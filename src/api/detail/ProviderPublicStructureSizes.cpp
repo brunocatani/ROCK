@@ -1,5 +1,13 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * PUBLIC STRUCTURE SIZES: the sizeof switch behind apiGetPublicStructureSizeV1.
+ *
+ * The RockProviderStructureIdV1 enum and this switch must stay in lockstep. A new
+ * structure id needs a new case here in the same change, or size negotiation
+ * silently reports zero for it.
+ */
 #include "api/detail/ProviderApiEntryPoints.h"
 
 namespace rock::provider::detail

@@ -1,3 +1,12 @@
+/*
+ * COLLIDER LIFECYCLE: create, update, and destroy the hand and body-bone colliders.
+ *
+ * Both registerCollisionLayer callers live here, together with
+ * serviceCollisionLayerDrift, so the layer contract is decided in one file.
+ * synchronizeDynamicWeaponHandCollisionRoles reassigns hand roles when the weapon
+ * changes hands; it belongs here because it edits the same collider set.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 

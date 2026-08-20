@@ -1,5 +1,17 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * RUNTIME SERVICES: the query and overlay surface that does not belong to an
+ * authority family.
+ *
+ * Covers world raycasts with their per-owner frame budget, the collider
+ * visualization override, debug overlay publish and clear, weapon evidence and
+ * classification passthroughs, raw wand buttons, Pip-Boy suppression, and emitters.
+ *
+ * The raycast budget is per owner and per frame. It exists so one consumer cannot
+ * spend the frame casting rays. Do not remove it.
+ */
 #include "api/detail/ProviderApiEntryPoints.h"
 #include "api/detail/ProviderApiCore.h"
 #include "api/detail/ProviderApiState.h"

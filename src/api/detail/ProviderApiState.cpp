@@ -1,5 +1,18 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * THE STATE SLOTS. Every provider static is defined here, once, and declared extern
+ * in detail/ProviderApiState.h.
+ *
+ * Statics are grouped by the mutex that guards them, and each group carries a
+ * one-line comment naming that lock and the threads that touch it. Keep a new
+ * static in its family's group, or the lock contract stops being readable.
+ *
+ * The class-type registries are constinit. That is a compile-time guarantee of
+ * constant initialization, so they cannot take part in a static initialization order
+ * problem across translation units. Keep constinit on them.
+ */
 #include "api/detail/ProviderApiState.h"
 
 namespace rock::provider::detail

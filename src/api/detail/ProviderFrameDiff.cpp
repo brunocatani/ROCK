@@ -1,5 +1,16 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * FRAME DIFF: pure comparison and sequence assignment over public frame structs.
+ *
+ * No locks, no globals, no engine access. That is what makes it unit testable, and
+ * ROCKProviderFrameDiffTests covers it. Keep new logic here pure so the test stays
+ * able to reach it.
+ *
+ * A sequence advances only when the payload actually changed. Consumers use that to
+ * skip work, so a spurious advance costs them a frame of needless recompute.
+ */
 #include "api/detail/ProviderFrameDiff.h"
 
 namespace rock::provider::detail

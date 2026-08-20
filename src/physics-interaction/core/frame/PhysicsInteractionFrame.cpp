@@ -1,3 +1,16 @@
+/*
+ * The per-frame ORCHESTRATOR. This is the top of the main-thread call tree.
+ *
+ * Read top-down and you read one game frame in order:
+ *   buildFrameContext  - sample wands, HMD, worlds, and clocks once
+ *   update             - the frame table of contents; guards first, then phases
+ *   the phase methods  - each phase, in the order update calls it
+ *   the finalize pass  - overlay publication and post-FRIK presentation fixups
+ *
+ * Every phase method takes the frame context by const reference. Nothing here may
+ * allocate, log per frame, or dispatch virtually: this runs every frame.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

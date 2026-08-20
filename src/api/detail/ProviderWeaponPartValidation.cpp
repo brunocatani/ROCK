@@ -1,5 +1,13 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * WEAPON PART VALIDATION: matcher and semantic checks for consumer-supplied weapon
+ * part targets, plus the conversion into the ROCK runtime target type.
+ *
+ * Pure functions over public structs. They fail closed: an unparseable or
+ * non-finite target is rejected, never clamped into something plausible.
+ */
 #include "api/detail/ProviderWeaponPartValidation.h"
 
 #include "api/detail/ProviderTransformMath.h"

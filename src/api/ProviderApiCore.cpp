@@ -1,5 +1,16 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * PROVIDER CORE: version and ready checks, consumer registration, the legacy frame
+ * callback registry, the animation-owner-thread claim, and the snapshot readers.
+ *
+ * invokeFrameCallbackSafely wraps every consumer callback in MSVC SEH. __try and
+ * __except cannot coexist with C++ unwinding in one function, so that helper stays
+ * shaped exactly as it is. Do not add objects with destructors inside the __try.
+ *
+ * s_animationOwnerThreadId is claimed here and gates 16 entry points in other TUs.
+ */
 #include "api/detail/ProviderApiCore.h"
 
 #include "api/detail/ProviderApiEntryPoints.h"

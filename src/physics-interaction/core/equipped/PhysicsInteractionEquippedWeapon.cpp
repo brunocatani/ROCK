@@ -1,3 +1,12 @@
+/*
+ * EQUIPPED WEAPON handling: which hand holds the equipped weapon, and how the
+ * shoulder sheath stores and returns it.
+ *
+ * Covers the handling-mode settings refresh, the hand assignment and its
+ * post-grip reconcile, the fixed left-hand carry, and the shoulder sheath
+ * submit/retrieve pair. The drop path is the sibling file, not this one.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

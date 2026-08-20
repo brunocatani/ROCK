@@ -1,3 +1,11 @@
+/*
+ * PROVIDER COMMANDS: the write half of the provider surface.
+ *
+ * Drains the interaction command queue, applies weapon-part drives, and restores
+ * part nodes when a drive lease expires. Runs on the main thread inside the frame,
+ * which is why it may touch scene and Havok state where the query file may not.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

@@ -1,3 +1,16 @@
+/*
+ * PHYSICS STEP WRITERS: the static Havok step thunks and the drive/observe bodies
+ * they call.
+ *
+ * THREAD BOUNDARY. This file and core/provider/PhysicsInteractionContacts.cpp are
+ * the only non-main-thread writers in PhysicsInteraction. The file is kept small on
+ * purpose, so the physics-thread contract is greppable in one place. Every function
+ * below says "Runs on the physics step thread"; keep it that way.
+ *
+ * Every entry point checks _initialized and physicsWritesAllowedForWorld before it
+ * writes. It fails closed: a missing world or a stale epoch skips the frame.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 

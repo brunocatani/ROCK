@@ -1,5 +1,17 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * AUTHORITY LEASES: hand input suppression, equipped-weapon handling authority and
+ * its hand request, and the offhand reservation.
+ *
+ * Every family expires the same way, through the shared prune machinery in
+ * ProviderLeasePolicy.h. A lease that outlives its frame budget is a bug, so a
+ * family must never grow its own expiry rule.
+ *
+ * Entry points that take both a consumer token and a family slot lock both mutexes
+ * in one scoped_lock. Keep every one of those a single acquisition.
+ */
 #include "api/detail/ProviderAuthorityLeases.h"
 
 #include "api/detail/ProviderApiCore.h"

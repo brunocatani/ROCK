@@ -1,3 +1,13 @@
+/*
+ * EQUIPPED WEAPON DROP: the momentum handoff that runs when the player releases
+ * an equipped weapon.
+ *
+ * Read in order: updateEquippedWeaponReleaseCapture samples the release,
+ * armEquippedWeaponDropMomentumHandoff arms the transaction, and
+ * serviceEquippedWeaponDropMomentumTransaction completes or abandons it.
+ * The transaction owns its own state and touches no other subsystem's members.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

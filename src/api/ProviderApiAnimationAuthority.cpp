@@ -1,5 +1,17 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * ANIMATION AUTHORITY: native animation authority, the animation phase callbacks,
+ * the FRIK hand visual authority bridge, native-anim runtime publication, and the
+ * equipped grip state readers.
+ *
+ * The phase callback invoker uses MSVC SEH. Keep it free of C++ unwinding objects.
+ *
+ * Most entry points here must run on the claimed animation owner thread. That check
+ * comes FIRST, before any structural or semantic check, per the shared entry
+ * validation order.
+ */
 #include "api/detail/ProviderAnimationAuthority.h"
 #include "api/detail/ProviderOwnerLifecycle.h"
 

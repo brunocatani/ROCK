@@ -1,3 +1,14 @@
+/*
+ * GRAB INPUT: turns one frame of controller state into grab and release decisions.
+ *
+ * updateGrabInput builds one GrabInputFrame for the frame, then calls
+ * processGrabInputHand once per hand. processGrabInputHand is a member, not a
+ * lambda, so the per-hand flow is readable and greppable on its own.
+ *
+ * Also owns the two context factories, makeGrabReleaseContext and
+ * makeGrabSharedObjectContext, that the force-grab flow declares and reuses.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

@@ -1,3 +1,12 @@
+/*
+ * DIAGNOSTICS ONLY: hand transform parity sampling and the collider clock trace.
+ *
+ * Nothing in this file writes gameplay, Havok, or scene state. It reads and it logs.
+ * If a change here starts to affect behavior, it belongs in another file.
+ *
+ * All logging is rate limited. These run per frame when their debug toggles are on.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

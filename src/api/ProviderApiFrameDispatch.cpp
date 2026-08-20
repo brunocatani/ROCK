@@ -1,5 +1,17 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * FRAME DISPATCH: one game frame, published to every registered consumer.
+ *
+ * Read top-down and you read the frame in order: fill the snapshot, publish
+ * generations, run the prune passes, diff state and emit events, dispatch the
+ * callbacks, then hand off to the monitor.
+ *
+ * It takes six mutexes one at a time, each in its own small scope. That is
+ * deliberate and matches the pre-split behavior. Do not merge them into one
+ * composite lock and do not widen any scope.
+ */
 #include "api/detail/ProviderAnimationAuthority.h"
 #include "api/detail/ProviderApiCore.h"
 #include "api/detail/ProviderApiState.h"

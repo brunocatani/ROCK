@@ -1,5 +1,16 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * THE ABI SURFACE. Slot order in ROCK_PROVIDER_API_FUNCTION_TABLE IS the ABI.
+ * Never reorder, never remove, never insert in the middle. Add only at the end.
+ *
+ * The static_assert on sizeof(RockProviderApi) is here on purpose. It makes a drift
+ * between the public header and this table fail THIS file's compile.
+ *
+ * ROCKAPI_GetProviderApi and ROCKAPI_GetDescriptorV1 are resolved by name through
+ * GetProcAddress. They stay exported and they keep these exact names.
+ */
 #include "api/detail/ProviderApiEntryPoints.h"
 #include "api/detail/ProviderFeatureBits.h"
 

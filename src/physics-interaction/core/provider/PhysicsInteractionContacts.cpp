@@ -1,3 +1,17 @@
+/*
+ * CONTACT STREAM: Havok contact and manifold callbacks, plus the push assist they
+ * feed.
+ *
+ * THREAD BOUNDARY. This file and core/PhysicsInteractionPhysicsStep.cpp are the
+ * only non-main-thread writers in PhysicsInteraction. Every function below carries
+ * a one-line comment saying which thread runs it. Keep that up to date; a reader
+ * must never have to guess.
+ *
+ * s_contactEventBridge and s_manifoldProcessedEventBridge are defined here and
+ * nowhere else. Havok compares them by ADDRESS to route a callback, so they are
+ * identity tokens, not data. Do not copy, move, or duplicate them.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 

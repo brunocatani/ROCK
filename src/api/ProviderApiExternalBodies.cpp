@@ -1,5 +1,14 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * EXTERNAL BODIES: consumer-registered Havok bodies, their scopes, and the contact
+ * streams they produce.
+ *
+ * The body lock joins the game thread and the physics thread. recordExternalContact
+ * is reached from the contact callback, so keep every critical section here short
+ * and free of allocation and logging.
+ */
 #include "api/detail/ProviderApiEntryPoints.h"
 #include "api/detail/ProviderApiCore.h"
 #include "api/detail/ProviderApiState.h"

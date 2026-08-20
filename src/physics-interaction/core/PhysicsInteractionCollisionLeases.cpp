@@ -1,3 +1,17 @@
+/*
+ * COLLISION SUPPRESSION LEASES: turn hand and player collision off for a reason,
+ * then put it back exactly as it was.
+ *
+ * Every lease family uses the same primitive pair, suppressHandCollisionLeases and
+ * restoreHandCollisionLeases, so a new family cannot invent its own restore rule.
+ * The three families are the dominant-weapon hand, the weapon-support hand, and
+ * the post-drop hand.
+ *
+ * The native player suppression block at the bottom is the exception worth reading
+ * carefully: it has a physics-thread twin. See the comments on those four functions
+ * for the callback-gate rule that makes the unlocked read safe.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 
 #include <algorithm>
@@ -548,6 +562,8 @@ namespace rock
         return !resolvedRef || resolvedRef == player;
     }
 
+    // Runs on the main thread. Takes the callback gate before it clears the
+    // lease array, so the physics-step reader cannot see a half-cleared array.
     void PhysicsInteraction::restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason)
     {
         if (_nativePlayerCollisionSuppressedBodyCount == 0) {
@@ -586,6 +602,8 @@ namespace rock
         _nativePlayerCollisionSuppressionRefreshFrames = pendingCount == 0 ? 0 : 30;
     }
 
+    // Runs on the main thread. The caller must already hold the callback gate:
+    // this rewrites the lease array that the physics-step twin below reads.
     void PhysicsInteraction::refreshNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* context)
     {
         if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _nativePlayerCollisionSuppressedBodyCount == 0) {
@@ -615,6 +633,16 @@ namespace rock
         _nativePlayerCollisionSuppressedBodyCount = retainedCount;
     }
 
+    // Runs on the physics step thread. This is the only physics-thread writer
+    // outside PhysicsInteractionPhysicsStep.cpp and PhysicsInteractionContacts.cpp.
+    // It stays with its main-thread family because all four functions share the
+    // same lease array.
+    //
+    // The lease array is read here without a lock. That is safe only because
+    // every main-thread mutator of _nativePlayerCollisionSuppressedBodies holds
+    // _generatedBodyStepDrive.callbackGate().pauseForMutation() while it writes,
+    // which keeps this callback out. Never mutate the array from the main thread
+    // without that gate.
     void PhysicsInteraction::refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(RE::hknpWorld* hknp, const char* context)
     {
         if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _nativePlayerCollisionSuppressedBodyCount == 0) {
@@ -671,6 +699,8 @@ namespace rock
         }
     }
 
+    // Runs on the main thread, once per frame from update(). Owns the gate for
+    // the whole refresh-and-rescan pass.
     void PhysicsInteraction::updateNativePlayerCollisionSuppression(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
     {
         if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled) {

@@ -1,5 +1,16 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * ABI PINNING. Compile-time assertions that tie the public enums and structs to the
+ * ROCK-internal ones they mirror.
+ *
+ * These are real tests. They fail the build the moment the two sides drift.
+ *
+ * This file exists separately because it needs both the public header and several
+ * heavy internal headers. Keeping that include cost here lets every other split TU
+ * stay light. Do not add runtime code to this file.
+ */
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/body/BodyZone.h"
 #include "physics-interaction/weapon/WeaponTypes.h"

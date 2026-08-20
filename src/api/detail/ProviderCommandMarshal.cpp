@@ -1,5 +1,13 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * COMMAND MARSHALING: one field selector over the interaction command union, plus
+ * result construction and storage.
+ *
+ * commandFields replaced six near-identical accessors that each switched over the
+ * same union. Read a field through it. Do not add a seventh switch.
+ */
 #include "api/detail/ProviderCommandMarshal.h"
 
 #include "physics-interaction/api/InteractionCommandPolicy.h"

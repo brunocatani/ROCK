@@ -1,3 +1,13 @@
+/*
+ * HAND FRAME READERS: the one place that answers "where is the interaction hand
+ * this frame".
+ *
+ * getInteractionHandFrame is the single source other TUs use, so hand-space rules
+ * stay in one file. refreshExternalHandWorldTransformsBeforeFrik publishes the
+ * external hand transforms before FRIK runs, which fixes the frame order between
+ * the visual hand and the physics hand.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

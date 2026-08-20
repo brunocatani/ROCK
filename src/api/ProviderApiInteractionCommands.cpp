@@ -1,5 +1,15 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * INTERACTION COMMANDS: the consumer request queue for force grab, force release,
+ * and thrown drop.
+ *
+ * Read in order: a consumer enqueues a request, the game thread dequeues it through
+ * the internal bridge, and the result is stored back for the consumer to read.
+ * Field access into the command union goes through one selector in
+ * detail/ProviderCommandMarshal.h; do not hand-roll a second switch.
+ */
 #include "api/detail/ProviderInteractionCommands.h"
 
 #include "api/detail/ProviderApiCore.h"

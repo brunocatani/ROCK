@@ -1,3 +1,11 @@
+/*
+ * DEBUG OVERLAY: draws the PhysicsInteraction debug shapes and text.
+ *
+ * Draw-only. It reads published snapshots and debug toggles. It must not change
+ * gameplay, Havok, or scene state, and nothing in the frame flow may depend on it
+ * running.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
 

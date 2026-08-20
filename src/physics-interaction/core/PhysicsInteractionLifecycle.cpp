@@ -1,3 +1,19 @@
+/*
+ * PhysicsInteraction LIFECYCLE: construction, init, shutdown, destruction, and the
+ * epoch bookkeeping that decides when generated bodies must be rebuilt.
+ *
+ * Read this file to learn when the subsystem exists and when it stops existing.
+ * Per-frame work lives in core/frame/. This file owns only the boundaries.
+ *
+ * The ctor stores s_instance and the dtor clears it. The workbench menu sink and
+ * PhysicsHooks.cpp reach in through that pointer, so the store/clear pair must stay
+ * in the ctor/dtor and must not move to init/shutdown.
+ *
+ * Also owns the teardown helpers that several callers share: releaseHeldObjectsForTeardown,
+ * restoreAllHandCollisionLeases, and yieldFrameAndDispatch. They live here because
+ * shutdown and the frame-interrupt paths both need the same ordered teardown.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

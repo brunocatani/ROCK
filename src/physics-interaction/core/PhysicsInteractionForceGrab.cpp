@@ -1,3 +1,15 @@
+/*
+ * FORCE GRAB and LOOSE GRENADES: provider-driven grabs, and the grenade quick-draw
+ * that reuses the same commit machinery.
+ *
+ * Read in order: the bare-fist guard and blocker mask decide whether a hand may
+ * accept a force grab, servicePendingForceGrabCommits completes the ones that may,
+ * and the loose-grenade block below drives arm/fuse state for a held grenade.
+ *
+ * makeGrabReleaseContext and makeGrabSharedObjectContext are declared here but
+ * DEFINED in core/frame/PhysicsInteractionGrabInput.cpp. Grab input owns them.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 

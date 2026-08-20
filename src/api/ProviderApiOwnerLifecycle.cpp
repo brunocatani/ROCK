@@ -1,5 +1,20 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * OWNER LIFECYCLE: one revocation path for every way an owner can go away.
+ *
+ * revokeOwner is the single implementation. apiUnregisterConsumerV1 and
+ * clearOwnerStateAfterCallbackFault are thin wrappers over it, and they differ only
+ * in the invalidation reason and whether the consumer slot is cleared too.
+ *
+ * LOCK ORDER. revokeOwner takes six mutexes in ONE std::scoped_lock. That single
+ * simultaneous acquisition is what makes it deadlock-safe. Never split it into
+ * sequential locks, and never move part of it into another function.
+ *
+ * clearExternalBodiesForProviderLoss below takes its per-family locks one at a time,
+ * in a fixed order. That order is load-bearing. Keep it.
+ */
 #include "ROCKProviderApiInternal.h"
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"

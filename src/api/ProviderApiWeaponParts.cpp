@@ -1,5 +1,14 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * WEAPON PARTS: target and drive publication, plus the pose, resolution, and
+ * drive-result readers.
+ *
+ * Validation and runtime conversion live in detail/ProviderWeaponPartValidation.h,
+ * so this file stays about publication and lock scope. Publishing entry points hold
+ * the consumer lock and the part lock together in one scoped_lock.
+ */
 #include "api/detail/ProviderWeaponParts.h"
 
 #include "api/detail/ProviderApiCore.h"

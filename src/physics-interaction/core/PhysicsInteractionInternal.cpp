@@ -1,3 +1,12 @@
+/*
+ * SHARED DETAIL HELPERS for the PhysicsInteraction translation units.
+ *
+ * Everything here is in rock::physics_interaction_detail and is declared in
+ * PhysicsInteractionInternal.h. A helper belongs here only when two or more
+ * PhysicsInteraction TUs call it. A helper used by one TU stays in that TU's
+ * anonymous namespace: internal linkage is still the default.
+ */
+
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
 #include <algorithm>

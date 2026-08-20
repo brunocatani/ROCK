@@ -1,3 +1,16 @@
+/*
+ * EVENTS AND OWNERSHIP: grab event dispatch, haptics, held-mass slowdown, and the
+ * object claim registry.
+ *
+ * Also holds the two world accessors, getPlayerBhkWorld and getHknpWorld, that most
+ * other TUs call. They live here because the claim registry is the other thing that
+ * must agree about which world is current.
+ *
+ * restoreHeldMassMovementSlowdown takes a reason string. Every early return in
+ * update() must call it, or the player keeps a movement penalty for an object they
+ * no longer hold.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 

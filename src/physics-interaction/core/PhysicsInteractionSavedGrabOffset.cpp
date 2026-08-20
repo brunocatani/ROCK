@@ -1,3 +1,10 @@
+/*
+ * SAVED GRAB OFFSETS: capture and update the per-weapon grab offset that the user
+ * tunes with the offset gesture.
+ *
+ * Small and self-contained. It writes the saved-offset store and nothing else.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 

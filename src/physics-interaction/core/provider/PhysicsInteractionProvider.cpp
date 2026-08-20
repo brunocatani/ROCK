@@ -1,3 +1,15 @@
+/*
+ * PROVIDER QUERIES: the read-only surface that ROCKProviderApi exposes to
+ * PAPER and SCISSORS.
+ *
+ * Every function here fills a caller-owned public struct and returns. Nothing in
+ * this file changes gameplay state. Provider calls that DO write are in the
+ * sibling file PhysicsInteractionProviderCommands.cpp; keep that split.
+ *
+ * These run on the consumer's calling thread, so they read published snapshots and
+ * atomics rather than live scene state.
+ */
+
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"

@@ -1,5 +1,13 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * PROVIDER LIMITS: the capacity values a consumer reads before it sizes its buffers.
+ *
+ * The feature-bit constants live in detail/ProviderFeatureBits.h because the table
+ * TU needs them too. Both 32-bit feature words are fully saturated: bit 31 is used
+ * in each. A new capability needs a third word, which is an ABI change.
+ */
 #include "api/detail/ProviderApiEntryPoints.h"
 #include "api/detail/ProviderApiState.h"
 #include "api/detail/ProviderFeatureBits.h"

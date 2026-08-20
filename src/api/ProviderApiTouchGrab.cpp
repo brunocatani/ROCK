@@ -1,5 +1,13 @@
 #define ROCK_API_EXPORTS
-// Build the DLL side of the public provider ABI.
+/*
+ * Build the DLL side of the public provider ABI.
+ *
+ * TOUCH GRAB: the scope lifecycle for consumer-registered touch grab targets.
+ *
+ * The registry itself is TouchGrabRegistry; this file owns only the API surface and
+ * the internal bridges over it. Scope entry points take the consumer lock and the
+ * touch lock together in one scoped_lock.
+ */
 #include "api/detail/ProviderApiEntryPoints.h"
 #include "api/detail/ProviderApiCore.h"
 #include "api/detail/ProviderApiState.h"
