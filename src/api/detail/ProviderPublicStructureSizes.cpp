@@ -1,0 +1,148 @@
+#define ROCK_API_EXPORTS
+// Build the DLL side of the public provider ABI.
+#include "api/detail/ProviderApiEntryPoints.h"
+
+namespace rock::provider::detail
+{
+    std::uint32_t ROCK_PROVIDER_CALL apiGetPublicStructureSizeV1(
+        const RockProviderStructureIdV1 structureId)
+    {
+        // Keep this switch in lockstep with RockProviderStructureIdV1.
+        switch (structureId) {
+        case RockProviderStructureIdV1::ApiDescriptor:
+            return sizeof(RockProviderApiDescriptorV1);
+        case RockProviderStructureIdV1::ConsumerRegistration:
+            return sizeof(RockProviderConsumerRegistrationV1);
+        case RockProviderStructureIdV1::ConsumerHandle:
+            return sizeof(RockProviderConsumerHandleV1);
+        case RockProviderStructureIdV1::Limits:
+            return sizeof(RockProviderLimitsV1);
+        case RockProviderStructureIdV1::LimitsExt:
+            return sizeof(RockProviderLimitsExtV1);
+        case RockProviderStructureIdV1::FrameSnapshot:
+            return sizeof(RockProviderFrameSnapshot);
+        case RockProviderStructureIdV1::HandFrame:
+            return sizeof(RockProviderHandFrameV1);
+        case RockProviderStructureIdV1::HandInteractionState:
+            return sizeof(RockProviderHandInteractionStateV1);
+        case RockProviderStructureIdV1::ProviderEvent:
+            return sizeof(RockProviderEventV1);
+        case RockProviderStructureIdV1::ProviderEventStreamState:
+            return sizeof(RockProviderEventStreamStateV1);
+        case RockProviderStructureIdV1::EquippedWeaponState:
+            return sizeof(RockProviderEquippedWeaponStateV1);
+        case RockProviderStructureIdV1::ExternalBodyRegistration:
+            return sizeof(RockProviderExternalBodyRegistration);
+        case RockProviderStructureIdV1::ExternalContact:
+            return sizeof(RockProviderExternalContactV1);
+        case RockProviderStructureIdV1::ExternalContactRecord:
+            return sizeof(RockProviderExternalContactRecordV1);
+        case RockProviderStructureIdV1::ExternalContactStreamState:
+            return sizeof(RockProviderExternalContactStreamStateV1);
+        case RockProviderStructureIdV1::WeaponPartTargetQuery:
+            return sizeof(RockProviderWeaponPartResolutionQueryV1);
+        case RockProviderStructureIdV1::WeaponPartTargetResolution:
+            return sizeof(RockProviderWeaponPartResolutionResultV1);
+        case RockProviderStructureIdV1::WeaponPartPose:
+            return sizeof(RockProviderWeaponPartPoseV1);
+        case RockProviderStructureIdV1::WeaponPartDriveResult:
+            return sizeof(RockProviderWeaponPartDriveApplicationResultV1);
+        case RockProviderStructureIdV1::ScopeSightState:
+            return sizeof(RockProviderScopeSightStateV1);
+        case RockProviderStructureIdV1::WeaponCompositionState:
+            return sizeof(RockProviderWeaponCompositionStateV1);
+        case RockProviderStructureIdV1::WeaponCompositionEntry:
+            return sizeof(RockProviderWeaponCompositionEntryV1);
+        case RockProviderStructureIdV1::AuthoredGripPose:
+            return sizeof(RockProviderAuthoredGripPoseV1);
+        case RockProviderStructureIdV1::PresentedHandPose:
+            return sizeof(RockProviderPresentedHandPoseV1);
+        case RockProviderStructureIdV1::SemanticHandContact:
+            return sizeof(RockProviderSemanticHandContactV1);
+        case RockProviderStructureIdV1::PlayerColliderDescriptor:
+            return sizeof(RockProviderPlayerColliderDescriptorV1);
+        case RockProviderStructureIdV1::HandCollisionAvailability:
+            return sizeof(RockProviderHandCollisionAvailabilityV1);
+        case RockProviderStructureIdV1::InputSuppressionState:
+            return sizeof(RockProviderHandInputSuppressionStateV1);
+        case RockProviderStructureIdV1::OffhandReservationRequest:
+            return sizeof(RockProviderOffhandReservationRequestV1);
+        case RockProviderStructureIdV1::OffhandReservationState:
+            return sizeof(RockProviderOffhandReservationStateV1);
+        case RockProviderStructureIdV1::ForceGrabRequest:
+            return sizeof(RockProviderForceGrabRequestV1);
+        case RockProviderStructureIdV1::ForceReleaseRequest:
+            return sizeof(RockProviderForceReleaseRequestV1);
+        case RockProviderStructureIdV1::ThrownDropRequest:
+            return sizeof(RockProviderThrownDropRequestV1);
+        case RockProviderStructureIdV1::InteractionCommandResult:
+            return sizeof(RockProviderInteractionCommandResultV1);
+        case RockProviderStructureIdV1::HandInputSuppressionRequest:
+            return sizeof(RockProviderHandInputSuppressionRequestV1);
+        case RockProviderStructureIdV1::RawWandButtonState:
+            return sizeof(RockProviderRawWandButtonStateV1);
+        case RockProviderStructureIdV1::WeaponPartTarget:
+            return sizeof(RockProviderWeaponPartTargetV1);
+        case RockProviderStructureIdV1::Transform:
+            return sizeof(RockProviderTransform);
+        case RockProviderStructureIdV1::WeaponPartDriveTarget:
+            return sizeof(RockProviderWeaponPartDriveTargetV1);
+        case RockProviderStructureIdV1::WeaponPartGripState:
+            return sizeof(RockProviderWeaponPartGripStateV1);
+        case RockProviderStructureIdV1::WeaponContactQuery:
+            return sizeof(RockProviderWeaponContactQuery);
+        case RockProviderStructureIdV1::WeaponContactResult:
+            return sizeof(RockProviderWeaponContactResult);
+        case RockProviderStructureIdV1::WeaponClassification:
+            return sizeof(RockProviderWeaponClassificationV1);
+        case RockProviderStructureIdV1::Point3:
+            return sizeof(RockProviderPoint3);
+        case RockProviderStructureIdV1::Bounds3:
+            return sizeof(RockProviderBounds3);
+        case RockProviderStructureIdV1::WeaponEmitter:
+            return sizeof(RockProviderWeaponEmitterV1);
+        case RockProviderStructureIdV1::NativeAnimationAuthorityRequest:
+            return sizeof(RockProviderNativeAnimationAuthorityRequestV1);
+        case RockProviderStructureIdV1::NativeAnimationAuthorityState:
+            return sizeof(RockProviderNativeAnimationAuthorityStateV1);
+        case RockProviderStructureIdV1::AnimationPhaseContext:
+            return sizeof(RockProviderAnimationPhaseContextV1);
+        case RockProviderStructureIdV1::EquippedWeaponGripState:
+            return sizeof(RockProviderEquippedWeaponGripStateV1);
+        case RockProviderStructureIdV1::EquippedWeaponHandlingRequest:
+            return sizeof(RockProviderEquippedWeaponHandlingRequestV1);
+        case RockProviderStructureIdV1::EquippedWeaponHandlingState:
+            return sizeof(RockProviderEquippedWeaponHandlingStateV1);
+        case RockProviderStructureIdV1::HandVisualAuthorityRequest:
+            return sizeof(RockProviderHandVisualAuthorityRequestV1);
+        case RockProviderStructureIdV1::NativeAnimationRuntimePublication:
+            return sizeof(RockProviderNativeAnimationRuntimePublicationV1);
+        case RockProviderStructureIdV1::DebugOverlayLine:
+            return sizeof(RockProviderDebugOverlayLineV1);
+        case RockProviderStructureIdV1::DebugOverlayText:
+            return sizeof(RockProviderDebugOverlayTextV1);
+        case RockProviderStructureIdV1::DebugOverlayPublication:
+            return sizeof(RockProviderDebugOverlayPublicationV1);
+        case RockProviderStructureIdV1::WeaponEvidenceDetail:
+            return sizeof(RockProviderWeaponEvidenceDetailV1);
+        case RockProviderStructureIdV1::BodyContact:
+            return sizeof(RockProviderBodyContactV1);
+        case RockProviderStructureIdV1::ApiFunctionTable:
+            return sizeof(RockProviderApi);
+        case RockProviderStructureIdV1::TouchGrabTarget:
+            return sizeof(RockProviderTouchGrabTargetV1);
+        case RockProviderStructureIdV1::TouchGrabState:
+            return sizeof(RockProviderTouchGrabStateV1);
+        case RockProviderStructureIdV1::EquippedWeaponHandRequest:
+            return sizeof(RockProviderEquippedWeaponHandRequestV1);
+        case RockProviderStructureIdV1::WorldRaycastRequest:
+            return sizeof(RockProviderWorldRaycastRequestV1);
+        case RockProviderStructureIdV1::WorldRaycastResult:
+            return sizeof(RockProviderWorldRaycastResultV1);
+        case RockProviderStructureIdV1::ColliderVisualizationRequest:
+            return sizeof(RockProviderColliderVisualizationRequestV1);
+        default:
+            return 0;
+        }
+    }
+}
