@@ -106,8 +106,6 @@ namespace rock
             return false;
         }
 
-        *outResponse = {};
-        outResponse->structSize = sizeof(frik::api::FRIKApiV2::RecoilResponse);
         outResponse->handMask = static_cast<std::uint32_t>(
             frik::api::FRIKApiV2::RecoilHandMask::Primary);
         outResponse->delivery = frik::api::FRIKApiV2::RecoilDelivery::Direct;

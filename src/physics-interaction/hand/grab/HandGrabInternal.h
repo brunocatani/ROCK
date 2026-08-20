@@ -15,6 +15,7 @@
 #include "physics-interaction/hand/grab/HandGrabPivotAuthority.h"
 
 #include "physics-interaction/body/BodyBoneColliderSet.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
@@ -527,7 +528,10 @@ namespace rock
             const auto* weapon = looseWeaponFormFromRef(refr);
             auto* weaponRoot = refr ? refr->Get3D() : nullptr;
             if (weapon && weaponRoot) {
-                const auto authored = authored_weapon_grip_library::find(weapon, weaponRoot, f4vr::isInPowerArmor());
+                const auto authored = authored_weapon_grip_library::find(
+                    weapon,
+                    weaponRoot,
+                    frik_skeleton_profile::effectiveInPowerArmor());
                 if (authored.found && authored.rightFiringFingerPose.complete()) {
                     frik_visual_authority::FingerLocalTransformOverride exactRightPose{};
                     exactRightPose.enabledMask = authored.rightFiringFingerPose.enabledMask;

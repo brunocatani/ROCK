@@ -9,6 +9,7 @@
 #include "RockConfig.h"
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -30,6 +31,7 @@
 #include "physics-interaction/weapon/equip/PipboyEquipRuntime.h"
 #include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -268,6 +270,21 @@ namespace
         input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
     }
 
+    void ensureFrikSkeletonProfile(const runtime_state::RuntimeFrameSnapshot& runtime)
+    {
+        if (!runtime.localSkeletonReady || frik_skeleton_profile::current().valid) {
+            return;
+        }
+
+        const auto skeletonGeneration = s_skeletonGeneration.load(std::memory_order_acquire);
+        const bool inPowerArmor = f4vr::isInPowerArmor();
+        frik_skeleton_profile::publishReady(skeletonGeneration, inPowerArmor);
+        logger::info(
+            "ROCK: Recovered hFRIK skeleton profile without a ready event (generation={}, powerArmor={}).",
+            skeletonGeneration,
+            inPowerArmor ? "yes" : "no");
+    }
+
     void onFrameUpdate()
     {
         performance_profiler::refreshSettings(
@@ -301,6 +318,7 @@ namespace
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
         });
         const auto& runtime = runtime_state::currentFrame();
+        ensureFrikSkeletonProfile(runtime);
         const bool authoredGripCaptureRuntimeEnabled =
             g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
@@ -795,9 +813,15 @@ namespace
 
         switch (static_cast<LE>(msg->type)) {
         case LE::kSkeletonReady:
-            logger::info("ROCK: Received kSkeletonReady from FRIK.");
+        {
+            const auto skeletonGeneration = bumpGeneration(s_skeletonGeneration);
+            const bool inPowerArmor = f4vr::isInPowerArmor();
+            frik_skeleton_profile::publishReady(skeletonGeneration, inPowerArmor);
+            logger::info(
+                "ROCK: Received kSkeletonReady from FRIK (generation={}, powerArmor={}).",
+                skeletonGeneration,
+                inPowerArmor ? "yes" : "no");
             frik_visual_authority::resetPresentedHandNodeCache();
-            bumpGeneration(s_skeletonGeneration);
             if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
                     "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
@@ -813,9 +837,11 @@ namespace
             }
             requestDeferredPhysicsCreation();
             break;
+        }
 
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
+            frik_skeleton_profile::clear();
             frik_visual_authority::resetPresentedHandNodeCache();
             bumpGeneration(s_skeletonGeneration);
             authored_weapon_grip_capture::resetTransientState();
@@ -844,6 +870,7 @@ namespace
 
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
             logger::info("ROCK: GameLoaded -- initializing FRIK API V2 and loading config...");
+            frik_skeleton_profile::clear();
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
@@ -925,6 +952,7 @@ namespace
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
+            frik_skeleton_profile::clear();
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);

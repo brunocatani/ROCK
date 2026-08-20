@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -128,7 +129,7 @@ namespace rock
             return false;
         }
 
-        const bool inPowerArmor = f4vr::isInPowerArmor();
+        const bool inPowerArmor = frik_skeleton_profile::effectiveInPowerArmor();
         const ResolvedTreeSource resolved = resolveTreeSource(source);
         if (!validTree(resolved.tree)) {
             if (!_missingSourceLogged || _cachedSource != resolved.source) {

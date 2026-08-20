@@ -5,6 +5,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 #include "physics-interaction/grab/saved/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/skeleton/HandFrame.h"
 #include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripLibrary.h"
@@ -123,7 +124,7 @@ namespace rock::loose_weapon_grip_zone
             const auto authoredLookup = authored_weapon_grip_library::find(
                 weapon,
                 looseRoot,
-                f4vr::isInPowerArmor());
+                frik_skeleton_profile::effectiveInPowerArmor());
             constexpr bool authoredGripEligible = true;
             const auto selectedSource = weapon_grip_authority_policy::select(
                 weapon_grip_authority_policy::Availability{

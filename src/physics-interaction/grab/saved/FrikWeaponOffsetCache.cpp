@@ -1,6 +1,7 @@
 #include "physics-interaction/grab/saved/FrikWeaponOffsetCache.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/ResourceUtils.h"
@@ -376,7 +377,7 @@ namespace rock::frik_weapon_offset_cache
                 return LookupResult{ .found = false, .reason = "cacheNotLoaded" };
             }
 
-            const bool inPowerArmor = f4vr::isInPowerArmor();
+            const bool inPowerArmor = frik_skeleton_profile::effectiveInPowerArmor();
             constexpr bool leftHanded = false;
             const auto offset = findEffectiveGripOffsetLocked(
                 cache,
@@ -404,7 +405,7 @@ namespace rock::frik_weapon_offset_cache
                 return CustomGripOverrideResult{ .found = false, .reason = "cacheNotLoaded" };
             }
 
-            const bool inPowerArmor = f4vr::isInPowerArmor();
+            const bool inPowerArmor = frik_skeleton_profile::effectiveInPowerArmor();
             constexpr bool leftHanded = false;
             for (const auto mode : kGripOffsetModes) {
                 const auto offset = findEffectiveGripOffsetLocked(

@@ -12,6 +12,7 @@
  */
 
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
 
@@ -904,7 +905,7 @@ namespace rock
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
             .primaryHandHoldingObject = rightHandHoldingObject,
             .rockFiringHandIsLeft = rockFiringHandIsLeft,
-            .inPowerArmor = f4vr::isInPowerArmor(),
+            .inPowerArmor = frik_skeleton_profile::effectiveInPowerArmor(),
         }, _twoHandedGrip);
 
         if (_equippedWeaponTransition.isHandPoseHandoffActive()) {
@@ -1179,4 +1180,3 @@ namespace rock
     }
 
 }
-

@@ -3,6 +3,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 #include "physics-interaction/native/hooks/NativeMemory.h"
 #include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripCacheFormat.h"
 #include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripCacheStore.h"
@@ -1584,7 +1585,8 @@ namespace rock::native_idle_grip_preharvest
                     return false;
                 }
 
-                if (player->race != job.race || f4vr::isInPowerArmor() != job.inPowerArmor) {
+                if (player->race != job.race ||
+                    frik_skeleton_profile::effectiveInPowerArmor() != job.inPowerArmor) {
                     failJob(state, "playerRaceOrPowerArmorChanged");
                     return true;
                 }
@@ -1725,7 +1727,7 @@ namespace rock::native_idle_grip_preharvest
             candidate.variant = authored_weapon_grip_library::identifyWeaponVariant(weaponRoot);
             candidate.referenceFormId = reference->GetFormID();
             candidate.weaponFormId = weapon->GetFormID();
-            candidate.inPowerArmor = f4vr::isInPowerArmor();
+            candidate.inPowerArmor = frik_skeleton_profile::effectiveInPowerArmor();
             candidate.origin = CandidateOrigin::LooseReference;
             return candidate;
         }
@@ -1746,7 +1748,7 @@ namespace rock::native_idle_grip_preharvest
             candidate.variant = authored_weapon_grip_library::identifyWeaponVariant(weaponRoot, instanceContentKey, true);
             candidate.instanceIdentity = reinterpret_cast<std::uintptr_t>(candidate.instanceData.get());
             candidate.weaponFormId = weapon->GetFormID();
-            candidate.inPowerArmor = f4vr::isInPowerArmor();
+            candidate.inPowerArmor = frik_skeleton_profile::effectiveInPowerArmor();
             candidate.origin = CandidateOrigin::EquippedWeapon;
             return candidate;
         }

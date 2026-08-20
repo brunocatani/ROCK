@@ -5,6 +5,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/core/FrikSkeletonProfile.h"
 #include "physics-interaction/grab/saved/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
@@ -191,7 +192,10 @@ namespace rock
             frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
         const auto authoredLookup =
             !customFrikOffsetPresent && input.weapon ?
-                authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :
+                authored_weapon_grip_library::find(
+                    input.weapon,
+                    model,
+                    frik_skeleton_profile::effectiveInPowerArmor()) :
                 authored_weapon_grip_library::LookupResult{};
 
         RE::NiTransform resolvedHandWorld{};
