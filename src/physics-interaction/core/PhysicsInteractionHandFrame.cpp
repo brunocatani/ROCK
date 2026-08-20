@@ -194,6 +194,13 @@ namespace rock
             _weaponCollision.getCurrentWeaponGenerationKey(),
             firingHandIsLeft,
             schedulerSequence);
+        _twoHandedGrip.captureFiringRecoilReferenceBeforeFrik(
+            firingHandIsLeft ?
+                leftWeaponHandDriver :
+                rightWeaponHandDriver,
+            _weaponCollision.getCurrentWeaponGenerationKey(),
+            firingHandIsLeft,
+            schedulerSequence);
     }
 
 }

@@ -134,9 +134,18 @@ namespace rock
         }
 
         const std::size_t index = isLeft ? 0u : 1u;
+        if (_firingRecoilReferenceCapturedBeforeFrik[index] &&
+            _currentSourceSchedulerSequence != 0 &&
+            _firingRecoilReferenceSchedulerSequence[index] ==
+                _currentSourceSchedulerSequence) {
+            return;
+        }
         _firingRecoilReferenceHandWorld[index] = handWorld;
         _firingRecoilReferenceGenerationKey[index] =
             _activeWeaponGenerationKey;
+        _firingRecoilReferenceSchedulerSequence[index] =
+            _currentSourceSchedulerSequence;
+        _firingRecoilReferenceCapturedBeforeFrik[index] = false;
         _hasFiringRecoilReference[index] = true;
     }
 
@@ -144,6 +153,8 @@ namespace rock
     {
         _firingRecoilReferenceHandWorld = {};
         _firingRecoilReferenceGenerationKey = {};
+        _firingRecoilReferenceSchedulerSequence = {};
+        _firingRecoilReferenceCapturedBeforeFrik = {};
         _firingRecoilAcceptedGenerationKey = 0;
         _firingRecoilAcceptedSequence = 0;
         _firingRecoilConsumedSequence = 0;
@@ -156,6 +167,8 @@ namespace rock
         const std::size_t index = isLeft ? 0u : 1u;
         _firingRecoilReferenceHandWorld[index] = {};
         _firingRecoilReferenceGenerationKey[index] = 0;
+        _firingRecoilReferenceSchedulerSequence[index] = 0;
+        _firingRecoilReferenceCapturedBeforeFrik[index] = false;
         _hasFiringRecoilReference[index] = false;
         if (_firingRecoilAcceptedHandIsLeft == isLeft) {
             _firingRecoilConsumedSequence =
@@ -935,6 +948,60 @@ namespace rock
         }
     }
 
+    void TwoHandedGrip::captureFiringRecoilReferenceBeforeFrik(
+        const EquippedWeaponScopeHandDriverFrame& firingHandDriver,
+        const std::uint64_t currentWeaponGenerationKey,
+        const bool firingHandIsLeft,
+        const std::uint64_t currentSchedulerSequence)
+    {
+        const std::size_t handIndex = firingHandIsLeft ? 0u : 1u;
+        if (currentSchedulerSequence == 0 ||
+            firingHandIsLeft != _firingHandIsLeft ||
+            currentWeaponGenerationKey == 0 ||
+            currentWeaponGenerationKey != _activeWeaponGenerationKey ||
+            !hasControlledFiringRecoilAuthority(firingHandIsLeft)) {
+            _firingRecoilReferenceSchedulerSequence[handIndex] = 0;
+            _firingRecoilReferenceCapturedBeforeFrik[handIndex] = false;
+            _hasFiringRecoilReference[handIndex] = false;
+            return;
+        }
+
+        const auto hand = handFromBool(firingHandIsLeft);
+        RE::NiTransform preRecoilHandWorld{};
+        const bool hasPublishedTarget =
+            frik_visual_authority::
+                hasPublishedExternalHandWorldTransform(hand);
+        const bool capturedPublishedTarget =
+            hasPublishedTarget &&
+            frik_visual_authority::
+                tryGetPublishedExternalHandWorldTarget(
+                    hand,
+                    preRecoilHandWorld);
+        const bool capturedControllerTarget =
+            !hasPublishedTarget &&
+            firingHandDriver.valid &&
+            isUsableHandAuthorityTransform(firingHandDriver.world);
+        if (capturedControllerTarget) {
+            preRecoilHandWorld = firingHandDriver.world;
+        }
+        if ((!capturedPublishedTarget && !capturedControllerTarget) ||
+            !isUsableHandAuthorityTransform(preRecoilHandWorld)) {
+            _firingRecoilReferenceSchedulerSequence[handIndex] =
+                currentSchedulerSequence;
+            _firingRecoilReferenceCapturedBeforeFrik[handIndex] = true;
+            _hasFiringRecoilReference[handIndex] = false;
+            return;
+        }
+
+        _firingRecoilReferenceHandWorld[handIndex] = preRecoilHandWorld;
+        _firingRecoilReferenceGenerationKey[handIndex] =
+            currentWeaponGenerationKey;
+        _firingRecoilReferenceSchedulerSequence[handIndex] =
+            currentSchedulerSequence;
+        _firingRecoilReferenceCapturedBeforeFrik[handIndex] = true;
+        _hasFiringRecoilReference[handIndex] = true;
+    }
+
     void TwoHandedGrip::beginWeaponCollisionPresentationFrame(
         const std::uint64_t currentWeaponGenerationKey)
     {
@@ -1023,6 +1090,10 @@ namespace rock
             !_hasFiringRecoilReference[acceptedHandIndex] ||
             _firingRecoilReferenceGenerationKey[acceptedHandIndex] !=
                 currentWeaponGenerationKey ||
+            !_firingRecoilReferenceCapturedBeforeFrik[acceptedHandIndex] ||
+            _currentSourceSchedulerSequence == 0 ||
+            _firingRecoilReferenceSchedulerSequence[acceptedHandIndex] !=
+                _currentSourceSchedulerSequence ||
             !isFiniteTransform(weaponNode->world)) {
             return false;
         }

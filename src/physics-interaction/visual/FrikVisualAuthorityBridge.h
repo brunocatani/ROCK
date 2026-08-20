@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 #include "api/FRIKApiV2.h"
@@ -58,6 +59,9 @@ namespace rock::frik_visual_authority
             std::array<char, kCachedHandPoseTagCapacity> tag{};
             std::size_t tagLength = 0;
             Hand hand = Hand::Left;
+            int priority = 0;
+            std::uint64_t sequence = 0;
+            RE::NiTransform worldTarget{};
             bool valid = false;
         };
 
@@ -72,6 +76,7 @@ namespace rock::frik_visual_authority
             g_trackedHandWorldPublications{};
         inline std::array<bool, 2> g_untrackedHandWorldPublicationOverflow{};
         inline std::array<bool, 2> g_handWorldPublicationReady{};
+        inline std::uint64_t g_handWorldPublicationSequence = 0;
 
         struct PresentedHandNodeCache
         {
@@ -134,7 +139,11 @@ namespace rock::frik_visual_authority
             return nullptr;
         }
 
-        inline void rememberTrackedHandWorldPublication(const char* tag, Hand hand)
+        inline void rememberTrackedHandWorldPublication(
+            const char* tag,
+            Hand hand,
+            const RE::NiTransform& worldTarget,
+            int priority)
         {
             std::string_view tagView;
             std::size_t handIndex = 0;
@@ -143,25 +152,35 @@ namespace rock::frik_visual_authority
                 return;
             }
 
-            if (findTrackedHandWorldPublication(tagView, hand)) {
+            auto* publication =
+                findTrackedHandWorldPublication(tagView, hand);
+            if (!publication) {
+                for (auto& entry : g_trackedHandWorldPublications) {
+                    if (!entry.valid) {
+                        publication = &entry;
+                        break;
+                    }
+                }
+            }
+            if (!publication) {
+                // An incomplete mirror cannot identify the exact target that
+                // hFRIK will consume. Recoil composition must fail closed.
+                g_untrackedHandWorldPublicationOverflow[handIndex] = true;
                 return;
             }
 
-            for (auto& entry : g_trackedHandWorldPublications) {
-                if (!entry.valid) {
-                    entry.tag.fill('\0');
-                    std::copy(tagView.begin(), tagView.end(), entry.tag.begin());
-                    entry.tagLength = tagView.size();
-                    entry.hand = hand;
-                    entry.valid = true;
-                    return;
-                }
+            ++g_handWorldPublicationSequence;
+            if (g_handWorldPublicationSequence == 0) {
+                g_handWorldPublicationSequence = 1;
             }
-
-            // Fail closed: if an unexpected caller exhausts the fixed hot-path
-            // registry, keep that physical hand on its controller-derived frame
-            // until the next explicit skeleton lifecycle reset.
-            g_untrackedHandWorldPublicationOverflow[handIndex] = true;
+            publication->tag.fill('\0');
+            std::copy(tagView.begin(), tagView.end(), publication->tag.begin());
+            publication->tagLength = tagView.size();
+            publication->hand = hand;
+            publication->priority = priority;
+            publication->sequence = g_handWorldPublicationSequence;
+            publication->worldTarget = worldTarget;
+            publication->valid = true;
         }
 
         inline void invalidateTrackedHandWorldPublication(const char* tag, Hand hand)
@@ -192,11 +211,42 @@ namespace rock::frik_visual_authority
             return false;
         }
 
+        [[nodiscard]] inline bool tryGetWinningTrackedHandWorldPublication(
+            Hand hand,
+            RE::NiTransform& outWorldTarget)
+        {
+            outWorldTarget = {};
+            std::size_t handIndex = 0;
+            if (!physicalHandIndex(hand, handIndex) ||
+                g_untrackedHandWorldPublicationOverflow[handIndex]) {
+                return false;
+            }
+
+            const TrackedHandWorldPublication* winner = nullptr;
+            for (const auto& entry : g_trackedHandWorldPublications) {
+                if (!entry.valid || entry.hand != hand) {
+                    continue;
+                }
+                if (!winner || entry.priority > winner->priority ||
+                    (entry.priority == winner->priority &&
+                        entry.sequence > winner->sequence)) {
+                    winner = &entry;
+                }
+            }
+            if (!winner) {
+                return false;
+            }
+
+            outWorldTarget = winner->worldTarget;
+            return true;
+        }
+
         inline void resetTrackedHandWorldPublications()
         {
             g_trackedHandWorldPublications = {};
             g_untrackedHandWorldPublicationOverflow = {};
             g_handWorldPublicationReady = {};
+            g_handWorldPublicationSequence = 0;
         }
 
         [[nodiscard]] inline bool sameFingerPoseData(
@@ -537,7 +587,11 @@ namespace rock::frik_visual_authority
             frikApi->setHandWorldTransform &&
             frikApi->setHandWorldTransform(tag, hand, worldTarget, priority);
         if (published) {
-            detail::rememberTrackedHandWorldPublication(tag, hand);
+            detail::rememberTrackedHandWorldPublication(
+                tag,
+                hand,
+                worldTarget,
+                priority);
         }
         return published;
     }
@@ -580,6 +634,15 @@ namespace rock::frik_visual_authority
         std::string_view tagView;
         return detail::makeCacheableTagView(tag, tagView) &&
                detail::findTrackedHandWorldPublication(tagView, hand) != nullptr;
+    }
+
+    [[nodiscard]] inline bool tryGetPublishedExternalHandWorldTarget(
+        Hand hand,
+        RE::NiTransform& outWorldTarget)
+    {
+        return detail::tryGetWinningTrackedHandWorldPublication(
+            hand,
+            outWorldTarget);
     }
 
     [[nodiscard]] inline bool setHandPoseCustomLocalTransformsWithPriority(

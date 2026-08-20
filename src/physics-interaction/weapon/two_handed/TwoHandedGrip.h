@@ -705,6 +705,15 @@ namespace rock
             bool firingHandIsLeft,
             std::uint64_t currentSchedulerSequence);
 
+        // Captures the exact winning hand target immediately before hFRIK
+        // adds controlled recoil and solves the arm. The later weapon recoil
+        // layer must compare against this target, never raw controller input.
+        void captureFiringRecoilReferenceBeforeFrik(
+            const EquippedWeaponScopeHandDriverFrame& firingHandDriver,
+            std::uint64_t currentWeaponGenerationKey,
+            bool firingHandIsLeft,
+            std::uint64_t currentSchedulerSequence);
+
         // Releases persistent collision claims when retained contact
         // presentation ends. Proxy-active free space belongs to the normal
         // per-hand grip/native authority and must not retain this owner.
@@ -1603,6 +1612,8 @@ namespace rock
         bool _recoilControllerRegistered{ false };
         std::array<RE::NiTransform, 2> _firingRecoilReferenceHandWorld{};
         std::array<std::uint64_t, 2> _firingRecoilReferenceGenerationKey{};
+        std::array<std::uint64_t, 2> _firingRecoilReferenceSchedulerSequence{};
+        std::array<bool, 2> _firingRecoilReferenceCapturedBeforeFrik{};
         std::uint64_t _firingRecoilAcceptedGenerationKey{ 0 };
         std::uint64_t _firingRecoilAcceptedSequence{ 0 };
         std::uint64_t _firingRecoilConsumedSequence{ 0 };
