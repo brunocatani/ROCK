@@ -690,6 +690,131 @@ namespace
             static_cast<std::uint32_t>(GetCurrentThreadId());
     }
 
+    enum class EntryThreadPolicy
+    {
+        AnyThread,
+        AnimationOwner,
+    };
+
+    struct EntryValidationChecks
+    {
+        bool threadValid{ true };
+        bool argumentPresent{ true };
+        bool sizeValid{ true };
+        bool versionValid{ true };
+        bool semanticValid{ true };
+    };
+
+    [[nodiscard]] constexpr RockProviderResultV1 validateEntryOrder(
+        const EntryValidationChecks& checks)
+    {
+        // Thread ownership is the first gate for every owner-thread entry.
+        if (!checks.threadValid) {
+            return RockProviderResultV1::WrongThread;
+        }
+        if (!checks.argumentPresent) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!checks.sizeValid) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (!checks.versionValid) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (!checks.semanticValid) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        return RockProviderResultV1::Ok;
+    }
+
+    [[nodiscard]] bool entryThreadValid(const EntryThreadPolicy policy)
+    {
+        return policy == EntryThreadPolicy::AnyThread ||
+               onAnimationOwnerThread();
+    }
+
+    template <class Entry, class SemanticValidator>
+    [[nodiscard]] RockProviderResultV1 validateEntry(
+        const Entry* entry,
+        const EntryThreadPolicy threadPolicy,
+        SemanticValidator&& semanticValidator)
+    {
+        if (!entryThreadValid(threadPolicy)) {
+            return RockProviderResultV1::WrongThread;
+        }
+        if (!entry) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        const auto structuralResult = validateEntryOrder(EntryValidationChecks{
+            .sizeValid = entry->size == sizeof(Entry),
+            .versionValid = entry->version != 0 &&
+                            entry->version <= ROCK_PROVIDER_API_VERSION,
+        });
+        if (structuralResult != RockProviderResultV1::Ok) {
+            return structuralResult;
+        }
+        return semanticValidator(*entry) ?
+            RockProviderResultV1::Ok :
+            RockProviderResultV1::InvalidArgument;
+    }
+
+    template <class Entry>
+    [[nodiscard]] RockProviderResultV1 validateEntry(
+        const Entry* entry,
+        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread)
+    {
+        return validateEntry(
+            entry,
+            threadPolicy,
+            [](const Entry&) { return true; });
+    }
+
+    [[nodiscard]] RockProviderResultV1 validateOwnerEntry(
+        const std::uint64_t ownerToken,
+        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread)
+    {
+        return validateEntryOrder(EntryValidationChecks{
+            .threadValid = entryThreadValid(threadPolicy),
+            .semanticValid = ownerToken != 0,
+        });
+    }
+
+    template <class Output>
+    [[nodiscard]] RockProviderResultV1 validateOutputEntry(
+        const std::uint64_t ownerToken,
+        const Output* output,
+        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread)
+    {
+        if (!entryThreadValid(threadPolicy)) {
+            return RockProviderResultV1::WrongThread;
+        }
+        if (!output) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        return validateEntryOrder(EntryValidationChecks{
+            .sizeValid = output->size >= sizeof(Output),
+            .semanticValid = ownerToken != 0,
+        });
+    }
+
+    template <class Value>
+    [[nodiscard]] RockProviderResultV1 validateArrayEntry(
+        const std::uint64_t ownerToken,
+        const Value* values,
+        const std::uint32_t maxValues,
+        const std::uint32_t* outValueCount,
+        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread,
+        const bool semanticValid = true)
+    {
+        return validateEntryOrder(EntryValidationChecks{
+            .threadValid = entryThreadValid(threadPolicy),
+            .argumentPresent = outValueCount != nullptr &&
+                               (maxValues == 0 || values != nullptr),
+            .semanticValid = ownerToken != 0 && semanticValid,
+        });
+    }
+
     bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot)
     {
         if (!outSnapshot || outSnapshot->size < ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE) {
@@ -812,6 +937,25 @@ namespace
         return capacity;
     }
 
+    template <std::size_t Capacity>
+    void addUniqueOwner(
+        std::array<std::uint64_t, Capacity>& owners,
+        std::uint32_t& count,
+        const std::uint64_t ownerToken)
+    {
+        if (ownerToken == 0) {
+            return;
+        }
+        for (std::uint32_t index = 0; index < count; ++index) {
+            if (owners[index] == ownerToken) {
+                return;
+            }
+        }
+        if (count < owners.size()) {
+            owners[count++] = ownerToken;
+        }
+    }
+
     bool modNameEquals(const ConsumerSlot& slot, const char* modName, std::size_t modNameLength)
     {
         return slot.token != 0 &&
@@ -839,7 +983,9 @@ namespace
         return slot && hasConsumerCapabilityV1(slot->grantedCapabilities, capability);
     }
 
-    [[nodiscard]] bool finiteProviderTransform(const RockProviderTransform& transform)
+    [[nodiscard]] bool finiteProviderTransform(
+        const RockProviderTransform& transform,
+        const float minimumScale = 0.000001f)
     {
         for (const float value : transform.rotate) {
             if (!std::isfinite(value)) {
@@ -850,7 +996,7 @@ namespace
                std::isfinite(transform.translate[1]) &&
                std::isfinite(transform.translate[2]) &&
                std::isfinite(transform.scale) &&
-               std::abs(transform.scale) > 0.000001f;
+               std::abs(transform.scale) > minimumScale;
     }
 
     [[nodiscard]] bool finiteProviderPoint(
@@ -1066,14 +1212,19 @@ namespace
         }
     }
 
+    void clearNativeAnimationRuntimePublicationLocked()
+    {
+        s_nativeAnimationRuntimeProviderOwner = 0;
+        s_nativeAnimationRuntimePublication = {};
+        s_nativeAnimationRuntimeExpiresAfterFrame = 0;
+        s_hasNativeAnimationRuntimePublication = false;
+    }
+
     void clearNativeAnimationRuntimePublicationForOwner(const std::uint64_t ownerToken)
     {
         std::scoped_lock lock(s_nativeAnimationRuntimePublicationMutex);
         if (s_nativeAnimationRuntimeProviderOwner == ownerToken) {
-            s_nativeAnimationRuntimeProviderOwner = 0;
-            s_nativeAnimationRuntimePublication = {};
-            s_nativeAnimationRuntimeExpiresAfterFrame = 0;
-            s_hasNativeAnimationRuntimePublication = false;
+            clearNativeAnimationRuntimePublicationLocked();
         }
     }
 
@@ -1086,29 +1237,63 @@ namespace
         }
     }
 
+    template <class IsActive, class GenerationChanged, class ExpiresAfter,
+              class Revoke>
+    [[nodiscard]] bool pruneExpiredSlots(
+        const std::size_t slotCount,
+        const std::uint64_t frameIndex,
+        IsActive&& isActive,
+        GenerationChanged&& generationChanged,
+        ExpiresAfter&& expiresAfter,
+        Revoke&& revoke)
+    {
+        bool changed = false;
+        for (std::size_t index = 0; index < slotCount; ++index) {
+            if (!isActive(index)) {
+                continue;
+            }
+
+            const bool staleGeneration = generationChanged(index);
+            if (!staleGeneration && provider_lease_policy::isActive(
+                    frameIndex,
+                    expiresAfter(index))) {
+                continue;
+            }
+
+            const auto reason = staleGeneration ?
+                RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
+                RockProviderSuppressionInvalidationReasonV1::Expired;
+            revoke(index, reason);
+            changed = true;
+        }
+        return changed;
+    }
+
     void pruneExpiredEquippedWeaponHandlingAuthorityLocked(
         const std::uint64_t frameIndex)
     {
-        if (!s_equippedWeaponHandlingAuthority.active) {
-            return;
-        }
-        const bool generationChanged = generationGuardsStale(
-            s_equippedWeaponHandlingAuthority.request.worldGeneration,
-            s_equippedWeaponHandlingAuthority.request.skeletonGeneration,
-            s_equippedWeaponHandlingAuthority.request.providerGeneration);
-        if (generationChanged ||
-            !provider_lease_policy::isActive(
-                frameIndex,
-                s_equippedWeaponHandlingAuthority.expiresAfterFrame)) {
-            publishAuthorityLostEvent(
-                s_equippedWeaponHandlingAuthority.ownerToken,
-                RockProviderAuthorityKindV1::EquippedWeaponHandling,
-                static_cast<std::uint32_t>(
-                    generationChanged ?
-                        RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                        RockProviderSuppressionInvalidationReasonV1::Expired));
-            s_equippedWeaponHandlingAuthority = {};
-        }
+        (void)pruneExpiredSlots(
+            1,
+            frameIndex,
+            [](const std::size_t) {
+                return s_equippedWeaponHandlingAuthority.active;
+            },
+            [](const std::size_t) {
+                return generationGuardsStale(
+                    s_equippedWeaponHandlingAuthority.request.worldGeneration,
+                    s_equippedWeaponHandlingAuthority.request.skeletonGeneration,
+                    s_equippedWeaponHandlingAuthority.request.providerGeneration);
+            },
+            [](const std::size_t) {
+                return s_equippedWeaponHandlingAuthority.expiresAfterFrame;
+            },
+            [](const std::size_t, const auto reason) {
+                publishAuthorityLostEvent(
+                    s_equippedWeaponHandlingAuthority.ownerToken,
+                    RockProviderAuthorityKindV1::EquippedWeaponHandling,
+                    static_cast<std::uint32_t>(reason));
+                s_equippedWeaponHandlingAuthority = {};
+            });
     }
 
     std::uint64_t currentProviderFrameIndex()
@@ -1204,69 +1389,74 @@ namespace
 
     void pruneExpiredOffhandReservationLocked(const std::uint64_t frameIndex)
     {
-        if (s_offhandReservationSlot.ownerToken == 0) {
-            return;
-        }
-        const bool generationChanged = generationGuardsStale(
-            s_offhandReservationSlot.worldGeneration,
-            s_offhandReservationSlot.skeletonGeneration,
-            s_offhandReservationSlot.providerGeneration);
-        if (generationChanged ||
-            !provider_lease_policy::isActive(
-                frameIndex,
-                s_offhandReservationSlot.expiresAfterFrame)) {
-            clearOffhandReservationLocked(
-                generationChanged ?
-                    RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                    RockProviderSuppressionInvalidationReasonV1::Expired);
-        }
+        (void)pruneExpiredSlots(
+            1,
+            frameIndex,
+            [](const std::size_t) {
+                return s_offhandReservationSlot.ownerToken != 0;
+            },
+            [](const std::size_t) {
+                return generationGuardsStale(
+                    s_offhandReservationSlot.worldGeneration,
+                    s_offhandReservationSlot.skeletonGeneration,
+                    s_offhandReservationSlot.providerGeneration);
+            },
+            [](const std::size_t) {
+                return s_offhandReservationSlot.expiresAfterFrame;
+            },
+            [](const std::size_t, const auto reason) {
+                clearOffhandReservationLocked(reason);
+            });
     }
 
     void pruneExpiredNativeAnimationRuntimePublicationLocked(
         const std::uint64_t frameIndex)
     {
-        if (!s_hasNativeAnimationRuntimePublication) {
-            return;
-        }
-        const bool generationChanged = generationGuardsStale(
-            s_nativeAnimationRuntimePublication.worldGeneration,
-            s_nativeAnimationRuntimePublication.skeletonGeneration,
-            s_nativeAnimationRuntimePublication.providerGeneration);
-        if (generationChanged ||
-            !provider_lease_policy::isActive(
-                frameIndex,
-                s_nativeAnimationRuntimeExpiresAfterFrame)) {
-            const auto ownerToken = s_nativeAnimationRuntimeProviderOwner;
-            s_nativeAnimationRuntimeProviderOwner = 0;
-            s_nativeAnimationRuntimePublication = {};
-            s_nativeAnimationRuntimeExpiresAfterFrame = 0;
-            s_hasNativeAnimationRuntimePublication = false;
-            publishAuthorityLostEvent(
-                ownerToken,
-                RockProviderAuthorityKindV1::NativeAnimationRuntime,
-                static_cast<std::uint32_t>(
-                    generationChanged ?
-                        RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                        RockProviderSuppressionInvalidationReasonV1::Expired));
-        }
+        (void)pruneExpiredSlots(
+            1,
+            frameIndex,
+            [](const std::size_t) {
+                return s_hasNativeAnimationRuntimePublication;
+            },
+            [](const std::size_t) {
+                return generationGuardsStale(
+                    s_nativeAnimationRuntimePublication.worldGeneration,
+                    s_nativeAnimationRuntimePublication.skeletonGeneration,
+                    s_nativeAnimationRuntimePublication.providerGeneration);
+            },
+            [](const std::size_t) {
+                return s_nativeAnimationRuntimeExpiresAfterFrame;
+            },
+            [](const std::size_t, const auto reason) {
+                const auto ownerToken = s_nativeAnimationRuntimeProviderOwner;
+                clearNativeAnimationRuntimePublicationLocked();
+                publishAuthorityLostEvent(
+                    ownerToken,
+                    RockProviderAuthorityKindV1::NativeAnimationRuntime,
+                    static_cast<std::uint32_t>(reason));
+            });
     }
 
     void pruneExpiredHandInputSuppressionsLocked(std::uint64_t frameIndex)
     {
-        for (auto& slot : s_handInputSuppressions) {
-            if (!slot.active) {
-                continue;
-            }
-            const bool generationChanged = generationGuardsStale(
-                slot.worldGeneration,
-                slot.skeletonGeneration,
-                slot.providerGeneration);
-            if (generationChanged || !provider_lease_policy::isActive(
-                    frameIndex,
-                    slot.expiresAfterFrame)) {
-                const auto reason = generationChanged ?
-                    RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                    RockProviderSuppressionInvalidationReasonV1::Expired;
+        (void)pruneExpiredSlots(
+            s_handInputSuppressions.size(),
+            frameIndex,
+            [](const std::size_t index) {
+                return s_handInputSuppressions[index].active;
+            },
+            [](const std::size_t index) {
+                const auto& slot = s_handInputSuppressions[index];
+                return generationGuardsStale(
+                    slot.worldGeneration,
+                    slot.skeletonGeneration,
+                    slot.providerGeneration);
+            },
+            [](const std::size_t index) {
+                return s_handInputSuppressions[index].expiresAfterFrame;
+            },
+            [frameIndex](const std::size_t index, const auto reason) {
+                auto& slot = s_handInputSuppressions[index];
                 publishAuthorityLostEvent(
                     slot.ownerToken,
                     RockProviderAuthorityKindV1::HandInputSuppression,
@@ -1275,18 +1465,19 @@ namespace
                 slot.flags = 0;
                 slot.lastInvalidationReason = reason;
                 slot.lastInvalidatedFrame = frameIndex;
-            }
-        }
+            });
     }
 
     void clearHandInputSuppressionsForOwnerLocked(
         std::uint64_t ownerToken,
         RockProviderHand hand,
         RockProviderSuppressionInvalidationReasonV1 reason =
-            RockProviderSuppressionInvalidationReasonV1::ExplicitClear)
+            RockProviderSuppressionInvalidationReasonV1::ExplicitClear,
+        const bool includeInactive = false)
     {
         for (auto& slot : s_handInputSuppressions) {
-            if (!slot.active || slot.ownerToken != ownerToken) {
+            if (slot.ownerToken != ownerToken ||
+                (!slot.active && !includeInactive)) {
                 continue;
             }
             if (hand == RockProviderHand::None || slot.hand == hand) {
@@ -1315,35 +1506,38 @@ namespace
 
     void pruneExpiredNativeAnimationAuthorityLocked(std::uint64_t frameIndex)
     {
-        bool changed = false;
-        for (auto& slot : s_nativeAnimationAuthoritySlots) {
-            if (!slot.active) {
-                continue;
-            }
-            const bool generationChanged = generationGuardsStale(
-                slot.worldGeneration,
-                slot.skeletonGeneration,
-                slot.providerGeneration);
-            if (generationChanged || !provider_lease_policy::isActive(
-                    frameIndex,
-                    slot.expiresAtFrame)) {
+        const bool changed = pruneExpiredSlots(
+            s_nativeAnimationAuthoritySlots.size(),
+            frameIndex,
+            [](const std::size_t index) {
+                return s_nativeAnimationAuthoritySlots[index].active;
+            },
+            [](const std::size_t index) {
+                const auto& slot = s_nativeAnimationAuthoritySlots[index];
+                return generationGuardsStale(
+                    slot.worldGeneration,
+                    slot.skeletonGeneration,
+                    slot.providerGeneration);
+            },
+            [](const std::size_t index) {
+                return s_nativeAnimationAuthoritySlots[index].expiresAtFrame;
+            },
+            [](const std::size_t index, const auto reason) {
+                auto& slot = s_nativeAnimationAuthoritySlots[index];
                 publishAuthorityLostEvent(
                     slot.ownerToken,
                     RockProviderAuthorityKindV1::NativeAnimation,
-                    static_cast<std::uint32_t>(
-                        generationChanged ?
-                            RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                            RockProviderSuppressionInvalidationReasonV1::Expired));
+                    static_cast<std::uint32_t>(reason));
                 slot = {};
-                changed = true;
-            }
-        }
+            });
         if (changed) {
             publishNativeAnimationAuthorityAggregateLocked();
         }
     }
 
-    void clearNativeAnimationAuthorityForOwnerLocked(std::uint64_t ownerToken)
+    void clearNativeAnimationAuthorityForOwnerLocked(
+        std::uint64_t ownerToken,
+        const bool publishAggregate = true)
     {
         bool changed = false;
         for (auto& slot : s_nativeAnimationAuthoritySlots) {
@@ -1352,7 +1546,7 @@ namespace
                 changed = true;
             }
         }
-        if (changed) {
+        if (changed && publishAggregate) {
             publishNativeAnimationAuthorityAggregateLocked();
         }
     }
@@ -1377,18 +1571,24 @@ namespace
 
     void pruneExpiredWeaponPartDrivesLocked(std::uint64_t frameIndex)
     {
-        for (auto& slot : s_weaponPartDrives) {
-            if (slot.active && !provider_lease_policy::isActive(
-                    frameIndex,
-                    slot.expiresAfterFrame)) {
+        (void)pruneExpiredSlots(
+            s_weaponPartDrives.size(),
+            frameIndex,
+            [](const std::size_t index) {
+                return s_weaponPartDrives[index].active;
+            },
+            [](const std::size_t) { return false; },
+            [](const std::size_t index) {
+                return s_weaponPartDrives[index].expiresAfterFrame;
+            },
+            [](const std::size_t index, const auto reason) {
+                auto& slot = s_weaponPartDrives[index];
                 publishAuthorityLostEvent(
                     slot.ownerToken,
                     RockProviderAuthorityKindV1::WeaponPartDrive,
-                    static_cast<std::uint32_t>(
-                        RockProviderSuppressionInvalidationReasonV1::Expired));
+                    static_cast<std::uint32_t>(reason));
                 slot = {};
-            }
-        }
+            });
     }
 
     bool hasValidWeaponPartMatcher(std::uint32_t flags, std::uint32_t bodyId, std::uintptr_t sourceRoot, const char* sourceName)
@@ -1517,20 +1717,6 @@ namespace
                space == RockProviderWeaponPartDriveSpaceV1::SourceParentLocal;
     }
 
-    bool isFiniteProviderTransform(const RockProviderTransform& transform)
-    {
-        for (float value : transform.rotate) {
-            if (!std::isfinite(value)) {
-                return false;
-            }
-        }
-        return std::isfinite(transform.translate[0]) &&
-               std::isfinite(transform.translate[1]) &&
-               std::isfinite(transform.translate[2]) &&
-               std::isfinite(transform.scale) &&
-               std::abs(transform.scale) > 0.0001f;
-    }
-
     weapon_part_runtime::GrabMode toRuntimeGrabMode(RockProviderWeaponPartGrabModeV1 mode)
     {
         switch (mode) {
@@ -1657,87 +1843,39 @@ namespace
         return id;
     }
 
-    RockProviderHand commandHand(const QueuedInteractionCommandV1& command)
+    struct CommandFields
     {
-        switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
-            return command.forceGrab.hand;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
-            return command.forceRelease.hand;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
-            return command.thrownDrop.hand;
-        default:
-            return RockProviderHand::None;
-        }
-    }
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t targetFormId{ 0 };
+        std::uint32_t targetBodyId{ kProviderInvalidBodyId };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+    };
 
-    std::uint32_t commandTargetFormId(const QueuedInteractionCommandV1& command)
+    [[nodiscard]] CommandFields commandFields(
+        const QueuedInteractionCommandV1& command)
     {
-        switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
-            return command.forceGrab.targetFormId;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
-            return command.forceRelease.targetFormId;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
-            return command.thrownDrop.targetFormId;
-        default:
-            return 0;
-        }
-    }
+        const auto select = []<class Request>(const Request& request) {
+            return CommandFields{
+                .hand = request.hand,
+                .targetFormId = request.targetFormId,
+                .targetBodyId = request.targetBodyId,
+                .worldGeneration = request.worldGeneration,
+                .skeletonGeneration = request.skeletonGeneration,
+                .providerGeneration = request.providerGeneration,
+            };
+        };
 
-    std::uint32_t commandTargetBodyId(const QueuedInteractionCommandV1& command)
-    {
         switch (command.kind) {
         case RockProviderInteractionCommandKindV1::ForceGrab:
-            return command.forceGrab.targetBodyId;
+            return select(command.forceGrab);
         case RockProviderInteractionCommandKindV1::ForceRelease:
-            return command.forceRelease.targetBodyId;
+            return select(command.forceRelease);
         case RockProviderInteractionCommandKindV1::ThrownDrop:
-            return command.thrownDrop.targetBodyId;
+            return select(command.thrownDrop);
         default:
-            return kProviderInvalidBodyId;
-        }
-    }
-
-    std::uint32_t commandWorldGeneration(const QueuedInteractionCommandV1& command)
-    {
-        switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
-            return command.forceGrab.worldGeneration;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
-            return command.forceRelease.worldGeneration;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
-            return command.thrownDrop.worldGeneration;
-        default:
-            return 0;
-        }
-    }
-
-    std::uint32_t commandSkeletonGeneration(const QueuedInteractionCommandV1& command)
-    {
-        switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
-            return command.forceGrab.skeletonGeneration;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
-            return command.forceRelease.skeletonGeneration;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
-            return command.thrownDrop.skeletonGeneration;
-        default:
-            return 0;
-        }
-    }
-
-    std::uint32_t commandProviderGeneration(const QueuedInteractionCommandV1& command)
-    {
-        switch (command.kind) {
-        case RockProviderInteractionCommandKindV1::ForceGrab:
-            return command.forceGrab.providerGeneration;
-        case RockProviderInteractionCommandKindV1::ForceRelease:
-            return command.forceRelease.providerGeneration;
-        case RockProviderInteractionCommandKindV1::ThrownDrop:
-            return command.thrownDrop.providerGeneration;
-        default:
-            return 0;
+            return {};
         }
     }
 
@@ -1754,12 +1892,13 @@ namespace
         result.kind = command.kind;
         result.state = state;
         result.failure = failure;
-        result.hand = commandHand(command);
-        result.targetFormId = commandTargetFormId(command);
-        result.targetBodyId = commandTargetBodyId(command);
-        result.worldGeneration = commandWorldGeneration(command);
-        result.skeletonGeneration = commandSkeletonGeneration(command);
-        result.providerGeneration = commandProviderGeneration(command);
+        const auto fields = commandFields(command);
+        result.hand = fields.hand;
+        result.targetFormId = fields.targetFormId;
+        result.targetBodyId = fields.targetBodyId;
+        result.worldGeneration = fields.worldGeneration;
+        result.skeletonGeneration = fields.skeletonGeneration;
+        result.providerGeneration = fields.providerGeneration;
         result.stage = interaction_command_policy::isTerminal(state) ?
             RockProviderCommandStageV1::Terminal :
             RockProviderCommandStageV1::Queued;
@@ -1882,25 +2021,55 @@ namespace
         s_forceGrabReservations.clearOwner(ownerToken);
     }
 
-    void clearOwnerStateAfterCallbackFault(const std::uint64_t ownerToken)
+    enum class RevokeReason
+    {
+        CallbackFault,
+        OwnerUnregistered,
+    };
+
+    [[nodiscard]] RockProviderResultV1 revokeOwner(
+        const std::uint64_t ownerToken,
+        const RevokeReason revokeReason,
+        const bool alsoUnregister)
     {
         if (ownerToken == 0) {
-            return;
+            return RockProviderResultV1::InvalidArgument;
         }
+
+        const auto invalidationReason =
+            revokeReason == RevokeReason::CallbackFault ?
+                RockProviderSuppressionInvalidationReasonV1::CallbackFault :
+                RockProviderSuppressionInvalidationReasonV1::OwnerUnregistered;
+        const auto commandFailure =
+            revokeReason == RevokeReason::CallbackFault ?
+                RockProviderInteractionFailureV1::InvalidRequest :
+                RockProviderInteractionFailureV1::OwnerNotRegistered;
+
         {
+            // Keep all owner registries in one deadlock-safe acquisition.
             std::scoped_lock lock(
+                s_consumerMutex,
                 s_interactionCommandMutex,
                 s_handInputSuppressionMutex,
                 s_weaponPartMutex,
                 s_nativeAnimationAuthorityMutex,
                 s_equippedWeaponHandlingAuthorityMutex);
+
+            if (alsoUnregister) {
+                auto* consumer = findConsumerSlotLocked(ownerToken);
+                if (!consumer) {
+                    return RockProviderResultV1::OwnerNotRegistered;
+                }
+                *consumer = {};
+            }
+
             clearInteractionCommandsForOwnerLocked(
                 ownerToken,
-                RockProviderInteractionFailureV1::InvalidRequest);
+                commandFailure);
             clearHandInputSuppressionsForOwnerLocked(
                 ownerToken,
                 RockProviderHand::None,
-                RockProviderSuppressionInvalidationReasonV1::CallbackFault);
+                invalidationReason);
             clearWeaponPartTargetsForOwnerLocked(ownerToken);
             clearWeaponPartDrivesForOwnerLocked(ownerToken);
             clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
@@ -1917,8 +2086,7 @@ namespace
         {
             std::scoped_lock lock(s_offhandReservationMutex);
             if (s_offhandReservationSlot.ownerToken == ownerToken) {
-                clearOffhandReservationLocked(
-                    RockProviderSuppressionInvalidationReasonV1::CallbackFault);
+                clearOffhandReservationLocked(invalidationReason);
             }
         }
         {
@@ -1940,27 +2108,33 @@ namespace
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
         provider_debug_overlay::clear(ownerToken);
         provider_collider_visualization::clear(ownerToken);
-        publishAuthorityLostEvent(
-            ownerToken,
-            RockProviderAuthorityKindV1::Unknown,
-            static_cast<std::uint32_t>(
-                RockProviderSuppressionInvalidationReasonV1::CallbackFault));
+        if (revokeReason == RevokeReason::CallbackFault) {
+            publishAuthorityLostEvent(
+                ownerToken,
+                RockProviderAuthorityKindV1::Unknown,
+                static_cast<std::uint32_t>(invalidationReason));
+        }
+        return RockProviderResultV1::Ok;
+    }
+
+    void clearOwnerStateAfterCallbackFault(const std::uint64_t ownerToken)
+    {
+        (void)revokeOwner(ownerToken, RevokeReason::CallbackFault, false);
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterConsumerV1(
         const RockProviderConsumerRegistrationV1* registration,
         RockProviderConsumerHandleV1* outHandle)
     {
-        if (!registration || !outHandle) {
+        const auto entryResult = validateEntry(registration);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (!outHandle) {
             return RockProviderResultV1::InvalidArgument;
         }
-
-        if (registration->size != sizeof(RockProviderConsumerRegistrationV1) || outHandle->size != sizeof(RockProviderConsumerHandleV1)) {
+        if (outHandle->size != sizeof(RockProviderConsumerHandleV1)) {
             return RockProviderResultV1::InvalidSize;
-        }
-
-        if (registration->version == 0 || registration->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
 
         const auto modNameLength = boundedStringLength(registration->modName, sizeof(registration->modName));
@@ -2003,73 +2177,10 @@ namespace
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterConsumerV1(std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-
-        {
-            std::scoped_lock lock(
-                s_consumerMutex,
-                s_interactionCommandMutex,
-                s_handInputSuppressionMutex,
-                s_weaponPartMutex,
-                s_nativeAnimationAuthorityMutex,
-                s_equippedWeaponHandlingAuthorityMutex);
-            auto* slot = findConsumerSlotLocked(ownerToken);
-            if (!slot) {
-                return RockProviderResultV1::OwnerNotRegistered;
-            }
-            *slot = {};
-            clearInteractionCommandsForOwnerLocked(ownerToken, RockProviderInteractionFailureV1::OwnerNotRegistered);
-            clearHandInputSuppressionsForOwnerLocked(
-                ownerToken,
-                RockProviderHand::None,
-                RockProviderSuppressionInvalidationReasonV1::OwnerUnregistered);
-            clearWeaponPartTargetsForOwnerLocked(ownerToken);
-            clearWeaponPartDrivesForOwnerLocked(ownerToken);
-            clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
-            clearEquippedWeaponHandlingAuthorityForOwnerLocked(ownerToken);
-        }
-
-        {
-            std::scoped_lock lock(s_externalBodyMutex);
-            s_externalBodies.clearOwner(ownerToken);
-        }
-        {
-            std::scoped_lock lock(s_touchGrabMutex);
-            s_touchGrabTargets.clearOwner(ownerToken);
-        }
-
-        {
-            std::scoped_lock lock(s_offhandReservationMutex);
-            if (s_offhandReservationSlot.ownerToken == ownerToken) {
-                clearOffhandReservationLocked(
-                    RockProviderSuppressionInvalidationReasonV1::OwnerUnregistered);
-            }
-        }
-
-        {
-            std::scoped_lock lock(s_callbackMutex);
-            for (auto& callback : s_callbacks) {
-                if (callback.ownerToken == ownerToken) {
-                    callback = {};
-                }
-            }
-        }
-
-        {
-            std::scoped_lock lock(s_animationPhaseCallbackMutex);
-            clearAnimationPhaseCallbacksForOwnerLocked(ownerToken);
-        }
-        (void)clearHandVisualAuthorityForOwner(
+        return revokeOwner(
             ownerToken,
-            RockProviderHand::None,
+            RevokeReason::OwnerUnregistered,
             true);
-        clearNativeAnimationRuntimePublicationForOwner(ownerToken);
-        provider_debug_overlay::clear(ownerToken);
-        provider_collider_visualization::clear(ownerToken);
-
-        return RockProviderResultV1::Ok;
     }
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetGrantedCapabilitiesV1(std::uint64_t ownerToken)
@@ -2371,12 +2482,12 @@ namespace
         const RockProviderHand hand,
         RockProviderHandInteractionStateV1* outState)
     {
-        if (!outState || ownerToken == 0 ||
-            (hand != RockProviderHand::Right && hand != RockProviderHand::Left)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOutputEntry(ownerToken, outState);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
-        if (outState->size < sizeof(RockProviderHandInteractionStateV1)) {
-            return RockProviderResultV1::InvalidSize;
+        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            return RockProviderResultV1::InvalidArgument;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
@@ -2411,9 +2522,13 @@ namespace
         const std::uint32_t maxEvents,
         RockProviderEventStreamStateV1* outStreamState)
     {
-        if (ownerToken == 0 || !outStreamState ||
-            outStreamState->size < sizeof(RockProviderEventStreamStateV1) ||
-            (maxEvents != 0 && !outEvents)) {
+        const auto entryResult = validateOutputEntry(
+            ownerToken,
+            outStreamState);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (maxEvents != 0 && !outEvents) {
             return RockProviderResultV1::InvalidArgument;
         }
         const auto ownerResult = validateReadCapability(
@@ -2470,11 +2585,9 @@ namespace
         const std::uint64_t ownerToken,
         RockProviderEquippedWeaponStateV1* outState)
     {
-        if (ownerToken == 0 || !outState) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        if (outState->size < sizeof(RockProviderEquippedWeaponStateV1)) {
-            return RockProviderResultV1::InvalidSize;
+        const auto entryResult = validateOutputEntry(ownerToken, outState);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
@@ -2495,12 +2608,13 @@ namespace
         const RockProviderWeaponPartResolutionQueryV1* query,
         RockProviderWeaponPartResolutionResultV1* outResolution)
     {
-        if (ownerToken == 0 || !query || !outResolution) {
-            return RockProviderResultV1::InvalidArgument;
+        auto entryResult = validateOutputEntry(ownerToken, query);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
-        if (query->size < sizeof(RockProviderWeaponPartResolutionQueryV1) ||
-            outResolution->size < sizeof(RockProviderWeaponPartResolutionResultV1)) {
-            return RockProviderResultV1::InvalidSize;
+        entryResult = validateOutputEntry(ownerToken, outResolution);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         const auto ownerResult = validateReadCapability(
             ownerToken,
@@ -2542,9 +2656,14 @@ namespace
         const std::uint32_t maxParts,
         std::uint32_t* outPartCount)
     {
-        if (ownerToken == 0 || !outPartCount ||
-            (maxParts != 0 && !outParts)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateArrayEntry(
+            ownerToken,
+            outParts,
+            maxParts,
+            outPartCount,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         *outPartCount = 0;
         const auto ownerResult = validateReadCapability(
@@ -2552,9 +2671,6 @@ namespace
             RockProviderConsumerCapabilityV1::WeaponPartObservability);
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
         }
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
@@ -2572,9 +2688,14 @@ namespace
         const std::uint32_t maxResults,
         std::uint32_t* outResultCount)
     {
-        if (ownerToken == 0 || !outResultCount ||
-            (maxResults != 0 && !outResults)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateArrayEntry(
+            ownerToken,
+            outResults,
+            maxResults,
+            outResultCount,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         *outResultCount = 0;
         const auto ownerResult = validateReadCapability(
@@ -2582,9 +2703,6 @@ namespace
             RockProviderConsumerCapabilityV1::WeaponPartObservability);
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
         }
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
@@ -2605,18 +2723,18 @@ namespace
         Query&& query,
         const bool requireAnimationThread = false)
     {
-        if (ownerToken == 0 || !output) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        if (output->size < sizeof(Output)) {
-            return RockProviderResultV1::InvalidSize;
+        const auto entryResult = validateOutputEntry(
+            ownerToken,
+            output,
+            requireAnimationThread ?
+                EntryThreadPolicy::AnimationOwner :
+                EntryThreadPolicy::AnyThread);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         const auto ownerResult = validateReadCapability(ownerToken, capability);
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
-        }
-        if (requireAnimationThread && !onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
         }
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
@@ -2700,6 +2818,13 @@ namespace
         const RockProviderHand hand,
         RockProviderPresentedHandPoseV1* outPose)
     {
+        const auto entryResult = validateOutputEntry(
+            ownerToken,
+            outPose,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
         if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
         }
@@ -2727,10 +2852,15 @@ namespace
         const std::uint32_t maxContacts,
         std::uint32_t* outContactCount)
     {
-        if (ownerToken == 0 || !outContactCount ||
-            (hand != RockProviderHand::Right && hand != RockProviderHand::Left) ||
-            (maxContacts != 0 && !outContacts)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateArrayEntry(
+            ownerToken,
+            outContacts,
+            maxContacts,
+            outContactCount,
+            EntryThreadPolicy::AnimationOwner,
+            hand == RockProviderHand::Right || hand == RockProviderHand::Left);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         *outContactCount = 0;
         const auto ownerResult = validateReadCapability(
@@ -2738,9 +2868,6 @@ namespace
             RockProviderConsumerCapabilityV1::SemanticHandContacts);
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
         }
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
@@ -2760,9 +2887,14 @@ namespace
         const std::uint32_t maxDescriptors,
         std::uint32_t* outDescriptorCount)
     {
-        if (ownerToken == 0 || !outDescriptorCount ||
-            (maxDescriptors != 0 && !outDescriptors)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateArrayEntry(
+            ownerToken,
+            outDescriptors,
+            maxDescriptors,
+            outDescriptorCount,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         *outDescriptorCount = 0;
         const auto ownerResult = validateReadCapability(
@@ -2770,9 +2902,6 @@ namespace
             RockProviderConsumerCapabilityV1::PlayerColliderDescriptors);
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
         }
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
@@ -2789,6 +2918,13 @@ namespace
         const RockProviderHand hand,
         RockProviderHandCollisionAvailabilityV1* outState)
     {
+        const auto entryResult = validateOutputEntry(
+            ownerToken,
+            outState,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
         if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
         }
@@ -2869,17 +3005,14 @@ namespace
         const RockProviderForceGrabRequestV1* request,
         std::uint64_t* outCommandId)
     {
-        if (!request || !outCommandId || ownerToken == 0) {
+        const auto entryResult = validateEntry(request);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (!outCommandId || ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }
         *outCommandId = 0;
-
-        if (request->size != sizeof(RockProviderForceGrabRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
-        }
         if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
         }
@@ -2906,17 +3039,14 @@ namespace
         const RockProviderForceReleaseRequestV1* request,
         std::uint64_t* outCommandId)
     {
-        if (!request || !outCommandId || ownerToken == 0) {
+        const auto entryResult = validateEntry(request);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (!outCommandId || ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }
         *outCommandId = 0;
-
-        if (request->size != sizeof(RockProviderForceReleaseRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
-        }
         if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
         }
@@ -2944,17 +3074,14 @@ namespace
         const RockProviderThrownDropRequestV1* request,
         std::uint64_t* outCommandId)
     {
-        if (!request || !outCommandId || ownerToken == 0) {
+        const auto entryResult = validateEntry(request);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (!outCommandId || ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
         }
         *outCommandId = 0;
-
-        if (request->size != sizeof(RockProviderThrownDropRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
-        }
         if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
         }
@@ -3065,14 +3192,12 @@ namespace
         std::uint64_t ownerToken,
         const RockProviderHandInputSuppressionRequestV1* request)
     {
-        if (!request || ownerToken == 0) {
+        const auto entryResult = validateEntry(request);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (request->size != sizeof(RockProviderHandInputSuppressionRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
@@ -3168,12 +3293,12 @@ namespace
         const RockProviderHand hand,
         RockProviderHandInputSuppressionStateV1* outState)
     {
-        if (ownerToken == 0 || !outState ||
-            (hand != RockProviderHand::Right && hand != RockProviderHand::Left)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOutputEntry(ownerToken, outState);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
-        if (outState->size < sizeof(RockProviderHandInputSuppressionStateV1)) {
-            return RockProviderResultV1::InvalidSize;
+        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            return RockProviderResultV1::InvalidArgument;
         }
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
@@ -3227,14 +3352,12 @@ namespace
         std::uint64_t ownerToken,
         const RockProviderNativeAnimationAuthorityRequestV1* request)
     {
-        if (!request || ownerToken == 0) {
+        const auto entryResult = validateEntry(request);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (request->size != sizeof(RockProviderNativeAnimationAuthorityRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         constexpr auto implementedFlags = static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityFlagV1::ReloadPose);
         if (request->flags == 0 ||
@@ -3300,8 +3423,9 @@ namespace
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearNativeAnimationAuthorityV1(std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOwnerEntry(ownerToken);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_nativeAnimationAuthorityMutex);
@@ -3453,17 +3577,14 @@ namespace
         const std::uint64_t ownerToken,
         const RockProviderHandVisualAuthorityRequestV1* request)
     {
-        if (!request || ownerToken == 0) {
+        const auto entryResult = validateEntry(
+            request,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
-        }
-        if (request->size != sizeof(RockProviderHandVisualAuthorityRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         if (request->hand != RockProviderHand::Right &&
             request->hand != RockProviderHand::Left) {
@@ -3597,14 +3718,16 @@ namespace
         const std::uint64_t ownerToken,
         const RockProviderHand hand)
     {
-        if (ownerToken == 0 ||
-            (hand != RockProviderHand::None &&
-                hand != RockProviderHand::Right &&
-                hand != RockProviderHand::Left)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOwnerEntry(
+            ownerToken,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+        if (hand != RockProviderHand::None &&
+            hand != RockProviderHand::Right &&
+            hand != RockProviderHand::Left) {
+            return RockProviderResultV1::InvalidArgument;
         }
         {
             std::scoped_lock lock(s_consumerMutex);
@@ -3625,16 +3748,12 @@ namespace
         const std::uint64_t ownerToken,
         const RockProviderNativeAnimationRuntimePublicationV1* publication)
     {
-        if (!publication || ownerToken == 0) {
+        const auto entryResult = validateEntry(publication);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (publication->size !=
-            sizeof(RockProviderNativeAnimationRuntimePublicationV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (publication->version == 0 ||
-            publication->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         constexpr std::uint32_t implementedStatusFlags =
             static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::HookInstalled) |
@@ -3692,8 +3811,9 @@ namespace
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearNativeAnimationRuntimeV1(
         const std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOwnerEntry(ownerToken);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         std::scoped_lock lock(
             s_consumerMutex,
@@ -3722,19 +3842,14 @@ namespace
         const RockProviderTouchGrabTargetV1* targets,
         const std::uint32_t targetCount)
     {
-        if (ownerToken == 0 || scopeToken == 0 ||
-            targetCount > ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 ||
+        if (targetCount > ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 ||
             (targetCount != 0 && !targets)) {
             return RockProviderResultV1::InvalidArgument;
         }
         for (std::uint32_t index = 0; index < targetCount; ++index) {
-            if (targets[index].size !=
-                sizeof(RockProviderTouchGrabTargetV1)) {
-                return RockProviderResultV1::InvalidSize;
-            }
-            if (targets[index].version == 0 ||
-                targets[index].version > ROCK_PROVIDER_API_VERSION) {
-                return RockProviderResultV1::UnsupportedVersion;
+            const auto entryResult = validateEntry(&targets[index]);
+            if (entryResult != RockProviderResultV1::Ok) {
+                return entryResult;
             }
             const auto generationResult = validateGenerationGuards(
                 targets[index].worldGeneration,
@@ -3743,6 +3858,9 @@ namespace
             if (generationResult != RockProviderResultV1::Ok) {
                 return generationResult;
             }
+        }
+        if (ownerToken == 0 || scopeToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
@@ -3800,9 +3918,15 @@ namespace
         const std::uint32_t maxStates,
         std::uint32_t* outStateCount)
     {
-        if (ownerToken == 0 || scopeToken == 0 || !outStateCount ||
-            (maxStates != 0 && !outStates)) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateArrayEntry(
+            ownerToken,
+            outStates,
+            maxStates,
+            outStateCount,
+            EntryThreadPolicy::AnyThread,
+            scopeToken != 0);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
         const auto ownerResult =
@@ -3879,14 +4003,12 @@ namespace
         const std::uint64_t ownerToken,
         const RockProviderEquippedWeaponHandlingRequestV1* request)
     {
-        if (ownerToken == 0 || !request) {
+        const auto entryResult = validateEntry(request);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (request->size != sizeof(RockProviderEquippedWeaponHandlingRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         constexpr std::uint32_t implementedFlags =
             static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership) |
@@ -4019,19 +4141,14 @@ namespace
         const std::uint64_t ownerToken,
         const RockProviderEquippedWeaponHandRequestV1* request)
     {
-        if (ownerToken == 0 || !request) {
+        const auto entryResult = validateEntry(
+            request,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
-        }
-        if (request->size !=
-            sizeof(RockProviderEquippedWeaponHandRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 ||
-            request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         if (request->hand != RockProviderHand::Right &&
             request->hand != RockProviderHand::Left) {
@@ -4103,16 +4220,18 @@ namespace
         const RockProviderWorldRaycastRequestV1* request,
         RockProviderWorldRaycastResultV1* outResult)
     {
-        if (ownerToken == 0 || !request || !outResult) {
+        auto entryResult = validateEntry(
+            request,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        entryResult = validateEntry(outResult);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (request->size != sizeof(RockProviderWorldRaycastRequestV1) ||
-            outResult->size != sizeof(RockProviderWorldRaycastResultV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version != ROCK_PROVIDER_API_VERSION ||
-            outResult->version != ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         if (!finiteProviderPoint(request->startGame) ||
             !finiteProviderPoint(request->directionGame) ||
@@ -4129,9 +4248,6 @@ namespace
         if (!std::isfinite(directionLengthSquared) ||
             directionLengthSquared <= 1.0e-8f) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
         }
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
@@ -4185,23 +4301,19 @@ namespace
             const std::uint64_t ownerToken,
             const RockProviderColliderVisualizationRequestV1* request)
     {
-        if (ownerToken == 0 || !request) {
+        const auto entryResult = validateEntry(
+            request,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (request->size !=
-            sizeof(RockProviderColliderVisualizationRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version != ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         if (request->weaponGenerationKey == 0 ||
             request->bodyId == 0x7FFF'FFFF ||
             request->leaseFrames == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
         }
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
@@ -4249,11 +4361,11 @@ namespace
         apiClearColliderVisualizationOverrideV1(
             const std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+        const auto entryResult = validateOwnerEntry(
+            ownerToken,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         const auto capabilityResult = validateReadCapability(
             ownerToken,
@@ -4270,19 +4382,14 @@ namespace
         const std::uint64_t ownerToken,
         const RockProviderDebugOverlayPublicationV1* publication)
     {
-        if (ownerToken == 0 || !publication) {
+        const auto entryResult = validateEntry(
+            publication,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
-        }
-        if (publication->size !=
-            sizeof(RockProviderDebugOverlayPublicationV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (publication->version == 0 ||
-            publication->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         if (publication->leaseFrames == 0) {
             return RockProviderResultV1::InvalidArgument;
@@ -4315,11 +4422,11 @@ namespace
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearDebugOverlayV1(
         const std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        if (!onAnimationOwnerThread()) {
-            return RockProviderResultV1::WrongThread;
+        const auto entryResult = validateOwnerEntry(
+            ownerToken,
+            EntryThreadPolicy::AnimationOwner);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         {
             std::scoped_lock lock(s_consumerMutex);
@@ -4339,32 +4446,33 @@ namespace
         const RockProviderWeaponPartTargetV1* targets,
         std::uint32_t targetCount)
     {
-        if (ownerToken == 0 || (targetCount > 0 && !targets)) {
-            return RockProviderResultV1::InvalidArgument;
-        }
         if (targetCount > ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1) {
             return RockProviderResultV1::CapacityFull;
         }
-
-        std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
+        if (targetCount > 0 && !targets) {
+            return RockProviderResultV1::InvalidArgument;
         }
 
         for (std::uint32_t i = 0; i < targetCount; ++i) {
             const auto& target = targets[i];
-            if (target.size != sizeof(RockProviderWeaponPartTargetV1)) {
-                return RockProviderResultV1::InvalidSize;
-            }
-            if (target.version == 0 || target.version > ROCK_PROVIDER_API_VERSION) {
-                return RockProviderResultV1::UnsupportedVersion;
+            const auto entryResult = validateEntry(&target);
+            if (entryResult != RockProviderResultV1::Ok) {
+                return entryResult;
             }
             if (!isValidWeaponPartGrabMode(target.grabMode) ||
                 !hasValidWeaponPartMatcher(target.flags, target.bodyId, target.sourceRoot, target.sourceName) ||
                 !hasValidWeaponPartTargetSemantics(target)) {
                 return RockProviderResultV1::InvalidArgument;
             }
+        }
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
         }
 
         if (targetCount > availableWeaponPartTargetSlotsForOwnerLocked(ownerToken)) {
@@ -4394,8 +4502,9 @@ namespace
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartTargetsV1(std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOwnerEntry(ownerToken);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
@@ -4412,11 +4521,28 @@ namespace
         const RockProviderWeaponPartDriveTargetV1* targets,
         std::uint32_t targetCount)
     {
-        if (ownerToken == 0 || (targetCount > 0 && !targets)) {
-            return RockProviderResultV1::InvalidArgument;
-        }
         if (targetCount > ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1) {
             return RockProviderResultV1::CapacityFull;
+        }
+        if (targetCount > 0 && !targets) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        for (std::uint32_t i = 0; i < targetCount; ++i) {
+            const auto& target = targets[i];
+            const auto entryResult = validateEntry(&target);
+            if (entryResult != RockProviderResultV1::Ok) {
+                return entryResult;
+            }
+            if (!isValidWeaponPartDriveSpace(target.driveSpace) ||
+                target.leaseFrames == 0 ||
+                !finiteProviderTransform(target.targetTransform, 0.0001f) ||
+                !hasConcreteWeaponPartDriveMatcher(target.flags, target.bodyId, target.sourceRoot, target.sourceName)) {
+                return RockProviderResultV1::InvalidArgument;
+            }
+        }
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
         }
 
         const auto frameIndex = currentProviderFrameIndex();
@@ -4424,22 +4550,6 @@ namespace
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
-        }
-
-        for (std::uint32_t i = 0; i < targetCount; ++i) {
-            const auto& target = targets[i];
-            if (target.size != sizeof(RockProviderWeaponPartDriveTargetV1)) {
-                return RockProviderResultV1::InvalidSize;
-            }
-            if (target.version == 0 || target.version > ROCK_PROVIDER_API_VERSION) {
-                return RockProviderResultV1::UnsupportedVersion;
-            }
-            if (!isValidWeaponPartDriveSpace(target.driveSpace) ||
-                target.leaseFrames == 0 ||
-                !isFiniteProviderTransform(target.targetTransform) ||
-                !hasConcreteWeaponPartDriveMatcher(target.flags, target.bodyId, target.sourceRoot, target.sourceName)) {
-                return RockProviderResultV1::InvalidArgument;
-            }
         }
 
         pruneExpiredWeaponPartDrivesLocked(frameIndex);
@@ -4477,8 +4587,9 @@ namespace
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiClearWeaponPartDriveTargetsV1(std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOwnerEntry(ownerToken);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
 
         std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
@@ -4686,9 +4797,13 @@ namespace
         const std::uint32_t maxContacts,
         RockProviderExternalContactStreamStateV1* outStreamState)
     {
-        if (ownerToken == 0 || !outStreamState ||
-            outStreamState->size < sizeof(RockProviderExternalContactStreamStateV1) ||
-            (maxContacts != 0 && !outContacts)) {
+        const auto entryResult = validateOutputEntry(
+            ownerToken,
+            outStreamState);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (maxContacts != 0 && !outContacts) {
             return RockProviderResultV1::InvalidArgument;
         }
         std::scoped_lock lock(s_consumerMutex, s_externalBodyMutex);
@@ -4755,10 +4870,7 @@ namespace
     [[nodiscard]] bool validOffhandReservationRequest(
         const RockProviderOffhandReservationRequestV1& request)
     {
-        return request.size == sizeof(RockProviderOffhandReservationRequestV1) &&
-               request.version != 0 &&
-               request.version <= ROCK_PROVIDER_API_VERSION &&
-               request.reservation != RockProviderOffhandReservation::Normal &&
+        return request.reservation != RockProviderOffhandReservation::Normal &&
                (request.reservation == RockProviderOffhandReservation::ReloadReserved ||
                    request.reservation == RockProviderOffhandReservation::ReloadPoseOverride) &&
                request.leaseFrames != 0;
@@ -4769,14 +4881,12 @@ namespace
         const RockProviderOffhandReservationRequestV1* request,
         const bool requireExisting)
     {
-        if (ownerToken == 0 || !request) {
+        const auto entryResult = validateEntry(request);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
+        }
+        if (ownerToken == 0) {
             return RockProviderResultV1::InvalidArgument;
-        }
-        if (request->size != sizeof(RockProviderOffhandReservationRequestV1)) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV1::UnsupportedVersion;
         }
         if (!validOffhandReservationRequest(*request)) {
             return RockProviderResultV1::InvalidArgument;
@@ -4840,8 +4950,9 @@ namespace
     RockProviderResultV1 ROCK_PROVIDER_CALL apiReleaseOffhandReservationV1(
         const std::uint64_t ownerToken)
     {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
+        const auto entryResult = validateOwnerEntry(ownerToken);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         std::scoped_lock lock(s_consumerMutex, s_offhandReservationMutex);
         const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
@@ -4864,11 +4975,9 @@ namespace
         const std::uint64_t ownerToken,
         RockProviderOffhandReservationStateV1* outState)
     {
-        if (ownerToken == 0 || !outState) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        if (outState->size < sizeof(RockProviderOffhandReservationStateV1)) {
-            return RockProviderResultV1::InvalidSize;
+        const auto entryResult = validateOutputEntry(ownerToken, outState);
+        if (entryResult != RockProviderResultV1::Ok) {
+            return entryResult;
         }
         const auto frameIndex = currentProviderFrameIndex();
         std::scoped_lock lock(s_consumerMutex, s_offhandReservationMutex);
@@ -5772,6 +5881,8 @@ namespace rock::provider
         std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
             suppressionOwners{};
         std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
+            suppressionSlotOwners{};
+        std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
             targetOwners{};
         std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
             driveOwners{};
@@ -5780,26 +5891,11 @@ namespace rock::provider
         std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
             handVisualOwners{};
         std::uint32_t suppressionOwnerCount = 0;
+        std::uint32_t suppressionSlotOwnerCount = 0;
         std::uint32_t targetOwnerCount = 0;
         std::uint32_t driveOwnerCount = 0;
         std::uint32_t nativeAnimationOwnerCount = 0;
         std::uint32_t handVisualOwnerCount = 0;
-        const auto addUniqueOwner = [](
-                                        auto& owners,
-                                        std::uint32_t& count,
-                                        const std::uint64_t ownerToken) {
-            if (ownerToken == 0) {
-                return;
-            }
-            for (std::uint32_t index = 0; index < count; ++index) {
-                if (owners[index] == ownerToken) {
-                    return;
-                }
-            }
-            if (count < owners.size()) {
-                owners[count++] = ownerToken;
-            }
-        };
         std::uint64_t nativeRuntimeOwner = 0;
         std::uint64_t equippedHandlingOwner = 0;
 
@@ -5814,21 +5910,29 @@ namespace rock::provider
         clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1::ProviderNotReady);
         {
             std::scoped_lock lock(s_handInputSuppressionMutex);
-            for (auto& slot : s_handInputSuppressions) {
+            for (const auto& slot : s_handInputSuppressions) {
                 if (slot.ownerToken == 0) {
                     continue;
                 }
+                addUniqueOwner(
+                    suppressionSlotOwners,
+                    suppressionSlotOwnerCount,
+                    slot.ownerToken);
                 if (slot.active) {
                     addUniqueOwner(
                         suppressionOwners,
                         suppressionOwnerCount,
                         slot.ownerToken);
                 }
-                slot.active = false;
-                slot.flags = 0;
-                slot.lastInvalidationReason =
-                    RockProviderSuppressionInvalidationReasonV1::ProviderLost;
-                slot.lastInvalidatedFrame = currentProviderFrameIndex();
+            }
+            for (std::uint32_t index = 0;
+                 index < suppressionSlotOwnerCount;
+                 ++index) {
+                clearHandInputSuppressionsForOwnerLocked(
+                    suppressionSlotOwners[index],
+                    RockProviderHand::None,
+                    RockProviderSuppressionInvalidationReasonV1::ProviderLost,
+                    true);
             }
         }
         {
@@ -5845,12 +5949,16 @@ namespace rock::provider
                 if (slot.active) {
                     addUniqueOwner(
                         driveOwners,
-                        driveOwnerCount,
-                        slot.ownerToken);
+                    driveOwnerCount,
+                    slot.ownerToken);
                 }
             }
-            s_weaponPartTargets = {};
-            s_weaponPartDrives = {};
+            for (std::uint32_t index = 0; index < targetOwnerCount; ++index) {
+                clearWeaponPartTargetsForOwnerLocked(targetOwners[index]);
+            }
+            for (std::uint32_t index = 0; index < driveOwnerCount; ++index) {
+                clearWeaponPartDrivesForOwnerLocked(driveOwners[index]);
+            }
         }
         {
             std::scoped_lock lock(s_nativeAnimationAuthorityMutex);
@@ -5859,10 +5967,16 @@ namespace rock::provider
                     addUniqueOwner(
                         nativeAnimationOwners,
                         nativeAnimationOwnerCount,
-                        slot.ownerToken);
+                    slot.ownerToken);
                 }
             }
-            s_nativeAnimationAuthoritySlots = {};
+            for (std::uint32_t index = 0;
+                 index < nativeAnimationOwnerCount;
+                 ++index) {
+                clearNativeAnimationAuthorityForOwnerLocked(
+                    nativeAnimationOwners[index],
+                    false);
+            }
             publishNativeAnimationAuthorityAggregateLocked();
         }
         {
@@ -5878,16 +5992,14 @@ namespace rock::provider
         {
             std::scoped_lock lock(s_nativeAnimationRuntimePublicationMutex);
             nativeRuntimeOwner = s_nativeAnimationRuntimeProviderOwner;
-            s_nativeAnimationRuntimeProviderOwner = 0;
-            s_nativeAnimationRuntimePublication = {};
-            s_nativeAnimationRuntimeExpiresAfterFrame = 0;
-            s_hasNativeAnimationRuntimePublication = false;
+            clearNativeAnimationRuntimePublicationLocked();
         }
         {
             std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
             equippedHandlingOwner =
                 s_equippedWeaponHandlingAuthority.ownerToken;
-            s_equippedWeaponHandlingAuthority = {};
+            clearEquippedWeaponHandlingAuthorityForOwnerLocked(
+                equippedHandlingOwner);
         }
         provider_debug_overlay::PruneResult overlayLost{};
         provider_debug_overlay::clearAll(
