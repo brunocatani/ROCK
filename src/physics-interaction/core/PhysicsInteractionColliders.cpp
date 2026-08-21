@@ -189,6 +189,15 @@ namespace rock
         _dynamicWeaponLeftHandInteractionEnabled =
             leftHandInteractionEnabled;
 
+        /*
+         * Existing hknp manifolds and the soft-motor displacement belong to
+         * the old attached/free hand topology. Reusing that contact body after
+         * a reload-yield, support acquisition, release, or handoff transports
+         * an old support-hand collision into the new weapon owner. Rebuild it
+         * at the current collision-free weapon intent after the matrix update.
+         */
+        _dynamicWeaponCollision.requestCollisionTopologyRebuild();
+
         ROCK_LOG_DEBUG(Weapon,
             "Dynamic weapon hand collision roles changed: right={} left={}",
             rightHandInteractionEnabled ? "free" : "attached",

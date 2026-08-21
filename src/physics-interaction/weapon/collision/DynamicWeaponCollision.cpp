@@ -664,6 +664,19 @@ namespace rock
             _frameRequestedWeaponWorld;
         _debugSnapshot.visualCorrectionActive =
             visualDecision.useResolvedWeaponWorld;
+        if (visualDecision.publish) {
+            ROCK_LOG_SAMPLE_INFO(
+                Weapon,
+                500,
+                "DWC retained contact presentation: contactBody={} otherBody={} otherLayer={} retention={:.3f}s correction=({:.2f}gu,{:.2f}deg) resolved={}",
+                snapshot.bodyId,
+                snapshot.otherBodyId,
+                snapshot.otherLayer,
+                snapshot.contactRetentionSeconds,
+                result.translationCorrectionGameUnits,
+                result.rotationCorrectionDegrees,
+                visualDecision.useResolvedWeaponWorld);
+        }
         logPipelineStage(
             visualDecision.useResolvedWeaponWorld ?
                 "publish-contact" :

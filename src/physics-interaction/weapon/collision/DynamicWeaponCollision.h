@@ -110,6 +110,16 @@ namespace rock
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
+        // The dynamic contact body and its manifolds are valid only for the
+        // hand-collision topology under which they were created. A support
+        // hand attached/free edge requests a bounded rebuild at the next
+        // finishFrame call, on the game thread and under the normal mutation
+        // gate.
+        void requestCollisionTopologyRebuild() noexcept
+        {
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+        }
+
         void beginFrame(
             std::uint64_t frameIndex,
             RE::hknpWorld* world,

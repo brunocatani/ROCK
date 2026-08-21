@@ -109,21 +109,47 @@ namespace rock
     {
         const auto* equippedWeaponData =
             physics_interaction_detail::getValidatedEquippedWeaponData();
+        const std::uint64_t reloadDispatchSequence =
+            input_remap_runtime::nativeReloadDispatchSequence();
+        const std::uint32_t gunState =
+            f4vr::getNativeGunState(f4vr::getPlayer());
+        const bool magazineCountKnown = equippedWeaponData != nullptr;
+        const bool magazineEmpty =
+            equippedWeaponData && equippedWeaponData->ammoCount == 0;
+        const bool dispatchEdge =
+            reloadDispatchSequence != 0 &&
+            reloadDispatchSequence !=
+                _nativeReloadHandAuthorityState.observedReloadDispatchSequence;
+        const bool wasActive = _nativeReloadHandAuthorityActive;
+        const std::uint64_t weaponGenerationKey =
+            _weaponCollision.getCurrentWeaponGenerationKey();
+        const std::uint64_t frameIndex =
+            runtime_state::currentFrame().frameIndex;
         _nativeReloadHandAuthorityActive =
             native_reload_hand_authority_policy::update(
                 _nativeReloadHandAuthorityState,
                 native_reload_hand_authority_policy::Input{
-                    .weaponGenerationKey =
-                        _weaponCollision.getCurrentWeaponGenerationKey(),
-                    .frameIndex = runtime_state::currentFrame().frameIndex,
-                    .reloadDispatchSequence =
-                        input_remap_runtime::nativeReloadDispatchSequence(),
-                    .gunState = f4vr::getNativeGunState(f4vr::getPlayer()),
-                    .magazineCountKnown = equippedWeaponData != nullptr,
-                    .magazineEmpty =
-                        equippedWeaponData &&
-                        equippedWeaponData->ammoCount == 0,
+                    .weaponGenerationKey = weaponGenerationKey,
+                    .frameIndex = frameIndex,
+                    .reloadDispatchSequence = reloadDispatchSequence,
+                    .gunState = gunState,
+                    .magazineCountKnown = magazineCountKnown,
+                    .magazineEmpty = magazineEmpty,
                 });
+        if (wasActive != _nativeReloadHandAuthorityActive) {
+            ROCK_LOG_INFO(
+                Weapon,
+                "Native reload hand authority edge active={} generation={:016X} frame={} gunState={} dispatch(sequence/edge)={}/{} magazine(known/count/empty)={}/{}/{}",
+                _nativeReloadHandAuthorityActive,
+                weaponGenerationKey,
+                frameIndex,
+                gunState,
+                reloadDispatchSequence,
+                dispatchEdge,
+                magazineCountKnown,
+                equippedWeaponData ? equippedWeaponData->ammoCount : 0,
+                magazineEmpty);
+        }
     }
 
     void PhysicsInteraction::refreshExternalHandWorldTransformsBeforeFrik(
