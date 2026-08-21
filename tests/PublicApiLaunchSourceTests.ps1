@@ -253,6 +253,12 @@ Require-Text 'src/api/ROCKProviderApi.h' 'NativeAnimationAuthority[\s\S]*RockPro
     'API V1 must expose selective native animation authority as a registered consumer capability.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_AUTHORITY_TABLE_BYTES[\s\S]*supportsNativeAnimationAuthorityV1' `
     'Native animation authority consumers must negotiate both feature bit and appended table size.'
+Require-Text 'src/api/ROCKProviderApi.h' 'WeaponCoupledWorldTransform\s*=\s*1u\s*<<\s*2' `
+    'Provider hand authority must expose explicit weapon-coupled composition semantics without transferring weapon ownership.'
+Require-Text 'src/api/ROCKProviderApi.h' 'WeaponCoupledWorldTransformSupported\s*=\s*1u\s*<<\s*7' `
+    'Animation callbacks must advertise whether the additive V1 weapon-coupled hand marker is supported.'
+Require-Text 'src/api/ROCKProviderApi.h' 'WeaponCoupledWorldTransform declares composition semantics only[\s\S]{0,180}does not grant weapon ownership' `
+    'The weapon-coupled hand marker must document that it composes with, rather than acquires, weapon ownership.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseFlagV1[\s\S]*UseVelocityHavok' `
     'Force release must expose an explicit trusted Havok velocity flag.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseRequestV1[\s\S]*linearVelocityHavok[\s\S]*angularVelocityRadiansPerSecond' `

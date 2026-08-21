@@ -50,6 +50,14 @@ namespace rock::provider::detail
     static_assert(static_cast<std::uint32_t>(
                       RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureFault) ==
                   (1u << 6));
+    static_assert(static_cast<std::uint32_t>(
+                      RockProviderHandVisualAuthorityFlagV1::
+                          WeaponCoupledWorldTransform) ==
+                  (1u << 2));
+    static_assert(static_cast<std::uint32_t>(
+                      RockProviderAnimationPhaseContextFlagV1::
+                          WeaponCoupledWorldTransformSupported) ==
+                  (1u << 7));
 
     // A public enum reorder must fail this build before it breaks a consumer.
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Receiver) == static_cast<std::uint32_t>(WeaponPartKind::Receiver));

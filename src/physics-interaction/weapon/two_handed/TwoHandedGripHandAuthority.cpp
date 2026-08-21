@@ -77,7 +77,7 @@ namespace rock
 
     bool TwoHandedGrip::hasVisualAuthorityForHand(const bool isLeft) const
     {
-        if (isHandAnimationAuthoritySupportHand(isLeft)) {
+        if (isNativeReloadSupportHand(isLeft)) {
             return false;
         }
         if (_gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
@@ -112,7 +112,7 @@ namespace rock
         outWeaponNode = nullptr;
         outWeaponGenerationKey = 0;
         if (isLeft != _firingHandIsLeft ||
-            handAnimationAuthorityBoundaryActive()) {
+            _nativeReloadHandAuthorityActive) {
             return false;
         }
 
@@ -796,7 +796,7 @@ namespace rock
         return true;
     }
 
-    void TwoHandedGrip::suspendAnimationAuthoritySupportHand(
+    void TwoHandedGrip::suspendNativeReloadSupportHandAuthority(
         const bool isLeft)
     {
         const std::size_t index = isLeft ? 0u : 1u;
@@ -833,53 +833,44 @@ namespace rock
         clearGunstockDedicatedHandAuthority();
     }
 
-    void TwoHandedGrip::setHandAnimationAuthorityBoundaries(
-        const bool providerAnimationBoundaryActive,
-        const bool nativeReloadHandAuthorityActive)
+    void TwoHandedGrip::setNativeReloadHandAuthorityActive(
+        const bool active)
     {
         const bool supportHandIsLeft = !_firingHandIsLeft;
-        const bool boundaryWasActive =
-            handAnimationAuthorityBoundaryActive();
         const bool supportRoleChanged =
-            boundaryWasActive &&
-            _handAnimationAuthoritySupportHandIsLeft != supportHandIsLeft;
-        _providerAnimationBoundaryActive =
-            providerAnimationBoundaryActive;
-        _nativeReloadHandAuthorityActive =
-            nativeReloadHandAuthorityActive;
-        const bool boundaryActive =
-            handAnimationAuthorityBoundaryActive();
+            _nativeReloadHandAuthorityActive &&
+            _nativeReloadSupportHandIsLeft != supportHandIsLeft;
 
-        if (!boundaryActive) {
-            if (boundaryWasActive) {
+        if (!active) {
+            if (_nativeReloadHandAuthorityActive) {
                 ROCK_LOG_INFO(
                     Weapon,
-                    "TwoHandedGrip: animation authority released support-hand FRIK authority hand={}",
-                    _handAnimationAuthoritySupportHandIsLeft ?
+                    "TwoHandedGrip: native reload released support-hand FRIK authority hand={}",
+                    _nativeReloadSupportHandIsLeft ?
                         "left" :
                         "right");
             }
-            _handAnimationAuthoritySupportHandIsLeft = supportHandIsLeft;
+            _nativeReloadHandAuthorityActive = false;
+            _nativeReloadSupportHandIsLeft = supportHandIsLeft;
             return;
         }
 
-        if (boundaryWasActive && !supportRoleChanged) {
+        if (_nativeReloadHandAuthorityActive && !supportRoleChanged) {
             return;
         }
 
         if (supportRoleChanged) {
-            suspendAnimationAuthoritySupportHand(
-                _handAnimationAuthoritySupportHandIsLeft);
+            suspendNativeReloadSupportHandAuthority(
+                _nativeReloadSupportHandIsLeft);
         }
         clearFiringRecoilPresentationState();
-        _handAnimationAuthoritySupportHandIsLeft = supportHandIsLeft;
-        suspendAnimationAuthoritySupportHand(supportHandIsLeft);
+        _nativeReloadHandAuthorityActive = true;
+        _nativeReloadSupportHandIsLeft = supportHandIsLeft;
+        suspendNativeReloadSupportHandAuthority(supportHandIsLeft);
         ROCK_LOG_INFO(
             Weapon,
-            "TwoHandedGrip: animation authority suspended support-hand FRIK authority hand={} provider={} nativeReload={} logicalGripRetained={}",
+            "TwoHandedGrip: native reload suspended support-hand FRIK authority hand={} logicalGripRetained={}",
             supportHandIsLeft ? "left" : "right",
-            providerAnimationBoundaryActive ? "yes" : "no",
-            nativeReloadHandAuthorityActive ? "yes" : "no",
             partGrip(supportHandIsLeft).active ? "yes" : "no");
     }
 
@@ -898,7 +889,7 @@ namespace rock
              index < _preFrikWeaponHandAuthority.size();
              ++index) {
             const bool isLeft = index == 0u;
-            if (isHandAnimationAuthoritySupportHand(isLeft)) {
+            if (isNativeReloadSupportHand(isLeft)) {
                 (void)clearWeaponCollisionHandAuthority(isLeft);
                 continue;
             }
@@ -999,7 +990,7 @@ namespace rock
         };
         for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
             const bool isLeft = handIndex == 0u;
-            if (isHandAnimationAuthoritySupportHand(isLeft)) {
+            if (isNativeReloadSupportHand(isLeft)) {
                 continue;
             }
             for (std::size_t kindIndex = 0;
@@ -1511,7 +1502,7 @@ namespace rock
         if (!weaponNode || !grip.active || !grip.hasHandWeaponLocal) {
             return false;
         }
-        if (isHandAnimationAuthoritySupportHand(isLeft)) {
+        if (isNativeReloadSupportHand(isLeft)) {
             return true;
         }
         if (!scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scopeMenuOpenThisFrame)) {
@@ -1615,7 +1606,7 @@ namespace rock
 
     void TwoHandedGrip::publishGripHandPoses(bool isLeft)
     {
-        if (isHandAnimationAuthoritySupportHand(isLeft) ||
+        if (isNativeReloadSupportHand(isLeft) ||
             !frik_visual_authority::isAvailable()) {
             return;
         }

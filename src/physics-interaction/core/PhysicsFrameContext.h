@@ -50,10 +50,9 @@ namespace rock
         float deltaSeconds = 1.0f / 90.0f;
         bool worldReady = false;
         bool menuBlocked = false;
-        // Provider graph ownership is the only global animation boundary. A
-        // native reload owns selected weapon-hand roles and must not suppress
-        // general hand collision, movement, or generated-body lifecycle.
-        bool providerAnimationBoundaryActive = false;
+        // A verified native reload can yield selected weapon-hand roles. A
+        // provider animation lease is compositional and never blocks physics,
+        // grabbing, gunstock, or generated-body lifecycle.
         bool nativeReloadHandAuthorityActive = false;
         bool hasHmdFrame = false;
         RE::NiPoint3 hmdPositionWorld{};

@@ -2,7 +2,6 @@
 
 #include "physics-interaction/hand/collision/DynamicHandCollisionFeedbackPolicy.h"
 #include "physics-interaction/hand/collision/DynamicHandSurfaceContactState.h"
-#include "physics-interaction/hand/collision/DynamicHandCollisionTransitionPolicy.h"
 #include "physics-interaction/hand/collision/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/collision/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/collision/SurfaceFingerCollisionPolicy.h"
@@ -113,11 +112,6 @@ namespace rock
         // Main-thread snapshot/event access. Future provider adapters must copy
         // from here on the main thread rather than retain runtime-owned state.
         [[nodiscard]] bool getTelemetrySnapshot(dynamic_hand_collision_telemetry::Snapshot& outSnapshot) const;
-        [[nodiscard]] bool isTransitionCollisionSuppressedAtomic() const
-        {
-            return _transitionCollisionSuppressedAtomic.load(
-                std::memory_order_acquire);
-        }
         [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
 
         struct DynamicBodyContactSource
@@ -501,7 +495,6 @@ namespace rock
             const dynamic_hand_collision_telemetry::HandSample& handTelemetry,
             float deltaSeconds,
             bool freezeCurrentPose);
-        void applyTransitionCollisionSuppression(RE::hknpWorld* world, bool suppressCollision);
         static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
         [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample, std::uint64_t& outSequence);
         static void clearPhysicsContactState(ProxySlot& slot);
@@ -524,9 +517,6 @@ namespace rock
         std::uint64_t _telemetryUpdateSequence = 0;
         std::uint32_t _logCounter = 0;
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
-        dynamic_hand_collision_transition::State _transitionState{};
-        bool _transitionCollisionSuppressed = false;
-        std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
         std::atomic<bool> _dynamicInteractionsEnabledAtomic{ false };
         std::atomic<std::uint32_t> _desiredWeaponBodyIdAtomic{
             hand_semantic_contact_state::kInvalidBodyId

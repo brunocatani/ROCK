@@ -19,7 +19,6 @@
 #include "RockUtils.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
@@ -178,15 +177,6 @@ namespace rock::physics_interaction_detail
                 f4vr::findNode(firstPersonSkeleton, "Weapon") :
                 nullptr;
         }
-    }
-
-    bool providerHandAnimationAuthorityActive()
-    {
-        const auto animationAuthorityFlags =
-            provider::currentNativeAnimationAuthorityFlagsV1();
-        return (animationAuthorityFlags &
-                   (authored_weapon_grip_capture_policy::kArms |
-                       authored_weapon_grip_capture_policy::kHands)) != 0;
     }
 
     std::uint32_t claimOwnerCount(std::uint32_t ownerMask)

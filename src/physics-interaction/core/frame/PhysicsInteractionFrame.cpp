@@ -149,8 +149,6 @@ namespace rock
         frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);
         frame.worldReady = bhk && hknp;
         frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
-        frame.providerAnimationBoundaryActive =
-            providerHandAnimationAuthorityActive();
         frame.nativeReloadHandAuthorityActive =
             _nativeReloadHandAuthorityActive;
     
@@ -440,16 +438,17 @@ namespace rock
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
             const bool rebuilt =
-                !frame.providerAnimationBoundaryActive &&
-                rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch");
+                rebuildGeneratedBodiesForLifecycle(
+                    bhk,
+                    hknp,
+                    "epoch-mismatch");
             if (rebuilt) {
                 observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
             } else {
                 observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesInvalidated);
                 ROCK_LOG_SAMPLE_DEBUG(Update,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "ROCK lifecycle generated-body rebuild pending: animationBoundary={} flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
-                    frame.providerAnimationBoundaryActive ? "yes" : "no",
+                    "ROCK lifecycle generated-body rebuild pending: flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
                     _lifecycleFlagsAtomic.load(std::memory_order_acquire),
                     _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
                     _worldGenerationAtomic.load(std::memory_order_acquire),
@@ -758,8 +757,6 @@ namespace rock
     // makes a debug-overlay publication valid; every early return above skips it.
     void PhysicsInteraction::completeFrame(const PhysicsFrameContext& frame)
     {
-        const auto& runtime = runtime_state::currentFrame();
-
         _deltaLogCounter++;
         if (g_rockConfig.rockDebugVerboseLogging && _deltaLogCounter >= 90) {
             _deltaLogCounter = 0;
@@ -1166,7 +1163,8 @@ namespace rock
                     !runtime.compatibilityConfigBlocking,
             });
         const bool nativeWeaponAnimationActive =
-            provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
+            (provider::currentNativeAnimationAuthorityFlagsV1() &
+                authored_weapon_grip_capture_policy::kWeapon) != 0 ||
             nativeGunState ==
                 static_cast<std::uint32_t>(RE::GUN_STATE::kReloading);
         _equippedWeaponTransition.update(

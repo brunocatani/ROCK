@@ -861,11 +861,6 @@ namespace rock
                         Flag::CollisionAvailable);
                 }
                 if ((collisionState.flags & static_cast<std::uint32_t>(
-                         ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::TransitionSuppressed)) != 0) {
-                    state.flags |= static_cast<std::uint32_t>(
-                        Flag::TransitionSuppressed);
-                }
-                if ((collisionState.flags & static_cast<std::uint32_t>(
                          ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::DynamicOtherHandContact)) != 0) {
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::DynamicOtherHandContact);
@@ -1383,9 +1378,6 @@ namespace rock
         const bool collisionAvailable =
             (availability.flags & static_cast<std::uint32_t>(
                  ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::CollisionAvailable)) != 0;
-        const bool transitionSuppressed =
-            (availability.flags & static_cast<std::uint32_t>(
-                 ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::TransitionSuppressed)) != 0;
 
         std::uint32_t copied = 0;
         for (const auto role : hand_collider_semantics::kHandColliderRoles) {
@@ -1456,10 +1448,6 @@ namespace rock
             if (collisionAvailable) {
                 out.flags |= static_cast<std::uint32_t>(
                     Flag::CollisionAvailable);
-            }
-            if (transitionSuppressed) {
-                out.flags |= static_cast<std::uint32_t>(
-                    Flag::TransitionSuppressed);
             }
             out.collisionGeneration =
                 _collisionGenerationAtomic.load(std::memory_order_acquire);
@@ -1610,10 +1598,6 @@ namespace rock
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::MenuSuppressed);
             }
-            if (telemetry.transitionCollisionSuppressed) {
-                outState.flags |= static_cast<std::uint32_t>(
-                    Flag::TransitionSuppressed);
-            }
             if (handTelemetry.handDisabled) {
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::HandDisabled);
@@ -1645,7 +1629,6 @@ namespace rock
                 handTelemetry.suppressedWeaponPairCount;
             if (outState.handBodyCount != 0 && telemetry.worldReady &&
                 telemetry.physicsWritesAllowed && !telemetry.menuBlocked &&
-                !telemetry.transitionCollisionSuppressed &&
                 !handTelemetry.handDisabled) {
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::CollisionAvailable);

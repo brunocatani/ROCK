@@ -95,6 +95,30 @@ Require-Text 'src/api/ProviderApiAnimationAuthority.cpp' `
 Require-Text 'src/api/ROCKProviderApi.h' `
     'next skeleton frame[\s\S]*republish[\s\S]*next skeleton frame[\s\S]*NotReady' `
     'Provider V1 must document deferred publication, moving-target refresh, clear latency, and scheduler readiness.'
+Require-Text 'src/api/ProviderApiAnimationAuthority.cpp' `
+    'weaponCoupledFlag[\s\S]{0,500}weaponCoupledFlag[\s\S]{0,160}worldFlag[\s\S]*ProviderWeaponCoupled[\s\S]{0,300}publishExternalHandWorldTransform' `
+    'Weapon-coupled provider hand targets must require a world transform and retain a typed compositional role in the deferred registry.'
+Require-Text 'src/api/ProviderApiAnimationAuthority.cpp' `
+    'context\.flags\s*\|=[\s\S]{0,180}WeaponCoupledWorldTransformSupported' `
+    'Every animation callback must expose the additive V1 weapon-coupled publication capability.'
+Require-Text 'src/physics-interaction/visual/HandWorldAuthorityRegistryPolicy.h' `
+    'ProviderWeaponCoupled[\s\S]{0,500}case Role::ProviderWeaponCoupled[\s\S]{0,100}return true' `
+    'Only an explicitly weapon-coupled provider hand target may move weapon presentation with the final hand delta.'
+Reject-Text 'src/physics-interaction/core/PhysicsFrameContext.h' `
+    'providerAnimationBoundaryActive' `
+    'Provider animation authority must not become a global physics-frame exclusion boundary.'
+Reject-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGrip.h' `
+    'providerAnimationBoundaryActive|handAnimationAuthorityBoundaryActive' `
+    'Provider animation authority must not suspend support-grip, gunstock, or recoil transactions.'
+Reject-Text 'src/physics-interaction/hand/collision/DynamicHandCollision.h' `
+    'DynamicHandCollisionTransitionPolicy|transitionCollisionSuppressed' `
+    'Provider animation transitions must not disable retained dynamic-hand collision.'
+Reject-Text 'src/physics-interaction/core/provider/PhysicsInteractionProvider.cpp' `
+    'Flag::TransitionSuppressed' `
+    'Provider snapshots must not reintroduce the removed animation-transition collision suppression path.'
+Require-Text 'src/physics-interaction/core/frame/PhysicsInteractionFrame.cpp' `
+    'const bool nativeWeaponAnimationActive\s*=[\s\S]{0,220}currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]{0,140}kWeapon[\s\S]{0,220}GUN_STATE::kReloading' `
+    'Arms-and-hands-only provider animation must not be classified as an equipped-weapon graph replacement.'
 
 Reject-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGripGunstock.cpp' `
     'recoilPrecompensated|recoilProbeApplied|immediately read|synchronously inside' `

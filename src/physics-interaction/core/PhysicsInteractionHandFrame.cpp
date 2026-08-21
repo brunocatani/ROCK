@@ -211,8 +211,7 @@ namespace rock
             { rightRawHandValid, rightRawHandWorld };
 
         const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
-        _twoHandedGrip.setHandAnimationAuthorityBoundaries(
-            providerHandAnimationAuthorityActive(),
+        _twoHandedGrip.setNativeReloadHandAuthorityActive(
             _nativeReloadHandAuthorityActive);
         _twoHandedGrip.refreshRetainedHandVisualAuthoritiesBeforeFrik(
             leftWeaponHandDriver,

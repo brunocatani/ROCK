@@ -205,13 +205,18 @@ namespace rock::frik_visual_authority
             const std::string_view tag,
             Hand hand,
             const RE::NiTransform& worldTarget,
-            int priority)
+            int priority,
+            const HandWorldAuthorityRole declaredRole)
         {
+            const auto role =
+                declaredRole == HandWorldAuthorityRole::Unknown ?
+                    classifyHandWorldRole(tag) :
+                    declaredRole;
             return g_handWorldAuthorityRegistry.commit(
                 publication,
                 tag,
                 hand,
-                classifyHandWorldRole(tag),
+                role,
                 priority,
                 worldTarget);
         }
@@ -619,7 +624,13 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->setHandPose && frikApi->setHandPose(tag, hand, handPose, priority);
     }
 
-    [[nodiscard]] inline bool publishExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
+    [[nodiscard]] inline bool publishExternalHandWorldTransform(
+        const char* tag,
+        Hand hand,
+        const RE::NiTransform& worldTarget,
+        int priority,
+        const HandWorldAuthorityRole declaredRole =
+            HandWorldAuthorityRole::Unknown)
     {
         std::string_view tagView;
         std::size_t handIndex = 0;
@@ -652,7 +663,8 @@ namespace rock::frik_visual_authority
                 tagView,
                 hand,
                 worldTarget,
-                priority);
+                priority,
+                declaredRole);
         if (!committed) {
             detail::g_handWorldAuthorityRegistry.cancelReservation(
                 *publication);

@@ -1363,14 +1363,10 @@ namespace rock
                 }
             }
 
-            const bool transitionSuppressed =
-                _dynamicHandCollision.isTransitionCollisionSuppressedAtomic();
-            if (transitionSuppressed) {
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::TransitionSuppressed);
-            } else if ((_lifecycleFlagsAtomic.load(std::memory_order_acquire) &
-                            static_cast<std::uint32_t>(
-                                ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed)) != 0) {
+            if ((_lifecycleFlagsAtomic.load(std::memory_order_acquire) &
+                    static_cast<std::uint32_t>(
+                        ::rock::provider::RockProviderLifecycleFlag::
+                            PhysicsWriteAllowed)) != 0) {
                 contact.flags |= static_cast<std::uint32_t>(
                     ::rock::provider::RockProviderExternalContactFlagV1::CollisionAvailable);
             }

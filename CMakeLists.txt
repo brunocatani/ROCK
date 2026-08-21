@@ -710,13 +710,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicHandTwinGeometryPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicHandTwinGeometryPolicyTests)
 
-  add_executable(ROCKDynamicHandCollisionTransitionPolicyTests
-    "${ROOT_DIR}/tests/DynamicHandCollisionTransitionPolicyTests.cpp"
-  )
-  target_compile_features(ROCKDynamicHandCollisionTransitionPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDynamicHandCollisionTransitionPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDynamicHandCollisionTransitionPolicyTests)
-
   add_executable(ROCKHavokCompoundShapeKeyPolicyTests
     "${ROOT_DIR}/tests/HavokCompoundShapeKeyPolicyTests.cpp"
   )
@@ -790,7 +783,6 @@ if(BUILD_ROCK_TESTS)
     ROCKAuthoredWeaponGripAuthorityPolicyTests
     ROCKPhysicsCallbackQuiescenceGateTests
     ROCKDynamicHandTwinGeometryPolicyTests
-    ROCKDynamicHandCollisionTransitionPolicyTests
     ROCKHavokCompoundShapeKeyPolicyTests
     ROCKDynamicWeaponCollisionPolicyTests
   )

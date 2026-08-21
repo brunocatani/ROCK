@@ -1237,9 +1237,8 @@ namespace rock
         auto& slot = handSlots.bodies[0];
         if (slot.created) {
             if (slot.createdWorld == frame.hknpWorld) {
-                if (_transitionCollisionSuppressed ||
-                    (slot.createdGeometryGeneration == geometryGeneration &&
-                        !slot.rebuildRequestedAtomic.load(std::memory_order_acquire))) {
+                if (slot.createdGeometryGeneration == geometryGeneration &&
+                    !slot.rebuildRequestedAtomic.load(std::memory_order_acquire)) {
                     return true;
                 }
             }
@@ -1344,7 +1343,7 @@ namespace rock
 
         const auto expectedFilterInfo = dynamicHandProxyFilterInfo(
             isLeft,
-            _transitionCollisionSuppressed);
+            false);
         if (!slot.body.create(
                 frame.hknpWorld,
                 frame.bhkWorld,
@@ -2063,42 +2062,6 @@ namespace rock
         return response.lastHelpfulDynamicSlotMask;
     }
 
-    void DynamicHandCollisionRuntime::applyTransitionCollisionSuppression(
-        RE::hknpWorld* world,
-        bool suppressCollision)
-    {
-        if (_transitionCollisionSuppressed == suppressCollision) {
-            return;
-        }
-
-        auto structuralMutation = _physicsCallbackGate ?
-            _physicsCallbackGate->pauseForMutation() :
-            PhysicsCallbackQuiescenceGate::MutationLease{};
-        for (std::size_t handIndexValue = 0;
-             handIndexValue < _hands.size();
-             ++handIndexValue) {
-            auto& handSlots = _hands[handIndexValue];
-            const auto filterInfo = dynamicHandProxyFilterInfo(
-                handIndexValue == 1,
-                suppressCollision);
-            for (auto& slot : handSlots.bodies) {
-                if (!slot.created || !slot.body.isValid() || slot.createdWorld != world) {
-                    continue;
-                }
-                slot.body.setCollisionFilterInfo(filterInfo, 1);
-                clearPhysicsContactState(slot);
-            }
-        }
-        _transitionCollisionSuppressed = suppressCollision;
-        _transitionCollisionSuppressedAtomic.store(
-            suppressCollision,
-            std::memory_order_release);
-        ROCK_LOG_INFO(
-            Hand,
-            "Dynamic hand collision animation transition {} retained bodies",
-            suppressCollision ? "suspended for" : "resumed on");
-    }
-
     void DynamicHandCollisionRuntime::retireAll(void* bhkWorld)
     {
         auto structuralMutation = _physicsCallbackGate ?
@@ -2124,9 +2087,6 @@ namespace rock
         _surfaceContactPublishSequenceAtomic.store(0, std::memory_order_release);
         _telemetryUpdateSequence = 0;
         _logCounter = 0;
-        _transitionState = {};
-        _transitionCollisionSuppressed = false;
-        _transitionCollisionSuppressedAtomic.store(false, std::memory_order_release);
         _dynamicInteractionsEnabledAtomic.store(false, std::memory_order_release);
         _desiredWeaponBodyIdAtomic.store(
             hand_semantic_contact_state::kInvalidBodyId,
@@ -2254,12 +2214,6 @@ namespace rock
             }
             _hands[0].hapticState = {};
             _hands[1].hapticState = {};
-            _transitionState = {};
-            _transitionCollisionSuppressed = false;
-            _transitionCollisionSuppressedAtomic.store(
-                false,
-                std::memory_order_release);
-            telemetry.transitionCollisionSuppressed = false;
             _telemetrySnapshot = telemetry;
             return;
         }
@@ -2273,8 +2227,6 @@ namespace rock
             telemetry.hands[1].visualAuthorityAvailable = telemetry.hands[0].visualAuthorityAvailable;
             updateHandHaptic(_hands[0], telemetry.hands[0], false, frame.deltaSeconds);
             updateHandHaptic(_hands[1], telemetry.hands[1], false, frame.deltaSeconds);
-            telemetry.transitionCollisionSuppressed =
-                _transitionCollisionSuppressed;
             _telemetrySnapshot = telemetry;
             return;
         }
@@ -2296,37 +2248,6 @@ namespace rock
                 telemetry.surfaceProcessedPairSequence,
                 telemetry.surfaceEligiblePairSequence,
                 telemetry.surfaceContactPublishSequence);
-        }
-
-        const auto handTargetsStable = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand) {
-            if (handInput.disabled) {
-                return true;
-            }
-            const auto& handTwins = hand.dynamicTwinTargets();
-            const auto& forearmTwins = bodyBoneColliders.dynamicForearmTwinTargets();
-            const auto& handSlots = _hands[handIndex(isLeft)];
-            for (std::size_t bodyIndex = 0; bodyIndex < kBodiesPerHand; ++bodyIndex) {
-                const auto* twinFrame = twinFrameForSlot(handTwins, forearmTwins, isLeft, bodyIndex);
-                const bool targetRequired =
-                    bodyIndex == kPalmSlot ||
-                    handSlots.bodies[0].created;
-                if (targetRequired &&
-                    (!twinFrame || !twinFrame->valid || !isFiniteTransform(twinFrame->target))) {
-                    return false;
-                }
-            }
-            return true;
-        };
-        const bool transitionTargetsStable =
-            handTargetsStable(false, frame.right, rightHand) &&
-            handTargetsStable(true, frame.left, leftHand);
-        const auto transitionStep = dynamic_hand_collision_transition::advance(
-            _transitionState,
-            frame.providerAnimationBoundaryActive,
-            transitionTargetsStable);
-        _transitionState = transitionStep.state;
-        if (transitionStep.collisionStateChanged) {
-            applyTransitionCollisionSuppression(frame.hknpWorld, transitionStep.suppressCollision);
         }
 
         auto updateHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand, bool weaponOwned, bool visualReturnActive) {
@@ -2477,8 +2398,7 @@ namespace rock
                     handSlots,
                     compoundRootTarget,
                     driveTargets)) {
-                if (handSlots.bodies[0].created &&
-                    !_transitionCollisionSuppressed) {
+                if (handSlots.bodies[0].created) {
                     retireHand(handSlots, frame.bhkWorld, isLeft);
                 }
                 clearVisual(handSlots, isLeft);
@@ -2599,8 +2519,7 @@ namespace rock
             handTelemetry.anyContact = handTelemetry.contactCount > 0;
             const bool physicallyOwnedByStrongerSystem =
                 suppressesGeneratedHandContactEvidence(hand.getState()) ||
-                weaponOwned ||
-                _transitionCollisionSuppressed;
+                weaponOwned;
             const bool visuallyOwnedByStrongerSystem =
                 physicallyOwnedByStrongerSystem || visualReturnActive;
             const bool latchAuthorityBlocked =
@@ -2838,8 +2757,6 @@ namespace rock
 
         updateHand(false, frame.right, rightHand, rightHandWeaponOwned, rightVisualReturnActive);
         updateHand(true, frame.left, leftHand, leftHandWeaponOwned, leftVisualReturnActive);
-        telemetry.transitionCollisionSuppressed =
-            _transitionCollisionSuppressed;
         _telemetrySnapshot = telemetry;
     }
 

@@ -503,6 +503,9 @@ namespace rock::provider
         // must also be set before publishing a hand world transform.
         VisualWritesAllowed = 1u << 5,
         WorldTransformWritesAllowed = 1u << 6,
+        // The runtime accepts WeaponCoupledWorldTransform and composes the
+        // presented-hand delta with its existing weapon transaction.
+        WeaponCoupledWorldTransformSupported = 1u << 7,
     };
 
     enum class RockProviderEquippedWeaponGripStateFlagV1 : std::uint32_t
@@ -565,6 +568,14 @@ namespace rock::provider
         None = 0,
         WorldTransform = 1u << 0,
         FingerLocalTransforms = 1u << 1,
+        /*
+         * Semantic modifier for WorldTransform. The provider target is an
+         * exact hand pose in the active equipped weapon frame. ROCK may keep
+         * weapon grab, collision, gunstock, and recoil transactions alive and
+         * apply the final presented-hand delta to that same weapon. This flag
+         * is invalid without WorldTransform.
+         */
+        WeaponCoupledWorldTransform = 1u << 2,
     };
 
     enum class RockProviderDebugOverlayTextFlagV1 : std::uint32_t
@@ -2084,6 +2095,11 @@ namespace rock::provider
      * The callback context reports this distinction with
      * WorldTransformWritesAllowed; VisualWritesAllowed alone permits only the
      * independent finger-local path.
+     * Check WeaponCoupledWorldTransformSupported in the callback context before
+     * setting WeaponCoupledWorldTransform, so the same consumer remains
+     * compatible with older V1 providers.
+     * WeaponCoupledWorldTransform declares composition semantics only. It does
+     * not grant weapon ownership and does not move the weapon by itself.
      * ROCK derives a unique tag from ownerToken. Every publication is a rolling
      * bounded lease with generation guards and is cleared on expiry,
      * generation change, explicit clear, consumer unregister, provider loss,

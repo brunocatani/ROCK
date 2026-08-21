@@ -136,6 +136,8 @@ int main()
     ok &= expect("weapon roles must explicitly compose with weapon presentation",
         policy::weaponPresentationFollowsRole(policy::Role::PrimaryGrip) &&
             policy::weaponPresentationFollowsRole(policy::Role::Gunstock) &&
+            policy::weaponPresentationFollowsRole(
+                policy::Role::ProviderWeaponCoupled) &&
             !policy::weaponPresentationFollowsRole(policy::Role::Provider) &&
             !policy::weaponPresentationFollowsRole(policy::Role::GrabHeld));
 

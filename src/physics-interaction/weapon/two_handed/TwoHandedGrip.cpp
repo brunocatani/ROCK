@@ -166,8 +166,7 @@ namespace rock
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
         _currentSourceSchedulerSequence = sourceSchedulerSequence;
-        setHandAnimationAuthorityBoundaries(
-            frameInput.providerAnimationBoundaryActive,
+        setNativeReloadHandAuthorityActive(
             frameInput.nativeReloadHandAuthorityActive);
         _gunstockFramePresentation = {};
         observeGunstockWeaponEligibility(
@@ -306,7 +305,7 @@ namespace rock
             weaponCollision,
             false);
         const bool supportTouchingSupport =
-            !handAnimationAuthorityBoundaryActive() &&
+            !_nativeReloadHandAuthorityActive &&
             decision.kind == WeaponInteractionKind::SupportGrip;
         RE::NiNode* interactionWeaponNode = sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
@@ -376,7 +375,7 @@ namespace rock
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: releasing support grip to recapture under newly matched provider weapon-part target");
                 transitionToInactive(ownsWeaponTransform());
             } else if (!supportRuntimeState.supportGripAllowed &&
-                       !handAnimationAuthorityBoundaryActive()) {
+                       !_nativeReloadHandAuthorityActive) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
                 transitionToInactive(false);
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
@@ -549,9 +548,8 @@ namespace rock
         _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
-        _providerAnimationBoundaryActive = false;
         _nativeReloadHandAuthorityActive = false;
-        _handAnimationAuthoritySupportHandIsLeft = true;
+        _nativeReloadSupportHandIsLeft = true;
         clearFiringRecoilPresentationState();
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};

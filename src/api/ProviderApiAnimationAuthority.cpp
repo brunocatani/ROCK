@@ -511,10 +511,17 @@ namespace rock::provider::detail
             static_cast<std::uint32_t>(RockProviderHandVisualAuthorityFlagV1::WorldTransform);
         constexpr std::uint32_t fingerFlag =
             static_cast<std::uint32_t>(RockProviderHandVisualAuthorityFlagV1::FingerLocalTransforms);
-        constexpr std::uint32_t implementedFlags = worldFlag | fingerFlag;
+        constexpr std::uint32_t weaponCoupledFlag =
+            static_cast<std::uint32_t>(
+                RockProviderHandVisualAuthorityFlagV1::
+                    WeaponCoupledWorldTransform);
+        constexpr std::uint32_t implementedFlags =
+            worldFlag | fingerFlag | weaponCoupledFlag;
         if (request->flags == 0 || (request->flags & ~implementedFlags) != 0 ||
             request->priority < -10000 || request->priority > 10000 ||
-            request->leaseFrames == 0) {
+            request->leaseFrames == 0 ||
+            ((request->flags & weaponCoupledFlag) != 0 &&
+                (request->flags & worldFlag) == 0)) {
             return RockProviderResultV1::InvalidArgument;
         }
         if ((request->flags & worldFlag) != 0 &&
@@ -610,11 +617,17 @@ namespace rock::provider::detail
                             request->priority);
         }
         if (published && (request->flags & worldFlag) != 0) {
+            const auto role =
+                (request->flags & weaponCoupledFlag) != 0 ?
+                    frik_visual_authority::HandWorldAuthorityRole::
+                        ProviderWeaponCoupled :
+                    frik_visual_authority::HandWorldAuthorityRole::Provider;
             published = frik_visual_authority::publishExternalHandWorldTransform(
                 slot->tag,
                 hand,
                 toNiTransform(request->worldTransform),
-                request->priority);
+                request->priority,
+                role);
         }
         if (!published) {
             slot->publishedFlags = request->flags;
@@ -801,6 +814,9 @@ namespace rock::provider
         RockProviderAnimationPhaseContextV1 context{};
         context.phase = phase;
         context.frameIndex = phaseFrameIndex;
+        context.flags |= static_cast<std::uint32_t>(
+            RockProviderAnimationPhaseContextFlagV1::
+                WeaponCoupledWorldTransformSupported);
         context.deltaSeconds =
             std::isfinite(deltaSeconds) && deltaSeconds > 0.0f &&
                     deltaSeconds <= 0.1f ?

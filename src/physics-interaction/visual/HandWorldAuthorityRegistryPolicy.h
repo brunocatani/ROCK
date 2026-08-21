@@ -25,6 +25,7 @@ namespace rock::hand_world_authority_registry_policy
         WeaponCollision,
         WeaponReturn,
         Provider,
+        ProviderWeaponCoupled,
     };
 
     [[nodiscard]] inline constexpr bool weaponPresentationFollowsRole(
@@ -38,6 +39,7 @@ namespace rock::hand_world_authority_registry_policy
         case Role::Gunstock:
         case Role::WeaponCollision:
         case Role::WeaponReturn:
+        case Role::ProviderWeaponCoupled:
             return true;
         case Role::Unknown:
         case Role::GrabHeld:
