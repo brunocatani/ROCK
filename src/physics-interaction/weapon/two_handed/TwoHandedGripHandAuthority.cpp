@@ -104,31 +104,72 @@ namespace rock
         rememberFiringRecoilReference(isLeft, appliedWorld);
     }
 
-    bool TwoHandedGrip::hasControlledFiringRecoilAuthority(
-        const bool isLeft) const
+    bool TwoHandedGrip::tryResolveControlledFiringRecoilSource(
+        const bool isLeft,
+        RE::NiNode*& outWeaponNode,
+        std::uint64_t& outWeaponGenerationKey) const
     {
+        outWeaponNode = nullptr;
+        outWeaponGenerationKey = 0;
         if (isLeft != _firingHandIsLeft ||
-            !_activeWeaponNode ||
-            _activeWeaponGenerationKey == 0 ||
             _nativeReloadHandAuthorityActive) {
             return false;
         }
 
         if (isLeft) {
-            return _weaponNodeOwnershipBlockEngaged &&
-                   isManualOwnershipActive();
+            if (!_activeWeaponNode ||
+                _activeWeaponGenerationKey == 0 ||
+                !_weaponNodeOwnershipBlockEngaged ||
+                !isManualOwnershipActive()) {
+                return false;
+            }
+            outWeaponNode = _activeWeaponNode;
+            outWeaponGenerationKey = _activeWeaponGenerationKey;
+            return true;
         }
 
-        return _state == TwoHandedState::Gripping &&
-               weapon_support_authority_policy::
-                   supportGripAppliesPrimaryHandAuthority(_authorityMode);
+        if (_activeWeaponNode &&
+            _activeWeaponGenerationKey != 0 &&
+            _state == TwoHandedState::Gripping &&
+            weapon_support_authority_policy::
+                supportGripAppliesPrimaryHandAuthority(_authorityMode)) {
+            outWeaponNode = _activeWeaponNode;
+            outWeaponGenerationKey = _activeWeaponGenerationKey;
+            return true;
+        }
+
+        /*
+         * Normal physical-right carry is owned by the authored primary grip
+         * runtime rather than the manual two-hand state machine. It still
+         * needs the same controlled recoil contract as physical-left carry:
+         * hFRIK moves the hand, then ROCK applies that exact world delta to
+         * the identity-bound weapon before collision and muzzle publication.
+         */
+        if (_rightFiringHandCanonicalSource !=
+                RightFiringCanonicalSource::AuthoredAnimation ||
+            !_hasRightFiringHandCanonicalWeaponLocal ||
+            !_rightFiringHandCanonicalWeaponNode ||
+            _rightFiringHandCanonicalGenerationKey == 0 ||
+            _rightFiringHandCanonicalOwnershipKey == 0) {
+            return false;
+        }
+
+        outWeaponNode = _rightFiringHandCanonicalWeaponNode;
+        outWeaponGenerationKey =
+            _rightFiringHandCanonicalGenerationKey;
+        return true;
     }
 
     void TwoHandedGrip::rememberFiringRecoilReference(
         const bool isLeft,
         const RE::NiTransform& handWorld)
     {
-        if (!hasControlledFiringRecoilAuthority(isLeft) ||
+        RE::NiNode* recoilWeaponNode = nullptr;
+        std::uint64_t recoilWeaponGenerationKey = 0;
+        if (!tryResolveControlledFiringRecoilSource(
+                isLeft,
+                recoilWeaponNode,
+                recoilWeaponGenerationKey) ||
             !isUsableHandAuthorityTransform(handWorld)) {
             return;
         }
@@ -142,7 +183,7 @@ namespace rock
         }
         _firingRecoilReferenceHandWorld[index] = handWorld;
         _firingRecoilReferenceGenerationKey[index] =
-            _activeWeaponGenerationKey;
+            recoilWeaponGenerationKey;
         _firingRecoilReferenceSchedulerSequence[index] =
             _currentSourceSchedulerSequence;
         _firingRecoilReferenceCapturedBeforeFrik[index] = false;
@@ -955,11 +996,16 @@ namespace rock
         const std::uint64_t currentSchedulerSequence)
     {
         const std::size_t handIndex = firingHandIsLeft ? 0u : 1u;
+        RE::NiNode* recoilWeaponNode = nullptr;
+        std::uint64_t recoilWeaponGenerationKey = 0;
         if (currentSchedulerSequence == 0 ||
             firingHandIsLeft != _firingHandIsLeft ||
             currentWeaponGenerationKey == 0 ||
-            currentWeaponGenerationKey != _activeWeaponGenerationKey ||
-            !hasControlledFiringRecoilAuthority(firingHandIsLeft)) {
+            !tryResolveControlledFiringRecoilSource(
+                firingHandIsLeft,
+                recoilWeaponNode,
+                recoilWeaponGenerationKey) ||
+            currentWeaponGenerationKey != recoilWeaponGenerationKey) {
             _firingRecoilReferenceSchedulerSequence[handIndex] = 0;
             _firingRecoilReferenceCapturedBeforeFrik[handIndex] = false;
             _hasFiringRecoilReference[handIndex] = false;
@@ -995,7 +1041,7 @@ namespace rock
 
         _firingRecoilReferenceHandWorld[handIndex] = preRecoilHandWorld;
         _firingRecoilReferenceGenerationKey[handIndex] =
-            currentWeaponGenerationKey;
+            recoilWeaponGenerationKey;
         _firingRecoilReferenceSchedulerSequence[handIndex] =
             currentSchedulerSequence;
         _firingRecoilReferenceCapturedBeforeFrik[handIndex] = true;
@@ -1079,14 +1125,19 @@ namespace rock
             _firingRecoilAcceptedHandIsLeft;
         const std::size_t acceptedHandIndex =
             acceptedHandIsLeft ? 0u : 1u;
+        RE::NiNode* recoilWeaponNode = nullptr;
+        std::uint64_t recoilWeaponGenerationKey = 0;
         if (!weaponNode ||
-            weaponNode != _activeWeaponNode ||
             currentWeaponGenerationKey == 0 ||
-            currentWeaponGenerationKey != _activeWeaponGenerationKey ||
+            !tryResolveControlledFiringRecoilSource(
+                acceptedHandIsLeft,
+                recoilWeaponNode,
+                recoilWeaponGenerationKey) ||
+            weaponNode != recoilWeaponNode ||
+            currentWeaponGenerationKey != recoilWeaponGenerationKey ||
             currentWeaponGenerationKey !=
                 _firingRecoilAcceptedGenerationKey ||
             acceptedHandIsLeft != _firingHandIsLeft ||
-            !hasControlledFiringRecoilAuthority(acceptedHandIsLeft) ||
             !_hasFiringRecoilReference[acceptedHandIndex] ||
             _firingRecoilReferenceGenerationKey[acceptedHandIndex] !=
                 currentWeaponGenerationKey ||

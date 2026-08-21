@@ -98,6 +98,8 @@ namespace rock
 
         const bool firingHandIsLeft = self->_firingHandIsLeft;
         const std::size_t firingHandIndex = firingHandIsLeft ? 0u : 1u;
+        RE::NiNode* recoilWeaponNode = nullptr;
+        std::uint64_t recoilWeaponGenerationKey = 0;
         const RE::NiTransform identity =
             transform_math::makeIdentityTransform<RE::NiTransform>();
         self->_nativeRecoilSampleSchedulerSequence =
@@ -108,11 +110,14 @@ namespace rock
                 sample->nativeKickLocal,
                 identity,
                 0.00001f);
-        if (!self->hasControlledFiringRecoilAuthority(firingHandIsLeft) ||
+        if (!self->tryResolveControlledFiringRecoilSource(
+                firingHandIsLeft,
+                recoilWeaponNode,
+                recoilWeaponGenerationKey) ||
             (!firingHandIsLeft &&
                 (!self->_hasFiringRecoilReference[firingHandIndex] ||
                     self->_firingRecoilReferenceGenerationKey[firingHandIndex] !=
-                        self->_activeWeaponGenerationKey))) {
+                        recoilWeaponGenerationKey))) {
             return false;
         }
 
@@ -135,7 +140,7 @@ namespace rock
                 self->_firingRecoilAcceptedSequence = 1;
             }
             self->_firingRecoilAcceptedGenerationKey =
-                self->_activeWeaponGenerationKey;
+                recoilWeaponGenerationKey;
             self->_firingRecoilAcceptedHandIsLeft = firingHandIsLeft;
         } else {
             // A neutral callback is a newer FRIK frame than any unconsumed

@@ -81,6 +81,12 @@ Require-Text $hfrikRoot 'src/skeleton/WeaponHandRecoil.cpp' `
 Require-Text $Root 'src/ROCKMain.cpp' `
     'registerWeaponHandRecoilController\s*!=\s*nullptr[\s\S]*unregisterWeaponHandRecoilController\s*!=\s*nullptr' `
     'ROCK startup must fail closed when the matching API V2 recoil-controller table is absent.'
+Require-Text $Root 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandAuthority.cpp' `
+    'tryResolveControlledFiringRecoilSource[\s\S]*RightFiringCanonicalSource::AuthoredAnimation[\s\S]*_rightFiringHandCanonicalWeaponNode[\s\S]*_rightFiringHandCanonicalGenerationKey[\s\S]*_rightFiringHandCanonicalOwnershipKey' `
+    'Normal authored physical-right carry must own controlled hand-and-weapon recoil through its identity-bound canonical.'
+Require-Text $Root 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandAuthority.cpp' `
+    'captureFiringRecoilReferenceBeforeFrik[\s\S]*tryResolveControlledFiringRecoilSource[\s\S]*applyFiringWeaponRecoilPresentation[\s\S]*tryResolveControlledFiringRecoilSource[\s\S]*weaponNode\s*!=\s*recoilWeaponNode[\s\S]*currentWeaponGenerationKey\s*!=\s*recoilWeaponGenerationKey' `
+    'ROCK must capture and apply right-hand recoil against the same current weapon node and generation source.'
 Require-Text $hfrikRoot 'src/api/FRIKApiV2.h' `
     'struct\s+RecoilSample[\s\S]*structSize[\s\S]*reserved0\[3\][\s\S]*nativeKickLocal[\s\S]*sizeof\(RecoilSample\)\s*==\s*112' `
     'hFRIK must expose only the solve-critical native kick sample.'

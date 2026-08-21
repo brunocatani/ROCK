@@ -1540,7 +1540,10 @@ namespace rock
             bool primaryHand,
             LockedHandVisualLerpState& visualState);
         void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
-        [[nodiscard]] bool hasControlledFiringRecoilAuthority(bool isLeft) const;
+        [[nodiscard]] bool tryResolveControlledFiringRecoilSource(
+            bool isLeft,
+            RE::NiNode*& outWeaponNode,
+            std::uint64_t& outWeaponGenerationKey) const;
         void rememberFiringRecoilReference(bool isLeft, const RE::NiTransform& handWorld);
         void clearFiringRecoilPresentationState();
         void clearFiringRecoilPresentationState(bool isLeft);
