@@ -55,6 +55,13 @@ namespace rock::authored_weapon_grip_capture_policy
         bool authoredCanonicalAvailable{ false };
     };
 
+    struct AuthoredPrimaryWeaponDriverInput
+    {
+        bool authoredFingerPosePublished{ false };
+        bool presentedHandWorldValid{ false };
+        bool weaponCoupledProviderWorldAuthorityActive{ false };
+    };
+
     struct StableAuthoredSupportGripReuseInput
     {
         bool snapshotValid{ false };
@@ -144,6 +151,21 @@ namespace rock::authored_weapon_grip_capture_policy
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.authoredCanonicalAvailable;
+    }
+
+    [[nodiscard]] constexpr bool shouldUsePresentedHandAsWeaponDriver(
+        const AuthoredPrimaryWeaponDriverInput& input) noexcept
+    {
+        /*
+         * A weapon-coupled provider target is derived from the weapon and is
+         * consumed by hFRIK one scheduler step later. Feeding that presented
+         * wrist back into one-hand weapon alignment creates a circular,
+         * one-frame-delayed weapon driver. The physical controller remains the
+         * weapon source; the provider target owns only hand presentation.
+         */
+        return input.authoredFingerPosePublished &&
+               input.presentedHandWorldValid &&
+               !input.weaponCoupledProviderWorldAuthorityActive;
     }
 
     /*

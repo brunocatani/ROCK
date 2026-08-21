@@ -452,11 +452,24 @@ namespace rock
         RE::NiTransform trackedHandWorld = input.controllerHandWorld;
         bool trackedHandWorldValid = input.controllerHandWorldValid;
         const char* trackedHandSource = "controller-acquisition";
-        if (weaponAuthority.
-                hasPublishedAuthoredPrimaryFiringGripFingerPose(
-                    input.rockFiringHandIsLeft) &&
+        const bool authoredFingerPosePublished =
+            weaponAuthority.hasPublishedAuthoredPrimaryFiringGripFingerPose(
+                input.rockFiringHandIsLeft);
+        const bool presentedHandWorldUsable =
             input.presentedHandWorldValid &&
-            finiteTransform(input.presentedHandWorld)) {
+            finiteTransform(input.presentedHandWorld);
+        if (authored_weapon_grip_capture_policy::
+                shouldUsePresentedHandAsWeaponDriver(
+                    authored_weapon_grip_capture_policy::
+                        AuthoredPrimaryWeaponDriverInput{
+                            .authoredFingerPosePublished =
+                                authoredFingerPosePublished,
+                            .presentedHandWorldValid =
+                                presentedHandWorldUsable,
+                            .weaponCoupledProviderWorldAuthorityActive =
+                                input.
+                                    weaponCoupledProviderWorldAuthorityActive,
+                        })) {
             /*
              * The blocker was consumed by FRIK before this update, so the
              * presented wrist is free of FRIK's native per-weapon rotation.
@@ -467,6 +480,8 @@ namespace rock
             trackedHandWorld = input.presentedHandWorld;
             trackedHandWorldValid = true;
             trackedHandSource = "presented-pose-blocked";
+        } else if (input.weaponCoupledProviderWorldAuthorityActive) {
+            trackedHandSource = "controller-provider-isolated";
         }
         RE::NiTransform gunstockTrackedHandWorld{};
         if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(

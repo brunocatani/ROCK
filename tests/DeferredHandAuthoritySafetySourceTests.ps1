@@ -132,6 +132,9 @@ Require-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandAuthori
 Require-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandAuthority.cpp' `
     'ProviderWeaponCoupled[\s\S]{0,900}isImmediateSuccessor[\s\S]{0,900}transportWeaponPresentationByDriver[\s\S]*providerWeaponCoupled\s*\?[\s\S]{0,180}transportedWeaponWorld' `
     'A weapon-coupled provider claim must restore a controller-transported weapon base instead of the stale pre-hFRIK weapon world.'
+Require-Text 'src/physics-interaction/weapon/authored_grip/AuthoredPrimaryFiringGrip.cpp' `
+    'shouldUsePresentedHandAsWeaponDriver[\s\S]{0,500}weaponCoupledProviderWorldAuthorityActive[\s\S]{0,900}controller-provider-isolated' `
+    'One-hand authored weapon alignment must keep the physical controller as its driver while a deferred weapon-coupled provider hand target wins.'
 Require-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGrip.cpp' `
     'void TwoHandedGrip::reset\(\)[\s\S]*_scopeDeferredHandAuthorityClears\s*=\s*\{\}' `
     'Lifecycle reset must remove every pending deferred scope-hand clear mask.'

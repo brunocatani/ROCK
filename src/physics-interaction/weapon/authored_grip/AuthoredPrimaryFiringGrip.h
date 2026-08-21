@@ -27,6 +27,7 @@ namespace rock
         bool controllerHandWorldValid{ false };
         RE::NiTransform presentedHandWorld{};
         bool presentedHandWorldValid{ false };
+        bool weaponCoupledProviderWorldAuthorityActive{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };

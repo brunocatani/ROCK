@@ -884,6 +884,16 @@ namespace rock
                     rockFiringHandIsLeft),
                 presentedHandWorld) &&
             finiteNiTransform(presentedHandWorld);
+        frik_visual_authority::HandWorldAuthoritySnapshot
+            firingHandWorldWinner{};
+        const bool weaponCoupledProviderWorldAuthorityActive =
+            frik_visual_authority::tryGetPublishedExternalHandWorldWinner(
+                frik_visual_authority::handFromBool(
+                    rockFiringHandIsLeft),
+                firingHandWorldWinner) &&
+            firingHandWorldWinner.role ==
+                frik_visual_authority::HandWorldAuthorityRole::
+                    ProviderWeaponCoupled;
 
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
@@ -896,6 +906,8 @@ namespace rock
             .controllerHandWorldValid = controllerHandWorldValid,
             .presentedHandWorld = presentedHandWorld,
             .presentedHandWorldValid = presentedHandWorldValid,
+            .weaponCoupledProviderWorldAuthorityActive =
+                weaponCoupledProviderWorldAuthorityActive,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
             .localSkeletonReady = runtime.localSkeletonReady,
