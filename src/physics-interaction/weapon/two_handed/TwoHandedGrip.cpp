@@ -1209,9 +1209,18 @@ namespace rock
             true);
         const bool primaryHandIsLeft = _firingHandIsLeft;
         const bool supportHandIsLeft = !_firingHandIsLeft;
-        if (!primaryHandIsLeft) {
-            clearFiringRecoilPresentationState(false);
-        }
+        /*
+         * Gripping -> PrimaryOnly retains the same firing hand and equipped
+         * weapon. Keep the pre-hFRIK recoil reference and an accepted current-
+         * frame ticket across that ownership handoff so hFRIK's hand recoil
+         * and ROCK's terminal weapon recoil finish as one transaction. The
+         * former clear here was correct only while authored right-hand carry
+         * had no controlled weapon-recoil owner: after that owner was added it
+         * split a two-hand shot at support release and let collision authority
+         * retain the hand-only pose. Divergent paths already clear this state
+         * in transitionToInactive, transitionToPartCarry, setFiringHand, reload,
+         * and lifecycle reset.
+         */
 
         if (_state == TwoHandedState::Inactive) {
             RE::NiTransform nativeWeaponLocalBaseline = weaponNode->local;

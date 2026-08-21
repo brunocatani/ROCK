@@ -87,6 +87,12 @@ Require-Text $Root 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandA
 Require-Text $Root 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandAuthority.cpp' `
     'captureFiringRecoilReferenceBeforeFrik[\s\S]*tryResolveControlledFiringRecoilSource[\s\S]*applyFiringWeaponRecoilPresentation[\s\S]*tryResolveControlledFiringRecoilSource[\s\S]*weaponNode\s*!=\s*recoilWeaponNode[\s\S]*currentWeaponGenerationKey\s*!=\s*recoilWeaponGenerationKey' `
     'ROCK must capture and apply right-hand recoil against the same current weapon node and generation source.'
+Require-Text $Root 'src/physics-interaction/weapon/two_handed/TwoHandedGrip.cpp' `
+    'Gripping -> PrimaryOnly retains the same firing hand and equipped[\s\S]{0,700}pre-hFRIK recoil reference[\s\S]{0,500}collision authority[\s\S]{0,500}transitionToInactive[\s\S]{0,300}transitionToPartCarry[\s\S]{0,300}setFiringHand' `
+    'A support-hand release must preserve the same-weapon recoil transaction while documenting every divergent cleanup owner.'
+Reject-Text $Root 'src/physics-interaction/weapon/two_handed/TwoHandedGrip.cpp' `
+    'bool\s+TwoHandedGrip::transitionToPrimaryOnly\([\s\S]{0,1400}clearFiringRecoilPresentationState\(false\)' `
+    'The two-hand to primary-only handoff must not discard the current right-hand recoil ticket before final weapon publication.'
 Require-Text $hfrikRoot 'src/api/FRIKApiV2.h' `
     'struct\s+RecoilSample[\s\S]*structSize[\s\S]*reserved0\[3\][\s\S]*nativeKickLocal[\s\S]*sizeof\(RecoilSample\)\s*==\s*112' `
     'hFRIK must expose only the solve-critical native kick sample.'
