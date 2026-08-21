@@ -798,10 +798,10 @@ namespace rock
 
         /*
          * Contact exclusion and visual attachment are separate contracts. A
-         * just-released support hand no longer follows weapon presentation,
-         * but it stays excluded from the dynamic weapon proxy until it exits
+         * free support hand at a weapon-generation edge, or immediately after
+         * release, stays excluded from the dynamic weapon proxy until it exits
          * the weapon contact region. Generated weapon-contact bodies remain
-         * active, so the hand can re-grab during this exit latch.
+         * active, so the hand can still acquire or re-grab during this latch.
          */
         dynamic_weapon_collision_policy::AttachedHandSelection
         weaponCollisionContactExcludedHands() const
@@ -809,10 +809,10 @@ namespace rock
             auto excluded = weaponCollisionAttachedHands();
             excluded.left =
                 excluded.left ||
-                _weaponCollisionReleaseSuppressions[0].active;
+                _weaponCollisionContactRearms[0].active;
             excluded.right =
                 excluded.right ||
-                _weaponCollisionReleaseSuppressions[1].active;
+                _weaponCollisionContactRearms[1].active;
             return excluded;
         }
 
@@ -1547,10 +1547,11 @@ namespace rock
         void clearDynamicSupportAcquisition(
             const char* reason,
             bool logCancellation);
-        void armWeaponCollisionReleaseSuppression(
+        void armWeaponCollisionContactRearm(
             bool isLeft,
-            std::uint64_t weaponGenerationKey);
-        void updateWeaponCollisionReleaseSuppressions(
+            std::uint64_t weaponGenerationKey,
+            const char* reason);
+        void updateWeaponCollisionContactRearms(
             const WeaponInteractionContact& leftWeaponContact,
             const WeaponInteractionContact& rightWeaponContact,
             std::uint64_t currentWeaponGenerationKey,
@@ -1854,7 +1855,7 @@ namespace rock
         LockedHandVisualLerpState _primaryHandVisualLerp{};
         DynamicSupportAcquisitionState _dynamicSupportAcquisition{};
 
-        struct WeaponCollisionReleaseSuppressionState
+        struct WeaponCollisionContactRearmState
         {
             std::uint64_t weaponGenerationKey = 0;
             float elapsedSeconds = 0.0f;
@@ -1862,11 +1863,12 @@ namespace rock
             bool active = false;
         };
         static constexpr float
-            WEAPON_COLLISION_RELEASE_MINIMUM_SECONDS = 0.20f;
+            WEAPON_COLLISION_CONTACT_REARM_MINIMUM_SECONDS = 0.20f;
         static constexpr std::uint8_t
-            WEAPON_COLLISION_RELEASE_EXIT_FRAMES = 3;
-        std::array<WeaponCollisionReleaseSuppressionState, 2>
-            _weaponCollisionReleaseSuppressions{};
+            WEAPON_COLLISION_CONTACT_REARM_EXIT_FRAMES = 3;
+        std::array<WeaponCollisionContactRearmState, 2>
+            _weaponCollisionContactRearms{};
+        std::uint64_t _weaponCollisionContactGenerationKey = 0;
 
         std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
         std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};

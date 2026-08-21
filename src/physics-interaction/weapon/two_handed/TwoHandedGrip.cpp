@@ -167,7 +167,7 @@ namespace rock
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
         _currentSourceSchedulerSequence = sourceSchedulerSequence;
-        updateWeaponCollisionReleaseSuppressions(
+        updateWeaponCollisionContactRearms(
             leftWeaponContact,
             rightWeaponContact,
             currentWeaponGenerationKey,
@@ -392,9 +392,10 @@ namespace rock
                     supportGripHeld ? "yes" : "no",
                     supportHandHoldingObject ? "yes" : "no",
                     _scopeMenuOpenThisFrame ? "open" : "closed");
-                armWeaponCollisionReleaseSuppression(
+                armWeaponCollisionContactRearm(
                     supportHandIsLeft,
-                    currentWeaponGenerationKey);
+                    currentWeaponGenerationKey,
+                    "support-release");
                 const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(
                     weapon_two_handed_grip_math::SupportReleaseOwnershipInput{
                         .firingGripOwnershipEnabled = handlingSettings.firingGripOwnershipEnabled,
@@ -541,33 +542,51 @@ namespace rock
         traceNativeScopeTransitionFinalState(weaponNode);
     }
 
-    void TwoHandedGrip::armWeaponCollisionReleaseSuppression(
+    void TwoHandedGrip::armWeaponCollisionContactRearm(
         const bool isLeft,
-        const std::uint64_t weaponGenerationKey)
+        const std::uint64_t weaponGenerationKey,
+        const char* reason)
     {
         if (weaponGenerationKey == 0) {
             return;
         }
 
         auto& suppression =
-            _weaponCollisionReleaseSuppressions[isLeft ? 0u : 1u];
+            _weaponCollisionContactRearms[isLeft ? 0u : 1u];
         suppression = {
             .weaponGenerationKey = weaponGenerationKey,
             .active = true,
         };
         ROCK_LOG_DEBUG(
             Weapon,
-            "TwoHandedGrip: dynamic weapon collision release suppression armed hand={} generation={:016X}",
+            "TwoHandedGrip: dynamic weapon collision contact rearm latched hand={} generation={:016X} reason={}",
             isLeft ? "left" : "right",
-            weaponGenerationKey);
+            weaponGenerationKey,
+            reason ? reason : "unknown");
     }
 
-    void TwoHandedGrip::updateWeaponCollisionReleaseSuppressions(
+    void TwoHandedGrip::updateWeaponCollisionContactRearms(
         const WeaponInteractionContact& leftWeaponContact,
         const WeaponInteractionContact& rightWeaponContact,
         const std::uint64_t currentWeaponGenerationKey,
         const float dt)
     {
+        if (currentWeaponGenerationKey == 0) {
+            _weaponCollisionContactGenerationKey = 0;
+            _weaponCollisionContactRearms = {};
+            return;
+        }
+        if (_weaponCollisionContactGenerationKey !=
+            currentWeaponGenerationKey) {
+            _weaponCollisionContactGenerationKey =
+                currentWeaponGenerationKey;
+            _weaponCollisionContactRearms = {};
+            armWeaponCollisionContactRearm(
+                !_firingHandIsLeft,
+                currentWeaponGenerationKey,
+                "weapon-generation");
+        }
+
         const std::array<const WeaponInteractionContact*, 2> contacts{
             &leftWeaponContact,
             &rightWeaponContact,
@@ -578,10 +597,10 @@ namespace rock
                 (1.0f / 90.0f);
 
         for (std::size_t handIndex = 0;
-             handIndex < _weaponCollisionReleaseSuppressions.size();
+             handIndex < _weaponCollisionContactRearms.size();
              ++handIndex) {
             auto& suppression =
-                _weaponCollisionReleaseSuppressions[handIndex];
+                _weaponCollisionContactRearms[handIndex];
             if (!suppression.active) {
                 continue;
             }
@@ -607,13 +626,13 @@ namespace rock
                 continue;
             }
             if (suppression.consecutiveExitFrames <
-                WEAPON_COLLISION_RELEASE_EXIT_FRAMES) {
+                WEAPON_COLLISION_CONTACT_REARM_EXIT_FRAMES) {
                 ++suppression.consecutiveExitFrames;
             }
             if (suppression.elapsedSeconds <
-                    WEAPON_COLLISION_RELEASE_MINIMUM_SECONDS ||
+                    WEAPON_COLLISION_CONTACT_REARM_MINIMUM_SECONDS ||
                 suppression.consecutiveExitFrames <
-                    WEAPON_COLLISION_RELEASE_EXIT_FRAMES) {
+                    WEAPON_COLLISION_CONTACT_REARM_EXIT_FRAMES) {
                 continue;
             }
 
@@ -621,10 +640,10 @@ namespace rock
             suppression = {};
             ROCK_LOG_DEBUG(
                 Weapon,
-                "TwoHandedGrip: dynamic weapon collision release suppression cleared hand={} elapsed={:.3f}s exitFrames={}",
+                "TwoHandedGrip: dynamic weapon collision contact rearmed hand={} elapsed={:.3f}s exitFrames={}",
                 handIndex == 0u ? "left" : "right",
                 completedSeconds,
-                WEAPON_COLLISION_RELEASE_EXIT_FRAMES);
+                WEAPON_COLLISION_CONTACT_REARM_EXIT_FRAMES);
         }
     }
 
@@ -642,7 +661,8 @@ namespace rock
         _preFrikRetainedHandAuthorities = {};
         _independentWeaponPresentationBeforeFrik = {};
         _postFrikNativeRightWeaponLocal = {};
-        _weaponCollisionReleaseSuppressions = {};
+        _weaponCollisionContactRearms = {};
+        _weaponCollisionContactGenerationKey = 0;
         _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
@@ -859,7 +879,7 @@ namespace rock
         clearDynamicSupportAcquisition(
             "new-two-hand-acquisition",
             true);
-        _weaponCollisionReleaseSuppressions = {};
+        _weaponCollisionContactRearms = {};
 
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const bool primaryHandIsLeft = _firingHandIsLeft;
