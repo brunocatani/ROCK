@@ -1116,6 +1116,29 @@ namespace rock
             _firingRecoilAcceptedSequence;
         if (acceptedSequence == 0 ||
             acceptedSequence == _firingRecoilConsumedSequence) {
+            if (_currentSourceSchedulerSequence != 0 &&
+                _firingRecoilCallbackSchedulerSequence ==
+                    _currentSourceSchedulerSequence &&
+                (_firingRecoilCallbackDecision ==
+                        FiringRecoilCallbackDecision::SourceUnavailable ||
+                    _firingRecoilCallbackDecision ==
+                        FiringRecoilCallbackDecision::ReferenceUnavailable)) {
+                ROCK_LOG_SAMPLE_DEBUG(
+                    Weapon,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "TwoHandedGrip: firing recoil rejected before ticket decision={} hand={} currentGeneration={:016X} activeGeneration={:016X} canonicalGeneration={:016X} reference(valid/generation/sequence)={}/{:016X}/{} scheduler={}",
+                    static_cast<unsigned>(_firingRecoilCallbackDecision),
+                    _firingHandIsLeft ? "left" : "right",
+                    currentWeaponGenerationKey,
+                    _activeWeaponGenerationKey,
+                    _rightFiringHandCanonicalGenerationKey,
+                    _hasFiringRecoilReference[_firingHandIsLeft ? 0u : 1u],
+                    _firingRecoilReferenceGenerationKey[
+                        _firingHandIsLeft ? 0u : 1u],
+                    _firingRecoilReferenceSchedulerSequence[
+                        _firingHandIsLeft ? 0u : 1u],
+                    _currentSourceSchedulerSequence);
+            }
             return false;
         }
 
@@ -1127,33 +1150,67 @@ namespace rock
             acceptedHandIsLeft ? 0u : 1u;
         RE::NiNode* recoilWeaponNode = nullptr;
         std::uint64_t recoilWeaponGenerationKey = 0;
-        if (!weaponNode ||
-            currentWeaponGenerationKey == 0 ||
-            !tryResolveControlledFiringRecoilSource(
+        const auto rejectTicket = [&](const char* const reason) {
+            ROCK_LOG_SAMPLE_DEBUG(
+                Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "TwoHandedGrip: firing recoil ticket rejected reason={} hand={} acceptedGeneration={:016X} currentGeneration={:016X} sourceGeneration={:016X} nodeMatch={} reference(valid/generation/preFrik/sequence)={}/{:016X}/{}/{} scheduler={}",
+                reason,
+                acceptedHandIsLeft ? "left" : "right",
+                _firingRecoilAcceptedGenerationKey,
+                currentWeaponGenerationKey,
+                recoilWeaponGenerationKey,
+                weaponNode && weaponNode == recoilWeaponNode,
+                _hasFiringRecoilReference[acceptedHandIndex],
+                _firingRecoilReferenceGenerationKey[acceptedHandIndex],
+                _firingRecoilReferenceCapturedBeforeFrik[acceptedHandIndex],
+                _firingRecoilReferenceSchedulerSequence[acceptedHandIndex],
+                _currentSourceSchedulerSequence);
+            return false;
+        };
+        if (!weaponNode) {
+            return rejectTicket("weapon-missing");
+        }
+        if (currentWeaponGenerationKey == 0) {
+            return rejectTicket("generation-missing");
+        }
+        if (!tryResolveControlledFiringRecoilSource(
                 acceptedHandIsLeft,
                 recoilWeaponNode,
-                recoilWeaponGenerationKey) ||
-            weaponNode != recoilWeaponNode ||
-            currentWeaponGenerationKey != recoilWeaponGenerationKey ||
+                recoilWeaponGenerationKey)) {
+            return rejectTicket("source-unavailable");
+        }
+        if (weaponNode != recoilWeaponNode) {
+            return rejectTicket("weapon-node-mismatch");
+        }
+        if (currentWeaponGenerationKey != recoilWeaponGenerationKey ||
             currentWeaponGenerationKey !=
-                _firingRecoilAcceptedGenerationKey ||
-            acceptedHandIsLeft != _firingHandIsLeft ||
-            !_hasFiringRecoilReference[acceptedHandIndex] ||
+                _firingRecoilAcceptedGenerationKey) {
+            return rejectTicket("generation-mismatch");
+        }
+        if (acceptedHandIsLeft != _firingHandIsLeft) {
+            return rejectTicket("firing-hand-changed");
+        }
+        if (!_hasFiringRecoilReference[acceptedHandIndex] ||
             _firingRecoilReferenceGenerationKey[acceptedHandIndex] !=
                 currentWeaponGenerationKey ||
-            !_firingRecoilReferenceCapturedBeforeFrik[acceptedHandIndex] ||
-            _currentSourceSchedulerSequence == 0 ||
+            !_firingRecoilReferenceCapturedBeforeFrik[acceptedHandIndex]) {
+            return rejectTicket("reference-invalid");
+        }
+        if (_currentSourceSchedulerSequence == 0 ||
             _firingRecoilReferenceSchedulerSequence[acceptedHandIndex] !=
-                _currentSourceSchedulerSequence ||
-            !isFiniteTransform(weaponNode->world)) {
-            return false;
+                _currentSourceSchedulerSequence) {
+            return rejectTicket("scheduler-mismatch");
+        }
+        if (!isFiniteTransform(weaponNode->world)) {
+            return rejectTicket("weapon-transform-invalid");
         }
 
         RE::NiTransform presentedFiringHandWorld{};
         if (!tryGetRootFlattenedHandBoneTransform(
                 acceptedHandIsLeft,
                 presentedFiringHandWorld)) {
-            return false;
+            return rejectTicket("presented-hand-unavailable");
         }
 
         const RE::NiTransform recoilWorldDelta =
@@ -1161,7 +1218,7 @@ namespace rock
                 _firingRecoilReferenceHandWorld[acceptedHandIndex],
                 presentedFiringHandWorld);
         if (!isUsableHandAuthorityTransform(recoilWorldDelta)) {
-            return false;
+            return rejectTicket("recoil-delta-invalid");
         }
 
         const RE::NiTransform recoiledWeaponWorld =
@@ -1169,16 +1226,28 @@ namespace rock
                 recoilWorldDelta,
                 weaponNode->world);
         if (!isFiniteTransform(recoiledWeaponWorld)) {
-            return false;
+            return rejectTicket("recoiled-weapon-invalid");
         }
 
         // This is a terminal presentation overlay, not new collision intent.
         // The collision bodies and muzzle sample the resulting weapon below.
-        return applyWeaponVisualAuthority(
+        const bool applied = applyWeaponVisualAuthority(
             weaponNode,
             recoiledWeaponWorld,
             currentWeaponGenerationKey,
             false);
+        ROCK_LOG_SAMPLE_DEBUG(
+            Weapon,
+            g_rockConfig.rockLogSampleMilliseconds,
+            "TwoHandedGrip: firing recoil weapon publication {} hand={} generation={:016X} deltaT=({:.4f},{:.4f},{:.4f}) scheduler={}",
+            applied ? "applied" : "failed",
+            acceptedHandIsLeft ? "left" : "right",
+            currentWeaponGenerationKey,
+            recoilWorldDelta.translate.x,
+            recoilWorldDelta.translate.y,
+            recoilWorldDelta.translate.z,
+            _currentSourceSchedulerSequence);
+        return applied;
     }
 
     bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
