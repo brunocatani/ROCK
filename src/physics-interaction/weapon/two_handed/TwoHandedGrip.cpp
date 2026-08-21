@@ -26,6 +26,7 @@
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -166,6 +167,11 @@ namespace rock
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
         _currentSourceSchedulerSequence = sourceSchedulerSequence;
+        updateWeaponCollisionReleaseSuppressions(
+            leftWeaponContact,
+            rightWeaponContact,
+            currentWeaponGenerationKey,
+            dt);
         setNativeReloadHandAuthorityActive(
             frameInput.nativeReloadHandAuthorityActive);
         _gunstockFramePresentation = {};
@@ -386,6 +392,9 @@ namespace rock
                     supportGripHeld ? "yes" : "no",
                     supportHandHoldingObject ? "yes" : "no",
                     _scopeMenuOpenThisFrame ? "open" : "closed");
+                armWeaponCollisionReleaseSuppression(
+                    supportHandIsLeft,
+                    currentWeaponGenerationKey);
                 const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(
                     weapon_two_handed_grip_math::SupportReleaseOwnershipInput{
                         .firingGripOwnershipEnabled = handlingSettings.firingGripOwnershipEnabled,
@@ -532,6 +541,93 @@ namespace rock
         traceNativeScopeTransitionFinalState(weaponNode);
     }
 
+    void TwoHandedGrip::armWeaponCollisionReleaseSuppression(
+        const bool isLeft,
+        const std::uint64_t weaponGenerationKey)
+    {
+        if (weaponGenerationKey == 0) {
+            return;
+        }
+
+        auto& suppression =
+            _weaponCollisionReleaseSuppressions[isLeft ? 0u : 1u];
+        suppression = {
+            .weaponGenerationKey = weaponGenerationKey,
+            .active = true,
+        };
+        ROCK_LOG_DEBUG(
+            Weapon,
+            "TwoHandedGrip: dynamic weapon collision release suppression armed hand={} generation={:016X}",
+            isLeft ? "left" : "right",
+            weaponGenerationKey);
+    }
+
+    void TwoHandedGrip::updateWeaponCollisionReleaseSuppressions(
+        const WeaponInteractionContact& leftWeaponContact,
+        const WeaponInteractionContact& rightWeaponContact,
+        const std::uint64_t currentWeaponGenerationKey,
+        const float dt)
+    {
+        const std::array<const WeaponInteractionContact*, 2> contacts{
+            &leftWeaponContact,
+            &rightWeaponContact,
+        };
+        const float elapsedSeconds =
+            std::isfinite(dt) && dt > 0.0f ?
+                std::clamp(dt, 0.0f, 0.1f) :
+                (1.0f / 90.0f);
+
+        for (std::size_t handIndex = 0;
+             handIndex < _weaponCollisionReleaseSuppressions.size();
+             ++handIndex) {
+            auto& suppression =
+                _weaponCollisionReleaseSuppressions[handIndex];
+            if (!suppression.active) {
+                continue;
+            }
+            if (currentWeaponGenerationKey == 0 ||
+                suppression.weaponGenerationKey !=
+                    currentWeaponGenerationKey) {
+                suppression = {};
+                continue;
+            }
+
+            suppression.elapsedSeconds =
+                (std::min)(
+                    suppression.elapsedSeconds + elapsedSeconds,
+                    60.0f);
+            const auto* contact = contacts[handIndex];
+            const bool stillInsideWeaponContact =
+                contact &&
+                contact->valid &&
+                contact->weaponGenerationKey ==
+                    currentWeaponGenerationKey;
+            if (stillInsideWeaponContact) {
+                suppression.consecutiveExitFrames = 0;
+                continue;
+            }
+            if (suppression.consecutiveExitFrames <
+                WEAPON_COLLISION_RELEASE_EXIT_FRAMES) {
+                ++suppression.consecutiveExitFrames;
+            }
+            if (suppression.elapsedSeconds <
+                    WEAPON_COLLISION_RELEASE_MINIMUM_SECONDS ||
+                suppression.consecutiveExitFrames <
+                    WEAPON_COLLISION_RELEASE_EXIT_FRAMES) {
+                continue;
+            }
+
+            const float completedSeconds = suppression.elapsedSeconds;
+            suppression = {};
+            ROCK_LOG_DEBUG(
+                Weapon,
+                "TwoHandedGrip: dynamic weapon collision release suppression cleared hand={} elapsed={:.3f}s exitFrames={}",
+                handIndex == 0u ? "left" : "right",
+                completedSeconds,
+                WEAPON_COLLISION_RELEASE_EXIT_FRAMES);
+        }
+    }
+
     void TwoHandedGrip::reset()
     {
         (void)frik_visual_authority::clearExternalHandWorldTransform(
@@ -546,6 +642,7 @@ namespace rock
         _preFrikRetainedHandAuthorities = {};
         _independentWeaponPresentationBeforeFrik = {};
         _postFrikNativeRightWeaponLocal = {};
+        _weaponCollisionReleaseSuppressions = {};
         _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
@@ -762,6 +859,7 @@ namespace rock
         clearDynamicSupportAcquisition(
             "new-two-hand-acquisition",
             true);
+        _weaponCollisionReleaseSuppressions = {};
 
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const bool primaryHandIsLeft = _firingHandIsLeft;

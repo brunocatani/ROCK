@@ -797,6 +797,26 @@ namespace rock
         }
 
         /*
+         * Contact exclusion and visual attachment are separate contracts. A
+         * just-released support hand no longer follows weapon presentation,
+         * but it stays excluded from the dynamic weapon proxy until it exits
+         * the weapon contact region. Generated weapon-contact bodies remain
+         * active, so the hand can re-grab during this exit latch.
+         */
+        dynamic_weapon_collision_policy::AttachedHandSelection
+        weaponCollisionContactExcludedHands() const
+        {
+            auto excluded = weaponCollisionAttachedHands();
+            excluded.left =
+                excluded.left ||
+                _weaponCollisionReleaseSuppressions[0].active;
+            excluded.right =
+                excluded.right ||
+                _weaponCollisionReleaseSuppressions[1].active;
+            return excluded;
+        }
+
+        /*
          * True while the OPEN firing palm hovers inside the reattach radius
          * during part carry: squeezing the grab right now would re-take the
          * firing grip. Recomputed every update(); PhysicsInteraction consumes
@@ -1527,6 +1547,14 @@ namespace rock
         void clearDynamicSupportAcquisition(
             const char* reason,
             bool logCancellation);
+        void armWeaponCollisionReleaseSuppression(
+            bool isLeft,
+            std::uint64_t weaponGenerationKey);
+        void updateWeaponCollisionReleaseSuppressions(
+            const WeaponInteractionContact& leftWeaponContact,
+            const WeaponInteractionContact& rightWeaponContact,
+            std::uint64_t currentWeaponGenerationKey,
+            float dt);
         [[nodiscard]] bool dynamicSupportAcquisitionMatches(
             bool supportHandIsLeft,
             const WeaponPartGrip& supportGrip) const;
@@ -1825,6 +1853,20 @@ namespace rock
 
         LockedHandVisualLerpState _primaryHandVisualLerp{};
         DynamicSupportAcquisitionState _dynamicSupportAcquisition{};
+
+        struct WeaponCollisionReleaseSuppressionState
+        {
+            std::uint64_t weaponGenerationKey = 0;
+            float elapsedSeconds = 0.0f;
+            std::uint8_t consecutiveExitFrames = 0;
+            bool active = false;
+        };
+        static constexpr float
+            WEAPON_COLLISION_RELEASE_MINIMUM_SECONDS = 0.20f;
+        static constexpr std::uint8_t
+            WEAPON_COLLISION_RELEASE_EXIT_FRAMES = 3;
+        std::array<WeaponCollisionReleaseSuppressionState, 2>
+            _weaponCollisionReleaseSuppressions{};
 
         std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
         std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};

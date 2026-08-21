@@ -172,7 +172,7 @@ namespace rock
         RE::hknpWorld* world)
     {
         const auto attachedHands =
-            _twoHandedGrip.weaponCollisionAttachedHands();
+            _twoHandedGrip.weaponCollisionContactExcludedHands();
         const bool rightHandInteractionEnabled =
             !attachedHands.right;
         const bool leftHandInteractionEnabled =
