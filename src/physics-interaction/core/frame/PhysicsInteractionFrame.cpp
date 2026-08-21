@@ -877,13 +877,6 @@ namespace rock
                 _handBoneCache.getBoneTree(),
                 controllerWand->world,
                 controllerHandWorld);
-        RE::NiTransform presentedHandWorld{};
-        const bool presentedHandWorldValid =
-            frik_visual_authority::tryGetHandWorldTransform(
-                frik_visual_authority::handFromBool(
-                    rockFiringHandIsLeft),
-                presentedHandWorld) &&
-            finiteNiTransform(presentedHandWorld);
         frik_visual_authority::HandWorldAuthoritySnapshot
             firingHandWorldWinner{};
         const bool weaponCoupledProviderWorldAuthorityActive =
@@ -904,8 +897,6 @@ namespace rock
             .weaponInstanceContentKnown = equippedGenerationMatchesForm,
             .controllerHandWorld = controllerHandWorld,
             .controllerHandWorldValid = controllerHandWorldValid,
-            .presentedHandWorld = presentedHandWorld,
-            .presentedHandWorldValid = presentedHandWorldValid,
             .weaponCoupledProviderWorldAuthorityActive =
                 weaponCoupledProviderWorldAuthorityActive,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),

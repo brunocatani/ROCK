@@ -194,23 +194,6 @@ int main()
         return !shouldUseAuthoredFiringGripProbe(input);
     }());
 
-    constexpr AuthoredPrimaryWeaponDriverInput presentedDriverEligible{
-        .authoredFingerPosePublished = true,
-        .presentedHandWorldValid = true,
-    };
-    static_assert(shouldUsePresentedHandAsWeaponDriver(
-        presentedDriverEligible));
-    static_assert([=] {
-        auto input = presentedDriverEligible;
-        input.weaponCoupledProviderWorldAuthorityActive = true;
-        return !shouldUsePresentedHandAsWeaponDriver(input);
-    }());
-    static_assert([=] {
-        auto input = presentedDriverEligible;
-        input.presentedHandWorldValid = false;
-        return !shouldUsePresentedHandAsWeaponDriver(input);
-    }());
-
     constexpr StableAuthoredSupportGripReuseInput stableSupportReusable{
         .snapshotValid = true,
         .weaponNodeValid = true,

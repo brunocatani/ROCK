@@ -451,38 +451,10 @@ namespace rock
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
         RE::NiTransform trackedHandWorld = input.controllerHandWorld;
         bool trackedHandWorldValid = input.controllerHandWorldValid;
-        const char* trackedHandSource = "controller-acquisition";
-        const bool authoredFingerPosePublished =
-            weaponAuthority.hasPublishedAuthoredPrimaryFiringGripFingerPose(
-                input.rockFiringHandIsLeft);
-        const bool presentedHandWorldUsable =
-            input.presentedHandWorldValid &&
-            finiteTransform(input.presentedHandWorld);
-        if (authored_weapon_grip_capture_policy::
-                shouldUsePresentedHandAsWeaponDriver(
-                    authored_weapon_grip_capture_policy::
-                        AuthoredPrimaryWeaponDriverInput{
-                            .authoredFingerPosePublished =
-                                authoredFingerPosePublished,
-                            .presentedHandWorldValid =
-                                presentedHandWorldUsable,
-                            .weaponCoupledProviderWorldAuthorityActive =
-                                input.
-                                    weaponCoupledProviderWorldAuthorityActive,
-                        })) {
-            /*
-             * The blocker was consumed by FRIK before this update, so the
-             * presented wrist is free of FRIK's native per-weapon rotation.
-             * Aligning the native child weapon to that rendered parent keeps
-             * the grip exact without restoring the animation feedback that the
-             * controller-only acquisition frame removed.
-             */
-            trackedHandWorld = input.presentedHandWorld;
-            trackedHandWorldValid = true;
-            trackedHandSource = "presented-pose-blocked";
-        } else if (input.weaponCoupledProviderWorldAuthorityActive) {
-            trackedHandSource = "controller-provider-isolated";
-        }
+        const char* trackedHandSource =
+            input.weaponCoupledProviderWorldAuthorityActive ?
+                "controller-provider-isolated" :
+                "controller-continuous";
         RE::NiTransform gunstockTrackedHandWorld{};
         if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
                 input.weaponNode,

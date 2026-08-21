@@ -25,8 +25,6 @@ namespace rock
         bool weaponInstanceContentKnown{ false };
         RE::NiTransform controllerHandWorld{};
         bool controllerHandWorldValid{ false };
-        RE::NiTransform presentedHandWorld{};
-        bool presentedHandWorldValid{ false };
         bool weaponCoupledProviderWorldAuthorityActive{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
@@ -44,8 +42,10 @@ namespace rock
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
-    // inverts it onto the rendered hand after ROCK's primary-pose blocker has
-    // taken effect. Controller reconstruction is the acquisition fallback.
+    // inverts it onto the physical controller reconstruction every frame.
+    // hFRIK's presented wrist is never a base weapon driver: it can contain a
+    // deferred recoil or IK result from the previous scheduler step. Recoil is
+    // composed later by the shared hand-and-weapon transaction.
     // The paired support relation is captured while Bethesda's native
     // right-primary topology is intact, then republished as a frame-scoped
     // candidate. A fully validated stable snapshot bridges transient
