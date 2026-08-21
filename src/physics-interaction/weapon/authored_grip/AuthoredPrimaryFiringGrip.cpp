@@ -424,6 +424,16 @@ namespace rock
             .weaponDrawn = input.weaponDrawn,
             .weaponVisible = input.weaponVisible,
             .weaponKeyValid = currentWeaponKey != 0,
+            /*
+             * An equip transition can expose the new Weapon node before hFRIK
+             * has rebound its native weapon state. A generated collision
+             * identity is published only after ROCK has observed the stable
+             * equipped node and stack. Do not invert a transitional live-graph
+             * capture onto the controller: that relation survives the later
+             * native bind and produces the delayed initial carry that a first
+             * support-grip cycle happened to clear.
+             */
+            .weaponGenerationReady = input.weaponGenerationKey != 0,
             .captureValid = harvestedRelationAvailable || captureStatus.valid,
             .captureNewerThanWeaponBoundary = harvestedRelationAvailable || captureStatus.captureSequence > _captureSequenceFloor,
             .nativeReloadAuthorityActive = input.nativeReloadAuthorityActive,
