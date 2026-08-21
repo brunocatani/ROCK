@@ -100,16 +100,6 @@ namespace rock
         const std::size_t firingHandIndex = firingHandIsLeft ? 0u : 1u;
         RE::NiNode* recoilWeaponNode = nullptr;
         std::uint64_t recoilWeaponGenerationKey = 0;
-        const RE::NiTransform identity =
-            transform_math::makeIdentityTransform<RE::NiTransform>();
-        self->_nativeRecoilSampleSchedulerSequence =
-            self->_currentSourceSchedulerSequence;
-        self->_nativeRecoilSampleNeutral =
-            self->_currentSourceSchedulerSequence != 0 &&
-            areTransformsNearlyEqual(
-                sample->nativeKickLocal,
-                identity,
-                0.00001f);
         if (!self->tryResolveControlledFiringRecoilSource(
                 firingHandIsLeft,
                 recoilWeaponNode,
@@ -126,6 +116,8 @@ namespace rock
         outResponse->delivery = frik::api::FRIKApiV2::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = sample->nativeKickLocal;
 
+        const RE::NiTransform identity =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
         if (!areTransformsNearlyEqual(
                 sample->nativeKickLocal,
                 identity,
@@ -552,13 +544,12 @@ namespace rock
         _weaponCollisionHandAuthorityGenerationKey = {};
         _preFrikWeaponHandAuthority = {};
         _preFrikRetainedHandAuthorities = {};
+        _independentWeaponPresentationBeforeFrik = {};
         _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
         _nativeReloadHandAuthorityActive = false;
         _nativeReloadSupportHandIsLeft = true;
-        _nativeRecoilSampleSchedulerSequence = 0;
-        _nativeRecoilSampleNeutral = false;
         clearFiringRecoilPresentationState();
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};

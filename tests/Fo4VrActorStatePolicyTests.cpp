@@ -1,5 +1,4 @@
 #include "rock_support/Fo4VrActorStatePolicy.h"
-#include "physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h"
 
 #include <cstdio>
 
@@ -78,64 +77,6 @@ int main()
         !isWeaponMagicDrawn(6) &&
             !isWeaponMagicDrawn(7) &&
             !isWeaponMagicDrawn(kInvalidWeaponState));
-
-    using ReloadInput =
-        rock::native_reload_hand_authority_policy::Input;
-    using ReloadState =
-        rock::native_reload_hand_authority_policy::State;
-    using rock::native_reload_hand_authority_policy::update;
-
-    ReloadState postFire{};
-    ok &= expect("a normal firing state must not reserve the support hand",
-        !update(postFire, ReloadInput{
-            .gunState = 7,
-            .frameIndex = 100,
-            .firingTriggerHeld = true,
-        }));
-    ok &= expect("post-fire state four must not become reload hand authority",
-        !update(postFire, ReloadInput{
-            .gunState = 4,
-            .frameIndex = 101,
-            .firingTriggerHeld = false,
-            .magazineCountKnown = true,
-            .magazineEmpty = false,
-        }));
-    ok &= expect("a post-fire state-four interval must remain excluded",
-        !update(postFire, ReloadInput{
-            .gunState = 4,
-            .frameIndex = 140,
-            .magazineCountKnown = true,
-            .magazineEmpty = false,
-        }));
-
-    ReloadState routedReload{};
-    ok &= expect("a routed reload request must reserve the support hand",
-        update(routedReload, ReloadInput{
-            .gunState = 4,
-            .frameIndex = 200,
-            .reloadDispatchSequence = 1,
-            .magazineCountKnown = true,
-            .magazineEmpty = false,
-        }));
-
-    ReloadState emptyReload{};
-    ok &= expect("an empty-magazine reload must reserve the support hand",
-        update(emptyReload, ReloadInput{
-            .gunState = 4,
-            .frameIndex = 300,
-            .firingTriggerHeld = true,
-            .magazineCountKnown = true,
-            .magazineEmpty = true,
-        }));
-
-    ReloadState providerReload{};
-    ok &= expect("provider arms or hands authority must always win",
-        update(providerReload, ReloadInput{
-            .gunState = 7,
-            .frameIndex = 400,
-            .providerOwnsArmsOrHands = true,
-            .firingTriggerHeld = true,
-        }));
 
     return ok ? 0 : 1;
 }

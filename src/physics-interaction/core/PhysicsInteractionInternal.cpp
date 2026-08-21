@@ -29,6 +29,7 @@
 #include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
+#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/VRControllers.h"
 
@@ -36,68 +37,6 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
-
-namespace rock
-{
-    bool PhysicsInteraction::nativeReloadHandAuthorityActive()
-    {
-        const auto animationAuthorityFlags =
-            provider::currentNativeAnimationAuthorityFlagsV1();
-        const bool providerOwnsArmsOrHands =
-            (animationAuthorityFlags &
-                (authored_weapon_grip_capture_policy::kArms |
-                    authored_weapon_grip_capture_policy::kHands)) != 0;
-
-        const bool firingHandIsLeft =
-            _twoHandedGrip.isFiringHandLeft();
-        const bool firingTriggerHeld =
-            input_remap_runtime::isRawButtonPhysicallyHeld(
-                firingHandIsLeft,
-                input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-
-        const auto* equippedWeaponData =
-            physics_interaction_detail::getValidatedEquippedWeaponData();
-        const auto& runtime = runtime_state::currentFrame();
-        const std::uint32_t gunState =
-            f4vr::getNativeGunState(f4vr::getPlayer());
-        const std::uint64_t reloadDispatchSequence =
-            input_remap_runtime::nativeReloadDispatchSequence();
-        const bool reloadAuthorityActive =
-            native_reload_hand_authority_policy::update(
-            _nativeReloadHandAuthorityState,
-            native_reload_hand_authority_policy::Input{
-                .gunState = gunState,
-                .frameIndex = runtime.frameIndex,
-                .reloadDispatchSequence = reloadDispatchSequence,
-                .providerOwnsArmsOrHands = providerOwnsArmsOrHands,
-                .firingTriggerHeld = firingTriggerHeld,
-                .magazineCountKnown = equippedWeaponData != nullptr,
-                .magazineEmpty = equippedWeaponData &&
-                    equippedWeaponData->ammoCount == 0,
-            });
-        if (firingTriggerHeld &&
-            !_nativeReloadTriggerHeldLastSample) {
-            ROCK_LOG_INFO(
-                Input,
-                "Native fire edge witness: hand={} frame={} gunState={} weaponState={} ammoKnown={} loadedAmmo={} attackState={} providerFlags=0x{:08X} reloadDispatchSequence={} reloadHandAuthority={}",
-                firingHandIsLeft ? "left" : "right",
-                runtime.frameIndex,
-                gunState,
-                f4vr::getNativeWeaponState(f4vr::getPlayer()),
-                equippedWeaponData ? "yes" : "no",
-                equippedWeaponData ? equippedWeaponData->ammoCount : 0,
-                equippedWeaponData ?
-                    static_cast<std::uint32_t>(
-                        equippedWeaponData->attackState) :
-                    0,
-                animationAuthorityFlags,
-                reloadDispatchSequence,
-                reloadAuthorityActive ? "yes" : "no");
-        }
-        _nativeReloadTriggerHeldLastSample = firingTriggerHeld;
-        return reloadAuthorityActive;
-    }
-}
 
 namespace rock::physics_interaction_detail
 {
@@ -240,6 +179,19 @@ namespace rock::physics_interaction_detail
                 f4vr::findNode(firstPersonSkeleton, "Weapon") :
                 nullptr;
         }
+    }
+
+    bool nativeReloadHandAuthorityActive()
+    {
+        const auto animationAuthorityFlags =
+            provider::currentNativeAnimationAuthorityFlagsV1();
+        const bool providerOwnsArmsOrHands =
+            (animationAuthorityFlags &
+                (authored_weapon_grip_capture_policy::kArms |
+                    authored_weapon_grip_capture_policy::kHands)) != 0;
+        return providerOwnsArmsOrHands ||
+               fo4vr_actor_state_policy::isNativeReloading(
+                   f4vr::getNativeGunState(f4vr::getPlayer()));
     }
 
     std::uint32_t claimOwnerCount(std::uint32_t ownerMask)

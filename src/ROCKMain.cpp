@@ -729,6 +729,13 @@ namespace
             s_originalGameLoopFunc(rcx);
         }
 
+        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
+            s_physicsInteraction) {
+            s_physicsInteraction->
+                restoreIndependentWeaponPresentationAfterFrik(
+                    s_preFrikSchedulerSequence);
+        }
+
         rock::provider::refreshNativeAnimationAuthorityLeasesV1();
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::BeforeRock,

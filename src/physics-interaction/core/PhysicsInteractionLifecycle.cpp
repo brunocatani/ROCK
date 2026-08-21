@@ -688,10 +688,6 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Init, "Initializing ROCK physics module...");
-        _nativeReloadHandAuthorityState = {};
-        _nativeReloadHandAuthorityState.observedReloadDispatchSequence =
-            input_remap_runtime::nativeReloadDispatchSequence();
-        _nativeReloadTriggerHeldLastSample = false;
 
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
@@ -930,8 +926,6 @@ namespace rock
         clearEquippedWeaponHandAssignment("physics-shutdown", false);
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _twoHandedGrip.reset();
-        _nativeReloadHandAuthorityState = {};
-        _nativeReloadTriggerHeldLastSample = false;
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
         clearLooseGrenadeRuntimeState();

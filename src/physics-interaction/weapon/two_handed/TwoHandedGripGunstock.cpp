@@ -1750,24 +1750,6 @@ namespace rock
             clearGunstockDedicatedHandAuthority();
             return false;
         }
-        const bool firingParentRebased =
-            rebaseWeaponLocalForDeferredParentHandTarget(
-                weaponNode,
-                firingCorrection.isLeft,
-                firingCorrection.requestedWorld);
-        const bool supportParentRebased =
-            !supportHandParticipates ||
-            rebaseWeaponLocalForDeferredParentHandTarget(
-                weaponNode,
-                supportCorrection.isLeft,
-                supportCorrection.requestedWorld);
-        if (!firingParentRebased || !supportParentRebased) {
-            restoreHandCorrection(supportCorrection);
-            restoreHandCorrection(firingCorrection);
-            clearGunstockDedicatedHandAuthority();
-            return false;
-        }
-
         _gunstockFramePresentation = GunstockFramePresentationState{
             .weaponNodeIdentity = weaponNode,
             .weaponGenerationKey = currentWeaponGenerationKey,

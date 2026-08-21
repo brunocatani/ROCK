@@ -201,6 +201,24 @@ namespace rock
             _weaponCollision.getCurrentWeaponGenerationKey(),
             firingHandIsLeft,
             schedulerSequence);
+        _twoHandedGrip.captureIndependentWeaponPresentationBeforeFrik(
+            resolveEquippedWeaponInteractionNode(),
+            _weaponCollision.getCurrentWeaponGenerationKey(),
+            schedulerSequence);
+    }
+
+    void PhysicsInteraction::restoreIndependentWeaponPresentationAfterFrik(
+        const std::uint64_t schedulerSequence)
+    {
+        if (!_initialized.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        (void)_twoHandedGrip.
+            restoreIndependentWeaponPresentationAfterFrik(
+                resolveEquippedWeaponInteractionNode(),
+                _weaponCollision.getCurrentWeaponGenerationKey(),
+                schedulerSequence);
     }
 
 }

@@ -34,7 +34,6 @@
 #include "physics-interaction/weapon/equip/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/equip/EquippedWeaponTransitionCoordinator.h"
-#include "physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h"
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
@@ -101,6 +100,9 @@ namespace rock
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
         void refreshExternalHandWorldTransformsBeforeFrik(
+            std::uint64_t schedulerSequence);
+
+        void restoreIndependentWeaponPresentationAfterFrik(
             std::uint64_t schedulerSequence);
 
         // Called after provider AfterRock callbacks. Only full native Weapon
@@ -306,8 +308,6 @@ namespace rock
         static RE::hknpWorld* getHknpWorld(RE::bhkWorld* bhk);
 
         PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds);
-
-        [[nodiscard]] bool nativeReloadHandAuthorityActive();
 
         void serviceCollisionLayerDrift(RE::hknpWorld* world);
 
@@ -594,9 +594,6 @@ namespace rock
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
-        native_reload_hand_authority_policy::State
-            _nativeReloadHandAuthorityState{};
-        bool _nativeReloadTriggerHeldLastSample{ false };
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
         bool _fixedFiringHandIsLeft{ false };
         bool _equippedWeaponHandlingModeInitialized{ false };

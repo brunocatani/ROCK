@@ -208,7 +208,6 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
-        std::atomic<std::uint64_t> s_nativeReloadDispatchSequence{ 0 };
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
@@ -1301,16 +1300,10 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
-            const bool dispatched = nativeActionDispatcher(
+            return nativeActionDispatcher(
                 dispatcherObject,
                 kNativeReloadActionId,
                 kNativeActionPriorityQueue);
-            if (dispatched) {
-                s_nativeReloadDispatchSequence.fetch_add(
-                    1,
-                    std::memory_order_acq_rel);
-            }
-            return dispatched;
         }
 
         /*
@@ -2474,12 +2467,6 @@ namespace rock::input_remap_runtime
                 "Dispatched manual-scope short release to equipped weapon reload hand={}",
                 firingHandIsLeft ? "left-X" : "right-A");
         }
-    }
-
-    std::uint64_t nativeReloadDispatchSequence()
-    {
-        return s_nativeReloadDispatchSequence.load(
-            std::memory_order_acquire);
     }
 
     bool isManualScopeActivationRequested()

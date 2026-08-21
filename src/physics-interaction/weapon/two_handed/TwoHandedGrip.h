@@ -714,6 +714,16 @@ namespace rock
             bool firingHandIsLeft,
             std::uint64_t currentSchedulerSequence);
 
+        void captureIndependentWeaponPresentationBeforeFrik(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentSchedulerSequence);
+
+        bool restoreIndependentWeaponPresentationAfterFrik(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentSchedulerSequence);
+
         // Releases persistent collision claims when retained contact
         // presentation ends. Proxy-active free space belongs to the normal
         // per-hand grip/native authority and must not retain this owner.
@@ -726,20 +736,6 @@ namespace rock
         bool applyFiringWeaponRecoilPresentation(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
-
-        /*
-         * True only when hFRIK sampled a neutral native kick after ROCK's
-         * current pre-FRIK publication pass. The authored right-hand alignment
-         * uses this witness before it treats the rendered wrist as a stable
-         * tracking target.
-         */
-        [[nodiscard]] bool currentPresentedFiringHandIsRecoilNeutral() const noexcept
-        {
-            return _currentSourceSchedulerSequence != 0 &&
-                   _nativeRecoilSampleSchedulerSequence ==
-                       _currentSourceSchedulerSequence &&
-                   _nativeRecoilSampleNeutral;
-        }
 
         bool previousWeaponCollisionPresentationWasLive() const
         {
@@ -1421,11 +1417,6 @@ namespace rock
             std::uint64_t authorityGenerationKey = 0,
             bool notifyVisualIntentObserver = true);
 
-        bool rebaseWeaponLocalForDeferredParentHandTarget(
-            RE::NiNode* weaponNode,
-            bool isLeft,
-            const RE::NiTransform& deferredHandWorld);
-
         void clearGunstockDedicatedHandAuthority();
         void observeGunstockWeaponEligibility(
             RE::NiNode* weaponNode,
@@ -1636,9 +1627,6 @@ namespace rock
         std::uint64_t _firingRecoilConsumedSequence{ 0 };
         std::array<bool, 2> _hasFiringRecoilReference{};
         bool _firingRecoilAcceptedHandIsLeft{ false };
-        std::uint64_t _nativeRecoilSampleSchedulerSequence{ 0 };
-        bool _nativeRecoilSampleNeutral{ false };
-
         enum class RightFiringCanonicalSource : std::uint8_t
         {
             None,
@@ -1852,6 +1840,20 @@ namespace rock
         };
         std::array<PreFrikWeaponHandAuthority, 2>
             _preFrikWeaponHandAuthority{};
+        struct IndependentWeaponPresentation
+        {
+            RE::NiTransform weaponWorld{};
+            // These scene pointers live only from ROCK's pre-hFRIK hook to
+            // its post-hFRIK hook in the same game-frame call chain.
+            RE::NiNode* weaponNode = nullptr;
+            RE::NiNode* parentHandNode = nullptr;
+            std::uint64_t weaponGenerationKey = 0;
+            std::uint64_t schedulerSequence = 0;
+            bool parentHandIsLeft = false;
+            bool valid = false;
+        };
+        IndependentWeaponPresentation
+            _independentWeaponPresentationBeforeFrik{};
         enum class RetainedHandAuthorityKind : std::uint8_t
         {
             PrimaryGrip,

@@ -138,26 +138,7 @@ namespace rock
             return true;
         }
 
-        /*
-         * Normal physical-right carry is owned by the authored primary grip
-         * runtime rather than the manual two-hand state machine. It still
-         * needs the same controlled recoil contract as physical-left carry:
-         * hFRIK moves the hand, then ROCK applies that exact world delta to
-         * the identity-bound weapon before collision and muzzle publication.
-         */
-        if (_rightFiringHandCanonicalSource !=
-                RightFiringCanonicalSource::AuthoredAnimation ||
-            !_hasRightFiringHandCanonicalWeaponLocal ||
-            !_rightFiringHandCanonicalWeaponNode ||
-            _rightFiringHandCanonicalGenerationKey == 0 ||
-            _rightFiringHandCanonicalOwnershipKey == 0) {
-            return false;
-        }
-
-        outWeaponNode = _rightFiringHandCanonicalWeaponNode;
-        outWeaponGenerationKey =
-            _rightFiringHandCanonicalGenerationKey;
-        return true;
+        return false;
     }
 
     void TwoHandedGrip::rememberFiringRecoilReference(
@@ -671,37 +652,89 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::rebaseWeaponLocalForDeferredParentHandTarget(
+    void TwoHandedGrip::captureIndependentWeaponPresentationBeforeFrik(
         RE::NiNode* weaponNode,
-        const bool isLeft,
-        const RE::NiTransform& deferredHandWorld)
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentSchedulerSequence)
     {
-        if (!weaponNode || !isFiniteTransform(weaponNode->world) ||
-            !isUsableHandAuthorityTransform(deferredHandWorld)) {
-            return false;
+        _independentWeaponPresentationBeforeFrik = {};
+        if (!weaponNode ||
+            currentWeaponGenerationKey == 0 ||
+            currentSchedulerSequence == 0 ||
+            !isFiniteTransform(weaponNode->world)) {
+            return;
         }
 
-        auto* const handNode = resolveFirstPersonHandNode(isLeft);
-        if (!handNode || weaponNode->parent != handNode) {
+        for (const bool isLeft : { true, false }) {
+            const std::size_t handIndex = isLeft ? 0u : 1u;
+            auto* const handNode = resolveFirstPersonHandNode(isLeft);
+            const auto hand = handFromBool(isLeft);
+            if (!handNode ||
+                weaponNode->parent != handNode ||
+                (!hasVisualAuthorityForHand(isLeft) &&
+                    !_weaponCollisionHandAuthorityLive[handIndex]) ||
+                !frik_visual_authority::
+                    hasPublishedExternalHandWorldTransform(hand)) {
+                continue;
+            }
+
+            _independentWeaponPresentationBeforeFrik = {
+                .weaponWorld = weaponNode->world,
+                .weaponNode = weaponNode,
+                .parentHandNode = handNode,
+                .weaponGenerationKey = currentWeaponGenerationKey,
+                .schedulerSequence = currentSchedulerSequence,
+                .parentHandIsLeft = isLeft,
+                .valid = true,
+            };
+            return;
+        }
+    }
+
+    bool TwoHandedGrip::restoreIndependentWeaponPresentationAfterFrik(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentSchedulerSequence)
+    {
+        const IndependentWeaponPresentation captured =
+            _independentWeaponPresentationBeforeFrik;
+        _independentWeaponPresentationBeforeFrik = {};
+        if (!captured.valid) {
             return true;
         }
 
-        const RE::NiTransform deferredParentLocal =
-            weapon_visual_authority_math::worldTargetToParentLocal(
-                deferredHandWorld,
-                weaponNode->world);
-        if (!isFiniteTransform(deferredParentLocal)) {
+        const auto hand = handFromBool(captured.parentHandIsLeft);
+        const std::size_t handIndex =
+            captured.parentHandIsLeft ? 0u : 1u;
+        auto* const currentParentHand =
+            resolveFirstPersonHandNode(captured.parentHandIsLeft);
+        if (!weaponNode ||
+            weaponNode != captured.weaponNode ||
+            currentWeaponGenerationKey == 0 ||
+            currentWeaponGenerationKey != captured.weaponGenerationKey ||
+            currentSchedulerSequence == 0 ||
+            currentSchedulerSequence != captured.schedulerSequence ||
+            !currentParentHand ||
+            currentParentHand != captured.parentHandNode ||
+            weaponNode->parent != currentParentHand ||
+            (!hasVisualAuthorityForHand(captured.parentHandIsLeft) &&
+                !_weaponCollisionHandAuthorityLive[handIndex]) ||
+            !frik_visual_authority::
+                hasPublishedExternalHandWorldTransform(hand)) {
             return false;
         }
 
-        /*
-         * FRIK V2 consumes the hand target on its next skeleton frame. The
-         * equipped weapon is normally a child of RArm_Hand, so a local derived
-         * from the hand's current world makes that later parent update carry
-         * the weapon a second time. Store the local against the deferred parent
-         * frame while retaining the already-solved weapon world for this frame.
-         */
-        weaponNode->local = deferredParentLocal;
+        if (!moveWeaponPresentationRigidly(
+                weaponNode,
+                captured.weaponWorld)) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "TwoHandedGrip: failed to restore the independent weapon presentation after deferred hFRIK hand solve generation={:016X} hand={}",
+                currentWeaponGenerationKey,
+                captured.parentHandIsLeft ? "left" : "right");
+            return false;
+        }
         return true;
     }
 
@@ -1345,25 +1378,6 @@ namespace rock
             scaleStableResolvedWeaponWorld,
             authorityGenerationKey,
             false);
-        bool deferredParentRebased = weaponPublished;
-        if (weaponPublished) {
-            for (const auto& pulse : pulses) {
-                if (!pulse.requested || !pulse.applied) {
-                    continue;
-                }
-                const bool pulseParentRebased =
-                    rebaseWeaponLocalForDeferredParentHandTarget(
-                        weaponNode,
-                        pulse.isLeft,
-                        pulse.targetWorld);
-                if (!pulseParentRebased) {
-                    (void)clearWeaponCollisionHandAuthority(pulse.isLeft);
-                }
-                deferredParentRebased =
-                    deferredParentRebased && pulseParentRebased;
-            }
-        }
-        handPulsesSucceeded = handPulsesSucceeded && deferredParentRebased;
         if (!weaponPublished || !handPulsesSucceeded) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
@@ -1422,16 +1436,6 @@ namespace rock
         (void)publishAuthoredPrimaryFiringGripFingerPose(_firingHandIsLeft);
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), appliedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
-        if (applied &&
-            !rebaseWeaponLocalForDeferredParentHandTarget(
-                weaponNode,
-                _firingHandIsLeft,
-                appliedFiringHandWorld)) {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(
-                PRIMARY_GRIP_TAG,
-                handFromBool(_firingHandIsLeft));
-            return false;
-        }
         if (applied) {
             recordPreFrikRetainedHandAuthority(
                 RetainedHandAuthorityKind::PrimaryGrip,
@@ -1481,16 +1485,6 @@ namespace rock
                 grip.visualLerp);
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             SUPPORT_GRIP_TAG, handFromBool(isLeft), appliedHandWorld, GRIP_HAND_POSE_PRIORITY);
-        if (applied &&
-            !rebaseWeaponLocalForDeferredParentHandTarget(
-                weaponNode,
-                isLeft,
-                appliedHandWorld)) {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(
-                SUPPORT_GRIP_TAG,
-                handFromBool(isLeft));
-            return false;
-        }
         if (applied) {
             recordPreFrikRetainedHandAuthority(
                 RetainedHandAuthorityKind::SupportGrip,
