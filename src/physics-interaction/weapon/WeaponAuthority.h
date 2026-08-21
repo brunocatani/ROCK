@@ -211,6 +211,27 @@ namespace rock::weapon_visual_authority_math
             makePresentationWorldDelta(oldWeaponWorld, newWeaponWorld),
             presentationWorld);
     }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform transportWeaponPresentationByDriver(
+        const Transform& sourceDriverWorld,
+        const Transform& currentDriverWorld,
+        const Transform& sourceWeaponWorld)
+    {
+        /*
+         * A provider weapon-coupled hand target is expressed from the weapon;
+         * it is not physical controller intent. Carry the weapon by the raw
+         * controller delta first. The later shared recoil transaction applies
+         * only hFRIK's presented-hand delta to this current-frame weapon base.
+         */
+        const Transform driverWorldDelta =
+            transform_math::composeTransforms(
+                currentDriverWorld,
+                transform_math::invertTransform(sourceDriverWorld));
+        return transform_math::composeTransforms(
+            driverWorldDelta,
+            sourceWeaponWorld);
+    }
 }
 
 // ---- NativeScopeRotationMath.h ----

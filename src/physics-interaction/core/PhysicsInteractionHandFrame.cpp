@@ -235,7 +235,9 @@ namespace rock
         _twoHandedGrip.captureIndependentWeaponPresentationBeforeFrik(
             resolveEquippedWeaponInteractionNode(),
             _weaponCollision.getCurrentWeaponGenerationKey(),
-            schedulerSequence);
+            schedulerSequence,
+            leftWeaponHandDriver,
+            rightWeaponHandDriver);
     }
 
     void PhysicsInteraction::restoreIndependentWeaponPresentationAfterFrik(

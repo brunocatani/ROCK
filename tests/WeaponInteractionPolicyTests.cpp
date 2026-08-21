@@ -1749,6 +1749,52 @@ int main()
     }
 
     {
+        TestTransform sourceDriver =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        sourceDriver.translate = { 2.0f, -4.0f, 6.0f };
+        sourceDriver.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            12.0f);
+
+        TestTransform currentDriver = sourceDriver;
+        currentDriver.translate = { 8.0f, 3.0f, 9.0f };
+        currentDriver.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            37.0f);
+
+        TestTransform sourceWeapon =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        sourceWeapon.translate = { 5.0f, 7.0f, 11.0f };
+        sourceWeapon.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            -18.0f);
+
+        const TestTransform transportedWeapon =
+            rock::weapon_visual_authority_math::
+                transportWeaponPresentationByDriver(
+                    sourceDriver,
+                    currentDriver,
+                    sourceWeapon);
+        const TestTransform sourceDriverToWeapon =
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(sourceDriver),
+                sourceWeapon);
+        const TestTransform currentDriverToWeapon =
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(currentDriver),
+                transportedWeapon);
+        ok &= expectTransformNear(
+            "provider weapon transport preserves physical driver relation",
+            currentDriverToWeapon,
+            sourceDriverToWeapon);
+        ok &= expectTrue(
+            "provider weapon transport does not restore the stale weapon world",
+            std::fabs(
+                transportedWeapon.translate.x -
+                sourceWeapon.translate.x) > 1.0f);
+    }
+
+    {
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();

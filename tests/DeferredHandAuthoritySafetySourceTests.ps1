@@ -129,6 +129,9 @@ Require-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGripGunstock.cp
 Require-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandAuthority.cpp' `
     'tryGetPublishedExternalHandWorldWinner[\s\S]{0,300}weaponPresentationFollowsRole[\s\S]*handWorldPublicationSequence' `
     'Weapon recoil and independent restore must validate typed winner role and exact publication sequence.'
+Require-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGripHandAuthority.cpp' `
+    'ProviderWeaponCoupled[\s\S]{0,900}isImmediateSuccessor[\s\S]{0,900}transportWeaponPresentationByDriver[\s\S]*providerWeaponCoupled\s*\?[\s\S]{0,180}transportedWeaponWorld' `
+    'A weapon-coupled provider claim must restore a controller-transported weapon base instead of the stale pre-hFRIK weapon world.'
 Require-Text 'src/physics-interaction/weapon/two_handed/TwoHandedGrip.cpp' `
     'void TwoHandedGrip::reset\(\)[\s\S]*_scopeDeferredHandAuthorityClears\s*=\s*\{\}' `
     'Lifecycle reset must remove every pending deferred scope-hand clear mask.'

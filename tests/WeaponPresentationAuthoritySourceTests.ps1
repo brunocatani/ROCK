@@ -28,6 +28,9 @@ Require-Text $authorityHeader `
 Require-Text $authorityHeader `
     'preserveLiveWeaponWorldScale[\s\S]*result\s*=\s*requestedWeaponWorld[\s\S]*result\.scale\s*=\s*liveWeaponWorld\.scale' `
     'Rigid weapon authority must preserve hFRIK''s live inherited world scale.'
+Require-Text $authorityHeader `
+    'transportWeaponPresentationByDriver[\s\S]*currentDriverWorld[\s\S]*invertTransform\(sourceDriverWorld\)[\s\S]*sourceWeaponWorld' `
+    'A weapon-coupled provider target must transport the weapon base by physical controller motion before deferred presentation and recoil composition.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'WeaponPresentationAuthoritySourceTests failed:' -ForegroundColor Red

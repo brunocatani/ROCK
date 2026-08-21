@@ -686,7 +686,9 @@ namespace rock
     void TwoHandedGrip::captureIndependentWeaponPresentationBeforeFrik(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
-        const std::uint64_t currentSchedulerSequence)
+        const std::uint64_t currentSchedulerSequence,
+        const EquippedWeaponScopeHandDriverFrame& leftHandDriver,
+        const EquippedWeaponScopeHandDriverFrame& rightHandDriver)
     {
         _independentWeaponPresentationBeforeFrik = {};
         if (!weaponNode ||
@@ -712,14 +714,45 @@ namespace rock
                 continue;
             }
 
+            const bool providerWeaponCoupled =
+                winner.role == frik_visual_authority::
+                    HandWorldAuthorityRole::ProviderWeaponCoupled;
+            RE::NiTransform transportedWeaponWorld = weaponNode->world;
+            if (providerWeaponCoupled) {
+                const auto& sourceDriver =
+                    _currentHandDriverFrames[handIndex];
+                const auto& currentDriver = isLeft ?
+                    leftHandDriver :
+                    rightHandDriver;
+                if (!sourceDriver.valid || !currentDriver.valid ||
+                    !prefrik_hand_authority_policy::isImmediateSuccessor(
+                        _currentSourceSchedulerSequence,
+                        currentSchedulerSequence) ||
+                    !isUsableHandAuthorityTransform(sourceDriver.world) ||
+                    !isUsableHandAuthorityTransform(currentDriver.world)) {
+                    continue;
+                }
+                transportedWeaponWorld =
+                    weapon_visual_authority_math::
+                        transportWeaponPresentationByDriver(
+                            sourceDriver.world,
+                            currentDriver.world,
+                            weaponNode->world);
+                if (!isFiniteTransform(transportedWeaponWorld)) {
+                    continue;
+                }
+            }
+
             _independentWeaponPresentationBeforeFrik = {
                 .weaponWorld = weaponNode->world,
+                .transportedWeaponWorld = transportedWeaponWorld,
                 .weaponNode = weaponNode,
                 .parentHandNode = handNode,
                 .weaponGenerationKey = currentWeaponGenerationKey,
                 .schedulerSequence = currentSchedulerSequence,
                 .handWorldPublicationSequence = winner.sequence,
                 .parentHandIsLeft = isLeft,
+                .providerWeaponCoupled = providerWeaponCoupled,
                 .valid = true,
             };
             return;
@@ -763,13 +796,20 @@ namespace rock
             return false;
         }
 
+        const RE::NiTransform& restoredWeaponWorld =
+            captured.providerWeaponCoupled ?
+                captured.transportedWeaponWorld :
+                captured.weaponWorld;
         if (!moveWeaponPresentationRigidly(
                 weaponNode,
-                captured.weaponWorld)) {
+                restoredWeaponWorld)) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
-                "TwoHandedGrip: failed to restore the independent weapon presentation after deferred hFRIK hand solve generation={:016X} hand={}",
+                "TwoHandedGrip: failed to restore the {} weapon presentation after deferred hFRIK hand solve generation={:016X} hand={}",
+                captured.providerWeaponCoupled ?
+                    "controller-transported provider" :
+                    "independent",
                 currentWeaponGenerationKey,
                 captured.parentHandIsLeft ? "left" : "right");
             return false;

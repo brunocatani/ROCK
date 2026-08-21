@@ -718,7 +718,9 @@ namespace rock
         void captureIndependentWeaponPresentationBeforeFrik(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentSchedulerSequence);
+            std::uint64_t currentSchedulerSequence,
+            const EquippedWeaponScopeHandDriverFrame& leftHandDriver,
+            const EquippedWeaponScopeHandDriverFrame& rightHandDriver);
 
         bool restoreIndependentWeaponPresentationAfterFrik(
             RE::NiNode* weaponNode,
@@ -1845,6 +1847,7 @@ namespace rock
         struct IndependentWeaponPresentation
         {
             RE::NiTransform weaponWorld{};
+            RE::NiTransform transportedWeaponWorld{};
             // These scene pointers live only from ROCK's pre-hFRIK hook to
             // its post-hFRIK hook in the same game-frame call chain.
             RE::NiNode* weaponNode = nullptr;
@@ -1853,6 +1856,7 @@ namespace rock
             std::uint64_t schedulerSequence = 0;
             std::uint64_t handWorldPublicationSequence = 0;
             bool parentHandIsLeft = false;
+            bool providerWeaponCoupled = false;
             bool valid = false;
         };
         IndependentWeaponPresentation
