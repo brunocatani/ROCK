@@ -1044,6 +1044,28 @@ namespace rock
     }
 
 
+    bool TwoHandedGrip::tryGetPostFrikNativeRightWeaponLocal(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        RE::NiTransform& outWeaponLocal) const
+    {
+        const auto& captured = _postFrikNativeRightWeaponLocal;
+        if (!captured.valid ||
+            !weaponNode ||
+            captured.weaponNode != weaponNode ||
+            currentWeaponGenerationKey == 0 ||
+            captured.weaponGenerationKey != currentWeaponGenerationKey ||
+            _currentSourceSchedulerSequence == 0 ||
+            captured.schedulerSequence != _currentSourceSchedulerSequence ||
+            !isFiniteTransform(captured.local)) {
+            return false;
+        }
+
+        outWeaponLocal = captured.local;
+        return true;
+    }
+
+
     void TwoHandedGrip::publishCollisionIsolatedRightNativeWeaponIntent(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey)
@@ -1069,10 +1091,16 @@ namespace rock
             return;
         }
 
+        RE::NiTransform nativeWeaponLocal = weaponNode->local;
+        (void)tryGetPostFrikNativeRightWeaponLocal(
+            weaponNode,
+            currentWeaponGenerationKey,
+            nativeWeaponLocal);
+
         const RE::NiTransform requestedWeaponWorld =
             transform_math::composeTransforms(
                 physicalRightHandWorld,
-                weaponNode->local);
+                nativeWeaponLocal);
         const RE::NiTransform scaleStableRequestedWeaponWorld =
             weapon_visual_authority_math::preserveLiveWeaponWorldScale(
                 weaponNode->world,
@@ -1084,10 +1112,13 @@ namespace rock
         /*
          * FRIK has already authored this frame's weapon-local animation, but
          * its parent hand still contains the previous collision presentation.
-         * Preserve the native local animation while replacing only that parent
-         * basis with the collision-isolated physical hand. Later ROCK-owned
-         * grip, return, and gunstock publications naturally supersede this
-         * default intent through the same observer.
+         * The post-FRIK isolation restore rewrites Weapon.local to keep the
+         * weapon world independent of that deferred hand move, so use the
+         * separately captured native local here. Preserve the native animation
+         * while replacing only the parent basis with the collision-isolated
+         * physical hand. Later ROCK-owned grip, return, and gunstock
+         * publications naturally supersede this default intent through the
+         * same observer.
          */
         _weaponVisualIntentObserver(
             _weaponVisualIntentObserverContext,

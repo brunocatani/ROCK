@@ -764,6 +764,7 @@ namespace rock
         const std::uint64_t currentWeaponGenerationKey,
         const std::uint64_t currentSchedulerSequence)
     {
+        _postFrikNativeRightWeaponLocal = {};
         const IndependentWeaponPresentation captured =
             _independentWeaponPresentationBeforeFrik;
         _independentWeaponPresentationBeforeFrik = {};
@@ -794,6 +795,27 @@ namespace rock
             !frik_visual_authority::
                 weaponPresentationFollowsRole(winner.role)) {
             return false;
+        }
+
+        /*
+         * hFRIK has now authored this frame's native Weapon.local, then moved
+         * the complete hand subtree for the deferred external-hand winner.
+         * Restoring the independent weapon world below must rewrite local
+         * against that moved parent. Preserve the authored local first: the
+         * rewritten value is presentation compensation and must never become
+         * the next one-hand collision intent or a two-hand return baseline.
+         * The old immediate hFRIK path excluded Weapon from the hand update,
+         * so this separate value channel was not necessary there.
+         */
+        if (!captured.parentHandIsLeft &&
+            isFiniteTransform(weaponNode->local)) {
+            _postFrikNativeRightWeaponLocal = {
+                .local = weaponNode->local,
+                .weaponNode = weaponNode,
+                .weaponGenerationKey = currentWeaponGenerationKey,
+                .schedulerSequence = currentSchedulerSequence,
+                .valid = true,
+            };
         }
 
         const RE::NiTransform& restoredWeaponWorld =

@@ -545,6 +545,7 @@ namespace rock
         _preFrikWeaponHandAuthority = {};
         _preFrikRetainedHandAuthorities = {};
         _independentWeaponPresentationBeforeFrik = {};
+        _postFrikNativeRightWeaponLocal = {};
         _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
@@ -768,6 +769,11 @@ namespace rock
         if (_returningWeaponVisual.localTransition.active && _returningWeaponVisual.weaponNode == weaponNode) {
             nativeWeaponLocalBaseline = _returningWeaponVisual.nativeBaselineLocal;
             clearWeaponVisualReturn("new-two-hand-acquisition", true, true);
+        } else if (!_firingHandIsLeft) {
+            (void)tryGetPostFrikNativeRightWeaponLocal(
+                weaponNode,
+                decision.weaponGenerationKey,
+                nativeWeaponLocalBaseline);
         }
 
         /*
@@ -1227,6 +1233,11 @@ namespace rock
             if (_returningWeaponVisual.localTransition.active && _returningWeaponVisual.weaponNode == weaponNode) {
                 nativeWeaponLocalBaseline = _returningWeaponVisual.nativeBaselineLocal;
                 clearWeaponVisualReturn("new-primary-acquisition", true, true);
+            } else if (!_firingHandIsLeft) {
+                (void)tryGetPostFrikNativeRightWeaponLocal(
+                    weaponNode,
+                    currentWeaponGenerationKey,
+                    nativeWeaponLocalBaseline);
             }
             _activeWeaponNode = weaponNode;
             _activeWeaponGenerationKey = currentWeaponGenerationKey;

@@ -1570,6 +1570,10 @@ namespace rock
         void publishCollisionIsolatedRightNativeWeaponIntent(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
+        [[nodiscard]] bool tryGetPostFrikNativeRightWeaponLocal(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            RE::NiTransform& outWeaponLocal) const;
         void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);
         [[nodiscard]] bool tryGetSolverHandTransform(
             bool isLeft,
@@ -1861,6 +1865,19 @@ namespace rock
         };
         IndependentWeaponPresentation
             _independentWeaponPresentationBeforeFrik{};
+        struct PostFrikNativeRightWeaponLocal
+        {
+            RE::NiTransform local{};
+            // The node is retained only through the matching main-frame
+            // update. Identity, generation, and scheduler checks reject any
+            // later use after an equip or scene transition.
+            RE::NiNode* weaponNode = nullptr;
+            std::uint64_t weaponGenerationKey = 0;
+            std::uint64_t schedulerSequence = 0;
+            bool valid = false;
+        };
+        PostFrikNativeRightWeaponLocal
+            _postFrikNativeRightWeaponLocal{};
         enum class RetainedHandAuthorityKind : std::uint8_t
         {
             PrimaryGrip,
