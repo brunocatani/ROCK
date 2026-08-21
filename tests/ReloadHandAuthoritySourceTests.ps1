@@ -47,10 +47,25 @@ function Require-Order(
 
 
 $actorState = 'src/rock_support/Fo4VrActorStatePolicy.h'
+$reloadPolicy = 'src/physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h'
+$interaction = 'src/physics-interaction/core/PhysicsInteractionInternal.cpp'
+$inputRuntime = 'src/physics-interaction/input/InputRemapRuntime.cpp'
 
 Require-Pattern $actorState `
     'kReloadingGunState\s*=\s*4[\s\S]*isNativeReloading\([\s\S]*gunState\s*==\s*kReloadingGunState' `
     'Reload ownership must use the verified native gun-state value instead of a CommonLib bitfield.'
+Require-Pattern $reloadPolicy `
+    'enteredFromFire[\s\S]*explicitReloadPending[\s\S]*automaticEmptyReload[\s\S]*!enteredFromFire' `
+    'Post-fire state four must be separated from routed, empty-magazine, and independent native reloads.'
+Require-Pattern $reloadPolicy `
+    'providerOwnsArmsOrHands\s*\|\|[\r\n\s]*state\.rawReloadOwnsSupportHand' `
+    'Explicit provider arms or hands authority must remain the highest-priority reload handoff.'
+Require-Pattern $inputRuntime `
+    'nativeActionDispatcher\([\s\S]*s_nativeReloadDispatchSequence\.fetch_add' `
+    'Only an accepted native reload dispatch may publish the explicit reload witness.'
+Require-Pattern $interaction `
+    'native_reload_hand_authority_policy::update\([\s\S]*nativeReloadDispatchSequence\(\)[\s\S]*ammoCount\s*==\s*0' `
+    'The shared pre-FRIK and physics-frame predicate must classify state four with reload, firing, and magazine evidence.'
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

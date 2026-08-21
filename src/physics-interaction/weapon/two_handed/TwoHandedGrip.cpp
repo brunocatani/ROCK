@@ -110,12 +110,6 @@ namespace rock
                 sample->nativeKickLocal,
                 identity,
                 0.00001f);
-        self->_firingRecoilCallbackSchedulerSequence =
-            self->_currentSourceSchedulerSequence;
-        self->_firingRecoilCallbackDecision =
-            self->_nativeRecoilSampleNeutral ?
-            FiringRecoilCallbackDecision::Neutral :
-            FiringRecoilCallbackDecision::SourceUnavailable;
         if (!self->tryResolveControlledFiringRecoilSource(
                 firingHandIsLeft,
                 recoilWeaponNode,
@@ -124,11 +118,6 @@ namespace rock
                 (!self->_hasFiringRecoilReference[firingHandIndex] ||
                     self->_firingRecoilReferenceGenerationKey[firingHandIndex] !=
                         recoilWeaponGenerationKey))) {
-            if (!self->_nativeRecoilSampleNeutral &&
-                recoilWeaponGenerationKey != 0) {
-                self->_firingRecoilCallbackDecision =
-                    FiringRecoilCallbackDecision::ReferenceUnavailable;
-            }
             return false;
         }
 
@@ -141,8 +130,6 @@ namespace rock
                 sample->nativeKickLocal,
                 identity,
                 0.00001f)) {
-            self->_firingRecoilCallbackDecision =
-                FiringRecoilCallbackDecision::Accepted;
             // FRIK invokes this callback synchronously on its game update
             // thread. Publish only a value ticket here; scene-node mutation
             // remains in ROCK's later presentation phase as required by the
@@ -572,9 +559,6 @@ namespace rock
         _nativeReloadSupportHandIsLeft = true;
         _nativeRecoilSampleSchedulerSequence = 0;
         _nativeRecoilSampleNeutral = false;
-        _firingRecoilCallbackSchedulerSequence = 0;
-        _firingRecoilCallbackDecision =
-            FiringRecoilCallbackDecision::NoSample;
         clearFiringRecoilPresentationState();
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};

@@ -1639,19 +1639,6 @@ namespace rock
         std::uint64_t _nativeRecoilSampleSchedulerSequence{ 0 };
         bool _nativeRecoilSampleNeutral{ false };
 
-        enum class FiringRecoilCallbackDecision : std::uint8_t
-        {
-            NoSample,
-            Neutral,
-            SourceUnavailable,
-            ReferenceUnavailable,
-            Accepted,
-        };
-        std::uint64_t _firingRecoilCallbackSchedulerSequence{ 0 };
-        FiringRecoilCallbackDecision _firingRecoilCallbackDecision{
-            FiringRecoilCallbackDecision::NoSample
-        };
-
         enum class RightFiringCanonicalSource : std::uint8_t
         {
             None,

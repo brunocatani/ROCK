@@ -29,7 +29,6 @@
 #include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
-#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/VRControllers.h"
 
@@ -37,6 +36,45 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
+
+namespace rock
+{
+    bool PhysicsInteraction::nativeReloadHandAuthorityActive()
+    {
+        const auto animationAuthorityFlags =
+            provider::currentNativeAnimationAuthorityFlagsV1();
+        const bool providerOwnsArmsOrHands =
+            (animationAuthorityFlags &
+                (authored_weapon_grip_capture_policy::kArms |
+                    authored_weapon_grip_capture_policy::kHands)) != 0;
+
+        const bool firingHandIsLeft =
+            _twoHandedGrip.isFiringHandLeft();
+        const bool firingTriggerHeld =
+            input_remap_runtime::isRawButtonPhysicallyHeld(
+                firingHandIsLeft,
+                input_remap_policy::kOpenVrSteamVrTriggerButtonId);
+
+        const auto* equippedWeaponData =
+            physics_interaction_detail::getValidatedEquippedWeaponData();
+        const auto& runtime = runtime_state::currentFrame();
+        return native_reload_hand_authority_policy::update(
+            _nativeReloadHandAuthorityState,
+            native_reload_hand_authority_policy::Input{
+                .gunState =
+                    f4vr::getNativeGunState(f4vr::getPlayer()),
+                .frameIndex = runtime.frameIndex,
+                .reloadDispatchSequence =
+                    input_remap_runtime::
+                        nativeReloadDispatchSequence(),
+                .providerOwnsArmsOrHands = providerOwnsArmsOrHands,
+                .firingTriggerHeld = firingTriggerHeld,
+                .magazineCountKnown = equippedWeaponData != nullptr,
+                .magazineEmpty = equippedWeaponData &&
+                    equippedWeaponData->ammoCount == 0,
+            });
+    }
+}
 
 namespace rock::physics_interaction_detail
 {
@@ -179,19 +217,6 @@ namespace rock::physics_interaction_detail
                 f4vr::findNode(firstPersonSkeleton, "Weapon") :
                 nullptr;
         }
-    }
-
-    bool nativeReloadHandAuthorityActive()
-    {
-        const auto animationAuthorityFlags =
-            provider::currentNativeAnimationAuthorityFlagsV1();
-        const bool providerOwnsArmsOrHands =
-            (animationAuthorityFlags &
-                (authored_weapon_grip_capture_policy::kArms |
-                    authored_weapon_grip_capture_policy::kHands)) != 0;
-        return providerOwnsArmsOrHands ||
-               fo4vr_actor_state_policy::isNativeReloading(
-                   f4vr::getNativeGunState(f4vr::getPlayer()));
     }
 
     std::uint32_t claimOwnerCount(std::uint32_t ownerMask)
