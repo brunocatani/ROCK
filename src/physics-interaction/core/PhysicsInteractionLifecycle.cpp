@@ -691,6 +691,7 @@ namespace rock
         _nativeReloadHandAuthorityState = {};
         _nativeReloadHandAuthorityState.observedReloadDispatchSequence =
             input_remap_runtime::nativeReloadDispatchSequence();
+        _nativeReloadTriggerHeldLastSample = false;
 
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
@@ -930,6 +931,7 @@ namespace rock
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _twoHandedGrip.reset();
         _nativeReloadHandAuthorityState = {};
+        _nativeReloadTriggerHeldLastSample = false;
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
         clearLooseGrenadeRuntimeState();

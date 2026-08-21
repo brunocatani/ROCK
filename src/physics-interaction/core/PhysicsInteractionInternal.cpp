@@ -58,21 +58,44 @@ namespace rock
         const auto* equippedWeaponData =
             physics_interaction_detail::getValidatedEquippedWeaponData();
         const auto& runtime = runtime_state::currentFrame();
-        return native_reload_hand_authority_policy::update(
+        const std::uint32_t gunState =
+            f4vr::getNativeGunState(f4vr::getPlayer());
+        const std::uint64_t reloadDispatchSequence =
+            input_remap_runtime::nativeReloadDispatchSequence();
+        const bool reloadAuthorityActive =
+            native_reload_hand_authority_policy::update(
             _nativeReloadHandAuthorityState,
             native_reload_hand_authority_policy::Input{
-                .gunState =
-                    f4vr::getNativeGunState(f4vr::getPlayer()),
+                .gunState = gunState,
                 .frameIndex = runtime.frameIndex,
-                .reloadDispatchSequence =
-                    input_remap_runtime::
-                        nativeReloadDispatchSequence(),
+                .reloadDispatchSequence = reloadDispatchSequence,
                 .providerOwnsArmsOrHands = providerOwnsArmsOrHands,
                 .firingTriggerHeld = firingTriggerHeld,
                 .magazineCountKnown = equippedWeaponData != nullptr,
                 .magazineEmpty = equippedWeaponData &&
                     equippedWeaponData->ammoCount == 0,
             });
+        if (firingTriggerHeld &&
+            !_nativeReloadTriggerHeldLastSample) {
+            ROCK_LOG_INFO(
+                Input,
+                "Native fire edge witness: hand={} frame={} gunState={} weaponState={} ammoKnown={} loadedAmmo={} attackState={} providerFlags=0x{:08X} reloadDispatchSequence={} reloadHandAuthority={}",
+                firingHandIsLeft ? "left" : "right",
+                runtime.frameIndex,
+                gunState,
+                f4vr::getNativeWeaponState(f4vr::getPlayer()),
+                equippedWeaponData ? "yes" : "no",
+                equippedWeaponData ? equippedWeaponData->ammoCount : 0,
+                equippedWeaponData ?
+                    static_cast<std::uint32_t>(
+                        equippedWeaponData->attackState) :
+                    0,
+                animationAuthorityFlags,
+                reloadDispatchSequence,
+                reloadAuthorityActive ? "yes" : "no");
+        }
+        _nativeReloadTriggerHeldLastSample = firingTriggerHeld;
+        return reloadAuthorityActive;
     }
 }
 

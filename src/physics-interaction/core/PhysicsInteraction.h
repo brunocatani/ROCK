@@ -596,6 +596,7 @@ namespace rock
         TwoHandedGrip _twoHandedGrip;
         native_reload_hand_authority_policy::State
             _nativeReloadHandAuthorityState{};
+        bool _nativeReloadTriggerHeldLastSample{ false };
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
         bool _fixedFiringHandIsLeft{ false };
         bool _equippedWeaponHandlingModeInitialized{ false };
