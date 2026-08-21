@@ -994,10 +994,14 @@ namespace rock
             .manualScopeActivationRequested = manualScopeActivationRequested,
             .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
             .nativeScopeRequestActive = nativeScopeRequestActive,
+            .providerAnimationBoundaryActive =
+                frame.providerAnimationBoundaryActive,
             .nativeReloadHandAuthorityActive =
-                frame.reloadBoundaryActive,
+                frame.nativeReloadHandAuthorityActive,
             .gunstockPresentationBlocked =
-                frame.menuBlocked || frame.reloadBoundaryActive,
+                frame.menuBlocked ||
+                frame.providerAnimationBoundaryActive ||
+                frame.nativeReloadHandAuthorityActive,
             .leftHandDriverFrame = leftHandDriverFrame,
             .rightHandDriverFrame = rightHandDriverFrame,
             .leftScopeHandDriverFrame = leftScopeHandDriverFrame,
@@ -1035,9 +1039,12 @@ namespace rock
                  _twoHandedGrip.isFiringHandLeft(),
                  input_remap_policy::
                      kOpenVrSteamVrTriggerButtonId) ||
-                frame.reloadBoundaryActive);
+                 frame.providerAnimationBoundaryActive ||
+                 frame.nativeReloadHandAuthorityActive);
         const bool gunstockPresentationBlocked =
-            frame.menuBlocked || frame.reloadBoundaryActive;
+            frame.menuBlocked ||
+            frame.providerAnimationBoundaryActive ||
+            frame.nativeReloadHandAuthorityActive;
         _twoHandedGrip.prepareGunstockAlignmentDebugSnapshot(
             weaponNode,
             gunstockProjectileNode,

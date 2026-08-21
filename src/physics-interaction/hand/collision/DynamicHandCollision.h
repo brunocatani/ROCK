@@ -90,6 +90,7 @@ namespace rock
             bool rightVisualReturnActive,
             bool leftVisualReturnActive);
         void refreshContactVisualAuthorityBeforeFrik(
+            RE::hknpWorld* world,
             std::uint64_t currentSchedulerSequence,
             bool rightRawHandValid,
             const RE::NiTransform& rightRawHandWorld,

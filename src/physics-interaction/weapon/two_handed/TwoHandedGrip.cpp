@@ -166,7 +166,8 @@ namespace rock
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
         _currentSourceSchedulerSequence = sourceSchedulerSequence;
-        setNativeReloadHandAuthorityActive(
+        setHandAnimationAuthorityBoundaries(
+            frameInput.providerAnimationBoundaryActive,
             frameInput.nativeReloadHandAuthorityActive);
         _gunstockFramePresentation = {};
         observeGunstockWeaponEligibility(
@@ -305,7 +306,7 @@ namespace rock
             weaponCollision,
             false);
         const bool supportTouchingSupport =
-            !_nativeReloadHandAuthorityActive &&
+            !handAnimationAuthorityBoundaryActive() &&
             decision.kind == WeaponInteractionKind::SupportGrip;
         RE::NiNode* interactionWeaponNode = sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
@@ -375,7 +376,7 @@ namespace rock
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: releasing support grip to recapture under newly matched provider weapon-part target");
                 transitionToInactive(ownsWeaponTransform());
             } else if (!supportRuntimeState.supportGripAllowed &&
-                       !_nativeReloadHandAuthorityActive) {
+                       !handAnimationAuthorityBoundaryActive()) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
                 transitionToInactive(false);
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
@@ -548,8 +549,9 @@ namespace rock
         _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
+        _providerAnimationBoundaryActive = false;
         _nativeReloadHandAuthorityActive = false;
-        _nativeReloadSupportHandIsLeft = true;
+        _handAnimationAuthoritySupportHandIsLeft = true;
         clearFiringRecoilPresentationState();
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};
@@ -583,6 +585,7 @@ namespace rock
         _nativeScopeTransitionFinalTraceSequence = 0;
         _nativeScopeTransitionFinalTraceSample = 0;
         _nativeScopeTransitionFinalTracePending = false;
+        _scopeDeferredHandAuthorityClears = {};
         _scopeHandAuthorityPublishedThisFrame = {};
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);

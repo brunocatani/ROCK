@@ -283,29 +283,6 @@ namespace rock
             }
     
             if (sourceOwned) {
-                ROCK_LOG_INFO(Hand,
-                    "{} ANCHOR_CLOCK stage=preFrik seq={} room=({:.2f},{:.2f},{:.2f}) roomYaw={:.3f} rawHand=({:.2f},{:.2f},{:.2f}) rawVsProducer={:.3f}gu roomVsProducer={:.3f}gu heldNode=({:.2f},{:.2f},{:.2f}) heldVsLastWrite={:.3f}gu repubHand=({:.2f},{:.2f},{:.2f}) freshPair={} intraMotion={:.3f}gu",
-                    handName(),
-                    schedulerSequence,
-                    anchorProbeRoom.position.x,
-                    anchorProbeRoom.position.y,
-                    anchorProbeRoom.position.z,
-                    anchorProbeRoom.yawDegrees,
-                    rawHandWorld.translate.x,
-                    rawHandWorld.translate.y,
-                    rawHandWorld.translate.z,
-                    anchorProbeRawVsProducer,
-                    anchorProbeRoomVsProducer,
-                    heldNodeWorld.translate.x,
-                    heldNodeWorld.translate.y,
-                    heldNodeWorld.translate.z,
-                    anchorProbeHeldVsLastWrite,
-                    publishedHandWorld.translate.x,
-                    publishedHandWorld.translate.y,
-                    publishedHandWorld.translate.z,
-                    freshPairApplied ? "yes" : "no",
-                    intraFrameHandMotionGameUnits);
-    
                 rock::debug::RockGrabClockStagePreFrikV1 grabClockPreFrikSample{};
                 grabClockPreFrikSample.schedulerSequence = schedulerSequence;
                 assignGrabClockFeedVec(grabClockPreFrikSample.roomPos, anchorProbeRoom.position);

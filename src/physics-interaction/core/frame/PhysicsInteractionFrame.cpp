@@ -149,7 +149,10 @@ namespace rock
         frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);
         frame.worldReady = bhk && hknp;
         frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
-        frame.reloadBoundaryActive = nativeReloadHandAuthorityActive();
+        frame.providerAnimationBoundaryActive =
+            providerHandAnimationAuthorityActive();
+        frame.nativeReloadHandAuthorityActive =
+            _nativeReloadHandAuthorityActive;
     
         if (auto* player = RE::PlayerCharacter::GetSingleton()) {
             (void)player;
@@ -437,7 +440,7 @@ namespace rock
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
             const bool rebuilt =
-                !frame.reloadBoundaryActive &&
+                !frame.providerAnimationBoundaryActive &&
                 rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch");
             if (rebuilt) {
                 observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
@@ -446,7 +449,7 @@ namespace rock
                 ROCK_LOG_SAMPLE_DEBUG(Update,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "ROCK lifecycle generated-body rebuild pending: animationBoundary={} flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
-                    frame.reloadBoundaryActive ? "yes" : "no",
+                    frame.providerAnimationBoundaryActive ? "yes" : "no",
                     _lifecycleFlagsAtomic.load(std::memory_order_acquire),
                     _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
                     _worldGenerationAtomic.load(std::memory_order_acquire),

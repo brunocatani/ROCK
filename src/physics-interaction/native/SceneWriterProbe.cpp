@@ -7,6 +7,7 @@
 
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiCollisionObject.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
 #include "REL/Relocation.h"
 
 #include <array>
@@ -14,7 +15,6 @@
 #include <cmath>
 #include <cstring>
 #include <intrin.h>
-#include <windows.h>
 
 namespace rock::scene_writer_probe
 {
@@ -40,6 +40,8 @@ namespace rock::scene_writer_probe
         constexpr std::size_t kWriterInputFloats = 15;
         constexpr std::size_t kTranslateXIndex = 12;
         constexpr std::size_t kTranslateZIndex = 14;
+        constexpr float kMaxAnchorRootShiftGameUnits = 35.0f;
+        constexpr float kMaxYawDeltaRadians = 0.35f;
 
         using SceneWriterFn = void(__fastcall*)(void* collisionObject, float* transform);
 
@@ -61,44 +63,74 @@ namespace rock::scene_writer_probe
         std::atomic<std::uint64_t> s_syncDivergenceSkips{ 0 };
         std::atomic<std::uint64_t> s_syncRebasedCalls{ 0 };
         std::atomic<std::uint64_t> s_syncRebaseSkips{ 0 };
+        std::atomic<std::uint32_t> s_activeHookReaders{ 0 };
 
         /*
-         * Seqlock-style per-hand slot: the game thread publishes with
-         * generation odd->write->even; the hook takes one stable snapshot or
-         * skips. A missed match during the two-store window only delays the
-         * next capture by one writer call; it can never tear a pointer read.
+         * All hook-visible fields are atomic. The generation counter adds a
+         * coherent multi-field snapshot without relying on a C++ data race.
+         * The active flag is published last and cleared first.
          */
         struct alignas(64) HandSlot
         {
+            std::atomic<bool> active{ false };
             std::atomic<std::uint32_t> generation{ 0 };
-            const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
-            std::uint32_t collisionObjectCount = 0;
-            RE::hknpWorld* world = nullptr;
-            const RE::NiAVObject* roomNode = nullptr;
-            std::uint32_t bodyId = 0x7FFF'FFFF;
-            float havokToGame = 0.0f;
-            std::uint64_t traceId = 0;
-            std::atomic<std::uint64_t> lastFullLogTraceId{ 0 };
+            std::array<std::atomic<const RE::NiCollisionObject*>, kMaxTrackedCollisionObjects>
+                collisionObjects{};
+            std::atomic<std::uint32_t> collisionObjectCount{ 0 };
+            std::atomic<const RE::NiAVObject*> roomNode{ nullptr };
+            std::atomic<std::uint64_t> traceId{ 0 };
         };
 
         HandSlot s_slots[2];
+        RE::NiPointer<RE::NiAVObject> s_roomNodeOwners[2];
+        RE::NiPointer<RE::NiAVObject> s_retiredRoomNodeOwners[2];
 
-        /*
-         * The anchor gets its own seqlock so the twice-per-frame game-thread
-         * publish never invalidates the rarely-written registration slot.
-         * Layout matches the writer input: 3 rows of 4 floats, then translate.
-         */
         struct alignas(64) AnchorSlot
         {
             std::atomic<std::uint32_t> generation{ 0 };
-            float rotationRows[12] = {};
-            float translate[3] = {};
-            AnchorRootSample sourceRoot{};
-            std::uint8_t stage = 0;
-            bool valid = false;
+            std::array<std::atomic<float>, 12> rotationRows{};
+            std::array<std::atomic<float>, 3> translate{};
+            std::array<std::atomic<float>, 3> sourceRootPositionHavok{};
+            std::atomic<std::uintptr_t> sourceRootControllerIdentity{ 0 };
+            std::atomic<float> sourceRootHavokToGame{ 0.0f };
+            std::atomic<bool> sourceRootValid{ false };
+            std::array<std::atomic<float>, 3> sourceRoomPositionGame{};
+            std::atomic<float> sourceRoomYawRadians{ 0.0f };
+            std::atomic<bool> sourceRoomValid{ false };
+            std::atomic<std::uint8_t> stage{ 0 };
+            std::atomic<bool> valid{ false };
         };
 
         AnchorSlot s_anchorSlots[2];
+
+        struct alignas(64) HookConfigSlot
+        {
+            std::atomic<std::uint32_t> generation{ 0 };
+            std::atomic<bool> syncEnabled{ false };
+            std::atomic<float> fullGapGameUnits{ 4.0f };
+            std::atomic<float> solverGapGameUnits{ 15.0f };
+            std::atomic<float> offsetZGameUnits{ 0.0f };
+            std::atomic<bool> valid{ false };
+        };
+
+        HookConfigSlot s_hookConfig;
+
+        static_assert(std::atomic<bool>::is_always_lock_free);
+        static_assert(std::atomic<float>::is_always_lock_free);
+        static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+        static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
+        static_assert(
+            std::atomic<const RE::NiAVObject*>::is_always_lock_free);
+        static_assert(
+            std::atomic<const RE::NiCollisionObject*>::is_always_lock_free);
+
+        struct SlotSnapshot
+        {
+            const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
+            std::uint32_t collisionObjectCount = 0;
+            const RE::NiAVObject* roomNode = nullptr;
+            std::uint64_t traceId = 0;
+        };
 
         struct AnchorSnapshot
         {
@@ -108,56 +140,159 @@ namespace rock::scene_writer_probe
             std::uint8_t stage = 0;
         };
 
-        bool tryReadAnchor(AnchorSlot& slot, AnchorSnapshot& out)
+        struct HookConfigSnapshot
         {
-            const std::uint32_t before = slot.generation.load(std::memory_order_acquire);
-            if ((before & 1u) != 0 || !slot.valid) {
-                return false;
-            }
-            std::memcpy(out.rotationRows, slot.rotationRows, sizeof(out.rotationRows));
-            out.translate[0] = slot.translate[0];
-            out.translate[1] = slot.translate[1];
-            out.translate[2] = slot.translate[2];
-            out.sourceRoot = slot.sourceRoot;
-            out.stage = slot.stage;
-            std::atomic_thread_fence(std::memory_order_acquire);
-            return slot.generation.load(std::memory_order_acquire) == before;
-        }
-
-        // A one-frame root step above this is a teleport/recenter, not motion.
-        constexpr float kMaxAnchorRootShiftGameUnits = 35.0f;
-
-        struct SlotSnapshot
-        {
-            const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
-            std::uint32_t collisionObjectCount = 0;
-            RE::hknpWorld* world = nullptr;
-            const RE::NiAVObject* roomNode = nullptr;
-            std::uint32_t bodyId = 0x7FFF'FFFF;
-            float havokToGame = 0.0f;
-            std::uint64_t traceId = 0;
+            bool syncEnabled = false;
+            float fullGapGameUnits = 4.0f;
+            float solverGapGameUnits = 15.0f;
+            float offsetZGameUnits = 0.0f;
         };
+
+        class HookReaderGuard
+        {
+        public:
+            HookReaderGuard()
+            {
+                s_activeHookReaders.fetch_add(1, std::memory_order_acq_rel);
+            }
+
+            ~HookReaderGuard()
+            {
+                s_activeHookReaders.fetch_sub(1, std::memory_order_acq_rel);
+            }
+
+            HookReaderGuard(const HookReaderGuard&) = delete;
+            HookReaderGuard& operator=(const HookReaderGuard&) = delete;
+        };
+
+        bool anyHandActive()
+        {
+            return s_slots[0].active.load(std::memory_order_acquire) ||
+                   s_slots[1].active.load(std::memory_order_acquire);
+        }
 
         bool tryReadSlot(HandSlot& slot, SlotSnapshot& out)
         {
+            if (!slot.active.load(std::memory_order_acquire)) {
+                return false;
+            }
             const std::uint32_t before = slot.generation.load(std::memory_order_acquire);
             if ((before & 1u) != 0) {
                 return false;
             }
-            out.collisionObjectCount = slot.collisionObjectCount;
-            if (out.collisionObjectCount > kMaxTrackedCollisionObjects) {
+            out.collisionObjectCount = slot.collisionObjectCount.load(std::memory_order_relaxed);
+            if (out.collisionObjectCount == 0 ||
+                out.collisionObjectCount > kMaxTrackedCollisionObjects) {
                 return false;
             }
             for (std::uint32_t i = 0; i < out.collisionObjectCount; ++i) {
-                out.collisionObjects[i] = slot.collisionObjects[i];
+                out.collisionObjects[i] = slot.collisionObjects[i].load(std::memory_order_relaxed);
             }
-            out.world = slot.world;
-            out.roomNode = slot.roomNode;
-            out.bodyId = slot.bodyId;
-            out.havokToGame = slot.havokToGame;
-            out.traceId = slot.traceId;
+            out.roomNode = slot.roomNode.load(std::memory_order_relaxed);
+            out.traceId = slot.traceId.load(std::memory_order_relaxed);
             std::atomic_thread_fence(std::memory_order_acquire);
-            return slot.generation.load(std::memory_order_acquire) == before;
+            return slot.generation.load(std::memory_order_acquire) == before &&
+                   slot.active.load(std::memory_order_acquire);
+        }
+
+        bool tryReadAnchor(AnchorSlot& slot, AnchorSnapshot& out)
+        {
+            const std::uint32_t before = slot.generation.load(std::memory_order_acquire);
+            if ((before & 1u) != 0 || !slot.valid.load(std::memory_order_relaxed)) {
+                return false;
+            }
+            for (std::size_t i = 0; i < 12; ++i) {
+                out.rotationRows[i] = slot.rotationRows[i].load(std::memory_order_relaxed);
+            }
+            for (std::size_t i = 0; i < 3; ++i) {
+                out.translate[i] = slot.translate[i].load(std::memory_order_relaxed);
+                out.sourceRoot.positionHavok[i] =
+                    slot.sourceRootPositionHavok[i].load(std::memory_order_relaxed);
+                out.sourceRoot.roomPositionGame[i] =
+                    slot.sourceRoomPositionGame[i].load(std::memory_order_relaxed);
+            }
+            out.sourceRoot.controllerIdentity =
+                slot.sourceRootControllerIdentity.load(std::memory_order_relaxed);
+            out.sourceRoot.havokToGame =
+                slot.sourceRootHavokToGame.load(std::memory_order_relaxed);
+            out.sourceRoot.valid = slot.sourceRootValid.load(std::memory_order_relaxed);
+            out.sourceRoot.roomYawRadians =
+                slot.sourceRoomYawRadians.load(std::memory_order_relaxed);
+            out.sourceRoot.roomValid = slot.sourceRoomValid.load(std::memory_order_relaxed);
+            out.stage = slot.stage.load(std::memory_order_relaxed);
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return slot.generation.load(std::memory_order_acquire) == before &&
+                   slot.valid.load(std::memory_order_acquire);
+        }
+
+        bool tryReadHookConfig(HookConfigSnapshot& out)
+        {
+            const std::uint32_t before = s_hookConfig.generation.load(std::memory_order_acquire);
+            if ((before & 1u) != 0 || !s_hookConfig.valid.load(std::memory_order_relaxed)) {
+                return false;
+            }
+            out.syncEnabled = s_hookConfig.syncEnabled.load(std::memory_order_relaxed);
+            out.fullGapGameUnits = s_hookConfig.fullGapGameUnits.load(std::memory_order_relaxed);
+            out.solverGapGameUnits = s_hookConfig.solverGapGameUnits.load(std::memory_order_relaxed);
+            out.offsetZGameUnits = s_hookConfig.offsetZGameUnits.load(std::memory_order_relaxed);
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return s_hookConfig.generation.load(std::memory_order_acquire) == before &&
+                   s_hookConfig.valid.load(std::memory_order_acquire);
+        }
+
+        void publishHookConfig()
+        {
+            const float configuredFullGap =
+                g_rockConfig.rockGrabScenePoseSyncFullAnchorGapGameUnits;
+            const float fullGap =
+                std::isfinite(configuredFullGap) && configuredFullGap >= 0.0f ?
+                    configuredFullGap :
+                    4.0f;
+            const float configuredSolverGap =
+                g_rockConfig.rockGrabScenePoseSyncSolverGapGameUnits;
+            const float solverGap =
+                std::isfinite(configuredSolverGap) && configuredSolverGap > fullGap ?
+                    configuredSolverGap :
+                    fullGap + 11.0f;
+            const float configuredOffset =
+                g_rockConfig.rockGrabSceneWriterProbeOffsetZGameUnits;
+            const float offset = std::isfinite(configuredOffset) ? configuredOffset : 0.0f;
+
+            s_hookConfig.generation.fetch_add(1, std::memory_order_acq_rel);
+            s_hookConfig.syncEnabled.store(
+                g_rockConfig.rockGrabHeldScenePoseSync,
+                std::memory_order_relaxed);
+            s_hookConfig.fullGapGameUnits.store(fullGap, std::memory_order_relaxed);
+            s_hookConfig.solverGapGameUnits.store(solverGap, std::memory_order_relaxed);
+            s_hookConfig.offsetZGameUnits.store(offset, std::memory_order_relaxed);
+            s_hookConfig.valid.store(true, std::memory_order_relaxed);
+            s_hookConfig.generation.fetch_add(1, std::memory_order_release);
+        }
+
+        void retireRoomNodeOwnersIfQuiescent()
+        {
+            if (s_activeHookReaders.load(std::memory_order_acquire) != 0) {
+                return;
+            }
+            for (std::size_t hand = 0; hand < 2; ++hand) {
+                s_retiredRoomNodeOwners[hand].reset();
+                if (!s_slots[hand].active.load(std::memory_order_acquire)) {
+                    s_roomNodeOwners[hand].reset();
+                }
+            }
+        }
+
+        void clearHandSlot(HandSlot& slot)
+        {
+            slot.active.store(false, std::memory_order_release);
+            slot.generation.fetch_add(1, std::memory_order_acq_rel);
+            for (auto& collisionObject : slot.collisionObjects) {
+                collisionObject.store(nullptr, std::memory_order_relaxed);
+            }
+            slot.collisionObjectCount.store(0, std::memory_order_relaxed);
+            slot.roomNode.store(nullptr, std::memory_order_relaxed);
+            slot.traceId.store(0, std::memory_order_relaxed);
+            slot.generation.fetch_add(1, std::memory_order_release);
         }
 
         bool snapshotMatches(const SlotSnapshot& snapshot, const void* collisionObject)
@@ -170,51 +305,6 @@ namespace rock::scene_writer_probe
             return false;
         }
 
-        struct MotionSample
-        {
-            float centerHavok[3] = { 0.0f, 0.0f, 0.0f };
-            bool valid = false;
-        };
-
-        /*
-         * Verified layout walk (dossier + hknpBody.h): bodies at
-         * [world+0x20] stride 0x90, motion index at body+0x68, motions at
-         * [world+0xE0] stride 0x80, current center at motion+0x00. Every hop
-         * is plausibility gated and fails closed to an invalid sample.
-         */
-        MotionSample readMotionCenter(RE::hknpWorld* world, std::uint32_t bodyId)
-        {
-            MotionSample sample{};
-            if (!world || bodyId == 0x7FFF'FFFF) {
-                return sample;
-            }
-            const auto worldBase = reinterpret_cast<std::uintptr_t>(world);
-            const auto bodyArray = *reinterpret_cast<std::uintptr_t*>(worldBase + 0x20);
-            const auto motionArray = *reinterpret_cast<std::uintptr_t*>(worldBase + 0xE0);
-            if (bodyArray == 0 || motionArray == 0 || bodyId > 0x000F'FFFF) {
-                return sample;
-            }
-            const auto body = bodyArray + static_cast<std::uintptr_t>(bodyId) * 0x90;
-            const auto storedBodyId = *reinterpret_cast<std::uint32_t*>(body + 0x60);
-            if ((storedBodyId & 0x7FFF'FFFF) != bodyId) {
-                return sample;
-            }
-            const auto motionId = *reinterpret_cast<std::uint32_t*>(body + 0x68);
-            if (motionId == 0 || motionId > 0x000F'FFFF) {
-                return sample;
-            }
-            const auto motion = motionArray + static_cast<std::uintptr_t>(motionId) * 0x80;
-            const float* center = reinterpret_cast<const float*>(motion + 0x00);
-            if (!std::isfinite(center[0]) || !std::isfinite(center[1]) || !std::isfinite(center[2])) {
-                return sample;
-            }
-            sample.centerHavok[0] = center[0];
-            sample.centerHavok[1] = center[1];
-            sample.centerHavok[2] = center[2];
-            sample.valid = true;
-            return sample;
-        }
-
         void __fastcall onSceneTransformWriter(void* collisionObject, float* transform)
         {
             const auto original = s_original.load(std::memory_order_relaxed);
@@ -223,44 +313,44 @@ namespace rock::scene_writer_probe
             }
             s_totalWriterCalls.fetch_add(1, std::memory_order_relaxed);
 
+            if (!collisionObject || !transform || !anyHandActive()) {
+                original(collisionObject, transform);
+                return;
+            }
+
+            HookReaderGuard readerGuard;
             SlotSnapshot snapshot{};
             int matchedHand = -1;
             for (int hand = 0; hand < 2 && matchedHand < 0; ++hand) {
-                if (s_slots[hand].collisionObjectCount == 0 &&
-                    (s_slots[hand].generation.load(std::memory_order_relaxed) & 1u) == 0) {
-                    continue;
-                }
                 SlotSnapshot candidate{};
-                if (tryReadSlot(s_slots[hand], candidate) && snapshotMatches(candidate, collisionObject)) {
+                if (tryReadSlot(s_slots[hand], candidate) &&
+                    snapshotMatches(candidate, collisionObject)) {
                     snapshot = candidate;
                     matchedHand = hand;
                 }
             }
 
-            if (matchedHand < 0 || !collisionObject || !transform) {
+            if (matchedHand < 0) {
                 original(collisionObject, transform);
                 return;
             }
 
             s_matchedCalls.fetch_add(1, std::memory_order_relaxed);
-
             const auto returnAddress = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
             const auto moduleBase = REL::Module::get().base();
-            const std::uintptr_t returnRva = returnAddress >= moduleBase ? returnAddress - moduleBase : 0;
-            const char* callsite = "other";
+            const std::uintptr_t returnRva =
+                returnAddress >= moduleBase ? returnAddress - moduleBase : 0;
             if (returnRva == offsets::kRet_SceneWriterMainCallsite) {
-                callsite = "main";
                 s_mainCallsiteCalls.fetch_add(1, std::memory_order_relaxed);
             } else if (returnRva == offsets::kRet_SceneWriterProxyCallsite) {
-                callsite = "proxy";
                 s_proxyCallsiteCalls.fetch_add(1, std::memory_order_relaxed);
             } else {
                 s_otherCallsiteCalls.fetch_add(1, std::memory_order_relaxed);
             }
 
             const auto collisionBase = reinterpret_cast<std::uintptr_t>(collisionObject);
-            const auto vptr = *reinterpret_cast<std::uintptr_t*>(collisionBase);
-            const std::uint8_t collisionFlags = *reinterpret_cast<const std::uint8_t*>(collisionBase + 0x18);
+            const std::uint8_t collisionFlags =
+                *reinterpret_cast<const std::uint8_t*>(collisionBase + 0x18);
             if ((collisionFlags & 0x04) != 0) {
                 s_callbackFlagCalls.fetch_add(1, std::memory_order_relaxed);
             }
@@ -268,64 +358,20 @@ namespace rock::scene_writer_probe
                 s_localFlagCalls.fetch_add(1, std::memory_order_relaxed);
             }
 
-            auto* sceneObject = static_cast<const RE::NiCollisionObject*>(collisionObject)->sceneObject;
-            float nodeBefore[3] = { 0.0f, 0.0f, 0.0f };
-            if (sceneObject) {
-                nodeBefore[0] = sceneObject->world.translate.x;
-                nodeBefore[1] = sceneObject->world.translate.y;
-                nodeBefore[2] = sceneObject->world.translate.z;
-            }
-            const MotionSample motion = readMotionCenter(snapshot.world, snapshot.bodyId);
-
-            float inputTranslate[3] = {
-                transform[kTranslateXIndex],
-                transform[kTranslateXIndex + 1],
-                transform[kTranslateZIndex],
-            };
-
-            /*
-             * Contract A render-pose sync: full anchor pose below the full-gap
-             * threshold, translation blended toward the solver up to the
-             * solver-gap threshold (rotation stays on the anchor while any
-             * blend applies), untouched solver pose beyond it. The diagnostic
-             * offset only runs when the sync did not substitute, so there is
-             * exactly one visual authority per call.
-             */
-            float syncGapGameUnits = -1.0f;
-            float syncRootShiftGameUnits = -1.0f;
-            std::uint8_t syncStage = 0;
+            HookConfigSnapshot config{};
+            const bool hasConfig = tryReadHookConfig(config);
             bool syncApplied = false;
-            if (g_rockConfig.rockGrabHeldScenePoseSync) {
+            if (hasConfig && config.syncEnabled) {
                 AnchorSnapshot anchor{};
                 if (tryReadAnchor(s_anchorSlots[matchedHand], anchor)) {
-                    /*
-                     * Write-time root rebase: the writer consumes the
-                     * producer-stage anchor before ROCK's pre-FRIK refresh
-                     * runs, so the anchor is one mid-frame locomotion step
-                     * stale. Sample the live controller root (SEH-guarded,
-                     * fail-closed) and carry the anchor by the measured step.
-                     * Identity/plausibility gates fail closed to the
-                     * unshifted anchor; the divergence gate below still owns
-                     * the final decision.
-                     */
-                    /*
-                     * Primary rebase: live ROOM node vs the anchor's source
-                     * room frame. Stick locomotion moves the room node, and
-                     * the camera inherits it; the character controller was
-                     * measured unmoved at draw time (rootShift=0, 13:01
-                     * session), so it stays telemetry-only below. Rigid 2D
-                     * room delta: rotate about the source room origin by the
-                     * yaw delta, then carry by the room translation. Snap
-                     * turns and teleports are gated out; the divergence gate
-                     * below still owns the final decision.
-                     */
                     if (anchor.sourceRoot.roomValid && snapshot.roomNode) {
                         const auto& liveRoomWorld = snapshot.roomNode->world;
                         const float liveRoomX = liveRoomWorld.translate.x;
                         const float liveRoomY = liveRoomWorld.translate.y;
                         const float liveRoomZ = liveRoomWorld.translate.z;
-                        const float liveYaw =
-                            std::atan2(liveRoomWorld.rotate.entry[1][0], liveRoomWorld.rotate.entry[0][0]);
+                        const float liveYaw = std::atan2(
+                            liveRoomWorld.rotate.entry[1][0],
+                            liveRoomWorld.rotate.entry[0][0]);
                         float yawDelta = liveYaw - anchor.sourceRoot.roomYawRadians;
                         while (yawDelta > 3.14159265f) {
                             yawDelta -= 6.2831853f;
@@ -336,13 +382,15 @@ namespace rock::scene_writer_probe
                         const bool liveRoomFinite =
                             std::isfinite(liveRoomX) && std::isfinite(liveRoomY) &&
                             std::isfinite(liveRoomZ) && std::isfinite(yawDelta);
-                        constexpr float kMaxYawDeltaRadians = 0.35f;
                         if (liveRoomFinite && std::fabs(yawDelta) <= kMaxYawDeltaRadians) {
                             const float cosDelta = std::cos(yawDelta);
                             const float sinDelta = std::sin(yawDelta);
-                            const float relX = anchor.translate[0] - anchor.sourceRoot.roomPositionGame[0];
-                            const float relY = anchor.translate[1] - anchor.sourceRoot.roomPositionGame[1];
-                            const float relZ = anchor.translate[2] - anchor.sourceRoot.roomPositionGame[2];
+                            const float relX =
+                                anchor.translate[0] - anchor.sourceRoot.roomPositionGame[0];
+                            const float relY =
+                                anchor.translate[1] - anchor.sourceRoot.roomPositionGame[1];
+                            const float relZ =
+                                anchor.translate[2] - anchor.sourceRoot.roomPositionGame[2];
                             const float newX = liveRoomX + cosDelta * relX - sinDelta * relY;
                             const float newY = liveRoomY + sinDelta * relX + cosDelta * relY;
                             const float newZ = liveRoomZ + relZ;
@@ -351,24 +399,21 @@ namespace rock::scene_writer_probe
                             const float shiftZ = newZ - anchor.translate[2];
                             const float shiftLength =
                                 std::sqrt(shiftX * shiftX + shiftY * shiftY + shiftZ * shiftZ);
-                            if (std::isfinite(shiftLength) && shiftLength <= kMaxAnchorRootShiftGameUnits) {
+                            if (std::isfinite(shiftLength) &&
+                                shiftLength <= kMaxAnchorRootShiftGameUnits) {
                                 anchor.translate[0] = newX;
                                 anchor.translate[1] = newY;
                                 anchor.translate[2] = newZ;
                                 if (std::fabs(yawDelta) > 0.0001f) {
-                                    // Rotate each stored rotation row's XY by
-                                    // the yaw delta. Walk has yawDelta ~0;
-                                    // turn correctness is verified visually
-                                    // (a wrong convention shows as the held
-                                    // object counter-rotating on smooth turn).
                                     for (int row = 0; row < 3; ++row) {
                                         const float rowX = anchor.rotationRows[row * 4];
                                         const float rowY = anchor.rotationRows[row * 4 + 1];
-                                        anchor.rotationRows[row * 4] = cosDelta * rowX - sinDelta * rowY;
-                                        anchor.rotationRows[row * 4 + 1] = sinDelta * rowX + cosDelta * rowY;
+                                        anchor.rotationRows[row * 4] =
+                                            cosDelta * rowX - sinDelta * rowY;
+                                        anchor.rotationRows[row * 4 + 1] =
+                                            sinDelta * rowX + cosDelta * rowY;
                                     }
                                 }
-                                syncRootShiftGameUnits = shiftLength;
                                 s_syncRebasedCalls.fetch_add(1, std::memory_order_relaxed);
                             } else {
                                 s_syncRebaseSkips.fetch_add(1, std::memory_order_relaxed);
@@ -377,27 +422,32 @@ namespace rock::scene_writer_probe
                             s_syncRebaseSkips.fetch_add(1, std::memory_order_relaxed);
                         }
                     }
+
                     const float deltaX = anchor.translate[0] - transform[kTranslateXIndex];
                     const float deltaY = anchor.translate[1] - transform[kTranslateXIndex + 1];
                     const float deltaZ = anchor.translate[2] - transform[kTranslateZIndex];
-                    syncGapGameUnits = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-                    const float fullGapConfig = g_rockConfig.rockGrabScenePoseSyncFullAnchorGapGameUnits;
-                    const float solverGapConfig = g_rockConfig.rockGrabScenePoseSyncSolverGapGameUnits;
-                    const float fullGap = std::isfinite(fullGapConfig) && fullGapConfig >= 0.0f ? fullGapConfig : 4.0f;
-                    const float solverGap =
-                        std::isfinite(solverGapConfig) && solverGapConfig > fullGap ? solverGapConfig : fullGap + 11.0f;
-                    if (std::isfinite(syncGapGameUnits) && syncGapGameUnits < solverGap) {
-                        const float blend =
-                            syncGapGameUnits <= fullGap ? 0.0f : (syncGapGameUnits - fullGap) / (solverGap - fullGap);
+                    const float syncGapGameUnits =
+                        std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+                    if (std::isfinite(syncGapGameUnits) &&
+                        syncGapGameUnits < config.solverGapGameUnits) {
+                        const float blend = syncGapGameUnits <= config.fullGapGameUnits ?
+                            0.0f :
+                            (syncGapGameUnits - config.fullGapGameUnits) /
+                                (config.solverGapGameUnits - config.fullGapGameUnits);
                         alignas(16) float substituted[16];
-                        std::memcpy(substituted, anchor.rotationRows, sizeof(anchor.rotationRows));
-                        substituted[12] = anchor.translate[0] + (transform[12] - anchor.translate[0]) * blend;
-                        substituted[13] = anchor.translate[1] + (transform[13] - anchor.translate[1]) * blend;
-                        substituted[14] = anchor.translate[2] + (transform[14] - anchor.translate[2]) * blend;
+                        std::memcpy(
+                            substituted,
+                            anchor.rotationRows,
+                            sizeof(anchor.rotationRows));
+                        substituted[12] =
+                            anchor.translate[0] + (transform[12] - anchor.translate[0]) * blend;
+                        substituted[13] =
+                            anchor.translate[1] + (transform[13] - anchor.translate[1]) * blend;
+                        substituted[14] =
+                            anchor.translate[2] + (transform[14] - anchor.translate[2]) * blend;
                         substituted[15] = 0.0f;
                         original(collisionObject, substituted);
                         syncApplied = true;
-                        syncStage = anchor.stage;
                         s_syncAppliedCalls.fetch_add(1, std::memory_order_relaxed);
                         if (anchor.stage == static_cast<std::uint8_t>(AnchorStage::PreFrik)) {
                             s_syncPreFrikStageCalls.fetch_add(1, std::memory_order_relaxed);
@@ -410,86 +460,17 @@ namespace rock::scene_writer_probe
                 }
             }
 
-            const float offsetZ = g_rockConfig.rockGrabSceneWriterProbeOffsetZGameUnits;
-            const bool applyOffset = !syncApplied && std::isfinite(offsetZ) && offsetZ != 0.0f;
+            const bool applyOffset =
+                !syncApplied && hasConfig && config.offsetZGameUnits != 0.0f;
             if (applyOffset) {
                 alignas(16) float substituted[16];
                 std::memcpy(substituted, transform, sizeof(float) * kWriterInputFloats);
                 substituted[15] = 0.0f;
-                substituted[kTranslateZIndex] += offsetZ;
+                substituted[kTranslateZIndex] += config.offsetZGameUnits;
                 s_offsetAppliedCalls.fetch_add(1, std::memory_order_relaxed);
                 original(collisionObject, substituted);
             } else if (!syncApplied) {
                 original(collisionObject, transform);
-            }
-
-            float nodeAfter[3] = { 0.0f, 0.0f, 0.0f };
-            if (sceneObject) {
-                nodeAfter[0] = sceneObject->world.translate.x;
-                nodeAfter[1] = sceneObject->world.translate.y;
-                nodeAfter[2] = sceneObject->world.translate.z;
-            }
-
-            /*
-             * One unconditional full snapshot per grab (trace id), then the
-             * shared sample interval. The hook thread is unknown, so only the
-             * bounded formatter below runs here; no allocation, no locks.
-             */
-            auto& slot = s_slots[matchedHand];
-            const std::uint64_t lastLogged = slot.lastFullLogTraceId.load(std::memory_order_relaxed);
-            const bool firstForGrab = snapshot.traceId != 0 && lastLogged != snapshot.traceId;
-            if (firstForGrab) {
-                slot.lastFullLogTraceId.store(snapshot.traceId, std::memory_order_relaxed);
-            }
-            const float havokToGame = snapshot.havokToGame;
-            const float motionGameX = motion.valid ? motion.centerHavok[0] * havokToGame : -1.0f;
-            const float motionGameY = motion.valid ? motion.centerHavok[1] * havokToGame : -1.0f;
-            const float motionGameZ = motion.valid ? motion.centerHavok[2] * havokToGame : -1.0f;
-            if (firstForGrab) {
-                ROCK_LOG_INFO(Hand,
-                    "SCENE_WRITER first-hit hand={} site={} retRva=0x{:X} vptr=0x{:X} flags=0x{:02X} body={} in=({:.2f},{:.2f},{:.2f}) nodeBefore=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) sync={} stage={} gap={:.3f} offZ={:.1f} thread={}",
-                    matchedHand == 0 ? "R" : "L",
-                    callsite,
-                    returnRva,
-                    vptr - moduleBase,
-                    collisionFlags,
-                    snapshot.bodyId,
-                    inputTranslate[0], inputTranslate[1], inputTranslate[2],
-                    nodeBefore[0], nodeBefore[1], nodeBefore[2],
-                    nodeAfter[0], nodeAfter[1], nodeAfter[2],
-                    motionGameX, motionGameY, motionGameZ,
-                    syncApplied ? "yes" : "no",
-                    syncStage,
-                    syncGapGameUnits,
-                    applyOffset ? offsetZ : 0.0f,
-                    ::GetCurrentThreadId());
-            } else {
-                ROCK_LOG_SAMPLE_INFO(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} sync={} stage={} gap={:.3f} roomShift={:.3f} syncApplied={} prodStage={} preFrikStage={} divergeSkips={} rebased={} rebaseSkips={} offZ={:.1f} matched={} thread={}",
-                    matchedHand == 0 ? "R" : "L",
-                    callsite,
-                    collisionFlags,
-                    inputTranslate[0], inputTranslate[1], inputTranslate[2],
-                    nodeAfter[0], nodeAfter[1], nodeAfter[2],
-                    motionGameX, motionGameY, motionGameZ,
-                    motion.valid ? std::sqrt(
-                        (inputTranslate[0] - motionGameX) * (inputTranslate[0] - motionGameX) +
-                        (inputTranslate[1] - motionGameY) * (inputTranslate[1] - motionGameY) +
-                        (inputTranslate[2] - motionGameZ) * (inputTranslate[2] - motionGameZ)) : -1.0f,
-                    syncApplied ? "yes" : "no",
-                    syncStage,
-                    syncGapGameUnits,
-                    syncRootShiftGameUnits,
-                    s_syncAppliedCalls.load(std::memory_order_relaxed),
-                    s_syncProducerStageCalls.load(std::memory_order_relaxed),
-                    s_syncPreFrikStageCalls.load(std::memory_order_relaxed),
-                    s_syncDivergenceSkips.load(std::memory_order_relaxed),
-                    s_syncRebasedCalls.load(std::memory_order_relaxed),
-                    s_syncRebaseSkips.load(std::memory_order_relaxed),
-                    applyOffset ? offsetZ : 0.0f,
-                    s_matchedCalls.load(std::memory_order_relaxed),
-                    ::GetCurrentThreadId());
             }
         }
     }
@@ -513,14 +494,14 @@ namespace rock::scene_writer_probe
             original);
         if (!installed || !original) {
             ROCK_LOG_ERROR(Init,
-                "Scene-writer probe unavailable: entry prefix mismatch or trampoline failure at RVA 0x{:X}; engine untouched",
+                "Scene-writer boundary unavailable: entry prefix mismatch or trampoline failure at RVA 0x{:X}; engine untouched",
                 static_cast<std::uint64_t>(offsets::kFunc_SceneTransformWriter));
             return false;
         }
         s_original.store(reinterpret_cast<SceneWriterFn>(original), std::memory_order_release);
         s_installed.store(true, std::memory_order_release);
         ROCK_LOG_INFO(Init,
-            "Scene-writer probe installed at RVA 0x{:X} (main callsite 0x{:X}, proxy callsite 0x{:X})",
+            "Scene-writer boundary installed at RVA 0x{:X} (main callsite 0x{:X}, proxy callsite 0x{:X})",
             static_cast<std::uint64_t>(offsets::kFunc_SceneTransformWriter),
             static_cast<std::uint64_t>(offsets::kRet_SceneWriterMainCallsite),
             static_cast<std::uint64_t>(offsets::kRet_SceneWriterProxyCallsite));
@@ -532,53 +513,101 @@ namespace rock::scene_writer_probe
         return s_installed.load(std::memory_order_acquire);
     }
 
-    void registerHeldTarget(bool isLeft, const HeldTargetRegistration& registration)
+    void serviceGameThread()
+    {
+        retireRoomNodeOwnersIfQuiescent();
+    }
+
+    bool registerHeldTarget(bool isLeft, const HeldTargetRegistration& registration)
+    {
+        if (!s_installed.load(std::memory_order_acquire)) {
+            return false;
+        }
+
+        std::array<const RE::NiCollisionObject*, kMaxTrackedCollisionObjects>
+            collisionObjects{};
+        std::uint32_t collisionObjectCount = 0;
+        const std::uint32_t requestedCount =
+            registration.collisionObjectCount > kMaxTrackedCollisionObjects ?
+                static_cast<std::uint32_t>(kMaxTrackedCollisionObjects) :
+                registration.collisionObjectCount;
+        for (std::uint32_t i = 0; i < requestedCount; ++i) {
+            const auto* candidate = registration.collisionObjects[i];
+            if (!candidate) {
+                continue;
+            }
+            bool duplicate = false;
+            for (std::uint32_t existing = 0; existing < collisionObjectCount; ++existing) {
+                if (collisionObjects[existing] == candidate) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) {
+                collisionObjects[collisionObjectCount++] = candidate;
+            }
+        }
+        if (collisionObjectCount == 0) {
+            return false;
+        }
+
+        publishHookConfig();
+        invalidateHeldAnchor(isLeft);
+
+        const std::size_t handIndex = isLeft ? 1u : 0u;
+        auto& slot = s_slots[handIndex];
+        clearHandSlot(slot);
+
+        /*
+         * Do not replace the strong owner while an earlier matched call can
+         * still use its raw room pointer. Registration retries next frame.
+         */
+        if (s_activeHookReaders.load(std::memory_order_acquire) != 0) {
+            return false;
+        }
+        retireRoomNodeOwnersIfQuiescent();
+        s_roomNodeOwners[handIndex] =
+            RE::NiPointer<RE::NiAVObject>(registration.roomNode);
+
+        slot.generation.fetch_add(1, std::memory_order_acq_rel);
+        for (std::size_t i = 0; i < kMaxTrackedCollisionObjects; ++i) {
+            slot.collisionObjects[i].store(collisionObjects[i], std::memory_order_relaxed);
+        }
+        slot.collisionObjectCount.store(collisionObjectCount, std::memory_order_relaxed);
+        slot.roomNode.store(s_roomNodeOwners[handIndex].get(), std::memory_order_relaxed);
+        slot.traceId.store(registration.traceId, std::memory_order_relaxed);
+        slot.generation.fetch_add(1, std::memory_order_release);
+        slot.active.store(true, std::memory_order_release);
+        return true;
+    }
+
+    void refreshHeldPresentationConfig(const bool isLeft)
     {
         if (!s_installed.load(std::memory_order_acquire)) {
             return;
         }
-        auto& slot = s_slots[isLeft ? 1 : 0];
-        const std::uint32_t count =
-            registration.collisionObjectCount > kMaxTrackedCollisionObjects ?
-                static_cast<std::uint32_t>(kMaxTrackedCollisionObjects) :
-                registration.collisionObjectCount;
-        slot.generation.fetch_add(1, std::memory_order_acq_rel);
-        for (std::uint32_t i = 0; i < kMaxTrackedCollisionObjects; ++i) {
-            slot.collisionObjects[i] = i < count ? registration.collisionObjects[i] : nullptr;
+        publishHookConfig();
+        retireRoomNodeOwnersIfQuiescent();
+        if (!g_rockConfig.rockGrabHeldScenePoseSync) {
+            invalidateHeldAnchor(isLeft);
         }
-        slot.collisionObjectCount = count;
-        slot.world = registration.world;
-        slot.roomNode = registration.roomNode;
-        slot.bodyId = registration.bodyId;
-        slot.havokToGame = registration.havokToGame;
-        slot.traceId = registration.traceId;
-        slot.generation.fetch_add(1, std::memory_order_release);
-        ROCK_LOG_INFO(Hand,
-            "SCENE_WRITER target registered hand={} collisionObjects={} body={} traceId={}",
-            isLeft ? "L" : "R",
-            count,
-            registration.bodyId,
-            registration.traceId);
     }
 
     void clearHeldTarget(bool isLeft)
     {
         invalidateHeldAnchor(isLeft);
-        auto& slot = s_slots[isLeft ? 1 : 0];
-        if (slot.collisionObjectCount == 0 && slot.traceId == 0) {
+        const std::size_t handIndex = isLeft ? 1u : 0u;
+        clearHandSlot(s_slots[handIndex]);
+
+        if (s_activeHookReaders.load(std::memory_order_acquire) == 0) {
+            retireRoomNodeOwnersIfQuiescent();
             return;
         }
-        slot.generation.fetch_add(1, std::memory_order_acq_rel);
-        for (auto& pointer : slot.collisionObjects) {
-            pointer = nullptr;
+
+        if (!s_retiredRoomNodeOwners[handIndex]) {
+            s_retiredRoomNodeOwners[handIndex] = s_roomNodeOwners[handIndex];
+            s_roomNodeOwners[handIndex].reset();
         }
-        slot.collisionObjectCount = 0;
-        slot.world = nullptr;
-        slot.roomNode = nullptr;
-        slot.bodyId = 0x7FFF'FFFF;
-        slot.havokToGame = 0.0f;
-        slot.traceId = 0;
-        slot.generation.fetch_add(1, std::memory_order_release);
     }
 
     void publishHeldAnchor(
@@ -590,28 +619,50 @@ namespace rock::scene_writer_probe
         if (!s_installed.load(std::memory_order_acquire)) {
             return;
         }
+        publishHookConfig();
+        retireRoomNodeOwnersIfQuiescent();
+
         static_assert(sizeof(bodyAnchorWorldGame.rotate) == sizeof(float) * 12);
+        const auto* rotationRows = reinterpret_cast<const float*>(&bodyAnchorWorldGame.rotate);
         auto& slot = s_anchorSlots[isLeft ? 1 : 0];
         slot.generation.fetch_add(1, std::memory_order_acq_rel);
-        std::memcpy(slot.rotationRows, &bodyAnchorWorldGame.rotate, sizeof(slot.rotationRows));
-        slot.translate[0] = bodyAnchorWorldGame.translate.x;
-        slot.translate[1] = bodyAnchorWorldGame.translate.y;
-        slot.translate[2] = bodyAnchorWorldGame.translate.z;
-        slot.sourceRoot = sourceRoot;
-        slot.stage = static_cast<std::uint8_t>(stage);
-        slot.valid = true;
+        for (std::size_t i = 0; i < 12; ++i) {
+            slot.rotationRows[i].store(rotationRows[i], std::memory_order_relaxed);
+        }
+        slot.translate[0].store(bodyAnchorWorldGame.translate.x, std::memory_order_relaxed);
+        slot.translate[1].store(bodyAnchorWorldGame.translate.y, std::memory_order_relaxed);
+        slot.translate[2].store(bodyAnchorWorldGame.translate.z, std::memory_order_relaxed);
+        for (std::size_t i = 0; i < 3; ++i) {
+            slot.sourceRootPositionHavok[i].store(
+                sourceRoot.positionHavok[i],
+                std::memory_order_relaxed);
+            slot.sourceRoomPositionGame[i].store(
+                sourceRoot.roomPositionGame[i],
+                std::memory_order_relaxed);
+        }
+        slot.sourceRootControllerIdentity.store(
+            sourceRoot.controllerIdentity,
+            std::memory_order_relaxed);
+        slot.sourceRootHavokToGame.store(sourceRoot.havokToGame, std::memory_order_relaxed);
+        slot.sourceRootValid.store(sourceRoot.valid, std::memory_order_relaxed);
+        slot.sourceRoomYawRadians.store(sourceRoot.roomYawRadians, std::memory_order_relaxed);
+        slot.sourceRoomValid.store(sourceRoot.roomValid, std::memory_order_relaxed);
+        slot.stage.store(static_cast<std::uint8_t>(stage), std::memory_order_relaxed);
+        slot.valid.store(true, std::memory_order_relaxed);
         slot.generation.fetch_add(1, std::memory_order_release);
     }
 
     void invalidateHeldAnchor(bool isLeft)
     {
         auto& slot = s_anchorSlots[isLeft ? 1 : 0];
-        if (!slot.valid) {
+        if (!slot.valid.load(std::memory_order_acquire)) {
             return;
         }
         slot.generation.fetch_add(1, std::memory_order_acq_rel);
-        slot.valid = false;
-        slot.stage = static_cast<std::uint8_t>(AnchorStage::None);
+        slot.valid.store(false, std::memory_order_relaxed);
+        slot.stage.store(
+            static_cast<std::uint8_t>(AnchorStage::None),
+            std::memory_order_relaxed);
         slot.generation.fetch_add(1, std::memory_order_release);
     }
 

@@ -8,6 +8,8 @@
 #include <string_view>
 
 #include "api/FRIKApiV2.h"
+#include "api/ROCKProviderApi.h"
+#include "physics-interaction/visual/HandWorldAuthorityRegistryPolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::frik_visual_authority
@@ -23,11 +25,38 @@ namespace rock::frik_visual_authority
     using RecoilResponse = frik::api::FRIKApiV2::RecoilResponse;
     using WeaponHandRecoilController = frik::api::FRIKApiV2::WeaponHandRecoilController;
 
+    using HandWorldAuthorityRole =
+        hand_world_authority_registry_policy::Role;
+
+    struct HandWorldAuthoritySnapshot
+    {
+        std::array<char, 64> tag{};
+        RE::NiTransform worldTarget{};
+        Hand hand = Hand::Left;
+        HandWorldAuthorityRole role = HandWorldAuthorityRole::Unknown;
+        int priority = 0;
+        std::uint64_t sequence = 0;
+        bool valid = false;
+    };
+
+    [[nodiscard]] inline constexpr bool weaponPresentationFollowsRole(
+        const HandWorldAuthorityRole role) noexcept
+    {
+        return hand_world_authority_registry_policy::
+            weaponPresentationFollowsRole(role);
+    }
+
     namespace detail
     {
         constexpr std::size_t kCachedHandPosePublicationCount = 8;
-        constexpr std::size_t kCachedHandPoseTagCapacity = 64;
-        constexpr std::size_t kTrackedHandWorldPublicationCount = 16;
+        constexpr std::size_t kCachedHandPoseTagCapacity =
+            hand_world_authority_registry_policy::kTagCapacity;
+        constexpr std::size_t kInternalHandWorldPublicationCount = 32;
+        constexpr std::size_t kTrackedHandWorldPublicationCount =
+            static_cast<std::size_t>(
+                provider::ROCK_PROVIDER_MAX_CONSUMERS_V1) *
+                2u +
+            kInternalHandWorldPublicationCount;
 
         struct CachedHandPosePublication
         {
@@ -54,16 +83,13 @@ namespace rock::frik_visual_authority
         inline std::size_t g_nextCachedHandPosePublication = 0;
         inline std::size_t g_nextCachedFingerLocalTransformPublication = 0;
 
-        struct TrackedHandWorldPublication
-        {
-            std::array<char, kCachedHandPoseTagCapacity> tag{};
-            std::size_t tagLength = 0;
-            Hand hand = Hand::Left;
-            int priority = 0;
-            std::uint64_t sequence = 0;
-            RE::NiTransform worldTarget{};
-            bool valid = false;
-        };
+        using HandWorldAuthorityRegistry =
+            hand_world_authority_registry_policy::Registry<
+                kTrackedHandWorldPublicationCount,
+                Hand,
+                RE::NiTransform>;
+        using TrackedHandWorldPublication =
+            HandWorldAuthorityRegistry::Entry;
 
         /*
          * FRIK API V2 retains accepted hand-world publications until their
@@ -72,11 +98,9 @@ namespace rock::frik_visual_authority
          * fresh controller target. All callers run on the game update thread;
          * lifecycle reset explicitly clears this non-owning publication state.
          */
-        inline std::array<TrackedHandWorldPublication, kTrackedHandWorldPublicationCount>
-            g_trackedHandWorldPublications{};
-        inline std::array<bool, 2> g_untrackedHandWorldPublicationOverflow{};
+        inline HandWorldAuthorityRegistry g_handWorldAuthorityRegistry{};
         inline std::array<bool, 2> g_handWorldPublicationReady{};
-        inline std::uint64_t g_handWorldPublicationSequence = 0;
+        inline bool g_handWorldSchedulerReady = false;
 
         struct PresentedHandNodeCache
         {
@@ -109,11 +133,6 @@ namespace rock::frik_visual_authority
             return std::string_view(entry.tag.data(), entry.tagLength);
         }
 
-        [[nodiscard]] inline std::string_view cachedTagView(const TrackedHandWorldPublication& entry)
-        {
-            return std::string_view(entry.tag.data(), entry.tagLength);
-        }
-
         [[nodiscard]] inline bool physicalHandIndex(Hand hand, std::size_t& outIndex)
         {
             if (hand == Hand::Left) {
@@ -131,56 +150,70 @@ namespace rock::frik_visual_authority
             std::string_view tag,
             Hand hand)
         {
-            for (auto& entry : g_trackedHandWorldPublications) {
-                if (entry.valid && entry.hand == hand && cachedTagView(entry) == tag) {
-                    return &entry;
-                }
-            }
-            return nullptr;
+            return g_handWorldAuthorityRegistry.find(tag, hand);
         }
 
-        inline void rememberTrackedHandWorldPublication(
-            const char* tag,
+        [[nodiscard]] inline HandWorldAuthorityRole classifyHandWorldRole(
+            const std::string_view tag) noexcept
+        {
+            if (tag.starts_with("ROCK_API_")) {
+                return HandWorldAuthorityRole::Provider;
+            }
+            if (tag == "ROCK_GrabVisual") {
+                return HandWorldAuthorityRole::GrabHeld;
+            }
+            if (tag == "ROCK_GrabReturn") {
+                return HandWorldAuthorityRole::GrabReturn;
+            }
+            if (tag == "ROCK_EquipPoseBridge") {
+                return HandWorldAuthorityRole::EquipHandoff;
+            }
+            if (tag.starts_with("ROCK_DynamicHand_")) {
+                return HandWorldAuthorityRole::DynamicContact;
+            }
+            if (tag == "ROCK_WeaponPrimaryGrip") {
+                return HandWorldAuthorityRole::PrimaryGrip;
+            }
+            if (tag == "ROCK_WeaponSupportGrip") {
+                return HandWorldAuthorityRole::SupportGrip;
+            }
+            if (tag == "ROCK_WeaponPrimaryDetach") {
+                return HandWorldAuthorityRole::PrimaryDetach;
+            }
+            if (tag == "ROCK_GunstockAlignment") {
+                return HandWorldAuthorityRole::Gunstock;
+            }
+            if (tag == "ROCK_WeaponCollisionHand") {
+                return HandWorldAuthorityRole::WeaponCollision;
+            }
+            if (tag == "ROCK_WeaponReturn") {
+                return HandWorldAuthorityRole::WeaponReturn;
+            }
+            return HandWorldAuthorityRole::Unknown;
+        }
+
+        [[nodiscard]] inline TrackedHandWorldPublication*
+            findOrReserveTrackedHandWorldPublication(
+                const std::string_view tag,
+                const Hand hand)
+        {
+            return g_handWorldAuthorityRegistry.findOrReserve(tag, hand);
+        }
+
+        [[nodiscard]] inline bool rememberTrackedHandWorldPublication(
+            TrackedHandWorldPublication& publication,
+            const std::string_view tag,
             Hand hand,
             const RE::NiTransform& worldTarget,
             int priority)
         {
-            std::string_view tagView;
-            std::size_t handIndex = 0;
-            if (!makeCacheableTagView(tag, tagView) ||
-                !physicalHandIndex(hand, handIndex)) {
-                return;
-            }
-
-            auto* publication =
-                findTrackedHandWorldPublication(tagView, hand);
-            if (!publication) {
-                for (auto& entry : g_trackedHandWorldPublications) {
-                    if (!entry.valid) {
-                        publication = &entry;
-                        break;
-                    }
-                }
-            }
-            if (!publication) {
-                // An incomplete mirror cannot identify the exact target that
-                // hFRIK will consume. Recoil composition must fail closed.
-                g_untrackedHandWorldPublicationOverflow[handIndex] = true;
-                return;
-            }
-
-            ++g_handWorldPublicationSequence;
-            if (g_handWorldPublicationSequence == 0) {
-                g_handWorldPublicationSequence = 1;
-            }
-            publication->tag.fill('\0');
-            std::copy(tagView.begin(), tagView.end(), publication->tag.begin());
-            publication->tagLength = tagView.size();
-            publication->hand = hand;
-            publication->priority = priority;
-            publication->sequence = g_handWorldPublicationSequence;
-            publication->worldTarget = worldTarget;
-            publication->valid = true;
+            return g_handWorldAuthorityRegistry.commit(
+                publication,
+                tag,
+                hand,
+                classifyHandWorldRole(tag),
+                priority,
+                worldTarget);
         }
 
         inline void invalidateTrackedHandWorldPublication(const char* tag, Hand hand)
@@ -189,9 +222,7 @@ namespace rock::frik_visual_authority
             if (!makeCacheableTagView(tag, tagView)) {
                 return;
             }
-            if (auto* entry = findTrackedHandWorldPublication(tagView, hand)) {
-                entry->valid = false;
-            }
+            (void)g_handWorldAuthorityRegistry.invalidate(tagView, hand);
         }
 
         [[nodiscard]] inline bool hasTrackedHandWorldPublication(Hand hand)
@@ -200,53 +231,41 @@ namespace rock::frik_visual_authority
             if (!physicalHandIndex(hand, handIndex)) {
                 return false;
             }
-            if (g_untrackedHandWorldPublicationOverflow[handIndex]) {
-                return true;
-            }
-            for (const auto& entry : g_trackedHandWorldPublications) {
-                if (entry.valid && entry.hand == hand) {
-                    return true;
-                }
-            }
-            return false;
+            return g_handWorldAuthorityRegistry.hasAny(hand);
         }
 
         [[nodiscard]] inline bool tryGetWinningTrackedHandWorldPublication(
             Hand hand,
-            RE::NiTransform& outWorldTarget)
+            HandWorldAuthoritySnapshot& outSnapshot)
         {
-            outWorldTarget = {};
+            outSnapshot = {};
             std::size_t handIndex = 0;
-            if (!physicalHandIndex(hand, handIndex) ||
-                g_untrackedHandWorldPublicationOverflow[handIndex]) {
+            if (!physicalHandIndex(hand, handIndex)) {
                 return false;
             }
 
-            const TrackedHandWorldPublication* winner = nullptr;
-            for (const auto& entry : g_trackedHandWorldPublications) {
-                if (!entry.valid || entry.hand != hand) {
-                    continue;
-                }
-                if (!winner || entry.priority > winner->priority ||
-                    (entry.priority == winner->priority &&
-                        entry.sequence > winner->sequence)) {
-                    winner = &entry;
-                }
-            }
-            if (!winner) {
+            TrackedHandWorldPublication winner{};
+            if (!g_handWorldAuthorityRegistry.winner(hand, winner)) {
                 return false;
             }
 
-            outWorldTarget = winner->worldTarget;
+            std::copy_n(
+                winner.tag.begin(),
+                winner.tag.size(),
+                outSnapshot.tag.begin());
+            outSnapshot.worldTarget = winner.target;
+            outSnapshot.hand = winner.hand;
+            outSnapshot.role = winner.role;
+            outSnapshot.priority = winner.priority;
+            outSnapshot.sequence = winner.sequence;
+            outSnapshot.valid = true;
             return true;
         }
 
         inline void resetTrackedHandWorldPublications()
         {
-            g_trackedHandWorldPublications = {};
-            g_untrackedHandWorldPublicationOverflow = {};
+            g_handWorldAuthorityRegistry.reset();
             g_handWorldPublicationReady = {};
-            g_handWorldPublicationSequence = 0;
         }
 
         [[nodiscard]] inline bool sameFingerPoseData(
@@ -522,6 +541,32 @@ namespace rock::frik_visual_authority
         return frikApi && (frikApi->isConfigOpen() || frikApi->isWristPipboyOpen());
     }
 
+    [[nodiscard]] inline bool isExternalHandWorldSchedulerReady()
+    {
+        return detail::g_handWorldSchedulerReady;
+    }
+
+    inline void setExternalHandWorldSchedulerReady(const bool ready)
+    {
+        if (detail::g_handWorldSchedulerReady == ready) {
+            return;
+        }
+
+        if (!ready) {
+            auto* frikApi = api();
+            if (frikApi && frikApi->clearHandWorldTransform) {
+                detail::g_handWorldAuthorityRegistry.forEachActive(
+                    [frikApi](const auto& entry) {
+                    (void)frikApi->clearHandWorldTransform(
+                        entry.tag.data(),
+                        entry.hand);
+                    });
+            }
+            detail::resetTrackedHandWorldPublications();
+        }
+        detail::g_handWorldSchedulerReady = ready;
+    }
+
     [[nodiscard]] inline bool clearHandPose(const char* tag, Hand hand)
     {
         detail::invalidateCachedHandPosePublication(tag, hand);
@@ -574,11 +619,21 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->setHandPose && frikApi->setHandPose(tag, hand, handPose, priority);
     }
 
-    [[nodiscard]] inline bool applyExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
+    [[nodiscard]] inline bool publishExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
     {
+        std::string_view tagView;
         std::size_t handIndex = 0;
-        if (!detail::physicalHandIndex(hand, handIndex) ||
+        if (!detail::g_handWorldSchedulerReady ||
+            !detail::makeCacheableTagView(tag, tagView) ||
+            !detail::physicalHandIndex(hand, handIndex) ||
             !detail::g_handWorldPublicationReady[handIndex]) {
+            return false;
+        }
+        auto* publication =
+            detail::findOrReserveTrackedHandWorldPublication(
+                tagView,
+                hand);
+        if (!publication) {
             return false;
         }
         auto* frikApi = api();
@@ -586,14 +641,28 @@ namespace rock::frik_visual_authority
             frikApi &&
             frikApi->setHandWorldTransform &&
             frikApi->setHandWorldTransform(tag, hand, worldTarget, priority);
-        if (published) {
+        if (!published) {
+            detail::g_handWorldAuthorityRegistry.cancelReservation(
+                *publication);
+            return false;
+        }
+        const bool committed =
             detail::rememberTrackedHandWorldPublication(
-                tag,
+                *publication,
+                tagView,
                 hand,
                 worldTarget,
                 priority);
+        if (!committed) {
+            detail::g_handWorldAuthorityRegistry.cancelReservation(
+                *publication);
+            if (frikApi->clearHandWorldTransform) {
+                (void)frikApi->clearHandWorldTransform(tag, hand);
+            }
+            detail::invalidateTrackedHandWorldPublication(tag, hand);
+            return false;
         }
-        return published;
+        return true;
     }
 
     inline void setExternalHandWorldPublicationReady(Hand hand, bool ready)
@@ -613,6 +682,15 @@ namespace rock::frik_visual_authority
 
     [[nodiscard]] inline bool clearExternalHandWorldTransform(const char* tag, Hand hand)
     {
+        std::string_view tagView;
+        std::size_t handIndex = 0;
+        if (!detail::makeCacheableTagView(tag, tagView) ||
+            !detail::physicalHandIndex(hand, handIndex)) {
+            return false;
+        }
+        if (!detail::findTrackedHandWorldPublication(tagView, hand)) {
+            return true;
+        }
         auto* frikApi = api();
         const bool cleared =
             frikApi &&
@@ -640,9 +718,24 @@ namespace rock::frik_visual_authority
         Hand hand,
         RE::NiTransform& outWorldTarget)
     {
+        HandWorldAuthoritySnapshot snapshot{};
+        if (!detail::tryGetWinningTrackedHandWorldPublication(
+                hand,
+                snapshot)) {
+            outWorldTarget = {};
+            return false;
+        }
+        outWorldTarget = snapshot.worldTarget;
+        return true;
+    }
+
+    [[nodiscard]] inline bool tryGetPublishedExternalHandWorldWinner(
+        Hand hand,
+        HandWorldAuthoritySnapshot& outSnapshot)
+    {
         return detail::tryGetWinningTrackedHandWorldPublication(
             hand,
-            outWorldTarget);
+            outSnapshot);
     }
 
     [[nodiscard]] inline bool setHandPoseCustomLocalTransformsWithPriority(

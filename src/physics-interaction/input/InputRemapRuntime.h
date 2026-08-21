@@ -62,6 +62,7 @@ namespace rock::input_remap_runtime
      * native scope activation until release. Frame thread only.
      */
     void updateFiringHandReloadInput(float deltaSeconds);
+    [[nodiscard]] std::uint64_t nativeReloadDispatchSequence();
     // Published manual-scope level state. The native scope decision hook owns
     // the engine transition; input runtime owns only the physical hold gesture.
     bool isManualScopeActivationRequested();

@@ -87,8 +87,9 @@ namespace rock
         bool manualScopeActivationRequested{ false };
         bool nativeScopeRequestStateValid{ false };
         bool nativeScopeRequestActive{ false };
-        // Native reload temporarily owns the physical support hand. ROCK keeps
-        // the logical grip but must yield every support-hand FRIK claim.
+        // Provider animation and native reload are independent facts. Either
+        // boundary can require ROCK to yield the current support-hand claims.
+        bool providerAnimationBoundaryActive{ false };
         bool nativeReloadHandAuthorityActive{ false };
         // Hard presentation boundary for menus and native reload authority.
         bool gunstockPresentationBlocked{ false };
@@ -687,9 +688,12 @@ namespace rock
         // witness to avoid reading collision-corrected roots back as intent.
         void beginWeaponCollisionPresentationFrame(std::uint64_t currentWeaponGenerationKey);
 
-        // Applies the reload handoff before FRIK and again from the coherent
-        // physics-frame snapshot. The logical support grip remains intact.
-        void setNativeReloadHandAuthorityActive(bool active);
+        // Applies the support-hand animation handoff before FRIK and again
+        // from the coherent physics-frame snapshot. The two causes stay
+        // separate while the logical support grip remains intact.
+        void setHandAnimationAuthorityBoundaries(
+            bool providerAnimationBoundaryActive,
+            bool nativeReloadHandAuthorityActive);
 
         void refreshWeaponCollisionHandAuthorityBeforeFrik(
             const EquippedWeaponScopeHandDriverFrame& leftHandDriver,
@@ -790,7 +794,7 @@ namespace rock
                 _firingHandIsLeft,
                 partGrip(true).active,
                 partGrip(false).active,
-                !_nativeReloadHandAuthorityActive);
+                !handAnimationAuthorityBoundaryActive());
         }
 
         /*
@@ -1401,13 +1405,20 @@ namespace rock
 
         bool clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole role, bool isLeft);
 
-        [[nodiscard]] bool isNativeReloadSupportHand(bool isLeft) const
+        [[nodiscard]] bool handAnimationAuthorityBoundaryActive() const
         {
-            return _nativeReloadHandAuthorityActive &&
+            return _providerAnimationBoundaryActive ||
+                   _nativeReloadHandAuthorityActive;
+        }
+
+        [[nodiscard]] bool isHandAnimationAuthoritySupportHand(
+            bool isLeft) const
+        {
+            return handAnimationAuthorityBoundaryActive() &&
                    isLeft == !_firingHandIsLeft;
         }
 
-        void suspendNativeReloadSupportHandAuthority(bool isLeft);
+        void suspendAnimationAuthoritySupportHand(bool isLeft);
 
         void reconcileDeferredScopeHandAuthority(RE::NiNode* weaponNode);
 
@@ -1610,8 +1621,9 @@ namespace rock
          * isFiringHandLeft() each frame to route input and ownership per role.
          */
         bool _firingHandIsLeft{ false };
+        bool _providerAnimationBoundaryActive{ false };
         bool _nativeReloadHandAuthorityActive{ false };
-        bool _nativeReloadSupportHandIsLeft{ true };
+        bool _handAnimationAuthoritySupportHandIsLeft{ true };
 
         // FRIK weapon-node ownership block + reparent bookkeeping for
         // left-firing carry; see syncFiringHandWeaponNodeOwnership().
@@ -1849,6 +1861,7 @@ namespace rock
             RE::NiNode* parentHandNode = nullptr;
             std::uint64_t weaponGenerationKey = 0;
             std::uint64_t schedulerSequence = 0;
+            std::uint64_t handWorldPublicationSequence = 0;
             bool parentHandIsLeft = false;
             bool valid = false;
         };

@@ -32,7 +32,7 @@ namespace rock::physics_interaction_detail
         float rotationDegrees = 0.0f;
     };
 
-    [[nodiscard]] bool nativeReloadHandAuthorityActive();
+    [[nodiscard]] bool providerHandAnimationAuthorityActive();
 
     [[nodiscard]] constexpr std::uint32_t claimOwnerBit(PhysicsObjectClaimOwner owner)
     {

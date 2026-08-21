@@ -51,7 +51,7 @@ namespace rock::fo4vr_actor_state_policy
         return weaponState >= 3 && weaponState <= 5;
     }
 
-    [[nodiscard]] inline constexpr bool isNativeReloading(
+    [[nodiscard]] inline constexpr bool isRawNativeReloadState(
         const std::uint32_t gunState) noexcept
     {
         return gunState == kReloadingGunState;

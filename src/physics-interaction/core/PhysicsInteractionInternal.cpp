@@ -29,7 +29,6 @@
 #include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
-#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/VRControllers.h"
 
@@ -181,17 +180,13 @@ namespace rock::physics_interaction_detail
         }
     }
 
-    bool nativeReloadHandAuthorityActive()
+    bool providerHandAnimationAuthorityActive()
     {
         const auto animationAuthorityFlags =
             provider::currentNativeAnimationAuthorityFlagsV1();
-        const bool providerOwnsArmsOrHands =
-            (animationAuthorityFlags &
-                (authored_weapon_grip_capture_policy::kArms |
-                    authored_weapon_grip_capture_policy::kHands)) != 0;
-        return providerOwnsArmsOrHands ||
-               fo4vr_actor_state_policy::isNativeReloading(
-                   f4vr::getNativeGunState(f4vr::getPlayer()));
+        return (animationAuthorityFlags &
+                   (authored_weapon_grip_capture_policy::kArms |
+                       authored_weapon_grip_capture_policy::kHands)) != 0;
     }
 
     std::uint32_t claimOwnerCount(std::uint32_t ownerMask)

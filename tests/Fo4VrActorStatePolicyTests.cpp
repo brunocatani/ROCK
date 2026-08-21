@@ -1,4 +1,5 @@
 #include "rock_support/Fo4VrActorStatePolicy.h"
+#include "physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h"
 
 #include <cstdio>
 
@@ -55,13 +56,13 @@ int main()
     }
     ok &= expect("native Reloading storage must decode as gun state four",
         decodeGunState(4u << kGunStateShift) == 4);
-    ok &= expect("native gun state four must report reload authority",
-        isNativeReloading(4));
-    ok &= expect("non-reload and invalid gun states must fail closed",
-        !isNativeReloading(0) &&
-            !isNativeReloading(3) &&
-            !isNativeReloading(5) &&
-            !isNativeReloading(kInvalidGunState));
+    ok &= expect("native gun state four must report raw reload telemetry",
+        isRawNativeReloadState(4));
+    ok &= expect("non-reload and invalid gun states must fail raw telemetry",
+        !isRawNativeReloadState(0) &&
+            !isRawNativeReloadState(3) &&
+            !isRawNativeReloadState(5) &&
+            !isRawNativeReloadState(kInvalidGunState));
 
     ok &= expect("Sheathed must not report weapon magic drawn",
         !isWeaponMagicDrawn(0));
@@ -77,6 +78,125 @@ int main()
         !isWeaponMagicDrawn(6) &&
             !isWeaponMagicDrawn(7) &&
             !isWeaponMagicDrawn(kInvalidWeaponState));
+
+    using ReloadInput =
+        rock::native_reload_hand_authority_policy::Input;
+    using ReloadState =
+        rock::native_reload_hand_authority_policy::State;
+    using rock::native_reload_hand_authority_policy::update;
+
+    ReloadState postFire{};
+    ok &= expect("normal fire must not reserve the support hand",
+        !update(postFire, ReloadInput{
+            .weaponGenerationKey = 1,
+            .frameIndex = 100,
+            .gunState = 7,
+        }));
+    ok &= expect("post-fire state four must not become reload authority",
+        !update(postFire, ReloadInput{
+            .weaponGenerationKey = 1,
+            .frameIndex = 101,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = false,
+        }));
+    ok &= expect("post-fire state four must remain excluded",
+        !update(postFire, ReloadInput{
+            .weaponGenerationKey = 1,
+            .frameIndex = 140,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = false,
+        }));
+
+    ReloadState routedReload{};
+    ok &= expect("normal fire before routed reload must not reserve the support hand",
+        !update(routedReload, ReloadInput{
+            .weaponGenerationKey = 2,
+            .frameIndex = 199,
+            .gunState = 7,
+        }));
+    ok &= expect("a routed reload immediately after fire must reserve the support hand",
+        update(routedReload, ReloadInput{
+            .weaponGenerationKey = 2,
+            .frameIndex = 200,
+            .reloadDispatchSequence = 1,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = false,
+        }));
+    ok &= expect("a routed reload remains active while its native state is current",
+        update(routedReload, ReloadInput{
+            .weaponGenerationKey = 2,
+            .frameIndex = 201,
+            .reloadDispatchSequence = 1,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = false,
+        }));
+    ok &= expect("a stuck raw state cannot retain reload authority forever",
+        !update(routedReload, ReloadInput{
+            .weaponGenerationKey = 2,
+            .frameIndex = 1101,
+            .reloadDispatchSequence = 1,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = false,
+        }));
+
+    ReloadState emptyReload{};
+    ok &= expect("an empty-magazine reload must reserve the support hand",
+        update(emptyReload, ReloadInput{
+            .weaponGenerationKey = 3,
+            .frameIndex = 300,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = true,
+        }));
+
+    ReloadState unsupportedRawState{};
+    ok &= expect("raw state four without positive evidence must fail closed",
+        !update(unsupportedRawState, ReloadInput{
+            .weaponGenerationKey = 4,
+            .frameIndex = 400,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = false,
+        }));
+    ok &= expect("a stuck unsupported raw state must remain inactive",
+        !update(unsupportedRawState, ReloadInput{
+            .weaponGenerationKey = 4,
+            .frameIndex = 1401,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = false,
+        }));
+
+    ReloadState generationChange{};
+    ok &= expect("a routed reload begins for its matching weapon generation",
+        update(generationChange, ReloadInput{
+            .weaponGenerationKey = 5,
+            .frameIndex = 500,
+            .reloadDispatchSequence = 2,
+            .gunState = 4,
+        }));
+    ok &= expect("weapon generation change must end old reload authority",
+        !update(generationChange, ReloadInput{
+            .weaponGenerationKey = 6,
+            .frameIndex = 501,
+            .reloadDispatchSequence = 2,
+            .gunState = 4,
+        }));
+
+    ReloadState noWeapon{};
+    ok &= expect("raw reload state without an equipped weapon must fail closed",
+        !update(noWeapon, ReloadInput{
+            .frameIndex = 600,
+            .reloadDispatchSequence = 3,
+            .gunState = 4,
+            .magazineCountKnown = true,
+            .magazineEmpty = true,
+        }));
 
     return ok ? 0 : 1;
 }

@@ -13,7 +13,9 @@
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
 
 #include "RockConfig.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/hand/skeleton/HandFrame.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/native_anim/NativeIdleGripPreharvest.h"
@@ -103,13 +105,37 @@ namespace rock
         return RE::NiTransform();
     }
 
+    void PhysicsInteraction::sampleNativeReloadHandAuthorityBeforeFrik()
+    {
+        const auto* equippedWeaponData =
+            physics_interaction_detail::getValidatedEquippedWeaponData();
+        _nativeReloadHandAuthorityActive =
+            native_reload_hand_authority_policy::update(
+                _nativeReloadHandAuthorityState,
+                native_reload_hand_authority_policy::Input{
+                    .weaponGenerationKey =
+                        _weaponCollision.getCurrentWeaponGenerationKey(),
+                    .frameIndex = runtime_state::currentFrame().frameIndex,
+                    .reloadDispatchSequence =
+                        input_remap_runtime::nativeReloadDispatchSequence(),
+                    .gunState = f4vr::getNativeGunState(f4vr::getPlayer()),
+                    .magazineCountKnown = equippedWeaponData != nullptr,
+                    .magazineEmpty =
+                        equippedWeaponData &&
+                        equippedWeaponData->ammoCount == 0,
+                });
+    }
+
     void PhysicsInteraction::refreshExternalHandWorldTransformsBeforeFrik(
         const std::uint64_t schedulerSequence)
     {
         _currentPreFrikSchedulerSequence = schedulerSequence;
         if (!_initialized.load(std::memory_order_acquire)) {
+            _nativeReloadHandAuthorityActive = false;
             return;
         }
+
+        sampleNativeReloadHandAuthorityBeforeFrik();
 
         const auto captureWand = [](RE::NiNode* node,
                                     RE::NiTransform& outWorld) {
@@ -160,7 +186,12 @@ namespace rock
         _equippedWeaponTransition.refreshHandVisualAuthorityBeforeFrik(
             schedulerSequence);
 
+        auto* const preFrikBhkWorld = getPlayerBhkWorld();
+        auto* const preFrikHknpWorld = preFrikBhkWorld ?
+            getHknpWorld(preFrikBhkWorld) :
+            nullptr;
         _dynamicHandCollision.refreshContactVisualAuthorityBeforeFrik(
+            preFrikHknpWorld,
             schedulerSequence,
             rightRawHandValid,
             rightRawHandWorld,
@@ -180,8 +211,9 @@ namespace rock
             { rightRawHandValid, rightRawHandWorld };
 
         const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
-        _twoHandedGrip.setNativeReloadHandAuthorityActive(
-            nativeReloadHandAuthorityActive());
+        _twoHandedGrip.setHandAnimationAuthorityBoundaries(
+            providerHandAnimationAuthorityActive(),
+            _nativeReloadHandAuthorityActive);
         _twoHandedGrip.refreshRetainedHandVisualAuthoritiesBeforeFrik(
             leftWeaponHandDriver,
             rightWeaponHandDriver,

@@ -47,10 +47,17 @@ function Require-Order(
 
 
 $actorState = 'src/rock_support/Fo4VrActorStatePolicy.h'
+$reloadPolicy = 'src/physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h'
 
 Require-Pattern $actorState `
-    'kReloadingGunState\s*=\s*4[\s\S]*isNativeReloading\([\s\S]*gunState\s*==\s*kReloadingGunState' `
-    'Reload ownership must use the verified native gun-state value instead of a CommonLib bitfield.'
+    'kReloadingGunState\s*=\s*4[\s\S]*isRawNativeReloadState\([\s\S]*gunState\s*==\s*kReloadingGunState' `
+    'Raw reload telemetry must use the verified native gun-state value instead of a CommonLib bitfield.'
+Require-Pattern $reloadPolicy `
+    'explicitReloadPending[\s\S]*automaticEmptyReload[\s\S]*nativeReloadState[\s\S]*rawReloadOwnsSupportHand\s*=\s*explicitReloadPending\s*\|\|\s*automaticEmptyReload' `
+    'Native reload hand ownership must require positive routed or empty-magazine evidence in raw state four.'
+Require-Pattern $reloadPolicy `
+    'kReloadAuthorityFrameWindow[\s\S]*reloadAuthorityExpiresAtFrame[\s\S]*frameIndex\s*>\s*state\.reloadAuthorityExpiresAtFrame[\s\S]*rawReloadOwnsSupportHand\s*=\s*false' `
+    'A stuck native state must have a bounded authority lifetime.'
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

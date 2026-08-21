@@ -39,6 +39,7 @@
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
+#include "physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h"
 #include "api/ROCKProviderApi.h"
 
 namespace RE
@@ -302,6 +303,8 @@ namespace rock
         HandFrame getInteractionHandFrame(bool isLeft);
 
         RE::NiTransform getInteractionHandTransform(bool isLeft);
+
+        void sampleNativeReloadHandAuthorityBeforeFrik();
 
         RE::bhkWorld* getPlayerBhkWorld() const;
 
@@ -574,6 +577,9 @@ namespace rock
         std::array<bool, 2> _persistentFrikHandInputIsolationActive{};
         std::array<std::uint64_t, 2> _persistentFrikHandInputIsolationSequence{};
         std::uint64_t _currentPreFrikSchedulerSequence = 0;
+        native_reload_hand_authority_policy::State
+            _nativeReloadHandAuthorityState{};
+        bool _nativeReloadHandAuthorityActive = false;
 
         Hand _rightHand{ false };
         Hand _leftHand{ true };

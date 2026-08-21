@@ -71,11 +71,23 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'PresentedHandNodeCache[\s\S]*getHandWorldTransform\(Hand hand\)[\s\S]*isSkeletonReadyHint\(\)[\s\S]*getFirstPersonSkeleton\(\)[\s\S]*findNode\(skeleton,\s*"RArm_Hand"\)[\s\S]*findNode\(skeleton,\s*"LArm_Hand"\)[\s\S]*handNode->world' `
     'ROCK must read final presented hands directly from the game first-person scene nodes.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
-    'g_trackedHandWorldPublications[\s\S]*rememberTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*invalidateTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*resetTrackedHandWorldPublications\(\)' `
-    'Persistent FRIK V2 hand-world publications must be tracked per tag and cleared at lifecycle reset.'
+    'kTrackedHandWorldPublicationCount[\s\S]*ROCK_PROVIDER_MAX_CONSUMERS_V1[\s\S]*HandWorldAuthorityRegistry[\s\S]*g_handWorldAuthorityRegistry' `
+    'Persistent FRIK V2 hand-world publications must use an exact fixed registry derived from the public provider capacity.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
-    'g_handWorldPublicationReady[\s\S]*applyExternalHandWorldTransform[\s\S]*!detail::g_handWorldPublicationReady\[handIndex\][\s\S]*setExternalHandWorldPublicationReady' `
+    'g_handWorldPublicationReady[\s\S]*publishExternalHandWorldTransform[\s\S]*!detail::g_handWorldPublicationReady\[handIndex\][\s\S]*setExternalHandWorldPublicationReady' `
     'Persistent hand publication must fail closed until controller reconstruction is calibrated.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'publishExternalHandWorldTransform[\s\S]*!detail::g_handWorldSchedulerReady[\s\S]*findOrReserveTrackedHandWorldPublication[\s\S]*setHandWorldTransform[\s\S]*rememberTrackedHandWorldPublication' `
+    'The local slot must be reserved before hFRIK publication, and scheduler loss must reject the publication.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'setExternalHandWorldSchedulerReady[\s\S]*clearHandWorldTransform[\s\S]*resetTrackedHandWorldPublications' `
+    'Scheduler loss must clear every retained hFRIK claim and reset local authority state.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'HandWorldAuthoritySnapshot[\s\S]*HandWorldAuthorityRole[\s\S]*priority[\s\S]*sequence[\s\S]*tryGetPublishedExternalHandWorldWinner' `
+    'Hand-wide winner queries must expose typed role, priority, sequence, tag, and target metadata.'
+Require-Text 'src/physics-interaction/visual/HandWorldAuthorityRegistryPolicy.h' `
+    'findOrReserve[\s\S]*reserved\s*=\s*true[\s\S]*commit[\s\S]*cancelReservation[\s\S]*invalidate[\s\S]*winner[\s\S]*reset' `
+    'The production registry policy must expose deterministic reserve, commit, clear, arbitration, and lifecycle reset operations.'
 Require-Text 'src/ROCKMain.cpp' `
     'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
     'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'

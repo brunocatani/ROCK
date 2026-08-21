@@ -496,7 +496,7 @@ namespace rock
         auto* world = frame.hknpWorld;
 
         if (!_rightHand.hasCollisionBody() || !_leftHand.hasCollisionBody()) {
-            if (frame.reloadBoundaryActive) {
+            if (frame.providerAnimationBoundaryActive) {
                 return;
             }
             if (_handColliderCreateRetryFrames > 0) {
@@ -578,7 +578,7 @@ namespace rock
         }
 
         if (!_bodyBoneColliders.hasBodies()) {
-            if (frame.reloadBoundaryActive) {
+            if (frame.providerAnimationBoundaryActive) {
                 return;
             }
             if (_bodyBoneColliderCreateRetryFrames > 0) {

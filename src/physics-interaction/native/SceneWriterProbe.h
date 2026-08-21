@@ -1,7 +1,8 @@
 #pragma once
 
 /*
- * Liveness probe on the engine's physics-to-scene transform writer
+ * Held-object presentation boundary on the engine's physics-to-scene
+ * transform writer
  * (FO4VR 1.2.72 RVA 0x1E06B00). Per the 2026-08-18 physics-to-scene sync
  * dossier, this function is the first verified render-facing storage write in
  * the generic dynamic-body display path:
@@ -11,20 +12,20 @@
  *     -> bhkNPCollisionObject(Proxy)::UpdateWorldData
  *     -> writer 0x1E06B00 (this hook) -> NiAVObject local/world
  *
- * The probe answers, for the exact held object only:
- *   1. does held clutter traverse this writer at all (main vs proxy callsite);
- *   2. what transform arrives (motion-predicted pose vs ROCK's anchor);
- *   3. does a display-only substitution at this boundary move the rendered
- *      mesh (the interception-boundary confirmation).
+ * For an exact registered held object, the boundary can substitute ROCK's
+ * published BODY-space presentation anchor for the solver pose. It does not
+ * modify the solver, motion record, or any unregistered object.
  *
  * Ownership/threading: registration and clearing happen on the game thread at
  * grab commit / release / world loss. The hook may run on any scene-update
- * thread, so the per-hand target slots use a seqlock-style generation; the
- * hook never blocks, never allocates, and fails closed to the original writer
- * on any doubt. The optional display offset (INI
+ * thread, so the per-hand target slots and immutable runtime configuration use
+ * atomic seqlock-style publication. A game-thread NiPointer plus a bounded
+ * reader retirement path keeps the live room node valid for every matched
+ * hook reader. The hook
+ * never logs, blocks, allocates, or reads mutable global configuration. The
+ * optional display offset (INI
  * fGrabSceneWriterProbeOffsetZGameUnits) modifies only a stack-local copy of
- * the writer input; engine storage and Havok state are never touched by the
- * probe itself.
+ * the writer input; engine storage and Havok state are never touched directly.
  */
 
 #include <cstddef>
@@ -34,7 +35,7 @@
 
 namespace RE
 {
-    class hknpWorld;
+    class NiAVObject;
     class NiCollisionObject;
 }
 
@@ -46,22 +47,27 @@ namespace rock::scene_writer_probe
     {
         const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
         std::uint32_t collisionObjectCount = 0;
-        RE::hknpWorld* world = nullptr;
         // The player room node. The hook reads its live world transform to
         // measure the mid-frame locomotion step at draw time.
-        const RE::NiAVObject* roomNode = nullptr;
-        std::uint32_t bodyId = 0x7FFF'FFFF;
-        float havokToGame = 0.0f;
+        RE::NiAVObject* roomNode = nullptr;
         std::uint64_t traceId = 0;
     };
 
-    // Byte-validated entry detour; idempotent, fails closed (probe disabled,
-    // engine untouched) on prefix mismatch. Install once at plugin load.
+    // Byte-validated entry detour; idempotent and leaves the engine untouched
+    // on prefix mismatch. ROCK requires this production boundary at load.
     bool install();
     bool isInstalled();
+    // Game thread only. Releases reader-retired strong owners after every
+    // earlier hook reader has drained.
+    void serviceGameThread();
 
     // Game thread only. Overwrites the hand's slot for the current grab.
-    void registerHeldTarget(bool isLeft, const HeldTargetRegistration& registration);
+    [[nodiscard]] bool registerHeldTarget(
+        bool isLeft,
+        const HeldTargetRegistration& registration);
+    // Game thread only. Publishes hot-reloaded immutable hook configuration;
+    // disabling scene sync also invalidates this hand's retained anchor.
+    void refreshHeldPresentationConfig(bool isLeft);
     // Game thread only. Safe to call when nothing is registered. Also drops
     // the published anchor.
     void clearHeldTarget(bool isLeft);
@@ -75,7 +81,7 @@ namespace rock::scene_writer_probe
      * anchor-vs-solver gaps above the full-anchor threshold the translation
      * blends back toward the solver pose, and above the solver threshold the
      * substitution is skipped entirely (object blocked by geometry must render
-     * physically). Stage tells the log which clock the writer consumed.
+     * physically). Stage records which published clock the writer consumed.
      */
     enum class AnchorStage : std::uint8_t
     {

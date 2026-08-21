@@ -478,6 +478,13 @@ namespace rock::provider
 
     enum class RockProviderAnimationPhaseV1 : std::uint32_t
     {
+        /*
+         * BeforeRock, AfterRock, and Complete run after hFRIK's skeleton pass.
+         * A hand world target published in these phases is therefore consumed
+         * by hFRIK on its next skeleton frame. NativeGraphOutput runs at the
+         * native animation hook and has the same next-skeleton-frame rule for
+         * hand world targets. No V1 callback is a pre-hFRIK callback.
+         */
         BeforeRock = 1,
         AfterRock = 2,
         Complete = 3,
@@ -492,7 +499,10 @@ namespace rock::provider
         SkeletonReady = 1u << 2,
         MenuBlocking = 1u << 3,
         ConfigBlocking = 1u << 4,
+        // Finger-local pose writes are allowed. WorldTransformWritesAllowed
+        // must also be set before publishing a hand world transform.
         VisualWritesAllowed = 1u << 5,
+        WorldTransformWritesAllowed = 1u << 6,
     };
 
     enum class RockProviderEquippedWeaponGripStateFlagV1 : std::uint32_t
@@ -2066,10 +2076,18 @@ namespace rock::provider
      * A consumer publishes one hand world target and/or an exact 15-bone
      * finger-local pose through ROCK's FRIK authority bridge. Set/clear only
      * from ROCK's animation/frame callbacks on the game thread; wrong-thread
-     * writes are rejected. ROCK derives a unique tag from ownerToken. Every
-     * publication is a rolling bounded lease with generation guards and is
-     * cleared on expiry, generation change, explicit clear, consumer
-     * unregister, provider loss, or callback fault.
+     * writes are rejected. A world target is retained and consumed on hFRIK's
+     * next skeleton frame. Republish from each callback when the target moves;
+     * a static target remains active until clear or lease invalidation. Clear
+     * hands the arm back on hFRIK's next skeleton frame. ROCK returns NotReady
+     * for world writes until its validated pre-hFRIK scheduler is installed.
+     * The callback context reports this distinction with
+     * WorldTransformWritesAllowed; VisualWritesAllowed alone permits only the
+     * independent finger-local path.
+     * ROCK derives a unique tag from ownerToken. Every publication is a rolling
+     * bounded lease with generation guards and is cleared on expiry,
+     * generation change, explicit clear, consumer unregister, provider loss,
+     * or callback fault.
      */
     struct RockProviderHandVisualAuthorityRequestV1
     {

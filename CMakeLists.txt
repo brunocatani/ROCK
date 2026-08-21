@@ -524,6 +524,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKPreFrikHandAuthorityPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKPreFrikHandAuthorityPolicyTests)
 
+  add_executable(ROCKHandWorldAuthorityRegistryPolicyTests
+    "${ROOT_DIR}/tests/HandWorldAuthorityRegistryPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHandWorldAuthorityRegistryPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHandWorldAuthorityRegistryPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHandWorldAuthorityRegistryPolicyTests)
+
   add_executable(ROCKHknpBodyFramePolicyTests
     "${ROOT_DIR}/tests/HknpBodyFramePolicyTests.cpp"
   )
@@ -819,7 +826,10 @@ if(BUILD_ROCK_TESTS)
     target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} REUSE_FROM ROCKPolicyTestSupport)
     target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE ROCKPolicyTestSupport)
   endforeach()
-  add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
+  add_custom_target(ROCKPolicyTestBinaries DEPENDS
+    ${ROCK_COMMONLIB_TEST_TARGETS}
+    ROCKHandWorldAuthorityRegistryPolicyTests
+  )
 
   add_executable(ROCKDebugConfigPolicyTests
     "${ROOT_DIR}/tests/DebugConfigPolicyTests.cpp"

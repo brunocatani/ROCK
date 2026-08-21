@@ -33,7 +33,7 @@ namespace rock::hand_grab_detail
 
     inline bool applyGrabExternalHandWorldTransform(bool isLeft, const RE::NiTransform& adjustedHandTransform)
     {
-        return frik_visual_authority::applyExternalHandWorldTransform(
+        return frik_visual_authority::publishExternalHandWorldTransform(
             kGrabExternalHandTag,
             handFromBool(isLeft),
             adjustedHandTransform,
@@ -47,7 +47,7 @@ namespace rock::hand_grab_detail
 
     inline bool applyGrabReturnHandWorldTransform(bool isLeft, const RE::NiTransform& handTransform)
     {
-        return frik_visual_authority::applyExternalHandWorldTransform(
+        return frik_visual_authority::publishExternalHandWorldTransform(
             kGrabReturnHandTag,
             handFromBool(isLeft),
             handTransform,

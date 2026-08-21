@@ -53,6 +53,9 @@ Require-Pattern $main `
 Require-Pattern $main `
     'onGameFrameUpdateHook[\s\S]{0,180}\(void\)tryHookFrikOuterGameLoop\(\)[\s\S]{0,180}s_originalGameLoopFunc\(rcx\)' `
     'The existing inner hook must lazily acquire the late FRIK wrapper without changing its native displaced-call order.'
+Require-Pattern $main `
+    'tryHookFrikOuterGameLoop[\s\S]*setExternalHandWorldSchedulerReady\(false\)[\s\S]*setExternalHandWorldSchedulerReady\(true\)' `
+    'The verified outer scheduler must explicitly gate persistent hand-world authority.'
 
 # Scheduler generation is captured once by PhysicsInteraction and stamps both
 # post providers; only the immediately succeeding pre phase may consume it.
@@ -85,8 +88,11 @@ Require-Pattern $handHeader `
 # Weapon targets are reconstructed from each physical hand's current FRIK
 # driver and reject stale scheduler, generation, or firing-role state.
 
-# Ordinary contact transport is scheduler-fresh and contact-normal safe, while
-# fixed-surface latches remain explicitly outside this provider.
+# Ordinary contact transport and fixed-surface latches both refresh their
+# identity-bound targets before hFRIK.
+Require-Pattern 'src/physics-interaction/hand/collision/DynamicHandCollision.cpp' `
+    'surfaceLatch\.active[\s\S]{0,1800}snapshotBody[\s\S]{0,1000}targetBodyIdentity[\s\S]{0,500}targetCollisionIdentity[\s\S]{0,1000}handInTargetBody[\s\S]{0,800}publishExternalHandWorldTransform' `
+    'A fixed-surface latch must reconstruct and publish its exact body-bound hand target before hFRIK.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Pre-FRIK hand authority source boundary failed:'

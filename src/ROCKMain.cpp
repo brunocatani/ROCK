@@ -619,6 +619,7 @@ namespace
     [[nodiscard]] bool tryHookFrikOuterGameLoop()
     {
         if (s_preFrikOuterHookInstalled) {
+            frik_visual_authority::setExternalHandWorldSchedulerReady(true);
             return true;
         }
 
@@ -640,12 +641,14 @@ namespace
                     "ROCK: Pre-FRIK scheduler refused an unreadable or non-CALL main-loop site.");
                 s_preFrikUnexpectedOwnerLogged = true;
             }
+            frik_visual_authority::setExternalHandWorldSchedulerReady(false);
             return false;
         }
 
         if (immediateTarget == reinterpret_cast<std::uintptr_t>(
                                    &onPreFrikGameFrameUpdateHook)) {
             s_preFrikOuterHookInstalled = true;
+            frik_visual_authority::setExternalHandWorldSchedulerReady(true);
             return true;
         }
 
@@ -662,6 +665,7 @@ namespace
             if (!main_loop_hook_policy::decodeCommonLibAbsoluteJumpTarget(
                     thunkBytes.data(),
                     terminalTarget)) {
+                frik_visual_authority::setExternalHandWorldSchedulerReady(false);
                 return false;
             }
         }
@@ -669,11 +673,13 @@ namespace
         if (terminalTarget == reinterpret_cast<std::uintptr_t>(
                                   &onGameFrameUpdateHook)) {
             // FRIK has not wrapped ROCK's original game-loop hook yet.
+            frik_visual_authority::setExternalHandWorldSchedulerReady(false);
             return false;
         }
         if (terminalTarget == reinterpret_cast<std::uintptr_t>(
                                   &onPreFrikGameFrameUpdateHook)) {
             s_preFrikOuterHookInstalled = true;
+            frik_visual_authority::setExternalHandWorldSchedulerReady(true);
             return true;
         }
         if (!isAddressOwnedByModule(terminalTarget, L"FRIK.dll")) {
@@ -683,6 +689,7 @@ namespace
                     terminalTarget);
                 s_preFrikUnexpectedOwnerLogged = true;
             }
+            frik_visual_authority::setExternalHandWorldSchedulerReady(false);
             return false;
         }
 
@@ -695,10 +702,12 @@ namespace
                 "ROCK: Pre-FRIK scheduler failed to retain the exact FRIK outer chain target expected=0x{:X} actual=0x{:X}.",
                 immediateTarget,
                 original);
+            frik_visual_authority::setExternalHandWorldSchedulerReady(false);
             return false;
         }
         s_frikOuterGameLoopFunc = reinterpret_cast<GameLoopFunc>(original);
         s_preFrikOuterHookInstalled = true;
+        frik_visual_authority::setExternalHandWorldSchedulerReady(true);
         logger::info(
             "ROCK: Pre-FRIK hand-authority scheduler installed before FRIK.dll target 0x{:X}.",
             terminalTarget);
@@ -728,6 +737,7 @@ namespace
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
         }
+        rock::scene_writer_probe::serviceGameThread();
 
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
             s_physicsInteraction) {
@@ -878,6 +888,10 @@ namespace
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
             logger::info("ROCK: GameLoaded -- initializing FRIK API V2 and loading config...");
             frik_skeleton_profile::clear();
+            if (!s_preFrikOuterHookInstalled) {
+                frik_visual_authority::
+                    setExternalHandWorldSchedulerReady(false);
+            }
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
@@ -1050,9 +1064,11 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
         logger::warn("ROCK: Held trigger/grip-zone equip disabled because the exact native transition contract is unavailable.");
     }
 
-    logger::info("ROCK: Install physics-to-scene writer probe...");
+    logger::info("ROCK: Install held-object physics-to-scene presentation boundary...");
     if (!rock::scene_writer_probe::install()) {
-        logger::warn("ROCK: Scene-writer probe unavailable; held-object scene-sync diagnostics disabled for this session.");
+        logger::critical(
+            "ROCK: Required held-object scene presentation boundary is unavailable. Cannot continue safely.");
+        return false;
     }
 
     logger::info("ROCK: Install scoped weapon transition animation acceleration...");

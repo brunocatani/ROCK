@@ -527,7 +527,7 @@ namespace rock
             sourceSchedulerSequence == 0 ||
             !isFiniteTransform(anchor->world) ||
             !isFiniteTransform(handWorld) ||
-            !frik_visual_authority::applyExternalHandWorldTransform(
+            !frik_visual_authority::publishExternalHandWorldTransform(
                 kHandPoseHandoffTag,
                 handFromBool(_isLeftHand),
                 handWorld,
@@ -583,7 +583,7 @@ namespace rock
         if (!sourceOwned ||
             !prefrik_hand_authority_policy::isUsableTransform(
                 refreshedHandWorld) ||
-            !frik_visual_authority::applyExternalHandWorldTransform(
+            !frik_visual_authority::publishExternalHandWorldTransform(
                 kHandPoseHandoffTag,
                 hand,
                 refreshedHandWorld,

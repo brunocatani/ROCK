@@ -77,7 +77,7 @@ namespace rock
 
     bool TwoHandedGrip::hasVisualAuthorityForHand(const bool isLeft) const
     {
-        if (isNativeReloadSupportHand(isLeft)) {
+        if (isHandAnimationAuthoritySupportHand(isLeft)) {
             return false;
         }
         if (_gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
@@ -112,8 +112,20 @@ namespace rock
         outWeaponNode = nullptr;
         outWeaponGenerationKey = 0;
         if (isLeft != _firingHandIsLeft ||
-            _nativeReloadHandAuthorityActive) {
+            handAnimationAuthorityBoundaryActive()) {
             return false;
+        }
+
+        const auto hand = handFromBool(isLeft);
+        if (frik_visual_authority::
+                hasPublishedExternalHandWorldTransform(hand)) {
+            frik_visual_authority::HandWorldAuthoritySnapshot winner{};
+            if (!frik_visual_authority::
+                    tryGetPublishedExternalHandWorldWinner(hand, winner) ||
+                !frik_visual_authority::
+                    weaponPresentationFollowsRole(winner.role)) {
+                return false;
+            }
         }
 
         if (isLeft) {
@@ -138,7 +150,26 @@ namespace rock
             return true;
         }
 
-        return false;
+        /*
+         * Normal physical-right carry is owned by the authored primary grip
+         * runtime rather than the manual two-hand state machine. Bind recoil
+         * to that exact authored weapon identity and generation.
+         */
+        if (_rightFiringHandCanonicalSource !=
+                RightFiringCanonicalSource::AuthoredAnimation ||
+            !_hasRightFiringHandCanonicalWeaponLocal ||
+            !_rightFiringHandCanonicalWeaponNode ||
+            _rightFiringHandCanonicalGenerationKey == 0 ||
+            _rightFiringHandCanonicalOwnershipKey == 0 ||
+            _rightFiringHandCanonicalOwnershipKey !=
+                _activeEquippedWeaponOwnershipKey) {
+            return false;
+        }
+
+        outWeaponNode = _rightFiringHandCanonicalWeaponNode;
+        outWeaponGenerationKey =
+            _rightFiringHandCanonicalGenerationKey;
+        return true;
     }
 
     void TwoHandedGrip::rememberFiringRecoilReference(
@@ -212,7 +243,7 @@ namespace rock
         }
 
         state.begin(_lastPublishedHandWorld[index]);
-        if (!frik_visual_authority::applyExternalHandWorldTransform(
+        if (!frik_visual_authority::publishExternalHandWorldTransform(
                 RETURN_HAND_TAG,
                 handFromBool(isLeft),
                 state.start,
@@ -284,7 +315,7 @@ namespace rock
                     state.durationSeconds);
             }
             if (!isUsableHandAuthorityTransform(result.transform) ||
-                !frik_visual_authority::applyExternalHandWorldTransform(
+                !frik_visual_authority::publishExternalHandWorldTransform(
                     RETURN_HAND_TAG,
                     handFromBool(isLeft),
                     result.transform,
@@ -669,12 +700,15 @@ namespace rock
             const std::size_t handIndex = isLeft ? 0u : 1u;
             auto* const handNode = resolveFirstPersonHandNode(isLeft);
             const auto hand = handFromBool(isLeft);
+            frik_visual_authority::HandWorldAuthoritySnapshot winner{};
             if (!handNode ||
                 weaponNode->parent != handNode ||
                 (!hasVisualAuthorityForHand(isLeft) &&
                     !_weaponCollisionHandAuthorityLive[handIndex]) ||
                 !frik_visual_authority::
-                    hasPublishedExternalHandWorldTransform(hand)) {
+                    tryGetPublishedExternalHandWorldWinner(hand, winner) ||
+                !frik_visual_authority::
+                    weaponPresentationFollowsRole(winner.role)) {
                 continue;
             }
 
@@ -684,6 +718,7 @@ namespace rock
                 .parentHandNode = handNode,
                 .weaponGenerationKey = currentWeaponGenerationKey,
                 .schedulerSequence = currentSchedulerSequence,
+                .handWorldPublicationSequence = winner.sequence,
                 .parentHandIsLeft = isLeft,
                 .valid = true,
             };
@@ -708,6 +743,7 @@ namespace rock
             captured.parentHandIsLeft ? 0u : 1u;
         auto* const currentParentHand =
             resolveFirstPersonHandNode(captured.parentHandIsLeft);
+        frik_visual_authority::HandWorldAuthoritySnapshot winner{};
         if (!weaponNode ||
             weaponNode != captured.weaponNode ||
             currentWeaponGenerationKey == 0 ||
@@ -720,7 +756,10 @@ namespace rock
             (!hasVisualAuthorityForHand(captured.parentHandIsLeft) &&
                 !_weaponCollisionHandAuthorityLive[handIndex]) ||
             !frik_visual_authority::
-                hasPublishedExternalHandWorldTransform(hand)) {
+                tryGetPublishedExternalHandWorldWinner(hand, winner) ||
+            winner.sequence != captured.handWorldPublicationSequence ||
+            !frik_visual_authority::
+                weaponPresentationFollowsRole(winner.role)) {
             return false;
         }
 
@@ -757,7 +796,7 @@ namespace rock
         return true;
     }
 
-    void TwoHandedGrip::suspendNativeReloadSupportHandAuthority(
+    void TwoHandedGrip::suspendAnimationAuthoritySupportHand(
         const bool isLeft)
     {
         const std::size_t index = isLeft ? 0u : 1u;
@@ -780,7 +819,10 @@ namespace rock
             scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach,
             isLeft);
         (void)clearWeaponCollisionHandAuthority(isLeft);
-        clearHandVisualReturn(isLeft, "native-reload-authority", false);
+        clearHandVisualReturn(
+            isLeft,
+            "hand-animation-authority",
+            false);
         _weaponCollisionBaselineHandWorldValid[index] = false;
         _weaponCollisionHandPresentationFromPreviousFrame[index] = false;
         _hasLastPublishedHandWorld[index] = false;
@@ -791,42 +833,53 @@ namespace rock
         clearGunstockDedicatedHandAuthority();
     }
 
-    void TwoHandedGrip::setNativeReloadHandAuthorityActive(
-        const bool active)
+    void TwoHandedGrip::setHandAnimationAuthorityBoundaries(
+        const bool providerAnimationBoundaryActive,
+        const bool nativeReloadHandAuthorityActive)
     {
         const bool supportHandIsLeft = !_firingHandIsLeft;
+        const bool boundaryWasActive =
+            handAnimationAuthorityBoundaryActive();
         const bool supportRoleChanged =
-            _nativeReloadHandAuthorityActive &&
-            _nativeReloadSupportHandIsLeft != supportHandIsLeft;
+            boundaryWasActive &&
+            _handAnimationAuthoritySupportHandIsLeft != supportHandIsLeft;
+        _providerAnimationBoundaryActive =
+            providerAnimationBoundaryActive;
+        _nativeReloadHandAuthorityActive =
+            nativeReloadHandAuthorityActive;
+        const bool boundaryActive =
+            handAnimationAuthorityBoundaryActive();
 
-        if (!active) {
-            if (_nativeReloadHandAuthorityActive) {
+        if (!boundaryActive) {
+            if (boundaryWasActive) {
                 ROCK_LOG_INFO(
                     Weapon,
-                    "TwoHandedGrip: native reload released support-hand FRIK authority hand={}",
-                    _nativeReloadSupportHandIsLeft ? "left" : "right");
+                    "TwoHandedGrip: animation authority released support-hand FRIK authority hand={}",
+                    _handAnimationAuthoritySupportHandIsLeft ?
+                        "left" :
+                        "right");
             }
-            _nativeReloadHandAuthorityActive = false;
-            _nativeReloadSupportHandIsLeft = supportHandIsLeft;
+            _handAnimationAuthoritySupportHandIsLeft = supportHandIsLeft;
             return;
         }
 
-        if (_nativeReloadHandAuthorityActive && !supportRoleChanged) {
+        if (boundaryWasActive && !supportRoleChanged) {
             return;
         }
 
         if (supportRoleChanged) {
-            suspendNativeReloadSupportHandAuthority(
-                _nativeReloadSupportHandIsLeft);
+            suspendAnimationAuthoritySupportHand(
+                _handAnimationAuthoritySupportHandIsLeft);
         }
         clearFiringRecoilPresentationState();
-        _nativeReloadHandAuthorityActive = true;
-        _nativeReloadSupportHandIsLeft = supportHandIsLeft;
-        suspendNativeReloadSupportHandAuthority(supportHandIsLeft);
+        _handAnimationAuthoritySupportHandIsLeft = supportHandIsLeft;
+        suspendAnimationAuthoritySupportHand(supportHandIsLeft);
         ROCK_LOG_INFO(
             Weapon,
-            "TwoHandedGrip: native reload suspended support-hand FRIK authority hand={} logicalGripRetained={}",
+            "TwoHandedGrip: animation authority suspended support-hand FRIK authority hand={} provider={} nativeReload={} logicalGripRetained={}",
             supportHandIsLeft ? "left" : "right",
+            providerAnimationBoundaryActive ? "yes" : "no",
+            nativeReloadHandAuthorityActive ? "yes" : "no",
             partGrip(supportHandIsLeft).active ? "yes" : "no");
     }
 
@@ -845,7 +898,7 @@ namespace rock
              index < _preFrikWeaponHandAuthority.size();
              ++index) {
             const bool isLeft = index == 0u;
-            if (isNativeReloadSupportHand(isLeft)) {
+            if (isHandAnimationAuthoritySupportHand(isLeft)) {
                 (void)clearWeaponCollisionHandAuthority(isLeft);
                 continue;
             }
@@ -878,7 +931,7 @@ namespace rock
                     source.driverToHandLocal);
             if (!prefrik_hand_authority_policy::isUsableTransform(
                     targetWorld) ||
-                !frik_visual_authority::applyExternalHandWorldTransform(
+                !frik_visual_authority::publishExternalHandWorldTransform(
                     WEAPON_COLLISION_HAND_TAG,
                     handFromBool(isLeft),
                     targetWorld,
@@ -946,7 +999,7 @@ namespace rock
         };
         for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
             const bool isLeft = handIndex == 0u;
-            if (isNativeReloadSupportHand(isLeft)) {
+            if (isHandAnimationAuthoritySupportHand(isLeft)) {
                 continue;
             }
             for (std::size_t kindIndex = 0;
@@ -1009,7 +1062,7 @@ namespace rock
                 if (!sourceCurrent ||
                     !prefrik_hand_authority_policy::isUsableTransform(
                         refreshedHandWorld) ||
-                    !frik_visual_authority::applyExternalHandWorldTransform(
+                    !frik_visual_authority::publishExternalHandWorldTransform(
                         tag,
                         hand,
                         refreshedHandWorld,
@@ -1050,12 +1103,16 @@ namespace rock
         const bool hasPublishedTarget =
             frik_visual_authority::
                 hasPublishedExternalHandWorldTransform(hand);
+        frik_visual_authority::HandWorldAuthoritySnapshot winner{};
         const bool capturedPublishedTarget =
             hasPublishedTarget &&
             frik_visual_authority::
-                tryGetPublishedExternalHandWorldTarget(
-                    hand,
-                    preRecoilHandWorld);
+                tryGetPublishedExternalHandWorldWinner(hand, winner) &&
+            frik_visual_authority::
+                weaponPresentationFollowsRole(winner.role);
+        if (capturedPublishedTarget) {
+            preRecoilHandWorld = winner.worldTarget;
+        }
         const bool capturedControllerTarget =
             !hasPublishedTarget &&
             firingHandDriver.valid &&
@@ -1319,7 +1376,7 @@ namespace rock
                 }
                 const auto hand = handFromBool(pulse.isLeft);
                 pulse.applied =
-                    frik_visual_authority::applyExternalHandWorldTransform(
+                    frik_visual_authority::publishExternalHandWorldTransform(
                         WEAPON_COLLISION_HAND_TAG,
                         hand,
                         pulse.targetWorld,
@@ -1434,7 +1491,7 @@ namespace rock
                 dt,
                 _primaryHandVisualLerp);
         (void)publishAuthoredPrimaryFiringGripFingerPose(_firingHandIsLeft);
-        const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
+        const bool applied = frik_visual_authority::publishExternalHandWorldTransform(
             PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), appliedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
             recordPreFrikRetainedHandAuthority(
@@ -1454,7 +1511,7 @@ namespace rock
         if (!weaponNode || !grip.active || !grip.hasHandWeaponLocal) {
             return false;
         }
-        if (isNativeReloadSupportHand(isLeft)) {
+        if (isHandAnimationAuthoritySupportHand(isLeft)) {
             return true;
         }
         if (!scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scopeMenuOpenThisFrame)) {
@@ -1483,7 +1540,7 @@ namespace rock
                 acquisitionStart,
                 dt,
                 grip.visualLerp);
-        const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
+        const bool applied = frik_visual_authority::publishExternalHandWorldTransform(
             SUPPORT_GRIP_TAG, handFromBool(isLeft), appliedHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
             recordPreFrikRetainedHandAuthority(
@@ -1558,7 +1615,7 @@ namespace rock
 
     void TwoHandedGrip::publishGripHandPoses(bool isLeft)
     {
-        if (isNativeReloadSupportHand(isLeft) ||
+        if (isHandAnimationAuthoritySupportHand(isLeft) ||
             !frik_visual_authority::isAvailable()) {
             return;
         }

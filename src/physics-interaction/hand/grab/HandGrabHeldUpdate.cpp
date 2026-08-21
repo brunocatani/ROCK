@@ -122,6 +122,7 @@ namespace rock
         if (_heldObjectIsLooseWeapon) {
             suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
         }
+        scene_writer_probe::refreshHeldPresentationConfig(_isLeft);
 
         /*
          * Scene-writer probe registration, once per grab trace: collect the
@@ -173,15 +174,15 @@ namespace rock
                     }
                 }
             }
-            probeRegistration.world = world;
             if (const auto* playerNodes = f4vr::getPlayerNodes(); playerNodes && playerNodes->roomnode) {
                 probeRegistration.roomNode = playerNodes->roomnode;
             }
-            probeRegistration.bodyId = _savedObjectState.bodyId.value;
-            probeRegistration.havokToGame = physics_scale::havokToGame();
             probeRegistration.traceId = _grabFrame.traceId;
-            scene_writer_probe::registerHeldTarget(_isLeft, probeRegistration);
-            _sceneWriterProbeRegisteredTraceId = _grabFrame.traceId;
+            if (scene_writer_probe::registerHeldTarget(
+                    _isLeft,
+                    probeRegistration)) {
+                _sceneWriterProbeRegisteredTraceId = _grabFrame.traceId;
+            }
         }
 
         _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);

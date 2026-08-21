@@ -1583,6 +1583,7 @@ namespace rock
     }
 
     void DynamicHandCollisionRuntime::refreshContactVisualAuthorityBeforeFrik(
+        RE::hknpWorld* world,
         const std::uint64_t currentSchedulerSequence,
         const bool rightRawHandValid,
         const RE::NiTransform& rightRawHandWorld,
@@ -1596,6 +1597,42 @@ namespace rock
             auto& handSlots = _hands[isLeft ? 1u : 0u];
             if (handSlots.surfaceLatch.active) {
                 handSlots.preFrikContactAuthority = {};
+                auto& latch = handSlots.surfaceLatch;
+                const auto targetSnapshot = havok_runtime::snapshotBody(
+                    world,
+                    RE::hknpBodyId{ latch.targetBodyId });
+                RE::NiTransform targetWorld{};
+                const bool targetCurrent =
+                    world &&
+                    targetSnapshot.valid &&
+                    targetSnapshot.body == latch.targetBodyIdentity &&
+                    targetSnapshot.collisionObject ==
+                        latch.targetCollisionIdentity &&
+                    havok_runtime::tryResolveLiveBodyWorldTransform(
+                        world,
+                        RE::hknpBodyId{ latch.targetBodyId },
+                        targetWorld) &&
+                    isFiniteTransform(targetWorld);
+                const RE::NiTransform refreshedHandWorld = targetCurrent ?
+                    transform_math::composeTransforms(
+                        targetWorld,
+                        latch.handInTargetBody) :
+                    RE::NiTransform{};
+                if (!targetCurrent ||
+                    !isFiniteTransform(refreshedHandWorld) ||
+                    !frik_visual_authority::publishExternalHandWorldTransform(
+                        dynamicHandTag(isLeft),
+                        frik_visual_authority::handFromBool(isLeft),
+                        refreshedHandWorld,
+                        kSurfaceLatchVisualPriority)) {
+                    clearVisual(handSlots, isLeft);
+                    return;
+                }
+
+                latch.lastHandWorld = refreshedHandWorld;
+                handSlots.visualActive = true;
+                handSlots.lastPresentedHandWorld = refreshedHandWorld;
+                handSlots.lastPresentedHandWorldValid = true;
                 return;
             }
 
@@ -1621,7 +1658,7 @@ namespace rock
                     currentRawHandWorld,
                     maximumRawMotionGameUnits);
             if (!transported.valid ||
-                !frik_visual_authority::applyExternalHandWorldTransform(
+                !frik_visual_authority::publishExternalHandWorldTransform(
                     dynamicHandTag(isLeft),
                     frik_visual_authority::handFromBool(isLeft),
                     transported.targetWorld,
@@ -2285,7 +2322,7 @@ namespace rock
             handTargetsStable(true, frame.left, leftHand);
         const auto transitionStep = dynamic_hand_collision_transition::advance(
             _transitionState,
-            frame.reloadBoundaryActive,
+            frame.providerAnimationBoundaryActive,
             transitionTargetsStable);
         _transitionState = transitionStep.state;
         if (transitionStep.collisionStateChanged) {
@@ -2654,7 +2691,7 @@ namespace rock
                             isLeft ? "Left" : "Right");
                     }
                 }
-                if (frik_visual_authority::applyExternalHandWorldTransform(
+                if (frik_visual_authority::publishExternalHandWorldTransform(
                         dynamicHandTag(isLeft),
                         frik_visual_authority::handFromBool(isLeft),
                         latchTarget,
@@ -2762,7 +2799,7 @@ namespace rock
             handSlots.lastPresentedHandWorld = target;
             handSlots.lastPresentedHandWorldValid = true;
 
-            if (frik_visual_authority::applyExternalHandWorldTransform(
+            if (frik_visual_authority::publishExternalHandWorldTransform(
                     dynamicHandTag(isLeft),
                     frik_visual_authority::handFromBool(isLeft),
                     target,

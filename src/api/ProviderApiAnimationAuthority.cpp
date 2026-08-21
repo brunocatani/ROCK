@@ -557,6 +557,11 @@ namespace rock::provider::detail
             !frik_visual_authority::isSkeletonReadyHint()) {
             return RockProviderResultV1::NotReady;
         }
+        if ((request->flags & worldFlag) != 0 &&
+            !frik_visual_authority::
+                isExternalHandWorldSchedulerReady()) {
+            return RockProviderResultV1::NotReady;
+        }
 
         std::scoped_lock lock(s_handVisualAuthorityMutex);
         auto* slot = findHandVisualAuthoritySlotLocked(ownerToken, request->hand);
@@ -605,7 +610,7 @@ namespace rock::provider::detail
                             request->priority);
         }
         if (published && (request->flags & worldFlag) != 0) {
-            published = frik_visual_authority::applyExternalHandWorldTransform(
+            published = frik_visual_authority::publishExternalHandWorldTransform(
                 slot->tag,
                 hand,
                 toNiTransform(request->worldTransform),
@@ -830,6 +835,12 @@ namespace rock::provider
             !runtime.compatibilityConfigBlocking) {
             context.flags |= static_cast<std::uint32_t>(
                 RockProviderAnimationPhaseContextFlagV1::VisualWritesAllowed);
+            if (frik_visual_authority::
+                    isExternalHandWorldSchedulerReady()) {
+                context.flags |= static_cast<std::uint32_t>(
+                    RockProviderAnimationPhaseContextFlagV1::
+                        WorldTransformWritesAllowed);
+            }
         }
         {
             std::scoped_lock lock(s_snapshotMutex);

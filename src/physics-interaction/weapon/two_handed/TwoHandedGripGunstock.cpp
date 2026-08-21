@@ -1507,10 +1507,8 @@ namespace rock
             const char* tag{ nullptr };
             RE::NiTransform originalWorld{};
             RE::NiTransform requestedWorld{};
-            RE::NiTransform recoilWorldDelta{};
             bool isLeft{ false };
             bool reusedGripRole{ false };
-            bool recoilPrecompensated{ false };
             bool applied{ false };
         };
 
@@ -1542,103 +1540,19 @@ namespace rock
                 _gunstockDedicatedHandAuthorityActive[index] = false;
             }
 
-            RE::NiTransform requestedWorld = desiredWorld;
-            bool recoilProbeApplied = false;
-            const bool leftManualFiringRecoil =
-                firingRole &&
-                isLeft &&
-                _firingHandIsLeft &&
-                isManualOwnershipActive() &&
-                _weaponNodeOwnershipBlockEngaged;
-            if (leftManualFiringRecoil) {
-                RE::NiTransform recoilAppliedWorld{};
-                RE::NiTransform recoilRequestedWorld{};
-                if (out.reusedGripRole) {
-                    if (!_hasLastPublishedHandWorld[index] ||
-                        !isUsableHandAuthorityTransform(
-                            _lastPublishedHandWorld[index])) {
-                        return false;
-                    }
-                    recoilRequestedWorld =
-                        _lastPublishedHandWorld[index];
-                    // hFRIK applies controlled recoil synchronously inside
-                    // the same primary-role publication. Read the presented
-                    // full-body hand bone now; the requested target is not
-                    // evidence of the transform that recoil actually produced.
-                    if (!tryGetRootFlattenedHandBoneTransform(
-                            isLeft,
-                            recoilAppliedWorld)) {
-                        return false;
-                    }
-                } else {
-                    recoilRequestedWorld = originalWorld;
-                    if (!frik_visual_authority::applyExternalHandWorldTransform(
-                            GUNSTOCK_ALIGNMENT_TAG,
-                            hand,
-                            recoilRequestedWorld,
-                            GRIP_HAND_POSE_PRIORITY)) {
-                        return false;
-                    }
-                    _gunstockDedicatedHandAuthorityActive[index] = true;
-                    recoilProbeApplied = true;
-                    if (!tryGetRootFlattenedHandBoneTransform(
-                            isLeft,
-                            recoilAppliedWorld)) {
-                        (void)frik_visual_authority::
-                            clearExternalHandWorldTransform(
-                                GUNSTOCK_ALIGNMENT_TAG,
-                                hand);
-                        _gunstockDedicatedHandAuthorityActive[index] = false;
-                        return false;
-                    }
-                }
-
-                out.recoilWorldDelta =
-                    gunstock_alignment_policy::deriveAppliedWorldDelta(
-                        recoilRequestedWorld,
-                        recoilAppliedWorld);
-                if (!isUsableHandAuthorityTransform(
-                        out.recoilWorldDelta)) {
-                    if (!out.reusedGripRole) {
-                        (void)frik_visual_authority::
-                            clearExternalHandWorldTransform(
-                                GUNSTOCK_ALIGNMENT_TAG,
-                                hand);
-                        _gunstockDedicatedHandAuthorityActive[index] = false;
-                    }
-                    return false;
-                }
-                requestedWorld =
-                    gunstock_alignment_policy::precompensateWorldTarget(
-                        out.recoilWorldDelta,
-                        desiredWorld);
-                out.recoilPrecompensated = true;
-            }
-
+            /*
+             * Publication is deferred. Never read the hand back in this call.
+             * The shared recoil transaction captures the winning target before
+             * hFRIK and applies the measured post-hFRIK delta to the weapon.
+             */
+            const RE::NiTransform requestedWorld = desiredWorld;
             if (!isUsableHandAuthorityTransform(requestedWorld) ||
-                !frik_visual_authority::applyExternalHandWorldTransform(
+                !frik_visual_authority::publishExternalHandWorldTransform(
                     out.tag,
                     hand,
                     requestedWorld,
                     GRIP_HAND_POSE_PRIORITY)) {
                 if (!out.reusedGripRole) {
-                    if (recoilProbeApplied &&
-                        isUsableHandAuthorityTransform(
-                            out.recoilWorldDelta)) {
-                        const RE::NiTransform restoreTarget =
-                            gunstock_alignment_policy::
-                                precompensateWorldTarget(
-                                    out.recoilWorldDelta,
-                                    originalWorld);
-                        if (isUsableHandAuthorityTransform(restoreTarget)) {
-                            (void)frik_visual_authority::
-                                applyExternalHandWorldTransform(
-                                    GUNSTOCK_ALIGNMENT_TAG,
-                                    hand,
-                                    restoreTarget,
-                                    GRIP_HAND_POSE_PRIORITY);
-                        }
-                    }
                     (void)frik_visual_authority::
                         clearExternalHandWorldTransform(
                             GUNSTOCK_ALIGNMENT_TAG,
@@ -1681,15 +1595,9 @@ namespace rock
             if (!applied.applied || !applied.tag) {
                 return;
             }
-            RE::NiTransform restoreTarget = applied.originalWorld;
-            if (applied.recoilPrecompensated) {
-                restoreTarget =
-                    gunstock_alignment_policy::precompensateWorldTarget(
-                        applied.recoilWorldDelta,
-                        applied.originalWorld);
-            }
+            const RE::NiTransform restoreTarget = applied.originalWorld;
             const bool restored =
-                frik_visual_authority::applyExternalHandWorldTransform(
+                frik_visual_authority::publishExternalHandWorldTransform(
                 applied.tag,
                 handFromBool(applied.isLeft),
                 restoreTarget,
@@ -1765,7 +1673,7 @@ namespace rock
 
         if (g_rockConfig.rockDebugDrawGunstockAlignment) {
             _gunstockAlignmentDebugSnapshot.recoilWitness =
-                firingCorrection.recoilPrecompensated ?
+                _recoilControllerRegistered ?
                 GunstockAlignmentDebugRecoilWitness::Controlled :
                 GunstockAlignmentDebugRecoilWitness::Regular;
         }
