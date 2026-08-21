@@ -55,6 +55,13 @@ namespace rock::authored_weapon_grip_capture_policy
         bool authoredCanonicalAvailable{ false };
     };
 
+    struct PresentedFiringHandTargetInput
+    {
+        bool authoredFingerPosePublished{ false };
+        bool presentedHandWorldValid{ false };
+        bool currentNativeRecoilSampleNeutral{ false };
+    };
+
     struct StableAuthoredSupportGripReuseInput
     {
         bool snapshotValid{ false };
@@ -144,6 +151,22 @@ namespace rock::authored_weapon_grip_capture_policy
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.authoredCanonicalAvailable;
+    }
+
+    /*
+     * The rendered firing wrist is the exact deferred hFRIK target only when
+     * this skeleton frame has no native recoil. A firing frame deliberately
+     * moves that wrist away from its tracking target. Feeding the moved wrist
+     * back into the persistent weapon alignment latches the shot transform and
+     * invalidates the weapon-relative support grip until a reload or equip
+     * boundary rebuilds it.
+     */
+    [[nodiscard]] constexpr bool shouldUsePresentedFiringHandTarget(
+        const PresentedFiringHandTargetInput& input) noexcept
+    {
+        return input.authoredFingerPosePublished &&
+               input.presentedHandWorldValid &&
+               input.currentNativeRecoilSampleNeutral;
     }
 
     /*

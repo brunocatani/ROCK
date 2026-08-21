@@ -727,6 +727,20 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
 
+        /*
+         * True only when hFRIK sampled a neutral native kick after ROCK's
+         * current pre-FRIK publication pass. The authored right-hand alignment
+         * uses this witness before it treats the rendered wrist as a stable
+         * tracking target.
+         */
+        [[nodiscard]] bool currentPresentedFiringHandIsRecoilNeutral() const noexcept
+        {
+            return _currentSourceSchedulerSequence != 0 &&
+                   _nativeRecoilSampleSchedulerSequence ==
+                       _currentSourceSchedulerSequence &&
+                   _nativeRecoilSampleNeutral;
+        }
+
         bool previousWeaponCollisionPresentationWasLive() const
         {
             return _weaponCollisionHandPresentationFromPreviousFrame[0] ||
@@ -1619,6 +1633,8 @@ namespace rock
         std::uint64_t _firingRecoilConsumedSequence{ 0 };
         std::array<bool, 2> _hasFiringRecoilReference{};
         bool _firingRecoilAcceptedHandIsLeft{ false };
+        std::uint64_t _nativeRecoilSampleSchedulerSequence{ 0 };
+        bool _nativeRecoilSampleNeutral{ false };
 
         enum class RightFiringCanonicalSource : std::uint8_t
         {

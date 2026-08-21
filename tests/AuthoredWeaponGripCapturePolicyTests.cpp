@@ -194,6 +194,29 @@ int main()
         return !shouldUseAuthoredFiringGripProbe(input);
     }());
 
+    constexpr PresentedFiringHandTargetInput presentedTargetEligible{
+        .authoredFingerPosePublished = true,
+        .presentedHandWorldValid = true,
+        .currentNativeRecoilSampleNeutral = true,
+    };
+    static_assert(shouldUsePresentedFiringHandTarget(
+        presentedTargetEligible));
+    static_assert([=] {
+        auto input = presentedTargetEligible;
+        input.currentNativeRecoilSampleNeutral = false;
+        return !shouldUsePresentedFiringHandTarget(input);
+    }());
+    static_assert([=] {
+        auto input = presentedTargetEligible;
+        input.presentedHandWorldValid = false;
+        return !shouldUsePresentedFiringHandTarget(input);
+    }());
+    static_assert([=] {
+        auto input = presentedTargetEligible;
+        input.authoredFingerPosePublished = false;
+        return !shouldUsePresentedFiringHandTarget(input);
+    }());
+
     constexpr StableAuthoredSupportGripReuseInput stableSupportReusable{
         .snapshotValid = true,
         .weaponNodeValid = true,

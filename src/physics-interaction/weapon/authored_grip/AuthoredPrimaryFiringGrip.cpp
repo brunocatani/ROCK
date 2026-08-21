@@ -452,11 +452,23 @@ namespace rock
         RE::NiTransform trackedHandWorld = input.controllerHandWorld;
         bool trackedHandWorldValid = input.controllerHandWorldValid;
         const char* trackedHandSource = "controller-acquisition";
-        if (weaponAuthority.
+        const bool authoredFingerPosePublished =
+            weaponAuthority.
                 hasPublishedAuthoredPrimaryFiringGripFingerPose(
-                    input.rockFiringHandIsLeft) &&
-            input.presentedHandWorldValid &&
-            finiteTransform(input.presentedHandWorld)) {
+                    input.rockFiringHandIsLeft);
+        if (authored_weapon_grip_capture_policy::
+                shouldUsePresentedFiringHandTarget(
+                    authored_weapon_grip_capture_policy::
+                        PresentedFiringHandTargetInput{
+                            .authoredFingerPosePublished =
+                                authoredFingerPosePublished,
+                            .presentedHandWorldValid =
+                                input.presentedHandWorldValid &&
+                                finiteTransform(input.presentedHandWorld),
+                            .currentNativeRecoilSampleNeutral =
+                                weaponAuthority.
+                                    currentPresentedFiringHandIsRecoilNeutral(),
+                        })) {
             /*
              * The blocker was consumed by FRIK before this update, so the
              * presented wrist is free of FRIK's native per-weapon rotation.
