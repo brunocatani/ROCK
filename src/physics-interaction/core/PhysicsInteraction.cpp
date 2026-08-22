@@ -300,8 +300,8 @@ namespace rock
             config.exitPaddingGameUnits = g_rockConfig.rockShoulderStashExitPaddingGameUnits;
             config.minDwellSeconds = g_rockConfig.rockShoulderStashMinDwellSeconds;
             config.maxSpeedGameUnitsPerSecond = g_rockConfig.rockShoulderStashMaxSpeedGameUnitsPerSecond;
-            config.recentContactFrames = g_rockConfig.rockShoulderStashRecentContactFrames;
-            config.sustainedContactMissFrames = g_rockConfig.rockShoulderStashSustainedContactMissFrames;
+            config.recentContactSeconds = g_rockConfig.rockShoulderStashRecentContactSeconds;
+            config.sustainedContactMissSeconds = g_rockConfig.rockShoulderStashSustainedContactMissSeconds;
             config.hmdBackRightOffsetGameUnits = g_rockConfig.rockShoulderStashHmdBackRightOffsetGameUnits;
             config.hmdBackLeftOffsetGameUnits = g_rockConfig.rockShoulderStashHmdBackLeftOffsetGameUnits;
             config.hmdBackRadiusGameUnits = g_rockConfig.rockShoulderStashHmdBackRadiusGameUnits;
@@ -10891,7 +10891,7 @@ namespace rock
                             .bodyColliders = &_bodyBoneColliders,
                             .bodyContacts = &_bodyContactRuntime,
                             .heldBodyIds = &hand.getHeldBodyIds(),
-                            .contactFrame = _handContactActivity.currentFrame(),
+                            .contactElapsedSeconds = _handContactActivity.currentElapsedSeconds(),
                             .isLeftHand = isLeft,
                             .probe = makeShoulderStashObjectProbe(hknp, hand, handInput),
                             .hmdProbe = makeShoulderStashHmdProbe(handInput),

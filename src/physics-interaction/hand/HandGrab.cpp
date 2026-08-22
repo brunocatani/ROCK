@@ -2154,7 +2154,7 @@ namespace rock
                                                hand_collider_semantics::HandColliderRole role,
                                                hand_collider_semantics::HandFinger finger,
                                                hand_collider_semantics::HandFingerSegment segment,
-                                               std::uint32_t framesSinceContact,
+                                               float secondsSinceContact,
                                                float sourceQualityScale,
                                                bool liveProbeSource,
                                                const hand_semantic_contact_state::SemanticContactVector* semanticContactPointGame = nullptr) {
@@ -2234,7 +2234,7 @@ namespace rock
                 patch.objectPointWorld = hit.position;
                 patch.normalWorld = hit.normal;
                 patch.quality = sourceQualityScale / (1.0f + contactDistance);
-                patch.framesSinceContact = framesSinceContact;
+                patch.secondsSinceContact = secondsSinceContact;
                 patches.push_back(patch);
 
                 const int fingerIndex = grab_multi_finger_contact_math::fingerIndex(finger);
@@ -2257,7 +2257,7 @@ namespace rock
                     contact.role,
                     contact.finger,
                     contact.segment,
-                    contact.framesSinceContact,
+                    contact.secondsSinceContact,
                     1.0f,
                     false,
                     hand_semantic_contact_state::hasUsableContactPoint(contact) ? &contact.contactPointGame : nullptr);
@@ -2279,7 +2279,9 @@ namespace rock
                         metadata.role,
                         finger,
                         metadata.segment,
-                        1,
+                        // Freshness tie-break bias, not a clock: a live probe
+                        // ranks slightly behind a same-frame semantic contact.
+                        0.011f,
                         0.75f,
                         true);
                 }
@@ -2300,7 +2302,7 @@ namespace rock
             options.enabled = true;
             options.targetBodyId = resolvedBodyId;
             options.minimumFingerGroups = g_rockConfig.rockGrabMinFingerContactGroups;
-            options.maxContactAgeFrames = static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
+            options.maxContactAgeSeconds = (std::max)(0.0f, g_rockConfig.rockGrabOppositionContactMaxAgeSeconds);
             options.minimumSpreadGameUnits = g_rockConfig.rockGrabMinFingerContactSpreadGameUnits;
             result.gripSet = grab_multi_finger_contact_math::buildGripContactSet(patches, options);
             result.reason = result.gripSet.reason;
@@ -8585,9 +8587,9 @@ namespace rock
             grabLocalMeshTriangles = cacheTrianglesInLocalSpace(grabMeshTriangles, objectWorldTransform);
         }
 
-        const auto semanticContacts = collectFreshSemanticContactsForBody(
+        const auto semanticContacts = collectFreshSemanticContactsForBodyWithinSeconds(
             objectBodyId.value,
-            static_cast<std::uint32_t>(g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
+            (std::max)(0.0f, g_rockConfig.rockGrabOppositionContactMaxAgeSeconds));
         const RE::NiPoint3 acquisitionGrabPivotAWorld = palmPocketPivotAWorld;
         const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
             proxyAuthorityFrameWorldAtGrab,
@@ -9231,7 +9233,7 @@ namespace rock
         }
 
         _grabStartTime = 0.0f;
-        _grabConvergeStableInsidePocketFrames = 0;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
 
         {
@@ -11942,18 +11944,18 @@ namespace rock
                     .maxTimeSeconds = g_rockConfig.rockGrabConvergeMaxTimeSeconds,
                     .touchDistanceGameUnits = touchDistance,
                     .pocketRadiusGameUnits = g_rockConfig.rockGrabPocketRadiusGameUnits,
-                    .stableInsidePocketFrames = _grabConvergeStableInsidePocketFrames,
-                    .requiredStableInsidePocketFrames = g_rockConfig.rockGrabConvergeStableFrames,
+                    .stableInsidePocketSeconds = _grabConvergeStableInsidePocketSeconds,
+                    .requiredStableInsidePocketSeconds = g_rockConfig.rockGrabConvergeStableSeconds,
                     .maxSeparatingSpeedGameUnitsPerSecond = g_rockConfig.rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond,
                 });
-            _grabConvergeStableInsidePocketFrames = convergenceDecision.nextStableInsidePocketFrames;
+            _grabConvergeStableInsidePocketSeconds = convergenceDecision.nextStableInsidePocketSeconds;
             _grabConvergePreviousGripErrorGameUnits = gripErrorGameUnits;
             const bool reachedTouchRange = convergenceDecision.reachedTouchRange;
             const bool convergenceTimedOutInsidePocket = convergenceDecision.timedOutInsidePocket;
             if (convergenceTimedOutInsidePocket) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} THREE-PHASE GRAB CONVERGE PROMOTION READY: phase={} gripErr={:.2f}gu touch={:.2f}gu pocket={:.2f}gu elapsed={:.3f}s colliding={} stableFrames={} sepSpeed={:.2f}gu/s",
+                    "{} THREE-PHASE GRAB CONVERGE PROMOTION READY: phase={} gripErr={:.2f}gu touch={:.2f}gu pocket={:.2f}gu elapsed={:.3f}s colliding={} stableDwell={:.3f}s sepSpeed={:.2f}gu/s",
                     handName(),
                     grab_three_phase::phaseName(previousAcquisitionPhase),
                     gripErrorGameUnits,
@@ -11961,7 +11963,7 @@ namespace rock
                     g_rockConfig.rockGrabPocketRadiusGameUnits,
                     _grabStartTime,
                     heldBodyColliding ? "yes" : "no",
-                    _grabConvergeStableInsidePocketFrames,
+                    _grabConvergeStableInsidePocketSeconds,
                     convergenceDecision.separatingSpeedGameUnitsPerSecond);
             }
 
@@ -14660,7 +14662,7 @@ namespace rock
         _heldDriveDecision = {};
         _heldObjectIsLooseWeapon = false;
         _grabFingerPosePublished = false;
-        _grabConvergeStableInsidePocketFrames = 0;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         _grabDeviationExceededSeconds = 0.0f;
         _grabDeviationHistory = {};

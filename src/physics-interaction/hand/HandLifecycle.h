@@ -367,7 +367,7 @@ namespace rock::hand_semantic_contact_state
         bool enabled,
         const SemanticContactRecord& record,
         std::uint32_t targetBodyId,
-        std::uint32_t maxFramesSinceContact)
+        float maxAgeSeconds)
     {
         if (!enabled) {
             return { false, "disabled" };
@@ -378,7 +378,7 @@ namespace rock::hand_semantic_contact_state
         if (targetBodyId == kInvalidBodyId || record.otherBodyId != targetBodyId) {
             return { false, "targetMismatch" };
         }
-        if (record.framesSinceContact > maxFramesSinceContact) {
+        if (!(record.secondsSinceContact <= maxAgeSeconds)) {
             return { false, "staleContact" };
         }
         if (record.role == hand_collider_semantics::HandColliderRole::PalmAnchor) {

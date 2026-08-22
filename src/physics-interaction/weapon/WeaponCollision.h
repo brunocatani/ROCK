@@ -572,7 +572,7 @@ namespace rock
             std::uint32_t weaponFormID,
             const std::vector<GeneratedHullSource>& sources);
         void resetVisualSourceUnavailableRetention();
-        bool canRetainCurrentWeaponBodiesForVisualSourceMiss(std::uint64_t observedIdentityKey, RE::NiAVObject* currentWeaponRoot, int retainFrameLimit);
+        bool canRetainCurrentWeaponBodiesForVisualSourceMiss(std::uint64_t observedIdentityKey, RE::NiAVObject* currentWeaponRoot, float retainSecondsLimit, float measuredDeltaSeconds);
         bool generatedSourceCacheMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const;
         void storeGeneratedSourceCache(std::uint64_t equippedKey,
             std::uint64_t visualKey,
@@ -706,10 +706,13 @@ namespace rock
         std::uint64_t _pendingWeaponVisualRebuildKey{ 0 };
         std::uint64_t _pendingWeaponVisualWitnessKey{ 0 };
         std::size_t _pendingWeaponVisualVisibleTriShapeCount{ 0 };
-        int _pendingWeaponVisualStableFrames{ 0 };
+        // Elapsed time the visual witness has stayed identical (seconds).
+        float _pendingWeaponVisualStableSeconds{ 0.0f };
         std::uint64_t _visualSourceUnavailableRetainIdentityKey{ 0 };
         std::uintptr_t _visualSourceUnavailableRetainRoot{ 0 };
-        int _visualSourceUnavailableRetainFrames{ 0 };
+        // Elapsed time the current bodies were retained across a visual
+        // source miss (seconds).
+        float _visualSourceUnavailableRetainSeconds{ 0.0f };
         int _weaponAnimNodeDumpFrameCounter{ 0 };
         std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
 

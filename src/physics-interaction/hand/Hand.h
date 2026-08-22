@@ -668,6 +668,7 @@ namespace rock
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsWithinSeconds(
             float maxAgeSeconds) const;
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsForBody(std::uint32_t targetBodyId, std::uint32_t maxFramesSinceContact) const;
+        hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsForBodyWithinSeconds(std::uint32_t targetBodyId, float maxAgeSeconds) const;
         bool isFingerTouching(hand_collider_semantics::HandFinger finger) const;
         bool isFingerTipTouching(hand_collider_semantics::HandFinger finger) const;
         bool tryGetHandColliderMetadataForRole(hand_collider_semantics::HandColliderRole role, HandColliderBodyMetadata& outMetadata) const;
@@ -1209,7 +1210,7 @@ namespace rock
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         bool _heldObjectIsLooseWeapon = false;
         bool _grabFingerPosePublished = false;
-        int _grabConvergeStableInsidePocketFrames = 0;
+        float _grabConvergeStableInsidePocketSeconds = 0.0f;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         nearby_grab_damping::NearbyGrabDampingState _nearbyGrabDamping;
         float _grabDeviationExceededSeconds = 0.0f;

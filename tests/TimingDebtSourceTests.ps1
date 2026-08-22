@@ -78,13 +78,9 @@ foreach ($relative in $nominalRateDebtRegister.Keys) {
 # Rule 2: frame-count configuration key register
 # ---------------------------------------------------------------------------
 
-$allowedGameplayFrameKeys = @(
-    'iWeaponCollisionVisualStabilizationFrames',
-    'iGrabConvergeStableFrames',
-    'iGrabOppositionContactMaxAgeFrames',
-    'iShoulderStashRecentContactFrames',
-    'iShoulderStashSustainedContactMissFrames'
-)
+# Gameplay durations are fully seconds-based; only diagnostic sampling
+# cadences may remain frame-count keys.
+$allowedGameplayFrameKeys = @()
 $allowedDiagnosticFrameKeys = @(
     'iPerformanceProfilerLogIntervalFrames',
     'iPerformanceProfilerWarmupFrames',

@@ -57,15 +57,15 @@ namespace rock::shoulder_stash
             return bodyId != kInvalidBodyId && bodyId != body_contact_runtime::kInvalidBodyContactId;
         }
 
-        [[nodiscard]] bool contactIsRecent(std::uint32_t currentFrame, std::uint32_t recordFrame, int recentFrames) noexcept
+        [[nodiscard]] bool contactIsRecent(double nowElapsedSeconds, double recordElapsedSeconds, float recentSeconds) noexcept
         {
-            if (recentFrames < 0) {
+            if (!std::isfinite(recentSeconds) || recentSeconds < 0.0f) {
                 return false;
             }
-            if (recordFrame > currentFrame) {
+            if (recordElapsedSeconds > nowElapsedSeconds) {
                 return false;
             }
-            return (currentFrame - recordFrame) <= static_cast<std::uint32_t>(recentFrames);
+            return (nowElapsedSeconds - recordElapsedSeconds) <= static_cast<double>(recentSeconds);
         }
 
         [[nodiscard]] float candidateConfidence(float distanceGameUnits, float radiusGameUnits, float thresholdGameUnits, bool sameSide) noexcept
@@ -159,16 +159,19 @@ namespace rock::shoulder_stash
             runtime.sustainedHeldBodyId = contact.heldBodyId;
             runtime.sustainedHeldBodyLocalPointGame = transform_math::worldPointToLocal(heldWorld, contact.nearestPointGame);
             runtime.sustainedPointGame = contact.nearestPointGame;
-            runtime.sustainedMissFrames = 0;
+            runtime.sustainedMissSeconds = 0.0f;
             runtime.hasSustainedContactAnchor = true;
             runtime.hasSustainedPointGame = true;
         }
 
         [[nodiscard]] Candidate makeSustainedMissToleranceCandidate(const DetectorInput& input, RuntimeState& runtime)
         {
-            ++runtime.sustainedMissFrames;
+            // Measured elapsed time only: an unmeasurable frame holds the
+            // miss tolerance instead of advancing it.
+            runtime.sustainedMissSeconds +=
+                std::isfinite(input.deltaSeconds) && input.deltaSeconds > 0.0f ? input.deltaSeconds : 0.0f;
             if (!runtime.hasSustainedPointGame ||
-                !sustainedContactMissWithinTolerance(runtime.sustainedMissFrames, input.config.sustainedContactMissFrames)) {
+                !sustainedContactMissWithinTolerance(runtime.sustainedMissSeconds, input.config.sustainedContactMissSeconds)) {
                 clearSustainedContact(runtime);
                 return {};
             }
@@ -226,7 +229,7 @@ namespace rock::shoulder_stash
                 return {};
             }
 
-            runtime.sustainedMissFrames = 0;
+            runtime.sustainedMissSeconds = 0.0f;
             runtime.sustainedPointGame = anchorWorld;
             runtime.hasSustainedPointGame = true;
 
@@ -315,7 +318,7 @@ namespace rock::shoulder_stash
             const auto count = input.bodyContacts->snapshot(records.data(), records.size());
             for (std::size_t i = 0; i < count; ++i) {
                 const auto& record = records[i];
-                if (!contactIsRecent(input.contactFrame, record.frame, input.config.recentContactFrames) || !isShoulderZone(record.zone)) {
+                if (!contactIsRecent(input.contactElapsedSeconds, record.elapsedSeconds, input.config.recentContactSeconds) || !isShoulderZone(record.zone)) {
                     continue;
                 }
                 if (!heldBodyContains(input.heldBodyIds, record.targetBodyId)) {

@@ -78,6 +78,13 @@ namespace rock::contact_activity_tracker
             return _frame.load(std::memory_order_acquire);
         }
 
+        // Cumulative measured game seconds of the contact clock; stamps and
+        // freshness windows compare against this value.
+        double currentElapsedSeconds() const
+        {
+            return _elapsedSeconds.load(std::memory_order_acquire);
+        }
+
         ContactRegistrationResult registerHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t targetBodyId)
         {
             if (!isTrackableBodyPair(handBodyId, targetBodyId)) {

@@ -1200,6 +1200,7 @@
 
             body_contact_runtime::BodyContactRecord record{};
             record.frame = _handContactActivity.currentFrame();
+            record.elapsedSeconds = _handContactActivity.currentElapsedSeconds();
             record.bodyId = contactRoute.sourceBodyId;
             record.targetBodyId = contactRoute.targetBodyId;
             record.bodyLayer = contactRoute.source.layer;

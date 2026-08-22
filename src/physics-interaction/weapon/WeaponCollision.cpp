@@ -2544,7 +2544,7 @@ namespace rock
         _pendingWeaponVisualRebuildKey = 0;
         _pendingWeaponVisualWitnessKey = 0;
         _pendingWeaponVisualVisibleTriShapeCount = 0;
-        _pendingWeaponVisualStableFrames = 0;
+        _pendingWeaponVisualStableSeconds = 0.0f;
     }
 
     void WeaponCollision::clearGeneratedSourceCache()
@@ -2886,33 +2886,37 @@ namespace rock
     {
         _visualSourceUnavailableRetainIdentityKey = 0;
         _visualSourceUnavailableRetainRoot = 0;
-        _visualSourceUnavailableRetainFrames = 0;
+        _visualSourceUnavailableRetainSeconds = 0.0f;
     }
 
     bool WeaponCollision::canRetainCurrentWeaponBodiesForVisualSourceMiss(
         std::uint64_t observedIdentityKey,
         RE::NiAVObject* currentWeaponRoot,
-        int retainFrameLimit)
+        float retainSecondsLimit,
+        float measuredDeltaSeconds)
     {
         if (observedIdentityKey == 0 || !currentWeaponRoot) {
             resetVisualSourceUnavailableRetention();
             return false;
         }
 
-        retainFrameLimit = (std::max)(1, retainFrameLimit);
+        retainSecondsLimit = (std::max)(0.011f, retainSecondsLimit);
         const auto currentRoot = reinterpret_cast<std::uintptr_t>(currentWeaponRoot);
         if (_visualSourceUnavailableRetainIdentityKey != observedIdentityKey ||
             _visualSourceUnavailableRetainRoot != currentRoot) {
             _visualSourceUnavailableRetainIdentityKey = observedIdentityKey;
             _visualSourceUnavailableRetainRoot = currentRoot;
-            _visualSourceUnavailableRetainFrames = 0;
+            _visualSourceUnavailableRetainSeconds = 0.0f;
         }
 
-        if (_visualSourceUnavailableRetainFrames >= retainFrameLimit) {
+        if (_visualSourceUnavailableRetainSeconds >= retainSecondsLimit) {
             return false;
         }
 
-        ++_visualSourceUnavailableRetainFrames;
+        // Measured elapsed retention only: an unmeasurable frame holds the
+        // window instead of advancing it.
+        _visualSourceUnavailableRetainSeconds +=
+            std::isfinite(measuredDeltaSeconds) && measuredDeltaSeconds > 0.0f ? measuredDeltaSeconds : 0.0f;
         return true;
     }
 
@@ -4880,15 +4884,17 @@ namespace rock
                     _omodPrebuildAuditRoot = weaponNode;
                 }
             }
-            const int requiredStableFrames = (std::max)(0, g_rockConfig.rockWeaponCollisionVisualStabilizationFrames);
-            const bool stabilizeVisualRebuild = generationDrivenRebuild && requiredStableFrames > 0;
+            const float requiredStableSeconds = (std::max)(0.0f, g_rockConfig.rockWeaponCollisionVisualStabilizationSeconds);
+            const float measuredStabilizationDelta =
+                std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
+            const bool stabilizeVisualRebuild = generationDrivenRebuild && requiredStableSeconds > 0.0f;
 
             if (stabilizeVisualRebuild && !weaponVisualNodeVisible(weaponNode)) {
                 const bool newInvisibleDeferred =
                     _pendingWeaponVisualRebuildKey != observedKey ||
                     _pendingWeaponVisualWitnessKey != observedVisualKey ||
                     _pendingWeaponVisualVisibleTriShapeCount != 0 ||
-                    _pendingWeaponVisualStableFrames != 0;
+                    _pendingWeaponVisualStableSeconds != 0.0f;
                 /*
                  * Weapon mod swaps can expose a transient app-culled Weapon root
                  * while child TriShapes still look locally visible. Replacing the
@@ -4899,13 +4905,13 @@ namespace rock
                 _pendingWeaponVisualRebuildKey = observedKey;
                 _pendingWeaponVisualWitnessKey = observedVisualKey;
                 _pendingWeaponVisualVisibleTriShapeCount = 0;
-                _pendingWeaponVisualStableFrames = 0;
+                _pendingWeaponVisualStableSeconds = 0.0f;
                 if (newInvisibleDeferred) {
                     performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualRootDeferred);
                 }
                 ROCK_LOG_SAMPLE_INFO(Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon collision rebuild deferred: visual root not ready cachedKey={:016X} observedKey={:016X} root='{}' flags=0x{:X} appCulled={} visibleTriShapes={} visualNodes={} invisibleNodes={} requiredStableFrames={}",
+                    "Generated weapon collision rebuild deferred: visual root not ready cachedKey={:016X} observedKey={:016X} root='{}' flags=0x{:X} appCulled={} visibleTriShapes={} visualNodes={} invisibleNodes={} requiredStableSeconds={:.3f}",
                     _cachedWeaponKey,
                     observedKey,
                     safeNodeName(weaponNode),
@@ -4914,7 +4920,7 @@ namespace rock
                     visualKeyStats.visibleTriShapeCount,
                     visualKeyStats.nodeCount,
                     visualKeyStats.invisibleNodeCount,
-                    requiredStableFrames);
+                    requiredStableSeconds);
             } else {
                 if (stabilizeVisualRebuild) {
                     /*
@@ -4930,19 +4936,23 @@ namespace rock
                     _pendingWeaponVisualRebuildKey = observedKey;
                     _pendingWeaponVisualWitnessKey = observedVisualKey;
                     _pendingWeaponVisualVisibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
-                    _pendingWeaponVisualStableFrames = samePendingVisual ? _pendingWeaponVisualStableFrames + 1 : 1;
+                    // Measured elapsed stability only: an unmeasurable frame
+                    // holds the wait instead of advancing it.
+                    _pendingWeaponVisualStableSeconds = samePendingVisual ?
+                        _pendingWeaponVisualStableSeconds + measuredStabilizationDelta :
+                        measuredStabilizationDelta;
 
-                    if (_pendingWeaponVisualStableFrames < requiredStableFrames) {
+                    if (_pendingWeaponVisualStableSeconds < requiredStableSeconds) {
                         if (!samePendingVisual) {
                             performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualStableWait);
                         }
                         ROCK_LOG_SAMPLE_INFO(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
-                            "Generated weapon collision rebuild waiting for stable visual witness cachedKey={:016X} observedKey={:016X} stableFrames={}/{} visualKey={:016X} visualRoots={} visibleTriShapes={} visualNodes={} invisibleNodes={}",
+                            "Generated weapon collision rebuild waiting for stable visual witness cachedKey={:016X} observedKey={:016X} stableSeconds={:.3f}/{:.3f} visualKey={:016X} visualRoots={} visibleTriShapes={} visualNodes={} invisibleNodes={}",
                             _cachedWeaponKey,
                             observedKey,
-                            _pendingWeaponVisualStableFrames,
-                            requiredStableFrames,
+                            _pendingWeaponVisualStableSeconds,
+                            requiredStableSeconds,
                             observedVisualKey,
                             visualKeyStats.rootCount,
                             visualKeyStats.visibleTriShapeCount,
@@ -5011,9 +5021,9 @@ namespace rock
                         retainedPackageRootStillCurrent &&
                         !settingsChanged &&
                         !driveRequestedRebuild;
-                    const int visualSourceMissRetainFrameLimit = (std::max)(1, requiredStableFrames);
+                    const float visualSourceMissRetainSecondsLimit = (std::max)(0.011f, requiredStableSeconds);
                     if (retainCandidate &&
-                        canRetainCurrentWeaponBodiesForVisualSourceMiss(observedIdentityKey, weaponNode, visualSourceMissRetainFrameLimit)) {
+                        canRetainCurrentWeaponBodiesForVisualSourceMiss(observedIdentityKey, weaponNode, visualSourceMissRetainSecondsLimit, measuredStabilizationDelta)) {
                         performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualSourceUnavailableRetained);
                         /*
                          * The visible tree can briefly report no extractable
@@ -5025,13 +5035,13 @@ namespace rock
                          */
                         ROCK_LOG_SAMPLE_INFO(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
-                            "Generated weapon mesh collision unavailable for same equipped identity - retaining current bodies cachedKey={:016X} observedKey={:016X} visualKey={:016X} bodies={} retainFrame={}/{}",
+                            "Generated weapon mesh collision unavailable for same equipped identity - retaining current bodies cachedKey={:016X} observedKey={:016X} visualKey={:016X} bodies={} retainSeconds={:.3f}/{:.3f}",
                             _cachedWeaponKey,
                             observedKey,
                             observedVisualKey,
                             getWeaponBodyCount(),
-                            _visualSourceUnavailableRetainFrames,
-                            visualSourceMissRetainFrameLimit);
+                            _visualSourceUnavailableRetainSeconds,
+                            visualSourceMissRetainSecondsLimit);
                         clearPendingGeneratedWeaponBuild(world, true);
                         clearPendingWeaponVisualRebuild();
                         return;
@@ -5040,12 +5050,12 @@ namespace rock
                         performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualSourceUnavailableRetainExpired);
                         ROCK_LOG_SAMPLE_WARN(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
-                            "Generated weapon mesh collision same-identity retain window expired cachedKey={:016X} observedKey={:016X} visualKey={:016X} retainFrames={} limit={} - destroying stale bodies",
+                            "Generated weapon mesh collision same-identity retain window expired cachedKey={:016X} observedKey={:016X} visualKey={:016X} retainSeconds={:.3f} limit={:.3f} - destroying stale bodies",
                             _cachedWeaponKey,
                             observedKey,
                             observedVisualKey,
-                            _visualSourceUnavailableRetainFrames,
-                            visualSourceMissRetainFrameLimit);
+                            _visualSourceUnavailableRetainSeconds,
+                            visualSourceMissRetainSecondsLimit);
                     } else {
                         resetVisualSourceUnavailableRetention();
                     }

@@ -35,8 +35,8 @@ namespace
     constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
     constexpr int kMinWeaponCollisionSupportFitTargetPoints = 4;
     constexpr int kMaxWeaponCollisionSupportFitTargetPoints = 252;
-    constexpr int kDefaultWeaponCollisionVisualStabilizationFrames = 8;
-    constexpr int kMaxWeaponCollisionVisualStabilizationFrames = 60;
+    constexpr float kDefaultWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
+    constexpr float kMaxWeaponCollisionVisualStabilizationSeconds = 60.0f / 90.0f;
     constexpr float kDefaultWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
     constexpr float kDefaultWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
@@ -200,7 +200,7 @@ namespace rock
         rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
         rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
         rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
-        rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
+        rockWeaponCollisionVisualStabilizationSeconds = kDefaultWeaponCollisionVisualStabilizationSeconds;
         rockWeaponCollisionConvexRadius = 0.01f;
         rockWeaponCollisionPointDedupGrid = 0.002f;
         rockWeaponCollisionSupportFitTargetPoints = kDefaultWeaponCollisionSupportFitTargetPoints;
@@ -514,8 +514,8 @@ namespace rock
         rockShoulderStashExitPaddingGameUnits = 8.0f;
         rockShoulderStashMinDwellSeconds = 0.08f;
         rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
-        rockShoulderStashRecentContactFrames = 4;
-        rockShoulderStashSustainedContactMissFrames = 18;
+        rockShoulderStashRecentContactSeconds = 4.0f / 90.0f;
+        rockShoulderStashSustainedContactMissSeconds = 18.0f / 90.0f;
         rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(14.0f, -18.0f, -6.85f);
         rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-14.0f, -18.0f, -6.85f);
         rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
@@ -552,7 +552,7 @@ namespace rock
         rockGrabGripInsetGameUnits = 2.0f;
         rockGrabGripMaxInsetGameUnits = 6.0f;
         rockGrabConvergeMaxTimeSeconds = 0.35f;
-        rockGrabConvergeStableFrames = 3;
+        rockGrabConvergeStableSeconds = 3.0f / 90.0f;
         rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
         rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
         rockGrabMultiFingerContactValidationEnabled = true;
@@ -561,7 +561,7 @@ namespace rock
         rockGrabMinFingerContactSpreadGameUnits = 1.0f;
         rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
         rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
-        rockGrabOppositionContactMaxAgeFrames = 5;
+        rockGrabOppositionContactMaxAgeSeconds = 5.0f / 90.0f;
         rockGrabPinchPocketEnabled = true;
         rockGrabPinchCloseSelectionEnabled = true;
         rockGrabPinchCompactMaxExtentGameUnits = grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits;
@@ -940,15 +940,16 @@ namespace rock
                 weapon_collision_grouping_policy::weaponCollisionGroupingModeName(sanitizedWeaponCollisionGroupingMode));
             rockWeaponCollisionGroupingMode = static_cast<int>(sanitizedWeaponCollisionGroupingMode);
         }
-        rockWeaponCollisionVisualStabilizationFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iWeaponCollisionVisualStabilizationFrames", rockWeaponCollisionVisualStabilizationFrames));
-        if (rockWeaponCollisionVisualStabilizationFrames < 0 ||
-            rockWeaponCollisionVisualStabilizationFrames > kMaxWeaponCollisionVisualStabilizationFrames) {
+        rockWeaponCollisionVisualStabilizationSeconds =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionVisualStabilizationSeconds", rockWeaponCollisionVisualStabilizationSeconds));
+        if (!std::isfinite(rockWeaponCollisionVisualStabilizationSeconds) ||
+            rockWeaponCollisionVisualStabilizationSeconds < 0.0f ||
+            rockWeaponCollisionVisualStabilizationSeconds > kMaxWeaponCollisionVisualStabilizationSeconds) {
             ROCK_LOG_WARN(Config,
-                "Invalid iWeaponCollisionVisualStabilizationFrames={} - using {}",
-                rockWeaponCollisionVisualStabilizationFrames,
-                kDefaultWeaponCollisionVisualStabilizationFrames);
-            rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
+                "Invalid fWeaponCollisionVisualStabilizationSeconds={} - using {}",
+                rockWeaponCollisionVisualStabilizationSeconds,
+                kDefaultWeaponCollisionVisualStabilizationSeconds);
+            rockWeaponCollisionVisualStabilizationSeconds = kDefaultWeaponCollisionVisualStabilizationSeconds;
         }
         rockWeaponCollisionConvexRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionConvexRadius", rockWeaponCollisionConvexRadius));
         rockWeaponCollisionPointDedupGrid = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionPointDedupGrid", rockWeaponCollisionPointDedupGrid));
@@ -2157,12 +2158,13 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabConvergeMaxTimeSeconds={} -- using 0.35", rockGrabConvergeMaxTimeSeconds);
             rockGrabConvergeMaxTimeSeconds = 0.35f;
         }
-        rockGrabConvergeStableFrames = static_cast<int>(ini.GetLongValue(SECTION, "iGrabConvergeStableFrames", rockGrabConvergeStableFrames));
-        if (rockGrabConvergeStableFrames < 1) {
-            ROCK_LOG_WARN(Config, "Invalid iGrabConvergeStableFrames={} -- using 3", rockGrabConvergeStableFrames);
-            rockGrabConvergeStableFrames = 3;
+        rockGrabConvergeStableSeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConvergeStableSeconds", rockGrabConvergeStableSeconds));
+        if (!std::isfinite(rockGrabConvergeStableSeconds) || rockGrabConvergeStableSeconds <= 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabConvergeStableSeconds={} -- using {}", rockGrabConvergeStableSeconds, 3.0f / 90.0f);
+            rockGrabConvergeStableSeconds = 3.0f / 90.0f;
         }
-        rockGrabConvergeStableFrames = std::clamp(rockGrabConvergeStableFrames, 1, 12);
+        // Bounds are the historical 1..12-frame tuning range at 90 Hz.
+        rockGrabConvergeStableSeconds = std::clamp(rockGrabConvergeStableSeconds, 0.0111f, 12.0f / 90.0f);
         rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond =
             static_cast<float>(ini.GetDoubleValue(
                 SECTION,
@@ -2211,9 +2213,12 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabSurfaceBehindPalmToleranceGameUnits={} -- using 1.5", rockGrabSurfaceBehindPalmToleranceGameUnits);
             rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         }
-        rockGrabOppositionContactMaxAgeFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iGrabOppositionContactMaxAgeFrames", rockGrabOppositionContactMaxAgeFrames));
-        rockGrabOppositionContactMaxAgeFrames = std::clamp(rockGrabOppositionContactMaxAgeFrames, 0, 60);
+        rockGrabOppositionContactMaxAgeSeconds =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOppositionContactMaxAgeSeconds", rockGrabOppositionContactMaxAgeSeconds));
+        rockGrabOppositionContactMaxAgeSeconds =
+            std::isfinite(rockGrabOppositionContactMaxAgeSeconds) ?
+                std::clamp(rockGrabOppositionContactMaxAgeSeconds, 0.0f, 60.0f / 90.0f) :
+                5.0f / 90.0f;
         rockGrabPinchPocketEnabled = ini.GetBoolValue(SECTION, "bGrabPinchPocketEnabled", rockGrabPinchPocketEnabled);
         rockGrabPinchCloseSelectionEnabled = ini.GetBoolValue(SECTION, "bGrabPinchCloseSelectionEnabled", rockGrabPinchCloseSelectionEnabled);
         rockGrabPinchCompactMaxExtentGameUnits = readClampedFloat(ini,
@@ -2563,12 +2568,18 @@ namespace rock
         readClampedFloat("fShoulderStashExitPaddingGameUnits", rockShoulderStashExitPaddingGameUnits, 8.0f, 0.0f, 60.0f);
         readClampedFloat("fShoulderStashMinDwellSeconds", rockShoulderStashMinDwellSeconds, 0.08f, 0.0f, 1.0f);
         readClampedFloat("fShoulderStashMaxSpeedGameUnitsPerSecond", rockShoulderStashMaxSpeedGameUnitsPerSecond, 140.0f, 0.0f, 1000.0f);
-        rockShoulderStashRecentContactFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iShoulderStashRecentContactFrames", rockShoulderStashRecentContactFrames));
-        rockShoulderStashRecentContactFrames = std::clamp(rockShoulderStashRecentContactFrames, 0, 60);
-        rockShoulderStashSustainedContactMissFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iShoulderStashSustainedContactMissFrames", rockShoulderStashSustainedContactMissFrames));
-        rockShoulderStashSustainedContactMissFrames = std::clamp(rockShoulderStashSustainedContactMissFrames, 0, 120);
+        rockShoulderStashRecentContactSeconds =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fShoulderStashRecentContactSeconds", rockShoulderStashRecentContactSeconds));
+        rockShoulderStashRecentContactSeconds =
+            std::isfinite(rockShoulderStashRecentContactSeconds) ?
+                std::clamp(rockShoulderStashRecentContactSeconds, 0.0f, 60.0f / 90.0f) :
+                4.0f / 90.0f;
+        rockShoulderStashSustainedContactMissSeconds =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fShoulderStashSustainedContactMissSeconds", rockShoulderStashSustainedContactMissSeconds));
+        rockShoulderStashSustainedContactMissSeconds =
+            std::isfinite(rockShoulderStashSustainedContactMissSeconds) ?
+                std::clamp(rockShoulderStashSustainedContactMissSeconds, 0.0f, 120.0f / 90.0f) :
+                18.0f / 90.0f;
         readOptionalVec3("fShoulderStashHmdBackRightOffsetXGameUnits",
             "fShoulderStashHmdBackRightOffsetYGameUnits",
             "fShoulderStashHmdBackRightOffsetZGameUnits",

@@ -128,7 +128,9 @@ namespace rock
         float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
         float rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
         int rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
-        int rockWeaponCollisionVisualStabilizationFrames = 8;
+        // Elapsed stable-witness window before a generation-driven weapon
+        // visual rebuild commits (historical 8-frame tuning at 90 Hz).
+        float rockWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
         float rockWeaponCollisionConvexRadius = 0.01f;
         float rockWeaponCollisionPointDedupGrid = 0.002f;
         int rockWeaponCollisionSupportFitTargetPoints = 96;
@@ -485,8 +487,10 @@ namespace rock
         float rockShoulderStashExitPaddingGameUnits = 8.0f;
         float rockShoulderStashMinDwellSeconds = 0.08f;
         float rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
-        int rockShoulderStashRecentContactFrames = 4;
-        int rockShoulderStashSustainedContactMissFrames = 18;
+        // Elapsed shoulder-stash contact freshness and miss tolerance
+        // (historical 4- and 18-frame tunings at 90 Hz).
+        float rockShoulderStashRecentContactSeconds = 4.0f / 90.0f;
+        float rockShoulderStashSustainedContactMissSeconds = 18.0f / 90.0f;
         RE::NiPoint3 rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(14.0f, -18.0f, -6.85f);
         RE::NiPoint3 rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-14.0f, -18.0f, -6.85f);
         float rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
@@ -527,7 +531,9 @@ namespace rock
         float rockGrabGripInsetGameUnits = 2.0f;
         float rockGrabGripMaxInsetGameUnits = 6.0f;
         float rockGrabConvergeMaxTimeSeconds = 0.35f;
-        int rockGrabConvergeStableFrames = 3;
+        // Elapsed stable dwell inside the grab pocket before convergence
+        // promotes (historical 3-frame tuning at 90 Hz).
+        float rockGrabConvergeStableSeconds = 3.0f / 90.0f;
         float rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
         float rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
         bool rockGrabMultiFingerContactValidationEnabled = true;
@@ -536,7 +542,9 @@ namespace rock
         float rockGrabMinFingerContactSpreadGameUnits = 1.0f;
         float rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
         float rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
-        int rockGrabOppositionContactMaxAgeFrames = 5;
+        // Elapsed opposition/patch contact freshness (historical 5-frame
+        // tuning at 90 Hz).
+        float rockGrabOppositionContactMaxAgeSeconds = 5.0f / 90.0f;
         bool rockGrabPinchPocketEnabled = true;
         bool rockGrabPinchCloseSelectionEnabled = true;
         float rockGrabPinchCompactMaxExtentGameUnits = 8.0f;

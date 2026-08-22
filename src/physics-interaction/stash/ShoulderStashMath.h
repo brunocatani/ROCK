@@ -59,7 +59,8 @@ namespace rock::shoulder_stash
         std::uint32_t sustainedHeldBodyId = kInvalidBodyId;
         RE::NiPoint3 sustainedHeldBodyLocalPointGame{};
         RE::NiPoint3 sustainedPointGame{};
-        std::uint32_t sustainedMissFrames = 0;
+        // Elapsed measured time without sustained-contact evidence.
+        float sustainedMissSeconds = 0.0f;
         bool hasSustainedContactAnchor = false;
         bool hasSustainedPointGame = false;
         float dwellSeconds = 0.0f;
@@ -109,9 +110,10 @@ namespace rock::shoulder_stash
                source == EvidenceSource::BodyZoneColliderAndContact;
     }
 
-    [[nodiscard]] inline bool sustainedContactMissWithinTolerance(std::uint32_t missFrames, int maxMissFrames) noexcept
+    [[nodiscard]] inline bool sustainedContactMissWithinTolerance(float missSeconds, float maxMissSeconds) noexcept
     {
-        return maxMissFrames >= 0 && missFrames <= static_cast<std::uint32_t>(maxMissFrames);
+        return std::isfinite(maxMissSeconds) && maxMissSeconds >= 0.0f &&
+               std::isfinite(missSeconds) && missSeconds <= maxMissSeconds;
     }
 
     inline void clearSustainedContact(RuntimeState& state) noexcept
@@ -121,7 +123,7 @@ namespace rock::shoulder_stash
         state.sustainedHeldBodyId = kInvalidBodyId;
         state.sustainedHeldBodyLocalPointGame = {};
         state.sustainedPointGame = {};
-        state.sustainedMissFrames = 0;
+        state.sustainedMissSeconds = 0.0f;
         state.hasSustainedContactAnchor = false;
         state.hasSustainedPointGame = false;
     }

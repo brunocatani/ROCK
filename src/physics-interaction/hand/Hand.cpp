@@ -283,7 +283,7 @@ namespace rock
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
         _grabFingerPosePublished = false;
-        _grabConvergeStableInsidePocketFrames = 0;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
@@ -391,7 +391,7 @@ namespace rock
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
         _grabFingerPosePublished = false;
-        _grabConvergeStableInsidePocketFrames = 0;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         clearGrabHandCollisionSuppressionState();
         clearHeldLooseWeaponBodyCollisionSuppressionState();
@@ -2090,6 +2090,25 @@ namespace rock
         return matching;
     }
 
+    hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContactsForBodyWithinSeconds(
+        const std::uint32_t targetBodyId,
+        const float maxAgeSeconds) const
+    {
+        hand_semantic_contact_state::SemanticContactCollection matching{};
+        if (targetBodyId == hand_semantic_contact_state::kInvalidBodyId) {
+            return matching;
+        }
+
+        const auto contacts =
+            collectFreshSemanticContactsWithinSeconds(maxAgeSeconds);
+        for (std::size_t index = 0; index < contacts.count; ++index) {
+            if (contacts.records[index].otherBodyId == targetBodyId) {
+                matching.add(contacts.records[index]);
+            }
+        }
+        return matching;
+    }
+
     bool Hand::tryGetHandColliderMetadataForRole(hand_collider_semantics::HandColliderRole role, HandColliderBodyMetadata& outMetadata) const
     {
         outMetadata = {};
@@ -2632,16 +2651,18 @@ namespace rock
                 best.hitNode = hitNode ? hitNode : best.visualNode;
             };
 
-            const auto semanticContacts = collectFreshSemanticContactsForBody(
+            const float oppositionMaxAgeSeconds =
+                (std::max)(0.0f, g_rockConfig.rockGrabOppositionContactMaxAgeSeconds);
+            const auto semanticContacts = collectFreshSemanticContactsForBodyWithinSeconds(
                 bodyId,
-                static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockGrabOppositionContactMaxAgeFrames)));
+                oppositionMaxAgeSeconds);
             for (std::size_t i = 0; i < semanticContacts.count && i < semanticContacts.records.size(); ++i) {
                 const auto& contact = semanticContacts.records[i];
                 const auto semanticDecision = hand_semantic_contact_state::evaluateSemanticPivotCandidate(
                     true,
                     contact,
                     bodyId,
-                    static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockGrabOppositionContactMaxAgeFrames)));
+                    oppositionMaxAgeSeconds);
                 if (!semanticDecision.accept) {
                     lastMissReason = semanticDecision.reason;
                     continue;

@@ -80,13 +80,13 @@ int main()
     ok &= expectNear("semantic contact preserves point z", stored.contactPointGame.z, 3.0f);
     ok &= expectTrue("semantic contact preserves optional normal flag", hasUsableContactNormal(stored));
 
-    auto decision = evaluateSemanticPivotCandidate(true, stored, 20, 0);
+    auto decision = evaluateSemanticPivotCandidate(true, stored, 20, 0.0f);
     ok &= expectTrue("fresh non-anchor semantic contact is a pivot candidate", decision.accept);
     ok &= expectReason("fresh semantic pivot reason", decision.reason, "semanticContact");
 
     set.advance(1.0f / 90.0f);
     const auto stale = set.getFreshForRole(HandColliderRole::IndexTip, 10);
-    decision = evaluateSemanticPivotCandidate(true, stale, 20, 0);
+    decision = evaluateSemanticPivotCandidate(true, stale, 20, 0.005f);
     ok &= expectFalse("stale semantic contact is rejected for pivot", decision.accept);
     ok &= expectReason("stale semantic pivot reason", decision.reason, "staleContact");
 
@@ -109,7 +109,8 @@ int main()
     SemanticContactRecord anchor = contact;
     anchor.role = HandColliderRole::PalmAnchor;
     anchor.framesSinceContact = 0;
-    decision = evaluateSemanticPivotCandidate(true, anchor, 20, 0);
+    anchor.secondsSinceContact = 0.0f;
+    decision = evaluateSemanticPivotCandidate(true, anchor, 20, 0.0f);
     ok &= expectFalse("anchor-only semantic contact is rejected", decision.accept);
     ok &= expectReason("anchor-only semantic pivot reason", decision.reason, "anchorOnly");
 

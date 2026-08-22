@@ -495,8 +495,10 @@ namespace rock::grab_three_phase
         float maxTimeSeconds = 0.0f;
         float touchDistanceGameUnits = 4.0f;
         float pocketRadiusGameUnits = 9.0f;
-        int stableInsidePocketFrames = 0;
-        int requiredStableInsidePocketFrames = 3;
+        // Elapsed stable dwell inside the pocket (historical 3-frame tuning
+        // at the 90 Hz baseline), rate-independent in seconds.
+        float stableInsidePocketSeconds = 0.0f;
+        float requiredStableInsidePocketSeconds = 3.0f / 90.0f;
         float maxSeparatingSpeedGameUnitsPerSecond = 40.0f;
     };
 
@@ -506,7 +508,7 @@ namespace rock::grab_three_phase
         bool insidePocket = false;
         bool stableThisFrame = false;
         bool timedOutInsidePocket = false;
-        int nextStableInsidePocketFrames = 0;
+        float nextStableInsidePocketSeconds = 0.0f;
         float separatingSpeedGameUnitsPerSecond = 0.0f;
         const char* timeoutBlockReason = "none";
     };
@@ -536,10 +538,15 @@ namespace rock::grab_three_phase
                 !std::isfinite(input.previousGripErrorGameUnits) ||
                 decision.separatingSpeedGameUnitsPerSecond <= maxSeparatingSpeed);
 
-        decision.nextStableInsidePocketFrames =
-            decision.stableThisFrame ? (std::max)(0, input.stableInsidePocketFrames) + 1 : 0;
+        // Measured elapsed dwell only: an unmeasurable frame holds the dwell.
+        const float measuredDelta =
+            std::isfinite(input.deltaSeconds) && input.deltaSeconds > 0.0f ? input.deltaSeconds : 0.0f;
+        decision.nextStableInsidePocketSeconds =
+            decision.stableThisFrame ?
+                (std::max)(0.0f, input.stableInsidePocketSeconds) + measuredDelta :
+                0.0f;
 
-        const int requiredStableFrames = (std::max)(1, input.requiredStableInsidePocketFrames);
+        const float requiredStableSeconds = (std::max)(0.0f, input.requiredStableInsidePocketSeconds);
         const bool timeoutElapsed =
             input.maxTimeSeconds > 0.0f &&
             std::isfinite(input.maxTimeSeconds) &&
@@ -548,13 +555,13 @@ namespace rock::grab_three_phase
         decision.timedOutInsidePocket =
             timeoutElapsed &&
             decision.insidePocket &&
-            decision.nextStableInsidePocketFrames >= requiredStableFrames;
+            decision.nextStableInsidePocketSeconds >= requiredStableSeconds;
 
         if (!timeoutElapsed) {
             decision.timeoutBlockReason = "waitingForTimeout";
         } else if (!decision.insidePocket) {
             decision.timeoutBlockReason = "outsidePocket";
-        } else if (decision.nextStableInsidePocketFrames < requiredStableFrames) {
+        } else if (decision.nextStableInsidePocketSeconds < requiredStableSeconds) {
             decision.timeoutBlockReason = "waitingForStablePocket";
         } else {
             decision.timeoutBlockReason = "promote";

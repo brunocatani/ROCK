@@ -28,8 +28,10 @@ namespace rock::shoulder_stash
         float exitPaddingGameUnits = 8.0f;
         float minDwellSeconds = 0.08f;
         float maxSpeedGameUnitsPerSecond = 140.0f;
-        int recentContactFrames = 4;
-        int sustainedContactMissFrames = 18;
+        // Elapsed contact freshness and miss tolerance (historical 4- and
+        // 18-frame tunings at the 90 Hz baseline), rate-independent.
+        float recentContactSeconds = 4.0f / 90.0f;
+        float sustainedContactMissSeconds = 18.0f / 90.0f;
         RE::NiPoint3 hmdBackRightOffsetGameUnits{ 14.0f, -18.0f, -6.85f };
         RE::NiPoint3 hmdBackLeftOffsetGameUnits{ -14.0f, -18.0f, -6.85f };
         float hmdBackRadiusGameUnits = 11.0f;
@@ -44,7 +46,8 @@ namespace rock::shoulder_stash
         const BodyBoneColliderSet* bodyColliders = nullptr;
         const body_contact_runtime::BodyContactRuntime* bodyContacts = nullptr;
         const std::vector<std::uint32_t>* heldBodyIds = nullptr;
-        std::uint32_t contactFrame = 0;
+        // "Now" on the contact clock (ContactActivityTracker elapsed seconds).
+        double contactElapsedSeconds = 0.0;
         bool isLeftHand = false;
         Probe probe{};
         Probe hmdProbe{};

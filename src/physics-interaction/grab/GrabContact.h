@@ -1594,7 +1594,9 @@ namespace rock::grab_multi_finger_contact_math
         bool enabled = true;
         std::uint32_t targetBodyId = kInvalidBodyId;
         int minimumFingerGroups = 3;
-        std::uint32_t maxContactAgeFrames = 5;
+        // Elapsed patch freshness (historical 5-frame window at the 90 Hz
+        // tuning baseline), rate-independent in seconds.
+        float maxContactAgeSeconds = 5.0f / 90.0f;
         float minimumSpreadGameUnits = 1.0f;
     };
 
@@ -1611,7 +1613,8 @@ namespace rock::grab_multi_finger_contact_math
         Vector objectPointWorld{};
         Vector normalWorld{};
         float quality = 0.0f;
-        std::uint32_t framesSinceContact = 0xFFFF'FFFFu;
+        // Elapsed contact age; large sentinel means never seen.
+        float secondsSinceContact = 1.0e9f;
     };
 
     template <class Vector>
@@ -1735,8 +1738,8 @@ namespace rock::grab_multi_finger_contact_math
         if (!current.valid) {
             return true;
         }
-        if (candidate.framesSinceContact != current.framesSinceContact) {
-            return candidate.framesSinceContact < current.framesSinceContact;
+        if (candidate.secondsSinceContact != current.secondsSinceContact) {
+            return candidate.secondsSinceContact < current.secondsSinceContact;
         }
         const int candidatePriority = segmentPriority(candidate.segment, candidate.role);
         const int currentPriority = segmentPriority(current.segment, current.role);
@@ -1774,7 +1777,7 @@ namespace rock::grab_multi_finger_contact_math
         bool sawUsableBody = false;
         std::uint32_t acceptedBodyId = options.targetBodyId;
         for (const auto& patch : patches) {
-            if (!patch.valid || patch.handBodyId == kInvalidBodyId || patch.framesSinceContact > options.maxContactAgeFrames) {
+            if (!patch.valid || patch.handBodyId == kInvalidBodyId || patch.secondsSinceContact > options.maxContactAgeSeconds) {
                 continue;
             }
             const int index = fingerIndex(patch.finger);
