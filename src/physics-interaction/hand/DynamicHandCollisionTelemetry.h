@@ -183,6 +183,9 @@ namespace rock::dynamic_hand_collision_telemetry
         bool physicsSampleValid = false;
         bool targetVelocityValid = false;
         bool contactActive = false;
+        // Static-world and car contact only. Hand and equipped-weapon contact
+        // must not drive the anatomical surface-finger response.
+        bool worldContactActive = false;
         bool recoveryTeleport = false;
     };
 

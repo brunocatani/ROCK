@@ -424,6 +424,7 @@ namespace rock
         telemetry.valid.store(sample.valid, std::memory_order_relaxed);
         telemetry.targetVelocityValid.store(sample.targetVelocityValid, std::memory_order_relaxed);
         telemetry.contactActive.store(sample.contactActive, std::memory_order_relaxed);
+        telemetry.worldContactActive.store(sample.worldContactActive, std::memory_order_relaxed);
         telemetry.recoveryTeleport.store(sample.recoveryTeleport, std::memory_order_relaxed);
         telemetry.sequence.fetch_add(1, std::memory_order_release);  // even: complete sample
     }
@@ -467,6 +468,7 @@ namespace rock
             sample.valid = telemetry.valid.load(std::memory_order_relaxed);
             sample.targetVelocityValid = telemetry.targetVelocityValid.load(std::memory_order_relaxed);
             sample.contactActive = telemetry.contactActive.load(std::memory_order_relaxed);
+            sample.worldContactActive = telemetry.worldContactActive.load(std::memory_order_relaxed);
             sample.recoveryTeleport = telemetry.recoveryTeleport.load(std::memory_order_relaxed);
 
             const std::uint64_t end = telemetry.sequence.load(std::memory_order_acquire);
@@ -590,6 +592,11 @@ namespace rock
         hand.pendingSolverContactMaskAtomic.fetch_or(
             slotBit,
             std::memory_order_release);
+        if (!otherIsHand && !otherIsWeapon) {
+            hand.pendingWorldContactMaskAtomic.fetch_or(
+                slotBit,
+                std::memory_order_release);
+        }
         if (!_dynamicInteractionsEnabledAtomic.load(
                 std::memory_order_acquire)) {
             return;
@@ -1104,7 +1111,6 @@ namespace rock
             return false;
         }
 
-        slot.body.setMass(kHandCompoundMass);
         if (!applyHandCompoundMassProperties(
                 frame.hknpWorld,
                 bodyId,
@@ -1254,7 +1260,11 @@ namespace rock
         handSlots.pendingSolverContactMaskAtomic.store(
             0,
             std::memory_order_release);
+        handSlots.pendingWorldContactMaskAtomic.store(
+            0,
+            std::memory_order_release);
         handSlots.retainedSolverContactMask = 0;
+        handSlots.retainedWorldContactMask = 0;
         handSlots.solverContactRetentionSeconds = 0.0f;
         handSlots.physicsContactActive = false;
         handSlots.contactEntrySequenceAtomic.store(0, std::memory_order_release);
@@ -1525,7 +1535,7 @@ namespace rock
              bodyIndex < kFirstForearmSlot;
              ++bodyIndex) {
             anyFingerContact = anyFingerContact ||
-                               handTelemetry.twins[bodyIndex].contactActive;
+                               handTelemetry.twins[bodyIndex].worldContactActive;
         }
         if (!handSlots.surfaceFingerResponse.active) {
             if (!anyFingerContact) {
@@ -1563,7 +1573,7 @@ namespace rock
                         dynamic_hand_collision_telemetry::
                             bodyIndexForFingerSegment(finger, segment);
                     const auto& twin = handTelemetry.twins[bodyIndex];
-                    if (!twin.contactActive ||
+                    if (!twin.worldContactActive ||
                         !std::isfinite(twin.contactDeviationGameUnits) ||
                         twin.contactDeviationGameUnits <= 0.0f) {
                         continue;
@@ -2178,6 +2188,8 @@ namespace rock
                     physicsSample.targetVelocityValid;
                 twinTelemetry.contactActive =
                     physicsSample.contactActive;
+                twinTelemetry.worldContactActive =
+                    physicsSample.worldContactActive;
                 twinTelemetry.recoveryTeleport =
                     physicsSample.recoveryTeleport;
                 twinTelemetry.requestedTargetWorldGame =
@@ -2703,9 +2715,16 @@ namespace rock
                     0,
                     std::memory_order_acq_rel) &
                 kAllChildBits;
+            const std::uint32_t observedWorldContactMask =
+                handSlots.pendingWorldContactMaskAtomic.exchange(
+                    0,
+                    std::memory_order_acq_rel) &
+                kAllChildBits;
             if (observedContactMask != 0) {
                 handSlots.retainedSolverContactMask =
                     observedContactMask;
+                handSlots.retainedWorldContactMask =
+                    observedWorldContactMask;
                 handSlots.solverContactRetentionSeconds =
                     kCompoundContactRetentionSeconds;
             } else {
@@ -2718,10 +2737,13 @@ namespace rock
                             0.1f));
                 if (handSlots.solverContactRetentionSeconds <= 0.0f) {
                     handSlots.retainedSolverContactMask = 0;
+                    handSlots.retainedWorldContactMask = 0;
                 }
             }
             const std::uint32_t contactMask =
                 handSlots.retainedSolverContactMask;
+            const std::uint32_t worldContactMask =
+                handSlots.retainedWorldContactMask;
 
             std::array<RE::NiTransform, kBodiesPerHand> childFrames{};
             {
@@ -2755,6 +2777,10 @@ namespace rock
 
                 const bool contact =
                     (contactMask &
+                        (1u << static_cast<std::uint32_t>(
+                            bodyIndex))) != 0;
+                const bool worldContact =
+                    (worldContactMask &
                         (1u << static_cast<std::uint32_t>(
                             bodyIndex))) != 0;
                 RE::NiPoint3 deviation{};
@@ -2796,6 +2822,7 @@ namespace rock
                         .targetVelocityValid =
                             owner.droveTargetVelocityValid,
                         .contactActive = contact,
+                        .worldContactActive = worldContact,
                         .recoveryTeleport =
                             owner.droveRecoveryTeleport,
                     });
@@ -2808,7 +2835,13 @@ namespace rock
             owner.lastPostSolveContact = contactMask != 0;
 
             const bool anyContact = contactMask != 0;
-            if (anyContact && !handSlots.physicsContactActive) {
+            const float entryGateSpeed = std::max(
+                0.0f,
+                g_rockConfig.
+                    rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond);
+            if (anyContact && !handSlots.physicsContactActive &&
+                maxEntryApproachSpeed >= entryGateSpeed &&
+                maxEntryApproachSpeed > 0.0f) {
                 handSlots.contactEntryApproachSpeedAtomic.store(
                     maxEntryApproachSpeed,
                     std::memory_order_relaxed);
@@ -2818,8 +2851,10 @@ namespace rock
                 handSlots.contactEntrySequenceAtomic.fetch_add(
                     1,
                     std::memory_order_release);
+                handSlots.physicsContactActive = true;
+            } else if (!anyContact) {
+                handSlots.physicsContactActive = false;
             }
-            handSlots.physicsContactActive = anyContact;
         }
     }
 }

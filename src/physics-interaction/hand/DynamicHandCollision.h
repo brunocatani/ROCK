@@ -214,6 +214,7 @@ namespace rock
             bool valid = false;
             bool targetVelocityValid = false;
             bool contactActive = false;
+            bool worldContactActive = false;
             bool recoveryTeleport = false;
         };
 
@@ -242,6 +243,7 @@ namespace rock
             std::atomic<bool> valid{ false };
             std::atomic<bool> targetVelocityValid{ false };
             std::atomic<bool> contactActive{ false };
+            std::atomic<bool> worldContactActive{ false };
             std::atomic<bool> recoveryTeleport{ false };
         };
 
@@ -380,7 +382,9 @@ namespace rock
             std::atomic<std::uint32_t> pendingOtherHandContactMaskAtomic{ 0 };
             std::atomic<std::uint32_t> pendingWeaponContactMaskAtomic{ 0 };
             std::atomic<std::uint32_t> pendingSolverContactMaskAtomic{ 0 };
+            std::atomic<std::uint32_t> pendingWorldContactMaskAtomic{ 0 };
             std::uint32_t retainedSolverContactMask = 0;
+            std::uint32_t retainedWorldContactMask = 0;
             float solverContactRetentionSeconds = 0.0f;
             std::uint32_t otherHandContactMask{ 0 };
             std::uint32_t weaponContactMask{ 0 };

@@ -193,9 +193,20 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl
     'tryClassifyDynamicBodyContactSourceAtomic\(',
     'recordDynamicBodyContactCallback\('
 ) 'Processed manifolds must recover exact compound-child contact identity from both shape keys.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'pendingSolverContactMaskAtomic\.fetch_or\(',
+    '!otherIsHand && !otherIsWeapon',
+    'pendingWorldContactMaskAtomic\.fetch_or\('
+) 'Compound contacts must retain a separate world-only child mask.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
     'void PhysicsInteraction::handleContactEvent\([\s\S]*tryClassifyDynamicBodyContactSourceAtomic\(' `
     'Key-3 impulse records must not guess a semantic child from the shared compound body ID.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'applyHandCompoundMassProperties\([\s\S]{0,500}placeGeneratedKeyframedBodyImmediately\(' `
+    'The compound must apply envelope inertia before its initial placement.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'slot\.body\.setMass\(' `
+    'The hand compound must preserve Havok motion-cinfo inverse mass.'
 
 # Finger residuals retain the current calibrated probe solve. Compound children
 # follow the live role frames published after the current FRIK pose claim.
@@ -212,6 +223,9 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'surface_finger_collision_policy::solve\(',
     'response\.lastDirections'
 ) 'Every contact must evaluate both anatomical directions against the solver-safe displacement.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'updateSurfaceFingerResponse\([\s\S]*worldContactActive' `
+    'Surface finger response must consume world-only compound contacts.'
 Require-Text 'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h' `
     'baselineCost[\s\S]*evaluateDirection[\s\S]*closing\.valid && opening\.valid[\s\S]*directionSwitchHysteresisFraction[\s\S]*selected->direction' `
     'Conflicting phalanx contacts must choose one coherent per-finger direction with switch hysteresis.'
@@ -292,8 +306,10 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
 # stronger ownership, and delivered through the shared main-thread mixer.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'samplePostSolveDeviations\(',
+    'entryGateSpeed',
+    'maxEntryApproachSpeed >= entryGateSpeed',
     'contactEntrySequenceAtomic\.fetch_add'
-) 'Dynamic hand contact entry must be published by the post-solve physics phase.'
+) 'Dynamic hand contact entry must wait for real post-solve pressing speed.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'updateHandHaptic\(' `
     'Dynamic hand contact entry must be consumed by the main-frame haptic policy.'
