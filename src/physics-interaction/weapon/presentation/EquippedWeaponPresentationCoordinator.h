@@ -8,21 +8,42 @@
 namespace rock
 {
     /*
-     * Owns the equipped-weapon presentation transaction for the frame.
+     * Owns the equipped-weapon presentation transaction across the two frames
+     * it needs.
      *
-     * Scope note. This stage of the work runs the transaction in SHADOW mode:
-     * the coordinator observes the existing writers and drives the state
-     * machine, but performs no writes and changes no behavior. Its output is
-     * the per-frame stage and abort reason, which measure how often the
-     * current immediate-write path would have had to abort once the deferred
-     * commit is switched on.
+     * The weapon and its attached hands are one visual object, but the hands
+     * are only moved by the NEXT deferred hFRIK skeleton pass. Writing the
+     * weapon in the same frame the hand claims are published assumes those
+     * claims will be honoured, and the solver is free to silently fall back
+     * to the tracked hand instead. That assumption is the split-presentation
+     * defect.
      *
-     * Shadow mode deliberately stops at FrikConsumed. Validating the readback
-     * requires the staged hand poses, and those only reach this object when it
-     * owns the staging itself, which is the next change. Reporting a readback
-     * it could not perform would be worse than reporting the honest stage.
+     * So the correction is pipelined. Two transactions are live at once:
      *
-     * All calls run on the game update thread.
+     *   _staging   the correction produced this frame. Its hand claims are
+     *              published as a group; the weapon is NOT written.
+     *   _inFlight  the correction staged last frame. The deferred solve has
+     *              now run, so the presented wrists can be read back. If they
+     *              arrived, the weapon commits once, composed onto THIS
+     *              frame's collision-free intent.
+     *
+     * At the end of the frame _staging rotates into _inFlight.
+     *
+     * The cost is one frame of latency on the correction, about 11 ms at
+     * 90 Hz, on a correction that is already one physics solve old. The gain
+     * is that the weapon never moves to a pose its hands did not reach.
+     *
+     * Aborting is always fail-closed: no weapon write, staged claims
+     * released, and the weapon keeps its collision-free intent. That errs
+     * toward visual penetration and never toward a weapon that has separated
+     * from the hands holding it.
+     *
+     * All calls run on the game update thread, in this order per frame:
+     *   post-hFRIK hook : observeFrikConsumed, observeReadback   (_inFlight)
+     *   phase 3         : beginFrame                             (_staging)
+     *   phase 6         : isCommitApproved / observeWeaponCommit (_inFlight)
+     *                     observePhysicsProposal, observeHandGroup (_staging)
+     *                     rotate
      */
     class EquippedWeaponPresentationCoordinator
     {
@@ -35,7 +56,8 @@ namespace rock
 
         void reset()
         {
-            presentation_transaction_policy::reset(_transaction);
+            presentation_transaction_policy::reset(_staging);
+            presentation_transaction_policy::reset(_inFlight);
             _abortCounts = {};
             _deepestStage = Stage::Idle;
             _frameAbortReason = AbortReason::None;
@@ -47,25 +69,12 @@ namespace rock
         {
             _deepestStage = Stage::Idle;
             _frameAbortReason = AbortReason::None;
-            /*
-             * Most frames retire a transaction that never needed to commit:
-             * free space offers no correction, and shadow mode has no commit
-             * after the deferred solve. Neither is an abort. Staged claims
-             * with no reported solve are different, and are counted: the
-             * previous frame published hand claims that nothing consumed.
-             */
-            if (_transaction.stage == Stage::HandTargetsStaged) {
-                presentation_transaction_policy::abort(
-                    _transaction,
-                    AbortReason::SubjectLost);
-                countAbort();
-            }
-            presentation_transaction_policy::reset(_transaction);
+            presentation_transaction_policy::reset(_staging);
             (void)presentation_transaction_policy::begin(
-                _transaction,
+                _staging,
                 identity,
                 stamp);
-            advanceDeepestStage();
+            advanceDeepestStage(_staging.stage);
         }
 
         void observePhysicsProposal(
@@ -73,55 +82,123 @@ namespace rock
             const TransactionIdentity& observedIdentity)
         {
             if (!presentation_transaction_policy::acceptPhysicsProposal(
-                    _transaction,
+                    _staging,
                     proposalAdmissible,
                     observedIdentity)) {
-                countAbort();
+                countAbort(_staging);
                 return;
             }
-            advanceDeepestStage();
+            advanceDeepestStage(_staging.stage);
         }
 
         void observeHandGroup(
             const std::uint8_t targetsAvailableMask,
             const std::uint8_t publishedMask,
+            const std::array<std::uint64_t, 2>& winnerSequence,
             const FrameStamp& stamp)
         {
             if (!presentation_transaction_policy::stageHandTargets(
-                    _transaction,
+                    _staging,
                     targetsAvailableMask,
                     publishedMask,
                     stamp)) {
-                countAbort();
+                countAbort(_staging);
                 return;
             }
-            advanceDeepestStage();
+            _staging.stagedWinnerSequence = winnerSequence;
+            advanceDeepestStage(_staging.stage);
         }
 
+        // The deferred solve for the in-flight transaction has now run.
         void observeFrikConsumed(const FrameStamp& stamp)
         {
-            if (_transaction.stage != Stage::HandTargetsStaged) {
-                // Nothing was staged for the deferred pass to consume. That is
-                // the ordinary case whenever the weapon is not in contact.
+            if (_inFlight.stage != Stage::HandTargetsStaged) {
                 return;
             }
             if (!presentation_transaction_policy::markFrikConsumed(
-                    _transaction,
+                    _inFlight,
                     stamp)) {
-                countAbort();
+                countAbort(_inFlight);
                 return;
             }
-            advanceDeepestStage();
+            advanceDeepestStage(_inFlight.stage);
         }
 
-        [[nodiscard]] Stage stage() const { return _transaction.stage; }
+        void observeReadback(
+            const TransactionIdentity& observedIdentity,
+            const std::uint8_t residualWithinPolicyMask,
+            const std::array<std::uint64_t, 2>& observedWinnerSequence)
+        {
+            if (_inFlight.stage != Stage::FrikConsumed) {
+                return;
+            }
+            if (!presentation_transaction_policy::validateReadback(
+                    _inFlight,
+                    observedIdentity,
+                    residualWithinPolicyMask,
+                    observedWinnerSequence)) {
+                countAbort(_inFlight);
+                return;
+            }
+            advanceDeepestStage(_inFlight.stage);
+        }
+
+        [[nodiscard]] bool isCommitApproved() const
+        {
+            return _inFlight.stage == Stage::ReadbackValidated;
+        }
+
+        // True while an in-flight transaction still holds staged hand claims
+        // that the caller must release if it is not going to commit.
+        [[nodiscard]] bool hasUncommittedInFlightClaims() const
+        {
+            return _inFlight.stage == Stage::HandTargetsStaged ||
+                _inFlight.stage == Stage::FrikConsumed ||
+                _inFlight.stage == Stage::Aborted;
+        }
+
+        void observeWeaponCommit(const bool weaponWritten)
+        {
+            if (!presentation_transaction_policy::commit(
+                    _inFlight,
+                    weaponWritten)) {
+                countAbort(_inFlight);
+                return;
+            }
+            advanceDeepestStage(_inFlight.stage);
+        }
+
+        /*
+         * End of the frame's presentation work. This frame's staged group
+         * becomes the next frame's in-flight transaction. Anything left open
+         * in the outgoing in-flight slot never reached a commit, so it is
+         * counted rather than dropped silently.
+         */
+        void rotate()
+        {
+            if (presentation_transaction_policy::isOpen(_inFlight.stage)) {
+                presentation_transaction_policy::abort(
+                    _inFlight,
+                    AbortReason::SubjectLost);
+                countAbort(_inFlight);
+            }
+            if (_staging.stage == Stage::HandTargetsStaged) {
+                _inFlight = _staging;
+            } else {
+                presentation_transaction_policy::reset(_inFlight);
+            }
+            presentation_transaction_policy::reset(_staging);
+        }
+
+        [[nodiscard]] Stage stagingStage() const { return _staging.stage; }
+
+        [[nodiscard]] Stage inFlightStage() const { return _inFlight.stage; }
 
         [[nodiscard]] Stage deepestStageReached() const
         {
             return _deepestStage;
         }
 
-        // The reason this frame's transaction stopped, if it did.
         [[nodiscard]] AbortReason abortReason() const
         {
             return _frameAbortReason;
@@ -134,25 +211,28 @@ namespace rock
         }
 
     private:
-        void countAbort()
+        void countAbort(
+            const presentation_transaction_policy::Transaction& transaction)
         {
-            _frameAbortReason = _transaction.abortReason;
+            _frameAbortReason = transaction.abortReason;
             const auto index =
-                static_cast<std::size_t>(_transaction.abortReason);
+                static_cast<std::size_t>(transaction.abortReason);
             if (index < _abortCounts.size()) {
                 ++_abortCounts[index];
             }
         }
 
-        void advanceDeepestStage()
+        void advanceDeepestStage(const Stage stage)
         {
-            if (static_cast<std::uint8_t>(_transaction.stage) >
-                static_cast<std::uint8_t>(_deepestStage)) {
-                _deepestStage = _transaction.stage;
+            if (stage != Stage::Aborted &&
+                static_cast<std::uint8_t>(stage) >
+                    static_cast<std::uint8_t>(_deepestStage)) {
+                _deepestStage = stage;
             }
         }
 
-        presentation_transaction_policy::Transaction _transaction{};
+        presentation_transaction_policy::Transaction _staging{};
+        presentation_transaction_policy::Transaction _inFlight{};
         std::array<
             std::uint64_t,
             presentation_transaction_policy::kAbortReasonCount>

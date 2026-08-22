@@ -1505,48 +1505,72 @@ namespace rock
                 dynamicWeaponFrame.translationCorrectionGameUnits,
                 dynamicWeaponFrame.rotationCorrectionDegrees);
         }
+        /*
+         * Commit before staging. The correction staged in the previous frame
+         * was validated against the wrists the deferred solve actually
+         * presented, and it is composed onto THIS frame's collision-free
+         * intent, so the player's motion since staging is preserved instead
+         * of being undone by a stale absolute pose.
+         */
+        if (_weaponPresentationCoordinator.isCommitApproved()) {
+            const bool committed =
+                dynamicWeaponFrame.requestedWeaponWorldValid &&
+                _twoHandedGrip.commitStagedWeaponCollisionCorrection(
+                    weaponNode,
+                    dynamicWeaponFrame.requestedWeaponWorld,
+                    currentWeaponGenerationKey);
+            _weaponPresentationCoordinator.observeWeaponCommit(committed);
+            if (!committed) {
+                _twoHandedGrip.discardStagedWeaponCollisionCorrection();
+            }
+        } else if (_weaponPresentationCoordinator
+                       .hasUncommittedInFlightClaims()) {
+            /*
+             * Fail closed. The weapon was never moved for this correction, so
+             * releasing the hand claims returns the whole group to its
+             * collision-free pose together. That errs toward one frame of
+             * visual penetration, never toward a weapon that has separated
+             * from the hands holding it.
+             */
+            _twoHandedGrip.discardStagedWeaponCollisionCorrection();
+        }
+
+        TwoHandedGrip::WeaponCollisionStageResult stageResult{};
         if (dynamicWeaponFrame.publishVisualAuthority) {
-            const bool visualPublishSucceeded = _twoHandedGrip.applyWeaponCollisionResolvedAuthority(
+            stageResult = _twoHandedGrip.stageWeaponCollisionCorrection(
                 weaponNode,
                 dynamicWeaponFrame.requestedWeaponWorld,
                 dynamicWeaponFrame.resolvedWeaponWorld,
                 currentWeaponGenerationKey);
-            const float immediateTranslationError =
-                visualPublishSucceeded && weaponNode ?
-                    dynamic_weapon_collision_policy::translationDeltaGameUnits(
-                        weaponNode->world,
-                        dynamicWeaponFrame.resolvedWeaponWorld) :
-                    -1.0f;
-            const float immediateRotationError =
-                visualPublishSucceeded && weaponNode ?
-                    dynamic_weapon_collision_policy::rotationDeltaDegrees(
-                        weaponNode->world,
-                        dynamicWeaponFrame.resolvedWeaponWorld) :
-                    -1.0f;
+            if (!stageResult.weaponDetached) {
+                _weaponPresentationCoordinator.observeHandGroup(
+                    stageResult.targetsAvailableMask,
+                    stageResult.publishedMask,
+                    stageResult.winnerSequence,
+                    presentation_transaction_policy::FrameStamp{
+                        .frameIndex = frame.gameFrameIndex,
+                        .schedulerSequence = frame.preFrikSchedulerSequence,
+                    });
+            }
             if (g_rockConfig.rockDebugDynamicWeaponLogging) {
                 ROCK_LOG_SAMPLE_INFO(
                     Weapon,
                     500,
-                    "DWC visual publication: bodyActive={} publishSucceeded={} immediateError=({:.3f}gu,{:.3f}deg) requestedCorrection=({:.3f}gu,{:.3f}deg)",
+                    "DWC correction staged: bodyActive={} detached={} staged={} weaponWritten={} required/targets/published={}/{}/{} correction=({:.3f}gu,{:.3f}deg)",
                     dynamicWeaponFrame.proxyActive,
-                    visualPublishSucceeded,
-                    immediateTranslationError,
-                    immediateRotationError,
+                    stageResult.weaponDetached,
+                    stageResult.staged,
+                    stageResult.weaponWritten,
+                    stageResult.requiredHandMask,
+                    stageResult.targetsAvailableMask,
+                    stageResult.publishedMask,
                     dynamicWeaponFrame.translationCorrectionGameUnits,
                     dynamicWeaponFrame.rotationCorrectionDegrees);
             }
-            const auto handMasks =
-                presentation_trace::currentCollisionHandMasks();
-            _weaponPresentationCoordinator.observeHandGroup(
-                handMasks.targetsAvailable,
-                handMasks.published,
-                presentation_transaction_policy::FrameStamp{
-                    .frameIndex = frame.gameFrameIndex,
-                    .schedulerSequence = frame.preFrikSchedulerSequence,
-                });
         }
         _twoHandedGrip.finishWeaponCollisionPresentationFrame(
-            dynamicWeaponFrame.publishVisualAuthority);
+            stageResult.staged);
+        _weaponPresentationCoordinator.rotate();
         (void)_twoHandedGrip.applyFiringWeaponRecoilPresentation(
             weaponNode,
             currentWeaponGenerationKey);

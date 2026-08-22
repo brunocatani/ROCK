@@ -277,54 +277,176 @@ namespace
         return ok;
     }
 
-    // The coordinator must recover from an abort: the next frame opens a fresh
-    // transaction rather than staying stuck in the failed one.
-    bool testCoordinatorRecoversAfterAbort()
+    using Coordinator = rock::EquippedWeaponPresentationCoordinator;
+
+    // Runs the staging half of one frame: begin, proposal, group publish.
+    void driveStagingFrame(
+        Coordinator& coordinator,
+        const policy::TransactionIdentity& identity,
+        const std::uint64_t schedulerSequence,
+        const std::uint8_t targetsAvailable,
+        const std::uint8_t published)
+    {
+        coordinator.beginFrame(identity, { .frameIndex = schedulerSequence, .schedulerSequence = schedulerSequence });
+        coordinator.observePhysicsProposal(true, identity);
+        coordinator.observeHandGroup(targetsAvailable, published, { 7u, 8u }, { .frameIndex = schedulerSequence, .schedulerSequence = schedulerSequence });
+    }
+
+    // The whole point: the weapon commits one frame after its hand claims,
+    // and only after the solved wrists prove the hands arrived.
+    bool testPipelineCommitsOneFrameLater()
     {
         bool ok = true;
-        rock::EquippedWeaponPresentationCoordinator coordinator;
+        Coordinator coordinator;
         const auto identity = twoHandIdentity();
 
-        coordinator.beginFrame(identity, { .frameIndex = 1, .schedulerSequence = 10 });
-        coordinator.observePhysicsProposal(true, identity);
-        coordinator.observeHandGroup(kBothHands, kRightOnly, { .frameIndex = 1, .schedulerSequence = 10 });
-        ok &= expectStage("a partial group aborts", coordinator.stage(), Stage::Aborted);
-        ok &= expectTrue("the abort is counted", coordinator.abortCount(AbortReason::HandPublishFailed) == 1u);
+        // Frame N stages the group. Nothing may commit yet.
+        driveStagingFrame(coordinator, identity, 10, kBothHands, kBothHands);
+        ok &= expectStage("the group is staged", coordinator.stagingStage(), Stage::HandTargetsStaged);
+        ok &= expectFalse("nothing commits on the staging frame", coordinator.isCommitApproved());
+        coordinator.rotate();
+        ok &= expectStage("the staged group is now in flight", coordinator.inFlightStage(), Stage::HandTargetsStaged);
 
-        coordinator.beginFrame(identity, { .frameIndex = 2, .schedulerSequence = 11 });
-        ok &= expectStage("the next frame opens cleanly", coordinator.stage(), Stage::IntentReady);
-        ok &= expectTrue("recovery does not add an abort", coordinator.abortCount(AbortReason::StageOutOfOrder) == 0u);
+        // Frame N+1 reads back after the deferred solve.
+        coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
+        coordinator.observeReadback(identity, kBothHands, { 7u, 8u });
+        ok &= expectTrue("a clean readback approves the commit", coordinator.isCommitApproved());
 
-        coordinator.observePhysicsProposal(true, identity);
-        coordinator.observeHandGroup(kBothHands, kBothHands, { .frameIndex = 2, .schedulerSequence = 11 });
-        coordinator.observeFrikConsumed({ .frameIndex = 3, .schedulerSequence = 12 });
-        ok &= expectStage("the deferred solve is observed", coordinator.stage(), Stage::FrikConsumed);
-        ok &= expectStage("the deepest stage is reported", coordinator.deepestStageReached(), Stage::FrikConsumed);
+        coordinator.beginFrame(identity, { .frameIndex = 11, .schedulerSequence = 11 });
+        ok &= expectTrue("opening the next staging frame keeps the approval", coordinator.isCommitApproved());
 
-        // Shadow mode ends at the deferred solve. Retiring it is not an abort.
-        coordinator.beginFrame(identity, { .frameIndex = 3, .schedulerSequence = 12 });
-        ok &= expectTrue("retiring a consumed transaction is not an abort", coordinator.abortCount(AbortReason::StageOutOfOrder) == 0u);
-        ok &= expectStage("the following frame opens cleanly", coordinator.stage(), Stage::IntentReady);
+        coordinator.observeWeaponCommit(true);
+        ok &= expectStage("the weapon commits", coordinator.inFlightStage(), Stage::Committed);
+        ok &= expectFalse("a committed transaction holds no claims", coordinator.hasUncommittedInFlightClaims());
+
+        coordinator.rotate();
+        ok &= expectStage("an unstaged frame leaves nothing in flight", coordinator.inFlightStage(), Stage::Idle);
+        for (std::size_t reason = 0; reason < policy::kAbortReasonCount; ++reason) {
+            ok &= expectTrue(
+                "a clean pipeline records no abort",
+                coordinator.abortCount(static_cast<AbortReason>(reason)) == 0u);
+        }
         return ok;
     }
 
-    // A free-space frame offers no proposal, so the transaction simply stays
-    // open at intent and records nothing.
+    /*
+     * The silent fallback. The claim was accepted and still wins, but the
+     * wrist never arrived. The commit must be refused and the caller told it
+     * still holds claims to release.
+     */
+    bool testFallbackReadbackFailsClosed()
+    {
+        bool ok = true;
+        Coordinator coordinator;
+        const auto identity = twoHandIdentity();
+
+        driveStagingFrame(coordinator, identity, 10, kBothHands, kBothHands);
+        coordinator.rotate();
+        coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
+        coordinator.observeReadback(identity, kRightOnly, { 7u, 8u });
+
+        ok &= expectFalse("an unreached wrist refuses the commit", coordinator.isCommitApproved());
+        ok &= expectTrue("the caller is told to release the claims", coordinator.hasUncommittedInFlightClaims());
+        ok &= expectTrue("the mismatch is counted", coordinator.abortCount(AbortReason::ReadbackMismatch) == 1u);
+
+        coordinator.beginFrame(identity, { .frameIndex = 11, .schedulerSequence = 11 });
+        coordinator.rotate();
+        ok &= expectStage("the failed transaction is retired", coordinator.inFlightStage(), Stage::Idle);
+        return ok;
+    }
+
+    // A group that could not publish in full never reaches the pipeline, so
+    // the following frame has nothing to commit.
+    bool testPartialGroupNeverReachesTheCommit()
+    {
+        bool ok = true;
+        Coordinator coordinator;
+        const auto identity = twoHandIdentity();
+
+        driveStagingFrame(coordinator, identity, 10, kBothHands, kRightOnly);
+        ok &= expectStage("a partial group aborts", coordinator.stagingStage(), Stage::Aborted);
+        coordinator.rotate();
+        ok &= expectStage("a partial group is not put in flight", coordinator.inFlightStage(), Stage::Idle);
+
+        coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
+        ok &= expectFalse("there is nothing to commit", coordinator.isCommitApproved());
+        ok &= expectTrue("the partial publish is counted", coordinator.abortCount(AbortReason::HandPublishFailed) == 1u);
+        return ok;
+    }
+
+    // A dropped scheduling interval means the staged pose describes something
+    // the solver never saw.
+    bool testSchedulerGapFailsClosedInThePipeline()
+    {
+        bool ok = true;
+        Coordinator coordinator;
+        const auto identity = twoHandIdentity();
+
+        driveStagingFrame(coordinator, identity, 10, kBothHands, kBothHands);
+        coordinator.rotate();
+        coordinator.observeFrikConsumed({ .frameIndex = 13, .schedulerSequence = 13 });
+        ok &= expectFalse("a dropped interval refuses the commit", coordinator.isCommitApproved());
+        ok &= expectTrue("the gap is counted", coordinator.abortCount(AbortReason::SchedulerDiscontinuity) == 1u);
+        ok &= expectTrue("the caller is told to release the claims", coordinator.hasUncommittedInFlightClaims());
+        return ok;
+    }
+
+    // Contact ended before the deferred solve reported back. The claims are
+    // still live, so the caller must be told to release them.
+    bool testAbandonedInFlightIsCounted()
+    {
+        bool ok = true;
+        Coordinator coordinator;
+        const auto identity = twoHandIdentity();
+
+        driveStagingFrame(coordinator, identity, 10, kBothHands, kBothHands);
+        coordinator.rotate();
+        // The next frame never observes the deferred solve at all.
+        coordinator.beginFrame(identity, { .frameIndex = 11, .schedulerSequence = 11 });
+        coordinator.rotate();
+        ok &= expectTrue("an abandoned group is counted", coordinator.abortCount(AbortReason::SubjectLost) == 1u);
+        ok &= expectStage("an abandoned group is retired", coordinator.inFlightStage(), Stage::Idle);
+        return ok;
+    }
+
+    // A free-space frame offers no proposal, so nothing stages, nothing goes
+    // in flight, and nothing is counted.
     bool testFreeSpaceFrameIsQuiet()
     {
         bool ok = true;
-        rock::EquippedWeaponPresentationCoordinator coordinator;
+        Coordinator coordinator;
         const auto identity = twoHandIdentity();
         for (std::uint64_t frame = 1; frame <= 5; ++frame) {
             coordinator.beginFrame(identity, { .frameIndex = frame, .schedulerSequence = frame });
             coordinator.observeFrikConsumed({ .frameIndex = frame, .schedulerSequence = frame });
-            ok &= expectStage("a quiet frame stays at intent", coordinator.stage(), Stage::IntentReady);
+            ok &= expectStage("a quiet frame stays at intent", coordinator.stagingStage(), Stage::IntentReady);
+            ok &= expectFalse("a quiet frame commits nothing", coordinator.isCommitApproved());
+            coordinator.rotate();
         }
         for (std::size_t reason = 0; reason < policy::kAbortReasonCount; ++reason) {
             ok &= expectTrue(
                 "a quiet frame records no abort",
                 coordinator.abortCount(static_cast<AbortReason>(reason)) == 0u);
         }
+        return ok;
+    }
+
+    // A single attached hand runs the same pipeline.
+    bool testOneHandPipeline()
+    {
+        bool ok = true;
+        Coordinator coordinator;
+        auto identity = twoHandIdentity();
+        identity.attachedHandMask = kRightOnly;
+
+        driveStagingFrame(coordinator, identity, 10, kRightOnly, kRightOnly);
+        coordinator.rotate();
+        coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
+        // The unrequested left hand contributes nothing either way.
+        coordinator.observeReadback(identity, kRightOnly, { 999u, 8u });
+        ok &= expectTrue("a one-hand group commits", coordinator.isCommitApproved());
+        coordinator.observeWeaponCommit(true);
+        ok &= expectStage("the one-hand weapon commits", coordinator.inFlightStage(), Stage::Committed);
         return ok;
     }
 }
@@ -343,7 +465,12 @@ int main()
     ok &= testFailedWeaponWriteAborts();
     ok &= testDetachedWeaponIsFlagged();
     ok &= testRejectedProposalAborts();
-    ok &= testCoordinatorRecoversAfterAbort();
+    ok &= testPipelineCommitsOneFrameLater();
+    ok &= testFallbackReadbackFailsClosed();
+    ok &= testPartialGroupNeverReachesTheCommit();
+    ok &= testSchedulerGapFailsClosedInThePipeline();
+    ok &= testAbandonedInFlightIsCounted();
     ok &= testFreeSpaceFrameIsQuiet();
+    ok &= testOneHandPipeline();
     return ok ? 0 : 1;
 }

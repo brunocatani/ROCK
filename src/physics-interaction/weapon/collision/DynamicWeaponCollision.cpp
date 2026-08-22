@@ -435,6 +435,10 @@ namespace rock
         FrameResult result{};
         result.requestedWeaponWorld = _frameRequestedWeaponWorld;
         result.resolvedWeaponWorld = _frameRequestedWeaponWorld;
+        result.requestedWeaponWorldValid =
+            _frameHasIntent &&
+            dynamic_weapon_collision_policy::isFiniteTransform(
+                _frameRequestedWeaponWorld);
 
         const bool frameMatches =
             _frameAcceptingIntent &&

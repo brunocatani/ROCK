@@ -746,13 +746,63 @@ namespace rock
                    _weaponCollisionHandPresentationFromPreviousFrame[1];
         }
 
-        // Republishes a physics-resolved visual pose without feeding that
-        // correction back into the next dynamic-weapon drive target.
-        bool applyWeaponCollisionResolvedAuthority(
+        struct WeaponCollisionStageResult
+        {
+            std::array<std::uint64_t, 2> winnerSequence{};
+            std::uint8_t requiredHandMask = 0;
+            std::uint8_t targetsAvailableMask = 0;
+            std::uint8_t publishedMask = 0;
+            // No attached hand means no group to keep together, so the
+            // correction is written immediately instead of being deferred.
+            bool weaponDetached = false;
+            bool weaponWritten = false;
+            bool staged = false;
+        };
+
+        /*
+         * Publishes a physics-resolved correction as a hand-claim group and
+         * records it for commit on the next frame. The weapon is NOT moved
+         * here: the deferred solver has not yet had a chance to honour the
+         * claims, and a weapon written against claims that later fall back is
+         * the split-presentation defect. If any required hand refuses the
+         * claim, every tag this call published is cleared before it returns.
+         */
+        WeaponCollisionStageResult stageWeaponCollisionCorrection(
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
             const RE::NiTransform& resolvedWeaponWorld,
             std::uint64_t authorityGenerationKey);
+
+        struct WeaponCollisionReadback
+        {
+            std::array<std::uint64_t, 2> winnerSequence{};
+            std::uint8_t residualWithinPolicyMask = 0;
+            bool hasStagedCorrection = false;
+        };
+
+        /*
+         * Compares each staged hand target against the wrist the deferred
+         * solve actually presented. This is the only observation that catches
+         * the silent tracked-hand fallback, which the publish result never
+         * reports.
+         */
+        WeaponCollisionReadback readBackStagedWeaponCollisionGroup(
+            std::uint64_t currentWeaponGenerationKey);
+
+        // Writes the staged correction once, composed onto the current
+        // collision-free weapon intent.
+        bool commitStagedWeaponCollisionCorrection(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& currentRequestedWeaponWorld,
+            std::uint64_t authorityGenerationKey);
+
+        // Releases the staged correction and the hand claims that carry it.
+        void discardStagedWeaponCollisionCorrection();
+
+        [[nodiscard]] bool hasStagedWeaponCollisionCorrection() const
+        {
+            return _stagedWeaponCollisionCorrection.valid;
+        }
 
         bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PartCarry; }
 
@@ -1890,6 +1940,26 @@ namespace rock
         };
         std::array<PreFrikWeaponHandAuthority, 2>
             _preFrikWeaponHandAuthority{};
+        /*
+         * The correction staged in the previous frame, waiting for the
+         * deferred solve to prove its hand claims arrived. It stores the
+         * correction as a world delta rather than an absolute pose so the
+         * commit can compose it onto the newest collision-free intent instead
+         * of replaying a stale weapon position.
+         */
+        struct StagedWeaponCollisionCorrection
+        {
+            RE::NiTransform correctionWorldDelta{};
+            // The exact target last published for each hand, including the
+            // pre-hFRIK driver rebase. The readback compares against this.
+            std::array<RE::NiTransform, 2> publishedHandTargetWorld{};
+            std::array<std::uint64_t, 2> winnerSequence{};
+            std::uint8_t requiredHandMask = 0;
+            std::uint64_t weaponGenerationKey = 0;
+            std::uint64_t schedulerSequence = 0;
+            bool valid = false;
+        };
+        StagedWeaponCollisionCorrection _stagedWeaponCollisionCorrection{};
         struct IndependentWeaponPresentation
         {
             RE::NiTransform weaponWorld{};

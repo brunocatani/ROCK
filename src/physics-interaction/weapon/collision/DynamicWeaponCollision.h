@@ -40,6 +40,10 @@ namespace rock
         {
             bool proxyActive{ false };
             bool publishVisualAuthority{ false };
+            // True when a weapon writer published this frame's collision-free
+            // intent. A deferred correction can only be committed onto a
+            // current intent, never onto a stale one.
+            bool requestedWeaponWorldValid{ false };
             bool contactEpisodeStarted{ false };
             /*
              * The retained-contact state of the current physics snapshot. The

@@ -273,18 +273,31 @@ namespace rock
             return;
         }
 
-        // The deferred solve for the previous frame's staged claims has now
-        // run. This is the earliest point a readback can see the result.
+        /*
+         * The deferred solve for the previous frame's staged claims has now
+         * run, and the presented skeleton is fresh. This is the only point in
+         * the frame where the silent tracked-hand fallback is observable: the
+         * claim was accepted and still wins, but the wrist never arrived.
+         */
+        const auto currentWeaponGenerationKey =
+            _weaponCollision.getCurrentWeaponGenerationKey();
         _weaponPresentationCoordinator.observeFrikConsumed(
             presentation_transaction_policy::FrameStamp{
                 .frameIndex = runtime_state::currentFrame().frameIndex,
                 .schedulerSequence = schedulerSequence,
             });
+        const auto readback =
+            _twoHandedGrip.readBackStagedWeaponCollisionGroup(
+                currentWeaponGenerationKey);
+        _weaponPresentationCoordinator.observeReadback(
+            makeWeaponPresentationIdentity(currentWeaponGenerationKey),
+            readback.residualWithinPolicyMask,
+            readback.winnerSequence);
 
         (void)_twoHandedGrip.
             restoreIndependentWeaponPresentationAfterFrik(
                 resolveEquippedWeaponInteractionNode(),
-                _weaponCollision.getCurrentWeaponGenerationKey(),
+                currentWeaponGenerationKey,
                 schedulerSequence);
     }
 

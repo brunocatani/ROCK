@@ -28,6 +28,7 @@
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/native_anim/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/presentation/PresentationTraceRuntime.h"
+#include "physics-interaction/weapon/presentation/PresentationTransactionPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -875,6 +876,17 @@ namespace rock
     {
         const std::size_t index = isLeft ? 0u : 1u;
         _preFrikWeaponHandAuthority[index] = {};
+        /*
+         * A staged correction is only meaningful while every claim that
+         * carries it is live. Releasing one of them retires the whole staged
+         * group, so no later frame can commit a weapon pose against hands
+         * that have already returned to their grip authority.
+         */
+        if (presentation_transaction_policy::maskContains(
+                _stagedWeaponCollisionCorrection.requiredHandMask,
+                isLeft)) {
+            _stagedWeaponCollisionCorrection = {};
+        }
         if (!_weaponCollisionHandAuthorityLive[index]) {
             _weaponCollisionHandAuthorityGenerationKey[index] = 0;
             return true;
@@ -1022,6 +1034,19 @@ namespace rock
                     targetWorld,
                     WEAPON_COLLISION_HAND_PRIORITY)) {
                 (void)clearWeaponCollisionHandAuthority(isLeft);
+                continue;
+            }
+            /*
+             * The staged group is now expressed against the current driver.
+             * The readback that follows this skeleton pass must compare the
+             * solved wrist against this rebased target, not against the pose
+             * captured before the player moved.
+             */
+            if (_stagedWeaponCollisionCorrection.valid &&
+                _stagedWeaponCollisionCorrection.weaponGenerationKey ==
+                    currentWeaponGenerationKey) {
+                _stagedWeaponCollisionCorrection
+                    .publishedHandTargetWorld[index] = targetWorld;
             }
         }
     }
@@ -1368,17 +1393,19 @@ namespace rock
         return recoilApplied;
     }
 
-    bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
-        RE::NiNode* weaponNode,
-        const RE::NiTransform& requestedWeaponWorld,
-        const RE::NiTransform& resolvedWeaponWorld,
-        const std::uint64_t authorityGenerationKey)
+    TwoHandedGrip::WeaponCollisionStageResult
+        TwoHandedGrip::stageWeaponCollisionCorrection(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& requestedWeaponWorld,
+            const RE::NiTransform& resolvedWeaponWorld,
+            const std::uint64_t authorityGenerationKey)
     {
+        WeaponCollisionStageResult stageResult{};
         if (!weaponNode ||
             !isFiniteTransform(weaponNode->world) ||
             !isFiniteTransform(requestedWeaponWorld) ||
             !isFiniteTransform(resolvedWeaponWorld)) {
-            return false;
+            return stageResult;
         }
 
 
@@ -1423,8 +1450,43 @@ namespace rock
         }
 
         const bool anyHandRequested = attachedHands.left || attachedHands.right;
-        bool handTargetsReady =
-            !anyHandRequested || frik_visual_authority::isAvailable();
+        stageResult.weaponDetached = !anyHandRequested;
+        for (const auto& pulse : pulses) {
+            if (pulse.requested) {
+                stageResult.requiredHandMask |=
+                    presentation_transaction_policy::handBit(pulse.isLeft);
+            }
+        }
+
+        /*
+         * A weapon with no attached hand has no presentation group to keep
+         * together. Deferring its correction would add a frame of latency and
+         * protect nothing, so it commits immediately.
+         */
+        if (!anyHandRequested) {
+            _stagedWeaponCollisionCorrection = {};
+            stageResult.weaponWritten = applyWeaponVisualAuthority(
+                weaponNode,
+                scaleStableResolvedWeaponWorld,
+                authorityGenerationKey,
+                false);
+            if (!stageResult.weaponWritten || !detachedHandsCleared) {
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    1000,
+                    "TwoHandedGrip: detached dynamic weapon collision write incomplete weapon={} handsCleared={} state={}",
+                    stageResult.weaponWritten ? "ok" : "failed",
+                    detachedHandsCleared ? "ok" : "failed",
+                    static_cast<int>(_state));
+            }
+            presentation_trace::recordCollisionGroupOutcome(
+                stageResult.weaponWritten,
+                detachedHandsCleared,
+                std::array<presentation_trace::HandRecord, 2>{});
+            return stageResult;
+        }
+
+        bool handTargetsReady = frik_visual_authority::isAvailable();
         for (auto& pulse : pulses) {
             if (!pulse.requested) {
                 continue;
@@ -1521,24 +1583,40 @@ namespace rock
             }
         }
 
+        std::array<presentation_trace::HandRecord, 2> handRecords{};
+        for (std::size_t index = 0; index < handRecords.size(); ++index) {
+            const auto& pulse = pulses[index];
+            handRecords[index].collisionRequested = pulse.requested;
+            handRecords[index].collisionTargetValid = pulse.targetValid;
+            handRecords[index].collisionApplied = pulse.applied;
+            handRecords[index].collisionAuthorityLive = pulse.retained;
+            if (pulse.requested && pulse.targetValid) {
+                stageResult.targetsAvailableMask |=
+                    presentation_transaction_policy::handBit(pulse.isLeft);
+            }
+            if (pulse.requested && pulse.applied && pulse.retained) {
+                stageResult.publishedMask |=
+                    presentation_transaction_policy::handBit(pulse.isLeft);
+            }
+        }
+
         /*
-         * A firing-hand pulse can propagate through the weapon's native parent
-         * chain. Publish the solver-authoritative weapon last so the final
-         * rendered weapon pose is exact while both hands keep the rigid
-         * pre-collision weapon-local relationship captured above.
+         * All or nothing. A group that keeps one accepted claim while another
+         * hand was refused presents exactly the split this transaction exists
+         * to prevent, so every tag published above is released here, in the
+         * same phase, before anything downstream can read the partial state.
          */
-        const bool weaponPublished = applyWeaponVisualAuthority(
-            weaponNode,
-            scaleStableResolvedWeaponWorld,
-            authorityGenerationKey,
-            false);
-        if (!weaponPublished || !handPulsesSucceeded) {
+        if (!handPulsesSucceeded) {
+            for (const auto& pulse : pulses) {
+                if (pulse.requested) {
+                    (void)clearWeaponCollisionHandAuthority(pulse.isLeft);
+                }
+            }
+            _stagedWeaponCollisionCorrection = {};
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
-                "TwoHandedGrip: dynamic weapon collision group publication incomplete weapon={} hands={} left(req/target/apply/live)={}/{}/{}/{} right(req/target/apply/live)={}/{}/{}/{} state={} firingHand={}",
-                weaponPublished ? "ok" : "failed",
-                handPulsesSucceeded ? "ok" : "failed",
+                "TwoHandedGrip: dynamic weapon collision group rolled back left(req/target/apply/live)={}/{}/{}/{} right(req/target/apply/live)={}/{}/{}/{} state={} firingHand={}",
                 pulses[0].requested,
                 pulses[0].targetValid,
                 pulses[0].applied,
@@ -1549,20 +1627,159 @@ namespace rock
                 pulses[1].retained,
                 static_cast<int>(_state),
                 _firingHandIsLeft ? "left" : "right");
+            presentation_trace::recordCollisionGroupOutcome(
+                false,
+                false,
+                handRecords);
+            return stageResult;
         }
-        std::array<presentation_trace::HandRecord, 2> handRecords{};
-        for (std::size_t index = 0; index < handRecords.size(); ++index) {
+
+        /*
+         * The whole group holds. Record the correction as a world delta, not
+         * as an absolute weapon pose: the commit happens one frame later and
+         * must ride on that frame's collision-free intent so the player's own
+         * motion in between is not undone.
+         */
+        _stagedWeaponCollisionCorrection = {};
+        _stagedWeaponCollisionCorrection.correctionWorldDelta =
+            transform_math::composeTransforms(
+                scaleStableResolvedWeaponWorld,
+                transform_math::invertTransform(
+                    scaleStableRequestedWeaponWorld));
+        for (std::size_t index = 0; index < pulses.size(); ++index) {
             const auto& pulse = pulses[index];
-            handRecords[index].collisionRequested = pulse.requested;
-            handRecords[index].collisionTargetValid = pulse.targetValid;
-            handRecords[index].collisionApplied = pulse.applied;
-            handRecords[index].collisionAuthorityLive = pulse.retained;
+            _stagedWeaponCollisionCorrection.publishedHandTargetWorld[index] =
+                pulse.targetWorld;
+            frik_visual_authority::HandWorldAuthoritySnapshot winner{};
+            if (pulse.requested &&
+                frik_visual_authority::tryGetPublishedExternalHandWorldWinner(
+                    handFromBool(pulse.isLeft),
+                    winner)) {
+                _stagedWeaponCollisionCorrection.winnerSequence[index] =
+                    winner.sequence;
+            }
         }
+        _stagedWeaponCollisionCorrection.requiredHandMask =
+            stageResult.requiredHandMask;
+        _stagedWeaponCollisionCorrection.weaponGenerationKey =
+            authorityGenerationKey;
+        _stagedWeaponCollisionCorrection.schedulerSequence =
+            _currentSourceSchedulerSequence;
+        _stagedWeaponCollisionCorrection.valid =
+            isFiniteTransform(
+                _stagedWeaponCollisionCorrection.correctionWorldDelta) &&
+            authorityGenerationKey != 0;
+        stageResult.winnerSequence =
+            _stagedWeaponCollisionCorrection.winnerSequence;
+        stageResult.staged = _stagedWeaponCollisionCorrection.valid;
+
         presentation_trace::recordCollisionGroupOutcome(
-            weaponPublished,
+            false,
             handPulsesSucceeded,
             handRecords);
-        return weaponPublished && handPulsesSucceeded;
+        return stageResult;
+    }
+
+    TwoHandedGrip::WeaponCollisionReadback
+        TwoHandedGrip::readBackStagedWeaponCollisionGroup(
+            const std::uint64_t currentWeaponGenerationKey)
+    {
+        WeaponCollisionReadback readback{};
+        const auto& staged = _stagedWeaponCollisionCorrection;
+        if (!staged.valid ||
+            currentWeaponGenerationKey == 0 ||
+            staged.weaponGenerationKey != currentWeaponGenerationKey) {
+            return readback;
+        }
+        readback.hasStagedCorrection = true;
+
+        for (std::size_t index = 0;
+             index < staged.publishedHandTargetWorld.size();
+             ++index) {
+            const bool isLeft = index == 0u;
+            if (!presentation_transaction_policy::maskContains(
+                    staged.requiredHandMask,
+                    isLeft)) {
+                continue;
+            }
+            frik_visual_authority::HandWorldAuthoritySnapshot winner{};
+            if (frik_visual_authority::
+                    tryGetPublishedExternalHandWorldWinner(
+                        handFromBool(isLeft),
+                        winner)) {
+                readback.winnerSequence[index] = winner.sequence;
+            }
+            RE::NiTransform presentedHandWorld{};
+            if (!tryGetRootFlattenedHandBoneTransform(
+                    isLeft,
+                    presentedHandWorld)) {
+                continue;
+            }
+            if (presentation_transaction_policy::residualWithinPolicy(
+                    presentedHandWorld,
+                    staged.publishedHandTargetWorld[index])) {
+                readback.residualWithinPolicyMask |=
+                    presentation_transaction_policy::handBit(isLeft);
+            }
+        }
+        return readback;
+    }
+
+    bool TwoHandedGrip::commitStagedWeaponCollisionCorrection(
+        RE::NiNode* weaponNode,
+        const RE::NiTransform& currentRequestedWeaponWorld,
+        const std::uint64_t authorityGenerationKey)
+    {
+        const auto staged = _stagedWeaponCollisionCorrection;
+        _stagedWeaponCollisionCorrection = {};
+        if (!staged.valid ||
+            !weaponNode ||
+            authorityGenerationKey == 0 ||
+            staged.weaponGenerationKey != authorityGenerationKey ||
+            !isFiniteTransform(weaponNode->world) ||
+            !isFiniteTransform(currentRequestedWeaponWorld)) {
+            return false;
+        }
+
+        /*
+         * The correction is a world-space push-out. Composing it on the left
+         * of this frame's collision-free intent reproduces the same physical
+         * separation the solver produced, against a weapon pose that is
+         * current rather than one frame stale.
+         */
+        const RE::NiTransform committedWeaponWorld =
+            weapon_visual_authority_math::preserveLiveWeaponWorldScale(
+                weaponNode->world,
+                transform_math::composeTransforms(
+                    staged.correctionWorldDelta,
+                    currentRequestedWeaponWorld));
+        if (!isFiniteTransform(committedWeaponWorld)) {
+            return false;
+        }
+        return applyWeaponVisualAuthority(
+            weaponNode,
+            committedWeaponWorld,
+            authorityGenerationKey,
+            false);
+    }
+
+    void TwoHandedGrip::discardStagedWeaponCollisionCorrection()
+    {
+        const auto staged = _stagedWeaponCollisionCorrection;
+        _stagedWeaponCollisionCorrection = {};
+        if (!staged.valid) {
+            return;
+        }
+        // The weapon was never moved for this correction, so releasing the
+        // claims returns the whole group to its collision-free pose together.
+        for (std::size_t index = 0; index < 2u; ++index) {
+            const bool isLeft = index == 0u;
+            if (presentation_transaction_policy::maskContains(
+                    staged.requiredHandMask,
+                    isLeft)) {
+                (void)clearWeaponCollisionHandAuthority(isLeft);
+            }
+        }
     }
 
     bool TwoHandedGrip::applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld)
