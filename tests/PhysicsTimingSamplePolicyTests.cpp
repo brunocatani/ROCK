@@ -112,6 +112,37 @@ int main()
         ok &= expectTrue("fallback flag sticky through phases", postSolve.usedFallback);
     }
 
+    // Missing native globals (all zeros) must classify as an invalid fallback
+    // sample, never a usable-looking schedule, and the drive-delta accessor
+    // must refuse it.
+    {
+        const auto missingGlobals = makeTimingSample(0.0f, 0.0f, 0.0f, 0.0f, 0);
+        ok &= expectFalse("missing globals invalid", missingGlobals.valid);
+        ok &= expectTrue("missing globals flag fallback", missingGlobals.usedFallback);
+        ok &= expectNear("missing globals zero raw", missingGlobals.rawDeltaSeconds, 0.0, 0.0);
+        ok &= expectNear("missing globals zero substep", missingGlobals.substepDeltaSeconds, 0.0, 0.0);
+
+        float driveDelta = -1.0f;
+        ok &= expectFalse("missing globals refuse drive delta", tryGetDriveDeltaSeconds(missingGlobals, driveDelta));
+        ok &= expectNear("refused drive delta zero", driveDelta, 0.0, 0.0);
+    }
+
+    // A measured substep sample yields its substep delta through the
+    // drive-delta accessor; a fallback-tainted one is refused even when its
+    // fields look plausible.
+    {
+        const auto wholeStep = makeTimingSample(1.0f / 45.0f, 1.0f / 90.0f, 0.0f, 1.0f / 45.0f, 2);
+        const auto substep = makeSubstepTimingSample(wholeStep, 0.5f, 1.0f / 90.0f, 1);
+        float driveDelta = 0.0f;
+        ok &= expectTrue("measured substep provides drive delta", tryGetDriveDeltaSeconds(substep, driveDelta));
+        ok &= expectNear("measured substep drive delta", driveDelta, 1.0 / 90.0, 1.0e-9);
+
+        auto tainted = substep;
+        tainted.usedFallback = true;
+        float taintedDelta = 0.0f;
+        ok &= expectFalse("fallback-tainted sample refused", tryGetDriveDeltaSeconds(tainted, taintedDelta));
+    }
+
     // Substep deltas measured by the engine (alternating 10/11/12 ms) pass
     // through the substep derivation unmodified.
     {

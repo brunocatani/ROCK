@@ -53,7 +53,6 @@ $nominalRateDebtRegister = @{
     'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' = 1
     'src/physics-interaction/grab/GrabMotionController.h'            = 3
     'src/physics-interaction/feedback/FeedbackHaptics.cpp'           = 1
-    'src/physics-interaction/native/HavokPhysicsTiming.h'            = 1
 }
 
 $sourceFiles = Get-ChildItem -LiteralPath $srcRoot -Recurse -File |

@@ -95,11 +95,15 @@ namespace rock
             float driveDeltaSeconds,
             GeneratedKeyframedBodyDriveResult& result)
         {
-            const float driveDelta = havok_physics_timing::isUsableDelta(driveDeltaSeconds) ? driveDeltaSeconds : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            if (!havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
+                result.requiredLinearVelocityHavok = 0.0f;
+                result.requiredAngularVelocityRadians = 0.0f;
+                return;
+            }
             const float linearGame = pointLength(pointDelta(liveTransform.translate, target.translate));
-            result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDelta;
+            result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDeltaSeconds;
             const float angle = generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
-            result.requiredAngularVelocityRadians = std::isfinite(angle) ? angle / driveDelta : 0.0f;
+            result.requiredAngularVelocityRadians = std::isfinite(angle) ? angle / driveDeltaSeconds : 0.0f;
         }
 
         void fillRotationReadbackTelemetry(
@@ -316,7 +320,7 @@ namespace rock
             state.pendingTarget = {};
             state.previousTarget = {};
             state.sampledLinearVelocityHavok = {};
-            state.sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            state.sourceDeltaSeconds = 0.0f;
             state.secondsSinceSourceSample = generated_keyframed_body_drive_math::kMaxStaleSeconds;
             state.teleportDistanceGameUnits = 1000.0f;
             state.stepsWithoutSource = 0;
@@ -343,7 +347,7 @@ namespace rock
         state.previousTarget = target;
         state.hasPendingTarget = true;
         state.hasPreviousTarget = true;
-        state.sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+        state.sourceDeltaSeconds = 0.0f;
         state.secondsSinceSourceSample = 0.0f;
         state.queuedSequence = 1;
         state.consumedSequence = 1;
@@ -489,7 +493,23 @@ namespace rock
         const GeneratedBodyDriveMode& mode)
     {
         GeneratedKeyframedBodyDriveResult result{};
-        result.driveDeltaSeconds = havok_physics_timing::driveDeltaSeconds(timing);
+        if (!havok_physics_timing::tryGetDriveDeltaSeconds(timing, result.driveDeltaSeconds)) {
+            /*
+             * No measured native physics time for this callback: hold the body
+             * and keep the queued target for the next measured substep instead
+             * of integrating against a fabricated rate.
+             */
+            result.skippedInvalidTiming = true;
+            ROCK_LOG_SAMPLE_WARN(Physics,
+                1000,
+                "Generated keyframed body drive skipped unmeasured physics timing owner={} bodyIndex={} bodyId={} phase={} fallback={}",
+                ownerName ? ownerName : "unknown",
+                bodyIndex,
+                body.getBodyId().value,
+                physicsStepPhaseName(timing.phase),
+                timing.usedFallback ? "yes" : "no");
+            return result;
+        }
 
         std::scoped_lock lock(state.mutex);
         if (!hasGeneratedKeyframedBodyDriveTargetUnlocked(state)) {

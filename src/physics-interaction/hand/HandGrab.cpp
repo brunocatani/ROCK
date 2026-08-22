@@ -12887,12 +12887,28 @@ namespace rock
         std::uint32_t resampleRebaseCount = 0;
         bool roomFeedForwardApplied = false;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
+        float driveDelta = 0.0f;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             const bool hasAuthority = _grabAuthorityProxy.isValid() &&
                                       _grabAuthorityProxyHknpWorld == world &&
                                       _grabAuthorityPendingTarget.valid;
             if (!hasAuthority) {
+                return;
+            }
+            if (!havok_physics_timing::tryGetDriveDeltaSeconds(timing, driveDelta)) {
+                /*
+                 * No measured native physics time this substep: skip the whole
+                 * flush. The pending target and its queued sequence stay
+                 * intact, so the next measured substep consumes the same
+                 * game-source sample and the phase lock is preserved.
+                 */
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    1000,
+                    "{} hand grab authority flush skipped unmeasured physics timing substep={}/{}",
+                    handName(),
+                    timing.substepIndex,
+                    timing.substepCount);
                 return;
             }
             performance_profiler::addEventCount(performance_profiler::Scope::GrabAuthorityFlush);
@@ -12924,7 +12940,6 @@ namespace rock
             proxyBodyId = _grabAuthorityProxy.getBodyId();
             angularAuthority = _activeConstraint.angularAuthority;
 
-            const float driveDelta = havok_physics_timing::driveDeltaSeconds(timing);
             // Game-clock phase lock: the frame's last substep commands EXACTLY
             // the queued game-frame sample, so frame-end proxy positions lie on
             // the sampled wand path the same way the hand collider's do -- the
@@ -13536,7 +13551,7 @@ namespace rock
                 proxyDriveResult.bodyCollisionObjectMismatch ? "yes" : "no",
                 timing.substepIndex,
                 timing.substepCount,
-                havok_physics_timing::driveDeltaSeconds(timing));
+                timing.substepDeltaSeconds);
             return;
         }
 
@@ -13575,7 +13590,7 @@ namespace rock
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
                 timing.substepIndex,
                 timing.substepCount,
-                havok_physics_timing::driveDeltaSeconds(timing),
+                timing.substepDeltaSeconds,
                 grab_authority_source_clock::resampleActionName(resampleAction),
                 resampleRebaseCount,
                 roomFeedForwardApplied ? "on" : "off",
@@ -13821,7 +13836,7 @@ namespace rock
                 afterSolveSequence,
                 timing.substepIndex,
                 timing.substepCount,
-                havok_physics_timing::driveDeltaSeconds(timing),
+                timing.substepDeltaSeconds,
                 objectOk ? "y" : "n",
                 objectReadback.translate.x,
                 objectReadback.translate.y,

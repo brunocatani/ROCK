@@ -782,7 +782,10 @@ namespace rock
 
             const float rawDt = timing ? timing->rawDeltaSeconds : -1.0f;
             const float subDt = timing ? timing->substepDeltaSeconds : -1.0f;
-            const float driveDt = timing ? havok_physics_timing::driveDeltaSeconds(*timing) : -1.0f;
+            float driveDt = -1.0f;
+            if (timing) {
+                (void)havok_physics_timing::tryGetDriveDeltaSeconds(*timing, driveDt);
+            }
             const float progress = timing ? timing->substepProgress : -1.0f;
             const std::uint32_t substepIndex = timing ? timing->substepIndex + 1 : 0;
             const std::uint32_t substepCount = timing ? timing->substepCount : 0;
