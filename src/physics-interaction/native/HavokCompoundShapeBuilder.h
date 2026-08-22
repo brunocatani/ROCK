@@ -1,5 +1,19 @@
 #pragma once
 
+/*
+ * hknpShape.h is not self-contained: it uses hkVector4f,
+ * hknpCollisionQueryCollector, and hkContainerHeapAllocator without
+ * declaring them. Production translation units receive them transitively;
+ * standalone consumers (policy tests) compile this header first, so declare
+ * the missing names here with their exact library tags before including it.
+ */
+namespace RE
+{
+    class hkVector4f;
+    class hknpCollisionQueryCollector;
+    struct hkContainerHeapAllocator;
+}
+
 #include "RE/Havok/hknpShape.h"
 
 #include <array>
