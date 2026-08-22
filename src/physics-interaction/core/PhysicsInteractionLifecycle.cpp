@@ -854,6 +854,7 @@ namespace rock
         _pendingDebugOverlayFrame = {};
         presentation_trace::reset();
         weapon_intent_stability_policy::reset(_weaponIntentStabilityState);
+        _weaponPresentationCoordinator.reset();
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
         debug::ShutdownShapePipeline();
         equipped_weapon_handling_runtime::reset();

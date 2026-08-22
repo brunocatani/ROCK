@@ -85,10 +85,14 @@ namespace rock::presentation_trace
             const auto& right = g_record.hands[1];
             ROCK_LOG_INFO(
                 Weapon,
-                "PresentationTrace: frame={} seq={} generation={:016X} dwc(proxy/contact/publish/weapon/hands)={}/{}/{}/{}/{} retention={:.3f}s correction=({:.2f}gu,{:.2f}deg) other(body/layer)={}/{} intent(valid/translation/rotation/stable)={}/{:.3f}/{:.3f}/{} recoil(accepted/consumed/applied)={}/{}/{} restoreGuard={} lateWriter=({:.3f}gu,{:.3f}deg) left(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{} right(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{}",
+                "PresentationTrace: frame={} seq={} generation={:016X} transaction={}/{} dwc(proxy/contact/publish/weapon/hands)={}/{}/{}/{}/{} retention={:.3f}s correction=({:.2f}gu,{:.2f}deg) other(body/layer)={}/{} intent(valid/translation/rotation/stable)={}/{:.3f}/{:.3f}/{} recoil(accepted/consumed/applied)={}/{}/{} restoreGuard={} lateWriter=({:.3f}gu,{:.3f}deg) left(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{} right(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{}",
                 g_record.frameIndex,
                 g_record.schedulerSequence,
                 g_record.weaponGenerationKey,
+                presentation_transaction_policy::stageName(
+                    g_record.transactionStage),
+                presentation_transaction_policy::abortReasonName(
+                    g_record.transactionAbortReason),
                 g_record.dwcProxyActive,
                 g_record.dwcContactActive,
                 g_record.dwcPublishRequested,
@@ -203,6 +207,35 @@ namespace rock::presentation_trace
                 InvariantCounter::RestoreGuardFailure,
                 policy::restoreGuardFailureName(reason));
         }
+    }
+
+    void recordTransactionOutcome(
+        const presentation_transaction_policy::Stage stage,
+        const presentation_transaction_policy::AbortReason abortReason)
+    {
+        g_record.transactionStage = stage;
+        g_record.transactionAbortReason = abortReason;
+    }
+
+    CollisionHandMasks currentCollisionHandMasks()
+    {
+        CollisionHandMasks masks{};
+        for (std::size_t index = 0; index < g_record.hands.size(); ++index) {
+            const bool isLeft = index == 0u;
+            const auto bit =
+                presentation_transaction_policy::handBit(isLeft);
+            const auto& hand = g_record.hands[index];
+            if (!hand.collisionRequested) {
+                continue;
+            }
+            if (hand.collisionTargetValid) {
+                masks.targetsAvailable |= bit;
+            }
+            if (hand.collisionApplied) {
+                masks.published |= bit;
+            }
+        }
+        return masks;
     }
 
     void recordRecoil(

@@ -1413,6 +1413,16 @@ namespace rock
             dynamicWeaponFrame.rotationCorrectionDegrees,
             dynamicWeaponFrame.snapshotOtherBodyId,
             dynamicWeaponFrame.snapshotOtherLayer);
+        /*
+         * A live proxy in contact is a correction offered to the presentation
+         * group. Free space offers nothing, so the transaction simply stays
+         * open at intent and no abort is recorded.
+         */
+        if (dynamicWeaponFrame.proxyActive && dynamicWeaponFrame.contactActive) {
+            _weaponPresentationCoordinator.observePhysicsProposal(
+                dynamicWeaponFrame.publishVisualAuthority,
+                makeWeaponPresentationIdentity(currentWeaponGenerationKey));
+        }
         if (dynamicWeaponFrame.contactEpisodeStarted &&
             g_rockConfig.rockDebugDynamicWeaponLogging) {
             auto* otherRef = resolveBodyToRef(
@@ -1525,6 +1535,15 @@ namespace rock
                     dynamicWeaponFrame.translationCorrectionGameUnits,
                     dynamicWeaponFrame.rotationCorrectionDegrees);
             }
+            const auto handMasks =
+                presentation_trace::currentCollisionHandMasks();
+            _weaponPresentationCoordinator.observeHandGroup(
+                handMasks.targetsAvailable,
+                handMasks.published,
+                presentation_transaction_policy::FrameStamp{
+                    .frameIndex = frame.gameFrameIndex,
+                    .schedulerSequence = frame.preFrikSchedulerSequence,
+                });
         }
         _twoHandedGrip.finishWeaponCollisionPresentationFrame(
             dynamicWeaponFrame.publishVisualAuthority);

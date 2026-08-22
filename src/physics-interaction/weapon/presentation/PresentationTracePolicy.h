@@ -7,6 +7,7 @@
 
 #include "physics-interaction/visual/HandWorldAuthorityRegistryPolicy.h"
 #include "physics-interaction/weapon/collision/WeaponIntentStabilityPolicy.h"
+#include "physics-interaction/weapon/presentation/PresentationTransactionPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -120,6 +121,13 @@ namespace rock::presentation_trace_policy
         RE::NiTransform weaponWorldAtColliderPublication{};
         float lateWriterTranslationGameUnits = -1.0f;
         float lateWriterRotationDegrees = -1.0f;
+
+        // How far the presentation transaction got this frame, and why it
+        // stopped. See EquippedWeaponPresentationCoordinator.
+        presentation_transaction_policy::Stage transactionStage =
+            presentation_transaction_policy::Stage::Idle;
+        presentation_transaction_policy::AbortReason transactionAbortReason =
+            presentation_transaction_policy::AbortReason::None;
 
         std::array<HandRecord, 2> hands{};
         bool valid = false;

@@ -66,6 +66,20 @@ namespace rock::presentation_trace
 
     void recordRestoreGuard(RestoreGuardFailure reason);
 
+    void recordTransactionOutcome(
+        presentation_transaction_policy::Stage stage,
+        presentation_transaction_policy::AbortReason abortReason);
+
+    // The per-hand collision claim state recorded for the current frame, as
+    // the group publish reported it.
+    struct CollisionHandMasks
+    {
+        std::uint8_t targetsAvailable = 0;
+        std::uint8_t published = 0;
+    };
+
+    [[nodiscard]] CollisionHandMasks currentCollisionHandMasks();
+
     void recordRecoil(
         std::uint64_t acceptedSequence,
         std::uint64_t consumedSequence,

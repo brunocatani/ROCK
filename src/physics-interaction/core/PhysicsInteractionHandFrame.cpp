@@ -273,6 +273,14 @@ namespace rock
             return;
         }
 
+        // The deferred solve for the previous frame's staged claims has now
+        // run. This is the earliest point a readback can see the result.
+        _weaponPresentationCoordinator.observeFrikConsumed(
+            presentation_transaction_policy::FrameStamp{
+                .frameIndex = runtime_state::currentFrame().frameIndex,
+                .schedulerSequence = schedulerSequence,
+            });
+
         (void)_twoHandedGrip.
             restoreIndependentWeaponPresentationAfterFrik(
                 resolveEquippedWeaponInteractionNode(),

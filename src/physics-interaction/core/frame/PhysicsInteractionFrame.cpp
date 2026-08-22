@@ -507,8 +507,38 @@ namespace rock
         completeFrame(frame);
     }
 
+    presentation_transaction_policy::TransactionIdentity
+        PhysicsInteraction::makeWeaponPresentationIdentity(
+            const std::uint64_t weaponGenerationKey) const
+    {
+        const auto attachedHands =
+            _twoHandedGrip.weaponCollisionAttachedHands();
+        std::uint8_t attachedHandMask = 0;
+        if (attachedHands.left) {
+            attachedHandMask |= presentation_transaction_policy::handBit(true);
+        }
+        if (attachedHands.right) {
+            attachedHandMask |= presentation_transaction_policy::handBit(false);
+        }
+        return presentation_transaction_policy::TransactionIdentity{
+            .weaponGenerationKey = weaponGenerationKey,
+            .worldGeneration =
+                _worldGenerationAtomic.load(std::memory_order_acquire),
+            .skeletonGeneration =
+                _skeletonGenerationAtomic.load(std::memory_order_acquire),
+            .providerGeneration =
+                _providerGenerationAtomic.load(std::memory_order_acquire),
+            .physicsSolveSequence =
+                _completedPhysicsSolveSequence.load(std::memory_order_acquire),
+            .attachedHandMask = attachedHandMask,
+        };
+    }
+
     void PhysicsInteraction::finalizePresentationTraceFrame()
     {
+        presentation_trace::recordTransactionOutcome(
+            _weaponPresentationCoordinator.deepestStageReached(),
+            _weaponPresentationCoordinator.abortReason());
         auto* const weaponNode = resolveEquippedWeaponInteractionNode();
         presentation_trace::finalizeFrame(
             weaponNode != nullptr,
@@ -647,6 +677,12 @@ namespace rock
         weaponFrame.generationKey = _weaponCollision.getCurrentWeaponGenerationKey();
         weaponFrame.ownershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
         presentation_trace::recordWeaponGeneration(weaponFrame.generationKey);
+        _weaponPresentationCoordinator.beginFrame(
+            makeWeaponPresentationIdentity(weaponFrame.generationKey),
+            presentation_transaction_policy::FrameStamp{
+                .frameIndex = frame.gameFrameIndex,
+                .schedulerSequence = frame.preFrikSchedulerSequence,
+            });
         /*
          * Measure the weapon against its controller driver, before any ROCK
          * authority writes this frame. Player locomotion cancels out of that

@@ -38,6 +38,7 @@
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "physics-interaction/weapon/collision/WeaponIntentStabilityPolicy.h"
+#include "physics-interaction/weapon/presentation/EquippedWeaponPresentationCoordinator.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h"
@@ -340,6 +341,12 @@ namespace rock
         void serviceEquippedWeaponGripFrame(
             const PhysicsFrameContext& frame,
             EquippedWeaponFrame& weaponFrame);
+        // The state that must not change between staging a weapon collision
+        // correction and committing it one frame later.
+        [[nodiscard]] presentation_transaction_policy::TransactionIdentity
+            makeWeaponPresentationIdentity(
+                std::uint64_t weaponGenerationKey) const;
+
         void finishDynamicWeaponFrame(
             const PhysicsFrameContext& frame,
             EquippedWeaponFrame& weaponFrame);
@@ -598,6 +605,7 @@ namespace rock
         // Tracks how long the weapon has held a steady relation to its
         // controller driver. An equip flight or a graph rebuild resets it.
         weapon_intent_stability_policy::State _weaponIntentStabilityState{};
+        EquippedWeaponPresentationCoordinator _weaponPresentationCoordinator;
 
         EquippedWeaponTransitionCoordinator _equippedWeaponTransition;
 
