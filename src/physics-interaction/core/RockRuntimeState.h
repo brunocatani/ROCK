@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
+
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -27,6 +29,14 @@ namespace rock::runtime_state
     struct RuntimeFrameSnapshot
     {
         std::uint64_t frameIndex = 0;
+        /*
+         * Authoritative game-frame clock snapshot for this frame. New and
+         * migrated consumers read this; deltaSeconds below is the legacy
+         * sanitized value that still fabricates a nominal-rate delta for
+         * unmeasurable frames and is scheduled for removal once every
+         * consumer is migrated.
+         */
+        game_frame_timing_policy::GameFrameTiming timing{};
         float deltaSeconds = 1.0f / 90.0f;
         bool playerAvailable = false;
         bool weaponDrawn = false;

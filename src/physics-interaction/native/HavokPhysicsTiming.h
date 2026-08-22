@@ -34,9 +34,34 @@ namespace rock::havok_physics_timing
         std::uint32_t substepCount = 1;
         std::uint32_t substepIndex = 0;
         PhysicsStepPhase phase = PhysicsStepPhase::WholePreStep;
+        /*
+         * Identity and cumulative-clock fields stamped by the step coordinator.
+         * stepSequence identifies the owning bhkWorld update; solveSequence
+         * counts completed substep solves (a post-solve sample includes its own
+         * completed solve). elapsedSimulatedSeconds accumulates measured
+         * substep time only — fabricated fallback deltas never advance it.
+         * All three are monotonic across world resets so stored physics
+         * timestamps keep ordering through world loss and recreation.
+         */
+        std::uint64_t stepSequence = 0;
+        std::uint64_t solveSequence = 0;
+        double elapsedSimulatedSeconds = 0.0;
         bool valid = false;
+        /*
+         * usedFallback is the raw-validity contract: true whenever any native
+         * timing input was unusable and a sanitized substitute is present in
+         * this sample. Behavior that integrates or retains state must treat a
+         * fallback sample as unmeasured and fail closed.
+         */
         bool usedFallback = true;
     };
+
+    // A completed substep advances the cumulative simulated clock only when
+    // its delta was actually measured from native timing.
+    [[nodiscard]] inline bool shouldAccumulateSimulatedTime(const PhysicsTimingSample& sample)
+    {
+        return sample.valid && !sample.usedFallback;
+    }
 
     inline bool isUsableDelta(float value)
     {

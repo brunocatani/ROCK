@@ -144,7 +144,7 @@ if (Test-Path -LiteralPath $rockConfigPath) {
 
 $wallClockPattern = 'steady_clock|GetTickCount64|QueryPerformanceCounter|system_clock'
 $allowedWallClockFiles = @(
-    'src/physics-interaction/core/RockRuntimeState.cpp',
+    'src/physics-interaction/timing/RockGameTiming.cpp',
     'src/physics-interaction/debug/DebugBodyOverlay.cpp',
     'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl',
     'src/physics-interaction/input/InputRemapRuntime.cpp',

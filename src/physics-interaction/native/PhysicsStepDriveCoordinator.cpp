@@ -196,8 +196,9 @@ namespace rock
         _lastTimingSample = {};
         _lastSubstepTimingSample = {};
         _registrationSequence = 0;
-        _stepSequence = 0;
         _currentSubstepIndex = 0;
+        // _stepSequence, _solveSequence, and _elapsedSimulatedSeconds stay
+        // monotonic across resets by contract (see the header).
     }
 
     PhysicsCallbackQuiescenceGate& PhysicsStepDriveCoordinator::callbackGate()
@@ -210,12 +211,23 @@ namespace rock
         return _nativeListener;
     }
 
+    void PhysicsStepDriveCoordinator::stampTimingIdentity(havok_physics_timing::PhysicsTimingSample& sample) const
+    {
+        sample.stepSequence = _stepSequence;
+        sample.solveSequence = _solveSequence;
+        sample.elapsedSimulatedSeconds = _elapsedSimulatedSeconds;
+    }
+
     void PhysicsStepDriveCoordinator::onBeforeWholePhysicsUpdate()
     {
         _lastTimingSample = havok_physics_timing::sampleCurrentTiming();
         _lastSubstepTimingSample = {};
         ++_stepSequence;
         _currentSubstepIndex = 0;
+        stampTimingIdentity(_lastTimingSample);
+        if (_lastTimingSample.usedFallback) {
+            ++_fallbackSampleCount;
+        }
 
         if (!_wholePreStepCallback || !_registeredWorld) {
             return;
@@ -226,25 +238,28 @@ namespace rock
 
     void PhysicsStepDriveCoordinator::onBeforeAnyPhysicsStep(float substepProgress, float substepDeltaSeconds)
     {
+        auto timing =
+            havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
+        stampTimingIdentity(timing);
+        _lastSubstepTimingSample = timing;
+        ++_currentSubstepIndex;
+
         if (!_substepPreCollideCallback || !_registeredWorld) {
             return;
         }
 
-        const auto timing =
-            havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
-        _lastSubstepTimingSample = timing;
-        ++_currentSubstepIndex;
         _substepPreCollideCallback(_userData, _registeredWorld, timing);
     }
 
     void PhysicsStepDriveCoordinator::onBetweenCollideAndSolve(float substepProgress, float substepDeltaSeconds)
     {
-        if (!_betweenCollideAndSolveCallback || !_registeredWorld) {
-            return;
-        }
-
         if (!_lastSubstepTimingSample.valid) {
             _lastSubstepTimingSample = havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
+            stampTimingIdentity(_lastSubstepTimingSample);
+        }
+
+        if (!_betweenCollideAndSolveCallback || !_registeredWorld) {
+            return;
         }
 
         const auto timing =
@@ -254,16 +269,31 @@ namespace rock
 
     void PhysicsStepDriveCoordinator::onAfterAnyPhysicsStep(float substepProgress, float substepDeltaSeconds)
     {
+        if (!_lastSubstepTimingSample.valid) {
+            _lastSubstepTimingSample = havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
+            stampTimingIdentity(_lastSubstepTimingSample);
+        }
+
+        auto timing =
+            havok_physics_timing::makeSubstepPhaseTimingSample(_lastSubstepTimingSample, havok_physics_timing::PhysicsStepPhase::SubstepPostSolve);
+        /*
+         * The substep's solve completes at this callback: the post-solve
+         * sample carries the updated solve identity and cumulative simulated
+         * clock so retention and observation code can timestamp against the
+         * state that now exists.
+         */
+        ++_solveSequence;
+        if (havok_physics_timing::shouldAccumulateSimulatedTime(timing)) {
+            _elapsedSimulatedSeconds += timing.substepDeltaSeconds;
+        } else {
+            ++_fallbackSampleCount;
+        }
+        stampTimingIdentity(timing);
+
         if (!_substepPostSolveCallback || !_registeredWorld) {
             return;
         }
 
-        if (!_lastSubstepTimingSample.valid) {
-            _lastSubstepTimingSample = havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
-        }
-
-        const auto timing =
-            havok_physics_timing::makeSubstepPhaseTimingSample(_lastSubstepTimingSample, havok_physics_timing::PhysicsStepPhase::SubstepPostSolve);
         _substepPostSolveCallback(_userData, _registeredWorld, timing);
     }
 }

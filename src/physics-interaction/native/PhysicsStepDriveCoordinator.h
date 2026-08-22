@@ -35,8 +35,25 @@ namespace rock
 
         PhysicsCallbackQuiescenceGate& callbackGate();
 
+        struct PhysicsTimingTelemetry
+        {
+            std::uint64_t stepSequence = 0;
+            std::uint64_t solveSequence = 0;
+            double elapsedSimulatedSeconds = 0.0;
+            std::uint64_t fallbackSampleCount = 0;
+        };
+
         const havok_physics_timing::PhysicsTimingSample& lastTimingSample() const { return _lastTimingSample; }
         std::uint64_t stepSequence() const { return _stepSequence; }
+        PhysicsTimingTelemetry physicsTimingTelemetry() const
+        {
+            return PhysicsTimingTelemetry{
+                .stepSequence = _stepSequence,
+                .solveSequence = _solveSequence,
+                .elapsedSimulatedSeconds = _elapsedSimulatedSeconds,
+                .fallbackSampleCount = _fallbackSampleCount,
+            };
+        }
         void onBeforeWholePhysicsUpdate();
         void onBeforeAnyPhysicsStep(float substepProgress, float substepDeltaSeconds);
         void onBetweenCollideAndSolve(float substepProgress, float substepDeltaSeconds);
@@ -44,6 +61,7 @@ namespace rock
 
     private:
         NativeStepListener* nativeListener();
+        void stampTimingIdentity(havok_physics_timing::PhysicsTimingSample& sample) const;
 
         DriveCallback _wholePreStepCallback = nullptr;
         DriveCallback _substepPreCollideCallback = nullptr;
@@ -54,7 +72,16 @@ namespace rock
         havok_physics_timing::PhysicsTimingSample _lastTimingSample{};
         havok_physics_timing::PhysicsTimingSample _lastSubstepTimingSample{};
         std::uint64_t _registrationSequence = 0;
+        /*
+         * Step/solve sequences and the cumulative simulated clock are
+         * monotonic for the coordinator lifetime: reset() drops world and
+         * callback state but never rewinds these, so physics timestamps stored
+         * by consumers keep ordering across world loss and recreation.
+         */
         std::uint64_t _stepSequence = 0;
+        std::uint64_t _solveSequence = 0;
+        double _elapsedSimulatedSeconds = 0.0;
+        std::uint64_t _fallbackSampleCount = 0;
         std::uint32_t _currentSubstepIndex = 0;
         NativeStepListener* _nativeListener = nullptr;
     };

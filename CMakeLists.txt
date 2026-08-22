@@ -894,6 +894,20 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKTouchGrabMathTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKTouchGrabMathTests)
 
+  add_executable(ROCKGameFrameTimingPolicyTests
+    "${ROOT_DIR}/tests/GameFrameTimingPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGameFrameTimingPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGameFrameTimingPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGameFrameTimingPolicyTests)
+
+  add_executable(ROCKPhysicsTimingSamplePolicyTests
+    "${ROOT_DIR}/tests/PhysicsTimingSamplePolicyTests.cpp"
+  )
+  target_compile_features(ROCKPhysicsTimingSamplePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPhysicsTimingSamplePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPhysicsTimingSamplePolicyTests)
+
   add_executable(ROCKDynamicHandSurfaceContactStateTests
     "${ROOT_DIR}/tests/DynamicHandSurfaceContactStateTests.cpp"
   )
@@ -946,6 +960,8 @@ if(BUILD_ROCK_TESTS)
     ROCKProviderExternalBodyRegistryTests
     ROCKProviderTouchGrabRegistryTests
     ROCKTouchGrabMathTests
+    ROCKGameFrameTimingPolicyTests
+    ROCKPhysicsTimingSamplePolicyTests
     ROCKDynamicHandSurfaceContactStateTests
     ROCKProviderLeasePolicyTests
     ROCKDebugOverlayShapeGeometryTests

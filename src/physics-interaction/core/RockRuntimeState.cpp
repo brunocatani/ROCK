@@ -4,8 +4,8 @@
 #include "physics-interaction/core/RockRuntimeStatePolicy.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/timing/RockGameTiming.h"
 
-#include <chrono>
 #include <string_view>
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -20,8 +20,6 @@ namespace rock::runtime_state
 
         f4vr::GameMenusHandler s_gameMenus;
         bool s_menuHandlerInitialized = false;
-        bool s_hasLastFrameTime = false;
-        std::chrono::steady_clock::time_point s_lastFrameTime{};
         RuntimeFrameSnapshot s_snapshot{};
         runtime_state_policy::PlayerSpaceTrackerState s_playerSpaceTracker{};
         DirectSkeletonBoneReader s_skeletonReader;
@@ -38,20 +36,6 @@ namespace rock::runtime_state
         [[nodiscard]] RE::NiPoint3 fromPolicyVec(const runtime_state_policy::Vec3& value)
         {
             return RE::NiPoint3(value.x, value.y, value.z);
-        }
-
-        [[nodiscard]] float sampleFrameDeltaSeconds()
-        {
-            const auto now = std::chrono::steady_clock::now();
-            if (!s_hasLastFrameTime) {
-                s_hasLastFrameTime = true;
-                s_lastFrameTime = now;
-                return runtime_state_policy::kFallbackDeltaSeconds;
-            }
-
-            const std::chrono::duration<float> elapsed = now - s_lastFrameTime;
-            s_lastFrameTime = now;
-            return runtime_state_policy::sanitizeFrameDelta(elapsed.count());
         }
 
         [[nodiscard]] bool hasPlayer()
@@ -193,8 +177,7 @@ namespace rock::runtime_state
 
     void resetTransientState()
     {
-        s_hasLastFrameTime = false;
-        s_lastFrameTime = {};
+        game_timing::resetForNewSession();
         s_playerSpaceTracker = {};
         s_skeletonReader.resetCache();
         s_snapshot = {};
@@ -204,7 +187,6 @@ namespace rock::runtime_state
     {
         RuntimeFrameSnapshot next{};
         next.frameIndex = s_snapshot.frameIndex + 1;
-        next.deltaSeconds = sampleFrameDeltaSeconds();
         next.playerAvailable = hasPlayer();
         next.weaponDrawn = sampleWeaponDrawn();
         next.inputMenuBlocking = input.menuInputBlocking;
@@ -212,6 +194,16 @@ namespace rock::runtime_state
         next.localLoadingMenuOpen = s_menuHandlerInitialized && s_gameMenus.isLoadingMenuOpen();
         next.localGameStopped = s_menuHandlerInitialized && s_gameMenus.isGameStopped();
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
+        next.timing = game_timing::beginGameFrame(next.localMenuBlocking);
+        /*
+         * Legacy compatibility value: identical to the historical sanitized
+         * delta (ordinary measured frames pass through, everything else
+         * becomes the nominal fallback). Removed together with the field once
+         * every consumer reads the timing snapshot.
+         */
+        next.deltaSeconds = (next.timing.valid && !next.timing.discontinuity) ?
+            next.timing.deltaSeconds :
+            runtime_state_policy::kFallbackDeltaSeconds;
         next.compatibilityConfigBlocking = input.compatibilityConfigBlocking;
         next.visualAuthorityAvailable = input.visualAuthorityAvailable;
         next.visualSkeletonReadyHint = input.visualSkeletonReadyHint;

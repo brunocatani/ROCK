@@ -5,8 +5,13 @@
 
 namespace rock::runtime_state_policy
 {
+    /*
+     * Legacy nominal-rate fallback kept only for the RuntimeFrameSnapshot
+     * deltaSeconds compatibility field while game-frame consumers migrate to
+     * the GameFrameTiming snapshot. Scheduled for removal with that field;
+     * new code must consume rock::game_timing instead.
+     */
     inline constexpr float kFallbackDeltaSeconds = 1.0f / 90.0f;
-    inline constexpr float kMaximumFrameDeltaSeconds = 0.1f;
     inline constexpr float kDefaultMovementThresholdGameUnits = 0.05f;
 
     struct Vec3
@@ -15,11 +20,6 @@ namespace rock::runtime_state_policy
         float y = 0.0f;
         float z = 0.0f;
     };
-
-    [[nodiscard]] inline float sanitizeFrameDelta(float rawDeltaSeconds)
-    {
-        return (rawDeltaSeconds > 0.0f && rawDeltaSeconds <= kMaximumFrameDeltaSeconds) ? rawDeltaSeconds : kFallbackDeltaSeconds;
-    }
 
     [[nodiscard]] inline Vec3 subtract(Vec3 lhs, Vec3 rhs)
     {
