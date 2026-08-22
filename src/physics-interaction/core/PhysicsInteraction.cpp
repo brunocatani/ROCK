@@ -6934,7 +6934,7 @@ namespace rock
         _dynamicWeaponCollision.samplePostSolve(
             world,
             completedSolveSequence);
-        _dynamicHandCollision.samplePostSolveDeviations(world);
+        _dynamicHandCollision.samplePostSolveDeviations(world, timing);
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);

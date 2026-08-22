@@ -94,7 +94,9 @@ namespace rock
          * saturates at the dt-dependent limiter distance (sessions 3-5
          * milli-punch pulsing).
          */
-        void samplePostSolveDeviations(RE::hknpWorld* world);
+        void samplePostSolveDeviations(
+            RE::hknpWorld* world,
+            const havok_physics_timing::PhysicsTimingSample& timing);
         void retireAll(void* bhkWorld);
         void reset();
         // Main-thread snapshot/event access. Future provider adapters must copy

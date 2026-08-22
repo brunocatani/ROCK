@@ -39,8 +39,7 @@ namespace rock
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr int kSurfaceLatchVisualPriority = 100;
-        // Keep two complete missed 90 Hz substeps after the last callback.
-        constexpr float kCompoundContactRetentionSeconds = 3.0f / 90.0f;
+        constexpr float kCompoundContactRetentionSeconds = 0.050f;
         constexpr float kHandCompoundMass = 2.0f;
         constexpr float kHandCompoundInverseInertiaMultiplier = 1.0f;
 
@@ -407,7 +406,12 @@ namespace rock
             if (!std::isfinite(smoothingSpeed) || smoothingSpeed <= 0.0f) {
                 return target;
             }
-            const float dt = std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
+            const float dt = std::clamp(
+                std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ?
+                    deltaSeconds :
+                    0.0f,
+                0.0f,
+                0.1f);
             const float alpha = std::clamp(1.0f - std::exp(-smoothingSpeed * dt), 0.0f, 1.0f);
             return RE::NiPoint3{
                 applied.x + (target.x - applied.x) * alpha,
@@ -1709,7 +1713,9 @@ namespace rock
 
         if (!anyFingerContact && !freezeCurrentPose) {
             const float dt = std::clamp(
-                std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f),
+                std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ?
+                    deltaSeconds :
+                    0.0f,
                 0.0f,
                 0.1f);
             response.noContactSeconds += dt;
@@ -2425,7 +2431,13 @@ namespace rock
             if (teleportedThisFrame && recoveryDuration > 0.0f) {
                 handSlots.teleportRecoverySecondsRemaining = recoveryDuration;
             }
-            const float frameDt = std::clamp(std::isfinite(frame.deltaSeconds) ? frame.deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
+            const float frameDt = std::clamp(
+                std::isfinite(frame.deltaSeconds) &&
+                        frame.deltaSeconds > 0.0f ?
+                    frame.deltaSeconds :
+                    0.0f,
+                0.0f,
+                0.1f);
             float smoothingSpeed = handTelemetry.anyContact ?
                 0.0f :
                 g_rockConfig.
@@ -2701,7 +2713,8 @@ namespace rock
     }
 
     void DynamicHandCollisionRuntime::samplePostSolveDeviations(
-        RE::hknpWorld* world)
+        RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         performance_profiler::ScopedTimer profilerTimer(
             performance_profiler::Scope::DynamicHandCollisionPostSolve);
@@ -2742,11 +2755,14 @@ namespace rock
                     0,
                     std::memory_order_acq_rel) &
                 kAllChildBits;
+            const bool retentionTimingValid =
+                timing.valid && !timing.usedFallback &&
+                havok_physics_timing::isUsableDelta(
+                    timing.substepDeltaSeconds);
             const float retentionDeltaSeconds =
-                std::isfinite(owner.drovePhysicsDeltaSeconds) &&
-                    owner.drovePhysicsDeltaSeconds > 0.0f ?
-                std::clamp(owner.drovePhysicsDeltaSeconds, 0.0f, 0.1f) :
-                (1.0f / 90.0f);
+                retentionTimingValid ?
+                timing.substepDeltaSeconds :
+                0.0f;
             std::uint32_t retainedSolverContactMask = 0;
             std::uint32_t retainedWorldContactMask = 0;
             for (std::size_t bodyIndex = 0;
@@ -2763,9 +2779,11 @@ namespace rock
                     handSlots.solverContactRetentionSeconds[bodyIndex];
                 solverRetention = solverObserved ?
                     kCompoundContactRetentionSeconds :
-                    std::max(
-                        0.0f,
-                        solverRetention - retentionDeltaSeconds);
+                    (retentionTimingValid ?
+                            std::max(
+                                0.0f,
+                                solverRetention - retentionDeltaSeconds) :
+                            0.0f);
                 if (solverRetention > 0.0f) {
                     retainedSolverContactMask |= childBit;
                 }
@@ -2779,9 +2797,11 @@ namespace rock
                     // classification for this semantic child.
                     worldRetention = 0.0f;
                 } else {
-                    worldRetention = std::max(
-                        0.0f,
-                        worldRetention - retentionDeltaSeconds);
+                    worldRetention = retentionTimingValid ?
+                        std::max(
+                            0.0f,
+                            worldRetention - retentionDeltaSeconds) :
+                        0.0f;
                 }
                 if (solverRetention > 0.0f &&
                     worldRetention > 0.0f) {

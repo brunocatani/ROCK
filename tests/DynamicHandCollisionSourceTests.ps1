@@ -279,12 +279,17 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'applyExternalHandWorldTransform\('
 ) 'Dynamic hand render-follow must preserve exact contact and smooth only release or teleport recovery.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'kCompoundContactRetentionSeconds = 3\.0f / 90\.0f',
+    'kCompoundContactRetentionSeconds = 0\.050f',
+    'timing\.valid && !timing\.usedFallback',
+    'timing\.substepDeltaSeconds',
     'solverContactRetentionSeconds\[bodyIndex\]',
     'worldContactRetentionSeconds\[bodyIndex\]',
     'retainedSolverContactMask \|= childBit',
     'retainedWorldContactMask \|= childBit'
-) 'Each compound child must survive two complete missed contact substeps without retaining unrelated child evidence.'
+) 'Each compound child must retain contact for 50 ms of native physics time without retaining unrelated child evidence.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    '1\.0f\s*/\s*90\.0f' `
+    'Dynamic hand collision must not assume a 90 Hz physics or render cadence.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'dynamicInteractionFingerContact[\s\S]{0,500}dynamicInteractionFingerContact\s*\?[\s\S]{0,80}0\.0f[\s\S]{0,120}rockHandCollisionSurfaceFingerSmoothingSpeed' `
     'Hand/hand and hand/weapon finger contacts must publish their collision pose without presentation lag.'
@@ -396,7 +401,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
 ) 'Surface latch child relations must use the same corrected compound frame.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
-    '_dynamicHandCollision\.samplePostSolveDeviations\(world\);'
+    '_dynamicHandCollision\.samplePostSolveDeviations\(world, timing\);'
 ) 'Dynamic hand post-solve sampling must run in the after-solve physics phase.'
 Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'liveBodyGamePosition\.x - result\.targetGamePosition' `
