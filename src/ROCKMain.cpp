@@ -15,6 +15,7 @@
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
@@ -297,6 +298,11 @@ namespace
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
         });
         const auto& runtime = runtime_state::currentFrame();
+        if (g_rockConfig.rockEnabled &&
+            runtime.localSkeletonReady &&
+            !runtime.compatibilityConfigBlocking) {
+            native_wand_visual_suppression::enforce();
+        }
         const bool authoredGripCaptureRuntimeEnabled =
             g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
