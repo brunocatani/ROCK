@@ -85,7 +85,7 @@ namespace rock::presentation_trace
             const auto& right = g_record.hands[1];
             ROCK_LOG_INFO(
                 Weapon,
-                "PresentationTrace: frame={} seq={} generation={:016X} transaction={}/{} dwc(proxy/contact/publish/weapon/hands)={}/{}/{}/{}/{} retention={:.3f}s correction=({:.2f}gu,{:.2f}deg) other(body/layer)={}/{} intent(valid/translation/rotation/stable)={}/{:.3f}/{:.3f}/{} warmUp={} recoil(accepted/consumed/applied)={}/{}/{} restoreGuard={} lateWriter=({:.3f}gu,{:.3f}deg) left(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{} right(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{}",
+                "PresentationTrace: frame={} seq={} generation={:016X} transaction={}/{} dwc(proxy/contact/publish/weapon/hands)={}/{}/{}/{}/{} retention={:.3f}s correction=({:.2f}gu,{:.2f}deg) other(body/layer)={}/{} intent(valid/translation/rotation/stable)={}/{:.3f}/{:.3f}/{} warmUp={} recoil(accepted/consumed/applied/rejected)={}/{}/{}/{} recoilDelta=({:.3f}gu,{:.3f}deg) recoilBound=({:.3f}gu,{:.3f}deg) restoreGuard={} lateWriter=({:.3f}gu,{:.3f}deg) left(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{} right(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{}",
                 g_record.frameIndex,
                 g_record.schedulerSequence,
                 g_record.weaponGenerationKey,
@@ -112,6 +112,11 @@ namespace rock::presentation_trace
                 g_record.recoilAcceptedSequence,
                 g_record.recoilConsumedSequence,
                 g_record.recoilApplied,
+                g_record.recoilRejected,
+                g_record.recoilAppliedTranslationGameUnits,
+                g_record.recoilAppliedRotationDegrees,
+                g_record.recoilBoundTranslationGameUnits,
+                g_record.recoilBoundRotationDegrees,
                 policy::restoreGuardFailureName(g_record.restoreGuardFailure),
                 g_record.lateWriterTranslationGameUnits,
                 g_record.lateWriterRotationDegrees,
@@ -259,6 +264,24 @@ namespace rock::presentation_trace
         if (applied) {
             bumpCounter(InvariantCounter::RecoilDeltaApplied, "kick-applied");
         }
+    }
+
+    void recordRecoilRejected(
+        const float appliedTranslationGameUnits,
+        const float appliedRotationDegrees,
+        const float boundTranslationGameUnits,
+        const float boundRotationDegrees)
+    {
+        g_record.recoilApplied = false;
+        g_record.recoilRejected = true;
+        g_record.recoilAppliedTranslationGameUnits =
+            appliedTranslationGameUnits;
+        g_record.recoilAppliedRotationDegrees = appliedRotationDegrees;
+        g_record.recoilBoundTranslationGameUnits = boundTranslationGameUnits;
+        g_record.recoilBoundRotationDegrees = boundRotationDegrees;
+        bumpCounter(
+            InvariantCounter::RecoilDeltaRejected,
+            "delta-exceeds-published-kick");
     }
 
     void sampleWeaponAtColliderPublication(

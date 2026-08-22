@@ -29,6 +29,7 @@
 #include "physics-interaction/weapon/native_anim/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/presentation/PresentationTraceRuntime.h"
 #include "physics-interaction/weapon/presentation/PresentationTransactionPolicy.h"
+#include "physics-interaction/weapon/two_handed/WeaponRecoilBoundPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -1368,6 +1369,50 @@ namespace rock
                 _firingRecoilReferenceHandWorld[acceptedHandIndex],
                 presentedFiringHandWorld);
         if (!isUsableHandAuthorityTransform(recoilWorldDelta)) {
+            return false;
+        }
+
+        /*
+         * The delta above is the kick only if the hand tracked its target.
+         * A solve that fell back to the tracked hand yields the whole
+         * fallback jump from the same subtraction, so bound the result by the
+         * kick the controller actually asked for and drop anything larger.
+         * Dropping a frame of recoil is a small loss; kicking the weapon by a
+         * solver artifact is not.
+         */
+        const RE::NiTransform identityDelta =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
+        const float appliedTranslationGameUnits =
+            prefrik_hand_authority_policy::translationDeltaGameUnits(
+                recoilWorldDelta,
+                identityDelta);
+        const float appliedRotationDegrees =
+            prefrik_hand_authority_policy::rotationDeltaDegrees(
+                recoilWorldDelta,
+                identityDelta);
+        const auto bounds = weapon_recoil_bound_policy::makeBounds(
+            _firingRecoilAcceptedKickTranslationGameUnits,
+            _firingRecoilAcceptedKickRotationDegrees);
+        if (!weapon_recoil_bound_policy::isAppliedDeltaWithinBounds(
+                appliedTranslationGameUnits,
+                appliedRotationDegrees,
+                bounds)) {
+            presentation_trace::recordRecoilRejected(
+                appliedTranslationGameUnits,
+                appliedRotationDegrees,
+                bounds.maxTranslationGameUnits,
+                bounds.maxRotationDegrees);
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "TwoHandedGrip: firing recoil delta rejected as out of bounds applied=({:.3f}gu,{:.3f}deg) bound=({:.3f}gu,{:.3f}deg) kick=({:.3f}gu,{:.3f}deg) hand={}",
+                appliedTranslationGameUnits,
+                appliedRotationDegrees,
+                bounds.maxTranslationGameUnits,
+                bounds.maxRotationDegrees,
+                _firingRecoilAcceptedKickTranslationGameUnits,
+                _firingRecoilAcceptedKickRotationDegrees,
+                acceptedHandIsLeft ? "left" : "right");
             return false;
         }
 

@@ -1,11 +1,13 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/two_handed/WeaponRecoilBoundPolicy.h"
 
 #include "support/FakeFrikExternalAuthority.h"
 #include "support/FakePhysicsProposalSource.h"
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <numbers>
 #include <string>
 
@@ -411,6 +413,110 @@ namespace
         return ok;
     }
 
+    /*
+     * A real kick passes the bound; a solver fallback jump does not. The
+     * numbers here are the ones the runtime evidence showed: kicks are a
+     * game unit or two, a tracked-hand fallback is tens of game units.
+     */
+    bool testRecoilBoundSeparatesKicksFromFallbacks()
+    {
+        bool ok = true;
+        namespace bound = rock::weapon_recoil_bound_policy;
+
+        const auto ordinaryKick = bound::makeBounds(1.5f, 4.0f);
+        ok &= expectTrue("an ordinary kick makes a bound", ordinaryKick.valid);
+        ok &= expectTrue(
+            "a faithful delivery passes",
+            bound::isAppliedDeltaWithinBounds(1.6f, 4.5f, ordinaryKick));
+        ok &= expectTrue(
+            "an amplified but plausible delivery passes",
+            bound::isAppliedDeltaWithinBounds(2.9f, 7.9f, ordinaryKick));
+        ok &= expectFalse(
+            "a tracked-hand fallback jump is rejected",
+            bound::isAppliedDeltaWithinBounds(32.8f, 5.0f, ordinaryKick));
+        ok &= expectFalse(
+            "a fallback rotation is rejected",
+            bound::isAppliedDeltaWithinBounds(1.0f, 45.0f, ordinaryKick));
+
+        // A heavy weapon's kick is larger, and must still be delivered.
+        const auto heavyKick = bound::makeBounds(6.0f, 15.0f);
+        ok &= expectTrue(
+            "a heavy kick still passes its own bound",
+            bound::isAppliedDeltaWithinBounds(9.0f, 22.0f, heavyKick));
+        ok &= expectFalse(
+            "a heavy kick does not licence a fallback jump",
+            bound::isAppliedDeltaWithinBounds(60.0f, 22.0f, heavyKick));
+
+        // A near-zero kick still needs a little room for solver residual.
+        const auto tinyKick = bound::makeBounds(0.0f, 0.0f);
+        ok &= expectTrue("a tiny kick makes a bound", tinyKick.valid);
+        ok &= expectTrue(
+            "solver residual on a tiny kick passes",
+            bound::isAppliedDeltaWithinBounds(0.2f, 0.5f, tinyKick));
+        ok &= expectFalse(
+            "a tiny kick cannot deliver a large delta",
+            bound::isAppliedDeltaWithinBounds(5.0f, 0.5f, tinyKick));
+
+        // Nonsense inputs fail closed rather than producing a huge bound.
+        ok &= expectFalse(
+            "a non-finite kick makes no bound",
+            bound::makeBounds(std::numeric_limits<float>::quiet_NaN(), 1.0f).valid);
+        ok &= expectFalse(
+            "a non-finite delta is rejected",
+            bound::isAppliedDeltaWithinBounds(
+                std::numeric_limits<float>::quiet_NaN(),
+                1.0f,
+                ordinaryKick));
+        ok &= expectFalse(
+            "an invalid bound rejects everything",
+            bound::isAppliedDeltaWithinBounds(0.0f, 0.0f, bound::Bounds{}));
+        return ok;
+    }
+
+    /*
+     * Case 10 end to end. The firing hand's claim is unreachable, so the
+     * solve falls back to the tracked hand. Subtracting the reference from
+     * the presented wrist then yields the fallback jump, not the kick, and
+     * the bound is what stops that from reaching the weapon.
+     */
+    bool testUnreachableTicketProducesNoWeaponKick()
+    {
+        bool ok = true;
+        namespace bound = rock::weapon_recoil_bound_policy;
+        FakeFrikExternalAuthority frik;
+
+        const RE::NiTransform tracked = identityTransform();
+        frik.setTrackedHandWorld(Hand::Right, tracked);
+        frik.setReachLimitGameUnits(20.0f);
+
+        // The captured pre-solve reference is where the hand was asked to be.
+        const RE::NiTransform reference = makeTransform(rotationAboutZ(0.0f), 40.0f, 0.0f, 0.0f);
+        ok &= expectTrue("the target publishes", frik.publish("ROCK_WeaponCollisionHand", Hand::Right, reference, 110));
+
+        // A small kick is published for this frame.
+        const RE::NiTransform kick = makeTransform(rotationAboutZ(2.0f), 0.0f, -1.0f, 0.0f);
+        frik.setPendingRecoilDelta(Hand::Right, kick);
+        frik.solveSkeletonFrame();
+        ok &= expectTrue("the unreachable target fell back", frik.lastSolveUsedFallback(Hand::Right));
+
+        // What the presentation layer would derive from the solved hand.
+        const RE::NiTransform presented = frik.presentedWrist(Hand::Right);
+        const float appliedTranslation =
+            dynamic_weapon_collision_policy::translationDeltaGameUnits(presented, reference);
+        const float appliedRotation =
+            dynamic_weapon_collision_policy::rotationDeltaDegrees(presented, reference);
+        const RE::NiTransform identity = identityTransform();
+        const auto bounds = bound::makeBounds(
+            dynamic_weapon_collision_policy::translationDeltaGameUnits(kick, identity),
+            dynamic_weapon_collision_policy::rotationDeltaDegrees(kick, identity));
+
+        ok &= expectTrue("the derived delta is fallback sized", appliedTranslation > 20.0f);
+        ok &= expectFalse(
+            "the fallback jump never reaches the weapon",
+            bound::isAppliedDeltaWithinBounds(appliedTranslation, appliedRotation, bounds));
+        return ok;
+    }
+
     bool testSkeletonDropReleasesEveryClaim()
     {
         bool ok = true;
@@ -439,6 +545,8 @@ int main()
     ok &= testHandReframeTakesTheSameWorldDelta();
     ok &= testContactRetentionAndVisualAuthority();
     ok &= testProposalAdmission();
+    ok &= testRecoilBoundSeparatesKicksFromFallbacks();
+    ok &= testUnreachableTicketProducesNoWeaponKick();
     ok &= testSkeletonDropReleasesEveryClaim();
     return ok ? 0 : 1;
 }

@@ -89,6 +89,12 @@ namespace rock::presentation_trace
         std::uint64_t consumedSequence,
         bool applied);
 
+    void recordRecoilRejected(
+        float appliedTranslationGameUnits,
+        float appliedRotationDegrees,
+        float boundTranslationGameUnits,
+        float boundRotationDegrees);
+
     // The weapon world as the generated colliders and the muzzle saw it.
     void sampleWeaponAtColliderPublication(
         bool weaponWorldValid,

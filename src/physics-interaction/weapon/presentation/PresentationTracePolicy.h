@@ -49,6 +49,10 @@ namespace rock::presentation_trace_policy
         CorrectionWhilePublicationUnready,
         // A firing recoil delta was composed into the presented weapon.
         RecoilDeltaApplied,
+        // A recoil delta was larger than the kick that produced it, so it was
+        // dropped rather than applied. A recurring hit means the firing hand
+        // is not reaching its target.
+        RecoilDeltaRejected,
         Count,
     };
 
@@ -118,7 +122,12 @@ namespace rock::presentation_trace_policy
 
         std::uint64_t recoilAcceptedSequence = 0;
         std::uint64_t recoilConsumedSequence = 0;
+        float recoilAppliedTranslationGameUnits = -1.0f;
+        float recoilAppliedRotationDegrees = -1.0f;
+        float recoilBoundTranslationGameUnits = -1.0f;
+        float recoilBoundRotationDegrees = -1.0f;
         bool recoilApplied = false;
+        bool recoilRejected = false;
 
         RestoreGuardFailure restoreGuardFailure = RestoreGuardFailure::None;
         bool restoreGuardEvaluated = false;
@@ -219,6 +228,8 @@ namespace rock::presentation_trace_policy
             return "correction-while-publication-unready";
         case InvariantCounter::RecoilDeltaApplied:
             return "recoil-delta-applied";
+        case InvariantCounter::RecoilDeltaRejected:
+            return "recoil-delta-rejected";
         default:
             return "unknown";
         }

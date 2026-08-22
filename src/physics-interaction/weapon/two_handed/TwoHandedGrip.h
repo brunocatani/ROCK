@@ -1712,6 +1712,11 @@ namespace rock
         std::uint64_t _firingRecoilAcceptedSequence{ 0 };
         std::uint64_t _firingRecoilConsumedSequence{ 0 };
         std::array<bool, 2> _hasFiringRecoilReference{};
+        // The size of the kick the controller published for this ticket. The
+        // presentation layer bounds its applied weapon delta by these, so a
+        // hand that silently fell back cannot pass its jump off as recoil.
+        float _firingRecoilAcceptedKickTranslationGameUnits{ 0.0f };
+        float _firingRecoilAcceptedKickRotationDegrees{ 0.0f };
         bool _firingRecoilAcceptedHandIsLeft{ false };
         enum class RightFiringCanonicalSource : std::uint8_t
         {

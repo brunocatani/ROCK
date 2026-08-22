@@ -135,6 +135,21 @@ namespace rock
             self->_firingRecoilAcceptedGenerationKey =
                 recoilWeaponGenerationKey;
             self->_firingRecoilAcceptedHandIsLeft = firingHandIsLeft;
+            /*
+             * Record how large the kick actually is. The presentation layer
+             * derives its weapon delta from the solved hand, which also moves
+             * for reasons that are not recoil, so it needs the requested size
+             * to tell a real kick from a solver fallback. Two scalars, no
+             * allocation and no logging: this runs on FRIK's thread.
+             */
+            self->_firingRecoilAcceptedKickTranslationGameUnits =
+                prefrik_hand_authority_policy::translationDeltaGameUnits(
+                    sample->nativeKickLocal,
+                    identity);
+            self->_firingRecoilAcceptedKickRotationDegrees =
+                prefrik_hand_authority_policy::rotationDeltaDegrees(
+                    sample->nativeKickLocal,
+                    identity);
         } else {
             // A neutral callback is a newer FRIK frame than any unconsumed
             // kick ticket. Retire that ticket so it cannot be replayed after
