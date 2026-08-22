@@ -1034,6 +1034,39 @@ namespace rock
         queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
     }
 
+    bool BodyBoneColliderSet::tryGetBodyTargetForDebug(
+        const std::uint32_t bodyId,
+        RE::NiTransform& outTarget) const
+    {
+        if (bodyId == kInvalidBodyBoneColliderBodyId) {
+            return false;
+        }
+
+        for (const auto& instance : _bodies) {
+            if (!instance.body.isValid() ||
+                instance.body.getBodyId().value != bodyId) {
+                continue;
+            }
+
+            std::unique_lock targetLock(
+                instance.driveState.mutex,
+                std::try_to_lock);
+            if (!targetLock.owns_lock()) {
+                return false;
+            }
+            if (instance.driveState.hasPendingTarget) {
+                outTarget = instance.driveState.pendingTarget;
+                return true;
+            }
+            if (instance.driveState.hasPreviousTarget) {
+                outTarget = instance.driveState.previousTarget;
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
     void BodyBoneColliderSet::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex)
     {
         if (!result.attempted || result.skippedStale) {

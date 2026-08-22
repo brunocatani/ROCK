@@ -148,6 +148,9 @@ namespace rock
         void abandonHavokStateAfterWorldLoss();
 
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug() const;
+        // Main-thread debug publication only. Returns the colliding contact
+        // body's target reconstructed from the pending grip-authority target.
+        [[nodiscard]] bool tryGetContactBodyTargetForDebug(RE::NiTransform& outTarget) const;
         bool getDebugSnapshot(DebugSnapshot& outSnapshot) const;
 
     private:

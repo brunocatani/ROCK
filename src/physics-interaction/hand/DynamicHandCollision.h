@@ -204,6 +204,12 @@ namespace rock
             const auto& slot = _hands[isLeft ? 1u : 0u].bodies[0];
             return slot.created ? slot.body.getBodyId() : RE::hknpBodyId{ 0x7FFF'FFFF };
         }
+        // Main-thread debug publication only. Returns the current compound-root
+        // target queued for the next generated-body physics callback.
+        [[nodiscard]] bool tryGetBodyTargetForDebug(
+            bool isLeft,
+            std::size_t bodyIndex,
+            RE::NiTransform& outTarget) const;
 
     private:
         struct PhysicsTelemetrySample

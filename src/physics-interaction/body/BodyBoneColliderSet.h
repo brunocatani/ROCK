@@ -68,6 +68,9 @@ namespace rock
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, skeleton_bone_debug_math::BoneColliderRole& outRole) const;
+        // Main-thread debug publication only. Returns the exact pending target
+        // that the next generated-body physics callback will consume.
+        bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;
         bool isRebuildPendingAtomic() const { return _driveRebuildRequested.load(std::memory_order_acquire); }
         const dynamic_hand_twin::ForearmTwinTargets& dynamicForearmTwinTargets() const { return _dynamicForearmTwinTargets; }
         RE::hknpShape* buildDynamicForearmTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame) const;

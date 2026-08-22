@@ -7072,6 +7072,11 @@ namespace rock
             completedSolveSequence);
         _dynamicHandCollision.samplePostSolveDeviations(world, timing);
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
+        debug::CapturePostSolveBodyPhases(
+            world,
+            timing,
+            gameFrameIndex,
+            completedSolveSequence);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);

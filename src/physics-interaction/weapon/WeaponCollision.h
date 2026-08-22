@@ -253,6 +253,9 @@ namespace rock
         std::uint32_t getWeaponBodyIdAtomic(std::size_t index) const;
 
         WeaponBodySnapshot getWeaponBodySnapshotAtomic() const;
+        // Main-thread debug publication only. Returns the exact pending target
+        // for one generated weapon body in the active bank.
+        bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;
 
         bool isWeaponBodyIdAtomic(std::uint32_t bodyId) const;
 

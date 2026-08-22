@@ -1038,6 +1038,46 @@ namespace rock
         return true;
     }
 
+    bool HandBoneColliderSet::tryGetBodyTargetForDebug(
+        const std::uint32_t bodyId,
+        RE::NiTransform& outTarget) const
+    {
+        if (bodyId == hand_collider_semantics::kInvalidBodyId) {
+            return false;
+        }
+
+        if (_hasLatestPalmAnchorTarget &&
+            _palmAnchorPublicationIndex != kInvalidPublicationIndex &&
+            getBodyIdAtomic(_palmAnchorPublicationIndex) == bodyId) {
+            outTarget = _latestPalmAnchorTarget;
+            return true;
+        }
+
+        for (const auto& instance : _bodies) {
+            if (!instance.body.isValid() ||
+                instance.body.getBodyId().value != bodyId) {
+                continue;
+            }
+
+            std::unique_lock targetLock(
+                instance.driveState.mutex,
+                std::try_to_lock);
+            if (!targetLock.owns_lock()) {
+                return false;
+            }
+            if (instance.driveState.hasPendingTarget) {
+                outTarget = instance.driveState.pendingTarget;
+                return true;
+            }
+            if (instance.driveState.hasPreviousTarget) {
+                outTarget = instance.driveState.previousTarget;
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
     void HandBoneColliderSet::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex)
     {
         if (!result.attempted || result.skippedStale) {

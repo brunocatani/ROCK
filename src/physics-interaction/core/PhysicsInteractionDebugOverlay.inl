@@ -226,6 +226,8 @@
             debug::Install();
             debug::BodyOverlayFrame focusedFrame{};
             focusedFrame.world = context.hknpWorld;
+            focusedFrame.gameFrameIndex =
+                _palmClockGameFrameIndex.load(std::memory_order_acquire);
             focusedFrame.drawRockBodies = true;
             focusedFrame.entries[0] = debug::BodyOverlayEntry{
                 RE::hknpBodyId{ colliderFocus.bodyId },
@@ -315,6 +317,8 @@
 
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
+        frame.gameFrameIndex =
+            _palmClockGameFrameIndex.load(std::memory_order_acquire);
         frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider || drawDynamicHandColliders || drawDynamicWeaponColliders;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
@@ -329,6 +333,7 @@
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
             drawAuthoredSupportGripDebug || drawGunstockAlignment || drawVideoSyncMarker ||
+            frame.drawRockBodies || frame.drawTargetBodies ||
             (providerOverlay && providerOverlay->textCount > 0);
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
@@ -356,18 +361,38 @@
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
 
-        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
-            if (bodyId.value == INVALID_BODY_ID || frame.count >= frame.entries.size()) {
+        auto addBodyWithTarget = [&](RE::hknpBodyId bodyId,
+                                     debug::BodyOverlayRole role,
+                                     const RE::NiTransform* currentTarget) {
+            if (bodyId.value == INVALID_BODY_ID) {
                 return;
             }
 
             for (std::uint32_t i = 0; i < frame.count; i++) {
                 if (frame.entries[i].bodyId.value == bodyId.value && frame.entries[i].role == role) {
+                    if (currentTarget) {
+                        frame.entries[i].currentTarget = *currentTarget;
+                        frame.entries[i].hasCurrentTarget = true;
+                    }
                     return;
                 }
             }
 
-            frame.entries[frame.count++] = debug::BodyOverlayEntry{ bodyId, role };
+            if (frame.count >= frame.entries.size()) {
+                return;
+            }
+
+            auto& entry = frame.entries[frame.count++];
+            entry.bodyId = bodyId;
+            entry.role = role;
+            if (currentTarget) {
+                entry.currentTarget = *currentTarget;
+                entry.hasCurrentTarget = true;
+            }
+        };
+
+        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
+            addBodyWithTarget(bodyId, role, nullptr);
         };
 
         auto addAxisTransformWithBasis = [&](const RE::NiTransform& transform,
@@ -474,6 +499,17 @@
             entry.worldAnchored = false;
             std::snprintf(entry.text, sizeof(entry.text), "%s", text);
         };
+
+        if (frame.drawRockBodies || frame.drawTargetBodies) {
+            const float phaseLegendColor[4]{ 1.0f, 1.0f, 1.0f, 0.96f };
+            char phaseLegend[128]{};
+            std::snprintf(
+                phaseLegend,
+                sizeof(phaseLegend),
+                "COLLIDER PHASE frame=%llu  TARGET=YELLOW  PRE=MAGENTA  POST=CYAN",
+                static_cast<unsigned long long>(frame.gameFrameIndex));
+            addScreenTextLine(18.0f, 60.0f, phaseLegendColor, phaseLegend);
+        }
 
         auto tryResolveBodyPosition = [&](std::uint32_t bodyId, RE::NiPoint3& outPosition) {
             if (!hknp || bodyId == INVALID_CONTACT_BODY_ID || bodyId == INVALID_BODY_ID) {
@@ -3522,6 +3558,12 @@
                     }
 
                     const bool isLeft = hand.isLeft();
+                    addBodyWithTarget(
+                        hand.getGrabAuthorityProxyBodyId(),
+                        isLeft ?
+                            debug::BodyOverlayRole::LeftGrabAuthorityProxy :
+                            debug::BodyOverlayRole::RightGrabAuthorityProxy,
+                        &snapshot.proxyTargetWorld);
                     addAxisTransform(snapshot.proxyTargetWorld,
                         isLeft ? debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget : debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
                         snapshot.palmAuthorityBaseWorld.translate,
@@ -3543,11 +3585,27 @@
                 const RE::hknpBodyId rightPalm = _rightHand.getCollisionBodyId();
                 const RE::hknpBodyId leftPalm = _leftHand.getCollisionBodyId();
                 if (rightPalm.value != INVALID_BODY_ID) {
-                    addBody(rightPalm, debug::BodyOverlayRole::RightHand);
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        _rightHand.tryGetHandColliderTargetForDebug(
+                            rightPalm.value,
+                            currentTarget);
+                    addBodyWithTarget(
+                        rightPalm,
+                        debug::BodyOverlayRole::RightHand,
+                        hasCurrentTarget ? &currentTarget : nullptr);
                     addAxisBody(rightPalm, debug::AxisOverlayRole::RightGrabPalmAuthorityFrame, context.right.rawHandWorld.translate, true);
                 }
                 if (leftPalm.value != INVALID_BODY_ID) {
-                    addBody(leftPalm, debug::BodyOverlayRole::LeftHand);
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        _leftHand.tryGetHandColliderTargetForDebug(
+                            leftPalm.value,
+                            currentTarget);
+                    addBodyWithTarget(
+                        leftPalm,
+                        debug::BodyOverlayRole::LeftHand,
+                        hasCurrentTarget ? &currentTarget : nullptr);
                     addAxisBody(leftPalm, debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame, context.left.rawHandWorld.translate, true);
                 }
 
@@ -3568,8 +3626,20 @@
 
             if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandColliders) &&
                 !g_rockConfig.rockDebugDrawHandBoneColliders) {
-                addBody(_rightHand.getCollisionBodyId(), debug::BodyOverlayRole::RightHand);
-                addBody(_leftHand.getCollisionBodyId(), debug::BodyOverlayRole::LeftHand);
+                const auto addPalmBody = [&](const Hand& hand, debug::BodyOverlayRole role) {
+                    const auto bodyId = hand.getCollisionBodyId();
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        hand.tryGetHandColliderTargetForDebug(
+                            bodyId.value,
+                            currentTarget);
+                    addBodyWithTarget(
+                        bodyId,
+                        role,
+                        hasCurrentTarget ? &currentTarget : nullptr);
+                };
+                addPalmBody(_rightHand, debug::BodyOverlayRole::RightHand);
+                addPalmBody(_leftHand, debug::BodyOverlayRole::LeftHand);
             }
 
             /*
@@ -3581,8 +3651,31 @@
              */
             if (drawDynamicHandColliders) {
                 for (std::size_t twinIndex = 0; twinIndex < DynamicHandCollisionRuntime::kBodiesPerHand; ++twinIndex) {
-                    addBody(_dynamicHandCollision.proxyBodyIdForDebug(false, twinIndex), debug::BodyOverlayRole::RightHand);
-                    addBody(_dynamicHandCollision.proxyBodyIdForDebug(true, twinIndex), debug::BodyOverlayRole::LeftHand);
+                    RE::NiTransform rightTarget{};
+                    const bool hasRightTarget =
+                        _dynamicHandCollision.tryGetBodyTargetForDebug(
+                            false,
+                            twinIndex,
+                            rightTarget);
+                    addBodyWithTarget(
+                        _dynamicHandCollision.proxyBodyIdForDebug(
+                            false,
+                            twinIndex),
+                        debug::BodyOverlayRole::RightHand,
+                        hasRightTarget ? &rightTarget : nullptr);
+
+                    RE::NiTransform leftTarget{};
+                    const bool hasLeftTarget =
+                        _dynamicHandCollision.tryGetBodyTargetForDebug(
+                            true,
+                            twinIndex,
+                            leftTarget);
+                    addBodyWithTarget(
+                        _dynamicHandCollision.proxyBodyIdForDebug(
+                            true,
+                            twinIndex),
+                        debug::BodyOverlayRole::LeftHand,
+                        hasLeftTarget ? &leftTarget : nullptr);
                 }
 
                 dynamic_hand_collision_telemetry::Snapshot telemetry{};
@@ -3655,9 +3748,14 @@
             }
 
             if (drawDynamicWeaponColliders) {
-                addBody(
+                RE::NiTransform currentTarget{};
+                const bool hasCurrentTarget =
+                    _dynamicWeaponCollision.tryGetContactBodyTargetForDebug(
+                        currentTarget);
+                addBodyWithTarget(
                     _dynamicWeaponCollision.proxyBodyIdForDebug(),
-                    debug::BodyOverlayRole::DynamicWeaponProxy);
+                    debug::BodyOverlayRole::DynamicWeaponProxy,
+                    hasCurrentTarget ? &currentTarget : nullptr);
 
                 DynamicWeaponCollisionRuntime::DebugSnapshot snapshot{};
                 constexpr float proxyColor[4]{ 1.0f, 0.24f, 0.08f, 0.96f };
@@ -3742,7 +3840,15 @@
                         if (bodyId == INVALID_BODY_ID) {
                             continue;
                         }
-                        addBody(RE::hknpBodyId{ bodyId }, i == 0 ? anchorRole : segmentRole);
+                        RE::NiTransform currentTarget{};
+                        const bool hasCurrentTarget =
+                            hand.tryGetHandColliderTargetForDebug(
+                                bodyId,
+                                currentTarget);
+                        addBodyWithTarget(
+                            RE::hknpBodyId{ bodyId },
+                            i == 0 ? anchorRole : segmentRole,
+                            hasCurrentTarget ? &currentTarget : nullptr);
                         ++drawn;
                     }
                 };
@@ -3780,7 +3886,15 @@
                     BodyBoneColliderMetadata metadata{};
                     const auto role =
                         _bodyBoneColliders.tryGetBodyMetadataAtomic(bodyId, metadata) ? bodyOverlayRoleFor(metadata.role) : debug::BodyOverlayRole::BodyTorsoSegment;
-                    addBody(RE::hknpBodyId{ bodyId }, role);
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        _bodyBoneColliders.tryGetBodyTargetForDebug(
+                            bodyId,
+                            currentTarget);
+                    addBodyWithTarget(
+                        RE::hknpBodyId{ bodyId },
+                        role,
+                        hasCurrentTarget ? &currentTarget : nullptr);
                     ++bodyDrawn;
                 }
             }
@@ -3790,7 +3904,15 @@
                 const bool drawNormalWeaponBody =
                     debug_overlay_policy::shouldDrawWeaponBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawWeaponColliders, i, g_rockConfig.rockDebugMaxWeaponBodiesDrawn);
                 if (drawNormalWeaponBody) {
-                    addBody(RE::hknpBodyId{ weaponSnapshot.bodyIds[i] }, debug::BodyOverlayRole::Weapon);
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        _weaponCollision.tryGetBodyTargetForDebug(
+                            weaponSnapshot.bodyIds[i],
+                            currentTarget);
+                    addBodyWithTarget(
+                        RE::hknpBodyId{ weaponSnapshot.bodyIds[i] },
+                        debug::BodyOverlayRole::Weapon,
+                        hasCurrentTarget ? &currentTarget : nullptr);
                 }
             }
         }
@@ -3801,7 +3923,18 @@
                 if (hand.isHolding()) {
                     const auto& savedState = hand.getSavedObjectState();
                     if (frame.drawTargetBodies) {
-                        addBody(savedState.bodyId, debug::BodyOverlayRole::Target);
+                        GrabForceTorqueDebugSnapshot targetSnapshot{};
+                        const bool hasCurrentTarget =
+                            hand.getGrabForceTorqueDebugSnapshot(
+                                hknp,
+                                handInput.rawHandWorld,
+                                targetSnapshot);
+                        addBodyWithTarget(
+                            savedState.bodyId,
+                            debug::BodyOverlayRole::Target,
+                            hasCurrentTarget ?
+                                &targetSnapshot.desiredBodyWorld :
+                                nullptr);
                         addAxisBody(savedState.bodyId, debug::AxisOverlayRole::TargetBody, handInput.rawHandWorld.translate, true);
                     }
                     addWorldOriginDiagnostic(hand, true, savedState.bodyId, savedState.refr, nullptr, nullptr);

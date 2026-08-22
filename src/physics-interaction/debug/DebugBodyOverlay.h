@@ -17,6 +17,11 @@ namespace RE
     class hknpWorld;
 }
 
+namespace rock::havok_physics_timing
+{
+    struct PhysicsTimingSample;
+}
+
 namespace rock::debug
 {
     enum class BodyOverlayRole : std::uint8_t
@@ -297,6 +302,8 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
+        RE::NiTransform currentTarget{};
+        bool hasCurrentTarget{ false };
     };
 
     struct AxisOverlayEntry
@@ -354,6 +361,7 @@ namespace rock::debug
     struct BodyOverlayFrame
     {
         RE::hknpWorld* world{ nullptr };
+        std::uint64_t gameFrameIndex{ 0 };
         std::array<BodyOverlayEntry,
             MAX_WEAPON_COLLISION_BODIES +
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
@@ -384,6 +392,14 @@ namespace rock::debug
     void Install();
     bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
+    // Physics-step-thread callback. Captures only bounded body matrices for the
+    // final substep. The implementation is non-blocking and does no allocation,
+    // logging, shape inspection, or rendering work.
+    void CapturePostSolveBodyPhases(
+        RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing,
+        std::uint64_t gameFrameIndex,
+        std::uint64_t solveSequence) noexcept;
     void ClearFrame();
     void ClearShapeCache();
     // Stops and joins the owned CPU shape worker without uninstalling the

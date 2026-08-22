@@ -560,6 +560,36 @@ namespace rock
         return outSnapshot.updateSequence != 0;
     }
 
+    bool DynamicHandCollisionRuntime::tryGetBodyTargetForDebug(
+        const bool isLeft,
+        const std::size_t bodyIndex,
+        RE::NiTransform& outTarget) const
+    {
+        if (bodyIndex != 0) {
+            return false;
+        }
+
+        const auto& slot = _hands[isLeft ? 1u : 0u].bodies[0];
+        if (!slot.created) {
+            return false;
+        }
+        std::unique_lock targetLock(
+            slot.driveState.mutex,
+            std::try_to_lock);
+        if (!targetLock.owns_lock()) {
+            return false;
+        }
+        if (slot.driveState.hasPendingTarget) {
+            outTarget = slot.driveState.pendingTarget;
+            return true;
+        }
+        if (slot.driveState.hasPreviousTarget) {
+            outTarget = slot.driveState.previousTarget;
+            return true;
+        }
+        return false;
+    }
+
     dynamic_hand_collision_telemetry::HapticEvents DynamicHandCollisionRuntime::consumeHapticEvents()
     {
         const auto events = _pendingHapticEvents;
