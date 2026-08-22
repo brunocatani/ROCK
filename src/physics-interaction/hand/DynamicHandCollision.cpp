@@ -89,6 +89,21 @@ namespace rock
             return true;
         }
 
+        /*
+         * Generated hand and forearm collider frames store physical axes in
+         * matrix columns. TransformMath relative composition expects physical
+         * axes in rows. Convert only at that math boundary. The compound root
+         * body continues to consume the original generated-collider frame.
+         */
+        RE::NiTransform colliderFrameToSceneFrame(
+            const RE::NiTransform& colliderFrame)
+        {
+            RE::NiTransform result = colliderFrame;
+            result.rotate =
+                transform_math::transposeRotation(colliderFrame.rotate);
+            return result;
+        }
+
         bool makeCompoundChildTransform(
             const RE::NiTransform& childInCompound,
             havok_compound_shape_builder::ChildTransform& outTransform)
@@ -807,10 +822,12 @@ namespace rock
             std::scoped_lock poseLock(handSlots.compoundPoseMutex);
             childFrames = handSlots.consumedChildInCompound;
         }
+        const RE::NiTransform liveCompoundSceneWorld =
+            colliderFrameToSceneFrame(liveCompoundWorld);
         for (std::size_t bodyIndex = 0; bodyIndex < kBodiesPerHand; ++bodyIndex) {
             const RE::NiTransform proxyWorld =
                 transform_math::composeTransforms(
-                    liveCompoundWorld,
+                    liveCompoundSceneWorld,
                     childFrames[bodyIndex]);
             if (!isFiniteTransform(proxyWorld)) {
                 continue;
@@ -978,7 +995,8 @@ namespace rock
         std::array<havok_compound_shape_builder::CompoundChild,
             kBodiesPerHand> compoundChildren{};
         const RE::NiTransform rootInverse =
-            transform_math::invertTransform(compoundRootTarget);
+            transform_math::invertTransform(
+                colliderFrameToSceneFrame(compoundRootTarget));
         bool childrenValid = true;
         RE::NiPoint3 boundsMin{};
         RE::NiPoint3 boundsMax{};
@@ -990,7 +1008,7 @@ namespace rock
 
             RE::NiTransform childLocal = transform_math::composeTransforms(
                 rootInverse,
-                driveTargets[child]);
+                colliderFrameToSceneFrame(driveTargets[child]));
             childLocal.scale = 1.0f;
             if (!childShapes[child] ||
                 !makeCompoundChildTransform(
@@ -1177,14 +1195,15 @@ namespace rock
         }
 
         const RE::NiTransform rootInverse =
-            transform_math::invertTransform(compoundRootTarget);
+            transform_math::invertTransform(
+                colliderFrameToSceneFrame(compoundRootTarget));
         std::array<havok_compound_shape_builder::ChildTransform,
             kBodiesPerHand> pendingTransforms{};
         std::array<RE::NiTransform, kBodiesPerHand> childFrames{};
         for (std::size_t child = 0; child < kBodiesPerHand; ++child) {
             RE::NiTransform childLocal = transform_math::composeTransforms(
                 rootInverse,
-                driveTargets[child]);
+                colliderFrameToSceneFrame(driveTargets[child]));
             childLocal.scale = 1.0f;
             if (!makeCompoundChildTransform(
                     childLocal,
@@ -2751,21 +2770,28 @@ namespace rock
                 childFrames = handSlots.consumedChildInCompound;
             }
 
+            const RE::NiTransform requestedSceneWorld =
+                colliderFrameToSceneFrame(owner.requestedTargetWorld);
+            const RE::NiTransform commandedSceneWorld =
+                colliderFrameToSceneFrame(owner.commandedTargetWorld);
+            const RE::NiTransform liveCompoundSceneWorld =
+                colliderFrameToSceneFrame(liveCompoundWorld);
+
             float maxEntryApproachSpeed = 0.0f;
             for (std::size_t bodyIndex = 0;
                  bodyIndex < kBodiesPerHand;
                  ++bodyIndex) {
                 const RE::NiTransform requestedChildWorld =
                     transform_math::composeTransforms(
-                        owner.requestedTargetWorld,
+                        requestedSceneWorld,
                         childFrames[bodyIndex]);
                 const RE::NiTransform commandedChildWorld =
                     transform_math::composeTransforms(
-                        owner.commandedTargetWorld,
+                        commandedSceneWorld,
                         childFrames[bodyIndex]);
                 const RE::NiTransform liveChildWorld =
                     transform_math::composeTransforms(
-                        liveCompoundWorld,
+                        liveCompoundSceneWorld,
                         childFrames[bodyIndex]);
                 if (!isFiniteTransform(requestedChildWorld) ||
                     !isFiniteTransform(commandedChildWorld) ||

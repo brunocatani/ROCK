@@ -169,9 +169,9 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     '_bodyBoneColliders,'
 ) 'Body forearm frames must publish before dynamic hand collision consumes them in the same game frame.'
 
-# One animated compound owns all semantic children. The current transform
-# convention maps Ni rows directly to Havok child columns; no transpose or
-# additional FRIK scheduling path may be introduced.
+# One animated compound owns all semantic children. Generated collider world
+# frames are column-authored, so relative child math converts them to the scene
+# row convention before the direct row-to-Havok-child-column write.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'const RE::NiTransform compoundRootTarget =\s*driveTargets\[kPalmSlot\]',
     'ensureHandCreated\(',
@@ -179,14 +179,21 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'queueGeneratedKeyframedBodyTarget\(\s*compoundOwner\.driveState'
 ) 'Dynamic hand collision must drive one palm-rooted compound body.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'colliderFrameToSceneFrame\(',
+    'transform_math::transposeRotation\(colliderFrame\.rotate\)',
+    'const RE::NiTransform rootInverse',
+    'colliderFrameToSceneFrame\(driveTargets\[child\]\)',
+    'makeCompoundChildTransform\('
+) 'Compound child relations must compose in scene-row space.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'Current ROCK convention:',
     'outTransform\.column0',
     'outTransform\.column1',
     'outTransform\.column2'
 ) 'Compound child transforms must use the current direct row-to-column mapping.'
 Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'colliderFrameToSceneFrame|sceneFrameToColliderFrame|transposeRotation|refreshContactVisualAuthorityBeforeFrik|transportRigidContactTarget' `
-    'The current branch must not regain the reverted FRIK scheduler or transpose path.'
+    'sceneFrameToColliderFrame|refreshContactVisualAuthorityBeforeFrik|transportRigidContactTarget' `
+    'The current branch must not regain the reverted FRIK scheduler or reverse transport path.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
     'shapeKeyA',
     'shapeKeyB',
@@ -366,10 +373,18 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'void DynamicHandCollisionRuntime::samplePostSolveDeviations\(',
     'tryResolveLiveBodyWorldTransform\(',
     'pendingSolverContactMaskAtomic\.exchange\(',
+    'colliderFrameToSceneFrame\(owner\.requestedTargetWorld\)',
+    'colliderFrameToSceneFrame\(owner\.commandedTargetWorld\)',
+    'colliderFrameToSceneFrame\(liveCompoundWorld\)',
     'requestedChildWorld',
     'commandedChildWorld',
     'liveChildWorld'
 ) 'Dynamic hand deviation must reconstruct exact child positions from the one compound body.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'bool DynamicHandCollisionRuntime::beginSurfaceLatch\(',
+    'liveCompoundSceneWorld',
+    'transform_math::composeTransforms\(\s*liveCompoundSceneWorld,\s*childFrames\[bodyIndex\]\)'
+) 'Surface latch child relations must use the same corrected compound frame.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
     '_dynamicHandCollision\.samplePostSolveDeviations\(world\);'
