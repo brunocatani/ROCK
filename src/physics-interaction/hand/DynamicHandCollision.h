@@ -432,6 +432,10 @@ namespace rock
             const dynamic_hand_collision_telemetry::HandSample& handTelemetry,
             float deltaSeconds,
             bool freezeCurrentPose);
+        void applyWeaponOwnershipCollisionSuppression(
+            RE::hknpWorld* world,
+            bool rightHandWeaponOwned,
+            bool leftHandWeaponOwned);
         void applyTransitionCollisionSuppression(RE::hknpWorld* world, bool suppressCollision);
         static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
         [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample, std::uint64_t& outSequence);
@@ -456,6 +460,7 @@ namespace rock
         dynamic_hand_collision_transition::State _transitionState{};
         bool _transitionCollisionSuppressed = false;
         std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
+        std::array<bool, 2> _weaponOwnershipCollisionSuppressed{};
         std::atomic<bool> _dynamicInteractionsEnabledAtomic{ false };
         std::atomic<std::uint32_t> _desiredWeaponBodyIdAtomic{
             hand_semantic_contact_state::kInvalidBodyId

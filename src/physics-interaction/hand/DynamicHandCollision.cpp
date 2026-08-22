@@ -1077,7 +1077,8 @@ namespace rock
 
         const std::uint32_t expectedFilterInfo = dynamicHandProxyFilterInfo(
             isLeft,
-            _transitionCollisionSuppressed);
+            _transitionCollisionSuppressed ||
+                _weaponOwnershipCollisionSuppressed[handIndex(isLeft)]);
         if (!slot.body.create(
                 frame.hknpWorld,
                 frame.bhkWorld,
@@ -1756,6 +1757,65 @@ namespace rock
         return response.lastHelpfulDynamicSlotMask;
     }
 
+    void DynamicHandCollisionRuntime::applyWeaponOwnershipCollisionSuppression(
+        RE::hknpWorld* world,
+        bool rightHandWeaponOwned,
+        bool leftHandWeaponOwned)
+    {
+        const std::array<bool, 2> desiredSuppression{
+            rightHandWeaponOwned,
+            leftHandWeaponOwned,
+        };
+        if (_weaponOwnershipCollisionSuppressed == desiredSuppression) {
+            return;
+        }
+
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        for (std::size_t handIndexValue = 0;
+             handIndexValue < _hands.size();
+             ++handIndexValue) {
+            if (_weaponOwnershipCollisionSuppressed[handIndexValue] ==
+                desiredSuppression[handIndexValue]) {
+                continue;
+            }
+
+            _weaponOwnershipCollisionSuppressed[handIndexValue] =
+                desiredSuppression[handIndexValue];
+            auto& handSlots = _hands[handIndexValue];
+            auto& owner = handSlots.bodies[0];
+            if (owner.created && owner.body.isValid() &&
+                owner.createdWorld == world) {
+                owner.body.setCollisionFilterInfo(
+                    dynamicHandProxyFilterInfo(
+                        handIndexValue == 1,
+                        _transitionCollisionSuppressed ||
+                            desiredSuppression[handIndexValue]),
+                    1);
+            }
+            for (auto& slot : handSlots.bodies) {
+                clearPhysicsContactState(slot);
+            }
+            handSlots.pendingOtherHandContactMaskAtomic.store(
+                0,
+                std::memory_order_release);
+            handSlots.pendingWeaponContactMaskAtomic.store(
+                0,
+                std::memory_order_release);
+            handSlots.otherHandContactMask = 0;
+            handSlots.weaponContactMask = 0;
+            handSlots.otherHandContactGraceFrames = 0;
+            handSlots.weaponContactGraceFrames = 0;
+        }
+
+        ROCK_LOG_INFO(
+            Hand,
+            "Dynamic hand weapon ownership collision suppression: right={} left={}",
+            desiredSuppression[0] ? "active" : "inactive",
+            desiredSuppression[1] ? "active" : "inactive");
+    }
+
     void DynamicHandCollisionRuntime::applyTransitionCollisionSuppression(
         RE::hknpWorld* world,
         bool suppressCollision)
@@ -1773,7 +1833,8 @@ namespace rock
             auto& handSlots = _hands[handIndexValue];
             const auto filterInfo = dynamicHandProxyFilterInfo(
                 handIndexValue == 1,
-                suppressCollision);
+                suppressCollision ||
+                    _weaponOwnershipCollisionSuppressed[handIndexValue]);
             auto& owner = handSlots.bodies[0];
             if (owner.created && owner.body.isValid() &&
                 owner.createdWorld == world) {
@@ -1821,6 +1882,7 @@ namespace rock
         _transitionState = {};
         _transitionCollisionSuppressed = false;
         _transitionCollisionSuppressedAtomic.store(false, std::memory_order_release);
+        _weaponOwnershipCollisionSuppressed = {};
         _dynamicInteractionsEnabledAtomic.store(false, std::memory_order_release);
         _desiredWeaponBodyIdAtomic.store(
             hand_semantic_contact_state::kInvalidBodyId,
@@ -1972,6 +2034,11 @@ namespace rock
             _telemetrySnapshot = telemetry;
             return;
         }
+
+        applyWeaponOwnershipCollisionSuppression(
+            frame.hknpWorld,
+            rightHandWeaponOwned,
+            leftHandWeaponOwned);
 
         if (++_logCounter >= 360) {
             _logCounter = 0;

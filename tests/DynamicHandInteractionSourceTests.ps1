@@ -101,6 +101,15 @@ Require-Pattern $pairSource `
 Require-Pattern $handSource `
     'flushPendingPhysicsDrive\([\s\S]*_weaponPairLeases\.reconcile\(' `
     'Native pair-table mutations must occur only in the serialized physics drive phase.'
+Require-Pattern $handSource `
+    'applyWeaponOwnershipCollisionSuppression\([\s\S]*dynamicHandProxyFilterInfo\([\s\S]*_transitionCollisionSuppressed\s*\|\|[\s\S]*desiredSuppression\[handIndexValue\]' `
+    'Weapon ownership must fail closed by suppressing the exact owned dynamic hand even before pair-filter reconciliation.'
+Require-Pattern $handSource `
+    'expectedFilterInfo\s*=\s*dynamicHandProxyFilterInfo\([\s\S]{0,180}_transitionCollisionSuppressed\s*\|\|[\s\S]{0,120}_weaponOwnershipCollisionSuppressed\[handIndex\(isLeft\)\]' `
+    'New dynamic hand compounds must inherit active transition or weapon-owner suppression at creation.'
+Require-Pattern $handSource `
+    'applyTransitionCollisionSuppression\([\s\S]*suppressCollision\s*\|\|[\s\S]*_weaponOwnershipCollisionSuppressed\[handIndexValue\]' `
+    'Transition restoration must not re-enable a hand that remains owned by the equipped weapon.'
 Reject-Pattern $handSource `
     'updateFrame\([\s\S]{0,500}_weaponPairLeases\.reconcile\(' `
     'The main frame must never mutate the native pair table.'

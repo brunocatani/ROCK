@@ -130,6 +130,59 @@ namespace rock
         };
         constexpr float kNearbyCarCollisionRadiusGameUnits = 4096.0f;
 
+        template <std::size_t Count>
+        void releaseStaleGeneratedHandSuppressionLeases(
+            RE::hknpWorld* world,
+            const Hand& hand,
+            hand_collision_suppression_math::SuppressionSet<Count>& suppressionSet,
+            collision_suppression_registry::CollisionSuppressionOwner owner,
+            const char* context)
+        {
+            if (!world) {
+                return;
+            }
+
+            const auto handContainsBody = [&](std::uint32_t bodyId) {
+                if (bodyId == collision_suppression_registry::kInvalidBodyId) {
+                    return false;
+                }
+
+                const std::uint32_t colliderCount =
+                    hand.getHandColliderBodyCount();
+                if (colliderCount > 0) {
+                    for (std::uint32_t index = 0;
+                         index < colliderCount;
+                         ++index) {
+                        if (hand.getHandColliderBodyIdAtomic(index) == bodyId) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                return hand.hasCollisionBody() &&
+                       hand.getCollisionBodyId().value == bodyId;
+            };
+
+            for (auto& entry : suppressionSet.entries) {
+                if (!entry.active || handContainsBody(entry.bodyId)) {
+                    continue;
+                }
+
+                const auto releaseResult =
+                    collision_suppression_registry::
+                        globalCollisionSuppressionRegistry()
+                            .release(
+                                world,
+                                entry.bodyId,
+                                owner,
+                                context);
+                if (!releaseResult.readFailed) {
+                    hand_collision_suppression_math::clear(entry);
+                }
+            }
+        }
+
         std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkRegistered{ false };
         std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged{ false };
 
@@ -2611,6 +2664,17 @@ namespace rock
         }
 
         updateHandCollisions(frame);
+        /*
+         * Hand collider creation/rebuild happens in updateHandCollisions. Re-run
+         * active weapon-owner leases immediately so a new body ID cannot reach
+         * the next physics step without the owning-hand suppression.
+         */
+        if (rightHandWeaponAuthorityActive) {
+            suppressRightHandCollisionForDominantWeapon(hknp);
+        }
+        if (rightPartGripActive) {
+            suppressHandCollisionForWeaponSupport(hknp, false);
+        }
         logPalmClockSampleForHand("game-after-hand-collider-queue",
             _rightHand,
             hknp,
@@ -4131,7 +4195,17 @@ namespace rock
          */
         _rightDominantWeaponCollisionSuppressed.store(true, std::memory_order_release);
 
-        if (!world || !_rightHand.hasCollisionBody()) {
+        if (!world) {
+            return;
+        }
+        releaseStaleGeneratedHandSuppressionLeases(
+            world,
+            _rightHand,
+            _rightDominantWeaponCollisionSuppression,
+            collision_suppression_registry::
+                CollisionSuppressionOwner::WeaponDominantHand,
+            "dominant-weapon-hand-stale");
+        if (!_rightHand.hasCollisionBody()) {
             return;
         }
 
@@ -4241,6 +4315,17 @@ namespace rock
         auto& suppressedFlag = isLeft ? _leftWeaponSupportCollisionSuppressed : _rightWeaponSupportCollisionSuppressed;
         suppressedFlag.store(true, std::memory_order_release);
 
+        if (!world) {
+            return;
+        }
+        releaseStaleGeneratedHandSuppressionLeases(
+            world,
+            hand,
+            suppressionSet,
+            collision_suppression_registry::
+                CollisionSuppressionOwner::WeaponSupportHand,
+            "weapon-support-hand-stale");
+
         auto bodyAlreadySuppressed = [&](std::uint32_t bodyId) {
             return bodyId == INVALID_CONTACT_BODY_ID ||
                    hand_collision_suppression_math::findSuppressionState(suppressionSet, bodyId) != nullptr;
@@ -4275,7 +4360,7 @@ namespace rock
             return;
         }
 
-        if (!world || !hand.hasCollisionBody()) {
+        if (!hand.hasCollisionBody()) {
             return;
         }
 
