@@ -20,12 +20,16 @@
         outSnapshot.skeletonGeneration = _skeletonGenerationAtomic.load(std::memory_order_acquire);
         outSnapshot.providerGeneration = _providerGenerationAtomic.load(std::memory_order_acquire);
         outSnapshot.stableFrameCount = _stableFrameCountAtomic.load(std::memory_order_acquire);
-        outSnapshot.deltaSeconds =
-            std::isfinite(_deltaTime) && _deltaTime > 0.0f ?
-                _deltaTime :
-                (1.0f / 90.0f);
-        outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-            ::rock::provider::RockProviderFrameEnrichmentFlagV1::DeltaSecondsValid);
+        /*
+         * Truthful timing publication: the validity flag is set only for a
+         * measured game delta. Consumers guard for non-positive values, so an
+         * unmeasurable frame publishes zero instead of a fabricated rate.
+         */
+        outSnapshot.deltaSeconds = runtime.timing.valid ? runtime.timing.deltaSeconds : 0.0f;
+        if (runtime.timing.valid) {
+            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderFrameEnrichmentFlagV1::DeltaSecondsValid);
+        }
         if (auto* playerNodes = f4vr::getPlayerNodes();
             playerNodes && playerNodes->HmdNode &&
             finiteNiTransform(playerNodes->HmdNode->world)) {

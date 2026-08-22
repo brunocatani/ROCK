@@ -5642,7 +5642,7 @@ namespace rock::provider
 
     void dispatchAnimationPhaseCallbacksV1(
         const RockProviderAnimationPhaseV1 phase,
-        const float deltaSeconds)
+        const game_frame_timing_policy::GameFrameTiming& timing)
     {
         if (!claimOrValidateAnimationOwnerThread()) {
             if (!s_animationThreadMismatchLogged.exchange(
@@ -5679,11 +5679,12 @@ namespace rock::provider
         RockProviderAnimationPhaseContextV1 context{};
         context.phase = phase;
         context.frameIndex = phaseFrameIndex;
-        context.deltaSeconds =
-            std::isfinite(deltaSeconds) && deltaSeconds > 0.0f &&
-                    deltaSeconds <= 0.1f ?
-                deltaSeconds :
-                (1.0f / 90.0f);
+        /*
+         * Truthful timing publication: the central game clock already
+         * sanitized the delta, so an unmeasurable frame publishes zero
+         * elapsed time instead of a fabricated nominal-rate value.
+         */
+        context.deltaSeconds = timing.valid ? timing.deltaSeconds : 0.0f;
         context.activeNativeAnimationAuthorityFlags =
             s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
 

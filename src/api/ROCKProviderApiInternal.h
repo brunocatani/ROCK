@@ -2,6 +2,7 @@
 
 #include "api/ROCKProviderApi.h"
 #include "api/TouchGrabRegistry.h"
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
 
 namespace rock
 {
@@ -61,9 +62,15 @@ namespace rock::provider
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
     std::uint32_t currentNativeAnimationAuthorityFlagsV1();
     void refreshNativeAnimationAuthorityLeasesV1();
+    /*
+     * Dispatches one animation phase with the frame's shared timing identity.
+     * The published context deltaSeconds is truthful: an unmeasurable frame
+     * publishes zero, never a fabricated nominal-rate value. Every workspace
+     * consumer guards for non-positive deltas before integrating.
+     */
     void dispatchAnimationPhaseCallbacksV1(
         RockProviderAnimationPhaseV1 phase,
-        float deltaSeconds);
+        const game_frame_timing_policy::GameFrameTiming& timing);
     bool resolveWeaponPartTargetV1(
         const RockProviderWeaponPartTargetQueryV1& query,
         RockProviderWeaponPartTargetResolutionV1& outResolution);

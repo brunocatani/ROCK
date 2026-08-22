@@ -1,4 +1,4 @@
-PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds)
+PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
 {
     /*
      * Frame-context construction is separated from the main update loop so
@@ -9,7 +9,13 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     PhysicsFrameContext frame{};
     frame.bhkWorld = bhk;
     frame.hknpWorld = hknp;
-    frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);
+    /*
+     * One central timing identity per frame: the runtime snapshot's timing is
+     * authoritative and its legacy sanitized delta is copied without local
+     * resanitization.
+     */
+    frame.timing = runtime_state::currentFrame().timing;
+    frame.deltaSeconds = runtime_state::currentFrame().deltaSeconds;
     frame.worldReady = bhk && hknp;
     frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
     const auto animationAuthorityFlags =

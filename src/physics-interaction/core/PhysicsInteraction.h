@@ -232,7 +232,7 @@ namespace rock
 
         static RE::hknpWorld* getHknpWorld(RE::bhkWorld* bhk);
 
-        PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds);
+        PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
 
         bool generatedBodiesExistForConfig() const;
         bool generatedBodiesMatchLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const;
@@ -485,7 +485,9 @@ namespace rock
         int _handColliderCreateRetryFrames = 0;
         int _bodyBoneColliderCreateRetryFrames = 0;
 
-        float _deltaTime = 1.0f / 90.0f;
+        // Central sanitized game delta captured each update; zero until the
+        // first frame is measured.
+        float _deltaTime = 0.0f;
 
         std::atomic<int> _contactLogCounter{ 0 };
         std::atomic<RE::hknpWorld*> _contactEventWorld{ nullptr };
@@ -806,7 +808,7 @@ namespace rock
         bool _parityEnabledLogged = false;
         bool _runtimeScaleLogged = false;
         std::atomic<std::uint64_t> _palmClockGameFrameIndex{ 0 };
-        std::atomic<float> _palmClockGameDeltaSeconds{ 1.0f / 90.0f };
+        std::atomic<float> _palmClockGameDeltaSeconds{ 0.0f };
         struct GrabTransformTelemetryState
         {
             bool active = false;

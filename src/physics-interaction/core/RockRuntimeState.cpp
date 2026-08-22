@@ -21,6 +21,21 @@ namespace rock::runtime_state
         f4vr::GameMenusHandler s_gameMenus;
         bool s_menuHandlerInitialized = false;
         RuntimeFrameSnapshot s_snapshot{};
+
+        /*
+         * Menu state is sampled exactly once per frame, in beginFrameTiming,
+         * so the timing snapshot's pause flag and the runtime snapshot's menu
+         * flags describe the same instant. updateFrame consumes the sample.
+         */
+        struct FrameMenuSample
+        {
+            bool valid = false;
+            bool inputMenuBlocking = false;
+            bool scopeMenuOpen = false;
+            bool loadingMenuOpen = false;
+            bool gameStopped = false;
+        };
+        FrameMenuSample s_frameMenuSample{};
         runtime_state_policy::PlayerSpaceTrackerState s_playerSpaceTracker{};
         DirectSkeletonBoneReader s_skeletonReader;
 
@@ -181,20 +196,38 @@ namespace rock::runtime_state
         s_playerSpaceTracker = {};
         s_skeletonReader.resetCache();
         s_snapshot = {};
+        s_frameMenuSample = {};
+    }
+
+    const game_frame_timing_policy::GameFrameTiming& beginFrameTiming(const bool menuInputBlocking)
+    {
+        s_frameMenuSample.valid = true;
+        s_frameMenuSample.inputMenuBlocking = menuInputBlocking;
+        s_frameMenuSample.scopeMenuOpen = s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
+        s_frameMenuSample.loadingMenuOpen = s_menuHandlerInitialized && s_gameMenus.isLoadingMenuOpen();
+        s_frameMenuSample.gameStopped = s_menuHandlerInitialized && s_gameMenus.isGameStopped();
+        return game_timing::beginGameFrame(s_frameMenuSample.gameStopped || menuInputBlocking);
     }
 
     void updateFrame(const RuntimeFrameInput& input)
     {
+        if (!s_frameMenuSample.valid) {
+            // The game-loop hook begins frame timing before any phase; this
+            // fail-closed path only protects an out-of-order caller from
+            // silently reusing a stale frame identity.
+            (void)beginFrameTiming(false);
+        }
+
         RuntimeFrameSnapshot next{};
         next.frameIndex = s_snapshot.frameIndex + 1;
         next.playerAvailable = hasPlayer();
         next.weaponDrawn = sampleWeaponDrawn();
-        next.inputMenuBlocking = input.menuInputBlocking;
-        next.localScopeMenuOpen = s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
-        next.localLoadingMenuOpen = s_menuHandlerInitialized && s_gameMenus.isLoadingMenuOpen();
-        next.localGameStopped = s_menuHandlerInitialized && s_gameMenus.isGameStopped();
+        next.inputMenuBlocking = s_frameMenuSample.inputMenuBlocking;
+        next.localScopeMenuOpen = s_frameMenuSample.scopeMenuOpen;
+        next.localLoadingMenuOpen = s_frameMenuSample.loadingMenuOpen;
+        next.localGameStopped = s_frameMenuSample.gameStopped;
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
-        next.timing = game_timing::beginGameFrame(next.localMenuBlocking);
+        next.timing = game_timing::currentFrameTiming();
         /*
          * Legacy compatibility value: identical to the historical sanitized
          * delta (ordinary measured frames pass through, everything else
@@ -209,6 +242,7 @@ namespace rock::runtime_state
         next.visualSkeletonReadyHint = input.visualSkeletonReadyHint;
         next.playerSpace = samplePlayerSpace();
         next.localSkeletonReady = sampleLocalSkeletonReady(next);
+        s_frameMenuSample.valid = false;
         s_snapshot = next;
     }
 
@@ -230,10 +264,5 @@ namespace rock::runtime_state
     bool isCompatibilityConfigBlocked()
     {
         return s_snapshot.compatibilityConfigBlocking;
-    }
-
-    float deltaSeconds()
-    {
-        return s_snapshot.deltaSeconds;
     }
 }

@@ -2,6 +2,7 @@
 
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -603,6 +604,21 @@ namespace rock::authored_weapon_grip_capture
             return true;
         }
 
+        /*
+         * The graph-output phase fires inside the native game update, between
+         * the previous frame's Complete and the next frame's BeforeRock. It
+         * attributes no elapsed time: consumers order against it, they do not
+         * integrate it, so the dispatched timing is zero-duration and invalid.
+         */
+        [[nodiscard]] game_frame_timing_policy::GameFrameTiming makeGraphOutputPhaseTiming()
+        {
+            game_frame_timing_policy::GameFrameTiming timing = game_timing::currentFrameTiming();
+            timing.rawDeltaSeconds = 0.0f;
+            timing.deltaSeconds = 0.0f;
+            timing.valid = false;
+            return timing;
+        }
+
         void onPostUpdateAnimationGraphManager(void* holder)
         {
 #if defined(_MSC_VER)
@@ -612,7 +628,7 @@ namespace rock::authored_weapon_grip_capture
                 // whether it must yield for this exact graph sample.
                 provider::dispatchAnimationPhaseCallbacksV1(
                     provider::RockProviderAnimationPhaseV1::NativeGraphOutput,
-                    0.0f);
+                    makeGraphOutputPhaseTiming());
                 captureAuthoredSupportGraphPose();
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 s_captureFault.store(true, std::memory_order_release);
@@ -625,7 +641,7 @@ namespace rock::authored_weapon_grip_capture
 #else
             provider::dispatchAnimationPhaseCallbacksV1(
                 provider::RockProviderAnimationPhaseV1::NativeGraphOutput,
-                0.0f);
+                makeGraphOutputPhaseTiming());
             captureAuthoredSupportGraphPose();
 #endif
             if (s_originalPostUpdate) {

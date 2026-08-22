@@ -20,7 +20,6 @@ namespace rock::runtime_state
 
     struct RuntimeFrameInput
     {
-        bool menuInputBlocking = false;
         bool visualAuthorityAvailable = false;
         bool visualSkeletonReadyHint = false;
         bool compatibilityConfigBlocking = false;
@@ -37,7 +36,7 @@ namespace rock::runtime_state
          * consumer is migrated.
          */
         game_frame_timing_policy::GameFrameTiming timing{};
-        float deltaSeconds = 1.0f / 90.0f;
+        float deltaSeconds = 0.0f;
         bool playerAvailable = false;
         bool weaponDrawn = false;
         bool localMenuBlocking = false;
@@ -56,11 +55,19 @@ namespace rock::runtime_state
 
     void initialize();
     void resetTransientState();
+
+    /*
+     * Creates the game-frame timing identity for this frame and samples menu
+     * state once. Call at the top of the game-loop hook, after the original
+     * game call returns and before any animation-phase dispatch; every phase
+     * and updateFrame() then share this one snapshot.
+     */
+    const game_frame_timing_policy::GameFrameTiming& beginFrameTiming(bool menuInputBlocking);
+
     void updateFrame(const RuntimeFrameInput& input);
 
     [[nodiscard]] const RuntimeFrameSnapshot& currentFrame();
     [[nodiscard]] bool isLocalSkeletonReady();
     [[nodiscard]] bool isPhysicsMenuBlocked();
     [[nodiscard]] bool isCompatibilityConfigBlocked();
-    [[nodiscard]] float deltaSeconds();
 }

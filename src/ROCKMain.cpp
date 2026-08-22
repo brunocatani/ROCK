@@ -290,9 +290,7 @@ namespace
 
         input_remap_runtime::installInputRemapHooks();
 
-        const bool menuInputActive = input_remap_runtime::isMenuInputActive();
         runtime_state::updateFrame(runtime_state::RuntimeFrameInput{
-            .menuInputBlocking = menuInputActive,
             .visualAuthorityAvailable = frik_visual_authority::isAvailable(),
             .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
@@ -580,10 +578,18 @@ namespace
             s_originalGameLoopFunc(rcx);
         }
 
+        /*
+         * One game-frame timing identity is created here, before any phase
+         * callback. BeforeRock, ROCK update, AfterRock, Complete, and this
+         * frame's provider publication all share this immutable snapshot.
+         */
+        const auto& frameTiming = runtime_state::beginFrameTiming(
+            input_remap_runtime::isMenuInputActive());
+
         rock::provider::refreshNativeAnimationAuthorityLeasesV1();
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::BeforeRock,
-            runtime_state::currentFrame().deltaSeconds);
+            frameTiming);
 
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
@@ -597,7 +603,7 @@ namespace
 
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::AfterRock,
-            runtime_state::currentFrame().deltaSeconds);
+            frameTiming);
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
             s_physicsInteraction) {
             s_physicsInteraction->
@@ -605,7 +611,7 @@ namespace
         }
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::Complete,
-            runtime_state::currentFrame().deltaSeconds);
+            frameTiming);
     }
 
     bool hookMainLoop()

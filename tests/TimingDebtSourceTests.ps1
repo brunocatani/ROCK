@@ -41,14 +41,7 @@ if (-not (Test-Path -LiteralPath $srcRoot)) {
 $nominalRatePattern = '1\s*\.\s*0?f?\s*/\s*90(\s*\.\s*0*f?)?'
 
 $nominalRateDebtRegister = @{
-    'src/api/ROCKProviderApi.cpp'                                    = 1
     'src/physics-interaction/core/RockRuntimeStatePolicy.h'          = 1
-    'src/physics-interaction/core/RockRuntimeState.h'                = 1
-    'src/physics-interaction/core/PhysicsFrameContext.h'             = 1
-    'src/physics-interaction/core/PhysicsInteractionFrame.inl'       = 1
-    'src/physics-interaction/core/PhysicsInteractionProvider.inl'    = 1
-    'src/physics-interaction/core/PhysicsInteraction.h'              = 2
-    'src/physics-interaction/core/PhysicsInteraction.cpp'            = 1
     'src/physics-interaction/input/DebugControllerRuntime.cpp'       = 1
     'src/physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h' = 1
     'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h'    = 1

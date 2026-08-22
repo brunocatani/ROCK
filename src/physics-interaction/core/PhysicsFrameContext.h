@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
+
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiNode.h"
@@ -37,7 +39,13 @@ namespace rock
     {
         RE::bhkWorld* bhkWorld = nullptr;
         RE::hknpWorld* hknpWorld = nullptr;
-        float deltaSeconds = 1.0f / 90.0f;
+        /*
+         * Authoritative game-frame clock snapshot for this frame.
+         * deltaSeconds below is the legacy sanitized value kept while
+         * subsystems migrate to explicit timing consumption.
+         */
+        game_frame_timing_policy::GameFrameTiming timing{};
+        float deltaSeconds = 0.0f;
         bool worldReady = false;
         bool menuBlocked = false;
         bool reloadBoundaryActive = false;

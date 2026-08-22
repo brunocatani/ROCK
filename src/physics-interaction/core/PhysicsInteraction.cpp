@@ -2221,11 +2221,12 @@ namespace rock
         // accept-button press replay as a reload frames later (see the API doc).
         input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
 
+        /*
+         * runtime.deltaSeconds is the central sanitized game delta; no local
+         * resanitization. Consumers migrate to runtime.timing individually
+         * with explicit invalid-sample handling.
+         */
         _deltaTime = runtime.deltaSeconds;
-
-        if (_deltaTime <= 0.0f || _deltaTime > 0.1f) {
-            _deltaTime = 1.0f / 90.0f;
-        }
         enforceNativeGrabHapticRuntimeSuppression();
         _dynamicPushElapsedSeconds += _deltaTime;
         if (_dynamicPushCooldownUntil.size() > 512) {
@@ -2414,7 +2415,7 @@ namespace rock
 
         refreshHandBoneCache();
         sampleHandTransformParity();
-        const auto frame = buildFrameContext(bhk, hknp, _deltaTime);
+        const auto frame = buildFrameContext(bhk, hknp);
         _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
