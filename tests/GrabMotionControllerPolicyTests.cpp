@@ -140,6 +140,28 @@ int main()
     ok &= expectNear("high physics rate clamps to minimum force scale", computePhysicsRateForceScale(true, 1.0f / 240.0f, 90.0f, 0.5f, 0.75f, 1.35f), 0.75f, 0.001f);
     ok &= expectNear("invalid physics delta keeps neutral force scale", computePhysicsRateForceScale(true, 0.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.0f, 0.001f);
 
+    /*
+     * Effective substep rates produced by the Havok timing fix for the
+     * supported game frame rates (min physics rate 70 Hz, max 3 substeps):
+     * 45 FPS -> 2 x 90 Hz, 60 FPS -> 2 x 120 Hz, 72 FPS -> 1 x 72 Hz,
+     * 90 FPS -> 1 x 90 Hz, 120 FPS -> 1 x 120 Hz. Force scaling must consume
+     * the EFFECTIVE substep rate, so 45 FPS play lands on the neutral
+     * calibration point and 72 FPS strengthens.
+     */
+    ok &= expectNear("45fps effective 90hz substeps stay neutral", computePhysicsRateForceScale(true, (1.0f / 45.0f) * 0.5f, 90.0f, 0.5f, 0.75f, 1.35f), 1.0f, 0.001f);
+    ok &= expectNear("72hz physics force scale strengthens held motors", computePhysicsRateForceScale(true, 1.0f / 72.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.118034f, 0.001f);
+    ok &= expectNear("60fps effective 120hz substeps soften held motors", computePhysicsRateForceScale(true, (1.0f / 60.0f) * 0.5f, 90.0f, 0.5f, 0.75f, 1.35f), 0.866025f, 0.001f);
+
+    // Unknown physics rate is reported honestly as zero, never as a
+    // pretended nominal measurement.
+    ok &= expectNear("unknown physics delta reports zero hz", computePhysicsHz(0.0f), 0.0f, 0.0f);
+    ok &= expectNear("measured physics delta reports its rate", computePhysicsHz(1.0f / 72.0f), 72.0f, 0.01f);
+
+    // An unmeasured frame holds tau interpolation instead of stepping by a
+    // fabricated nominal delta.
+    ok &= expectNear("unmeasured delta holds tau advance", advanceToward(0.8f, 0.03f, 1.0f, 0.0f), 0.8f, 0.0f);
+    ok &= expectNear("measured delta advances tau", advanceToward(0.8f, 0.03f, 1.0f, 1.0f), 0.03f, 0.001f);
+
     MotorInput scaledAt60Hz = singleHand;
     scaledAt60Hz.physicsRateForceScalingEnabled = true;
     scaledAt60Hz.physicsDeltaSeconds = 1.0f / 60.0f;

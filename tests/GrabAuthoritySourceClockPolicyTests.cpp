@@ -269,30 +269,32 @@ int main()
         ok &= expectTrue("long run keeps a single initialization rebase", phaseLock.rebaseCount == 1);
     }
 
-    // Room-velocity feed-forward: constant-lead prediction of the room component.
+    // Room-velocity feed-forward: per-frame-constant lead prediction of the
+    // room component. The lead value is the clock's measured source interval;
+    // here the math is exercised with a representative 90 Hz interval.
     {
         using rock::grab_authority_source_clock::applyRoomVelocityFeedForward;
-        using rock::grab_authority_source_clock::kFeedForwardLeadSeconds;
+        constexpr float kMeasuredLeadSeconds = 1.0f / 90.0f;
         const RE::NiPoint3 base{ 100.0f, -50.0f, 25.0f };
 
-        // Walking: target advances by exactly v * constant lead.
+        // Walking: target advances by exactly v * lead.
         bool applied = false;
         const RE::NiPoint3 walking =
-            applyRoomVelocityFeedForward(base, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, applied);
+            applyRoomVelocityFeedForward(base, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kMeasuredLeadSeconds, applied);
         ok &= expectTrue("walking feed-forward applies", applied);
-        ok &= expectNear("walking feed-forward x", walking.x, 100.0f + 400.0f * kFeedForwardLeadSeconds, 1e-4f);
+        ok &= expectNear("walking feed-forward x", walking.x, 100.0f + 400.0f * kMeasuredLeadSeconds, 1e-4f);
         ok &= expectNear("walking feed-forward y untouched", walking.y, -50.0f, 1e-6f);
 
-        // The constant lead cancels out of consecutive-substep target
+        // A frame-constant lead cancels out of consecutive-substep target
         // differences: two bases one source step apart, predicted with the
         // SAME lead, differ by exactly the source displacement regardless of
         // how the physics dt was quantized (no vCC*(dt_n - dt_prev) noise).
         bool appliedA = false;
         bool appliedB = false;
         const RE::NiPoint3 stepA =
-            applyRoomVelocityFeedForward(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, appliedA);
+            applyRoomVelocityFeedForward(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kMeasuredLeadSeconds, appliedA);
         const RE::NiPoint3 stepB =
-            applyRoomVelocityFeedForward(RE::NiPoint3{ 4.4f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, appliedB);
+            applyRoomVelocityFeedForward(RE::NiPoint3{ 4.4f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kMeasuredLeadSeconds, appliedB);
         ok &= expectTrue("constant-lead pair applies", appliedA && appliedB);
         ok &= expectNear("constant lead cancels in the difference", stepB.x - stepA.x, 4.4f, 1e-5f);
 
@@ -409,6 +411,88 @@ int main()
         std::printf("smoother: raw vel std=%.2f gu/s, smoothed vel std=%.2f gu/s (%.0f%% of raw), steady lag=%.2f gu\n",
             rawStd, smStd, 100.0 * smStd / rawStd, maxLag);
         ok &= expectTrue("smoother reduces commanded-velocity quantization", smStd < rawStd * 0.6);
+    }
+
+    /*
+     * Feed-forward lead: the measured, jitter-filtered game-source interval.
+     * One source frame of prediction at every supported rate, zero before a
+     * validated cadence exists, and hitches or teleports never poison it.
+     */
+    {
+        // Fail closed: no lead before any validated segment.
+        GameClockPhaseLock phaseLock;
+        ok &= expectNear("no cadence yields zero lead", phaseLock.feedForwardLeadSeconds(), 0.0f, 0.0f);
+        std::uint64_t sequence = 0;
+        phaseLock.advanceSource(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        // The first sample is rebase-only: still no measured segment interval.
+        ok &= expectNear("first sample yields zero lead", phaseLock.feedForwardLeadSeconds(), 0.0f, 0.0f);
+    }
+
+    // Steady cadences converge to one source-frame of lead at every rate.
+    for (const float cadence : { 1.0f / 45.0f, 1.0f / 60.0f, 1.0f / 72.0f, 1.0f / 90.0f, 1.0f / 120.0f }) {
+        GameClockPhaseLock phaseLock;
+        std::uint64_t sequence = 0;
+        float x = 0.0f;
+        for (int frame = 0; frame < 60; ++frame) {
+            x += 1.0f;
+            phaseLock.advanceSource(RE::NiPoint3{ x, 0.0f, 0.0f }, identity, cadence, ++sequence);
+        }
+        ok &= expectNear("steady cadence lead equals source interval", phaseLock.feedForwardLeadSeconds(), cadence, 0.0002f);
+    }
+
+    // Irregular pacing: alternating 10/12 ms intervals keep the lead near the
+    // mean and successive leads move by far less than the interval jitter, so
+    // pacing noise cannot enter consecutive target displacements.
+    {
+        GameClockPhaseLock phaseLock;
+        std::uint64_t sequence = 0;
+        float x = 0.0f;
+        float previousLead = 0.0f;
+        float maxLeadStep = 0.0f;
+        for (int frame = 0; frame < 200; ++frame) {
+            x += 1.0f;
+            const float interval = (frame & 1) != 0 ? 0.012f : 0.010f;
+            phaseLock.advanceSource(RE::NiPoint3{ x, 0.0f, 0.0f }, identity, interval, ++sequence);
+            const float lead = phaseLock.feedForwardLeadSeconds();
+            if (frame > 20) {
+                maxLeadStep = (std::max)(maxLeadStep, std::fabs(lead - previousLead));
+            }
+            previousLead = lead;
+        }
+        ok &= expectNear("jittered cadence lead stays near the mean", previousLead, 0.011f, 0.0015f);
+        ok &= expectTrue("lead moves far less than the interval jitter", maxLeadStep < 0.0004f);
+    }
+
+    // A hitch interval takes the rebase path and must not enter the filter;
+    // a translation-jump rebase keeps the cadence too.
+    {
+        GameClockPhaseLock phaseLock;
+        std::uint64_t sequence = 0;
+        float x = 0.0f;
+        for (int frame = 0; frame < 30; ++frame) {
+            x += 1.0f;
+            phaseLock.advanceSource(RE::NiPoint3{ x, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        }
+        const float leadBefore = phaseLock.feedForwardLeadSeconds();
+        phaseLock.advanceSource(RE::NiPoint3{ x + 1.0f, 0.0f, 0.0f }, identity, 0.25f, ++sequence);
+        ok &= expectNear("hitch interval does not poison the lead", phaseLock.feedForwardLeadSeconds(), leadBefore, 1.0e-6f);
+        phaseLock.advanceSource(RE::NiPoint3{ x + 500.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        ok &= expectNear("teleport rebase keeps the cadence", phaseLock.feedForwardLeadSeconds(), leadBefore, 1.0e-6f);
+    }
+
+    // The lead is bounded for very slow cadences.
+    {
+        GameClockPhaseLock phaseLock;
+        std::uint64_t sequence = 0;
+        float x = 0.0f;
+        for (int frame = 0; frame < 60; ++frame) {
+            x += 1.0f;
+            phaseLock.advanceSource(RE::NiPoint3{ x, 0.0f, 0.0f }, identity, 0.05f, ++sequence);
+        }
+        ok &= expectNear("slow cadence lead is bounded",
+            phaseLock.feedForwardLeadSeconds(),
+            rock::grab_authority_source_clock::kMaxFeedForwardLeadSeconds,
+            1.0e-6f);
     }
 
     return ok ? 0 : 1;

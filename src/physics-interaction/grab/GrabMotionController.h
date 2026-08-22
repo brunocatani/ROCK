@@ -62,9 +62,14 @@ namespace rock::grab_motion_controller
         float currentLinearTau = 0.03f;
         float currentAngularTau = 0.03f;
         float tauLerpSpeed = 0.5f;
-        float deltaTime = 1.0f / 90.0f;
+        // Measured game-frame delta; zero (no tau advance) until measured.
+        float deltaTime = 0.0f;
         bool physicsRateForceScalingEnabled = false;
-        float physicsDeltaSeconds = 1.0f / 90.0f;
+        // Measured physics substep delta; zero means unknown rate and yields
+        // a neutral force scale.
+        float physicsDeltaSeconds = 0.0f;
+        // Named calibration reference: the physics rate the grab force tuning
+        // was authored at. A rate baseline, not a clock fallback.
         float physicsRateReferenceHz = 90.0f;
         float physicsRateForceScaleExponent = 0.5f;
         float physicsRateMinForceScale = 0.75f;
@@ -90,7 +95,8 @@ namespace rock::grab_motion_controller
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
         float fadeFactor = 1.0f;
-        float physicsHz = 90.0f;
+        // Zero until a measured physics delta produced a rate.
+        float physicsHz = 0.0f;
         float physicsRateForceScale = 1.0f;
     };
 
@@ -157,7 +163,12 @@ namespace rock::grab_motion_controller
             return target;
         }
 
-        const float dt = safePositive(deltaTime, 1.0f / 90.0f);
+        // An unmeasured frame advances no time: hold instead of stepping by a
+        // fabricated nominal rate.
+        const float dt = safePositive(deltaTime, 0.0f);
+        if (dt <= 0.0f) {
+            return current;
+        }
         const float step = speed * dt;
         const float delta = target - current;
         if (std::abs(delta) <= step) {
@@ -196,15 +207,18 @@ namespace rock::grab_motion_controller
         return (std::max)(sanitizedMass, sanitizedFloor);
     }
 
-    inline float computePhysicsHz(float physicsDeltaSeconds, float fallbackHz = 90.0f)
+    // Returns the measured physics rate, or zero when the delta is
+    // unmeasured. Zero means "unknown" honestly; force scaling treats it as
+    // the neutral calibration point.
+    inline float computePhysicsHz(float physicsDeltaSeconds)
     {
         const float sanitizedDelta = safePositive(physicsDeltaSeconds, 0.0f);
         if (sanitizedDelta <= 0.0f) {
-            return safePositive(fallbackHz, 90.0f);
+            return 0.0f;
         }
 
         const float hz = 1.0f / sanitizedDelta;
-        return std::isfinite(hz) && hz > 0.0f ? hz : safePositive(fallbackHz, 90.0f);
+        return std::isfinite(hz) && hz > 0.0f ? hz : 0.0f;
     }
 
     inline float computePhysicsRateForceScale(
@@ -220,11 +234,13 @@ namespace rock::grab_motion_controller
         }
 
         const float sanitizedReferenceHz = safePositive(referenceHz, 90.0f);
-        const float physicsHz = computePhysicsHz(physicsDeltaSeconds, sanitizedReferenceHz);
+        const float physicsHz = computePhysicsHz(physicsDeltaSeconds);
         const float sanitizedExponent = (std::isfinite(exponent) && exponent >= 0.0f) ? exponent : 0.5f;
         const float lowerScale = safePositive((std::min)(minScale, maxScale), 1.0f);
         const float upperScale = (std::max)(lowerScale, safePositive((std::max)(minScale, maxScale), 1.0f));
         if (physicsHz <= 0.0f || sanitizedReferenceHz <= 0.0f) {
+            // Unknown physics rate: neutral scale (the calibration point),
+            // never a pretended 90 Hz measurement.
             return 1.0f;
         }
 
@@ -706,7 +722,7 @@ namespace rock::grab_motion_controller
         const float baseForce = (std::max)(0.0f, finiteOr(input.baseMaxForce, 0.0f));
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
-        out.physicsHz = computePhysicsHz(input.physicsDeltaSeconds, input.physicsRateReferenceHz);
+        out.physicsHz = computePhysicsHz(input.physicsDeltaSeconds);
         out.physicsRateForceScale = computePhysicsRateForceScale(
             input.physicsRateForceScalingEnabled,
             input.physicsDeltaSeconds,

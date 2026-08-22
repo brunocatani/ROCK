@@ -1449,8 +1449,11 @@ namespace rock::pull_motion_math
         if (!std::isfinite(damping) || damping <= 0.0f) {
             return 1.0f;
         }
-        const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : (1.0f / 90.0f);
-        return 1.0f / (1.0f + damping * dt);
+        if (!std::isfinite(deltaTime) || deltaTime <= 0.0f) {
+            // Unmeasured frame: no elapsed time, no damping decay.
+            return 1.0f;
+        }
+        return 1.0f / (1.0f + damping * deltaTime);
     }
 
     template <class Vec3>

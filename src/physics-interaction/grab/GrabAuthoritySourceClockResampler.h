@@ -78,16 +78,27 @@ namespace rock::grab_authority_source_clock
     constexpr float kFeedForwardMinSpeedGameUnitsPerSecond = 1.0f;
     constexpr float kFeedForwardMaxSpeedGameUnitsPerSecond = 2000.0f;
     /*
-     * CONSTANT prediction lead. Predicting each substep's end with that
-     * substep's own quantized dt puts the dt-DIFFERENCE into consecutive
-     * target displacements (dTgt = vSrc*dt_n + vCC*(dt_n - dt_prev)), which
-     * reads as +-vCC*2ms velocity spikes on every 10/11/12ms transition --
-     * measured 2026-07-13: target speed 467 on dt-up vs 349 on dt-down at a
-     * 412 gu/s walk. A constant lead cancels out of the difference, so the
-     * commanded velocity stays exactly the source velocity; the cost is a
-     * sub-2ms constant phase error, invisible next to the removed noise.
+     * Feed-forward lead bounds. The lead compensates the ONE-SOURCE-FRAME
+     * sampling lag of the room component, so its correct magnitude is the
+     * measured game-source interval — not a fixed nominal rate. It is derived
+     * from the jitter-filtered source interval below; these bounds keep a
+     * mis-measured cadence from predicting too far ahead.
+     *
+     * The lead must stay CONSTANT WITHIN a frame: predicting each substep's
+     * end with that substep's own quantized dt puts the dt-DIFFERENCE into
+     * consecutive target displacements (dTgt = vSrc*dt_n + vCC*(dt_n -
+     * dt_prev)), which reads as +-vCC*2ms velocity spikes on every 10/11/12ms
+     * transition -- measured 2026-07-13: target speed 467 on dt-up vs 349 on
+     * dt-down at a 412 gu/s walk. The filtered per-frame lead changes only by
+     * the filtered cadence drift (sub-0.1ms per frame at steady pacing), so
+     * frame-boundary jitter never enters consecutive displacements either.
      */
-    constexpr float kFeedForwardLeadSeconds = 1.0f / 90.0f;
+    constexpr float kMaxFeedForwardLeadSeconds = 1.0f / 30.0f;
+    // Exponential filter weight per accepted source sample (~10-sample
+    // smoothing): fast enough to track a real rate change within a fraction
+    // of a second, slow enough that per-frame pacing jitter moves the lead by
+    // well under 0.1 ms.
+    constexpr float kSourceIntervalFilterAlpha = 0.1f;
 
     // angle(a^T * b) via trace(a^T * b) = element-wise dot product; identical for
     // row-major and column-major storage because both operands share it.
@@ -240,6 +251,13 @@ namespace rock::grab_authority_source_clock
         // used only to derive the smooth game-clock segment velocity for the
         // opt-in bounded velocity smoother. Not part of the phase-lock playback.
         float segmentSourceDeltaSeconds = 0.0f;
+        /*
+         * Jitter-filtered measured game-source interval (exponential average
+         * of validated segment intervals). Zero until the first validated
+         * segment. Survives rebases: a teleport or snap turn interrupts the
+         * position path, not the source cadence.
+         */
+        float filteredSourceIntervalSeconds = 0.0f;
         std::uint32_t rebaseCount = 0;
         std::uint32_t duplicateSourceCount = 0;
         std::uint32_t invalidSourceCount = 0;
@@ -305,6 +323,29 @@ namespace rock::grab_authority_source_clock
             currentRotation = rotation;
             playedFraction = 0.0f;
             segmentSourceDeltaSeconds = sourceDeltaSeconds;
+            // Only validated ordinary intervals feed the cadence filter;
+            // hitches and invalid samples took the rebase paths above.
+            filteredSourceIntervalSeconds = filteredSourceIntervalSeconds > 0.0f ?
+                filteredSourceIntervalSeconds +
+                    kSourceIntervalFilterAlpha * (sourceDeltaSeconds - filteredSourceIntervalSeconds) :
+                sourceDeltaSeconds;
+        }
+
+        /*
+         * One-source-frame prediction lead for the room-velocity feed-forward:
+         * the filtered, bounded measured game-source interval. Zero (which
+         * disables the feed-forward) until a validated cadence exists, so an
+         * unmeasured source never predicts by a fabricated rate.
+         */
+        float feedForwardLeadSeconds() const noexcept
+        {
+            if (!initialized || !(filteredSourceIntervalSeconds > 0.0f) ||
+                !std::isfinite(filteredSourceIntervalSeconds)) {
+                return 0.0f;
+            }
+            return filteredSourceIntervalSeconds < kMaxFeedForwardLeadSeconds ?
+                filteredSourceIntervalSeconds :
+                kMaxFeedForwardLeadSeconds;
         }
 
         // Smooth game-clock velocity of the current segment (game units/second):

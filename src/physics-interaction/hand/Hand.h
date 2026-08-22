@@ -1010,7 +1010,8 @@ namespace rock
         void recordHeldObjectVelocitySample(RE::hknpWorld* world);
 
         ActiveConstraint _activeConstraint;
-        std::atomic<float> _lastGrabPhysicsHz{ 90.0f };
+        // Zero until a measured physics delta produced a rate (telemetry).
+        std::atomic<float> _lastGrabPhysicsHz{ 0.0f };
         std::atomic<float> _lastGrabPhysicsRateForceScale{ 1.0f };
         BethesdaPhysicsBody _grabAuthorityProxy;
         RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;

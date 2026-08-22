@@ -6493,7 +6493,9 @@ namespace rock
                 .proxyWorld = proxyWorldTransform,
                 .rawHandWorld = rawHandWorldTransform,
                 .proxyFrameSource = "grabStartLivePalmAnchor",
-                .deltaTime = 1.0f / 90.0f,
+                // The first sample is rebase-only in the source clock (no
+                // segment exists yet), so it carries no fabricated interval.
+                .deltaTime = 0.0f,
                 .forceFadeInTime = g_rockConfig.rockGrabForceFadeInTime,
                 .tauMin = g_rockConfig.rockGrabTauMin,
                 .grabPositionErrorGameUnits = 0.0f,
@@ -12886,6 +12888,7 @@ namespace rock
         grab_authority_source_clock::ResampleAction resampleAction = grab_authority_source_clock::ResampleAction::Hold;
         std::uint32_t resampleRebaseCount = 0;
         bool roomFeedForwardApplied = false;
+        float roomFeedForwardLeadForLog = 0.0f;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
         float driveDelta = 0.0f;
         {
@@ -12972,11 +12975,19 @@ namespace rock
             const bool liveLocomotionVelocityOk =
                 (g_rockConfig.rockGrabRoomVelocityFeedForward || g_rockConfig.rockGrabLocomotionJagCorrection) &&
                 character_controller_runtime::tryGetPlayerLocomotionVelocityRawGameUnits(liveLocomotionVelocity);
+            /*
+             * The lead is the measured, jitter-filtered game-source interval:
+             * one source frame of room-velocity prediction at any frame rate,
+             * constant within the frame (see the resampler's lead contract).
+             */
+            const float roomFeedForwardLeadSeconds =
+                _grabAuthoritySourceClock.feedForwardLeadSeconds();
+            roomFeedForwardLeadForLog = roomFeedForwardLeadSeconds;
             if (g_rockConfig.rockGrabRoomVelocityFeedForward && liveLocomotionVelocityOk) {
                 pending.proxyWorld.translate = grab_authority_source_clock::applyRoomVelocityFeedForward(
                     pending.proxyWorld.translate,
                     liveLocomotionVelocity,
-                    grab_authority_source_clock::kFeedForwardLeadSeconds,
+                    roomFeedForwardLeadSeconds,
                     roomFeedForwardApplied);
             }
             /*
@@ -13582,7 +13593,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} ffwd={} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} ffwd={} ffwdLead={:.4f} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -13594,6 +13605,7 @@ namespace rock
                 grab_authority_source_clock::resampleActionName(resampleAction),
                 resampleRebaseCount,
                 roomFeedForwardApplied ? "on" : "off",
+                roomFeedForwardLeadForLog,
                 pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,

@@ -379,9 +379,12 @@ namespace rock::held_object_physics_math
         return std::sqrt(lengthSquared(value));
     }
 
-    inline float safeDeltaTime(float deltaTime)
+    // An unmeasurable frame contributes zero time: velocity estimates
+    // invalidate, dwell accumulation holds, and smoothing does not advance.
+    // Nothing here fabricates a nominal-rate delta.
+    inline float measuredDeltaOrZero(float deltaTime)
     {
-        return (std::isfinite(deltaTime) && deltaTime > 0.00001f) ? deltaTime : (1.0f / 90.0f);
+        return (std::isfinite(deltaTime) && deltaTime > 0.00001f) ? deltaTime : 0.0f;
     }
 
     inline float finitePositiveOrZero(float value)
@@ -411,8 +414,13 @@ namespace rock::held_object_physics_math
     template <class Vec3>
     inline Vec3 gameUnitsDeltaToHavokVelocity(const Vec3& deltaGameUnits, float deltaTime, float havokToGameScale = physics_scale::kFallbackHavokToGame)
     {
+        const float dt = measuredDeltaOrZero(deltaTime);
+        if (dt <= 0.0f) {
+            // No measured interval: no velocity claim.
+            return makeVector<Vec3>(0.0f, 0.0f, 0.0f);
+        }
         const float unitsPerHavok = physics_scale::isUsableScale(havokToGameScale) ? havokToGameScale : physics_scale::kFallbackHavokToGame;
-        const float scale = 1.0f / (unitsPerHavok * safeDeltaTime(deltaTime));
+        const float scale = 1.0f / (unitsPerHavok * dt);
         return makeVector<Vec3>(deltaGameUnits.x * scale, deltaGameUnits.y * scale, deltaGameUnits.z * scale);
     }
 
@@ -555,7 +563,7 @@ namespace rock::held_object_physics_math
         }
 
         const float current = std::isfinite(currentSeconds) && currentSeconds > 0.0f ? currentSeconds : 0.0f;
-        return current + safeDeltaTime(deltaTime);
+        return current + measuredDeltaOrZero(deltaTime);
     }
 
     inline bool deviationExceeded(float accumulatedSeconds, float allowedSeconds)
@@ -578,7 +586,11 @@ namespace rock::held_object_physics_math
             return target;
         }
 
-        const float step = speed * safeDeltaTime(deltaTime);
+        const float step = speed * measuredDeltaOrZero(deltaTime);
+        if (step <= 0.0f) {
+            // Unmeasured frame: hold instead of advancing by fabricated time.
+            return current;
+        }
         const float delta = target - current;
         if (std::abs(delta) <= step) {
             return target;

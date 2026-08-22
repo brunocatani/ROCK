@@ -45,13 +45,8 @@ $nominalRateDebtRegister = @{
     'src/physics-interaction/input/DebugControllerRuntime.cpp'       = 1
     'src/physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h' = 1
     'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h'    = 1
-    'src/physics-interaction/hand/HandGrab.cpp'                      = 1
     'src/physics-interaction/weapon/TwoHandedGrip.cpp'               = 1
-    'src/physics-interaction/grab/GrabHeldObject.h'                  = 1
     'src/physics-interaction/grab/GrabFinger.h'                      = 1
-    'src/physics-interaction/grab/GrabCore.h'                        = 1
-    'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' = 1
-    'src/physics-interaction/grab/GrabMotionController.h'            = 3
     'src/physics-interaction/feedback/FeedbackHaptics.cpp'           = 1
 }
 
