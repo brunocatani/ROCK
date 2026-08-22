@@ -1535,8 +1535,22 @@ namespace rock
             _twoHandedGrip.discardStagedWeaponCollisionCorrection();
         }
 
+        /*
+         * Bodies may exist during the equip warm-up; presentation may not.
+         * Until the weapon has been handed over and the owning hands are both
+         * publishable and excluded from the weapon proxy, any correction
+         * describes a state the player is not in.
+         */
+        const auto warmUpBlockReason =
+            weaponCollisionPresentationWarmUpBlockReason();
+        const bool presentationWarmedUp =
+            warmUpBlockReason ==
+            weapon_presentation_warm_up_policy::BlockReason::None;
+        presentation_trace::recordPresentationWarmUp(
+            presentationWarmedUp,
+            warmUpBlockReason);
         TwoHandedGrip::WeaponCollisionStageResult stageResult{};
-        if (dynamicWeaponFrame.publishVisualAuthority) {
+        if (dynamicWeaponFrame.publishVisualAuthority && presentationWarmedUp) {
             stageResult = _twoHandedGrip.stageWeaponCollisionCorrection(
                 weaponNode,
                 dynamicWeaponFrame.requestedWeaponWorld,

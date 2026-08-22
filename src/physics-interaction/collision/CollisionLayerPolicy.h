@@ -87,10 +87,19 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49;
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50;
     /*
-     * The dynamic weapon proxy is deliberately limited to solver obstacles:
-     * static world surfaces and explicitly tagged ExplodableCar bodies.
+     * The dynamic weapon proxy solves against static world surfaces, tagged
+     * ExplodableCar bodies, and, while dynamic interactions are enabled, the
+     * two dynamic hand proxy rows (48 and 52). See
+     * buildRockDynamicWeaponProxyExpectedMask below.
+     *
+     * The hand rows are the reason a per-pair suppression lease exists: a
+     * hand that owns the weapon must not also solve against it, and until
+     * that lease is applied the owning hand's proxy and the weapon proxy
+     * overlap and produce a correction the player never caused. Presentation
+     * therefore waits for pair readiness, not merely for the bodies.
+     *
      * Layer-44 generated hulls remain the sole weapon contact/evidence path
-     * for hands, actors, projectiles, and ordinary dynamic props.
+     * for actors, projectiles, and ordinary dynamic props.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WEAPON_PROXY = 51;
     /*

@@ -64,6 +64,10 @@ namespace rock::presentation_trace
         bool handGroupPublished,
         const std::array<HandRecord, 2>& hands);
 
+    void recordPresentationWarmUp(
+        bool warmedUp,
+        weapon_presentation_warm_up_policy::BlockReason blockReason);
+
     void recordRestoreGuard(RestoreGuardFailure reason);
 
     void recordTransactionOutcome(

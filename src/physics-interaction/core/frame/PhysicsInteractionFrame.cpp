@@ -507,6 +507,30 @@ namespace rock
         completeFrame(frame);
     }
 
+    weapon_presentation_warm_up_policy::BlockReason
+        PhysicsInteraction::weaponCollisionPresentationWarmUpBlockReason() const
+    {
+        const auto transition = _equippedWeaponTransition.getPublicSnapshot();
+        const auto attachedHands =
+            _twoHandedGrip.weaponCollisionAttachedHands();
+        weapon_presentation_warm_up_policy::Inputs inputs{
+            .handAttached = { attachedHands.left, attachedHands.right },
+            .nativeRenderable = transition.nativeRenderable,
+            .handPoseHandoffComplete = transition.handPoseHandoffComplete,
+            .pairFilterReady = _dynamicHandCollision.isPairFilterReady(),
+        };
+        for (std::size_t index = 0; index < inputs.handAttached.size();
+             ++index) {
+            const bool isLeft = index == 0u;
+            inputs.handPublicationReady[index] =
+                frik_visual_authority::isExternalHandWorldPublicationReady(
+                    frik_visual_authority::handFromBool(isLeft));
+            inputs.handWeaponPairSuppressed[index] =
+                _dynamicHandCollision.isWeaponPairSuppressedForHand(isLeft);
+        }
+        return weapon_presentation_warm_up_policy::blockReason(inputs);
+    }
+
     presentation_transaction_policy::TransactionIdentity
         PhysicsInteraction::makeWeaponPresentationIdentity(
             const std::uint64_t weaponGenerationKey) const
@@ -689,16 +713,17 @@ namespace rock
          * local relation, so a moving value means the engine is still flying
          * the weapon into place after an equip or rebuilding its graph.
          */
+        _weaponIntentStabilitySample = weapon_intent_stability_policy::update(
+            _weaponIntentStabilityState,
+            frame.rightWeaponDriver.valid,
+            frame.rightWeaponDriver.world,
+            weaponFrame.weaponNode != nullptr,
+            weaponFrame.weaponNode ?
+                weaponFrame.weaponNode->world :
+                RE::NiTransform{},
+            weaponFrame.generationKey);
         presentation_trace::recordIntentStability(
-            weapon_intent_stability_policy::update(
-                _weaponIntentStabilityState,
-                frame.rightWeaponDriver.valid,
-                frame.rightWeaponDriver.world,
-                weaponFrame.weaponNode != nullptr,
-                weaponFrame.weaponNode ?
-                    weaponFrame.weaponNode->world :
-                    RE::NiTransform{},
-                weaponFrame.generationKey));
+            _weaponIntentStabilitySample);
         _twoHandedGrip.beginWeaponCollisionPresentationFrame(
             weaponFrame.generationKey);
         const bool suppressDefaultNativeWeaponIntent =
@@ -713,7 +738,16 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionDynamicBoxEnabled &&
                 runtime.weaponDrawn &&
                 !frame.menuBlocked &&
-                physicsWritesAllowedForWorld(frame.hknpWorld),
+                physicsWritesAllowedForWorld(frame.hknpWorld) &&
+                /*
+                 * An unsettled weapon is still flying to its attach point.
+                 * Driving a collision body along that flight sweeps the proxy
+                 * through the world and manufactures contacts, which is how a
+                 * plain equip produced a large correction against a static
+                 * surface the player never touched.
+                 */
+                weapon_intent_stability_policy::isAdmissibleCollisionIntent(
+                    _weaponIntentStabilitySample),
             suppressDefaultNativeWeaponIntent);
         reconcileEquippedWeaponHandlingMode();
         serviceEquippedWeaponHandAssignment(

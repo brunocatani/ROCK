@@ -85,7 +85,7 @@ namespace rock::presentation_trace
             const auto& right = g_record.hands[1];
             ROCK_LOG_INFO(
                 Weapon,
-                "PresentationTrace: frame={} seq={} generation={:016X} transaction={}/{} dwc(proxy/contact/publish/weapon/hands)={}/{}/{}/{}/{} retention={:.3f}s correction=({:.2f}gu,{:.2f}deg) other(body/layer)={}/{} intent(valid/translation/rotation/stable)={}/{:.3f}/{:.3f}/{} recoil(accepted/consumed/applied)={}/{}/{} restoreGuard={} lateWriter=({:.3f}gu,{:.3f}deg) left(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{} right(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{}",
+                "PresentationTrace: frame={} seq={} generation={:016X} transaction={}/{} dwc(proxy/contact/publish/weapon/hands)={}/{}/{}/{}/{} retention={:.3f}s correction=({:.2f}gu,{:.2f}deg) other(body/layer)={}/{} intent(valid/translation/rotation/stable)={}/{:.3f}/{:.3f}/{} warmUp={} recoil(accepted/consumed/applied)={}/{}/{} restoreGuard={} lateWriter=({:.3f}gu,{:.3f}deg) left(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{} right(ready/req/target/applied/live/winner/priority/seq)={}/{}/{}/{}/{}/{}/{}/{}",
                 g_record.frameIndex,
                 g_record.schedulerSequence,
                 g_record.weaponGenerationKey,
@@ -107,6 +107,8 @@ namespace rock::presentation_trace
                 g_record.intentStability.translationDeltaGameUnits,
                 g_record.intentStability.rotationDeltaDegrees,
                 g_record.intentStability.stableFrameCount,
+                weapon_presentation_warm_up_policy::blockReasonName(
+                    g_record.warmUpBlockReason),
                 g_record.recoilAcceptedSequence,
                 g_record.recoilConsumedSequence,
                 g_record.recoilApplied,
@@ -207,6 +209,14 @@ namespace rock::presentation_trace
                 InvariantCounter::RestoreGuardFailure,
                 policy::restoreGuardFailureName(reason));
         }
+    }
+
+    void recordPresentationWarmUp(
+        const bool warmedUp,
+        const weapon_presentation_warm_up_policy::BlockReason blockReason)
+    {
+        g_record.presentationWarmedUp = warmedUp;
+        g_record.warmUpBlockReason = blockReason;
     }
 
     void recordTransactionOutcome(

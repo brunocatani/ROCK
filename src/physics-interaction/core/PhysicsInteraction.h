@@ -39,6 +39,7 @@
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
 #include "physics-interaction/weapon/collision/WeaponIntentStabilityPolicy.h"
 #include "physics-interaction/weapon/presentation/EquippedWeaponPresentationCoordinator.h"
+#include "physics-interaction/weapon/presentation/WeaponPresentationWarmUpPolicy.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h"
@@ -341,6 +342,17 @@ namespace rock
         void serviceEquippedWeaponGripFrame(
             const PhysicsFrameContext& frame,
             EquippedWeaponFrame& weaponFrame);
+        /*
+         * Whether a dynamic weapon correction may reach presentation at all.
+         * Bodies are allowed to exist before this is true; hand claims and
+         * weapon writes are not. It requires the equip transition to have
+         * finished handing the weapon over, every attached hand's publication
+         * channel to be open, and the hand/weapon pair suppression to be live
+         * so an owning hand is not solving against the weapon it holds.
+         */
+        [[nodiscard]] weapon_presentation_warm_up_policy::BlockReason
+            weaponCollisionPresentationWarmUpBlockReason() const;
+
         // The state that must not change between staging a weapon collision
         // correction and committing it one frame later.
         [[nodiscard]] presentation_transaction_policy::TransactionIdentity
@@ -605,6 +617,7 @@ namespace rock
         // Tracks how long the weapon has held a steady relation to its
         // controller driver. An equip flight or a graph rebuild resets it.
         weapon_intent_stability_policy::State _weaponIntentStabilityState{};
+        weapon_intent_stability_policy::Sample _weaponIntentStabilitySample{};
         EquippedWeaponPresentationCoordinator _weaponPresentationCoordinator;
 
         EquippedWeaponTransitionCoordinator _equippedWeaponTransition;

@@ -8,6 +8,7 @@
 #include "physics-interaction/visual/HandWorldAuthorityRegistryPolicy.h"
 #include "physics-interaction/weapon/collision/WeaponIntentStabilityPolicy.h"
 #include "physics-interaction/weapon/presentation/PresentationTransactionPolicy.h"
+#include "physics-interaction/weapon/presentation/WeaponPresentationWarmUpPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -109,6 +110,11 @@ namespace rock::presentation_trace_policy
         std::uint32_t dwcOtherLayer = 0;
 
         weapon_intent_stability_policy::Sample intentStability{};
+        // False while the equip handover, hand publication channels, or the
+        // hand/weapon pair suppression are not yet ready for presentation.
+        bool presentationWarmedUp = false;
+        weapon_presentation_warm_up_policy::BlockReason warmUpBlockReason =
+            weapon_presentation_warm_up_policy::BlockReason::None;
 
         std::uint64_t recoilAcceptedSequence = 0;
         std::uint64_t recoilConsumedSequence = 0;

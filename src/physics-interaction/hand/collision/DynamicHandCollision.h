@@ -213,6 +213,25 @@ namespace rock
             return slot.created ? slot.body.getBodyId() : RE::hknpBodyId{ 0x7FFF'FFFF };
         }
 
+        // The counted-pair filter is installed in the current world, so a
+        // requested hand/weapon suppression can actually take effect.
+        [[nodiscard]] bool isPairFilterReady() const
+        {
+            return _pairFilterReadyAtomic.load(std::memory_order_acquire);
+        }
+
+        /*
+         * This hand's proxy is currently excluded from the weapon proxy. A
+         * hand that holds the weapon must not also solve against it; until
+         * the lease is live the two overlap and produce a correction that no
+         * real contact caused.
+         */
+        [[nodiscard]] bool isWeaponPairSuppressedForHand(const bool isLeft) const
+        {
+            return _suppressedWeaponPairCountAtomic[isLeft ? 1u : 0u].load(
+                       std::memory_order_acquire) != 0;
+        }
+
     private:
         struct PhysicsTelemetrySample
         {

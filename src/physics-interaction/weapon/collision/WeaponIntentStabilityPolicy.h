@@ -24,6 +24,13 @@ namespace rock::weapon_intent_stability_policy
      */
     inline constexpr float kDefaultTranslationTolerancePerFrameGameUnits = 0.75f;
     inline constexpr float kDefaultRotationTolerancePerFrameDegrees = 2.0f;
+    /*
+     * Three consecutive steady frames, about 33 ms at 90 Hz. An equip flight
+     * crosses hundreds of game units over many more frames than that, so the
+     * gate closes for the whole transient while costing an ordinary draw only
+     * a few frames before its collision body starts.
+     */
+    inline constexpr std::uint32_t kRequiredStableFrameCount = 3;
 
     struct State
     {
@@ -44,6 +51,21 @@ namespace rock::weapon_intent_stability_policy
     inline void reset(State& state) noexcept
     {
         state = {};
+    }
+
+    /*
+     * Whether the weapon may be admitted as dynamic collision intent. An
+     * unsettled weapon is still flying to its attach point, and driving a
+     * collision body along that flight sweeps the proxy through the world and
+     * manufactures contacts the player never made.
+     */
+    [[nodiscard]] inline constexpr bool isAdmissibleCollisionIntent(
+        const Sample& sample,
+        const std::uint32_t requiredStableFrameCount =
+            kRequiredStableFrameCount) noexcept
+    {
+        return sample.valid &&
+            sample.stableFrameCount >= requiredStableFrameCount;
     }
 
     [[nodiscard]] inline Sample update(

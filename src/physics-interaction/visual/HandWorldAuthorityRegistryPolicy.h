@@ -28,6 +28,16 @@ namespace rock::hand_world_authority_registry_policy
         ProviderWeaponCoupled,
     };
 
+    /*
+     * Which hand owners the weapon presentation is allowed to follow.
+     *
+     * DynamicContact stays in this set deliberately. A hand deviated by its
+     * own contact solve is still holding the weapon, and dropping it from the
+     * set would silently change recoil eligibility while the firing hand is
+     * deviated, which is a fidelity regression. The window that made this
+     * role look dangerous was publication before the hand collision state was
+     * ready, and that is closed by the presentation warm-up gate instead.
+     */
     [[nodiscard]] inline constexpr bool weaponPresentationFollowsRole(
         const Role role) noexcept
     {
