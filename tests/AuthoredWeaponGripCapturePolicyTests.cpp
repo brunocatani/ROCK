@@ -71,14 +71,14 @@ int main()
         .weaponDrawn = true,
         .weaponVisible = true,
         .weaponKeyValid = true,
-        .weaponGenerationReady = true,
+        .authoritativeNativeRelationReady = true,
         .captureValid = true,
         .captureNewerThanWeaponBoundary = true,
     };
     static_assert(shouldApplyAuthoredPrimaryFiringGrip(eligible));
     static_assert([=] {
         auto input = eligible;
-        input.weaponGenerationReady = false;
+        input.authoritativeNativeRelationReady = false;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());
     static_assert([=] {

@@ -48,6 +48,7 @@ namespace rock::equipped_weapon_transition_policy
         bool identityMatches{ false };
         bool weaponExactlyDrawn{ false };
         std::uint32_t nativeWeaponState{ 0 };
+        bool preDrawAttachRepairAllowed{ false };
         bool bridgeModelAvailable{ false };
         bool nativeInstanceFound{ false };
         bool nativeAncestorPathVisible{ false };
@@ -172,6 +173,33 @@ namespace rock::equipped_weapon_transition_policy
                     kWantToDrawStallSeconds;
                 decision.repair = RepairAction::RequestDraw;
                 return decision;
+            }
+
+            const bool nativeDrawUnacknowledged =
+                nativeState == NativeWeaponState::Sheathed ||
+                nativeState == NativeWeaponState::WantToSheathe ||
+                nativeState == NativeWeaponState::Sheathing;
+            if (input.preDrawAttachRepairAllowed &&
+                nativeDrawUnacknowledged &&
+                state.drawRequests > 0 &&
+                !input.nativeInstanceFound) {
+                /*
+                 * A shoulder-sheathed weapon can survive a save while its
+                 * first-person Weapon graph does not. DrawWeaponMagicHands
+                 * accepts the request but cannot start a clip in that state.
+                 * Repair the exact equipped graph before the next draw retry.
+                 */
+                if (state.attachSettleFramesRemaining > 0) {
+                    --state.attachSettleFramesRemaining;
+                    return decision;
+                }
+                if (state.attachAttempts < kMaximumAttachAttempts) {
+                    ++state.attachAttempts;
+                    state.attachSettleFramesRemaining =
+                        kAttachSettleFrames;
+                    decision.repair = RepairAction::QueueNativeAttach;
+                    return decision;
+                }
             }
 
             const bool returnedFromWantToDraw =

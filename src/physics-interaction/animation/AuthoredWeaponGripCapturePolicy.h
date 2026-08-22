@@ -24,7 +24,7 @@ namespace rock::authored_weapon_grip_capture_policy
         bool weaponDrawn{ false };
         bool weaponVisible{ false };
         bool weaponKeyValid{ false };
-        bool weaponGenerationReady{ false };
+        bool authoritativeNativeRelationReady{ false };
         bool captureValid{ false };
         bool captureNewerThanWeaponBoundary{ false };
         bool nativeReloadAuthorityActive{ false };
@@ -82,7 +82,7 @@ namespace rock::authored_weapon_grip_capture_policy
                input.weaponDrawn &&
                input.weaponVisible &&
                input.weaponKeyValid &&
-               input.weaponGenerationReady &&
+               input.authoritativeNativeRelationReady &&
                input.captureValid &&
                input.captureNewerThanWeaponBoundary &&
                !input.nativeReloadAuthorityActive &&

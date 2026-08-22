@@ -361,6 +361,7 @@ namespace rock
                 .identityMatches = true,
                 .weaponExactlyDrawn = weaponExactlyDrawn,
                 .nativeWeaponState = input.nativeWeaponState,
+                .preDrawAttachRepairAllowed = true,
                 .bridgeModelAvailable = _bridge.hasVisualModel(),
                 .nativeInstanceFound = exactNativeInstanceIsCurrent,
                 .nativeAncestorPathVisible = visual.ancestorPathVisible,

@@ -261,6 +261,37 @@ int main()
             drawState.drawRequests == 4 &&
             !drawState.drawRecoveryExhausted);
 
+    State missingSheathedGraph{};
+    const auto initialMissingGraphDraw = advance(
+        missingSheathedGraph,
+        FrameInput{
+            .drawRecoveryElapsedSeconds = 0.0f,
+            .mutationAllowed = true,
+            .identityMatches = true,
+            .weaponExactlyDrawn = false,
+            .nativeWeaponState = 0,
+            .preDrawAttachRepairAllowed = true,
+            .nativeInstanceFound = false,
+        });
+    const auto repairMissingGraphBeforeRetry = advance(
+        missingSheathedGraph,
+        FrameInput{
+            .drawRecoveryElapsedSeconds = 0.01f,
+            .mutationAllowed = true,
+            .identityMatches = true,
+            .weaponExactlyDrawn = false,
+            .nativeWeaponState = 0,
+            .preDrawAttachRepairAllowed = true,
+            .nativeInstanceFound = false,
+        });
+    ok &= expect(
+        "a sheathed weapon with no graph must queue exact attach after the first unacknowledged draw",
+        initialMissingGraphDraw.repair == RepairAction::RequestDraw &&
+            repairMissingGraphBeforeRetry.repair ==
+                RepairAction::QueueNativeAttach &&
+            missingSheathedGraph.drawRequests == 1 &&
+            missingSheathedGraph.attachAttempts == 1);
+
     State blockedDrawState{};
     const auto blockedDraw = advance(blockedDrawState, FrameInput{
         .drawRecoveryElapsedSeconds = 20.0f,

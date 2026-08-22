@@ -114,7 +114,6 @@ namespace rock
         _sessionLogged = false;
         _applyFailureLogged = false;
         _canonicalPublishFailureLogged = false;
-        _libraryPublishFailureLogged = false;
         _customFrikOffsetOverrideActive = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
@@ -172,7 +171,6 @@ namespace rock
             _sessionLogged = false;
             _applyFailureLogged = false;
             _canonicalPublishFailureLogged = false;
-            _libraryPublishFailureLogged = false;
             _supportCaptureFailureLogged = false;
             _mirroredLeftFingerPose = {};
             _mirroredFingerPoseCaptureSequence = 0;
@@ -425,17 +423,15 @@ namespace rock
             .weaponVisible = input.weaponVisible,
             .weaponKeyValid = currentWeaponKey != 0,
             /*
-             * An equip transition can expose the new Weapon node before hFRIK
-             * has rebound its native weapon state. A generated collision
-             * identity is published only after ROCK has observed the stable
-             * equipped node and stack. Do not invert a transitional live-graph
-             * capture onto the controller: that relation survives the later
-             * native bind and produces the delayed initial carry that a first
-             * support-grip cycle happened to clear.
+             * Deferred hFRIK can expose a live equipped-graph relation before
+             * its native weapon bind is stable. That transient relation is not
+             * a weapon driver. The off-screen native idle sample is independent
+             * of presentation timing and is the only safe one-hand relation.
+             * Until it exists, leave the weapon under native hFRIK carry.
              */
-            .weaponGenerationReady = input.weaponGenerationKey != 0,
-            .captureValid = harvestedRelationAvailable || captureStatus.valid,
-            .captureNewerThanWeaponBoundary = harvestedRelationAvailable || captureStatus.captureSequence > _captureSequenceFloor,
+            .authoritativeNativeRelationReady = harvestedRelationAvailable,
+            .captureValid = harvestedRelationAvailable,
+            .captureNewerThanWeaponBoundary = harvestedRelationAvailable,
             .nativeReloadAuthorityActive = input.nativeReloadAuthorityActive,
             .conflictingWeaponTransformAuthorityActive =
                 input.conflictingWeaponTransformAuthorityActive,
@@ -482,28 +478,23 @@ namespace rock
             return;
         }
 
-        RE::NiTransform solvedWeaponWorld{};
-        RE::NiTransform currentAuthoredHandWorld{};
-        RE::NiTransform authoredPrimaryHandInWeapon{};
-        std::uint64_t resolvedCaptureSequence = 0;
-        bool alignmentResolved = false;
-        if (harvestedRelationAvailable) {
-            authoredPrimaryHandInWeapon = authoredLookup.rightHandWeaponLocal;
-            resolvedCaptureSequence = authoredLookup.captureSequence;
-            currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
-            solvedWeaponWorld = transform_math::composeTransforms(trackedHandWorld, transform_math::invertTransform(authoredPrimaryHandInWeapon));
-            alignmentResolved = finiteTransform(authoredPrimaryHandInWeapon) && finiteTransform(currentAuthoredHandWorld) && finiteTransform(solvedWeaponWorld);
-        } else {
-            alignmentResolved = authored_weapon_grip_capture::tryResolvePrimaryFiringGripAlignment(
-                input.weaponNode,
+        const RE::NiTransform authoredPrimaryHandInWeapon =
+            authoredLookup.rightHandWeaponLocal;
+        const std::uint64_t resolvedCaptureSequence =
+            authoredLookup.captureSequence;
+        const RE::NiTransform currentAuthoredHandWorld =
+            transform_math::composeTransforms(
                 liveWeaponWorld,
+                authoredPrimaryHandInWeapon);
+        const RE::NiTransform solvedWeaponWorld =
+            transform_math::composeTransforms(
                 trackedHandWorld,
-                solvedWeaponWorld,
-                currentAuthoredHandWorld,
-                authoredPrimaryHandInWeapon,
-                resolvedCaptureSequence) &&
-                resolvedCaptureSequence > _captureSequenceFloor;
-        }
+                transform_math::invertTransform(
+                    authoredPrimaryHandInWeapon));
+        const bool alignmentResolved =
+            finiteTransform(authoredPrimaryHandInWeapon) &&
+            finiteTransform(currentAuthoredHandWorld) &&
+            finiteTransform(solvedWeaponWorld);
         if (!alignmentResolved) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("capture-resolution-failed");
@@ -550,25 +541,6 @@ namespace rock
             }
         }
 
-        if (!harvestedRelationAvailable &&
-            !authored_weapon_grip_library::publishResolvedVariant(
-                input.weapon,
-                variant,
-                input.inPowerArmor,
-                authoredPrimaryHandInWeapon,
-                resolvedCaptureSequence,
-                authored_weapon_grip_library::CaptureSource::LiveEquippedGraph)) {
-            if (!_libraryPublishFailureLogged) {
-                ROCK_LOG_WARN(Animation,
-                    "Authored primary firing grip could not publish loose-weapon relation weaponKey=0x{:X} capture={}",
-                    currentWeaponKey,
-                    resolvedCaptureSequence);
-                _libraryPublishFailureLogged = true;
-            }
-        } else {
-            _libraryPublishFailureLogged = false;
-        }
-
         _active = true;
         _applyFailureLogged = false;
 
@@ -588,7 +560,7 @@ namespace rock
                 "primaryHand={} physicalLeftSource=mirrored-authored-canonical",
                 currentWeaponKey,
                 input.weaponGenerationKey,
-                resolvedCaptureSequence, harvestedRelationAvailable ? "native-idle-preharvest" : "live-equipped-fallback",
+                resolvedCaptureSequence, "native-idle-preharvest",
                 rightFingerPose ? (leftFingerPose ? "right-and-left" : "right-only") : "fallback",
                 translationDistance(trackedHandWorld, currentAuthoredHandWorld),
                 translationDistance(liveWeaponWorld, solvedWeaponWorld),
