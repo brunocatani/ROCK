@@ -54,8 +54,8 @@ namespace rock::presentation_transaction_policy
         None = 0,
         // A caller advanced a stage that is not the current one.
         StageOutOfOrder,
-        // The world, skeleton, provider, weapon generation, attached-hand set,
-        // or physics sample changed between staging and commit.
+        // The world, skeleton, provider, weapon generation, or attached-hand
+        // set changed between staging and commit.
         IdentityChanged,
         // The physics snapshot did not describe the current body.
         ProposalRejected,
@@ -70,7 +70,8 @@ namespace rock::presentation_transaction_policy
         // The solved wrist did not arrive at the staged target. This is the
         // silent tracked-hand fallback, which no publish result reports.
         ReadbackMismatch,
-        // The pre-hFRIK driver transport could not rebase the staged pose.
+        // The staged group did not survive to the readback: the pre-hFRIK
+        // rebase failed or a required claim was released in between.
         TransportFailed,
         // The final weapon write itself failed.
         WeaponCommitFailed,
@@ -106,9 +107,12 @@ namespace rock::presentation_transaction_policy
     }
 
     /*
-     * Everything that must not change between staging and commit. Frame and
-     * scheduler counters are deliberately absent: the transaction is designed
-     * to span frames, so they are tracked separately as stamps.
+     * Everything that must not change between staging and commit. Frame,
+     * scheduler, and physics-solve counters are deliberately absent: the
+     * transaction is designed to span frames, and each of those advances
+     * every frame by construction, so including one makes the cross-frame
+     * equality check fail on every readback. Frame continuity is enforced
+     * separately through the stamps and markFrikConsumed.
      */
     struct TransactionIdentity
     {
@@ -116,7 +120,6 @@ namespace rock::presentation_transaction_policy
         std::uint64_t worldGeneration = 0;
         std::uint64_t skeletonGeneration = 0;
         std::uint64_t providerGeneration = 0;
-        std::uint64_t physicsSolveSequence = 0;
         std::uint8_t attachedHandMask = 0;
 
         [[nodiscard]] friend constexpr bool operator==(
@@ -144,7 +147,6 @@ namespace rock::presentation_transaction_policy
         RE::NiTransform stagedWeaponWorld{};
         RE::NiTransform stagedDriverWorld{};
         std::array<RE::NiTransform, 2> stagedHandWorld{};
-        std::array<std::uint64_t, 2> stagedWinnerSequence{};
         bool stagedDriverValid = false;
         // A weapon with no attached hands has no group to keep together, so
         // it commits immediately instead of deferring.
@@ -292,12 +294,20 @@ namespace rock::presentation_transaction_policy
      * The readback. The caller has compared each required hand's presented
      * wrist against the pose it staged, and re-read the winning owner. This is
      * the only place the silent tracked-hand fallback becomes observable.
+     *
+     * The winner comparison is the CALLER's, against the sequence stamped by
+     * its LATEST publish of each claim, including the pre-solve rebase
+     * republish. The registry stamps a fresh sequence on every publish, so a
+     * transaction that held the stage-time sequence would read the pipeline's
+     * own rebase as a theft and abort every commit. The policy therefore
+     * receives per-hand verdicts, not raw sequences.
      */
     [[nodiscard]] inline bool validateReadback(
         Transaction& transaction,
         const TransactionIdentity& observedIdentity,
-        const std::uint8_t residualWithinPolicyMask,
-        const std::array<std::uint64_t, 2>& observedWinnerSequence) noexcept
+        const bool stagedGroupStillHeld,
+        const std::uint8_t winnerUnchangedMask,
+        const std::uint8_t residualWithinPolicyMask) noexcept
     {
         if (transaction.stage != Stage::FrikConsumed) {
             abort(transaction, AbortReason::StageOutOfOrder);
@@ -307,18 +317,14 @@ namespace rock::presentation_transaction_policy
             abort(transaction, AbortReason::IdentityChanged);
             return false;
         }
-        for (std::size_t index = 0;
-             index < observedWinnerSequence.size();
-             ++index) {
-            const bool isLeft = index == 0u;
-            if (!maskContains(transaction.requiredHandMask, isLeft)) {
-                continue;
-            }
-            if (observedWinnerSequence[index] !=
-                transaction.stagedWinnerSequence[index]) {
-                abort(transaction, AbortReason::WinnerChanged);
-                return false;
-            }
+        if (!stagedGroupStillHeld) {
+            abort(transaction, AbortReason::TransportFailed);
+            return false;
+        }
+        if ((winnerUnchangedMask & transaction.requiredHandMask) !=
+            transaction.requiredHandMask) {
+            abort(transaction, AbortReason::WinnerChanged);
+            return false;
         }
         if ((residualWithinPolicyMask & transaction.requiredHandMask) !=
             transaction.requiredHandMask) {

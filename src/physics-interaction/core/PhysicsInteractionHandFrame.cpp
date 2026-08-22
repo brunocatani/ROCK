@@ -291,8 +291,9 @@ namespace rock
                 currentWeaponGenerationKey);
         _weaponPresentationCoordinator.observeReadback(
             makeWeaponPresentationIdentity(currentWeaponGenerationKey),
-            readback.residualWithinPolicyMask,
-            readback.winnerSequence);
+            readback.hasStagedCorrection,
+            readback.winnerUnchangedMask,
+            readback.residualWithinPolicyMask);
 
         (void)_twoHandedGrip.
             restoreIndependentWeaponPresentationAfterFrik(

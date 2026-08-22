@@ -1,5 +1,6 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/presentation/PresentationTransactionPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/two_handed/WeaponRecoilBoundPolicy.h"
 
@@ -571,6 +572,76 @@ namespace
         return ok;
     }
 
+    /*
+     * The regression pin for the rebase/readback defect. The registry stamps
+     * a fresh sequence on EVERY publish, including the pipeline's own
+     * pre-solve rebase republish of an unchanged claim. A readback that
+     * compares the live winner against the STAGE-TIME sequence therefore
+     * reads its own rebase as a stolen hand and aborts every commit — which
+     * shipped as "the weapon never corrects while a hand is attached". The
+     * staged sequence must be restamped at the rebase, and only a publish by
+     * someone else may then read as a winner change.
+     */
+    bool testRebaseRepublishIsNotAWinnerChange()
+    {
+        bool ok = true;
+        namespace policy = rock::presentation_transaction_policy;
+        FakeFrikExternalAuthority frik;
+        frik.setTrackedHandWorld(Hand::Right, identityTransform());
+
+        const RE::NiTransform stagedTarget = makeTransform(rotationAboutZ(0.0f), 5.0f, 0.0f, 0.0f);
+        const RE::NiTransform rebasedTarget = makeTransform(rotationAboutZ(0.0f), 6.0f, 0.0f, 0.0f);
+
+        // The staging frame publishes the group and records the winner.
+        ok &= expectTrue("the claim publishes", frik.publish("ROCK_WeaponCollisionHand", Hand::Right, stagedTarget, 110));
+        FakeFrikExternalAuthority::Claim winner{};
+        ok &= expectTrue("the claim wins its hand", frik.tryGetWinner(Hand::Right, winner));
+        const std::uint64_t stageTimeSequence = winner.sequence;
+
+        // The next frame's pre-solve rebase republishes the same claim. The
+        // registry stamps a new sequence; the staged bookkeeping restamps
+        // from the re-read winner.
+        ok &= expectTrue("the rebase republishes", frik.publish("ROCK_WeaponCollisionHand", Hand::Right, rebasedTarget, 110));
+        ok &= expectTrue("the rebased claim still wins", frik.tryGetWinner(Hand::Right, winner));
+        ok &= expectTrue("a republish stamps a new sequence", winner.sequence != stageTimeSequence);
+        const std::uint64_t stagedSequence = winner.sequence;
+
+        frik.solveSkeletonFrame();
+
+        // The readback: the winner is still this group's own claim.
+        ok &= expectTrue("the readback finds a winner", frik.tryGetWinner(Hand::Right, winner));
+        ok &= expectTrue("the restamped sequence matches the live winner", winner.sequence == stagedSequence);
+        ok &= expectTrue("the stage-time sequence no longer names the claim", winner.sequence != stageTimeSequence);
+        ok &= expectSameTransform("the solve presented the rebased target", frik.presentedWrist(Hand::Right), rebasedTarget);
+
+        // The same verdicts drive the transaction end to end: it commits.
+        policy::Transaction transaction{};
+        const policy::TransactionIdentity identity{
+            .weaponGenerationKey = 0xAAAAu,
+            .worldGeneration = 1u,
+            .skeletonGeneration = 1u,
+            .providerGeneration = 1u,
+            .attachedHandMask = static_cast<std::uint8_t>(policy::HandMask::Right),
+        };
+        const std::uint8_t rightBit = policy::handBit(false);
+        ok &= expectTrue("begin", policy::begin(transaction, identity, { .frameIndex = 10, .schedulerSequence = 10 }));
+        ok &= expectTrue("proposal", policy::acceptPhysicsProposal(transaction, true, identity));
+        ok &= expectTrue("stage", policy::stageHandTargets(transaction, rightBit, rightBit, { .frameIndex = 10, .schedulerSequence = 10 }));
+        ok &= expectTrue("consume", policy::markFrikConsumed(transaction, { .frameIndex = 11, .schedulerSequence = 11 }));
+        const std::uint8_t winnerUnchangedMask =
+            winner.sequence == stagedSequence ? rightBit : std::uint8_t{ 0 };
+        const std::uint8_t residualMask =
+            policy::residualWithinPolicy(frik.presentedWrist(Hand::Right), rebasedTarget) ? rightBit : std::uint8_t{ 0 };
+        ok &= expectTrue("the readback validates through the rebase", policy::validateReadback(transaction, identity, true, winnerUnchangedMask, residualMask));
+        ok &= expectTrue("the weapon commits", policy::commit(transaction, true));
+
+        // A publish by someone else AFTER the rebase still reads as a theft.
+        ok &= expectTrue("someone else takes the hand", frik.publish("ROCK_Gunstock", Hand::Right, stagedTarget, 110));
+        ok &= expectTrue("the readback sees the thief win", frik.tryGetWinner(Hand::Right, winner));
+        ok &= expectTrue("a stolen hand does not match the staged sequence", winner.sequence != stagedSequence);
+        return ok;
+    }
+
     bool testSkeletonDropReleasesEveryClaim()
     {
         bool ok = true;
@@ -603,6 +674,7 @@ int main()
     ok &= testUnreachableTicketProducesNoWeaponKick();
     ok &= testWeaponCoupledTransportKeepsTheDriverRelation();
     ok &= testWeaponCoupledTransportIsIdentityWithoutDriverMotion();
+    ok &= testRebaseRepublishIsNotAWinnerChange();
     ok &= testSkeletonDropReleasesEveryClaim();
     return ok ? 0 : 1;
 }

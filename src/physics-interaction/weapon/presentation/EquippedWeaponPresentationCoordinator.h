@@ -94,7 +94,6 @@ namespace rock
         void observeHandGroup(
             const std::uint8_t targetsAvailableMask,
             const std::uint8_t publishedMask,
-            const std::array<std::uint64_t, 2>& winnerSequence,
             const FrameStamp& stamp)
         {
             if (!presentation_transaction_policy::stageHandTargets(
@@ -105,7 +104,6 @@ namespace rock
                 countAbort(_staging);
                 return;
             }
-            _staging.stagedWinnerSequence = winnerSequence;
             advanceDeepestStage(_staging.stage);
         }
 
@@ -124,10 +122,14 @@ namespace rock
             advanceDeepestStage(_inFlight.stage);
         }
 
+        // The winner mask is the caller's per-hand comparison of the live
+        // winning owner against the sequence its own LAST publish stamped,
+        // rebase republish included. See validateReadback.
         void observeReadback(
             const TransactionIdentity& observedIdentity,
-            const std::uint8_t residualWithinPolicyMask,
-            const std::array<std::uint64_t, 2>& observedWinnerSequence)
+            const bool stagedGroupStillHeld,
+            const std::uint8_t winnerUnchangedMask,
+            const std::uint8_t residualWithinPolicyMask)
         {
             if (_inFlight.stage != Stage::FrikConsumed) {
                 return;
@@ -135,8 +137,9 @@ namespace rock
             if (!presentation_transaction_policy::validateReadback(
                     _inFlight,
                     observedIdentity,
-                    residualWithinPolicyMask,
-                    observedWinnerSequence)) {
+                    stagedGroupStillHeld,
+                    winnerUnchangedMask,
+                    residualWithinPolicyMask)) {
                 countAbort(_inFlight);
                 return;
             }

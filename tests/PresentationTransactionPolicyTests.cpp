@@ -45,6 +45,12 @@ namespace
         return false;
     }
 
+    /*
+     * The identity holds only values that stay constant across the two
+     * frames of a healthy pipeline. Nothing per-frame belongs in here: the
+     * shipped defect was a per-step physics solve counter in this struct,
+     * which made the cross-frame equality check abort every readback.
+     */
     policy::TransactionIdentity twoHandIdentity()
     {
         return policy::TransactionIdentity{
@@ -52,7 +58,6 @@ namespace
             .worldGeneration = 3u,
             .skeletonGeneration = 4u,
             .providerGeneration = 5u,
-            .physicsSolveSequence = 900u,
             .attachedHandMask = static_cast<std::uint8_t>(policy::HandMask::Both),
         };
     }
@@ -80,7 +85,7 @@ namespace
         ok &= expectTrue("consumed", policy::markFrikConsumed(transaction, { .frameIndex = 11, .schedulerSequence = 101 }));
         ok &= expectStage("after consume", transaction.stage, Stage::FrikConsumed);
 
-        ok &= expectTrue("readback", policy::validateReadback(transaction, identity, kBothHands, transaction.stagedWinnerSequence));
+        ok &= expectTrue("readback", policy::validateReadback(transaction, identity, true, kBothHands, kBothHands));
         ok &= expectStage("after readback", transaction.stage, Stage::ReadbackValidated);
 
         ok &= expectTrue("commit", policy::commit(transaction, true));
@@ -117,7 +122,7 @@ namespace
         {
             policy::Transaction transaction{};
             (void)policy::begin(transaction, identity, {});
-            ok &= expectFalse("readback before consume", policy::validateReadback(transaction, identity, kBothHands, {}));
+            ok &= expectFalse("readback before consume", policy::validateReadback(transaction, identity, true, kBothHands, kBothHands));
             ok &= expectAbort("readback before consume aborts", transaction.abortReason, AbortReason::StageOutOfOrder);
         }
         return ok;
@@ -176,7 +181,7 @@ namespace
             (void)policy::markFrikConsumed(transaction, { .schedulerSequence = 101 });
             auto changed = identity;
             changed.attachedHandMask = kRightOnly;
-            ok &= expectFalse("a changed hand set refuses the readback", policy::validateReadback(transaction, changed, kBothHands, transaction.stagedWinnerSequence));
+            ok &= expectFalse("a changed hand set refuses the readback", policy::validateReadback(transaction, changed, true, kBothHands, kBothHands));
             ok &= expectAbort("a changed hand set aborts", transaction.abortReason, AbortReason::IdentityChanged);
         }
         return ok;
@@ -211,11 +216,17 @@ namespace
         (void)policy::stageHandTargets(transaction, kBothHands, kBothHands, { .schedulerSequence = 100 });
         (void)policy::markFrikConsumed(transaction, { .schedulerSequence = 101 });
 
-        ok &= expectFalse("one unreached wrist refuses the readback", policy::validateReadback(transaction, identity, kRightOnly, transaction.stagedWinnerSequence));
+        ok &= expectFalse("one unreached wrist refuses the readback", policy::validateReadback(transaction, identity, true, kBothHands, kRightOnly));
         ok &= expectAbort("one unreached wrist aborts", transaction.abortReason, AbortReason::ReadbackMismatch);
         return ok;
     }
 
+    /*
+     * The caller compares the live winner against the sequence stamped by
+     * its own LAST publish of each claim, rebase republish included, and
+     * reports a per-hand verdict. A cleared bit on a required hand means
+     * another owner took that hand after the group was staged.
+     */
     bool testWinnerChangeAborts()
     {
         bool ok = true;
@@ -224,13 +235,29 @@ namespace
         (void)policy::begin(transaction, identity, {});
         (void)policy::acceptPhysicsProposal(transaction, true, identity);
         (void)policy::stageHandTargets(transaction, kBothHands, kBothHands, { .schedulerSequence = 100 });
-        transaction.stagedWinnerSequence = { 40u, 41u };
         (void)policy::markFrikConsumed(transaction, { .schedulerSequence = 101 });
 
         // Someone published over the left hand after the group was staged.
-        const std::array<std::uint64_t, 2> observed{ 55u, 41u };
-        ok &= expectFalse("a stolen hand refuses the readback", policy::validateReadback(transaction, identity, kBothHands, observed));
+        ok &= expectFalse("a stolen hand refuses the readback", policy::validateReadback(transaction, identity, true, kRightOnly, kBothHands));
         ok &= expectAbort("a stolen hand aborts", transaction.abortReason, AbortReason::WinnerChanged);
+        return ok;
+    }
+
+    // The staged group was retired before the readback: the pre-hFRIK rebase
+    // failed or a required claim was released in between. There is nothing
+    // left to validate, and the honest reason is the transport, not the wrist.
+    bool testRetiredStagedGroupAborts()
+    {
+        bool ok = true;
+        policy::Transaction transaction{};
+        const auto identity = twoHandIdentity();
+        (void)policy::begin(transaction, identity, {});
+        (void)policy::acceptPhysicsProposal(transaction, true, identity);
+        (void)policy::stageHandTargets(transaction, kBothHands, kBothHands, { .schedulerSequence = 100 });
+        (void)policy::markFrikConsumed(transaction, { .schedulerSequence = 101 });
+
+        ok &= expectFalse("a retired group refuses the readback", policy::validateReadback(transaction, identity, false, kBothHands, kBothHands));
+        ok &= expectAbort("a retired group aborts as transport", transaction.abortReason, AbortReason::TransportFailed);
         return ok;
     }
 
@@ -243,7 +270,7 @@ namespace
         (void)policy::acceptPhysicsProposal(transaction, true, identity);
         (void)policy::stageHandTargets(transaction, kBothHands, kBothHands, { .schedulerSequence = 100 });
         (void)policy::markFrikConsumed(transaction, { .schedulerSequence = 101 });
-        (void)policy::validateReadback(transaction, identity, kBothHands, transaction.stagedWinnerSequence);
+        (void)policy::validateReadback(transaction, identity, true, kBothHands, kBothHands);
 
         ok &= expectFalse("a refused weapon write does not commit", policy::commit(transaction, false));
         ok &= expectAbort("a refused weapon write aborts", transaction.abortReason, AbortReason::WeaponCommitFailed);
@@ -289,7 +316,7 @@ namespace
     {
         coordinator.beginFrame(identity, { .frameIndex = schedulerSequence, .schedulerSequence = schedulerSequence });
         coordinator.observePhysicsProposal(true, identity);
-        coordinator.observeHandGroup(targetsAvailable, published, { 7u, 8u }, { .frameIndex = schedulerSequence, .schedulerSequence = schedulerSequence });
+        coordinator.observeHandGroup(targetsAvailable, published, { .frameIndex = schedulerSequence, .schedulerSequence = schedulerSequence });
     }
 
     // The whole point: the weapon commits one frame after its hand claims,
@@ -309,7 +336,7 @@ namespace
 
         // Frame N+1 reads back after the deferred solve.
         coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
-        coordinator.observeReadback(identity, kBothHands, { 7u, 8u });
+        coordinator.observeReadback(identity, true, kBothHands, kBothHands);
         ok &= expectTrue("a clean readback approves the commit", coordinator.isCommitApproved());
 
         coordinator.beginFrame(identity, { .frameIndex = 11, .schedulerSequence = 11 });
@@ -343,7 +370,7 @@ namespace
         driveStagingFrame(coordinator, identity, 10, kBothHands, kBothHands);
         coordinator.rotate();
         coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
-        coordinator.observeReadback(identity, kRightOnly, { 7u, 8u });
+        coordinator.observeReadback(identity, true, kBothHands, kRightOnly);
 
         ok &= expectFalse("an unreached wrist refuses the commit", coordinator.isCommitApproved());
         ok &= expectTrue("the caller is told to release the claims", coordinator.hasUncommittedInFlightClaims());
@@ -431,6 +458,25 @@ namespace
         return ok;
     }
 
+    // A hand stolen between the rebase and the readback refuses the commit
+    // through the pipeline, and the claims are reported as still held.
+    bool testStolenHandFailsClosedInThePipeline()
+    {
+        bool ok = true;
+        Coordinator coordinator;
+        const auto identity = twoHandIdentity();
+
+        driveStagingFrame(coordinator, identity, 10, kBothHands, kBothHands);
+        coordinator.rotate();
+        coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
+        coordinator.observeReadback(identity, true, kRightOnly, kBothHands);
+
+        ok &= expectFalse("a stolen hand refuses the commit", coordinator.isCommitApproved());
+        ok &= expectTrue("the theft is counted", coordinator.abortCount(AbortReason::WinnerChanged) == 1u);
+        ok &= expectTrue("the caller is told to release the claims", coordinator.hasUncommittedInFlightClaims());
+        return ok;
+    }
+
     // A single attached hand runs the same pipeline.
     bool testOneHandPipeline()
     {
@@ -442,8 +488,9 @@ namespace
         driveStagingFrame(coordinator, identity, 10, kRightOnly, kRightOnly);
         coordinator.rotate();
         coordinator.observeFrikConsumed({ .frameIndex = 11, .schedulerSequence = 11 });
-        // The unrequested left hand contributes nothing either way.
-        coordinator.observeReadback(identity, kRightOnly, { 999u, 8u });
+        // The unrequested left hand contributes nothing either way: its bits
+        // stay clear in both masks and no check requires them.
+        coordinator.observeReadback(identity, true, kRightOnly, kRightOnly);
         ok &= expectTrue("a one-hand group commits", coordinator.isCommitApproved());
         coordinator.observeWeaponCommit(true);
         ok &= expectStage("the one-hand weapon commits", coordinator.inFlightStage(), Stage::Committed);
@@ -462,6 +509,7 @@ int main()
     ok &= testSchedulerDiscontinuityAborts();
     ok &= testReadbackCatchesSilentFallback();
     ok &= testWinnerChangeAborts();
+    ok &= testRetiredStagedGroupAborts();
     ok &= testFailedWeaponWriteAborts();
     ok &= testDetachedWeaponIsFlagged();
     ok &= testRejectedProposalAborts();
@@ -469,6 +517,7 @@ int main()
     ok &= testFallbackReadbackFailsClosed();
     ok &= testPartialGroupNeverReachesTheCommit();
     ok &= testSchedulerGapFailsClosedInThePipeline();
+    ok &= testStolenHandFailsClosedInThePipeline();
     ok &= testAbandonedInFlightIsCounted();
     ok &= testFreeSpaceFrameIsQuiet();
     ok &= testOneHandPipeline();

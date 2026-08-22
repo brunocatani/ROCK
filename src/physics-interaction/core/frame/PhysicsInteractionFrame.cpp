@@ -544,6 +544,12 @@ namespace rock
         if (attachedHands.right) {
             attachedHandMask |= presentation_transaction_policy::handBit(false);
         }
+        /*
+         * The per-step physics solve counter is deliberately NOT part of the
+         * identity. It advances every frame, and the identity must stay equal
+         * from the staging frame to the next frame's readback; sample
+         * staleness is already refused where the proposal is admitted.
+         */
         return presentation_transaction_policy::TransactionIdentity{
             .weaponGenerationKey = weaponGenerationKey,
             .worldGeneration =
@@ -552,8 +558,6 @@ namespace rock
                 _skeletonGenerationAtomic.load(std::memory_order_acquire),
             .providerGeneration =
                 _providerGenerationAtomic.load(std::memory_order_acquire),
-            .physicsSolveSequence =
-                _completedPhysicsSolveSequence.load(std::memory_order_acquire),
             .attachedHandMask = attachedHandMask,
         };
     }

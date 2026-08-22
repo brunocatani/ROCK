@@ -1560,7 +1560,6 @@ namespace rock
                 _weaponPresentationCoordinator.observeHandGroup(
                     stageResult.targetsAvailableMask,
                     stageResult.publishedMask,
-                    stageResult.winnerSequence,
                     presentation_transaction_policy::FrameStamp{
                         .frameIndex = frame.gameFrameIndex,
                         .schedulerSequence = frame.preFrikSchedulerSequence,

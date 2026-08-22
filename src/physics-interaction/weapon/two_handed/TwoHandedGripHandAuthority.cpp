@@ -1041,13 +1041,26 @@ namespace rock
              * The staged group is now expressed against the current driver.
              * The readback that follows this skeleton pass must compare the
              * solved wrist against this rebased target, not against the pose
-             * captured before the player moved.
+             * captured before the player moved. The winner sequence must be
+             * restamped for the same reason: the registry issues a fresh
+             * sequence on every publish, so after this republish the claim's
+             * stage-time sequence no longer names it, and a readback that
+             * still compared against it would count this pipeline's own
+             * rebase as a stolen hand and abort every commit.
              */
             if (_stagedWeaponCollisionCorrection.valid &&
                 _stagedWeaponCollisionCorrection.weaponGenerationKey ==
                     currentWeaponGenerationKey) {
                 _stagedWeaponCollisionCorrection
                     .publishedHandTargetWorld[index] = targetWorld;
+                frik_visual_authority::HandWorldAuthoritySnapshot winner{};
+                if (frik_visual_authority::
+                        tryGetPublishedExternalHandWorldWinner(
+                            handFromBool(isLeft),
+                            winner)) {
+                    _stagedWeaponCollisionCorrection.winnerSequence[index] =
+                        winner.sequence;
+                }
             }
         }
     }
@@ -1715,8 +1728,6 @@ namespace rock
             isFiniteTransform(
                 _stagedWeaponCollisionCorrection.correctionWorldDelta) &&
             authorityGenerationKey != 0;
-        stageResult.winnerSequence =
-            _stagedWeaponCollisionCorrection.winnerSequence;
         stageResult.staged = _stagedWeaponCollisionCorrection.valid;
 
         presentation_trace::recordCollisionGroupOutcome(
@@ -1748,12 +1759,18 @@ namespace rock
                     isLeft)) {
                 continue;
             }
+            // The staged sequence was restamped by the pre-solve rebase
+            // republish, so equality here means "the winner is still this
+            // group's own claim", and any later publish by another owner,
+            // at any priority that wins the hand, breaks it.
             frik_visual_authority::HandWorldAuthoritySnapshot winner{};
             if (frik_visual_authority::
                     tryGetPublishedExternalHandWorldWinner(
                         handFromBool(isLeft),
-                        winner)) {
-                readback.winnerSequence[index] = winner.sequence;
+                        winner) &&
+                winner.sequence == staged.winnerSequence[index]) {
+                readback.winnerUnchangedMask |=
+                    presentation_transaction_policy::handBit(isLeft);
             }
             RE::NiTransform presentedHandWorld{};
             if (!tryGetRootFlattenedHandBoneTransform(

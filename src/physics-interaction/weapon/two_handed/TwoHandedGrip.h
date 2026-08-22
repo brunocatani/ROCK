@@ -748,7 +748,6 @@ namespace rock
 
         struct WeaponCollisionStageResult
         {
-            std::array<std::uint64_t, 2> winnerSequence{};
             std::uint8_t requiredHandMask = 0;
             std::uint8_t targetsAvailableMask = 0;
             std::uint8_t publishedMask = 0;
@@ -775,7 +774,9 @@ namespace rock
 
         struct WeaponCollisionReadback
         {
-            std::array<std::uint64_t, 2> winnerSequence{};
+            // Bit set: the live winning owner for this required hand is still
+            // the claim this group last published, rebase republish included.
+            std::uint8_t winnerUnchangedMask = 0;
             std::uint8_t residualWithinPolicyMask = 0;
             bool hasStagedCorrection = false;
         };
@@ -784,7 +785,10 @@ namespace rock
          * Compares each staged hand target against the wrist the deferred
          * solve actually presented. This is the only observation that catches
          * the silent tracked-hand fallback, which the publish result never
-         * reports.
+         * reports. The winner comparison runs against the sequence stamped by
+         * this group's LATEST publish of each claim: the registry issues a
+         * fresh sequence on every publish, so comparing against the stage-time
+         * sequence would read the pipeline's own pre-solve rebase as a theft.
          */
         WeaponCollisionReadback readBackStagedWeaponCollisionGroup(
             std::uint64_t currentWeaponGenerationKey);

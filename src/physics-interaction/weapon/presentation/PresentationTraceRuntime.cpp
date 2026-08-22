@@ -26,6 +26,18 @@ namespace rock::presentation_trace
             policy::kInvariantCounterCount>
             g_counters{};
 
+        // For counters that measure normal behavior, not violations. The
+        // count stays queryable and visible in the per-frame trace row, but
+        // no "invariant violated" warning is issued for expected events.
+        void countOccurrence(const policy::InvariantCounter counter)
+        {
+            const auto index = static_cast<std::size_t>(counter);
+            if (index >= g_counters.size()) {
+                return;
+            }
+            g_counters[index].fetch_add(1, std::memory_order_relaxed);
+        }
+
         void bumpCounter(
             const policy::InvariantCounter counter,
             const char* const detail)
@@ -230,6 +242,25 @@ namespace rock::presentation_trace
     {
         g_record.transactionStage = stage;
         g_record.transactionAbortReason = abortReason;
+        /*
+         * A transaction abort is fail-closed and can be legitimate (a hand
+         * released mid-pipeline), but a RECURRING abort means the deferred
+         * commit is dead and the weapon silently never corrects — a failure
+         * the invariant counters cannot see, because the deferred path never
+         * writes the weapon at all. Keep it visible in the normal log at a
+         * sampled rate so it can never be silent again.
+         */
+        if (abortReason !=
+            presentation_transaction_policy::AbortReason::None) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                5000,
+                "Presentation transaction aborted: stage={} reason={} frame={} generation={:016X}",
+                presentation_transaction_policy::stageName(stage),
+                presentation_transaction_policy::abortReasonName(abortReason),
+                g_record.frameIndex,
+                g_record.weaponGenerationKey);
+        }
     }
 
     CollisionHandMasks currentCollisionHandMasks()
@@ -262,7 +293,8 @@ namespace rock::presentation_trace
         g_record.recoilConsumedSequence = consumedSequence;
         g_record.recoilApplied = applied;
         if (applied) {
-            bumpCounter(InvariantCounter::RecoilDeltaApplied, "kick-applied");
+            // An applied kick is normal behavior: count it, never warn.
+            countOccurrence(InvariantCounter::RecoilDeltaApplied);
         }
     }
 

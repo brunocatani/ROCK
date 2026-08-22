@@ -47,7 +47,10 @@ namespace rock::presentation_trace_policy
         // A collision correction reached a hand whose publication channel was
         // not ready, so the claim could never be honoured.
         CorrectionWhilePublicationUnready,
-        // A firing recoil delta was composed into the presented weapon.
+        // A firing recoil delta was composed into the presented weapon. This
+        // is an OCCURRENCE counter for normal behavior, not a violation: it
+        // is expected to be non-zero in any session where a gun fired, and it
+        // never triggers the invariant-violated warning.
         RecoilDeltaApplied,
         // A recoil delta was larger than the kick that produced it, so it was
         // dropped rather than applied. A recurring hit means the firing hand
