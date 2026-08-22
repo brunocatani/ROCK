@@ -1588,29 +1588,90 @@ namespace rock
         (void)_twoHandedGrip.applyFiringWeaponRecoilPresentation(
             weaponNode,
             currentWeaponGenerationKey);
-        if (weaponNode) {
-            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
-            _weaponCollision.updateBodiesFromCurrentSourceTransforms(
-                hknp,
-                weaponNode,
-                frame.deltaSeconds,
-                drivenSourceNodes.data(),
-                drivenSourceNodeCount);
+        /*
+         * The generated colliders and the muzzle are NOT published here. The
+         * gunstock finalize and provider AfterRock still move the weapon
+         * after this phase, and a consumer that sampled it now would describe
+         * a pose the player never saw. Hand the work to the main hook, which
+         * runs it once every writer of the frame has finished.
+         */
+        _pendingWeaponDownstreamPublication = {};
+        _pendingWeaponDownstreamPublication.drivenSourceNodes =
+            drivenSourceNodes;
+        _pendingWeaponDownstreamPublication.drivenSourceNodeCount =
+            drivenSourceNodeCount;
+        _pendingWeaponDownstreamPublication.hknpWorld = hknp;
+        _pendingWeaponDownstreamPublication.weaponNode = weaponNode;
+        _pendingWeaponDownstreamPublication.frameIndex = frame.gameFrameIndex;
+        _pendingWeaponDownstreamPublication.deltaSeconds = frame.deltaSeconds;
+        _pendingWeaponDownstreamPublication.valid = true;
+
+        _twoHandedGrip.finalizeGunstockAlignmentDebugSnapshot(
+            weaponNode,
+            gunstockProjectileNode,
+            currentWeaponGenerationKey);
+    }
+
+    void PhysicsInteraction::publishCommittedWeaponDownstream()
+    {
+        const auto pending = _pendingWeaponDownstreamPublication;
+        const auto pendingRegistration = _pendingStepDriveRegistration;
+        _pendingWeaponDownstreamPublication = {};
+        _pendingStepDriveRegistration = {};
+        const auto currentFrameIndex =
+            runtime_state::currentFrame().frameIndex;
+
+        /*
+         * Publishing the weapon must happen before the step-drive
+         * registration below, which is the barrier that hands this frame's
+         * collider targets to the physics callbacks.
+         */
+        publishWeaponColliderTargetsFromCommittedPose(
+            pending,
+            currentFrameIndex);
+
+        if (pendingRegistration.valid &&
+            pendingRegistration.frameIndex == currentFrameIndex) {
+            _generatedBodyStepDrive.registerForNextStep(
+                pendingRegistration.bhkWorld,
+                pendingRegistration.hknpWorld);
         }
-        if (f4vr::isNodeVisible(weaponNode)) {
+    }
+
+    void PhysicsInteraction::publishWeaponColliderTargetsFromCommittedPose(
+        const PendingWeaponDownstreamPublication& pending,
+        const std::uint64_t currentFrameIndex)
+    {
+        if (!pending.valid || pending.frameIndex != currentFrameIndex) {
+            // The equipped-weapon phase did not run this frame, or the
+            // capture belongs to an older one. Publishing either would drive
+            // the generated bodies from a pose nothing on screen matches.
+            return;
+        }
+
+        if (pending.weaponNode) {
+            performance_profiler::ScopedTimer profilerTimer(
+                performance_profiler::Scope::WeaponCollisionTransforms);
+            _weaponCollision.updateBodiesFromCurrentSourceTransforms(
+                pending.hknpWorld,
+                pending.weaponNode,
+                pending.deltaSeconds,
+                pending.drivenSourceNodes.data(),
+                pending.drivenSourceNodeCount);
+        }
+        if (f4vr::isNodeVisible(pending.weaponNode)) {
             applyFinalWeaponMuzzleAuthority();
         }
         /*
          * The generated colliders and the muzzle have now sampled the weapon.
          * Anything that moves it after this point leaves them describing a
-         * pose the player never saw, so record what they read.
+         * pose the player never saw, so record what they read; the trace
+         * compares it against the finally presented weapon.
          */
         presentation_trace::sampleWeaponAtColliderPublication(
-            weaponNode != nullptr,
-            weaponNode ? weaponNode->world : RE::NiTransform{});
-        _twoHandedGrip.finalizeGunstockAlignmentDebugSnapshot(
-            weaponNode,
-            gunstockProjectileNode,
-            currentWeaponGenerationKey);
+            pending.weaponNode != nullptr,
+            pending.weaponNode ?
+                pending.weaponNode->world :
+                RE::NiTransform{});
     }
 }

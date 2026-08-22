@@ -879,9 +879,21 @@ namespace rock
         }
 
         ::rock::provider::dispatchFrameCallbacks(*this);
-        // Publish callback ownership only after every main-thread collider
-        // mutation and target update for this frame has committed.
-        _generatedBodyStepDrive.registerForNextStep(frame.bhkWorld, frame.hknpWorld);
+        /*
+         * Callback ownership is still published only after every main-thread
+         * collider mutation and target update for this frame has committed.
+         * The last of those moved out of this phase: generated weapon
+         * collider targets are now published from the main hook, once the
+         * gunstock finalize and provider AfterRock have finished moving the
+         * weapon. So the registration moves with them rather than running
+         * here, one step ahead of the mutation it is meant to follow.
+         */
+        _pendingStepDriveRegistration = PendingStepDriveRegistration{
+            .bhkWorld = frame.bhkWorld,
+            .hknpWorld = frame.hknpWorld,
+            .frameIndex = frame.gameFrameIndex,
+            .valid = true,
+        };
 
         // Defer immutable overlay construction until the outer frame hook has
         // also completed native-animation finalization and every provider

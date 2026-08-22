@@ -113,6 +113,15 @@ namespace rock
         // animation authority can consume the frame-local gunstock correction.
         void finalizeGunstockPresentationAfterNativeAnimation();
 
+        /*
+         * Called after provider AfterRock and the gunstock finalize, before
+         * the provider Complete phase. Generated weapon collider targets and
+         * muzzle authority are published here so every downstream consumer
+         * samples the weapon pose the player was actually shown, rather than
+         * the pose it held before the last writers of the frame ran.
+         */
+        void publishCommittedWeaponDownstream();
+
         // Called after the provider Complete phase. This freezes immutable
         // logical debug geometry after all game-thread mutations. Generated
         // Havok body matrices are paired with it only after the native
@@ -619,6 +628,43 @@ namespace rock
         weapon_intent_stability_policy::State _weaponIntentStabilityState{};
         weapon_intent_stability_policy::Sample _weaponIntentStabilitySample{};
         EquippedWeaponPresentationCoordinator _weaponPresentationCoordinator;
+        /*
+         * Everything publishCommittedWeaponDownstream needs, captured while
+         * the equipped-weapon frame still owns it. The scene and world
+         * pointers are non-owning and live only from ROCK's frame phase to
+         * the main hook that consumes them in the same game frame; the frame
+         * index stamp is what enforces that.
+         */
+        struct PendingWeaponDownstreamPublication
+        {
+            std::array<
+                const RE::NiAVObject*,
+                ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>
+                drivenSourceNodes{};
+            std::size_t drivenSourceNodeCount = 0;
+            RE::hknpWorld* hknpWorld = nullptr;
+            RE::NiNode* weaponNode = nullptr;
+            std::uint64_t frameIndex = 0;
+            float deltaSeconds = 0.0f;
+            bool valid = false;
+        };
+        PendingWeaponDownstreamPublication
+            _pendingWeaponDownstreamPublication{};
+        // The generated-body step drive registration follows the last collider
+        // target update of the frame, which is now the weapon publication in
+        // the main hook rather than the end of the ROCK frame.
+        struct PendingStepDriveRegistration
+        {
+            RE::bhkWorld* bhkWorld = nullptr;
+            RE::hknpWorld* hknpWorld = nullptr;
+            std::uint64_t frameIndex = 0;
+            bool valid = false;
+        };
+        PendingStepDriveRegistration _pendingStepDriveRegistration{};
+
+        void publishWeaponColliderTargetsFromCommittedPose(
+            const PendingWeaponDownstreamPublication& pending,
+            std::uint64_t currentFrameIndex);
 
         EquippedWeaponTransitionCoordinator _equippedWeaponTransition;
 

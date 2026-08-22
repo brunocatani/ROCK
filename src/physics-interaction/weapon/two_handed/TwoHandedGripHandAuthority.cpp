@@ -1425,7 +1425,8 @@ namespace rock
         }
 
         // This is a terminal presentation overlay, not new collision intent.
-        // The collision bodies and muzzle sample the resulting weapon below.
+        // The collision bodies and muzzle sample the resulting weapon later in
+        // the frame, from the main hook, after every writer has finished.
         const bool recoilApplied = applyWeaponVisualAuthority(
             weaponNode,
             recoiledWeaponWorld,

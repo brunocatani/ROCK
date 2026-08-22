@@ -149,6 +149,60 @@ namespace
         return ok;
     }
 
+    /*
+     * Case 15. Once the collider targets and the muzzle are published from
+     * the committed pose, nothing moves the weapon afterwards, so what those
+     * consumers sampled is what the player was shown. This is the release
+     * gate for the downstream-ordering change: the counter must read zero.
+     */
+    bool testCommittedPublicationLeavesNoDrift()
+    {
+        bool ok = true;
+        presentation_trace_policy::FrameRecord record{};
+        record.valid = true;
+        record.weaponSampledAtColliderPublication = true;
+        record.lateWriterTranslationGameUnits = 0.0f;
+        record.lateWriterRotationDegrees = 0.0f;
+        ok &= expectFalse(
+            "a committed publication has no downstream drift",
+            presentation_trace_policy::violatesDownstreamOrdering(record));
+        return ok;
+    }
+
+    /*
+     * Case 13. The gunstock finalize and a dynamic weapon correction land in
+     * the same frame. If the colliders sampled the weapon before the gunstock
+     * moved it, they describe an aim the player never had. That is the defect
+     * the counter names, and it is the reason the publication moved after
+     * every writer.
+     */
+    bool testGunstockAfterColliderSampleIsAnOrderingViolation()
+    {
+        bool ok = true;
+        presentation_trace_policy::FrameRecord record{};
+        record.valid = true;
+        record.weaponSampledAtColliderPublication = true;
+        // A gunstock alignment is a small but clearly visible correction.
+        record.lateWriterTranslationGameUnits = 1.8f;
+        record.lateWriterRotationDegrees = 3.2f;
+        ok &= expectTrue(
+            "a gunstock write after the collider sample is a violation",
+            presentation_trace_policy::violatesDownstreamOrdering(record));
+
+        // A rotation-only late write is caught the same way.
+        record.lateWriterTranslationGameUnits = 0.0f;
+        ok &= expectTrue(
+            "a rotation-only late write is a violation",
+            presentation_trace_policy::violatesDownstreamOrdering(record));
+
+        // A frame that published nothing downstream makes no claim.
+        record.weaponSampledAtColliderPublication = false;
+        ok &= expectFalse(
+            "no publication means no ordering claim",
+            presentation_trace_policy::violatesDownstreamOrdering(record));
+        return ok;
+    }
+
     bool testIntentStabilityCountsSteadyFrames()
     {
         bool ok = true;
@@ -213,6 +267,8 @@ int main()
     ok &= testGroupAtomicityInvariant();
     ok &= testPublicationReadinessInvariant();
     ok &= testDownstreamOrderingInvariant();
+    ok &= testCommittedPublicationLeavesNoDrift();
+    ok &= testGunstockAfterColliderSampleIsAnOrderingViolation();
     ok &= testIntentStabilityCountsSteadyFrames();
     ok &= testIntentStabilityRejectsAttachFlightAndGenerationEdge();
     return ok ? 0 : 1;

@@ -768,6 +768,14 @@ namespace
             s_physicsInteraction) {
             s_physicsInteraction->
                 finalizeGunstockPresentationAfterNativeAnimation();
+            /*
+             * Every writer of the weapon presentation has now run: the ROCK
+             * frame, provider AfterRock, and the gunstock finalize. Publish
+             * the generated collider targets and muzzle authority from that
+             * committed pose so no downstream consumer describes a weapon the
+             * player never saw.
+             */
+            s_physicsInteraction->publishCommittedWeaponDownstream();
         }
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::Complete,
