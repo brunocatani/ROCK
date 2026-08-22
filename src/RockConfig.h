@@ -90,6 +90,7 @@ namespace rock
         bool rockDebugProviderColliderFocusEnabled = false;
         bool rockDebugColliderClockLogging = false;
         bool rockDebugDynamicWeaponLogging = false;
+        bool rockDebugPresentationTraceLogging = false;
         bool rockPerformanceProfilerEnabled = false;
         int rockPerformanceProfilerLogIntervalFrames = 300;
         int rockPerformanceProfilerWarmupFrames = 120;

@@ -27,6 +27,7 @@
 #include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/native_anim/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/weapon/presentation/PresentationTraceRuntime.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -777,23 +778,51 @@ namespace rock
             captured.parentHandIsLeft ? 0u : 1u;
         auto* const currentParentHand =
             resolveFirstPersonHandNode(captured.parentHandIsLeft);
+        /*
+         * The guard order below is unchanged; each clause now names the state
+         * that refused the restore. A refusal leaves the weapon wherever the
+         * deferred hand solve put it, so the reason is the first thing a
+         * presentation defect investigation needs.
+         */
+        using RestoreGuardFailure =
+            presentation_trace::RestoreGuardFailure;
         frik_visual_authority::HandWorldAuthoritySnapshot winner{};
-        if (!weaponNode ||
-            weaponNode != captured.weaponNode ||
-            currentWeaponGenerationKey == 0 ||
-            currentWeaponGenerationKey != captured.weaponGenerationKey ||
-            currentSchedulerSequence == 0 ||
-            currentSchedulerSequence != captured.schedulerSequence ||
-            !currentParentHand ||
-            currentParentHand != captured.parentHandNode ||
-            weaponNode->parent != currentParentHand ||
-            (!hasVisualAuthorityForHand(captured.parentHandIsLeft) &&
-                !_weaponCollisionHandAuthorityLive[handIndex]) ||
-            !frik_visual_authority::
-                tryGetPublishedExternalHandWorldWinner(hand, winner) ||
-            winner.sequence != captured.handWorldPublicationSequence ||
-            !frik_visual_authority::
-                weaponPresentationFollowsRole(winner.role)) {
+        const auto guardFailure = [&]() -> RestoreGuardFailure {
+            if (!weaponNode || weaponNode != captured.weaponNode) {
+                return RestoreGuardFailure::WeaponNodeMismatch;
+            }
+            if (currentWeaponGenerationKey == 0 ||
+                currentWeaponGenerationKey != captured.weaponGenerationKey) {
+                return RestoreGuardFailure::GenerationMismatch;
+            }
+            if (currentSchedulerSequence == 0 ||
+                currentSchedulerSequence != captured.schedulerSequence) {
+                return RestoreGuardFailure::SchedulerMismatch;
+            }
+            if (!currentParentHand ||
+                currentParentHand != captured.parentHandNode ||
+                weaponNode->parent != currentParentHand) {
+                return RestoreGuardFailure::ParentHandMismatch;
+            }
+            if (!hasVisualAuthorityForHand(captured.parentHandIsLeft) &&
+                !_weaponCollisionHandAuthorityLive[handIndex]) {
+                return RestoreGuardFailure::NoHandAuthority;
+            }
+            if (!frik_visual_authority::
+                    tryGetPublishedExternalHandWorldWinner(hand, winner)) {
+                return RestoreGuardFailure::NoWinner;
+            }
+            if (winner.sequence != captured.handWorldPublicationSequence) {
+                return RestoreGuardFailure::WinnerSequenceChanged;
+            }
+            if (!frik_visual_authority::
+                    weaponPresentationFollowsRole(winner.role)) {
+                return RestoreGuardFailure::WinnerRoleNotWeaponFollowing;
+            }
+            return RestoreGuardFailure::None;
+        }();
+        if (guardFailure != RestoreGuardFailure::None) {
+            presentation_trace::recordRestoreGuard(guardFailure);
             return false;
         }
 
@@ -834,8 +863,11 @@ namespace rock
                     "independent",
                 currentWeaponGenerationKey,
                 captured.parentHandIsLeft ? "left" : "right");
+            presentation_trace::recordRestoreGuard(
+                RestoreGuardFailure::RigidMoveFailed);
             return false;
         }
+        presentation_trace::recordRestoreGuard(RestoreGuardFailure::None);
         return true;
     }
 
@@ -1264,6 +1296,13 @@ namespace rock
 
         // Consume first so a failed/stale sample can never kick a later weapon.
         _firingRecoilConsumedSequence = acceptedSequence;
+        // Record the ticket before the eligibility chain. Every later return
+        // path below is a rejected kick, and the trace must show that the
+        // ticket existed and was dropped rather than showing nothing.
+        presentation_trace::recordRecoil(
+            acceptedSequence,
+            _firingRecoilConsumedSequence,
+            false);
         const bool acceptedHandIsLeft =
             _firingRecoilAcceptedHandIsLeft;
         const std::size_t acceptedHandIndex =
@@ -1317,11 +1356,16 @@ namespace rock
 
         // This is a terminal presentation overlay, not new collision intent.
         // The collision bodies and muzzle sample the resulting weapon below.
-        return applyWeaponVisualAuthority(
+        const bool recoilApplied = applyWeaponVisualAuthority(
             weaponNode,
             recoiledWeaponWorld,
             currentWeaponGenerationKey,
             false);
+        presentation_trace::recordRecoil(
+            acceptedSequence,
+            _firingRecoilConsumedSequence,
+            recoilApplied);
+        return recoilApplied;
     }
 
     bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
@@ -1506,6 +1550,18 @@ namespace rock
                 static_cast<int>(_state),
                 _firingHandIsLeft ? "left" : "right");
         }
+        std::array<presentation_trace::HandRecord, 2> handRecords{};
+        for (std::size_t index = 0; index < handRecords.size(); ++index) {
+            const auto& pulse = pulses[index];
+            handRecords[index].collisionRequested = pulse.requested;
+            handRecords[index].collisionTargetValid = pulse.targetValid;
+            handRecords[index].collisionApplied = pulse.applied;
+            handRecords[index].collisionAuthorityLive = pulse.retained;
+        }
+        presentation_trace::recordCollisionGroupOutcome(
+            weaponPublished,
+            handPulsesSucceeded,
+            handRecords);
         return weaponPublished && handPulsesSucceeded;
     }
 

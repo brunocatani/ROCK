@@ -37,6 +37,7 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/collision/WeaponCollision.h"
+#include "physics-interaction/weapon/collision/WeaponIntentStabilityPolicy.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/NativeReloadHandAuthorityPolicy.h"
@@ -115,6 +116,11 @@ namespace rock
         // Havok body matrices are paired with it only after the native
         // pre-collide drive consumes this frame's queued targets.
         void publishDebugOverlayAfterFrameCallbacks();
+
+        // Closes this frame's presentation trace record. It runs last, after
+        // every writer of the weapon presentation, so the invariant checks see
+        // the pose the player was actually shown.
+        void finalizePresentationTraceFrame();
 
         [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
             std::uint64_t& outWeaponGenerationKey,
@@ -589,6 +595,9 @@ namespace rock
 
         WeaponCollision _weaponCollision;
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
+        // Tracks how long the weapon has held a steady relation to its
+        // controller driver. An equip flight or a graph rebuild resets it.
+        weapon_intent_stability_policy::State _weaponIntentStabilityState{};
 
         EquippedWeaponTransitionCoordinator _equippedWeaponTransition;
 

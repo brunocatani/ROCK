@@ -22,6 +22,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
+#include "physics-interaction/weapon/presentation/PresentationTraceRuntime.h"
 
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
@@ -1403,6 +1404,15 @@ namespace rock
                 weaponNode,
                 currentWeaponGenerationKey,
                 _weaponCollision);
+        presentation_trace::recordDynamicWeaponFrame(
+            dynamicWeaponFrame.proxyActive,
+            dynamicWeaponFrame.contactActive,
+            dynamicWeaponFrame.publishVisualAuthority,
+            dynamicWeaponFrame.contactRetentionSeconds,
+            dynamicWeaponFrame.translationCorrectionGameUnits,
+            dynamicWeaponFrame.rotationCorrectionDegrees,
+            dynamicWeaponFrame.snapshotOtherBodyId,
+            dynamicWeaponFrame.snapshotOtherLayer);
         if (dynamicWeaponFrame.contactEpisodeStarted &&
             g_rockConfig.rockDebugDynamicWeaponLogging) {
             auto* otherRef = resolveBodyToRef(
@@ -1533,6 +1543,14 @@ namespace rock
         if (f4vr::isNodeVisible(weaponNode)) {
             applyFinalWeaponMuzzleAuthority();
         }
+        /*
+         * The generated colliders and the muzzle have now sampled the weapon.
+         * Anything that moves it after this point leaves them describing a
+         * pose the player never saw, so record what they read.
+         */
+        presentation_trace::sampleWeaponAtColliderPublication(
+            weaponNode != nullptr,
+            weaponNode ? weaponNode->world : RE::NiTransform{});
         _twoHandedGrip.finalizeGunstockAlignmentDebugSnapshot(
             weaponNode,
             gunstockProjectileNode,

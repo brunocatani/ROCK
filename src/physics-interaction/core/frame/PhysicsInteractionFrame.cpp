@@ -15,6 +15,7 @@
 #include "physics-interaction/core/FrikSkeletonProfile.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
+#include "physics-interaction/weapon/presentation/PresentationTraceRuntime.h"
 
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
@@ -486,6 +487,11 @@ namespace rock
             return;
         }
 
+        presentation_trace::beginFrame(
+            frame.gameFrameIndex,
+            frame.preFrikSchedulerSequence,
+            0);
+
         // The frame runs in this order. Each phase is a member below.
         EquippedWeaponFrame weaponFrame{};
         serviceFrameEntryReconcile(frame, weaponFrame);
@@ -499,6 +505,14 @@ namespace rock
         finishDynamicWeaponFrame(frame, weaponFrame);
         updateInteractionFrame(frame, weaponFrame);
         completeFrame(frame);
+    }
+
+    void PhysicsInteraction::finalizePresentationTraceFrame()
+    {
+        auto* const weaponNode = resolveEquippedWeaponInteractionNode();
+        presentation_trace::finalizeFrame(
+            weaponNode != nullptr,
+            weaponNode ? weaponNode->world : RE::NiTransform{});
     }
 
     // Phase 1. Settle anything a menu left half-done, then decide who owns the
@@ -632,6 +646,23 @@ namespace rock
 
         weaponFrame.generationKey = _weaponCollision.getCurrentWeaponGenerationKey();
         weaponFrame.ownershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
+        presentation_trace::recordWeaponGeneration(weaponFrame.generationKey);
+        /*
+         * Measure the weapon against its controller driver, before any ROCK
+         * authority writes this frame. Player locomotion cancels out of that
+         * local relation, so a moving value means the engine is still flying
+         * the weapon into place after an equip or rebuilding its graph.
+         */
+        presentation_trace::recordIntentStability(
+            weapon_intent_stability_policy::update(
+                _weaponIntentStabilityState,
+                frame.rightWeaponDriver.valid,
+                frame.rightWeaponDriver.world,
+                weaponFrame.weaponNode != nullptr,
+                weaponFrame.weaponNode ?
+                    weaponFrame.weaponNode->world :
+                    RE::NiTransform{},
+                weaponFrame.generationKey));
         _twoHandedGrip.beginWeaponCollisionPresentationFrame(
             weaponFrame.generationKey);
         const bool suppressDefaultNativeWeaponIntent =

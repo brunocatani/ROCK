@@ -607,6 +607,10 @@ namespace rock
         result.rotationCorrectionDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(
             resolvedWeaponWorld,
             _frameRequestedWeaponWorld);
+        result.contactActive = snapshot.contactActive;
+        result.contactRetentionSeconds = snapshot.contactRetentionSeconds;
+        result.snapshotOtherBodyId = snapshot.otherBodyId;
+        result.snapshotOtherLayer = snapshot.otherLayer;
         _debugSnapshot.contactActive = snapshot.contactActive;
         _debugSnapshot.otherBodyId = snapshot.otherBodyId;
         _debugSnapshot.otherLayer = snapshot.otherLayer;

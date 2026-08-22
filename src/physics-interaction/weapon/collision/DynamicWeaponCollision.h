@@ -41,6 +41,17 @@ namespace rock
             bool proxyActive{ false };
             bool publishVisualAuthority{ false };
             bool contactEpisodeStarted{ false };
+            /*
+             * The retained-contact state of the current physics snapshot. The
+             * contact diagnostic fields below describe only the frame a new
+             * contact episode opened, and only while contact debugging is on,
+             * so presentation callers need this always-populated view of who
+             * the weapon is currently touching and for how long.
+             */
+            bool contactActive{ false };
+            float contactRetentionSeconds{ 0.0f };
+            std::uint32_t snapshotOtherBodyId{ 0x7FFF'FFFFu };
+            std::uint32_t snapshotOtherLayer{ 0 };
             bool rawContactPointValid{ false };
             bool rawContactProxyWasBodyA{ false };
             bool otherBodyWorldValid{ false };

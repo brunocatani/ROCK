@@ -17,6 +17,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
+#include "physics-interaction/weapon/presentation/PresentationTraceRuntime.h"
 
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
@@ -851,6 +852,8 @@ namespace rock
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
         _pendingDebugOverlayFrame = {};
+        presentation_trace::reset();
+        weapon_intent_stability_policy::reset(_weaponIntentStabilityState);
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
         debug::ShutdownShapePipeline();
         equipped_weapon_handling_runtime::reset();

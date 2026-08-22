@@ -343,6 +343,7 @@ namespace rock
         rockDebugProviderColliderFocusEnabled = false;
         rockDebugColliderClockLogging = false;
         rockDebugDynamicWeaponLogging = false;
+        rockDebugPresentationTraceLogging = false;
         rockPerformanceProfilerEnabled = false;
         rockPerformanceProfilerLogIntervalFrames = 300;
         rockPerformanceProfilerWarmupFrames = 120;
@@ -1665,6 +1666,7 @@ namespace rock
         rockDebugGrabFrameLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bGrabFrame", rockDebugGrabFrameLogging);
         rockDebugColliderClockLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bColliderClock", rockDebugColliderClockLogging);
         rockDebugDynamicWeaponLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bDynamicWeapon", rockDebugDynamicWeaponLogging);
+        rockDebugPresentationTraceLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bPresentationTrace", rockDebugPresentationTraceLogging);
         rockDebugGrabTimelineTrace = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bGrabTimeline", rockDebugGrabTimelineTrace);
         rockDebugGrabAfterSolveAnomalySampling =
             ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
@@ -2863,6 +2865,7 @@ namespace rock
         rockDebugGrabAfterSolveAnomalySampling = rockDebugLoggingEnabled && rockDebugGrabAfterSolveAnomalySampling;
         rockDebugColliderClockLogging = rockDebugLoggingEnabled && rockDebugColliderClockLogging;
         rockDebugDynamicWeaponLogging = rockDebugLoggingEnabled && rockDebugDynamicWeaponLogging;
+        rockDebugPresentationTraceLogging = rockDebugLoggingEnabled && rockDebugPresentationTraceLogging;
         rockDebugDumpWeaponAnimNodes = rockDebugLoggingEnabled && rockDebugDumpWeaponAnimNodes;
         rockDebugWeaponOmodDumpEnabled = rockDebugLoggingEnabled && rockDebugWeaponOmodDumpEnabled;
         rockDebugWeaponOmodCoverageAudit = rockDebugLoggingEnabled && rockDebugWeaponOmodCoverageAudit;

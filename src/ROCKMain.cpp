@@ -775,6 +775,9 @@ namespace
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
             s_physicsInteraction) {
             s_physicsInteraction->publishDebugOverlayAfterFrameCallbacks();
+            // Last writer of the frame. Every weapon presentation owner, ROCK
+            // and provider alike, has finished by this point.
+            s_physicsInteraction->finalizePresentationTraceFrame();
         }
     }
 
