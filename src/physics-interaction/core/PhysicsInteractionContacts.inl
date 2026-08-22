@@ -550,6 +550,12 @@
 
         const auto bodyIdA = *reinterpret_cast<const std::uint32_t*>(data + 0x08);
         const auto bodyIdB = *reinterpret_cast<const std::uint32_t*>(data + 0x0C);
+        const auto shapeKeyA =
+            *reinterpret_cast<const std::uint32_t*>(data + 0x10);
+        const auto shapeKeyB =
+            *reinterpret_cast<const std::uint32_t*>(data + 0x14);
+        const auto manifoldPointCount =
+            *reinterpret_cast<const std::int32_t*>(data + 0x30);
         if (!contact_pipeline_policy::isValidBodyId(bodyIdA) ||
             !contact_pipeline_policy::isValidBodyId(bodyIdB) ||
             bodyIdA == bodyIdB) {
@@ -567,35 +573,34 @@
         const bool bodyAIsDynamicHand =
             _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
                 bodyIdA,
+                shapeKeyA,
                 dynamicBodySourceA);
         const bool bodyBIsDynamicHand =
             _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
                 bodyIdB,
+                shapeKeyB,
                 dynamicBodySourceB);
         const bool bodyAIsDynamicWeapon =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeapon =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (bodyAIsDynamicHand && bodyBIsDynamicHand &&
-            dynamicBodySourceA.isLeft != dynamicBodySourceB.isLeft) {
+        const bool solvedChildContact =
+            manifoldPointCount > 0 && manifoldPointCount <= 4;
+        if (solvedChildContact && bodyAIsDynamicHand) {
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceA,
-                true,
-                false);
+                bodyBIsDynamicHand &&
+                    dynamicBodySourceA.isLeft !=
+                        dynamicBodySourceB.isLeft,
+                bodyBIsDynamicWeapon);
+        }
+        if (solvedChildContact && bodyBIsDynamicHand) {
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceB,
-                true,
-                false);
-        } else if (bodyAIsDynamicHand && bodyBIsDynamicWeapon) {
-            _dynamicHandCollision.recordDynamicBodyContactCallback(
-                dynamicBodySourceA,
-                false,
-                true);
-        } else if (bodyBIsDynamicHand && bodyAIsDynamicWeapon) {
-            _dynamicHandCollision.recordDynamicBodyContactCallback(
-                dynamicBodySourceB,
-                false,
-                true);
+                bodyAIsDynamicHand &&
+                    dynamicBodySourceA.isLeft !=
+                        dynamicBodySourceB.isLeft,
+                bodyAIsDynamicWeapon);
         }
 
         /*
@@ -608,12 +613,15 @@
         const bool bodyAIsDynamicHandSurfaceSource =
             _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
                 bodyIdA,
+                shapeKeyA,
                 dynamicHandSourceA);
         const bool bodyBIsDynamicHandSurfaceSource =
             _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
                 bodyIdB,
+                shapeKeyB,
                 dynamicHandSourceB);
-        if (bodyAIsDynamicHandSurfaceSource !=
+        if (solvedChildContact &&
+            bodyAIsDynamicHandSurfaceSource !=
             bodyBIsDynamicHandSurfaceSource) {
             const auto& source = bodyAIsDynamicHandSurfaceSource ?
                 dynamicHandSourceA :
@@ -628,11 +636,37 @@
                 otherFilterInfo);
             const auto otherLayer =
                 otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            hand_semantic_contact_state::SemanticContactVector pointGame{};
+            hand_semantic_contact_state::SemanticContactVector normalGame{};
+            const float scale = havokToGameScale();
+            const auto* normalHavok =
+                reinterpret_cast<const float*>(data + 0x40);
+            normalGame = {
+                normalHavok[0],
+                normalHavok[1],
+                normalHavok[2],
+            };
+            for (std::int32_t pointIndex = 0;
+                 pointIndex < manifoldPointCount;
+                 ++pointIndex) {
+                const auto* pointHavok = reinterpret_cast<const float*>(
+                    data + 0x70 + pointIndex * 0x10);
+                pointGame.x += pointHavok[0] * scale;
+                pointGame.y += pointHavok[1] * scale;
+                pointGame.z += pointHavok[2] * scale;
+            }
+            const float inversePointCount =
+                1.0f / static_cast<float>(manifoldPointCount);
+            pointGame.x *= inversePointCount;
+            pointGame.y *= inversePointCount;
+            pointGame.z *= inversePointCount;
             _dynamicHandCollision.recordSurfaceManifoldProcessedCallback(
                 source,
                 otherBodyId,
                 otherLayerRead,
-                otherLayer);
+                otherLayer,
+                &pointGame,
+                &normalGame);
         }
 
         const bool bodyAIsWeaponProxy =
@@ -689,103 +723,12 @@
             return hasRawContactPoint;
         };
 
-        DynamicHandCollisionRuntime::DynamicBodyContactSource
-            dynamicBodySourceA{};
-        DynamicHandCollisionRuntime::DynamicBodyContactSource
-            dynamicBodySourceB{};
-        const bool bodyAIsDynamicHand =
-            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
-                bodyIdA,
-                dynamicBodySourceA);
-        const bool bodyBIsDynamicHand =
-            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
-                bodyIdB,
-                dynamicBodySourceB);
-        const bool bodyAIsDynamicWeapon =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
-        const bool bodyBIsDynamicWeapon =
-            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (bodyAIsDynamicHand && bodyBIsDynamicHand &&
-            dynamicBodySourceA.isLeft != dynamicBodySourceB.isLeft) {
-            _dynamicHandCollision.recordDynamicBodyContactCallback(
-                dynamicBodySourceA,
-                true,
-                false);
-            _dynamicHandCollision.recordDynamicBodyContactCallback(
-                dynamicBodySourceB,
-                true,
-                false);
-        } else if (bodyAIsDynamicHand && bodyBIsDynamicWeapon) {
-            _dynamicHandCollision.recordDynamicBodyContactCallback(
-                dynamicBodySourceA,
-                false,
-                true);
-        } else if (bodyBIsDynamicHand && bodyAIsDynamicWeapon) {
-            _dynamicHandCollision.recordDynamicBodyContactCallback(
-                dynamicBodySourceB,
-                false,
-                true);
-        }
-
         /*
-         * Dynamic palm/fingertip twins remain outside the ordinary generated
-         * body registry. Publish only their world-surface pairs into the
-         * dedicated fixed-anchor channel before the normal prefilter discards
-         * them. Forearm twins are deliberately not grab triggers.
+         * Dynamic-hand compound child identity exists only in the verified
+         * key-2 shape keys. Key-3 impulse records carry the shared body ID but
+         * cannot identify a semantic child, so they must not publish hand
+         * contact or surface-grab evidence.
          */
-        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceA{};
-        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceB{};
-        const bool bodyAIsDynamicHandSurfaceSource =
-            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
-                bodyIdA,
-                dynamicHandSourceA);
-        const bool bodyBIsDynamicHandSurfaceSource =
-            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
-                bodyIdB,
-                dynamicHandSourceB);
-        if (bodyAIsDynamicHandSurfaceSource !=
-            bodyBIsDynamicHandSurfaceSource) {
-            const auto& source = bodyAIsDynamicHandSurfaceSource ?
-                dynamicHandSourceA :
-                dynamicHandSourceB;
-            const std::uint32_t otherBodyId =
-                bodyAIsDynamicHandSurfaceSource ? bodyIdB : bodyIdA;
-            std::uint32_t otherFilterInfo = 0;
-            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
-                world,
-                RE::hknpBodyId{ otherBodyId },
-                otherFilterInfo);
-            const std::uint32_t otherLayer =
-                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-            if (otherLayerRead &&
-                collision_layer_policy::isDynamicHandProxySurfaceLayer(
-                    otherLayer)) {
-                hand_semantic_contact_state::SemanticContactVector pointGame{};
-                hand_semantic_contact_state::SemanticContactVector normalGame{};
-                const hand_semantic_contact_state::SemanticContactVector* point = nullptr;
-                const hand_semantic_contact_state::SemanticContactVector* normal = nullptr;
-                if (ensureRawContactPoint()) {
-                    const float scale = havokToGameScale();
-                    pointGame = {
-                        rawContactPoint.contactPointHavok[0] * scale,
-                        rawContactPoint.contactPointHavok[1] * scale,
-                        rawContactPoint.contactPointHavok[2] * scale
-                    };
-                    normalGame = {
-                        rawContactPoint.contactNormalHavok[0],
-                        rawContactPoint.contactNormalHavok[1],
-                        rawContactPoint.contactNormalHavok[2]
-                    };
-                    point = &pointGame;
-                    normal = &normalGame;
-                }
-                _dynamicHandCollision.recordSurfaceContactCallback(
-                    source,
-                    otherBodyId,
-                    point,
-                    normal);
-            }
-        }
 
         /*
          * The dynamic weapon proxy is intentionally absent from the normal

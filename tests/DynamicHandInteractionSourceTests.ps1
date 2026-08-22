@@ -106,8 +106,11 @@ Reject-Pattern $handSource `
     'The main frame must never mutate the native pair table.'
 
 Require-Pattern $contacts `
-    'tryClassifyDynamicBodyContactSourceAtomic\([\s\S]*recordDynamicBodyContactCallback\([\s\S]*bodyAIsDynamicWeapon[\s\S]*bodyBIsDynamicWeapon' `
-    'Both callback paths must aggregate dynamic hand-hand and hand-weapon pairs before registry filtering.'
+    'handleManifoldProcessedEvent\([\s\S]*shapeKeyA[\s\S]*shapeKeyB[\s\S]*tryClassifyDynamicBodyContactSourceAtomic\([\s\S]*recordDynamicBodyContactCallback\([\s\S]*bodyAIsDynamicWeapon[\s\S]*bodyBIsDynamicWeapon' `
+    'Processed manifolds must aggregate exact dynamic hand-hand and hand-weapon child pairs before registry filtering.'
+Reject-Pattern $contacts `
+    'handleContactEvent\([\s\S]*tryClassifyDynamicBodyContactSourceAtomic\(' `
+    'Key-3 impulse records must not guess compound child identity.'
 Require-Pattern $handHeader `
     'pendingOtherHandContactMaskAtomic[\s\S]*pendingWeaponContactMaskAtomic' `
     'Dynamic pair contact publication must use bounded atomic slot masks.'

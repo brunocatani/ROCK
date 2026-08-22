@@ -171,18 +171,22 @@ namespace rock::debug
             std::uintptr_t shapeAddress{ 0 };
             ShapeKey key{};
             float detailUniformScale{ 1.0f };
+            int shapeType{ -1 };
         };
 
         struct PublishedBodyEntry
         {
             ShapeKey shapeKey{};
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
+            DirectX::XMMATRIX childLocalMatrix =
+                DirectX::XMMatrixIdentity();
             DirectX::XMFLOAT3 worldAabbMin{};
             DirectX::XMFLOAT3 worldAabbMax{};
             BodyOverlayRole role{ BodyOverlayRole::Target };
             std::uint32_t bodyId{ kInvalidBodyId };
             float detailUniformScale{ 1.0f };
             bool hasValidWorldAabb{ false };
+            bool hasChildLocalMatrix{ false };
         };
 
         struct PublishedAxisEntry
@@ -927,6 +931,117 @@ namespace rock::debug
             return recipe.valid;
         }
 
+        struct CapturedCompoundChild
+        {
+            std::uintptr_t shapeAddress{ 0 };
+            std::array<float, 16> transform{};
+            std::array<float, 3> scale{};
+        };
+
+        inline constexpr std::size_t kMaxExpandedCompoundChildren = 64;
+
+        std::int32_t captureCompoundChildSlotsUnsafe(
+            const std::uintptr_t shapeAddress,
+            const OverlayRenderSettings& settings,
+            std::array<CapturedCompoundChild,
+                kMaxExpandedCompoundChildren>& outChildren)
+        {
+            try {
+                const auto slotArray =
+                    *reinterpret_cast<const std::uintptr_t*>(
+                        shapeAddress + kCompoundSlotArrayOffset);
+                const auto slotCount =
+                    *reinterpret_cast<const std::int32_t*>(
+                        shapeAddress + kCompoundSlotCountOffset);
+                if (!slotArray || slotCount <= 0 ||
+                    static_cast<std::uint32_t>(slotCount) >
+                        settings.limits.maxCompoundChildren ||
+                    static_cast<std::size_t>(slotCount) >
+                        outChildren.size()) {
+                    return -1;
+                }
+
+                std::int32_t captured = 0;
+                for (std::int32_t index = 0;
+                     index < slotCount;
+                     ++index) {
+                    const auto slotOffset =
+                        static_cast<std::uintptr_t>(index) *
+                        kCompoundSlotStride;
+                    if (slotArray >
+                        (std::numeric_limits<std::uintptr_t>::max)() -
+                            slotOffset) {
+                        return -1;
+                    }
+                    const auto slot = slotArray + slotOffset;
+                    if (*reinterpret_cast<const std::uint8_t*>(
+                            slot + kCompoundSlotActiveOffset) != 0) {
+                        continue;
+                    }
+
+                    const auto childShapeAddress =
+                        *reinterpret_cast<const std::uintptr_t*>(
+                            slot + kCompoundSlotShapeOffset);
+                    const auto* transform =
+                        reinterpret_cast<const float*>(
+                            slot + kCompoundSlotTransformOffset);
+                    const auto* childScale =
+                        reinterpret_cast<const float*>(
+                            slot + kCompoundSlotScaleOffset);
+                    if (!childShapeAddress ||
+                        !finiteShapeTransform(transform) ||
+                        !finiteShapeVector3(childScale)) {
+                        return -1;
+                    }
+
+                    auto& child = outChildren[
+                        static_cast<std::size_t>(captured++)];
+                    child.shapeAddress = childShapeAddress;
+                    std::copy_n(
+                        transform,
+                        child.transform.size(),
+                        child.transform.begin());
+                    std::copy_n(
+                        childScale,
+                        child.scale.size(),
+                        child.scale.begin());
+                }
+                return captured;
+            } catch (...) {
+                return -1;
+            }
+        }
+
+        std::int32_t captureCompoundChildSlotsSeh(
+            const std::uintptr_t shapeAddress,
+            const OverlayRenderSettings* settings,
+            std::array<CapturedCompoundChild,
+                kMaxExpandedCompoundChildren>* outChildren)
+        {
+            if (!settings || !outChildren) {
+                return -1;
+            }
+            __try {
+                return captureCompoundChildSlotsUnsafe(
+                    shapeAddress,
+                    *settings,
+                    *outChildren);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return -1;
+            }
+        }
+
+        DirectX::XMMATRIX compoundChildLocalMatrix(
+            const CapturedCompoundChild& child)
+        {
+            return DirectX::XMMatrixMultiply(
+                DirectX::XMMatrixScaling(
+                    child.scale[0],
+                    child.scale[1],
+                    child.scale[2]),
+                bodyToWorldMatrix(child.transform.data()));
+        }
+
         bool isRockBodyRole(BodyOverlayRole role)
         {
             return role == BodyOverlayRole::RightHand || role == BodyOverlayRole::LeftHand ||
@@ -1014,7 +1129,12 @@ namespace rock::debug
                 detailUniformScale = convexRadius * havokToGameScale();
             }
 
-            const CapturedShapeIdentity captured{ shapeAddress, key, detailUniformScale };
+            const CapturedShapeIdentity captured{
+                shapeAddress,
+                key,
+                detailUniformScale,
+                shapeType,
+            };
             frame.capturedShapeIdentities.push_back(captured);
             return captured;
         }
@@ -1106,8 +1226,58 @@ namespace rock::debug
                     continue;
                 }
 
-                PublishedBodyEntry published{};
                 const auto shapeIdentity = captureShapeIdentityForFrame(destination, body.shapeAddress);
+                if (rockRole &&
+                    (shapeIdentity.shapeType == 7 ||
+                        shapeIdentity.shapeType == 8)) {
+                    std::array<CapturedCompoundChild,
+                        kMaxExpandedCompoundChildren> children{};
+                    const auto childCount = captureCompoundChildSlotsSeh(
+                        body.shapeAddress,
+                        &destination.settings,
+                        &children);
+                    if (childCount > 0) {
+                        DirectX::XMFLOAT3 aabbMin{};
+                        DirectX::XMFLOAT3 aabbMax{};
+                        const bool aabbValid = captureBodyWorldAabb(
+                            source.world,
+                            entry.bodyId,
+                            aabbMin,
+                            aabbMax);
+                        for (std::int32_t childIndex = 0;
+                             childIndex < childCount;
+                             ++childIndex) {
+                            const auto& child = children[
+                                static_cast<std::size_t>(childIndex)];
+                            const auto childIdentity =
+                                captureShapeIdentityForFrame(
+                                    destination,
+                                    child.shapeAddress);
+                            PublishedBodyEntry published{};
+                            published.shapeKey = childIdentity.key;
+                            published.worldMatrix = body.worldMatrix;
+                            published.childLocalMatrix =
+                                compoundChildLocalMatrix(child);
+                            published.hasChildLocalMatrix = true;
+                            published.role = entry.role;
+                            published.bodyId = body.bodyId;
+                            published.detailUniformScale =
+                                childIdentity.detailUniformScale;
+                            published.hasValidWorldAabb = aabbValid;
+                            published.worldAabbMin = aabbMin;
+                            published.worldAabbMax = aabbMax;
+                            requestShapeBuildForFrame(
+                                destination,
+                                published.shapeKey,
+                                child.shapeAddress);
+                            destination.bodies.push_back(
+                                std::move(published));
+                        }
+                        continue;
+                    }
+                }
+
+                PublishedBodyEntry published{};
                 published.shapeKey = shapeIdentity.key;
                 published.worldMatrix = body.worldMatrix;
                 published.role = entry.role;
@@ -3413,6 +3583,11 @@ namespace rock::debug
                 std::shared_ptr<const GpuShape> shapeOwner;
                 const GpuShape* gpuShape = nullptr;
                 DirectX::XMMATRIX model = entry.worldMatrix;
+                if (entry.hasChildLocalMatrix) {
+                    model = DirectX::XMMatrixMultiply(
+                        entry.childLocalMatrix,
+                        model);
+                }
                 if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
                     shapeOwner = cached.shape;
                     gpuShape = shapeOwner.get();

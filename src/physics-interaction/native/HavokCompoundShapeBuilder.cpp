@@ -373,9 +373,19 @@ namespace rock::havok_compound_shape_builder
         }
 
         _shape.reset(compound);
+        _shapeKeyBitCount = compoundShapeKeyBitCount(children.size());
+        const std::uint32_t maximumEncodedInstanceId =
+            (1u << _shapeKeyBitCount) - 1u;
         for (std::size_t i = 0; i < _instanceIds.size(); ++i) {
-            if (_instanceIds[i] < 0 || _instanceIds[i] >= 0x7FFF) {
-                ROCK_LOG_ERROR(Weapon, "Dynamic compound build failed: constructor returned invalid child id {} at index {}", _instanceIds[i], i);
+            if (_instanceIds[i] < 0 || _instanceIds[i] >= 0x7FFF ||
+                static_cast<std::uint32_t>(_instanceIds[i]) >
+                    maximumEncodedInstanceId) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic compound build failed: constructor returned unencodable child id {} at index {} for {} key bits",
+                    _instanceIds[i],
+                    i,
+                    _shapeKeyBitCount);
                 reset();
                 return false;
             }
@@ -388,6 +398,33 @@ namespace rock::havok_compound_shape_builder
             }
         }
         return true;
+    }
+
+    std::optional<std::size_t> DynamicCompoundShape::tryResolveChildIndex(
+        const std::uint32_t shapeKey) const noexcept
+    {
+        if (!_shape || shapeKey == 0xFFFF'FFFFu ||
+            _shapeKeyBitCount == 0 || _shapeKeyBitCount >= 32 ||
+            _instanceIds.size() != _instances.size()) {
+            return std::nullopt;
+        }
+
+        const auto decodedId = decodeTopLevelCompoundInstanceId(
+            shapeKey,
+            _shapeKeyBitCount);
+        if (!decodedId) {
+            return std::nullopt;
+        }
+        const auto nativeInstanceId = static_cast<std::int16_t>(*decodedId);
+        const auto found = std::find(
+            _instanceIds.begin(),
+            _instanceIds.end(),
+            nativeInstanceId);
+        if (found == _instanceIds.end()) {
+            return std::nullopt;
+        }
+        return static_cast<std::size_t>(
+            std::distance(_instanceIds.begin(), found));
     }
 
     DynamicCompoundUpdateResult DynamicCompoundShape::updateTransforms(std::span<const ChildTransform> transforms) noexcept
@@ -436,6 +473,7 @@ namespace rock::havok_compound_shape_builder
 
     void DynamicCompoundShape::reset() noexcept
     {
+        _shapeKeyBitCount = 0;
         _updateIds.clear();
         _updateInstances.clear();
         _lastTransforms.clear();

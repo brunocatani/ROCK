@@ -101,7 +101,7 @@ Require-Pattern 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'relo
 Require-Pattern $interaction '!frame\.reloadBoundaryActive\s*&&\s*rebuildGeneratedBodiesForLifecycle' 'Lifecycle body creation must wait until the animation authority boundary closes.'
 Require-Pattern $interaction 'if \(!_bodyBoneColliders\.hasBodies\(\)\) \{\s*if \(frame\.reloadBoundaryActive\)' 'Optional body collider retries must not create bodies during the animation boundary.'
 Require-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' 'kSuppressionNoCollideBit[\s\S]*applyTransitionCollisionSuppression' 'Animation transitions must retain bodies and suppress their collision filter.'
-Require-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' 'slot\.created && !_transitionCollisionSuppressed' 'Missing transition-time forearm targets must retain the existing body instead of retiring it.'
+Require-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' 'handSlots\.bodies\[0\]\.created &&[\s\S]{0,160}!_transitionCollisionSuppressed[\s\S]{0,160}retireHand' 'Missing transition-time compound-child targets must retain the existing body instead of retiring it.'
 Require-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' '_transitionCollisionSuppressed[\s\S]{0,220}createdGeometryGeneration == geometryGeneration' 'Real geometry rebuilds must be deferred, not discarded, while animation collision is suspended.'
 
 if ($failures.Count -gt 0) {

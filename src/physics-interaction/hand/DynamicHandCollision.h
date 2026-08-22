@@ -8,6 +8,7 @@
 #include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/HavokPairCollisionFilter.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
@@ -19,6 +20,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 namespace RE
 {
@@ -34,14 +36,12 @@ namespace rock
     struct HandFrameInput;
 
     /*
-     * Dynamic world collision uses DYNAMIC twins of the palm anchor, all 15
-     * finger-segment colliders, and one merged ForeArm1->Hand proxy per side.
-     * They chase their published role frames with engine hard-keyframe
-     * velocities every physics substep, on the world-only extended layer.
-     * Static world clips their velocity inside the solver
-     * (true multi-plane contact); the rendered FRIK hand follows the COMBINED
-     * position deviation (sequential projection over palm/forearm deviations,
-     * with unresolved fingertip contacts retaining the legacy rigid fallback).
+     * Dynamic world collision uses one palm-rooted animated compound per hand.
+     * Its 17 semantic children are the palm, all 15 finger segments, and one
+     * merged ForeArm1->Hand proxy. The current ROCK/FRIK presentation contract
+     * remains unchanged: the compound supplies per-child position deviations,
+     * and the normal game-frame path publishes the existing combined position
+     * correction. No additional FRIK phase or transform convention exists.
      * Finger-segment residuals independently drive bounded anatomical flexion
      * or extension, choosing the direction that best moves all contacted
      * phalanxes toward their solver-safe positions. During ordinary tracking
@@ -119,6 +119,7 @@ namespace rock
 
         [[nodiscard]] bool tryClassifyDynamicBodyContactSourceAtomic(
             std::uint32_t bodyId,
+            std::uint32_t shapeKey,
             DynamicBodyContactSource& outSource) const noexcept;
         void recordDynamicBodyContactCallback(
             const DynamicBodyContactSource& source,
@@ -127,6 +128,7 @@ namespace rock
 
         [[nodiscard]] bool tryClassifySurfaceContactSourceAtomic(
             std::uint32_t bodyId,
+            std::uint32_t shapeKey,
             dynamic_hand_surface_contact_state::ContactSource& outSource) const noexcept;
         void recordSurfaceContactCallback(
             const dynamic_hand_surface_contact_state::ContactSource& source,
@@ -137,7 +139,9 @@ namespace rock
             const dynamic_hand_surface_contact_state::ContactSource& source,
             std::uint32_t otherBodyId,
             bool otherLayerRead,
-            std::uint32_t otherLayer) noexcept;
+            std::uint32_t otherLayer,
+            const hand_semantic_contact_state::SemanticContactVector* contactPointGame = nullptr,
+            const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr) noexcept;
         [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(
             bool isLeft,
             std::uint32_t maximumAgeFrames) const noexcept;
@@ -170,8 +174,7 @@ namespace rock
          * relative to that target until TouchGrabRuntime ends the latch.
          */
         [[nodiscard]] bool beginSurfaceLatch(
-            bool isLeft,
-            std::uint32_t sourceBodyId,
+            const dynamic_hand_surface_contact_state::ContactSource& source,
             std::uint32_t targetBodyId,
             RE::hknpWorld* world,
             const SurfaceLatchPresentation* presentation = nullptr,
@@ -192,10 +195,10 @@ namespace rock
          */
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug(bool isLeft, std::size_t bodyIndex) const
         {
-            if (bodyIndex >= kBodiesPerHand) {
+            if (bodyIndex != 0) {
                 return RE::hknpBodyId{ 0x7FFF'FFFF };
             }
-            const auto& slot = _hands[isLeft ? 1u : 0u].bodies[bodyIndex];
+            const auto& slot = _hands[isLeft ? 1u : 0u].bodies[0];
             return slot.created ? slot.body.getBodyId() : RE::hknpBodyId{ 0x7FFF'FFFF };
         }
 
@@ -267,6 +270,8 @@ namespace rock
              * in-and-out "milli-punch" pulsing of in-game sessions 3-5.
              */
             bool droveThisSubstep = false;
+            RE::NiTransform commandedTargetWorld{};
+            RE::NiTransform requestedTargetWorld{};
             RE::NiPoint3 commandedTargetGame{};
             RE::NiPoint3 requestedTargetGame{};
             // Physics-thread copy of the last post-solve CONTACT deviation
@@ -300,18 +305,12 @@ namespace rock
         {
             struct SurfaceFingerResponse
             {
-                std::array<RE::NiTransform,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    intentFramesInHand{};
                 std::array<RE::NiPoint3,
                     hand_collider_semantics::kHandFingerRoleCount>
                     closingProbeTravelInHand{};
                 std::array<RE::NiPoint3,
                     hand_collider_semantics::kHandFingerRoleCount>
                     openingProbeTravelInHand{};
-                std::array<bool,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    intentValid{};
                 std::array<float, hand_collider_semantics::kHandFingerCount>
                     baselineOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
                 std::array<float, hand_collider_semantics::kHandFingerCount>
@@ -350,6 +349,17 @@ namespace rock
             };
 
             std::array<ProxySlot, kBodiesPerHand> bodies{};
+            havok_compound_shape_builder::DynamicCompoundShape compoundShape{};
+            std::mutex compoundPoseMutex{};
+            std::array<havok_compound_shape_builder::ChildTransform,
+                kBodiesPerHand> pendingCompoundChildTransforms{};
+            std::array<RE::NiTransform, kBodiesPerHand>
+                childInCompound{};
+            std::array<RE::NiTransform, kBodiesPerHand>
+                consumedChildInCompound{};
+            std::uint64_t queuedCompoundPoseSequence = 0;
+            std::uint64_t consumedCompoundPoseSequence = 0;
+            std::uint64_t compoundGeometryGeneration = 0;
             RE::NiPoint3 appliedDeviation{};
             bool visualActive = false;
             RE::NiTransform lastPresentedHandWorld{};
@@ -369,6 +379,9 @@ namespace rock
             std::atomic<std::uint32_t> contactEntryMaskAtomic{ 0 };
             std::atomic<std::uint32_t> pendingOtherHandContactMaskAtomic{ 0 };
             std::atomic<std::uint32_t> pendingWeaponContactMaskAtomic{ 0 };
+            std::atomic<std::uint32_t> pendingSolverContactMaskAtomic{ 0 };
+            std::uint32_t retainedSolverContactMask = 0;
+            float solverContactRetentionSeconds = 0.0f;
             std::uint32_t otherHandContactMask{ 0 };
             std::uint32_t weaponContactMask{ 0 };
             std::uint8_t otherHandContactGraceFrames{ 0 };
@@ -376,14 +389,20 @@ namespace rock
             dynamic_hand_collision_feedback::ContactPulseState hapticState{};
         };
 
-        bool ensureSlotCreated(ProxySlot& slot,
+        bool ensureHandCreated(HandSlots& handSlots,
             bool isLeft,
-            std::size_t bodyIndex,
             const PhysicsFrameContext& frame,
             const Hand& hand,
             const BodyBoneColliderSet& bodyBoneColliders,
-            const dynamic_hand_twin::TwinSlotFrame& twinFrame,
+            const std::array<const dynamic_hand_twin::TwinSlotFrame*,
+                kBodiesPerHand>& twinFrames,
+            const RE::NiTransform& compoundRootTarget,
+            const std::array<RE::NiTransform, kBodiesPerHand>& driveTargets,
             std::uint64_t geometryGeneration);
+        [[nodiscard]] bool queueCompoundPose(
+            HandSlots& handSlots,
+            const RE::NiTransform& compoundRootTarget,
+            const std::array<RE::NiTransform, kBodiesPerHand>& driveTargets);
         void retireSlot(ProxySlot& slot, void* bhkWorld);
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
         void clearVisual(HandSlots& handSlots, bool isLeft);

@@ -704,6 +704,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicHandCollisionTransitionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicHandCollisionTransitionPolicyTests)
 
+  add_executable(ROCKHavokCompoundShapeKeyPolicyTests
+    "${ROOT_DIR}/tests/HavokCompoundShapeKeyPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHavokCompoundShapeKeyPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHavokCompoundShapeKeyPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHavokCompoundShapeKeyPolicyTests)
+
   add_executable(ROCKDynamicWeaponCollisionPolicyTests
     "${ROOT_DIR}/tests/DynamicWeaponCollisionPolicyTests.cpp"
   )
@@ -771,6 +778,7 @@ if(BUILD_ROCK_TESTS)
     ROCKPhysicsCallbackQuiescenceGateTests
     ROCKDynamicHandTwinGeometryPolicyTests
     ROCKDynamicHandCollisionTransitionPolicyTests
+    ROCKHavokCompoundShapeKeyPolicyTests
     ROCKDynamicWeaponCollisionPolicyTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and

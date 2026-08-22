@@ -98,6 +98,13 @@ if (-not $draw.Success) {
         'The compositor must not capture, fingerprint, or build CPU shape geometry.'
 }
 
+Require-In $overlay 'captureCompoundChildSlotsSeh[\s\S]*captureCompoundChildSlotsUnsafe[\s\S]*EXCEPTION_EXECUTE_HANDLER' `
+    'Animated compound child-slot capture must fail closed on invalid engine memory.'
+Require-In $overlay 'rockRole &&[\s\S]*shapeIdentity\.shapeType == 7[\s\S]*shapeIdentity\.shapeType == 8[\s\S]*captureCompoundChildSlotsSeh[\s\S]*hasChildLocalMatrix = true[\s\S]*requestShapeBuildForFrame' `
+    'ROCK animated compounds must expand into stable per-child shape entries.'
+Require-In $overlay 'entry\.hasChildLocalMatrix[\s\S]*XMMatrixMultiply\([\s\S]*entry\.childLocalMatrix,[\s\S]*model' `
+    'Animated compound children must compose their live slot transform at draw time.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'DebugOverlayShapePipelineSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

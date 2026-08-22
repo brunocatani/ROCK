@@ -131,7 +131,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'twinFrameForSlot\(handTwins, forearmTwins, isLeft, bodyIndex\)'
 ) 'Dynamic collision must consume the body-collider forearm frame publication.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'bodyBoneColliders\.buildDynamicForearmTwinShape\(twinFrame\)' `
+    'bodyBoneColliders\.buildDynamicForearmTwinShape\(childFrame\)' `
     'Dynamic forearm twins must use the body-collider shared hull builder.'
 Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'dimensionsDrifted|twinFrame\.length - slot\.createdLength|twinFrame\.radius - slot\.createdRadius|twinFrame\.convexRadius - slot\.createdConvexRadius' `
@@ -155,7 +155,7 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'if \(_transitionCollisionSuppressed \|\|',
     'slot\.createdGeometryGeneration == geometryGeneration',
-    'retireSlot\(slot, frame\.bhkWorld\);'
+    'retireHand\(handSlots, frame\.bhkWorld, isLeft\);'
 ) 'Queued geometry rebuilds must coalesce behind animation suspension and commit only after stable resume.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
     'kForearmSlot\s*=\s*kFirstForearmSlot[\s\S]*Forearm,[\s\S]*return "FARM"' `
@@ -169,15 +169,43 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     '_bodyBoneColliders,'
 ) 'Body forearm frames must publish before dynamic hand collision consumes them in the same game frame.'
 
-# Finger residuals must be evaluated against immutable pre-correction intent.
+# One animated compound owns all semantic children. The current transform
+# convention maps Ni rows directly to Havok child columns; no transpose or
+# additional FRIK scheduling path may be introduced.
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'const RE::NiTransform compoundRootTarget =\s*driveTargets\[kPalmSlot\]',
+    'ensureHandCreated\(',
+    'queueCompoundPose\(',
+    'queueGeneratedKeyframedBodyTarget\(\s*compoundOwner\.driveState'
+) 'Dynamic hand collision must drive one palm-rooted compound body.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'Current ROCK convention:',
+    'outTransform\.column0',
+    'outTransform\.column1',
+    'outTransform\.column2'
+) 'Compound child transforms must use the current direct row-to-column mapping.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'colliderFrameToSceneFrame|sceneFrameToColliderFrame|transposeRotation|refreshContactVisualAuthorityBeforeFrik|transportRigidContactTarget' `
+    'The current branch must not regain the reverted FRIK scheduler or transpose path.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
+    'shapeKeyA',
+    'shapeKeyB',
+    'tryClassifyDynamicBodyContactSourceAtomic\(',
+    'recordDynamicBodyContactCallback\('
+) 'Processed manifolds must recover exact compound-child contact identity from both shape keys.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
+    'void PhysicsInteraction::handleContactEvent\([\s\S]*tryClassifyDynamicBodyContactSourceAtomic\(' `
+    'Key-3 impulse records must not guess a semantic child from the shared compound body ID.'
+
+# Finger residuals retain the current calibrated probe solve. Compound children
+# follow the live role frames published after the current FRIK pose claim.
 # Only helpful anatomical motion may replace the established tip pushback;
 # base/middle probes must never multiply the rigid whole-hand correction.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'candidate\.intentFramesInHand\[linearIndex\]',
     'candidate\.closingProbeTravelInHand\[linearIndex\]',
     'candidate\.openingProbeTravelInHand\[linearIndex\]',
     'candidate\.active = true'
-) 'Surface finger response must capture stable hand-local intent and calibrated opening/closing travel on contact entry.'
+) 'Surface finger response must capture calibrated opening/closing probe travel on contact entry.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'closingProbeTravelGameUnits',
     'openingProbeTravelGameUnits',
@@ -187,11 +215,14 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
 Require-Text 'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h' `
     'baselineCost[\s\S]*evaluateDirection[\s\S]*closing\.valid && opening\.valid[\s\S]*directionSwitchHysteresisFraction[\s\S]*selected->direction' `
     'Conflicting phalanx contacts must choose one coherent per-finger direction with switch hysteresis.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'intentFramesInHand|intentValid' `
+    'Compound finger children must not remain frozen at capture-time intent frames.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'handSlots\.surfaceFingerResponse\.intentFramesInHand',
-    'composeTransforms\(\s*handInput\.rawHandWorld',
-    'queueGeneratedKeyframedBodyTarget\('
-) 'Contacted finger twins must chase immutable intent composed with the raw tracked hand, not corrected presentation.'
+    'driveTargets\[bodyIndex\] =',
+    'twinFrame->target',
+    'queueCompoundPose\('
+) 'Compound finger children must follow the current live role-frame publication.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'updateSurfaceFingerResponse\(',
     'isFingerTipSlot\(',
@@ -312,18 +343,17 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         "$configPath must not retain legacy soft-contact or target-identity keys."
 }
 
-# Deviation is a two-stage POST-SOLVE measurement against the same substep's
-# targets: the residual vs the COMMANDED (velocity-limited) target detects
-# contact, and only in contact is the render deviation published, measured vs
-# the REQUESTED (pre-limit) target. Pre-collide sampling leaks tracking lag;
-# rendering the commanded residual saturates at the dt-dependent limiter
-# distance (framerate-modulated milli-punch pulsing).
+# Contact identity comes from processed-manifold child shape keys. Post-solve
+# reconstruction composes the one requested/commanded/live compound frame with
+# the exact child-local frame consumed by that physics step.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'void DynamicHandCollisionRuntime::samplePostSolveDeviations\(',
     'tryResolveLiveBodyWorldTransform\(',
-    'commandedTargetGame',
-    'requestedTargetGame'
-) 'Dynamic hand deviation must detect contact vs the commanded target and measure vs the requested target.'
+    'pendingSolverContactMaskAtomic\.exchange\(',
+    'requestedChildWorld',
+    'commandedChildWorld',
+    'liveChildWorld'
+) 'Dynamic hand deviation must reconstruct exact child positions from the one compound body.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
     '_dynamicHandCollision\.samplePostSolveDeviations\(world\);'

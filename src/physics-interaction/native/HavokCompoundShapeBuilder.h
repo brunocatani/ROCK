@@ -6,11 +6,35 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
 namespace rock::havok_compound_shape_builder
 {
+    [[nodiscard]] constexpr std::uint8_t compoundShapeKeyBitCount(
+        std::size_t childCount) noexcept
+    {
+        std::uint8_t bits = 0;
+        do {
+            ++bits;
+            childCount >>= 1;
+        } while (childCount != 0);
+        return bits;
+    }
+
+    [[nodiscard]] constexpr std::optional<std::uint16_t>
+    decodeTopLevelCompoundInstanceId(
+        std::uint32_t shapeKey,
+        std::uint8_t bitCount) noexcept
+    {
+        if (shapeKey == 0xFFFF'FFFFu || bitCount == 0 || bitCount >= 32) {
+            return std::nullopt;
+        }
+        return static_cast<std::uint16_t>(
+            shapeKey >> (32u - bitCount));
+    }
+
     /*
      * PAPER reload bodies need one generated body for one authored part even
      * when the point cloud must be split into several convex children. Ghidra
@@ -81,6 +105,12 @@ namespace rock::havok_compound_shape_builder
 
         [[nodiscard]] RE::hknpShape* get() const noexcept { return _shape.get(); }
         [[nodiscard]] std::size_t childCount() const noexcept { return _instances.size(); }
+        [[nodiscard]] std::optional<std::size_t> tryResolveChildIndex(
+            std::uint32_t shapeKey) const noexcept;
+        [[nodiscard]] std::uint8_t shapeKeyBitCount() const noexcept
+        {
+            return _shapeKeyBitCount;
+        }
         [[nodiscard]] explicit operator bool() const noexcept { return _shape != nullptr; }
 
     private:
@@ -95,5 +125,6 @@ namespace rock::havok_compound_shape_builder
         std::vector<ChildTransform> _lastTransforms;
         std::vector<ShapeInstanceStorage> _updateInstances;
         std::vector<std::int16_t> _updateIds;
+        std::uint8_t _shapeKeyBitCount = 0;
     };
 }
