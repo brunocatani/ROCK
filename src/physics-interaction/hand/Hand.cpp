@@ -231,13 +231,13 @@ namespace rock
         _cachedFarCandidate.clear();
         clearGrabAcquisitionCache("reset");
         _farDetectCounter = 0;
-        _selectionHoldFrames = 0;
+        _selectionHoldSeconds = 0.0f;
         _deselectCooldown = 0;
         _lastDeselectedRef = nullptr;
         _lastTouchedRef = nullptr;
         _lastTouchedFormID = 0;
         _lastTouchedLayer = 0;
-        _touchActiveFrames = 100;
+        _secondsSinceTouch = 100.0f;
         {
             std::scoped_lock writeLock(_semanticContactWriteMutex);
             _semanticContactFrameCounter.store(0, std::memory_order_release);
@@ -910,7 +910,7 @@ namespace rock
         stopSelectionHighlight();
         _currentSelection = selection;
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
-        _selectionHoldFrames = 0;
+        _selectionHoldSeconds = 0.0f;
         clearSelectedCloseFingerPose();
         playSelectionHighlight(_currentSelection);
 
@@ -1096,7 +1096,7 @@ namespace rock
         _currentSelection = replacement;
         _cachedFarCandidate = replacement;
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundFar });
-        _selectionHoldFrames = 0;
+        _selectionHoldSeconds = 0.0f;
         playSelectionHighlight(_currentSelection);
 
         ROCK_LOG_DEBUG(Hand,
@@ -1199,7 +1199,7 @@ namespace rock
         stopSelectionHighlight();
         _currentSelection = selection;
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
-        _selectionHoldFrames = 0;
+        _selectionHoldSeconds = 0.0f;
         clearSelectedCloseFingerPose();
 
         ROCK_LOG_DEBUG(Hand,
@@ -2134,7 +2134,7 @@ namespace rock
         if (!transition.accepted) {
             return false;
         }
-        _selectionHoldFrames = 0;
+        _selectionHoldSeconds = 0.0f;
         ROCK_LOG_DEBUG(Hand, "{} hand locked far selection formID={:08X} dist={:.1f}", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
             _currentSelection.distance);
         return true;
@@ -2162,7 +2162,7 @@ namespace rock
             (_state == HandState::Idle) ? HandInteractionEvent::Initialize :
                                           HandInteractionEvent::ObjectInvalidated;
         applyTransition(HandTransitionRequest{ .event = event });
-        _selectionHoldFrames = 0;
+        _selectionHoldSeconds = 0.0f;
     }
 
     void Hand::preloadSelectionBeam()
@@ -2211,6 +2211,11 @@ namespace rock
         if (!selection_state_policy::canUpdateSelectionFromState(_state))
             return;
 
+        // Measured elapsed time only: an unmeasurable frame holds the
+        // selection-hold clock.
+        const float measuredSelectionDelta =
+            std::isfinite(deltaTime) && deltaTime > 0.0f ? deltaTime : 0.0f;
+
         if (hasArrivedPullCatchIntent()) {
             /*
              * Once pull arrives, the original ref/body is the owner until close
@@ -2219,7 +2224,7 @@ namespace rock
              * the claimed pulled object or restart the far-pull path.
              */
             if (_currentSelection.isValid()) {
-                _selectionHoldFrames++;
+                _selectionHoldSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 updateGrabAcquisitionCache(bhkWorld, hknpWorld);
             }
@@ -2235,7 +2240,7 @@ namespace rock
              * root and lose the far-only clothing authority.
              */
             if (_currentSelection.isValid()) {
-                _selectionHoldFrames++;
+                _selectionHoldSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 updateGrabAcquisitionCache(bhkWorld, hknpWorld);
             }
@@ -2340,7 +2345,7 @@ namespace rock
             const float currentScore = _currentSelection.hasSelectionScore ? _currentSelection.selectionScore : (std::numeric_limits<float>::infinity)();
             const float candidateScore = best.hasSelectionScore ? best.selectionScore : (std::numeric_limits<float>::infinity)();
             if (selection_query_policy::shouldKeepCurrentCloseSelectionAgainstCandidate(currentScore, candidateScore, _currentSelection.distance, best.distance)) {
-                _selectionHoldFrames++;
+                _selectionHoldSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 updateGrabAcquisitionCache(bhkWorld, hknpWorld);
                 return;
@@ -2364,7 +2369,7 @@ namespace rock
                     best.signedAlongDistance,
                     best.lateralDistance);
             }
-            _selectionHoldFrames++;
+            _selectionHoldSeconds += measuredSelectionDelta;
             if (refreshedSource) {
                 playSelectionHighlight(_currentSelection);
             } else {
@@ -2407,14 +2412,16 @@ namespace rock
 
             applyTransition(
                 HandTransitionRequest{ .event = best.isFarSelection ? HandInteractionEvent::SelectionFoundFar : HandInteractionEvent::SelectionFoundClose });
-            _selectionHoldFrames = 0;
+            _selectionHoldSeconds = 0.0f;
 
             playSelectionHighlight(_currentSelection);
         } else if (_currentSelection.isValid()) {
-            constexpr int MIN_HOLD_FRAMES = 15;
+            // Elapsed minimum hold (the historical 15-frame window at the
+            // 90 Hz tuning baseline), rate-independent in seconds.
+            constexpr float MIN_HOLD_SECONDS = 15.0f / 90.0f;
 
-            if (_selectionHoldFrames < MIN_HOLD_FRAMES) {
-                _selectionHoldFrames++;
+            if (_selectionHoldSeconds < MIN_HOLD_SECONDS) {
+                _selectionHoldSeconds += measuredSelectionDelta;
                 refreshSelectionHighlight(_currentSelection);
                 return;
             }
@@ -2455,7 +2462,7 @@ namespace rock
                     _currentSelection.clear();
                     clearGrabAcquisitionCache("selection-anchor-lost");
                     applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionLost });
-                    _selectionHoldFrames = 0;
+                    _selectionHoldSeconds = 0.0f;
                     clearSelectedCloseFingerPose();
                     return;
                 }
@@ -2465,14 +2472,14 @@ namespace rock
 
             const bool keepAfterMiss = selection_query_policy::shouldKeepSelectionAfterMiss(
                 _currentSelection.isFarSelection,
-                _selectionHoldFrames,
-                MIN_HOLD_FRAMES,
+                _selectionHoldSeconds,
+                MIN_HOLD_SECONDS,
                 _currentSelection.distance,
                 hysteresisRange);
 
             if (refInvalid || !keepAfterMiss) {
-                ROCK_LOG_DEBUG(Hand, "{} hand cleared (formID={:08X}, dist={:.1f}, held={}f)", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
-                    _currentSelection.distance, _selectionHoldFrames);
+                ROCK_LOG_DEBUG(Hand, "{} hand cleared (formID={:08X}, dist={:.1f}, held={:.3f}s)", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
+                    _currentSelection.distance, _selectionHoldSeconds);
                 clearSelectionState(true);
             } else {
                 refreshSelectionHighlight(_currentSelection);
@@ -2676,7 +2683,7 @@ namespace rock
 
         stopSelectionHighlight();
         _currentSelection = best;
-        _selectionHoldFrames = 0;
+        _selectionHoldSeconds = 0.0f;
         clearSelectedCloseFingerPose();
 
         ROCK_LOG_DEBUG(Hand,

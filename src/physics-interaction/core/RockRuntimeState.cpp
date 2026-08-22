@@ -229,14 +229,12 @@ namespace rock::runtime_state
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;
         next.timing = game_timing::currentFrameTiming();
         /*
-         * Legacy compatibility value: identical to the historical sanitized
-         * delta (ordinary measured frames pass through, everything else
-         * becomes the nominal fallback). Removed together with the field once
-         * every consumer reads the timing snapshot.
+         * Convenience copy of the sanitized measured delta. Zero for an
+         * unmeasurable frame — every consumer holds on zero elapsed time; a
+         * hitch frame carries the clamped bounded delta with
+         * timing.discontinuity set for estimators that must rebase.
          */
-        next.deltaSeconds = (next.timing.valid && !next.timing.discontinuity) ?
-            next.timing.deltaSeconds :
-            runtime_state_policy::kFallbackDeltaSeconds;
+        next.deltaSeconds = next.timing.valid ? next.timing.deltaSeconds : 0.0f;
         next.compatibilityConfigBlocking = input.compatibilityConfigBlocking;
         next.visualAuthorityAvailable = input.visualAuthorityAvailable;
         next.visualSkeletonReadyHint = input.visualSkeletonReadyHint;

@@ -40,14 +40,9 @@ if (-not (Test-Path -LiteralPath $srcRoot)) {
 
 $nominalRatePattern = '1\s*\.\s*0?f?\s*/\s*90(\s*\.\s*0*f?)?'
 
-$nominalRateDebtRegister = @{
-    'src/physics-interaction/core/RockRuntimeStatePolicy.h'          = 1
-    'src/physics-interaction/input/DebugControllerRuntime.cpp'       = 1
-    'src/physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h' = 1
-    'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h'    = 1
-    'src/physics-interaction/grab/GrabFinger.h'                      = 1
-    'src/physics-interaction/feedback/FeedbackHaptics.cpp'           = 1
-}
+# The nominal-rate fallback debt is fully retired: production behavior never
+# fabricates a 1/90 delta. Any new site fails this audit.
+$nominalRateDebtRegister = @{}
 
 $sourceFiles = Get-ChildItem -LiteralPath $srcRoot -Recurse -File |
     Where-Object { $_.Extension -in @('.h', '.cpp', '.inl') }

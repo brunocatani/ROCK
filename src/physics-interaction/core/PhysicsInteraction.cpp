@@ -3999,10 +3999,10 @@ namespace rock
 
         bool wasTouchingR = _rightHand.isTouching();
         bool wasTouchingL = _leftHand.isTouching();
-        _rightHand.tickTouchState();
-        _leftHand.tickTouchState();
         const float measuredFrameDeltaSeconds =
             frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
+        _rightHand.tickTouchState(measuredFrameDeltaSeconds);
+        _leftHand.tickTouchState(measuredFrameDeltaSeconds);
         _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
         _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
         _handContactActivity.advanceFrame(measuredFrameDeltaSeconds);

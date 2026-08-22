@@ -92,7 +92,9 @@ namespace rock::feedback_haptics
 
     std::size_t FeedbackHaptics::update(float deltaSeconds, HapticOutput* outputs, std::size_t outputCapacity) noexcept
     {
-        const float delta = (std::isfinite(deltaSeconds) && deltaSeconds > 0.0f) ? deltaSeconds : 1.0f / 90.0f;
+        // Unmeasurable frames advance no envelope time: active events hold
+        // their intensity instead of progressing by a fabricated rate.
+        const float delta = (std::isfinite(deltaSeconds) && deltaSeconds > 0.0f) ? deltaSeconds : 0.0f;
         std::size_t outputCount = 0;
 
         for (std::size_t hand = 0; hand < _events.size(); ++hand) {

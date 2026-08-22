@@ -70,7 +70,9 @@ namespace rock::dynamic_hand_collision_feedback
         bool authorityAllowsFeedback,
         const ContactPulseConfig& config)
     {
-        const float dt = std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
+        // Unmeasurable frames advance no cooldown time (hold, never a
+        // fabricated nominal rate).
+        const float dt = std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : 0.0f, 0.0f, 0.1f);
         state.cooldownRemainingSeconds = std::max(0.0f, state.cooldownRemainingSeconds - dt);
 
         ContactPulseDecision decision{};

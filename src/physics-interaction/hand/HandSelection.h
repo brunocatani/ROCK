@@ -289,9 +289,9 @@ namespace rock::selection_query_policy
         return std::isfinite(dot) && dot >= std::clamp(minDot, -1.0f, 1.0f);
     }
 
-    inline bool shouldKeepSelectionAfterMiss(bool currentIsFarSelection, int heldFrames, int minimumHoldFrames, float currentDistance, float hysteresisRange)
+    inline bool shouldKeepSelectionAfterMiss(bool currentIsFarSelection, float heldSeconds, float minimumHoldSeconds, float currentDistance, float hysteresisRange)
     {
-        if (heldFrames < minimumHoldFrames) {
+        if (heldSeconds < minimumHoldSeconds) {
             return true;
         }
 

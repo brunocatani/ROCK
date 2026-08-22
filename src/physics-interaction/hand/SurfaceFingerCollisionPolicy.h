@@ -300,8 +300,10 @@ namespace rock::surface_finger_collision_policy
     {
         const float speed = std::isfinite(smoothingSpeed) ?
             std::max(0.0f, smoothingSpeed) : 0.0f;
+        // Unmeasurable frames advance no smoothing (alpha 0 holds the
+        // current pose), never a fabricated nominal step.
         const float dt = std::clamp(
-            std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f),
+            std::isfinite(deltaSeconds) ? deltaSeconds : 0.0f,
             0.0f,
             0.1f);
         const float alpha = speed > 0.0f ?

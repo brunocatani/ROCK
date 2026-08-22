@@ -92,7 +92,9 @@ namespace rock::debug_controller_runtime
                 return deltaSeconds;
             }
 
-            return 1.0f / 90.0f;
+            // Unmeasurable frame: debug-stick motion holds instead of
+            // advancing by fabricated time.
+            return 0.0f;
         }
 
         [[nodiscard]] float normalizeThumb(std::int16_t value)

@@ -1330,7 +1330,15 @@ namespace rock::grab_finger_pose_math
             return result;
         }
 
-        const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : (1.0f / 90.0f);
+        const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : 0.0f;
+        if (dt <= 0.0f) {
+            // Unmeasurable frame: hold the current pose instead of advancing
+            // by fabricated time.
+            for (std::size_t i = 0; i < result.size(); ++i) {
+                result[i] = clampOpenValue(current[i]);
+            }
+            return result;
+        }
         const float step = speed * dt;
         for (std::size_t i = 0; i < result.size(); ++i) {
             const float from = clampOpenValue(current[i]);

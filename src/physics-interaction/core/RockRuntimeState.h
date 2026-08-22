@@ -29,11 +29,11 @@ namespace rock::runtime_state
     {
         std::uint64_t frameIndex = 0;
         /*
-         * Authoritative game-frame clock snapshot for this frame. New and
-         * migrated consumers read this; deltaSeconds below is the legacy
-         * sanitized value that still fabricates a nominal-rate delta for
-         * unmeasurable frames and is scheduled for removal once every
-         * consumer is migrated.
+         * Authoritative game-frame clock snapshot for this frame.
+         * deltaSeconds is a convenience copy of its sanitized measured delta:
+         * zero for an unmeasurable frame (every consumer holds on zero), the
+         * clamped bounded delta for a hitch (timing.discontinuity tells
+         * estimators to rebase).
          */
         game_frame_timing_policy::GameFrameTiming timing{};
         float deltaSeconds = 0.0f;

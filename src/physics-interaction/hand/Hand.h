@@ -35,6 +35,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -374,7 +375,10 @@ namespace rock
         const SelectedObject& getSelection() const { return _currentSelection; }
         bool hasSelection() const { return _currentSelection.isValid(); }
 
-        bool isTouching() const { return _touchActiveFrames < 5; }
+        // Touch recency is an elapsed contract (the historical 5-frame window
+        // at the 90 Hz tuning baseline), rate-independent in seconds.
+        static constexpr float kTouchActiveWindowSeconds = 5.0f / 90.0f;
+        bool isTouching() const { return _secondsSinceTouch < kTouchActiveWindowSeconds; }
         RE::TESObjectREFR* getLastTouchedRef() const { return _lastTouchedRef; }
         std::uint32_t getLastTouchedFormID() const { return _lastTouchedFormID; }
         std::uint32_t getLastTouchedLayer() const { return _lastTouchedLayer; }
@@ -384,7 +388,7 @@ namespace rock
             _lastTouchedRef = refr;
             _lastTouchedFormID = formID;
             _lastTouchedLayer = layer;
-            _touchActiveFrames = 0;
+            _secondsSinceTouch = 0.0f;
         }
 
         bool isHolding() const { return isHoldingState(_state); }
@@ -539,7 +543,14 @@ namespace rock
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
 
-        void tickTouchState() { _touchActiveFrames++; }
+        // Advance by measured game time only (zero holds touch recency).
+        void tickTouchState(float validDeltaSeconds)
+        {
+            if (std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f &&
+                _secondsSinceTouch < 100.0f) {
+                _secondsSinceTouch += validDeltaSeconds;
+            }
+        }
 
         void updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,
             const RE::NiPoint3& farSelectionDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
@@ -844,7 +855,9 @@ namespace rock
         SelectedObject _cachedFarCandidate;
         GrabAcquisitionCache _grabAcquisitionCache;
         int _farDetectCounter = 0;
-        int _selectionHoldFrames = 0;
+        // Elapsed time the current selection has been held (rate-independent
+        // minimum-hold and hysteresis windows consume seconds).
+        float _selectionHoldSeconds = 0.0f;
         int _selectionHighlightRefreshFrames = 0;
         int _deselectCooldown = 0;
         RE::TESObjectREFR* _lastDeselectedRef = nullptr;
@@ -852,7 +865,7 @@ namespace rock
         RE::TESObjectREFR* _lastTouchedRef = nullptr;
         std::uint32_t _lastTouchedFormID = 0;
         std::uint32_t _lastTouchedLayer = 0;
-        int _touchActiveFrames = 100;
+        float _secondsSinceTouch = 100.0f;
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
         std::atomic<std::uint32_t> _heldContactHeldBodyId{ INVALID_BODY_ID };

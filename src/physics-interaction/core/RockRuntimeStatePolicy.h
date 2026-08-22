@@ -5,13 +5,6 @@
 
 namespace rock::runtime_state_policy
 {
-    /*
-     * Legacy nominal-rate fallback kept only for the RuntimeFrameSnapshot
-     * deltaSeconds compatibility field while game-frame consumers migrate to
-     * the GameFrameTiming snapshot. Scheduled for removal with that field;
-     * new code must consume rock::game_timing instead.
-     */
-    inline constexpr float kFallbackDeltaSeconds = 1.0f / 90.0f;
     inline constexpr float kDefaultMovementThresholdGameUnits = 0.05f;
 
     struct Vec3
