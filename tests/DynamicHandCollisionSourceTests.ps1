@@ -265,17 +265,26 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'clearSurfaceFingerResponse\(_hands\[0\], false\)[\s\S]*clearSurfaceFingerResponse\(_hands\[1\], true\)' `
     'World/menu shutdown must deterministically release both surface finger pose claims.'
 
-# Render-follow pipeline: combine per-body deviations, apply normal contact
-# exactly, and reserve smoothing for explicit teleport recovery only.
+# Render-follow pipeline: combine per-body deviations and apply active contact
+# exactly. When contact ends, retain authority during a bounded smooth return.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'sanitizeHandTargetResponseScale\(twinFrame->handTargetResponseScale\)',
     'handTargetCorrectionWorldGame',
     'combineTwinDeviations\(',
-    'float smoothingSpeed = 0\.0f',
+    'float smoothingSpeed = handTelemetry\.anyContact \?',
+    '0\.0f',
+    'rockHandCollisionDynamicRenderFollowSmoothingSpeed',
     'teleportRecoverySecondsRemaining > 0\.0f',
     'smoothAppliedDeviation\(',
     'applyExternalHandWorldTransform\('
-) 'Dynamic hand render-follow must map forearm leverage, combine contacts, and smooth only teleport recovery before publication.'
+) 'Dynamic hand render-follow must preserve exact contact and smooth only release or teleport recovery.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'kCompoundContactRetentionSeconds = 3\.0f / 90\.0f',
+    'solverContactRetentionSeconds\[bodyIndex\]',
+    'worldContactRetentionSeconds\[bodyIndex\]',
+    'retainedSolverContactMask \|= childBit',
+    'retainedWorldContactMask \|= childBit'
+) 'Each compound child must survive two complete missed contact substeps without retaining unrelated child evidence.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'dynamicInteractionFingerContact[\s\S]{0,500}dynamicInteractionFingerContact\s*\?[\s\S]{0,80}0\.0f[\s\S]{0,120}rockHandCollisionSurfaceFingerSmoothingSpeed' `
     'Hand/hand and hand/weapon finger contacts must publish their collision pose without presentation lag.'

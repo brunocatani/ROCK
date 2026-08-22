@@ -385,7 +385,10 @@ namespace rock
             std::atomic<std::uint32_t> pendingWorldContactMaskAtomic{ 0 };
             std::uint32_t retainedSolverContactMask = 0;
             std::uint32_t retainedWorldContactMask = 0;
-            float solverContactRetentionSeconds = 0.0f;
+            std::array<float, kBodiesPerHand>
+                solverContactRetentionSeconds{};
+            std::array<float, kBodiesPerHand>
+                worldContactRetentionSeconds{};
             std::uint32_t otherHandContactMask{ 0 };
             std::uint32_t weaponContactMask{ 0 };
             std::uint8_t otherHandContactGraceFrames{ 0 };

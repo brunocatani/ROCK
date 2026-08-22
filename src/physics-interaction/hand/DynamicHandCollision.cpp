@@ -39,7 +39,8 @@ namespace rock
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr int kSurfaceLatchVisualPriority = 100;
-        constexpr float kCompoundContactRetentionSeconds = 1.0f / 90.0f;
+        // Keep two complete missed 90 Hz substeps after the last callback.
+        constexpr float kCompoundContactRetentionSeconds = 3.0f / 90.0f;
         constexpr float kHandCompoundMass = 2.0f;
         constexpr float kHandCompoundInverseInertiaMultiplier = 1.0f;
 
@@ -396,12 +397,10 @@ namespace rock
         }
 
         /*
-         * Contact-noise smoothing for the rendered hand: the solver resolves a
-         * driven-into-surface twin slightly differently each substep, and the
-         * raw deviation twitch is visible while the hand rests still. The
-         * exponential filter only shapes CONTACT deviations (free space is
-         * exactly zero and gated before application), so tracking latency is
-         * untouched. speed <= 0 disables.
+         * Exponential visual release. Active contacts can bypass this filter
+         * and remain locked to the current solver result. A lost contact claim
+         * decays through it instead of returning to the controller in one
+         * frame. speed <= 0 disables the filter.
          */
         RE::NiPoint3 smoothAppliedDeviation(const RE::NiPoint3& applied, const RE::NiPoint3& target, float smoothingSpeed, float deltaSeconds)
         {
@@ -1284,7 +1283,8 @@ namespace rock
             std::memory_order_release);
         handSlots.retainedSolverContactMask = 0;
         handSlots.retainedWorldContactMask = 0;
-        handSlots.solverContactRetentionSeconds = 0.0f;
+        handSlots.solverContactRetentionSeconds.fill(0.0f);
+        handSlots.worldContactRetentionSeconds.fill(0.0f);
         handSlots.physicsContactActive = false;
         handSlots.contactEntrySequenceAtomic.store(0, std::memory_order_release);
         handSlots.contactEntryApproachSpeedAtomic.store(0.0f, std::memory_order_relaxed);
@@ -2413,7 +2413,7 @@ namespace rock
              * A divergence teleport opens the recovery window: the applied
              * deviation glides home over the configured duration (speed ~3/T
              * reaches ~95% by the window's end) instead of snapping at the
-             * contact-smoothing rate.
+             * normal visual-release rate.
              */
             bool teleportedThisFrame = false;
             for (auto& slot : handSlots.bodies) {
@@ -2426,7 +2426,10 @@ namespace rock
                 handSlots.teleportRecoverySecondsRemaining = recoveryDuration;
             }
             const float frameDt = std::clamp(std::isfinite(frame.deltaSeconds) ? frame.deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
-            float smoothingSpeed = 0.0f;
+            float smoothingSpeed = handTelemetry.anyContact ?
+                0.0f :
+                g_rockConfig.
+                    rockHandCollisionDynamicRenderFollowSmoothingSpeed;
             if (handSlots.teleportRecoverySecondsRemaining > 0.0f) {
                 handSlots.teleportRecoverySecondsRemaining = std::max(0.0f, handSlots.teleportRecoverySecondsRemaining - frameDt);
                 const float recoverySpeed = 3.0f / std::max(recoveryDuration, 0.05f);
@@ -2739,26 +2742,56 @@ namespace rock
                     0,
                     std::memory_order_acq_rel) &
                 kAllChildBits;
-            if (observedContactMask != 0) {
-                handSlots.retainedSolverContactMask =
-                    observedContactMask;
-                handSlots.retainedWorldContactMask =
-                    observedWorldContactMask;
-                handSlots.solverContactRetentionSeconds =
-                    kCompoundContactRetentionSeconds;
-            } else {
-                handSlots.solverContactRetentionSeconds = std::max(
-                    0.0f,
-                    handSlots.solverContactRetentionSeconds -
-                        std::clamp(
-                            owner.drovePhysicsDeltaSeconds,
-                            0.0f,
-                            0.1f));
-                if (handSlots.solverContactRetentionSeconds <= 0.0f) {
-                    handSlots.retainedSolverContactMask = 0;
-                    handSlots.retainedWorldContactMask = 0;
+            const float retentionDeltaSeconds =
+                std::isfinite(owner.drovePhysicsDeltaSeconds) &&
+                    owner.drovePhysicsDeltaSeconds > 0.0f ?
+                std::clamp(owner.drovePhysicsDeltaSeconds, 0.0f, 0.1f) :
+                (1.0f / 90.0f);
+            std::uint32_t retainedSolverContactMask = 0;
+            std::uint32_t retainedWorldContactMask = 0;
+            for (std::size_t bodyIndex = 0;
+                 bodyIndex < kBodiesPerHand;
+                 ++bodyIndex) {
+                const std::uint32_t childBit =
+                    1u << static_cast<std::uint32_t>(bodyIndex);
+                const bool solverObserved =
+                    (observedContactMask & childBit) != 0;
+                const bool worldObserved =
+                    (observedWorldContactMask & childBit) != 0;
+
+                auto& solverRetention =
+                    handSlots.solverContactRetentionSeconds[bodyIndex];
+                solverRetention = solverObserved ?
+                    kCompoundContactRetentionSeconds :
+                    std::max(
+                        0.0f,
+                        solverRetention - retentionDeltaSeconds);
+                if (solverRetention > 0.0f) {
+                    retainedSolverContactMask |= childBit;
+                }
+
+                auto& worldRetention =
+                    handSlots.worldContactRetentionSeconds[bodyIndex];
+                if (worldObserved) {
+                    worldRetention = kCompoundContactRetentionSeconds;
+                } else if (solverObserved) {
+                    // Fresh hand or weapon evidence supersedes stale world
+                    // classification for this semantic child.
+                    worldRetention = 0.0f;
+                } else {
+                    worldRetention = std::max(
+                        0.0f,
+                        worldRetention - retentionDeltaSeconds);
+                }
+                if (solverRetention > 0.0f &&
+                    worldRetention > 0.0f) {
+                    retainedWorldContactMask |= childBit;
                 }
             }
+            handSlots.retainedSolverContactMask =
+                retainedSolverContactMask;
+            handSlots.retainedWorldContactMask =
+                retainedWorldContactMask;
             const std::uint32_t contactMask =
                 handSlots.retainedSolverContactMask;
             const std::uint32_t worldContactMask =
