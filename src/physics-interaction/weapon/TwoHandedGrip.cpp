@@ -1120,13 +1120,15 @@ namespace rock
         frik::api::FRIKApi::RecoilResponse* const outResponse,
         void* const userData) noexcept
     {
-        const auto* const self = static_cast<const TwoHandedGrip*>(userData);
+        auto* const self = static_cast<TwoHandedGrip*>(userData);
         if (!self ||
             !sample ||
             sample->structSize < sizeof(frik::api::FRIKApi::RecoilSample) ||
             !outResponse) {
             return false;
         }
+
+        self->captureLeftFiringWeaponRecoil(*sample);
 
         if (!self->_weaponNodeOwnershipBlockEngaged ||
             !self->_firingHandIsLeft ||
@@ -1140,6 +1142,110 @@ namespace rock
             frik::api::FRIKApi::RecoilHandMask::Primary);
         outResponse->delivery = frik::api::FRIKApi::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = sample->nativeKickLocal;
+        return true;
+    }
+
+    void TwoHandedGrip::captureLeftFiringWeaponRecoil(
+        const frik::api::FRIKApi::RecoilSample& sample) noexcept
+    {
+        ++_weaponRecoilSampleSequence;
+        _leftFiringWeaponRecoilSampleValid = false;
+        _leftFiringWeaponRecoilWorldDelta =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
+
+        if (!_weaponNodeOwnershipBlockEngaged ||
+            !_firingHandIsLeft ||
+            !isManualOwnershipActive() ||
+            !isFiniteTransform(sample.nativeKickLocal)) {
+            return;
+        }
+
+        const auto* const playerNodes = f4vr::getPlayerNodes();
+        const auto* const kickbackNode = playerNodes ?
+            playerNodes->primaryWeaponKickbackRecoilNode :
+            nullptr;
+        const auto* const kickParent = kickbackNode ? kickbackNode->parent : nullptr;
+        const auto* const leftHandedMode =
+            f4vr::getIniSetting("bLeftHandedMode:VR");
+        if (!playerNodes ||
+            !kickParent ||
+            !leftHandedMode ||
+            !isInvertibleTransform(kickParent->world)) {
+            return;
+        }
+
+        const bool leftIsNativeOffhand = !leftHandedMode->GetBinary();
+        if (leftIsNativeOffhand &&
+            (!playerNodes->primaryWandNode ||
+                !playerNodes->SecondaryWandNode ||
+                !isInvertibleTransform(playerNodes->primaryWandNode->world) ||
+                !isInvertibleTransform(playerNodes->SecondaryWandNode->world))) {
+            return;
+        }
+
+        const RE::NiTransform identity =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
+        const RE::NiTransform& primaryWandWorld = leftIsNativeOffhand ?
+            playerNodes->primaryWandNode->world :
+            identity;
+        const RE::NiTransform& offhandWandWorld = leftIsNativeOffhand ?
+            playerNodes->SecondaryWandNode->world :
+            identity;
+        const RE::NiTransform recoilWorldDelta =
+            weapon_recoil_authority_math::resolveWorldDelta(
+                sample.nativeKickLocal,
+                kickParent->world,
+                primaryWandWorld,
+                offhandWandWorld,
+                leftIsNativeOffhand);
+        if (!isFiniteTransform(recoilWorldDelta)) {
+            return;
+        }
+
+        _leftFiringWeaponRecoilWorldDelta = recoilWorldDelta;
+        _leftFiringWeaponRecoilSampleValid = true;
+    }
+
+    bool TwoHandedGrip::applyLeftFiringWeaponRecoil(RE::NiNode* weaponNode)
+    {
+        if (!_leftFiringWeaponRecoilReadyThisUpdate) {
+            return true;
+        }
+        _leftFiringWeaponRecoilReadyThisUpdate = false;
+
+        if (!weaponNode ||
+            !_weaponNodeOwnershipBlockEngaged ||
+            !_firingHandIsLeft ||
+            !isManualOwnershipActive() ||
+            !isFiniteTransform(weaponNode->world) ||
+            !isFiniteTransform(_leftFiringWeaponRecoilWorldDelta)) {
+            return true;
+        }
+
+        const RE::NiTransform identity =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
+        if (areTransformsNearlyEqual(
+                _leftFiringWeaponRecoilWorldDelta,
+                identity,
+                0.000001f)) {
+            return true;
+        }
+
+        const RE::NiTransform recoiledWeaponWorld =
+            transform_math::composeTransforms(
+                _leftFiringWeaponRecoilWorldDelta,
+                weaponNode->world);
+        if (!isFiniteTransform(recoiledWeaponWorld) ||
+            !applyWeaponVisualAuthority(weaponNode, recoiledWeaponWorld)) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "TwoHandedGrip: left-firing weapon recoil publication failed");
+            return false;
+        }
+
+        _lastSolvedWeaponTransform = weaponNode->world;
+        _hasSolvedWeaponTransform = true;
         return true;
     }
 
@@ -2374,6 +2480,12 @@ namespace rock
         bool firingGripProximityAuthorityEnabled,
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
+        _leftFiringWeaponRecoilReadyThisUpdate =
+            _leftFiringWeaponRecoilSampleValid &&
+            _weaponRecoilSampleSequence !=
+                _observedWeaponRecoilSampleSequence;
+        _observedWeaponRecoilSampleSequence =
+            _weaponRecoilSampleSequence;
         _handlingSettings = handlingSettings;
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
@@ -2724,6 +2836,7 @@ namespace rock
         // before stale scoped roles are removed. This keeps hFRIK under one
         // continuous ROCK authority selection across scope and role edges.
         reconcileDeferredScopeHandAuthority(weaponNode);
+        (void)applyLeftFiringWeaponRecoil(weaponNode);
         traceNativeScopeTransitionFinalState(weaponNode);
     }
 
@@ -2830,6 +2943,12 @@ namespace rock
         _hasLastPublishedHandWorld = {};
         _lastRenderedWeaponWorld = {};
         _hasLastRenderedWeaponWorld = false;
+        _leftFiringWeaponRecoilWorldDelta =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
+        _observedWeaponRecoilSampleSequence =
+            _weaponRecoilSampleSequence;
+        _leftFiringWeaponRecoilSampleValid = false;
+        _leftFiringWeaponRecoilReadyThisUpdate = false;
         resetLockedHandVisualLerp();
     }
 

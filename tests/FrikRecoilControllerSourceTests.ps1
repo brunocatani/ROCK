@@ -87,6 +87,12 @@ Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     '_weaponNodeOwnershipBlockEngaged[\s\S]*_firingHandIsLeft[\s\S]*isManualOwnershipActive\(\)[\s\S]*RecoilHandMask::Primary[\s\S]*RecoilDelivery::Direct[\s\S]*nativeKickLocal' `
     'ROCK may consume recoil only for its active physical-left firing carry and must preserve the validated native kick directly.'
+Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'captureLeftFiringWeaponRecoil\(\*sample\)[\s\S]*weapon_recoil_authority_math::resolveWorldDelta[\s\S]*_leftFiringWeaponRecoilSampleValid\s*=\s*true' `
+    'ROCK must capture the current physical-left weapon recoil without scene-node writes in the callback.'
+Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'reconcileDeferredScopeHandAuthority\(weaponNode\);[\s\S]*applyLeftFiringWeaponRecoil\(weaponNode\)[\s\S]*traceNativeScopeTransitionFinalState' `
+    'ROCK must apply left-firing weapon recoil after neutral grip and hand publication but before later presentation passes.'
 Require-Text $Root 'src/ROCKMain.cpp' `
     'registerWeaponHandRecoilController\s*!=\s*nullptr[\s\S]*unregisterWeaponHandRecoilController\s*!=\s*nullptr' `
     'ROCK startup must fail closed when the matching V5 recoil-controller table is absent.'

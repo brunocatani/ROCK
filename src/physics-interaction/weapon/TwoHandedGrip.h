@@ -916,6 +916,10 @@ namespace rock
             frik::api::FRIKApi::RecoilResponse* outResponse,
             void* userData) noexcept;
 
+        void captureLeftFiringWeaponRecoil(
+            const frik::api::FRIKApi::RecoilSample& sample) noexcept;
+        bool applyLeftFiringWeaponRecoil(RE::NiNode* weaponNode);
+
         struct LockedHandVisualLerpState
         {
             bool active = false;
@@ -1681,6 +1685,17 @@ namespace rock
         ReturningWeaponVisualState _returningWeaponVisual{};
         RE::NiTransform _lastRenderedWeaponWorld{};
         bool _hasLastRenderedWeaponWorld{ false };
+
+        /*
+         * hFRIK calls the recoil controller before ROCK's update on the same
+         * game thread. The sequence makes a sample valid for one ROCK update
+         * only. It prevents a skipped callback from reusing an old gun kick.
+         */
+        RE::NiTransform _leftFiringWeaponRecoilWorldDelta{};
+        std::uint64_t _weaponRecoilSampleSequence{ 0 };
+        std::uint64_t _observedWeaponRecoilSampleSequence{ 0 };
+        bool _leftFiringWeaponRecoilSampleValid{ false };
+        bool _leftFiringWeaponRecoilReadyThisUpdate{ false };
 
         float _primaryGripConfidence{ 0.0f };
 

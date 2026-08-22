@@ -196,6 +196,50 @@ namespace rock::weapon_visual_authority_math
     }
 }
 
+// ---- WeaponRecoilAuthorityMath.h ----
+
+namespace rock::weapon_recoil_authority_math
+{
+    template <class Transform>
+    [[nodiscard]] inline Transform mirrorLocalAcrossSagittal(
+        const Transform& local)
+    {
+        Transform mirror = transform_math::makeIdentityTransform<Transform>();
+        mirror.rotate.entry[0][0] = -1.0f;
+        return transform_math::composeTransforms(
+            mirror,
+            transform_math::composeTransforms(local, mirror));
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveWorldDelta(
+        const Transform& nativeKickLocal,
+        const Transform& nativeKickParentWorld,
+        const Transform& nativePrimaryWandWorld,
+        const Transform& nativeOffhandWandWorld,
+        const bool targetIsNativeOffhand)
+    {
+        Transform kickParentWorld = nativeKickParentWorld;
+        Transform kickLocal = nativeKickLocal;
+        if (targetIsNativeOffhand) {
+            const Transform kickParentInPrimaryWand =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(nativePrimaryWandWorld),
+                    nativeKickParentWorld);
+            kickParentWorld = transform_math::composeTransforms(
+                nativeOffhandWandWorld,
+                mirrorLocalAcrossSagittal(kickParentInPrimaryWand));
+            kickLocal = mirrorLocalAcrossSagittal(nativeKickLocal);
+        }
+
+        return transform_math::composeTransforms(
+            kickParentWorld,
+            transform_math::composeTransforms(
+                kickLocal,
+                transform_math::invertTransform(kickParentWorld)));
+    }
+}
+
 // ---- NativeScopeRotationMath.h ----
 
 namespace rock::native_scope_rotation_math
