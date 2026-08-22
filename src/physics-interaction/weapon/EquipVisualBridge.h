@@ -164,6 +164,12 @@ namespace rock
         float _elapsedSeconds = 0.0f;
         float _lifetimeSeconds = 0.0f;
         float _blendSeconds = 0.15f;
+        /*
+         * Wall-clock safety lease by contract: the bridge presentation must
+         * expire even if game-frame updates stall, so a loose bridge model
+         * can never persist indefinitely. The blend itself advances on the
+         * game clock; only the lease uses wall time.
+         */
         float _presentationLeaseSeconds = 1.0f;
         std::chrono::steady_clock::time_point _presentationLeaseStartedAt{};
         std::uint32_t _weaponFormID = 0;

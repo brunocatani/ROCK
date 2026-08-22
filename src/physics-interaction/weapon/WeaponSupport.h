@@ -301,23 +301,31 @@ namespace rock::equipped_weapon_manual_ownership_policy
     }
 
     /*
-     * A firing-grip release that confirms while the support grab is only a
-     * few frames old is part of the SAME physical gesture (reach-over
+     * A firing-grip release that confirms while the support grab is only
+     * moments old is part of the SAME physical gesture (reach-over
      * takeover) or a grab-synchronized grip flicker - never an independent,
      * deliberate release. Acting on it immediately let a fresh offhand grab
      * steal the firing role one frame after capture (left-firing round-4
-     * break, 2026-07-12). The window must exceed the release-confirm
-     * debounce so the earliest confirm reachable after a grab is always
-     * deferred; ~5 frames (about 110ms at 45Hz) also outlasts short grip
-     * click flickers while staying imperceptible for deliberate takeovers.
+     * break, 2026-07-12). This is an elapsed-time contract (the human
+     * gesture window does not shrink at higher frame rates), tuned to the
+     * historically documented 110 ms: it outlasts short grip click flickers
+     * while staying imperceptible for deliberate takeovers.
      */
-    inline constexpr std::uint32_t kFreshSupportGripPrimaryReleaseDeferFrames = 5;
-    static_assert(kFreshSupportGripPrimaryReleaseDeferFrames > kPrimaryReleaseConfirmFrames,
-        "defer window must outlast the release-confirm debounce or a grab-synchronized release acts on its first confirmable frame");
+    inline constexpr float kFreshSupportGripPrimaryReleaseDeferSeconds = 0.110f;
+    /*
+     * The release-confirm debounce stays a consecutive-publication count
+     * (grip evidence arrives once per frame), so the defer window must
+     * outlast it at the SLOWEST supported game rate (45 FPS) or a
+     * grab-synchronized release acts on its first confirmable frame.
+     */
+    static_assert(
+        kFreshSupportGripPrimaryReleaseDeferSeconds >
+            static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f,
+        "defer window must outlast the release-confirm debounce at every supported rate");
 
-    [[nodiscard]] inline constexpr bool shouldDeferPrimaryReleaseActionForFreshSupportGrip(std::uint32_t supportGripAgeFrames) noexcept
+    [[nodiscard]] inline constexpr bool shouldDeferPrimaryReleaseActionForFreshSupportGrip(float supportGripAgeSeconds) noexcept
     {
-        return supportGripAgeFrames <= kFreshSupportGripPrimaryReleaseDeferFrames;
+        return supportGripAgeSeconds <= kFreshSupportGripPrimaryReleaseDeferSeconds;
     }
 
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(

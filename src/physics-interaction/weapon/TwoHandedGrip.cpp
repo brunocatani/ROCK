@@ -56,6 +56,11 @@ namespace rock
         constexpr float DYNAMIC_SUPPORT_MINIMUM_SMOOTHED_ROTATION_RADIANS =
             0.5f * 0.01745329251994329577f;
         constexpr float RADIANS_TO_DEGREES = 57.295779513082320876f;
+        /*
+         * Clock domain: a consecutive-publication count by design. The hFRIK
+         * driver either publishes each frame or it does not; the tolerance is
+         * a number of missed publications, not an elapsed duration.
+         */
         constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
         constexpr std::uint32_t SCOPE_TRANSITION_TRACE_FRAMES = 6;
@@ -1899,7 +1904,9 @@ namespace rock
                 _scopeSafeHandFrames[1].hasDriverToHandLocal ? "ready" : "missing");
         }
 
-        const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : (1.0f / 90.0f);
+        // Central game delta; an unmeasurable frame holds the rebase
+        // interpolation instead of advancing it by fabricated time.
+        const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : 0.0f;
         const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
             const std::size_t handIndex = isLeft ? 0u : 1u;
             ScopeSafeHandFrameState& state = _scopeSafeHandFrames[handIndex];
@@ -2644,10 +2651,13 @@ namespace rock
                 break;
             }
             if (supportTouchingSupport) {
-                _touchFrames = 0;
+                _touchAbsentSeconds = 0.0f;
             } else {
-                _touchFrames++;
-                if (_touchFrames > TOUCH_TIMEOUT_FRAMES) {
+                // Measured elapsed time only: an unmeasurable frame holds the
+                // timeout instead of advancing it by fabricated time.
+                _touchAbsentSeconds +=
+                    std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
+                if (_touchAbsentSeconds > TOUCH_TIMEOUT_SECONDS) {
                     _state = TwoHandedState::Inactive;
                     break;
                 }
@@ -2664,9 +2674,8 @@ namespace rock
             break;
 
         case TwoHandedState::Gripping:
-            if (_supportGripAgeFrames < (std::numeric_limits<std::uint32_t>::max)()) {
-                ++_supportGripAgeFrames;
-            }
+            _supportGripAgeSeconds +=
+                std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
             if (!_activeWeaponNode) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because active weapon source root is unavailable");
                 transitionToInactive(false);
@@ -2727,7 +2736,7 @@ namespace rock
                     transitionToInactive(ownsWeaponTransform());
                 }
             } else if ((handlingSettings.primaryDetachEnabled || handlingSettings.ambidextrousHandoffEnabled) && !primaryGripInput.held &&
-                       equipped_weapon_manual_ownership_policy::shouldDeferPrimaryReleaseActionForFreshSupportGrip(_supportGripAgeFrames)) {
+                       equipped_weapon_manual_ownership_policy::shouldDeferPrimaryReleaseActionForFreshSupportGrip(_supportGripAgeSeconds)) {
                 /*
                  * The firing-grip release confirmed while the support grab is
                  * only a few frames old: same physical gesture or a
@@ -2741,8 +2750,8 @@ namespace rock
                 if (!_freshSupportGripDeferLogged) {
                     _freshSupportGripDeferLogged = true;
                     ROCK_LOG_INFO(Weapon,
-                        "TwoHandedGrip: deferring firing-grip release action while support grip is fresh age={} firingHand={} leftGripHeld={} rightGripHeld={}",
-                        _supportGripAgeFrames,
+                        "TwoHandedGrip: deferring firing-grip release action while support grip is fresh age={:.3f}s firingHand={} leftGripHeld={} rightGripHeld={}",
+                        _supportGripAgeSeconds,
                         _firingHandIsLeft ? "left" : "right",
                         stableFrameInput.leftGripHeld ? "yes" : "no",
                         stableFrameInput.rightGripHeld ? "yes" : "no");
@@ -2917,14 +2926,14 @@ namespace rock
         _scopeMenuOpenThisFrame = false;
         _scopeMenuClosedThisFrame = false;
         _state = TwoHandedState::Inactive;
-        _touchFrames = 0;
+        _touchAbsentSeconds = 0.0f;
         _rotationBlend = 0.0f;
         _partGrips = {};
         _partCarryPivotIsLeft = true;
         _partCarryGripSeparationWorld = 0.0f;
         _primaryGripLocal = {};
         _lockedGripSeparationWorld = 0.0f;
-        _supportGripAgeFrames = 0;
+        _supportGripAgeSeconds = 0.0f;
         _freshSupportGripDeferLogged = false;
         _authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _hasSolvedWeaponTransform = false;
@@ -3880,7 +3889,7 @@ namespace rock
         }
 
         _state = TwoHandedState::Touching;
-        _touchFrames = 0;
+        _touchAbsentSeconds = 0.0f;
         ROCK_LOG_DEBUG(Weapon,
             "TwoHandedGrip: touching weapon='{}' bodyId={} partKind={} pose={} interactionRoot={:x} sourceRoot={:x} generation={:016X}",
             weaponNode->name.c_str(),
@@ -5041,7 +5050,7 @@ namespace rock
         _state = TwoHandedState::Gripping;
         _rotationBlend = gunstockBaselineActive ? 1.0f : 0.0f;
         _gripLogCounter = 0;
-        _supportGripAgeFrames = 0;
+        _supportGripAgeSeconds = 0.0f;
         _freshSupportGripDeferLogged = false;
 
         ROCK_LOG_INFO(Weapon,
@@ -5106,14 +5115,14 @@ namespace rock
         }
 
         _state = TwoHandedState::Inactive;
-        _touchFrames = 0;
+        _touchAbsentSeconds = 0.0f;
         _rotationBlend = 0.0f;
         _partGrips = {};
         _partCarryPivotIsLeft = true;
         _partCarryGripSeparationWorld = 0.0f;
         _primaryGripLocal = {};
         _lockedGripSeparationWorld = 0.0f;
-        _supportGripAgeFrames = 0;
+        _supportGripAgeSeconds = 0.0f;
         _freshSupportGripDeferLogged = false;
         _authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _hasSolvedWeaponTransform = weaponReturnActive || (publishRestoredWeaponTransform && restoredWeaponTransformAvailable);
@@ -6818,7 +6827,7 @@ namespace rock
                     _state = TwoHandedState::Gripping;
                     // Fresh two-hand configuration: the just-taken firing grip
                     // gets the same release-defer window as a fresh support grab.
-                    _supportGripAgeFrames = 0;
+                    _supportGripAgeSeconds = 0.0f;
                     _freshSupportGripDeferLogged = false;
                     RE::NiTransform supportInputWorld{};
                     if (!tryGetSolverHandTransform(

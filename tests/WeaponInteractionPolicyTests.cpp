@@ -2719,13 +2719,15 @@ int main()
     ok &= expectTrue("stable open primary samples confirm release", primaryReleaseDecision.releaseConfirmed);
 
     ok &= expectTrue("release confirmed on a just-captured support grip is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(0));
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(0.0f));
+    // The confirm debounce is a publication count; the defer window must
+    // outlast it at the slowest supported rate (2 frames at 45 FPS).
     ok &= expectTrue("release confirmed on the earliest confirmable frame after a grab is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kPrimaryReleaseConfirmFrames));
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f));
     ok &= expectTrue("release confirmed at the defer window edge is still deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferFrames));
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds));
     ok &= expectFalse("release confirmed on an aged support grip acts normally",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferFrames + 1));
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds + 0.001f));
 
     RuntimeState manualState{};
     auto manualDecision = update(manualState,

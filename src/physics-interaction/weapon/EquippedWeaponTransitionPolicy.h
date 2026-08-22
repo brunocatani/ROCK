@@ -6,6 +6,15 @@
 
 namespace rock::equipped_weapon_transition_policy
 {
+    /*
+     * Clock domains: the frame counts below are consecutive-observation
+     * confirmations and engine-processing settle counts, deliberately NOT
+     * elapsed durations. Renderability evidence arrives once per game frame,
+     * and the engine consumes attach/visibility mutations on its own frame
+     * cadence, so the rate-independent contract is "N observations", not
+     * "N milliseconds". Every genuinely elapsed contract in this policy
+     * (draw retry, stall, and recovery deadlines) is expressed in seconds.
+     */
     constexpr std::uint8_t kStableFramesBeforeNativeHandoff = 3;
     constexpr std::uint8_t kMissingFramesBeforeRepair = 2;
     constexpr std::uint8_t kAttachSettleFrames = 6;

@@ -1653,8 +1653,13 @@ namespace rock
 
         float _partCarryGripSeparationWorld{ 0.0f };
 
-        int _touchFrames{ 0 };
-        static constexpr int TOUCH_TIMEOUT_FRAMES = 5;
+        /*
+         * Elapsed time the support hand has been off the weapon while in the
+         * Touching state. An elapsed contract (the historical 5-frame window
+         * at the 90 Hz tuning baseline), rate-independent in seconds.
+         */
+        float _touchAbsentSeconds{ 0.0f };
+        static constexpr float TOUCH_TIMEOUT_SECONDS = 5.0f / 90.0f;
 
         float _rotationBlend{ 0.0f };
         static constexpr float ROTATION_BLEND_SPEED = 8.0f;
@@ -1714,7 +1719,7 @@ namespace rock
          * release that confirms while this is still fresh is the same
          * gesture (or a grab-synchronized grip flicker) and is deferred.
          */
-        std::uint32_t _supportGripAgeFrames{ 0 };
+        float _supportGripAgeSeconds{ 0.0f };
         bool _freshSupportGripDeferLogged{ false };
 
         RE::NiTransform _weaponNodeLocalBaseline{};

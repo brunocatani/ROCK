@@ -98,6 +98,12 @@ namespace rock::weapon_transition_animation_acceleration
             RE::PlayerCharacter* player{ nullptr };
             Identity identity{};
             Direction direction{ Direction::Draw };
+            /*
+             * Wall-clock lease by contract: the acceleration supervises an
+             * asynchronous native animation request and must expire even when
+             * game-frame updates stall (menus, loading). Deliberately not
+             * gameplay time.
+             */
             std::chrono::steady_clock::time_point requestedAt{};
             std::uint64_t sequence{ 0 };
             bool active{ false };
