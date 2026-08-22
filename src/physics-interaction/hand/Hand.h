@@ -667,7 +667,6 @@ namespace rock
         // Rate-independent freshness for internal gameplay windows.
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsWithinSeconds(
             float maxAgeSeconds) const;
-        hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsForBody(std::uint32_t targetBodyId, std::uint32_t maxFramesSinceContact) const;
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsForBodyWithinSeconds(std::uint32_t targetBodyId, float maxAgeSeconds) const;
         bool isFingerTouching(hand_collider_semantics::HandFinger finger) const;
         bool isFingerTipTouching(hand_collider_semantics::HandFinger finger) const;

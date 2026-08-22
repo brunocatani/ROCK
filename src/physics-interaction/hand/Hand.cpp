@@ -2071,25 +2071,6 @@ namespace rock
         return contacts;
     }
 
-    hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContactsForBody(
-        const std::uint32_t targetBodyId,
-        const std::uint32_t maxFramesSinceContact) const
-    {
-        hand_semantic_contact_state::SemanticContactCollection matching{};
-        if (targetBodyId == hand_semantic_contact_state::kInvalidBodyId) {
-            return matching;
-        }
-
-        const auto contacts =
-            collectFreshSemanticContacts(maxFramesSinceContact);
-        for (std::size_t index = 0; index < contacts.count; ++index) {
-            if (contacts.records[index].otherBodyId == targetBodyId) {
-                matching.add(contacts.records[index]);
-            }
-        }
-        return matching;
-    }
-
     hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContactsForBodyWithinSeconds(
         const std::uint32_t targetBodyId,
         const float maxAgeSeconds) const

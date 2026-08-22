@@ -83,6 +83,13 @@ namespace rock
         int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
         int rockLogSampleMilliseconds = 2000;
+        /*
+         * Clock-domain note: the remaining *Frames diagnostic settings below
+         * (profiler warmup/report windows, dump/audit/log intervals) are
+         * deliberate PUBLICATION-COUNT SAMPLING — "log every Nth frame" for
+         * video/frame correlation — not gameplay durations. Gameplay behavior
+         * settings are seconds-based.
+         */
         bool rockPerformanceProfilerEnabled = false;
         int rockPerformanceProfilerLogIntervalFrames = 300;
         int rockPerformanceProfilerWarmupFrames = 120;
