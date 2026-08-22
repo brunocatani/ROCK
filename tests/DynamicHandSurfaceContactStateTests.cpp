@@ -64,9 +64,18 @@ int main()
     assert(!contacts.records[0].hasContactPointGame);
     assert(!contacts.records[0].hasContactNormalGame);
 
-    state.advanceFrame();
+    state.advanceFrame(1.0f / 90.0f);
     assert(state.collectFresh(false, 0).count == 0);
     assert(state.collectFresh(false, 1).count == 1);
+
+    // Seconds-based freshness is frame-rate independent: the contact aged one
+    // 90 Hz frame, so an 11 ms window keeps it and a 5 ms window expires it.
+    assert(state.collectFresh(false, 0xFFFF'FFFFu, 0.0120f).count == 1);
+    assert(state.collectFresh(false, 0xFFFF'FFFFu, 0.0050f).count == 0);
+
+    // Invalid frames advance no measured time: freshness holds.
+    state.advanceFrame(0.0f);
+    assert(state.collectFresh(false, 0xFFFF'FFFFu, 0.0120f).count == 1);
 
     state.clear();
     assert(state.collectFresh(false, 10).count == 0);

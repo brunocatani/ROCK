@@ -146,7 +146,8 @@ namespace rock
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr) noexcept;
         [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(
             bool isLeft,
-            std::uint32_t maximumAgeFrames) const noexcept;
+            std::uint32_t maximumAgeFrames,
+            float maximumAgeSeconds = -1.0f) const noexcept;
 
         enum class SurfaceLatchFailure : std::uint8_t
         {

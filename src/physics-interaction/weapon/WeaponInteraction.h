@@ -27,6 +27,11 @@ namespace rock
          * touching hand cannot be reclassified as an authored proximity snap.
          * The lease affects provenance only; a valid current touch/probe
          * candidate is still required before a grab can start.
+         *
+         * Clock domain: deliberately a consecutive-publication count, not an
+         * elapsed duration. The flicker it bridges is quantized per
+         * presentation frame, so the number of missed publications to
+         * tolerate is rate-independent while its elapsed time is not.
          */
         [[nodiscard]] inline constexpr WeaponInteractionAcquisitionSource resolve(
             State& state,

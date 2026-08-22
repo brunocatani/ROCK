@@ -84,6 +84,10 @@ namespace rock::hand_semantic_contact_state
         float z = 0.0f;
     };
 
+    // Sentinel age for a record that has never seen a contact on the seconds
+    // clock; any finite freshness window classifies it as stale.
+    inline constexpr float kSemanticContactNeverSeconds = 1.0e9f;
+
     struct SemanticContactRecord
     {
         bool valid = false;
@@ -94,9 +98,16 @@ namespace rock::hand_semantic_contact_state
         std::uint32_t handBodyId = kInvalidBodyId;
         std::uint32_t otherBodyId = kInvalidBodyId;
         std::uint32_t sequence = 0;
+        /*
+         * Frame fields are publication/sequence identity and stay counters:
+         * the provider V1 contract and frame-count configuration gates consume
+         * them. secondsSinceContact is the rate-independent elapsed-freshness
+         * value internal gameplay windows consume.
+         */
         std::uint32_t contactFrame = 0xFFFF'FFFFu;
         std::uint32_t contactRunStartFrame = 0xFFFF'FFFFu;
         std::uint32_t framesSinceContact = 0xFFFF'FFFFu;
+        float secondsSinceContact = kSemanticContactNeverSeconds;
         bool hasContactPointGame = false;
         bool hasContactNormalGame = false;
         SemanticContactVector contactPointGame{};
@@ -273,14 +284,29 @@ namespace rock::hand_semantic_contact_state
             }
             auto stored = record;
             stored.framesSinceContact = 0;
+            stored.secondsSinceContact = 0.0f;
             _records[semanticContactSlotForRole(stored.role)] = stored;
         }
 
-        void advanceFrames()
+        /*
+         * Advance both clocks once per game frame: the frame counter always
+         * counts publications; the seconds clock accumulates only measured
+         * game time (pass zero for an invalid or unmeasurable frame so
+         * freshness never advances by fabricated time).
+         */
+        void advance(float validDeltaSeconds)
         {
+            const float delta =
+                std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f ? validDeltaSeconds : 0.0f;
             for (auto& record : _records) {
-                if (record.valid && record.framesSinceContact < 0xFFFF'FFFFu) {
+                if (!record.valid) {
+                    continue;
+                }
+                if (record.framesSinceContact < 0xFFFF'FFFFu) {
                     ++record.framesSinceContact;
+                }
+                if (record.secondsSinceContact < kSemanticContactNeverSeconds) {
+                    record.secondsSinceContact += delta;
                 }
             }
         }
@@ -293,6 +319,21 @@ namespace rock::hand_semantic_contact_state
                     continue;
                 }
                 if (record.framesSinceContact > maxFramesSinceContact) {
+                    continue;
+                }
+                result.add(record);
+            }
+            return result;
+        }
+
+        SemanticContactCollection collectFreshForBodyWithinSeconds(std::uint32_t targetBodyId, float maxAgeSeconds) const
+        {
+            SemanticContactCollection result{};
+            for (const auto& record : _records) {
+                if (!record.valid || record.handBodyId == kInvalidBodyId || record.otherBodyId != targetBodyId) {
+                    continue;
+                }
+                if (!(record.secondsSinceContact <= maxAgeSeconds)) {
                     continue;
                 }
                 result.add(record);

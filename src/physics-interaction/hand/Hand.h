@@ -620,7 +620,13 @@ namespace rock
             const hand_semantic_contact_state::SemanticContactVector* contactPointGame = nullptr,
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr);
         void clearSemanticContactEvidence();
-        void tickSemanticContactState();
+        /*
+         * Advance both semantic-contact clocks once per game frame: the frame
+         * counter always counts publications (provider V1 and frame-count
+         * gates consume it); the seconds clock accumulates only measured game
+         * time, so pass zero for an invalid or unmeasurable frame.
+         */
+        void tickSemanticContactState(float validDeltaSeconds);
         bool getLastSemanticContact(hand_semantic_contact_state::SemanticContactRecord& outContact) const;
         bool getFreshSemanticContactForRole(
             hand_collider_semantics::HandColliderRole role,
@@ -628,6 +634,9 @@ namespace rock
             hand_semantic_contact_state::SemanticContactRecord& outContact) const;
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContacts(
             std::uint32_t maxFramesSinceContact) const;
+        // Rate-independent freshness for internal gameplay windows.
+        hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsWithinSeconds(
+            float maxAgeSeconds) const;
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsForBody(std::uint32_t targetBodyId, std::uint32_t maxFramesSinceContact) const;
         bool isFingerTouching(hand_collider_semantics::HandFinger finger) const;
         bool isFingerTipTouching(hand_collider_semantics::HandFinger finger) const;
@@ -877,7 +886,15 @@ namespace rock
         std::atomic<float> _semanticContactNormalGameX{ 0.0f };
         std::atomic<float> _semanticContactNormalGameY{ 0.0f };
         std::atomic<float> _semanticContactNormalGameZ{ 0.0f };
+        hand_semantic_contact_state::SemanticContactCollection collectSemanticContactsFiltered(
+            std::uint32_t maxFramesSinceContact,
+            float maxAgeSeconds) const;
+
         std::mutex _semanticContactWriteMutex;
+        // Seconds clock beside the frame counter: physics-thread producers
+        // stamp the current elapsed value; game-frame consumers compute age.
+        std::atomic<double> _semanticContactElapsedSeconds{ 0.0 };
+        std::array<std::atomic<double>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetSeconds{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetValid{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetRole{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetFinger{};

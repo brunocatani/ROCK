@@ -4001,9 +4001,11 @@ namespace rock
         bool wasTouchingL = _leftHand.isTouching();
         _rightHand.tickTouchState();
         _leftHand.tickTouchState();
-        _rightHand.tickSemanticContactState();
-        _leftHand.tickSemanticContactState();
-        _handContactActivity.advanceFrame();
+        const float measuredFrameDeltaSeconds =
+            frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
+        _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
+        _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
+        _handContactActivity.advanceFrame(measuredFrameDeltaSeconds);
         if (wasTouchingR && !_rightHand.isTouching()) {
             dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, false, _rightHand.getLastTouchedRef(), _rightHand.getLastTouchedFormID(), _rightHand.getLastTouchedLayer());
         }
@@ -9921,15 +9923,21 @@ namespace rock
             }
             if (canTryTouchGrab) {
                 _touchGrabRuntime.beginAttemptDiagnostics();
-                constexpr std::uint32_t
-                    kTouchGrabContactFreshnessFrames = 4;
+                /*
+                 * Elapsed-time contact freshness for touch-grab candidacy:
+                 * the historical 4-frame window at the 90 Hz tuning baseline,
+                 * now identical at every game frame rate.
+                 */
+                constexpr float
+                    kTouchGrabContactFreshnessSeconds = 4.0f / 90.0f;
                 const auto contacts =
-                    hand.collectFreshSemanticContacts(
-                        kTouchGrabContactFreshnessFrames);
+                    hand.collectFreshSemanticContactsWithinSeconds(
+                        kTouchGrabContactFreshnessSeconds);
                 const auto surfaceContacts =
                     _dynamicHandCollision.collectFreshSurfaceContacts(
                         isLeft,
-                        kTouchGrabContactFreshnessFrames);
+                        0xFFFF'FFFFu,
+                        kTouchGrabContactFreshnessSeconds);
                 const auto tryTargetClass =
                     [&](const TouchGrabRuntime::TargetClass
                             targetClass) {

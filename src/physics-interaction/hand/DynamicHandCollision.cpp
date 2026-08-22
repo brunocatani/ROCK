@@ -722,9 +722,10 @@ namespace rock
     hand_semantic_contact_state::SemanticContactCollection
     DynamicHandCollisionRuntime::collectFreshSurfaceContacts(
         const bool isLeft,
-        const std::uint32_t maximumAgeFrames) const noexcept
+        const std::uint32_t maximumAgeFrames,
+        const float maximumAgeSeconds) const noexcept
     {
-        return _surfaceContacts.collectFresh(isLeft, maximumAgeFrames);
+        return _surfaceContacts.collectFresh(isLeft, maximumAgeFrames, maximumAgeSeconds);
     }
 
     bool DynamicHandCollisionRuntime::beginSurfaceLatch(
@@ -1919,7 +1920,8 @@ namespace rock
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DynamicHandCollisionFrame);
 
-        _surfaceContacts.advanceFrame();
+        _surfaceContacts.advanceFrame(
+            frame.timing.valid ? frame.timing.deltaSeconds : 0.0f);
         _pendingHapticEvents = {};
         dynamic_hand_collision_telemetry::Snapshot telemetry{};
         telemetry.updateSequence = ++_telemetryUpdateSequence;

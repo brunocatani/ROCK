@@ -84,11 +84,27 @@ int main()
     ok &= expectTrue("fresh non-anchor semantic contact is a pivot candidate", decision.accept);
     ok &= expectReason("fresh semantic pivot reason", decision.reason, "semanticContact");
 
-    set.advanceFrames();
+    set.advance(1.0f / 90.0f);
     const auto stale = set.getFreshForRole(HandColliderRole::IndexTip, 10);
     decision = evaluateSemanticPivotCandidate(true, stale, 20, 0);
     ok &= expectFalse("stale semantic contact is rejected for pivot", decision.accept);
     ok &= expectReason("stale semantic pivot reason", decision.reason, "staleContact");
+
+    // Seconds-based freshness is frame-rate independent: after one 90 Hz
+    // frame the record survives an 11 ms window and expires a 5 ms window.
+    ok &= expectTrue(
+        "seconds window keeps a fresh record",
+        set.collectFreshForBodyWithinSeconds(20, 0.0120f).count == 1);
+    ok &= expectTrue(
+        "seconds window expires an old record",
+        set.collectFreshForBodyWithinSeconds(20, 0.0050f).count == 0);
+
+    // An unmeasurable frame advances no seconds: freshness holds while the
+    // publication counter still advances.
+    set.advance(0.0f);
+    ok &= expectTrue(
+        "invalid frame holds seconds freshness",
+        set.collectFreshForBodyWithinSeconds(20, 0.0120f).count == 1);
 
     SemanticContactRecord anchor = contact;
     anchor.role = HandColliderRole::PalmAnchor;

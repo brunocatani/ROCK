@@ -40,9 +40,20 @@ namespace rock::dynamic_hand_surface_contact_state
     class State
     {
     public:
-        void advanceFrame() noexcept
+        /*
+         * Advance both clocks once per game frame. The frame counter counts
+         * publications; the seconds clock accumulates only measured game time
+         * (pass zero for an invalid or unmeasurable frame), so surface-grab
+         * candidate freshness is refresh-rate independent.
+         */
+        void advanceFrame(const float validDeltaSeconds) noexcept
         {
             _frame.fetch_add(1, std::memory_order_acq_rel);
+            if (std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f) {
+                const double now =
+                    _elapsedSeconds.load(std::memory_order_acquire) + validDeltaSeconds;
+                _elapsedSeconds.store(now, std::memory_order_release);
+            }
         }
 
         void clear() noexcept
@@ -86,6 +97,7 @@ namespace rock::dynamic_hand_surface_contact_state
             slot.valid.store(0, std::memory_order_release);
             slot.epoch.store(_epoch.load(std::memory_order_acquire), std::memory_order_relaxed);
             slot.frame.store(_frame.load(std::memory_order_acquire), std::memory_order_relaxed);
+            slot.seconds.store(_elapsedSeconds.load(std::memory_order_acquire), std::memory_order_relaxed);
             slot.role.store(static_cast<std::uint32_t>(source.role), std::memory_order_relaxed);
             slot.finger.store(static_cast<std::uint32_t>(source.finger), std::memory_order_relaxed);
             slot.segment.store(static_cast<std::uint32_t>(source.segment), std::memory_order_relaxed);
@@ -105,15 +117,22 @@ namespace rock::dynamic_hand_surface_contact_state
             return true;
         }
 
+        /*
+         * maximumAgeSeconds < 0 disables the seconds gate (frame-count-only
+         * callers); maximumAgeFrames = UINT32_MAX disables the frame gate.
+         */
         [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFresh(
             const bool isLeft,
-            const std::uint32_t maximumAgeFrames) const noexcept
+            const std::uint32_t maximumAgeFrames,
+            const float maximumAgeSeconds = -1.0f) const noexcept
         {
             hand_semantic_contact_state::SemanticContactCollection result{};
             const std::uint64_t currentEpoch =
                 _epoch.load(std::memory_order_acquire);
             const std::uint32_t currentFrame =
                 _frame.load(std::memory_order_acquire);
+            const double nowSeconds =
+                _elapsedSeconds.load(std::memory_order_acquire);
 
             for (const auto& slot : _slots[isLeft ? 1u : 0u]) {
                 for (int attempt = 0; attempt < 3; ++attempt) {
@@ -130,6 +149,8 @@ namespace rock::dynamic_hand_surface_contact_state
                         slot.epoch.load(std::memory_order_relaxed);
                     const std::uint32_t contactFrame =
                         slot.frame.load(std::memory_order_relaxed);
+                    const double contactSeconds =
+                        slot.seconds.load(std::memory_order_relaxed);
                     hand_semantic_contact_state::SemanticContactRecord contact{};
                     contact.valid = true;
                     contact.isLeft = isLeft;
@@ -147,6 +168,8 @@ namespace rock::dynamic_hand_surface_contact_state
                     contact.contactFrame = contactFrame;
                     contact.contactRunStartFrame = contactFrame;
                     contact.framesSinceContact = currentFrame - contactFrame;
+                    contact.secondsSinceContact = static_cast<float>(
+                        nowSeconds >= contactSeconds ? nowSeconds - contactSeconds : 0.0);
                     contact.hasContactPointGame =
                         slot.hasPoint.load(std::memory_order_relaxed) != 0;
                     contact.hasContactNormalGame =
@@ -172,7 +195,8 @@ namespace rock::dynamic_hand_surface_contact_state
                     if (contactEpoch != currentEpoch ||
                         contact.handBodyId == hand_semantic_contact_state::kInvalidBodyId ||
                         contact.otherBodyId == hand_semantic_contact_state::kInvalidBodyId ||
-                        contact.framesSinceContact > maximumAgeFrames) {
+                        contact.framesSinceContact > maximumAgeFrames ||
+                        (maximumAgeSeconds >= 0.0f && contact.secondsSinceContact > maximumAgeSeconds)) {
                         break;
                     }
                     if (contact.hasContactPointGame &&
@@ -198,6 +222,7 @@ namespace rock::dynamic_hand_surface_contact_state
             std::atomic<std::uint32_t> valid{ 0 };
             std::atomic<std::uint64_t> epoch{ 0 };
             std::atomic<std::uint32_t> frame{ 0 };
+            std::atomic<double> seconds{ 0.0 };
             std::atomic<std::uint32_t> role{ 0 };
             std::atomic<std::uint32_t> finger{ 0 };
             std::atomic<std::uint32_t> segment{ 0 };
@@ -236,5 +261,6 @@ namespace rock::dynamic_hand_surface_contact_state
         std::array<std::array<AtomicSlot, kContactRolesPerHand>, kHandCount> _slots{};
         std::atomic<std::uint64_t> _epoch{ 1 };
         std::atomic<std::uint32_t> _frame{ 0 };
+        std::atomic<double> _elapsedSeconds{ 0.0 };
     };
 }

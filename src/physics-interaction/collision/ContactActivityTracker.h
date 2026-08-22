@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -20,12 +21,20 @@ namespace rock::contact_activity_tracker
 
     inline constexpr std::uint32_t kInvalidBodyId = 0xFFFF'FFFFu;
     inline constexpr std::uint32_t kInvalidBodyIdLegacy = 0x7FFF'FFFFu;
-    inline constexpr std::uint32_t kActiveContactFrames = 15;
-    inline constexpr std::uint32_t kCleanupContactFrames = 100;
+    /*
+     * Continuity and cleanup are elapsed-time contracts. The durations keep
+     * the historical tuning (15 and 100 game frames at the 90 Hz baseline) so
+     * behavior is unchanged at 90 FPS and now identical at every other rate.
+     * The frame counter below remains only as publication identity for
+     * contact records.
+     */
+    inline constexpr double kActiveContactSeconds = 15.0 / 90.0;
+    inline constexpr double kCleanupContactSeconds = 100.0 / 90.0;
     inline constexpr std::size_t kMaxTrackedContactsPerHand = 512;
     inline constexpr std::uint64_t kFreeContactActivityKey = 0;
     inline constexpr std::uint64_t kReservedContactActivityKey = (std::numeric_limits<std::uint64_t>::max)();
     inline constexpr std::uint32_t kInvalidContactActivityFrame = (std::numeric_limits<std::uint32_t>::max)();
+    inline constexpr double kNeverSeenContactSeconds = -1.0e9;
 
     struct ContactRegistrationResult
     {
@@ -42,15 +51,25 @@ namespace rock::contact_activity_tracker
         void reset()
         {
             _frame.store(0, std::memory_order_release);
+            _elapsedSeconds.store(0.0, std::memory_order_release);
             clearBank(_right);
             clearBank(_left);
         }
 
-        std::uint32_t advanceFrame()
+        /*
+         * Advance once per game frame with the frame's measured delta (zero
+         * for an invalid or unmeasurable frame, so continuity windows hold
+         * instead of expiring on fabricated time).
+         */
+        std::uint32_t advanceFrame(float validDeltaSeconds)
         {
             const auto frame = _frame.fetch_add(1, std::memory_order_acq_rel) + 1;
-            pruneStale(_right, frame);
-            pruneStale(_left, frame);
+            const double delta =
+                std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f ? static_cast<double>(validDeltaSeconds) : 0.0;
+            const double now = _elapsedSeconds.load(std::memory_order_acquire) + delta;
+            _elapsedSeconds.store(now, std::memory_order_release);
+            pruneStale(_right, now);
+            pruneStale(_left, now);
             return frame;
         }
 
@@ -66,17 +85,19 @@ namespace rock::contact_activity_tracker
             }
 
             const auto frame = currentFrame();
+            const double now = _elapsedSeconds.load(std::memory_order_acquire);
             const auto key = makeBodyPairKey(handBodyId, targetBodyId);
             auto& bank = isLeft ? _left : _right;
-            auto updateExistingSlot = [frame, key](auto* slot, ContactRegistrationResult& out) {
-                const auto previousFrame = slot->lastFrame.exchange(frame, std::memory_order_acq_rel);
+            auto updateExistingSlot = [frame, now, key](auto* slot, ContactRegistrationResult& out) {
+                const double previousSeen = slot->lastSeenSeconds.exchange(now, std::memory_order_acq_rel);
+                slot->lastFrame.store(frame, std::memory_order_release);
                 if (slot->key.load(std::memory_order_acquire) != key) {
                     return false;
                 }
 
                 out = ContactRegistrationResult{
                     .tracked = true,
-                    .newlyActive = !isFrameWithinActiveWindow(frame, previousFrame),
+                    .newlyActive = !isWithinActiveWindow(now, previousSeen),
                     .inserted = false,
                     .evictedStale = false,
                     .frame = frame,
@@ -100,7 +121,7 @@ namespace rock::contact_activity_tracker
             }
 
             bool evictedStale = false;
-            auto* slot = findClaimableSlot(bank, frame, evictedStale);
+            auto* slot = findClaimableSlot(bank, now, evictedStale);
             if (!slot) {
                 return ContactRegistrationResult{ .frame = frame };
             }
@@ -108,6 +129,7 @@ namespace rock::contact_activity_tracker
             slot->sourceBodyId.store(handBodyId, std::memory_order_relaxed);
             slot->targetBodyId.store(targetBodyId, std::memory_order_relaxed);
             slot->lastFrame.store(frame, std::memory_order_release);
+            slot->lastSeenSeconds.store(now, std::memory_order_release);
             slot->key.store(key, std::memory_order_release);
             return ContactRegistrationResult{
                 .tracked = true,
@@ -121,7 +143,10 @@ namespace rock::contact_activity_tracker
         bool isHandContactActive(bool isLeft, std::uint32_t handBodyId, std::uint32_t targetBodyId) const
         {
             const auto* slot = findSlot(isLeft ? _left : _right, makeBodyPairKey(handBodyId, targetBodyId));
-            return slot && isFrameWithinActiveWindow(currentFrame(), slot->lastFrame.load(std::memory_order_acquire));
+            return slot &&
+                   isWithinActiveWindow(
+                       _elapsedSeconds.load(std::memory_order_acquire),
+                       slot->lastSeenSeconds.load(std::memory_order_acquire));
         }
 
         bool isHandContactTracked(bool isLeft, std::uint32_t handBodyId, std::uint32_t targetBodyId) const
@@ -149,6 +174,7 @@ namespace rock::contact_activity_tracker
             std::atomic<std::uint32_t> sourceBodyId{ kInvalidBodyId };
             std::atomic<std::uint32_t> targetBodyId{ kInvalidBodyId };
             std::atomic<std::uint32_t> lastFrame{ kInvalidContactActivityFrame };
+            std::atomic<double> lastSeenSeconds{ kNeverSeenContactSeconds };
         };
 
         struct Bank
@@ -172,22 +198,14 @@ namespace rock::contact_activity_tracker
             return (static_cast<std::uint64_t>(sourceBodyId) << 32) | static_cast<std::uint64_t>(targetBodyId);
         }
 
-        static constexpr std::uint32_t frameAge(std::uint32_t frame, std::uint32_t lastFrame)
+        static constexpr bool isWithinActiveWindow(double nowSeconds, double lastSeenSeconds)
         {
-            if (lastFrame == kInvalidContactActivityFrame) {
-                return kInvalidContactActivityFrame;
-            }
-            return frame - lastFrame;
+            return nowSeconds - lastSeenSeconds <= kActiveContactSeconds;
         }
 
-        static constexpr bool isFrameWithinActiveWindow(std::uint32_t frame, std::uint32_t lastFrame)
+        static constexpr bool isBeyondCleanupWindow(double nowSeconds, double lastSeenSeconds)
         {
-            return frameAge(frame, lastFrame) <= kActiveContactFrames;
-        }
-
-        static constexpr bool isFrameBeyondCleanupWindow(std::uint32_t frame, std::uint32_t lastFrame)
-        {
-            return frameAge(frame, lastFrame) > kCleanupContactFrames;
+            return nowSeconds - lastSeenSeconds > kCleanupContactSeconds;
         }
 
         static Slot* findSlot(Bank& bank, std::uint64_t key)
@@ -223,6 +241,7 @@ namespace rock::contact_activity_tracker
             slot.sourceBodyId.store(kInvalidBodyId, std::memory_order_relaxed);
             slot.targetBodyId.store(kInvalidBodyId, std::memory_order_relaxed);
             slot.lastFrame.store(kInvalidContactActivityFrame, std::memory_order_release);
+            slot.lastSeenSeconds.store(kNeverSeenContactSeconds, std::memory_order_release);
             slot.key.store(kFreeContactActivityKey, std::memory_order_release);
         }
 
@@ -234,7 +253,7 @@ namespace rock::contact_activity_tracker
             }
         }
 
-        static Slot* findClaimableSlot(Bank& bank, std::uint32_t frame, bool& evictedStale)
+        static Slot* findClaimableSlot(Bank& bank, double nowSeconds, bool& evictedStale)
         {
             for (auto& slot : bank.slots) {
                 if (slot.key.load(std::memory_order_acquire) == kFreeContactActivityKey) {
@@ -249,8 +268,8 @@ namespace rock::contact_activity_tracker
                     continue;
                 }
 
-                const auto lastFrame = slot.lastFrame.load(std::memory_order_acquire);
-                if (!isFrameBeyondCleanupWindow(frame, lastFrame)) {
+                const auto lastSeen = slot.lastSeenSeconds.load(std::memory_order_acquire);
+                if (!isBeyondCleanupWindow(nowSeconds, lastSeen)) {
                     continue;
                 }
 
@@ -259,10 +278,11 @@ namespace rock::contact_activity_tracker
                     continue;
                 }
 
-                if (isFrameBeyondCleanupWindow(frame, slot.lastFrame.load(std::memory_order_acquire))) {
+                if (isBeyondCleanupWindow(nowSeconds, slot.lastSeenSeconds.load(std::memory_order_acquire))) {
                     slot.sourceBodyId.store(kInvalidBodyId, std::memory_order_relaxed);
                     slot.targetBodyId.store(kInvalidBodyId, std::memory_order_relaxed);
                     slot.lastFrame.store(kInvalidContactActivityFrame, std::memory_order_release);
+                    slot.lastSeenSeconds.store(kNeverSeenContactSeconds, std::memory_order_release);
                     evictedStale = true;
                     return &slot;
                 }
@@ -273,7 +293,7 @@ namespace rock::contact_activity_tracker
             return nullptr;
         }
 
-        static void pruneStale(Bank& bank, std::uint32_t frame)
+        static void pruneStale(Bank& bank, double nowSeconds)
         {
             std::scoped_lock lock(bank.insertMutex);
             for (auto& slot : bank.slots) {
@@ -282,7 +302,7 @@ namespace rock::contact_activity_tracker
                     continue;
                 }
 
-                if (!isFrameBeyondCleanupWindow(frame, slot.lastFrame.load(std::memory_order_acquire))) {
+                if (!isBeyondCleanupWindow(nowSeconds, slot.lastSeenSeconds.load(std::memory_order_acquire))) {
                     continue;
                 }
 
@@ -291,7 +311,7 @@ namespace rock::contact_activity_tracker
                     continue;
                 }
 
-                if (isFrameBeyondCleanupWindow(frame, slot.lastFrame.load(std::memory_order_acquire))) {
+                if (isBeyondCleanupWindow(nowSeconds, slot.lastSeenSeconds.load(std::memory_order_acquire))) {
                     clearSlot(slot);
                 } else {
                     slot.key.store(key, std::memory_order_release);
@@ -300,6 +320,7 @@ namespace rock::contact_activity_tracker
         }
 
         std::atomic<std::uint32_t> _frame{ 0 };
+        std::atomic<double> _elapsedSeconds{ 0.0 };
         Bank _right{};
         Bank _left{};
     };
