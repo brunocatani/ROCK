@@ -228,6 +228,11 @@ namespace rock
         if (_lastTimingSample.usedFallback) {
             ++_fallbackSampleCount;
         }
+        _stepSequenceAtomic.store(_stepSequence, std::memory_order_release);
+        _fallbackSampleCountAtomic.store(_fallbackSampleCount, std::memory_order_release);
+        _rawDeltaSecondsAtomic.store(_lastTimingSample.rawDeltaSeconds, std::memory_order_release);
+        _substepCountAtomic.store(_lastTimingSample.substepCount, std::memory_order_release);
+        _lastSampleUsedFallbackAtomic.store(_lastTimingSample.usedFallback, std::memory_order_release);
 
         if (!_wholePreStepCallback || !_registeredWorld) {
             return;
@@ -289,6 +294,10 @@ namespace rock
             ++_fallbackSampleCount;
         }
         stampTimingIdentity(timing);
+        _solveSequenceAtomic.store(_solveSequence, std::memory_order_release);
+        _elapsedSimulatedAtomic.store(_elapsedSimulatedSeconds, std::memory_order_release);
+        _fallbackSampleCountAtomic.store(_fallbackSampleCount, std::memory_order_release);
+        _substepDeltaSecondsAtomic.store(timing.substepDeltaSeconds, std::memory_order_release);
 
         if (!_substepPostSolveCallback || !_registeredWorld) {
             return;

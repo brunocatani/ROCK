@@ -77,6 +77,7 @@
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
 #include "physics-interaction/native/PhysicsRayCast.h"
 #include "physics-interaction/native/PhysicsScale.h"
@@ -4011,6 +4012,50 @@ namespace rock
         }
         if (wasTouchingL && !_leftHand.isTouching()) {
             dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, true, _leftHand.getLastTouchedRef(), _leftHand.getLastTouchedFormID(), _leftHand.getLastTouchedLayer());
+        }
+
+        /*
+         * Bounded timing telemetry: one rate-limited line that explains the
+         * active game and physics schedule (sequence identities, measured
+         * deltas and effective rates, validity, fallback use, and the grab
+         * source-clock state). Debug-gated; never per-frame in production.
+         */
+        if (g_rockConfig.rockDebugVerboseLogging) {
+            const auto gameTelemetry = game_timing::telemetry();
+            const auto physicsTelemetry = _generatedBodyStepDrive.physicsTimingTelemetry();
+            const auto rightGrabClock = _rightHand.getGrabClockTelemetry();
+            const auto leftGrabClock = _leftHand.getGrabClockTelemetry();
+            const float gameHz = gameTelemetry.deltaSeconds > 0.0f ? 1.0f / gameTelemetry.deltaSeconds : 0.0f;
+            const float physicsHz = physicsTelemetry.substepDeltaSeconds > 0.0f ? 1.0f / physicsTelemetry.substepDeltaSeconds : 0.0f;
+            ROCK_LOG_SAMPLE_DEBUG(Update,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "TIMING game: seq={} dt={:.6f} hz={:.1f} valid={} paused={} elapsed={:.2f}s disc={} invalid={} | physics: step={} solve={} rawDt={:.6f} subDt={:.6f} substeps={} hz={:.1f} fallback={} fallbackCount={} simulated={:.2f}s | phaseIdentity={} | grabR: hz={:.1f} scale={:.3f} srcInt={:.4f} lead={:.4f} | grabL: hz={:.1f} scale={:.3f} srcInt={:.4f} lead={:.4f}",
+                gameTelemetry.sequence,
+                gameTelemetry.deltaSeconds,
+                gameHz,
+                gameTelemetry.valid ? "y" : "n",
+                gameTelemetry.menuPaused ? "y" : "n",
+                gameTelemetry.elapsedGameSeconds,
+                gameTelemetry.discontinuityCount,
+                gameTelemetry.invalidSampleCount,
+                physicsTelemetry.stepSequence,
+                physicsTelemetry.solveSequence,
+                physicsTelemetry.rawDeltaSeconds,
+                physicsTelemetry.substepDeltaSeconds,
+                physicsTelemetry.substepCount,
+                physicsHz,
+                physicsTelemetry.lastSampleUsedFallback ? "y" : "n",
+                physicsTelemetry.fallbackSampleCount,
+                physicsTelemetry.elapsedSimulatedSeconds,
+                frame.timing.sequence,
+                rightGrabClock.physicsHz,
+                rightGrabClock.physicsRateForceScale,
+                rightGrabClock.sourceIntervalSeconds,
+                rightGrabClock.feedForwardLeadSeconds,
+                leftGrabClock.physicsHz,
+                leftGrabClock.physicsRateForceScale,
+                leftGrabClock.sourceIntervalSeconds,
+                leftGrabClock.feedForwardLeadSeconds);
         }
 
         _deltaLogCounter++;

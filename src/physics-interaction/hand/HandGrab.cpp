@@ -12983,6 +12983,12 @@ namespace rock
             const float roomFeedForwardLeadSeconds =
                 _grabAuthoritySourceClock.feedForwardLeadSeconds();
             roomFeedForwardLeadForLog = roomFeedForwardLeadSeconds;
+            _lastGrabSourceIntervalSeconds.store(
+                _grabAuthoritySourceClock.filteredSourceIntervalSeconds,
+                std::memory_order_relaxed);
+            _lastGrabFeedForwardLeadSeconds.store(
+                roomFeedForwardLeadSeconds,
+                std::memory_order_relaxed);
             if (g_rockConfig.rockGrabRoomVelocityFeedForward && liveLocomotionVelocityOk) {
                 pending.proxyWorld.translate = grab_authority_source_clock::applyRoomVelocityFeedForward(
                     pending.proxyWorld.translate,

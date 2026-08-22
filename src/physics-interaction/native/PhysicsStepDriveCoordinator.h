@@ -5,6 +5,7 @@
 
 #include "RE/Havok/hknpWorld.h"
 
+#include <atomic>
 #include <cstdint>
 
 namespace rock
@@ -41,17 +42,30 @@ namespace rock
             std::uint64_t solveSequence = 0;
             double elapsedSimulatedSeconds = 0.0;
             std::uint64_t fallbackSampleCount = 0;
+            float rawDeltaSeconds = 0.0f;
+            float substepDeltaSeconds = 0.0f;
+            std::uint32_t substepCount = 0;
+            bool lastSampleUsedFallback = false;
         };
 
         const havok_physics_timing::PhysicsTimingSample& lastTimingSample() const { return _lastTimingSample; }
         std::uint64_t stepSequence() const { return _stepSequence; }
+        /*
+         * Cross-thread telemetry snapshot: the physics callbacks publish an
+         * atomic mirror so the game thread can report the active physics
+         * schedule without touching callback-owned state.
+         */
         PhysicsTimingTelemetry physicsTimingTelemetry() const
         {
             return PhysicsTimingTelemetry{
-                .stepSequence = _stepSequence,
-                .solveSequence = _solveSequence,
-                .elapsedSimulatedSeconds = _elapsedSimulatedSeconds,
-                .fallbackSampleCount = _fallbackSampleCount,
+                .stepSequence = _stepSequenceAtomic.load(std::memory_order_acquire),
+                .solveSequence = _solveSequenceAtomic.load(std::memory_order_acquire),
+                .elapsedSimulatedSeconds = _elapsedSimulatedAtomic.load(std::memory_order_acquire),
+                .fallbackSampleCount = _fallbackSampleCountAtomic.load(std::memory_order_acquire),
+                .rawDeltaSeconds = _rawDeltaSecondsAtomic.load(std::memory_order_acquire),
+                .substepDeltaSeconds = _substepDeltaSecondsAtomic.load(std::memory_order_acquire),
+                .substepCount = _substepCountAtomic.load(std::memory_order_acquire),
+                .lastSampleUsedFallback = _lastSampleUsedFallbackAtomic.load(std::memory_order_acquire),
             };
         }
         void onBeforeWholePhysicsUpdate();
@@ -83,6 +97,16 @@ namespace rock
         double _elapsedSimulatedSeconds = 0.0;
         std::uint64_t _fallbackSampleCount = 0;
         std::uint32_t _currentSubstepIndex = 0;
+        // Telemetry mirror published by the physics callbacks (see
+        // physicsTimingTelemetry).
+        std::atomic<std::uint64_t> _stepSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _solveSequenceAtomic{ 0 };
+        std::atomic<double> _elapsedSimulatedAtomic{ 0.0 };
+        std::atomic<std::uint64_t> _fallbackSampleCountAtomic{ 0 };
+        std::atomic<float> _rawDeltaSecondsAtomic{ 0.0f };
+        std::atomic<float> _substepDeltaSecondsAtomic{ 0.0f };
+        std::atomic<std::uint32_t> _substepCountAtomic{ 0 };
+        std::atomic<bool> _lastSampleUsedFallbackAtomic{ false };
         NativeStepListener* _nativeListener = nullptr;
     };
 }

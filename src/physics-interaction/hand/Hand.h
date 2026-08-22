@@ -375,6 +375,25 @@ namespace rock
         const SelectedObject& getSelection() const { return _currentSelection; }
         bool hasSelection() const { return _currentSelection.isValid(); }
 
+        // Grab clock telemetry for the game-thread timing report (all fields
+        // are atomically mirrored from the physics-side flush).
+        struct GrabClockTelemetry
+        {
+            float physicsHz = 0.0f;
+            float physicsRateForceScale = 1.0f;
+            float sourceIntervalSeconds = 0.0f;
+            float feedForwardLeadSeconds = 0.0f;
+        };
+        GrabClockTelemetry getGrabClockTelemetry() const
+        {
+            return GrabClockTelemetry{
+                .physicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed),
+                .physicsRateForceScale = _lastGrabPhysicsRateForceScale.load(std::memory_order_relaxed),
+                .sourceIntervalSeconds = _lastGrabSourceIntervalSeconds.load(std::memory_order_relaxed),
+                .feedForwardLeadSeconds = _lastGrabFeedForwardLeadSeconds.load(std::memory_order_relaxed),
+            };
+        }
+
         // Touch recency is an elapsed contract (the historical 5-frame window
         // at the 90 Hz tuning baseline), rate-independent in seconds.
         static constexpr float kTouchActiveWindowSeconds = 5.0f / 90.0f;
@@ -1026,6 +1045,10 @@ namespace rock
         // Zero until a measured physics delta produced a rate (telemetry).
         std::atomic<float> _lastGrabPhysicsHz{ 0.0f };
         std::atomic<float> _lastGrabPhysicsRateForceScale{ 1.0f };
+        // Grab source-clock telemetry mirrors published by the physics-side
+        // flush for the game-thread timing report.
+        std::atomic<float> _lastGrabSourceIntervalSeconds{ 0.0f };
+        std::atomic<float> _lastGrabFeedForwardLeadSeconds{ 0.0f };
         BethesdaPhysicsBody _grabAuthorityProxy;
         RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;
         RE::hknpWorld* _grabAuthorityProxyHknpWorld = nullptr;
