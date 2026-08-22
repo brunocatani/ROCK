@@ -1,5 +1,6 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/two_handed/WeaponRecoilBoundPolicy.h"
 
 #include "support/FakeFrikExternalAuthority.h"
@@ -517,6 +518,59 @@ namespace
         return ok;
     }
 
+    /*
+     * Case 11. A weapon-coupled provider target moves the weapon by the
+     * controller delta, not by the solved wrist. The property that makes that
+     * safe is that the weapon keeps its exact relation to the controller, so
+     * one commit and the collider target derived from it agree.
+     */
+    bool testWeaponCoupledTransportKeepsTheDriverRelation()
+    {
+        bool ok = true;
+        const RE::NiTransform sourceDriver = makeTransform(rotationAboutZ(10.0f), 1.0f, 2.0f, 3.0f);
+        const RE::NiTransform currentDriver = makeTransform(rotationAboutX(35.0f), 14.0f, -6.0f, 9.0f);
+        const RE::NiTransform sourceWeapon = makeTransform(rotationAboutZ(-25.0f), 4.0f, 5.0f, 6.0f);
+
+        const RE::NiTransform transported =
+            rock::weapon_visual_authority_math::transportWeaponPresentationByDriver(
+                sourceDriver,
+                currentDriver,
+                sourceWeapon);
+
+        const RE::NiTransform sourceRelation = transform_math::composeTransforms(
+            transform_math::invertTransform(sourceDriver),
+            sourceWeapon);
+        const RE::NiTransform transportedRelation = transform_math::composeTransforms(
+            transform_math::invertTransform(currentDriver),
+            transported);
+        ok &= expectSameTransform(
+            "the transported weapon keeps its controller relation",
+            transportedRelation,
+            sourceRelation);
+        return ok;
+    }
+
+    /*
+     * Case 12. When the provider clears or its lease expires there is no
+     * transport, and the weapon must simply stay where the native baseline
+     * put it. A still controller must therefore transport to exactly the
+     * same pose, or handing authority back would show a one-frame split.
+     */
+    bool testWeaponCoupledTransportIsIdentityWithoutDriverMotion()
+    {
+        bool ok = true;
+        const RE::NiTransform driver = makeTransform(rotationAboutZ(42.0f), 7.0f, 8.0f, 9.0f);
+        const RE::NiTransform weapon = makeTransform(rotationAboutX(15.0f), 2.0f, -3.0f, 4.0f);
+
+        const RE::NiTransform transported =
+            rock::weapon_visual_authority_math::transportWeaponPresentationByDriver(
+                driver,
+                driver,
+                weapon);
+        ok &= expectSameTransform("a still controller moves nothing", transported, weapon);
+        return ok;
+    }
+
     bool testSkeletonDropReleasesEveryClaim()
     {
         bool ok = true;
@@ -547,6 +601,8 @@ int main()
     ok &= testProposalAdmission();
     ok &= testRecoilBoundSeparatesKicksFromFallbacks();
     ok &= testUnreachableTicketProducesNoWeaponKick();
+    ok &= testWeaponCoupledTransportKeepsTheDriverRelation();
+    ok &= testWeaponCoupledTransportIsIdentityWithoutDriverMotion();
     ok &= testSkeletonDropReleasesEveryClaim();
     return ok ? 0 : 1;
 }

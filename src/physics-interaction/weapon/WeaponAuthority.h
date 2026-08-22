@@ -221,8 +221,11 @@ namespace rock::weapon_visual_authority_math
         /*
          * A provider weapon-coupled hand target is expressed from the weapon;
          * it is not physical controller intent. Carry the weapon by the raw
-         * controller delta first. The later shared recoil transaction applies
-         * only hFRIK's presented-hand delta to this current-frame weapon base.
+         * controller delta, so the weapon follows the controller rather than
+         * the solved wrist. The post-solve restore writes this transported
+         * world back onto the weapon after hFRIK has moved the hand subtree,
+         * which is what keeps a hand that misses its target from dragging the
+         * weapon along with it.
          */
         const Transform driverWorldDelta =
             transform_math::composeTransforms(

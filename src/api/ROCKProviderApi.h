@@ -503,8 +503,24 @@ namespace rock::provider
         // must also be set before publishing a hand world transform.
         VisualWritesAllowed = 1u << 5,
         WorldTransformWritesAllowed = 1u << 6,
-        // The runtime accepts WeaponCoupledWorldTransform and composes the
-        // presented-hand delta with its existing weapon transaction.
+        /*
+         * The runtime accepts WeaponCoupledWorldTransform.
+         *
+         * The weapon is not driven by the presented hand. Before hFRIK's
+         * skeleton pass ROCK transports the weapon's own world by the
+         * controller-driver delta between the frame that captured it and the
+         * current pre-solve frame, and restores that transported pose after
+         * the solve. So the weapon follows the controller, not the solved
+         * wrist, and a hand that does not reach its target does not drag the
+         * weapon with it.
+         *
+         * The transport requires consecutive scheduling intervals and a valid
+         * driver at both ends; without them the frame is skipped rather than
+         * transported by a stale delta. From ROCK's downstream-ordering
+         * change onward, generated colliders and muzzle authority sample the
+         * weapon after provider AfterRock, so a provider that adjusts the
+         * weapon in that phase is seen by those consumers.
+         */
         WeaponCoupledWorldTransformSupported = 1u << 7,
     };
 
