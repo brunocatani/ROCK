@@ -3512,6 +3512,26 @@ namespace rock::debug
             }
         }
 
+        float bodyDiagnosticPhaseScale(BodyRenderPhase phase)
+        {
+            /*
+             * Coincident wireframes are otherwise visually indistinguishable
+             * even when all three instances reach the GPU. Keep every phase
+             * origin and rotation exact while nesting only the diagnostic
+             * shells around that origin.
+             */
+            switch (phase) {
+            case BodyRenderPhase::CurrentTarget:
+                return 1.030f;
+            case BodyRenderPhase::PreStep:
+                return 1.015f;
+            case BodyRenderPhase::PostSolve:
+            case BodyRenderPhase::RoleColor:
+            default:
+                return 1.0f;
+            }
+        }
+
         void collectMarkerOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
         {
             if (!frame.drawMarkers || frame.markers.empty()) {
@@ -4042,6 +4062,16 @@ namespace rock::debug
                         model = worldAabbMatrix(entry);
                     }
 
+                    const float phaseScale =
+                        bodyDiagnosticPhaseScale(phase);
+                    if (phaseScale != 1.0f) {
+                        model = DirectX::XMMatrixScaling(
+                                    phaseScale,
+                                    phaseScale,
+                                    phaseScale) *
+                            model;
+                    }
+
                     BodyDrawItem draw{};
                     if (shapeReady) {
                         draw.shapeOwner = cached.shape;
@@ -4332,6 +4362,32 @@ namespace rock::debug
                     admissionStats.noPublicationSkips,
                     admissionStats.duplicateSkips,
                     admissionStats.serialRaceSkips);
+                ROCK_LOG_DEBUG(Hand,
+                    "Debug overlay phase: completed={} source={} display={} age={} solve={} substep={}/{} bodies={}/{}",
+                    hasCompletedPhaseFrame ? "yes" : "no",
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.gameFrameIndex :
+                        0,
+                    frame->gameFrameIndex,
+                    hasCompletedPhaseFrame ?
+                        frame->gameFrameIndex -
+                            completedPhaseFrame.gameFrameIndex :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.solveSequence :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.substepIndex + 1 :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.substepCount :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.validCount :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.count :
+                        0);
             }
         }
 

@@ -549,7 +549,7 @@
             std::snprintf(
                 phaseLegend,
                 sizeof(phaseLegend),
-                "COLLIDER PHASE frame=%llu  TARGET=YELLOW  PRE=MAGENTA  POST=CYAN",
+                "COLLIDER PHASE frame=%llu  TARGET=YELLOW(103%%)  PRE=MAGENTA(101.5%%)  POST=CYAN(100%%)",
                 static_cast<unsigned long long>(frame.gameFrameIndex));
             addScreenTextLine(18.0f, 60.0f, phaseLegendColor, phaseLegend);
         }

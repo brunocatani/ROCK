@@ -44,6 +44,10 @@ Require-Pattern 'CompletedBodyPhaseFrame[\s\S]*postSolveWorldMatrix[\s\S]*kMaxCo
     'The compositor must retain one bounded completed target/pre/post packet across the next publication boundary.'
 Require-Pattern 'findCompletedBodyPhaseEntry[\s\S]*BodyRenderPhase::CurrentTarget[\s\S]*BodyRenderPhase::PreStep[\s\S]*BodyRenderPhase::PostSolve' `
     'Phase rendering must draw one internally matched completed yellow/magenta/cyan triplet.'
+Require-Pattern 'bodyDiagnosticPhaseScale[\s\S]*CurrentTarget[\s\S]*1\.030f[\s\S]*PreStep[\s\S]*1\.015f[\s\S]*PostSolve[\s\S]*1\.0f' `
+    'Coincident phase wireframes must use bounded nested display shells without moving their exact origins.'
+Require-Pattern 'Debug overlay phase: completed=\{\} source=\{\} display=\{\} age=\{\}' `
+    'Verbose overlay telemetry must expose the completed phase packet age and identity.'
 Require-Pattern 'world->GetBodyAabb\(bodyId,\s*&raw\)' `
     'Body bounds must use the current CommonLibF4VR world wrapper instead of imported raw standalone offsets.'
 Require-Pattern 'captureOverlayRenderSettings[\s\S]*g_rockConfig' `
