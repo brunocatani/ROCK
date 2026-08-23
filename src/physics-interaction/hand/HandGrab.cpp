@@ -12710,11 +12710,8 @@ namespace rock
             // the sampled wand path the same way the hand collider's do -- the
             // 2026-07-13 OVERLAY_POINT probe proved physics-clock playback put
             // v x (clock mismatch) between the held object and everything else
-            // the eye tracks. The global coherent timing schedule now makes
-            // the coming world's simulated duration match this source segment,
-            // so exact frame-end placement does not compress it into a shorter
-            // residual solve. Intra-frame substeps interpolate along the sample
-            // segment. Local copy only: every downstream use in this
+            // the eye tracks. Intra-frame substeps interpolate along the
+            // sample segment. Local copy only: every downstream use in this
             // flush -- keyframe drive, constraint target, motors, readback
             // diagnostics, last-applied tracking -- sees the locked target
             // consistently, while the stored pending target stays the raw

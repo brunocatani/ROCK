@@ -2,13 +2,10 @@
 
 #include <cstdint>
 
-#include "physics-interaction/timing/GameFrameTimingPolicy.h"
-
 namespace rock
 {
     void installBumpHook();
     bool installHavokTimingFixHook();
-    void applyHavokTimingFixForGameFrame(const game_frame_timing_policy::GameFrameTiming& frameTiming);
     void installNativeGrabHook();
     bool validateNativeMeleeSuppressionHookTargets();
     bool installNativeMeleeSuppressionHooks();

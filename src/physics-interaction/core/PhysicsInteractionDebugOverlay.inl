@@ -9,11 +9,8 @@
      * collider body, the live proxy body, and the current-frame stereo origin.
      * Consecutive lines decompose visible held-object stutter into its links
      * (object-vs-target, target-vs-wand, wand-vs-camera, camera-vs-world) in one
-     * common time base. Bodies here are live motion records at overlay time.
-     * FO4VR can advance those records through its remainder-driven presentation
-     * path after HELD_POSTSOLVE and before this probe, so the post-solve rows are
-     * the completed-state witness and these rows are the presentation witness.
-     * Diagnostic only; rides
+     * common time base. Bodies here reflect the last completed physics step - the
+     * exact state this frame renders. Diagnostic only; rides
      * bDebugGrabFrameLogging like the HELD_POSTSOLVE probe and logs only while a
      * hand holds an object.
      */

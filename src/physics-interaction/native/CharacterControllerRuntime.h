@@ -10,8 +10,6 @@ namespace RE
 
 namespace rock::character_controller_runtime
 {
-    // FO4VR-only pointer walk. CommonLibF4VR's flat MiddleHighProcessData
-    // member is eight bytes early for this field in VR.
     RE::bhkCharacterController* tryGetActorCharacterController(RE::Actor* actor) noexcept;
     RE::bhkCharacterController* tryGetPlayerCharacterController() noexcept;
 
