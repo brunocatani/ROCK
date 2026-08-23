@@ -1616,7 +1616,11 @@ namespace rock::debug
                                 compoundChildLocalMatrix(child);
                             published.hasChildLocalMatrix = true;
                             published.role = entry.role;
-                            published.bodyId = body.bodyId;
+                            // Keep the array-index id, not the +0x6C
+                            // self-reported id: the post-solve phase capture
+                            // feeds this value back into extractBody, whose
+                            // index guard rejects the serial bits.
+                            published.bodyId = entry.bodyId.value;
                             published.detailUniformScale =
                                 childIdentity.detailUniformScale;
                             published.hasValidWorldAabb = aabbValid;
@@ -1644,7 +1648,10 @@ namespace rock::debug
                     published.hasCurrentTarget = true;
                 }
                 published.role = entry.role;
-                published.bodyId = body.bodyId;
+                // Keep the array-index id, not the +0x6C self-reported id:
+                // the post-solve phase capture feeds this value back into
+                // extractBody, whose index guard rejects the serial bits.
+                published.bodyId = entry.bodyId.value;
                 published.detailUniformScale = shapeIdentity.detailUniformScale;
                 published.hasValidWorldAabb =
                     captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
