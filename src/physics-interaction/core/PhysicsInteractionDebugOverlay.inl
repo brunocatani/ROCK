@@ -310,7 +310,7 @@
                         1ull << 39;
 
                     ROCK_LOG_DEBUG(Hand,
-                        "{} RENDER_CONSUME: t={}us renderT={}us age={}us trace={}/{} calls={} ordinal={} geometry={:p}/{:p} pass=0x{:X} thread={} technique=0x{:08X} flags=0x{:016X}->0x{:016X} transformChanged={}->{} world=({:.3f},{:.3f},{:.3f}) meshNow=({:.3f},{:.3f},{:.3f}) d={:.4f}gu rotStep={:.3f}",
+                        "{} RENDER_CONSUME: t={}us renderT={}us age={}us trace={}/{} calls={} ordinal={} geometry={:p}/{:p} eyeState=0x{:X} thread={} mode={} flags=0x{:016X}->0x{:016X} transformChanged={}->{} world=({:.3f},{:.3f},{:.3f}) meshNow=({:.3f},{:.3f},{:.3f}) d={:.4f}gu rotStep={:.3f}",
                         hand.handName(),
                         probeMicroseconds,
                         renderConsumption.captureMicroseconds,
@@ -322,9 +322,9 @@
                         static_cast<const void*>(geometry.node),
                         static_cast<const void*>(
                             renderConsumption.geometry),
-                        renderConsumption.renderPass,
+                        renderConsumption.eyeState,
                         renderConsumption.threadId,
-                        renderConsumption.technique,
+                        renderConsumption.transformMode,
                         renderConsumption.shaderFlagsBefore,
                         renderConsumption.shaderFlagsAfter,
                         (renderConsumption.shaderFlagsBefore &
@@ -352,7 +352,7 @@
                     renderState.valid = sameTrace;
                 } else {
                     ROCK_LOG_DEBUG(Hand,
-                        "{} RENDER_CONSUME: t={}us trace={} calls=0 ordinal={} geometry={:p} reason=no-new-lighting-setup",
+                        "{} RENDER_CONSUME: t={}us trace={} calls=0 ordinal={} geometry={:p} reason=no-new-eye-transform",
                         hand.handName(),
                         probeMicroseconds,
                         presentationNodes.traceId,

@@ -35,7 +35,11 @@ namespace rock::held_scene_presentation
             std::uint32_t,
             float,
             float*);
-        using LightingShaderSetupGeometry = void (*)(void*, void*, void*);
+        using GeometryEyeTransform = void (*)(
+            const float*,
+            std::uint8_t,
+            float*,
+            void*);
 
         constexpr std::array<std::uint8_t, 19> kExpectedWriterPrefix{
             0x4C, 0x8B, 0xDC,
@@ -45,18 +49,15 @@ namespace rock::held_scene_presentation
             0x48, 0x81, 0xEC, 0x30, 0x01, 0x00, 0x00,
         };
 
-        constexpr std::array<std::uint8_t, 20> kExpectedLightingSetupPrefix{
+        constexpr std::array<std::uint8_t, 14> kExpectedEyeTransformPrefix{
             0x48, 0x8B, 0xC4,
-            0x48, 0x89, 0x58, 0x08,
-            0x48, 0x89, 0x68, 0x18,
-            0x48, 0x89, 0x70, 0x20,
-            0x48, 0x89, 0x50, 0x10,
-            0x57,
+            0x53,
+            0x48, 0x81, 0xEC, 0xE0, 0x00, 0x00, 0x00,
+            0x49, 0x8B, 0xD8,
         };
 
         constexpr std::size_t kRenderConsumptionCapacity = 128;
-        constexpr std::uintptr_t kRenderPassGeometryOffset = 0x18;
-        constexpr std::uintptr_t kShaderDescriptorTechniqueOffset = 0x40;
+        constexpr std::uintptr_t kNiAVObjectWorldOffset = 0x70;
         constexpr std::uintptr_t kGeometryShaderPropertyOffset = 0x178;
         constexpr std::uintptr_t kShaderPropertyFlagsOffset = 0x30;
         static_assert(
@@ -96,9 +97,9 @@ namespace rock::held_scene_presentation
             std::atomic<std::uint64_t> readyOrdinal{ 0 };
             std::atomic<std::uint64_t> traceId{ 0 };
             std::atomic<std::uint64_t> captureMicroseconds{ 0 };
-            std::atomic<std::uintptr_t> renderPass{ 0 };
+            std::atomic<std::uintptr_t> eyeState{ 0 };
             std::atomic<std::uint32_t> threadId{ 0 };
-            std::atomic<std::uint32_t> technique{ 0 };
+            std::atomic<std::uint32_t> transformMode{ 0 };
             std::atomic<RE::NiAVObject*> geometry{ nullptr };
             std::array<std::atomic<std::uint32_t>, 16> worldBits{};
             std::atomic<std::uint64_t> shaderFlagsBefore{ 0 };
@@ -124,7 +125,7 @@ namespace rock::held_scene_presentation
         std::atomic<bool> s_installed{ false };
         std::atomic<bool> s_renderProbeInstalled{ false };
         SceneTransformWriter s_originalWriter = nullptr;
-        LightingShaderSetupGeometry s_originalLightingSetup = nullptr;
+        GeometryEyeTransform s_originalEyeTransform = nullptr;
 
         AtomicHandRegistration& registrationFor(bool isLeft) noexcept
         {
@@ -190,8 +191,8 @@ namespace rock::held_scene_presentation
             std::size_t handIndex,
             std::uint64_t traceId,
             std::uint64_t captureMicroseconds,
-            void* renderPass,
-            std::uint32_t technique,
+            void* eyeState,
+            std::uint32_t transformMode,
             RE::NiAVObject* geometry,
             const RE::NiTransform& world,
             std::uint64_t shaderFlagsBefore,
@@ -209,13 +210,15 @@ namespace rock::held_scene_presentation
             destination.captureMicroseconds.store(
                 captureMicroseconds,
                 std::memory_order_relaxed);
-            destination.renderPass.store(
-                reinterpret_cast<std::uintptr_t>(renderPass),
+            destination.eyeState.store(
+                reinterpret_cast<std::uintptr_t>(eyeState),
                 std::memory_order_relaxed);
             destination.threadId.store(
                 GetCurrentThreadId(),
                 std::memory_order_relaxed);
-            destination.technique.store(technique, std::memory_order_relaxed);
+            destination.transformMode.store(
+                transformMode,
+                std::memory_order_relaxed);
             destination.geometry.store(geometry, std::memory_order_relaxed);
             const auto* worldFloats = reinterpret_cast<const float*>(&world);
             for (std::size_t index = 0; index < 16; ++index) {
@@ -525,22 +528,21 @@ namespace rock::held_scene_presentation
             s_originalWriter(collisionObjectRaw, correctedInput);
         }
 
-        __declspec(noinline) void lightingShaderSetupHook(
-            void* shader,
-            void* renderPass,
-            void* shaderDescriptor) noexcept
+        __declspec(noinline) void geometryEyeTransformHook(
+            const float* sourceTransform,
+            std::uint8_t transformMode,
+            float* outputMatrix,
+            void* eyeState) noexcept
         {
-            if (!s_originalLightingSetup) {
+            if (!s_originalEyeTransform) {
                 return;
             }
 
-            RE::NiAVObject* geometry = nullptr;
-            if (renderPass) {
-                const auto* passBytes =
-                    reinterpret_cast<const std::byte*>(renderPass);
-                geometry = *reinterpret_cast<RE::NiAVObject* const*>(
-                    passBytes + kRenderPassGeometryOffset);
-            }
+            auto* geometry = sourceTransform ?
+                reinterpret_cast<RE::NiAVObject*>(
+                    reinterpret_cast<std::uintptr_t>(sourceTransform) -
+                    kNiAVObjectWorldOffset) :
+                nullptr;
 
             std::array<bool, 2> matchedHands{};
             std::array<std::uint64_t, 2> traceIds{};
@@ -558,7 +560,11 @@ namespace rock::held_scene_presentation
             }
 
             if (!anyMatch) {
-                s_originalLightingSetup(shader, renderPass, shaderDescriptor);
+                s_originalEyeTransform(
+                    sourceTransform,
+                    transformMode,
+                    outputMatrix,
+                    eyeState);
                 return;
             }
 
@@ -566,18 +572,16 @@ namespace rock::held_scene_presentation
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch())
                     .count());
-            const RE::NiTransform consumedWorld = geometry->world;
+            const RE::NiTransform consumedWorld =
+                *reinterpret_cast<const RE::NiTransform*>(sourceTransform);
             const std::uint64_t shaderFlagsBefore =
                 readShaderPropertyFlags(geometry);
-            std::uint32_t technique = 0;
-            if (shaderDescriptor) {
-                const auto* descriptorBytes =
-                    reinterpret_cast<const std::byte*>(shaderDescriptor);
-                technique = *reinterpret_cast<const std::uint32_t*>(
-                    descriptorBytes + kShaderDescriptorTechniqueOffset);
-            }
 
-            s_originalLightingSetup(shader, renderPass, shaderDescriptor);
+            s_originalEyeTransform(
+                sourceTransform,
+                transformMode,
+                outputMatrix,
+                eyeState);
 
             const std::uint64_t shaderFlagsAfter =
                 readShaderPropertyFlags(geometry);
@@ -591,8 +595,8 @@ namespace rock::held_scene_presentation
                     handIndex,
                     traceIds[handIndex],
                     captureMicroseconds,
-                    renderPass,
-                    technique,
+                    eyeState,
+                    transformMode,
                     geometry,
                     consumedWorld,
                     shaderFlagsBefore,
@@ -639,17 +643,17 @@ namespace rock::held_scene_presentation
             return false;
         }
 
-        void* original = reinterpret_cast<void*>(s_originalLightingSetup);
+        void* original = reinterpret_cast<void*>(s_originalEyeTransform);
         const bool installed = entry_trampoline_hook::install(
-            "held lighting-shader geometry setup",
-            renderer_offsets::kFunc_BSLightingShaderSetupGeometry,
-            kExpectedLightingSetupPrefix.data(),
-            kExpectedLightingSetupPrefix.size(),
-            reinterpret_cast<void*>(&lightingShaderSetupHook),
+            "held common geometry eye transform",
+            renderer_offsets::kFunc_GeometryEyeTransform,
+            kExpectedEyeTransformPrefix.data(),
+            kExpectedEyeTransformPrefix.size(),
+            reinterpret_cast<void*>(&geometryEyeTransformHook),
             original);
-        s_originalLightingSetup =
-            reinterpret_cast<LightingShaderSetupGeometry>(original);
-        const bool ready = installed && s_originalLightingSetup != nullptr;
+        s_originalEyeTransform =
+            reinterpret_cast<GeometryEyeTransform>(original);
+        const bool ready = installed && s_originalEyeTransform != nullptr;
         s_renderProbeInstalled.store(ready, std::memory_order_release);
         return ready;
     }
@@ -727,12 +731,12 @@ namespace rock::held_scene_presentation
                 source.traceId.load(std::memory_order_relaxed);
             snapshot.captureMicroseconds =
                 source.captureMicroseconds.load(std::memory_order_relaxed);
-            snapshot.renderPass =
-                source.renderPass.load(std::memory_order_relaxed);
+            snapshot.eyeState =
+                source.eyeState.load(std::memory_order_relaxed);
             snapshot.threadId =
                 source.threadId.load(std::memory_order_relaxed);
-            snapshot.technique =
-                source.technique.load(std::memory_order_relaxed);
+            snapshot.transformMode =
+                source.transformMode.load(std::memory_order_relaxed);
             snapshot.geometry =
                 source.geometry.load(std::memory_order_relaxed);
             auto* worldFloats = reinterpret_cast<float*>(&snapshot.world);

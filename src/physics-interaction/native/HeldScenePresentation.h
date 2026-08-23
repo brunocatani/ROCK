@@ -36,9 +36,9 @@ namespace rock::held_scene_presentation
         std::uint64_t ordinal = 0;
         std::uint64_t traceId = 0;
         std::uint64_t captureMicroseconds = 0;
-        std::uintptr_t renderPass = 0;
+        std::uintptr_t eyeState = 0;
         std::uint32_t threadId = 0;
-        std::uint32_t technique = 0;
+        std::uint32_t transformMode = 0;
         RE::NiAVObject* geometry = nullptr;
         RE::NiTransform world{};
         std::uint64_t shaderFlagsBefore = 0;
