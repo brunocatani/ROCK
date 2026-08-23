@@ -3944,8 +3944,18 @@ namespace rock::debug
             const CompletedBodyPhaseFrame* completedPhaseFrame,
             OverlayRuntimeStats& stats)
         {
-            if (!frame.drawText || frame.text.empty() || !s_d3d.textVB || !s_d3d.screenTextVertexShader || !s_d3d.coloredInputLayout || !s_d3d.scratch ||
+            if (!s_d3d.textVB || !s_d3d.screenTextVertexShader || !s_d3d.coloredInputLayout || !s_d3d.scratch ||
                 textureWidth <= 0.0f || textureHeight <= 0.0f) {
+                return;
+            }
+
+            /*
+             * The phase-diagnostic lines must render even when no published
+             * text entries exist; the earlier combined gate silently hid
+             * them whenever every other text toggle was off.
+             */
+            const bool drawPublishedText = frame.drawText && !frame.text.empty();
+            if (!drawPublishedText && !frame.phaseDiagnosticsEnabled) {
                 return;
             }
 
@@ -3955,33 +3965,107 @@ namespace rock::debug
             vertices.clear();
             std::uint32_t rejectedVertices = 0;
             const auto maxVertices = frame.settings.limits.maxTextVertices;
-            for (const auto& entry : frame.text) {
-                const std::uint32_t rejectedBefore = rejectedVertices;
-                if (entry.worldAnchored) {
-                    appendWorldAnchoredTextGlyphs(
-                        vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
-                } else {
-                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
-                    if (duplicatePerEye) {
-                        appendTextGlyphs(
-                            vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+            if (drawPublishedText) {
+                for (const auto& entry : frame.text) {
+                    const std::uint32_t rejectedBefore = rejectedVertices;
+                    if (entry.worldAnchored) {
+                        appendWorldAnchoredTextGlyphs(
+                            vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
+                    } else {
+                        appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                        if (duplicatePerEye) {
+                            appendTextGlyphs(
+                                vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                        }
                     }
-                }
-                if (rejectedVertices != rejectedBefore) {
-                    ++stats.textVertexTruncations;
+                    if (rejectedVertices != rejectedBefore) {
+                        ++stats.textVertexTruncations;
+                    }
                 }
             }
 
             if (frame.phaseDiagnosticsEnabled) {
+                /*
+                 * Anchor the diagnostic block in the world above the tracked
+                 * body (the Target/held body when present). Fixed-pixel text
+                 * on the submitted eye textures lands in the stereo periphery
+                 * and cannot fuse in the headset; world-anchored text
+                 * projects per eye with real depth. Screen-space placement
+                 * remains only as a fallback when no body is published.
+                 */
+                RE::NiPoint3 diagnosticAnchor{};
+                bool diagnosticAnchorValid = false;
+                for (const auto& body : frame.bodies) {
+                    const bool preferred = body.role == BodyOverlayRole::Target;
+                    if (!diagnosticAnchorValid || preferred) {
+                        diagnosticAnchor = RE::NiPoint3(
+                            DirectX::XMVectorGetX(body.worldMatrix.r[3]),
+                            DirectX::XMVectorGetY(body.worldMatrix.r[3]),
+                            DirectX::XMVectorGetZ(body.worldMatrix.r[3]) +
+                                10.0f);
+                        diagnosticAnchorValid = true;
+                        if (preferred) {
+                            break;
+                        }
+                    }
+                }
+
+                const auto appendDiagnosticLine = [&](
+                                                      TextOverlayEntry& line,
+                                                      const float screenY,
+                                                      const float anchorOffsetY) {
+                    if (diagnosticAnchorValid) {
+                        line.worldAnchored = true;
+                        line.worldAnchor = diagnosticAnchor;
+                        line.x = 16.0f;
+                        line.y = anchorOffsetY;
+                        appendWorldAnchoredTextGlyphs(
+                            vertices,
+                            line,
+                            eye0,
+                            eye1,
+                            adjust0,
+                            adjust1,
+                            textureWidth,
+                            textureHeight,
+                            duplicatePerEye,
+                            maxVertices,
+                            rejectedVertices);
+                        return;
+                    }
+                    line.worldAnchored = false;
+                    line.x = 18.0f;
+                    line.y = screenY;
+                    appendTextGlyphs(
+                        vertices,
+                        line,
+                        line.x,
+                        line.y,
+                        eyeWidth - 8.0f,
+                        textureWidth,
+                        textureHeight,
+                        maxVertices,
+                        rejectedVertices);
+                    if (duplicatePerEye) {
+                        appendTextGlyphs(
+                            vertices,
+                            line,
+                            line.x + eyeWidth,
+                            line.y,
+                            textureWidth - 8.0f,
+                            textureWidth,
+                            textureHeight,
+                            maxVertices,
+                            rejectedVertices);
+                    }
+                };
+
                 TextOverlayEntry status{};
-                status.x = 18.0f;
-                status.y = 74.0f;
                 status.size = 2.0f;
                 status.color[0] = completedPhaseFrame ? 0.05f : 1.0f;
                 status.color[1] = completedPhaseFrame ? 1.0f : 0.45f;
                 status.color[2] = completedPhaseFrame ? 0.72f : 0.10f;
                 status.color[3] = 0.96f;
-                status.worldAnchored = false;
                 if (completedPhaseFrame) {
                     std::snprintf(
                         status.text,
@@ -4007,35 +4091,11 @@ namespace rock::debug
                 }
 
                 const std::uint32_t rejectedBefore = rejectedVertices;
-                appendTextGlyphs(
-                    vertices,
-                    status,
-                    status.x,
-                    status.y,
-                    eyeWidth - 8.0f,
-                    textureWidth,
-                    textureHeight,
-                    maxVertices,
-                    rejectedVertices);
-                if (duplicatePerEye) {
-                    appendTextGlyphs(
-                        vertices,
-                        status,
-                        status.x + eyeWidth,
-                        status.y,
-                        textureWidth - 8.0f,
-                        textureWidth,
-                        textureHeight,
-                        maxVertices,
-                        rejectedVertices);
-                }
+                appendDiagnosticLine(status, 74.0f, -64.0f);
 
                 if (completedPhaseFrame) {
                     TextOverlayEntry present{};
-                    present.x = 18.0f;
-                    present.y = 94.0f;
                     present.size = 2.0f;
-                    present.worldAnchored = false;
                     if (completedPhaseFrame->presentationRemainderValid) {
                         float maxOffsetGameUnits = 0.0f;
                         std::uint32_t predictedBodies = 0;
@@ -4075,28 +4135,7 @@ namespace rock::debug
                             sizeof(present.text),
                             "PRESENT remainder unavailable (fallback timing)");
                     }
-                    appendTextGlyphs(
-                        vertices,
-                        present,
-                        present.x,
-                        present.y,
-                        eyeWidth - 8.0f,
-                        textureWidth,
-                        textureHeight,
-                        maxVertices,
-                        rejectedVertices);
-                    if (duplicatePerEye) {
-                        appendTextGlyphs(
-                            vertices,
-                            present,
-                            present.x + eyeWidth,
-                            present.y,
-                            textureWidth - 8.0f,
-                            textureWidth,
-                            textureHeight,
-                            maxVertices,
-                            rejectedVertices);
-                    }
+                    appendDiagnosticLine(present, 94.0f, -42.0f);
                 }
 
                 {
@@ -4106,14 +4145,11 @@ namespace rock::debug
                     // ok/ms render consume hits/misses.
                     const auto& diag = s_phaseCaptureDiagnostics;
                     TextOverlayEntry capture{};
-                    capture.x = 18.0f;
-                    capture.y = 114.0f;
                     capture.size = 2.0f;
                     capture.color[0] = 0.85f;
                     capture.color[1] = 0.85f;
                     capture.color[2] = 0.85f;
                     capture.color[3] = 0.92f;
-                    capture.worldAnchored = false;
                     std::snprintf(
                         capture.text,
                         sizeof(capture.text),
@@ -4127,28 +4163,7 @@ namespace rock::debug
                         diag.extractFailures.load(std::memory_order_relaxed),
                         diag.consumeHits.load(std::memory_order_relaxed),
                         diag.consumeMisses.load(std::memory_order_relaxed));
-                    appendTextGlyphs(
-                        vertices,
-                        capture,
-                        capture.x,
-                        capture.y,
-                        eyeWidth - 8.0f,
-                        textureWidth,
-                        textureHeight,
-                        maxVertices,
-                        rejectedVertices);
-                    if (duplicatePerEye) {
-                        appendTextGlyphs(
-                            vertices,
-                            capture,
-                            capture.x + eyeWidth,
-                            capture.y,
-                            textureWidth - 8.0f,
-                            textureWidth,
-                            textureHeight,
-                            maxVertices,
-                            rejectedVertices);
-                    }
+                    appendDiagnosticLine(capture, 114.0f, -20.0f);
                 }
                 if (rejectedVertices != rejectedBefore) {
                     ++stats.textVertexTruncations;
