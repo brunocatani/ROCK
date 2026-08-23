@@ -434,6 +434,29 @@ namespace rock::debug
         static PhysicsPhaseCaptureRequest s_physicsPhaseCaptureRequest{};
         static CompletedBodyPhaseFrame s_completedBodyPhaseFrame{};
 
+        /*
+         * Post-solve phase-capture diagnostics. The capture chain crosses
+         * three threads (game publish, physics capture, render consume) and
+         * previously failed silently; these counters attribute a missing
+         * cyan/orange shell to the exact gate that refused. Read on the HUD
+         * and in a rate-limited game-thread log line.
+         */
+        struct PhaseCaptureDiagnostics
+        {
+            std::atomic<std::uint32_t> storedFrames{ 0 };
+            std::atomic<std::uint32_t> invalidInputs{ 0 };
+            std::atomic<std::uint32_t> gateMisses{ 0 };
+            std::atomic<std::uint32_t> notStaged{ 0 };
+            std::atomic<std::uint32_t> worldMismatches{ 0 };
+            std::atomic<std::uint32_t> frameMismatches{ 0 };
+            std::atomic<std::uint32_t> extractFailures{ 0 };
+            std::atomic<std::uint32_t> consumeHits{ 0 };
+            std::atomic<std::uint32_t> consumeMisses{ 0 };
+            std::atomic<std::uint64_t> lastRequestFrame{ 0 };
+            std::atomic<std::uint64_t> lastCaptureFrame{ 0 };
+        };
+        static PhaseCaptureDiagnostics s_phaseCaptureDiagnostics{};
+
         static D3DResources s_d3d{};
         static std::atomic_flag s_renderPassActive = ATOMIC_FLAG_INIT;
         static debug_overlay_frame_admission::FrameAdmission s_frameAdmission{};
@@ -962,9 +985,13 @@ namespace rock::debug
                 published.gameFrameIndex - s_completedBodyPhaseFrame.gameFrameIndex >
                     kMaxCompletedPhaseAgeFrames ||
                 s_completedBodyPhaseFrame.count == 0) {
+                s_phaseCaptureDiagnostics.consumeMisses.fetch_add(
+                    1, std::memory_order_relaxed);
                 return false;
             }
 
+            s_phaseCaptureDiagnostics.consumeHits.fetch_add(
+                1, std::memory_order_relaxed);
             outFrame = s_completedBodyPhaseFrame;
             return true;
         }
@@ -4071,6 +4098,58 @@ namespace rock::debug
                             rejectedVertices);
                     }
                 }
+
+                {
+                    // Which capture gate refused: st stored, in invalid
+                    // inputs, gt lease misses, s0 request empty, wm world
+                    // mismatch, fm frame mismatch, xf extract failures,
+                    // ok/ms render consume hits/misses.
+                    const auto& diag = s_phaseCaptureDiagnostics;
+                    TextOverlayEntry capture{};
+                    capture.x = 18.0f;
+                    capture.y = 114.0f;
+                    capture.size = 2.0f;
+                    capture.color[0] = 0.85f;
+                    capture.color[1] = 0.85f;
+                    capture.color[2] = 0.85f;
+                    capture.color[3] = 0.92f;
+                    capture.worldAnchored = false;
+                    std::snprintf(
+                        capture.text,
+                        sizeof(capture.text),
+                        "CAP st=%u in=%u gt=%u s0=%u wm=%u fm=%u xf=%u ok=%u ms=%u",
+                        diag.storedFrames.load(std::memory_order_relaxed),
+                        diag.invalidInputs.load(std::memory_order_relaxed),
+                        diag.gateMisses.load(std::memory_order_relaxed),
+                        diag.notStaged.load(std::memory_order_relaxed),
+                        diag.worldMismatches.load(std::memory_order_relaxed),
+                        diag.frameMismatches.load(std::memory_order_relaxed),
+                        diag.extractFailures.load(std::memory_order_relaxed),
+                        diag.consumeHits.load(std::memory_order_relaxed),
+                        diag.consumeMisses.load(std::memory_order_relaxed));
+                    appendTextGlyphs(
+                        vertices,
+                        capture,
+                        capture.x,
+                        capture.y,
+                        eyeWidth - 8.0f,
+                        textureWidth,
+                        textureHeight,
+                        maxVertices,
+                        rejectedVertices);
+                    if (duplicatePerEye) {
+                        appendTextGlyphs(
+                            vertices,
+                            capture,
+                            capture.x + eyeWidth,
+                            capture.y,
+                            textureWidth - 8.0f,
+                            textureWidth,
+                            textureHeight,
+                            maxVertices,
+                            rejectedVertices);
+                    }
+                }
                 if (rejectedVertices != rejectedBefore) {
                     ++stats.textVertexTruncations;
                 }
@@ -4665,6 +4744,31 @@ namespace rock::debug
         const bool enabled = buildPublishedFrame(frame, *next);
         if (enabled) {
             stagePhysicsPhaseCapture(*next);
+
+            // Publish-thread-only counter; ~7 s cadence at 90 Hz. Leaves
+            // log evidence of which phase-capture gate refused, so a
+            // missing cyan/orange shell is attributable from the session
+            // log without HUD relay.
+            static std::uint32_t s_phaseDiagPublishCounter = 0;
+            if (next->phaseDiagnosticsEnabled &&
+                ++s_phaseDiagPublishCounter >= 600) {
+                s_phaseDiagPublishCounter = 0;
+                const auto& diag = s_phaseCaptureDiagnostics;
+                ROCK_LOG_INFO(
+                    Hand,
+                    "PHASE_CAPTURE store={} invalid={} gate={} notStaged={} worldMis={} frameMis={} extractFail={} consume={}/{} reqFrame={} capFrame={}",
+                    diag.storedFrames.load(std::memory_order_relaxed),
+                    diag.invalidInputs.load(std::memory_order_relaxed),
+                    diag.gateMisses.load(std::memory_order_relaxed),
+                    diag.notStaged.load(std::memory_order_relaxed),
+                    diag.worldMismatches.load(std::memory_order_relaxed),
+                    diag.frameMismatches.load(std::memory_order_relaxed),
+                    diag.extractFailures.load(std::memory_order_relaxed),
+                    diag.consumeHits.load(std::memory_order_relaxed),
+                    diag.consumeMisses.load(std::memory_order_relaxed),
+                    diag.lastRequestFrame.load(std::memory_order_relaxed),
+                    diag.lastCaptureFrame.load(std::memory_order_relaxed));
+            }
         } else {
             clearPhysicsPhaseCapture();
         }
@@ -4683,6 +4787,8 @@ namespace rock::debug
     {
         if (!world || gameFrameIndex == 0 || solveSequence == 0 ||
             !timing.valid) {
+            s_phaseCaptureDiagnostics.invalidInputs.fetch_add(
+                1, std::memory_order_relaxed);
             return;
         }
 
@@ -4719,11 +4825,30 @@ namespace rock::debug
         }
 
         AtomicFlagLease lease(s_physicsPhaseCaptureGate);
-        if (!lease ||
-            s_physicsPhaseCaptureRequest.worldIdentity !=
-                reinterpret_cast<std::uintptr_t>(world) ||
-            s_physicsPhaseCaptureRequest.gameFrameIndex != gameFrameIndex ||
-            s_physicsPhaseCaptureRequest.count == 0) {
+        if (!lease) {
+            s_phaseCaptureDiagnostics.gateMisses.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+        s_phaseCaptureDiagnostics.lastRequestFrame.store(
+            s_physicsPhaseCaptureRequest.gameFrameIndex,
+            std::memory_order_relaxed);
+        s_phaseCaptureDiagnostics.lastCaptureFrame.store(
+            gameFrameIndex, std::memory_order_relaxed);
+        if (s_physicsPhaseCaptureRequest.count == 0) {
+            s_phaseCaptureDiagnostics.notStaged.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+        if (s_physicsPhaseCaptureRequest.worldIdentity !=
+            reinterpret_cast<std::uintptr_t>(world)) {
+            s_phaseCaptureDiagnostics.worldMismatches.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+        if (s_physicsPhaseCaptureRequest.gameFrameIndex != gameFrameIndex) {
+            s_phaseCaptureDiagnostics.frameMismatches.fetch_add(
+                1, std::memory_order_relaxed);
             return;
         }
 
@@ -4758,6 +4883,8 @@ namespace rock::debug
                         BodyOverlayFrameSource::BodyArrayTransform :
                         BodyOverlayFrameSource::LiveMotionWhenAvailable,
                     body)) {
+                s_phaseCaptureDiagnostics.extractFailures.fetch_add(
+                    1, std::memory_order_relaxed);
                 continue;
             }
 
@@ -4797,6 +4924,8 @@ namespace rock::debug
         }
 
         s_completedBodyPhaseFrame = captured;
+        s_phaseCaptureDiagnostics.storedFrames.fetch_add(
+            1, std::memory_order_relaxed);
     }
 
     void ClearFrame()
