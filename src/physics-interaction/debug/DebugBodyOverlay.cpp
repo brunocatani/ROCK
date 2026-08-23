@@ -686,10 +686,16 @@ namespace rock::debug
 
         DirectX::XMMATRIX niTransformToWorldMatrix(const RE::NiTransform& transform)
         {
+            // Generated-body writes cross the NiTransform -> hkTransform
+            // boundary through niRotToHkTransformRotation. Render the current
+            // target through the same conversion so TARGET and BODY use one
+            // physical-axis convention in the row-major instancing shader.
+            const RE::NiMatrix3 physicsRotation =
+                niRotToHkTransformRotation(transform.rotate);
             const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(
-                transform.rotate.entry[0][0], transform.rotate.entry[0][1], transform.rotate.entry[0][2], 0.0f,
-                transform.rotate.entry[1][0], transform.rotate.entry[1][1], transform.rotate.entry[1][2], 0.0f,
-                transform.rotate.entry[2][0], transform.rotate.entry[2][1], transform.rotate.entry[2][2], 0.0f,
+                physicsRotation.entry[0][0], physicsRotation.entry[0][1], physicsRotation.entry[0][2], 0.0f,
+                physicsRotation.entry[1][0], physicsRotation.entry[1][1], physicsRotation.entry[1][2], 0.0f,
+                physicsRotation.entry[2][0], physicsRotation.entry[2][1], physicsRotation.entry[2][2], 0.0f,
                 0.0f, 0.0f, 0.0f, 1.0f);
             const DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(
                 transform.translate.x,
@@ -2222,13 +2228,13 @@ namespace rock::debug
                 color[0] = 1.0f;
                 color[1] = 0.08f;
                 color[2] = 0.58f;
-                color[3] = 0.48f;
+                color[3] = 0.34f;
                 return;
             case BodyRenderPhase::PostSolve:
                 color[0] = 0.05f;
                 color[1] = 1.0f;
                 color[2] = 0.72f;
-                color[3] = 0.68f;
+                color[3] = 0.96f;
                 return;
             case BodyRenderPhase::RoleColor:
                 break;
