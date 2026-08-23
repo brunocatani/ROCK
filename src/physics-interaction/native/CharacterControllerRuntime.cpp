@@ -16,8 +16,17 @@ namespace rock::character_controller_runtime
         RE::bhkCharacterController* controller = nullptr;
 
         __try {
-            if (actor && actor->currentProcess && actor->currentProcess->middleHigh) {
-                controller = actor->currentProcess->middleHigh->charController.get();
+            if (actor) {
+                const auto* actorBytes = reinterpret_cast<const std::uint8_t*>(actor);
+                const void* currentProcess = *reinterpret_cast<void* const*>(actorBytes + 0x300);
+                if (currentProcess) {
+                    const auto* processBytes = reinterpret_cast<const std::uint8_t*>(currentProcess);
+                    const void* middleHigh = *reinterpret_cast<void* const*>(processBytes + 0x08);
+                    if (middleHigh) {
+                        const auto* middleHighBytes = reinterpret_cast<const std::uint8_t*>(middleHigh);
+                        controller = *reinterpret_cast<RE::bhkCharacterController* const*>(middleHighBytes + 0x3E8);
+                    }
+                }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             controller = nullptr;
@@ -37,30 +46,16 @@ namespace rock::character_controller_runtime
         bool ok = false;
 
         __try {
-            auto* player = RE::PlayerCharacter::GetSingleton();
-            if (player) {
-                // Verified FO4VR offsets only -- do not substitute CommonLibF4VR struct members here.
-                const auto* playerBytes = reinterpret_cast<const std::uint8_t*>(player);
-                const void* currentProcess = *reinterpret_cast<void* const*>(playerBytes + 0x300);  // Actor::currentProcess
-                if (currentProcess) {
-                    const auto* processBytes = reinterpret_cast<const std::uint8_t*>(currentProcess);
-                    const void* middleHigh = *reinterpret_cast<void* const*>(processBytes + 0x08);  // AIProcess::middleHigh
-                    if (middleHigh) {
-                        const auto* middleHighBytes = reinterpret_cast<const std::uint8_t*>(middleHigh);
-                        const void* charController = *reinterpret_cast<void* const*>(middleHighBytes + 0x3E8);  // VR-verified (CommonLib 0x3E0 is wrong)
-                        if (charController) {
-                            const auto* ccBytes = reinterpret_cast<const std::uint8_t*>(charController);
-                            const float vx = *reinterpret_cast<const float*>(ccBytes + 0x250);  // cachedLinearVelocity.x (game units)
-                            const float vy = *reinterpret_cast<const float*>(ccBytes + 0x254);
-                            const float vz = *reinterpret_cast<const float*>(ccBytes + 0x258);
-                            if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
-                                outVelocityGameUnits.x = vx;
-                                outVelocityGameUnits.y = vy;
-                                outVelocityGameUnits.z = vz;
-                                ok = true;
-                            }
-                        }
-                    }
+            if (const auto* charController = tryGetPlayerCharacterController()) {
+                const auto* ccBytes = reinterpret_cast<const std::uint8_t*>(charController);
+                const float vx = *reinterpret_cast<const float*>(ccBytes + 0x250);  // cachedLinearVelocity.x (game units)
+                const float vy = *reinterpret_cast<const float*>(ccBytes + 0x254);
+                const float vz = *reinterpret_cast<const float*>(ccBytes + 0x258);
+                if (std::isfinite(vx) && std::isfinite(vy) && std::isfinite(vz)) {
+                    outVelocityGameUnits.x = vx;
+                    outVelocityGameUnits.y = vy;
+                    outVelocityGameUnits.z = vz;
+                    ok = true;
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -102,34 +97,20 @@ namespace rock::character_controller_runtime
         }
 
         __try {
-            auto* player = RE::PlayerCharacter::GetSingleton();
-            if (player) {
-                // Same VR-verified walk as the velocity read above.
-                const auto* playerBytes = reinterpret_cast<const std::uint8_t*>(player);
-                const void* currentProcess = *reinterpret_cast<void* const*>(playerBytes + 0x300);
-                if (currentProcess) {
-                    const auto* processBytes = reinterpret_cast<const std::uint8_t*>(currentProcess);
-                    const void* middleHigh = *reinterpret_cast<void* const*>(processBytes + 0x08);
-                    if (middleHigh) {
-                        const auto* middleHighBytes = reinterpret_cast<const std::uint8_t*>(middleHigh);
-                        const void* charController = *reinterpret_cast<void* const*>(middleHighBytes + 0x3E8);
-                        if (charController) {
-                            const auto* ccBytes = reinterpret_cast<const std::uint8_t*>(charController);
-                            // GetPositionImpl's own indirection: character impl, then its position.
-                            const void* characterImpl = *reinterpret_cast<void* const*>(ccBytes + 0x470);
-                            if (characterImpl) {
-                                const auto* implBytes = reinterpret_cast<const std::uint8_t*>(characterImpl);
-                                const float x = *reinterpret_cast<const float*>(implBytes + 0x70);
-                                const float y = *reinterpret_cast<const float*>(implBytes + 0x74);
-                                const float z = *reinterpret_cast<const float*>(implBytes + 0x78);
-                                if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-                                    outPositionGameUnits.x = x * havokToGame;
-                                    outPositionGameUnits.y = y * havokToGame;
-                                    outPositionGameUnits.z = z * havokToGame;
-                                    ok = true;
-                                }
-                            }
-                        }
+            if (const auto* charController = tryGetPlayerCharacterController()) {
+                const auto* ccBytes = reinterpret_cast<const std::uint8_t*>(charController);
+                // GetPositionImpl's own indirection: character impl, then its position.
+                const void* characterImpl = *reinterpret_cast<void* const*>(ccBytes + 0x470);
+                if (characterImpl) {
+                    const auto* implBytes = reinterpret_cast<const std::uint8_t*>(characterImpl);
+                    const float x = *reinterpret_cast<const float*>(implBytes + 0x70);
+                    const float y = *reinterpret_cast<const float*>(implBytes + 0x74);
+                    const float z = *reinterpret_cast<const float*>(implBytes + 0x78);
+                    if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
+                        outPositionGameUnits.x = x * havokToGame;
+                        outPositionGameUnits.y = y * havokToGame;
+                        outPositionGameUnits.z = z * havokToGame;
+                        ok = true;
                     }
                 }
             }

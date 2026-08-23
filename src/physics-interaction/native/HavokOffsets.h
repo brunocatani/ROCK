@@ -197,9 +197,9 @@ namespace rock::offsets
     constexpr std::uintptr_t kData_BhkWorldRemainderDeltaSeconds = 0x65A3D7C;
 
     // Native SetDeltaTime stores the prior live remainder here before clearing
-    // the live field. The coherent transaction keeps this snapshot equal to
-    // its stable presentation phase; the current verified reader passes the
-    // value to a callee that does not consume the float argument.
+    // the live field. The coherent transaction clears both global remainder
+    // fields. The current verified reader of this previous field passes it to
+    // a callee that does not consume the float argument.
     constexpr std::uintptr_t kData_BhkWorldPreviousRemainderDeltaSeconds = 0x65A3D80;
 
     constexpr std::uintptr_t kData_BhkWorldAccumulatedDeltaSeconds = 0x65A3D84;
@@ -212,6 +212,17 @@ namespace rock::offsets
     // so timing code must use this verified VR offset and fail closed if its
     // address is unavailable.
     constexpr std::uintptr_t kData_GlobalSimulationTimeMultiplier = 0x3881630;
+
+    /*
+     * FO4VR 1.2.72 concrete character-controller vtable entries for the
+     * position-presentation remainder consumer. Both functions read the live
+     * bhkWorld remainder. ROCK chains them and substitutes the shadow native
+     * phase only for the player controller on the owning game thread.
+     */
+    constexpr std::uintptr_t kVtableEntry_CharProxyController_Presentation = 0x2E894E0;
+    constexpr std::uintptr_t kFunc_CharProxyController_Presentation = 0x1E4E050;
+    constexpr std::uintptr_t kVtableEntry_CharRigidBodyController_Presentation = 0x2E89CE0;
+    constexpr std::uintptr_t kFunc_CharRigidBodyController_Presentation = 0x1E53CD0;
 
     constexpr std::uintptr_t kData_BethesdaAllocatorPool = 0x392E400;
 

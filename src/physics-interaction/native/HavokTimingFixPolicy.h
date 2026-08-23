@@ -14,14 +14,11 @@ namespace rock::havok_timing_fix_policy
     constexpr float kMinAcceptedFrameDeltaSeconds = 0.000001f;
     constexpr float kMaxAcceptedFrameDeltaSeconds = 0.25f;
     constexpr float kMaxNativeAnchorDeltaSeconds = 0.1f;
-    constexpr float kStablePresentationPhaseFraction = 0.5f;
-    constexpr float kMaxNativeSubstepToRawAnchorRatio = 2.5f;
 
     struct TimingFixRuntimeState
     {
-        bool presentationPhaseInitialized = false;
-        float presentationPhaseSeconds = 0.0f;
-        float globalTimeMultiplier = 1.0f;
+        bool characterPresentationPhaseInitialized = false;
+        float characterPresentationPhaseSeconds = 0.0f;
     };
 
     /*
@@ -58,11 +55,11 @@ namespace rock::havok_timing_fix_policy
         float nativePreviousRemainderDeltaSeconds = 0.0f;
         float nativeNextRemainderDeltaSeconds = 0.0f;
         float presentationPhaseSeconds = 0.0f;
+        float characterPresentationPhaseSeconds = 0.0f;
         std::uint32_t substepCount = 0;
         float maxPhysicsFrameSeconds = 0.0f;
         int clampedMaxSubsteps = kDefaultMaxSubsteps;
-        bool presentationPhaseInitializedThisFrame = false;
-        bool presentationPhaseRescaled = false;
+        bool characterPresentationPhaseInitializedThisFrame = false;
         const char* reason = "uninitialized";
     };
 
@@ -144,9 +141,9 @@ namespace rock::havok_timing_fix_policy
         /*
          * bhkWorld::Update begins by adding accumulated-minus-consumed time
          * to the live remainder. Calculate the value the untouched native
-         * schedule would have produced so it can validate and initialize the
-         * coherent presentation phase. Do not publish this cycling value into
-         * an every-frame coherent schedule.
+         * schedule would have produced so it can validate and initialize a
+         * separate player character-controller phase. Do not publish this
+         * cycling value into the global collision-object presentation path.
          */
         const float nativeConsumedDeltaSeconds =
             input.nativeSubstepDeltaSeconds * static_cast<float>(input.nativeSubstepCount);
@@ -168,57 +165,36 @@ namespace rock::havok_timing_fix_policy
         }
 
         /*
-         * Native FO4VR uses the live remainder as an extrapolation interval:
-         * presentedPosition = completedPosition + remainder * velocity. A
-         * native fixed-step world needs a cycling remainder between solves.
-         * ROCK's coherent schedule completes one source interval every outer
-         * frame, so carrying that unrelated native cycle forward moves every
-         * presented Havok body by a second, discontinuous clock.
+         * FO4VR's collision-object and character-controller presentation paths
+         * both read the live remainder. They cannot share one value after ROCK
+         * completes a source-clock solve every outer frame: a nonzero global
+         * phase advances solved rigid bodies again, while removing the native
+         * cycle from the player controller breaks locomotion presentation.
          *
-         * The native remainder is a sawtooth over one fixed step. Its cycling
-         * value is required by a fixed-step schedule, but publishing it after
-         * ROCK completes one source interval every outer frame adds visible
-         * phase vibration to every presented Havok body. The time-average of
-         * that native sawtooth is the middle of the fixed step. Keep that mean
-         * phase stable so character-controller presentation retains the
-         * native amount of advance without reintroducing the cycle.
-         *
-         * Do not anchor while the adaptive native timer is still carrying a
-         * loading-frame substep. A recovered fixed step stays within the
-         * bounded ratio below; the observed load-recovery state does not.
+         * Publish zero globally. Maintain the native sawtooth separately for a
+         * narrow player-controller hook. The shadow phase starts from the last
+         * untouched native result, then advances only from native raw duration
+         * and the native fixed-step interval. ROCK's coherent substep selection
+         * never becomes an input to this character-only clock.
          */
-        bool presentationPhaseInitializedThisFrame = false;
-        bool presentationPhaseRescaled = false;
-        if (runtimeState.presentationPhaseInitialized) {
-            constexpr float kMultiplierChangeTolerance = 0.0001f;
-            if (std::fabs(runtimeState.globalTimeMultiplier - input.globalTimeMultiplier) >
-                kMultiplierChangeTolerance) {
-                runtimeState.presentationPhaseSeconds *=
-                    input.globalTimeMultiplier / runtimeState.globalTimeMultiplier;
-                runtimeState.globalTimeMultiplier = input.globalTimeMultiplier;
-                presentationPhaseRescaled = true;
-            }
+        bool characterPresentationPhaseInitializedThisFrame = false;
+        float characterPresentationPhaseSeconds = 0.0f;
+        if (runtimeState.characterPresentationPhaseInitialized) {
+            characterPresentationPhaseSeconds = std::fmod(
+                runtimeState.characterPresentationPhaseSeconds + input.nativeRawDeltaSeconds,
+                input.nativeSubstepDeltaSeconds);
         } else {
-            if (input.nativeSubstepDeltaSeconds >
-                input.nativeRawDeltaSeconds * kMaxNativeSubstepToRawAnchorRatio) {
-                return invalid("nativePresentationPhaseNotReady");
-            }
-
-            const float phaseCandidate =
-                input.nativeSubstepDeltaSeconds * kStablePresentationPhaseFraction;
-            if (!isUsableDeltaSeconds(phaseCandidate)) {
-                return invalid("nativePresentationPhaseNotReady");
-            }
-            runtimeState.presentationPhaseInitialized = true;
-            runtimeState.presentationPhaseSeconds = phaseCandidate;
-            runtimeState.globalTimeMultiplier = input.globalTimeMultiplier;
-            presentationPhaseInitializedThisFrame = true;
+            characterPresentationPhaseSeconds = std::fmod(
+                nativeNextRemainderDeltaSeconds,
+                input.nativeSubstepDeltaSeconds);
+            runtimeState.characterPresentationPhaseInitialized = true;
+            characterPresentationPhaseInitializedThisFrame = true;
         }
 
-        if (!isUsableDeltaSeconds(runtimeState.presentationPhaseSeconds)) {
-            return resetAndInvalidate("invalidPresentationPhase");
+        if (!isUsableRemainderDeltaSeconds(characterPresentationPhaseSeconds)) {
+            return resetAndInvalidate("invalidCharacterPresentationPhase");
         }
-        const float presentationPhaseSeconds = runtimeState.presentationPhaseSeconds;
+        runtimeState.characterPresentationPhaseSeconds = characterPresentationPhaseSeconds;
 
         /*
          * Consume exactly one scaled source interval in the upcoming world
@@ -244,12 +220,12 @@ namespace rock::havok_timing_fix_policy
             .simulatedDeltaSeconds = substepDeltaSeconds * static_cast<float>(substepCount),
             .nativePreviousRemainderDeltaSeconds = input.nativePreviousRemainderDeltaSeconds,
             .nativeNextRemainderDeltaSeconds = nativeNextRemainderDeltaSeconds,
-            .presentationPhaseSeconds = presentationPhaseSeconds,
+            .presentationPhaseSeconds = 0.0f,
+            .characterPresentationPhaseSeconds = characterPresentationPhaseSeconds,
             .substepCount = substepCount,
             .maxPhysicsFrameSeconds = maxPhysicsFrameSeconds,
             .clampedMaxSubsteps = maxSubsteps,
-            .presentationPhaseInitializedThisFrame = presentationPhaseInitializedThisFrame,
-            .presentationPhaseRescaled = presentationPhaseRescaled,
+            .characterPresentationPhaseInitializedThisFrame = characterPresentationPhaseInitializedThisFrame,
             .reason = "ok",
         };
     }

@@ -39,6 +39,7 @@ namespace rock
         using NativePlayerWeaponSwingCallback_t = void (*)(RE::Actor*, std::uint32_t);
         using NativeVrMeleeImpactCallback_t = void (*)(RE::Actor*, void*, void*);
         using BhkWorldSetDeltaTime_t = void (*)(float);
+        using CharacterControllerPresentation_t = void (*)(void*, float*, bool);
 
         static NativeMeleeHandler_t g_originalWeaponSwingHandler = nullptr;
         static NativeMeleeHandler_t g_originalHitFrameHandler = nullptr;
@@ -46,9 +47,17 @@ namespace rock
         static NativePlayerWeaponSwingCallback_t g_originalPlayerWeaponSwingCallback = nullptr;
         static NativeVrMeleeImpactCallback_t g_originalVrMeleeImpactCallback = nullptr;
         static BhkWorldSetDeltaTime_t g_originalBhkWorldSetDeltaTime = nullptr;
+        static CharacterControllerPresentation_t g_originalCharProxyControllerPresentation = nullptr;
+        static CharacterControllerPresentation_t g_originalCharRigidBodyControllerPresentation = nullptr;
         static std::atomic<bool> g_havokTimingFixMissingOriginalLogged{ false };
         static std::atomic<bool> g_havokTimingFixMultiplierReadFailureLogged{ false };
         static std::atomic<bool> g_havokTimingFixWriteFailureLogged{ false };
+        static std::atomic<bool> g_havokTimingCharacterHooksInstalled{ false };
+        static std::atomic<bool> g_havokTimingCharacterPhaseOverrideEnabled{ false };
+        static std::atomic<bool> g_havokTimingCharProxyPlayerObserved{ false };
+        static std::atomic<bool> g_havokTimingCharRigidPlayerObserved{ false };
+        static std::atomic<float> g_havokTimingCharacterPresentationPhaseSeconds{ 0.0f };
+        static std::atomic<DWORD> g_havokTimingOwningGameThreadId{ 0 };
 
         struct BhkWorldTimingState
         {
@@ -167,7 +176,7 @@ namespace rock
             return address >= text.address() && address < text.address() + text.size();
         }
 
-        bool validateNativeMeleeVtableTarget(std::uintptr_t entryOffset, std::uintptr_t expectedFunctionOffset, const char* label)
+        bool validateVtableTarget(std::uintptr_t entryOffset, std::uintptr_t expectedFunctionOffset, const char* label)
         {
             REL::Relocation<std::uintptr_t> entry{ REL::Offset(entryOffset) };
             auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
@@ -1026,7 +1035,7 @@ namespace rock
         }
 
         template <class HandlerT>
-        bool installNativeMeleeVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original, const char* label)
+        bool installVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original, const char* label)
         {
             REL::Relocation<std::uintptr_t> entry{ REL::Offset(entryOffset) };
             auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
@@ -1065,7 +1074,7 @@ namespace rock
         }
 
         template <class HandlerT>
-        bool restoreNativeMeleeVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original, bool& installed, const char* label)
+        bool restoreVtableHook(std::uintptr_t entryOffset, HandlerT hook, HandlerT& original, bool& installed, const char* label)
         {
             if (!installed) {
                 return true;
@@ -1106,14 +1115,14 @@ namespace rock
 
     bool validateNativeMeleeSuppressionHookTargets()
     {
-        const bool swingValid = validateNativeMeleeVtableTarget(
+        const bool swingValid = validateVtableTarget(
             offsets::kVtableEntry_WeaponSwingHandler_Handle, offsets::kFunc_WeaponSwingHandler_Handle, "WeaponSwingHandler::Handle");
         const bool hitFrameValid =
-            validateNativeMeleeVtableTarget(offsets::kVtableEntry_HitFrameHandler_Handle, offsets::kFunc_HitFrameHandler_Handle, "HitFrameHandler::Handle");
-        const bool attackBlockValid = validateNativeMeleeVtableTarget(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
+            validateVtableTarget(offsets::kVtableEntry_HitFrameHandler_Handle, offsets::kFunc_HitFrameHandler_Handle, "HitFrameHandler::Handle");
+        const bool attackBlockValid = validateVtableTarget(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
             offsets::kFunc_AttackBlockHandler_ShouldHandleEvent,
             "AttackBlockHandler::ShouldHandleEvent");
-        const bool playerSwingCallbackValid = validateNativeMeleeVtableTarget(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
+        const bool playerSwingCallbackValid = validateVtableTarget(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
             offsets::kFunc_PlayerCharacter_WeaponSwingCallBack,
             "PlayerCharacter::WeaponSwingCallBack");
         const bool vrMeleeImpactValid = validateEntryTrampolineTarget(
@@ -1388,6 +1397,101 @@ namespace rock
         return controller && playerController && controller == playerController;
     }
 
+    bool invokeCharacterControllerPresentation(
+        CharacterControllerPresentation_t original,
+        void* controller,
+        float* output,
+        bool applyCenterOffset)
+    {
+        if (!original) {
+            return false;
+        }
+
+        const DWORD owningThreadId =
+            g_havokTimingOwningGameThreadId.load(std::memory_order_acquire);
+        const bool useCharacterPhase =
+            g_havokTimingCharacterPhaseOverrideEnabled.load(std::memory_order_acquire) &&
+            owningThreadId != 0 &&
+            GetCurrentThreadId() == owningThreadId &&
+            isPlayerCharacterController(controller);
+        if (!useCharacterPhase) {
+            original(controller, output, applyCenterOffset);
+            return false;
+        }
+
+        const float characterPhase =
+            g_havokTimingCharacterPresentationPhaseSeconds.load(std::memory_order_acquire);
+        if (!havok_timing_fix_policy::isUsableRemainderDeltaSeconds(characterPhase)) {
+            original(controller, output, applyCenterOffset);
+            return false;
+        }
+
+        static REL::Relocation<float*> liveRemainder{
+            REL::Offset(offsets::kData_BhkWorldRemainderDeltaSeconds)
+        };
+        if (!liveRemainder.address()) {
+            original(controller, output, applyCenterOffset);
+            return false;
+        }
+
+        const float globalPresentationPhase = *liveRemainder;
+        *liveRemainder = characterPhase;
+        original(controller, output, applyCenterOffset);
+        *liveRemainder = globalPresentationPhase;
+        return true;
+    }
+
+    void hookedCharProxyControllerPresentation(
+        void* controller,
+        float* output,
+        bool applyCenterOffset)
+    {
+        const bool overridden = invokeCharacterControllerPresentation(
+            g_originalCharProxyControllerPresentation,
+            controller,
+            output,
+            applyCenterOffset);
+        if (overridden &&
+            !g_havokTimingCharProxyPlayerObserved.load(std::memory_order_relaxed)) {
+            bool expected = false;
+            if (g_havokTimingCharProxyPlayerObserved.compare_exchange_strong(
+                    expected, true, std::memory_order_relaxed)) {
+                ROCK_LOG_INFO(Init,
+                    "HAVOK_TIMING_FIX player controller confirmed route=proxy controller=0x{:X}",
+                    reinterpret_cast<std::uintptr_t>(controller));
+            }
+        }
+    }
+
+    void hookedCharRigidBodyControllerPresentation(
+        void* controller,
+        float* output,
+        bool applyCenterOffset)
+    {
+        const bool overridden = invokeCharacterControllerPresentation(
+            g_originalCharRigidBodyControllerPresentation,
+            controller,
+            output,
+            applyCenterOffset);
+        if (overridden &&
+            !g_havokTimingCharRigidPlayerObserved.load(std::memory_order_relaxed)) {
+            bool expected = false;
+            if (g_havokTimingCharRigidPlayerObserved.compare_exchange_strong(
+                    expected, true, std::memory_order_relaxed)) {
+                ROCK_LOG_INFO(Init,
+                    "HAVOK_TIMING_FIX player controller confirmed route=rigid controller=0x{:X}",
+                    reinterpret_cast<std::uintptr_t>(controller));
+            }
+        }
+    }
+
+    void disableHavokTimingCharacterPhaseOverride()
+    {
+        g_havokTimingCharacterPhaseOverrideEnabled.store(false, std::memory_order_release);
+        g_havokTimingCharacterPresentationPhaseSeconds.store(0.0f, std::memory_order_release);
+        g_havokTimingOwningGameThreadId.store(0, std::memory_order_release);
+    }
+
     RE::bhkWorld* resolvePlayerBhkWorld()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1513,13 +1617,17 @@ namespace rock
 
     void applyHavokTimingFixForGameFrame(const game_frame_timing_policy::GameFrameTiming& frameTiming)
     {
-        if (!g_rockConfig.rockHavokTimingFixEnabled) {
+        if (!g_rockConfig.rockHavokTimingFixEnabled ||
+            !g_havokTimingCharacterHooksInstalled.load(std::memory_order_acquire)) {
+            disableHavokTimingCharacterPhaseOverride();
             havok_timing_fix_policy::resetTimingFixRuntimeState(g_havokTimingFixRuntimeState);
             return;
         }
 
         const auto pending = g_pendingNativeTimingFrame;
         if (!pending.valid || pending.sequence == 0 || pending.sequence == g_appliedNativeTimingSequence) {
+            disableHavokTimingCharacterPhaseOverride();
+            havok_timing_fix_policy::resetTimingFixRuntimeState(g_havokTimingFixRuntimeState);
             if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_SAMPLE_DEBUG(Physics,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -1542,6 +1650,7 @@ namespace rock
          */
         float globalTimeMultiplier = 0.0f;
         if (!tryReadGlobalSimulationTimeMultiplier(globalTimeMultiplier)) {
+            disableHavokTimingCharacterPhaseOverride();
             havok_timing_fix_policy::resetTimingFixRuntimeState(g_havokTimingFixRuntimeState);
             if (!g_havokTimingFixMultiplierReadFailureLogged.exchange(true, std::memory_order_acq_rel)) {
                 ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX global simulation multiplier is unavailable; native schedule preserved");
@@ -1566,6 +1675,7 @@ namespace rock
             },
             g_havokTimingFixRuntimeState);
         if (!decision.valid) {
+            disableHavokTimingCharacterPhaseOverride();
             if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_SAMPLE_DEBUG(Physics,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -1592,12 +1702,21 @@ namespace rock
             .substepCount = decision.substepCount,
         };
         if (!tryWriteBhkWorldTimingState(coherent)) {
+            disableHavokTimingCharacterPhaseOverride();
             havok_timing_fix_policy::resetTimingFixRuntimeState(g_havokTimingFixRuntimeState);
             if (!g_havokTimingFixWriteFailureLogged.exchange(true, std::memory_order_acq_rel)) {
                 ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX failed to write the coherent FO4VR timing state; native schedule preserved");
             }
             return;
         }
+
+        g_havokTimingCharacterPresentationPhaseSeconds.store(
+            decision.characterPresentationPhaseSeconds,
+            std::memory_order_release);
+        g_havokTimingOwningGameThreadId.store(
+            GetCurrentThreadId(),
+            std::memory_order_release);
+        g_havokTimingCharacterPhaseOverrideEnabled.store(true, std::memory_order_release);
 
         if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
             const float nativeToSourceRatio =
@@ -1608,7 +1727,7 @@ namespace rock
                 g_rockConfig.rockLogSampleMilliseconds,
                 "HAVOK_TIMING_FIX sourceDt={:.6f} globalScale={:.4f} coherentDt={:.6f} nativeRawDt={:.6f} nativeAccumDt={:.6f} "
                 "nativeSubDt={:.6f} nativeSubsteps={} nativePrevRem={:.6f} predictedNativeNextRem={:.6f} "
-                "presentationPhase={:.6f} phaseInit={} phaseRescaled={} native/source={:.3f} "
+                "globalPresentationPhase={:.6f} characterPresentationPhase={:.6f} characterPhaseInit={} native/source={:.3f} "
                 "newSubDt={:.6f} newSubsteps={} simulatedDt={:.6f} "
                 "minHz={:.2f} maxSubsteps={}",
                 decision.sourceDeltaSeconds,
@@ -1621,8 +1740,8 @@ namespace rock
                 decision.nativePreviousRemainderDeltaSeconds,
                 decision.nativeNextRemainderDeltaSeconds,
                 decision.presentationPhaseSeconds,
-                decision.presentationPhaseInitializedThisFrame ? "yes" : "no",
-                decision.presentationPhaseRescaled ? "yes" : "no",
+                decision.characterPresentationPhaseSeconds,
+                decision.characterPresentationPhaseInitializedThisFrame ? "yes" : "no",
                 nativeToSourceRatio,
                 decision.substepDeltaSeconds,
                 decision.substepCount,
@@ -1636,6 +1755,8 @@ namespace rock
     {
         static bool installed = false;
         static bool installAttempted = false;
+        static bool proxyPresentationInstalled = false;
+        static bool rigidPresentationInstalled = false;
         if (installed) {
             return true;
         }
@@ -1648,21 +1769,69 @@ namespace rock
             ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX hook not installed; FO4VR timing call site did not match verified bytes");
             return false;
         }
+        const bool proxyPresentationValid = validateVtableTarget(
+            offsets::kVtableEntry_CharProxyController_Presentation,
+            offsets::kFunc_CharProxyController_Presentation,
+            "bhkCharProxyController presentation");
+        const bool rigidPresentationValid = validateVtableTarget(
+            offsets::kVtableEntry_CharRigidBodyController_Presentation,
+            offsets::kFunc_CharRigidBodyController_Presentation,
+            "bhkCharRigidBodyController presentation");
+        if (!proxyPresentationValid || !rigidPresentationValid) {
+            ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX player presentation hook validation failed; native schedule preserved");
+            return false;
+        }
 
         REL::Relocation<std::uintptr_t> hookCallSite{ REL::Offset(kHookSite_BhkWorldSetDeltaTimeMainCall) };
         auto& trampoline = F4SE::GetTrampoline();
         const auto original = trampoline.write_call<5>(hookCallSite.address(), &hookedBhkWorldSetDeltaTime);
         g_originalBhkWorldSetDeltaTime = reinterpret_cast<BhkWorldSetDeltaTime_t>(original);
-        installed = g_originalBhkWorldSetDeltaTime != nullptr;
 
-        if (!installed) {
+        if (!g_originalBhkWorldSetDeltaTime) {
             ROCK_LOG_CRITICAL(Init, "HAVOK_TIMING_FIX hook install failed at 0x{:X}: original target was null", hookCallSite.address());
             return false;
         }
 
+        proxyPresentationInstalled = installVtableHook(
+            offsets::kVtableEntry_CharProxyController_Presentation,
+            &hookedCharProxyControllerPresentation,
+            g_originalCharProxyControllerPresentation,
+            "bhkCharProxyController presentation");
+        rigidPresentationInstalled = installVtableHook(
+            offsets::kVtableEntry_CharRigidBodyController_Presentation,
+            &hookedCharRigidBodyControllerPresentation,
+            g_originalCharRigidBodyControllerPresentation,
+            "bhkCharRigidBodyController presentation");
+        if (!proxyPresentationInstalled || !rigidPresentationInstalled) {
+            bool rollbackOk = true;
+            rollbackOk = restoreVtableHook(
+                             offsets::kVtableEntry_CharRigidBodyController_Presentation,
+                             &hookedCharRigidBodyControllerPresentation,
+                             g_originalCharRigidBodyControllerPresentation,
+                             rigidPresentationInstalled,
+                             "bhkCharRigidBodyController presentation") &&
+                         rollbackOk;
+            rollbackOk = restoreVtableHook(
+                             offsets::kVtableEntry_CharProxyController_Presentation,
+                             &hookedCharProxyControllerPresentation,
+                             g_originalCharProxyControllerPresentation,
+                             proxyPresentationInstalled,
+                             "bhkCharProxyController presentation") &&
+                         rollbackOk;
+            g_havokTimingCharacterHooksInstalled.store(false, std::memory_order_release);
+            disableHavokTimingCharacterPhaseOverride();
+            ROCK_LOG_CRITICAL(Init,
+                "HAVOK_TIMING_FIX player presentation hook installation failed; rollback={} native schedule preserved",
+                rollbackOk ? "complete" : "incomplete");
+            return false;
+        }
+
+        g_havokTimingCharacterHooksInstalled.store(true, std::memory_order_release);
+        installed = true;
+
         ROCK_LOG_INFO(Init,
             "HAVOK_TIMING_FIX capture hook installed at 0x{:X}; original=0x{:X} enabled={} minHz={:.2f} maxSubsteps={} "
-            "schedule=game-source-late-apply",
+            "schedule=game-source-late-apply globalPhase=completed-solve playerPhase=native-shadow",
             hookCallSite.address(),
             original,
             g_rockConfig.rockHavokTimingFixEnabled ? "yes" : "no",
@@ -1732,22 +1901,22 @@ namespace rock
         auto rollbackNativeMeleeSuppressionHooks = [&]() {
             bool rollbackOk = true;
 
-            rollbackOk = restoreNativeMeleeVtableHook(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
+            rollbackOk = restoreVtableHook(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
                              &hookedPlayerWeaponSwingCallback,
                              g_originalPlayerWeaponSwingCallback,
                              playerWeaponSwingCallbackInstalled,
                              "PlayerCharacter::WeaponSwingCallBack") &&
                          rollbackOk;
-            rollbackOk = restoreNativeMeleeVtableHook(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
+            rollbackOk = restoreVtableHook(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
                              &hookedAttackBlockShouldHandleEvent,
                              g_originalAttackBlockShouldHandleEvent,
                              attackBlockInstalled,
                              "AttackBlockHandler::ShouldHandleEvent") &&
                          rollbackOk;
-            rollbackOk = restoreNativeMeleeVtableHook(
+            rollbackOk = restoreVtableHook(
                              offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler, g_originalHitFrameHandler, hitFrameInstalled, "HitFrameHandler::Handle") &&
                          rollbackOk;
-            rollbackOk = restoreNativeMeleeVtableHook(offsets::kVtableEntry_WeaponSwingHandler_Handle,
+            rollbackOk = restoreVtableHook(offsets::kVtableEntry_WeaponSwingHandler_Handle,
                              &hookedWeaponSwingHandler,
                              g_originalWeaponSwingHandler,
                              weaponSwingInstalled,
@@ -1803,21 +1972,21 @@ namespace rock
             g_originalVrMeleeImpactCallback = reinterpret_cast<NativeVrMeleeImpactCallback_t>(impactOriginal);
         }
         if (!weaponSwingInstalled) {
-            weaponSwingInstalled = installNativeMeleeVtableHook(
+            weaponSwingInstalled = installVtableHook(
                 offsets::kVtableEntry_WeaponSwingHandler_Handle, &hookedWeaponSwingHandler, g_originalWeaponSwingHandler, "WeaponSwingHandler::Handle");
         }
         if (!hitFrameInstalled) {
             hitFrameInstalled =
-                installNativeMeleeVtableHook(offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler, g_originalHitFrameHandler, "HitFrameHandler::Handle");
+                installVtableHook(offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler, g_originalHitFrameHandler, "HitFrameHandler::Handle");
         }
         if (!attackBlockInstalled) {
-            attackBlockInstalled = installNativeMeleeVtableHook(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
+            attackBlockInstalled = installVtableHook(offsets::kVtableEntry_AttackBlockHandler_ShouldHandleEvent,
                 &hookedAttackBlockShouldHandleEvent,
                 g_originalAttackBlockShouldHandleEvent,
                 "AttackBlockHandler::ShouldHandleEvent");
         }
         if (!playerWeaponSwingCallbackInstalled) {
-            playerWeaponSwingCallbackInstalled = installNativeMeleeVtableHook(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
+            playerWeaponSwingCallbackInstalled = installVtableHook(offsets::kVtableEntry_PlayerCharacter_WeaponSwingCallBack,
                 &hookedPlayerWeaponSwingCallback,
                 g_originalPlayerWeaponSwingCallback,
                 "PlayerCharacter::WeaponSwingCallBack");

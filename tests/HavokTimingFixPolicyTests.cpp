@@ -90,7 +90,8 @@ int main()
         ok &= expectNear(label, decision.substepDeltaSeconds, sourceDelta / static_cast<float>(expectedCount), 0.000001f);
         ok &= expectNear(label, decision.nativePreviousRemainderDeltaSeconds, 0.004f, 0.000001f);
         ok &= expectNear(label, decision.nativeNextRemainderDeltaSeconds, 1.0f / 90.0f, 0.000001f);
-        ok &= expectNear(label, decision.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
+        ok &= expectNear(label, decision.presentationPhaseSeconds, 0.0f, 0.000001f);
+        ok &= expectNear(label, decision.characterPresentationPhaseSeconds, 1.0f / 90.0f, 0.000001f);
     }
 
     // Ordinary pacing variation must always preserve the complete source
@@ -150,21 +151,25 @@ int main()
             decision.nativeNextRemainderDeltaSeconds,
             (2.0f / 90.0f) - (1.0f / 60.0f),
             0.000001f);
-        ok &= expectNear("stable presentation phase", decision.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
-        ok &= expectTrue("presentation phase initialized", decision.presentationPhaseInitializedThisFrame);
+        const float initialCharacterPhase = (2.0f / 90.0f) - (1.0f / 60.0f);
+        ok &= expectNear("global completed-solve phase", decision.presentationPhaseSeconds, 0.0f, 0.000001f);
+        ok &= expectNear("initial character phase", decision.characterPresentationPhaseSeconds, initialCharacterPhase, 0.000001f);
+        ok &= expectTrue("character phase initialized", decision.characterPresentationPhaseInitializedThisFrame);
 
+        input.nativeRawDeltaSeconds = 0.004f;
         input.nativePreviousRemainderDeltaSeconds = 0.010f;
         input.nativeAccumulatedDeltaSeconds = 0.010f;
         input.nativeSubstepCount = 0;
         const auto continued = evaluateTimingFix(input, runtimeState);
-        ok &= expectTrue("continued presentation phase", continued.valid);
-        ok &= expectNear("continued presentation phase", continued.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
-        ok &= expectFalse("continued phase not reinitialized", continued.presentationPhaseInitializedThisFrame);
+        ok &= expectTrue("continued character phase", continued.valid);
+        ok &= expectNear("continued global phase", continued.presentationPhaseSeconds, 0.0f, 0.000001f);
+        ok &= expectNear("continued character phase", continued.characterPresentationPhaseSeconds, initialCharacterPhase + 0.004f, 0.000001f);
+        ok &= expectFalse("continued character phase not reinitialized", continued.characterPresentationPhaseInitializedThisFrame);
 
         input.nativeAccumulatedDeltaSeconds = 0.0f;
         input.nativeSubstepCount = 1;
         ok &= expectFalse("negative native remainder", evaluateTimingFix(input, runtimeState).valid);
-        ok &= expectFalse("invalid native state resets phase", runtimeState.presentationPhaseInitialized);
+        ok &= expectFalse("invalid native state resets phase", runtimeState.characterPresentationPhaseInitialized);
     }
 
     {
@@ -184,40 +189,48 @@ int main()
         TimingFixRuntimeState runtimeState{};
         const auto decision = evaluateTimingFix(input, runtimeState);
         ok &= expectTrue("native phase on step boundary", decision.valid);
-        ok &= expectNear("mean native presentation phase", decision.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
-        ok &= expectTrue("mean native phase initialized", runtimeState.presentationPhaseInitialized);
+        ok &= expectNear("zero global phase on step boundary", decision.presentationPhaseSeconds, 0.0f, 0.000001f);
+        ok &= expectNear("zero character phase on step boundary", decision.characterPresentationPhaseSeconds, 0.0f, 0.000001f);
+        ok &= expectTrue("character phase initialized on boundary", runtimeState.characterPresentationPhaseInitialized);
     }
 
-    // The first normal source frame after loading can still carry the native
-    // adaptive timer's much larger recovery substep. Do not freeze that load
-    // phase into the presentation clock; initialize after native timing has
-    // returned to its ordinary fixed step.
+    // The character-only shadow clock initializes from the untouched native
+    // recovery result, then continues its own native remainder recurrence even
+    // though the global collision-object phase remains zero.
     {
         auto input = TimingFixInput{
-            .sourceDeltaSeconds = 0.012251f,
+            .sourceDeltaSeconds = 0.032637f,
             .globalTimeMultiplier = 1.0f,
-            .nativeRawDeltaSeconds = 0.009f,
+            .nativeRawDeltaSeconds = 0.031f,
             .nativeRemainderDeltaSeconds = 0.0f,
-            .nativePreviousRemainderDeltaSeconds = 0.024833f,
-            .nativeAccumulatedDeltaSeconds = 0.033833f,
-            .nativeSubstepDeltaSeconds = 0.033167f,
+            .nativePreviousRemainderDeltaSeconds = 0.004833f,
+            .nativeAccumulatedDeltaSeconds = 0.035833f,
+            .nativeSubstepDeltaSeconds = 0.032836f,
             .nativeSubstepCount = 1,
             .sourceValid = true,
             .sourceDiscontinuity = false,
             .sourcePaused = false,
         };
         TimingFixRuntimeState runtimeState{};
-        ok &= expectFalse("adaptive recovery phase rejected", evaluateTimingFix(input, runtimeState).valid);
-        ok &= expectFalse("adaptive recovery phase not initialized", runtimeState.presentationPhaseInitialized);
+        const auto recovery = evaluateTimingFix(input, runtimeState);
+        ok &= expectTrue("adaptive recovery state accepted", recovery.valid);
+        ok &= expectNear("adaptive recovery global phase", recovery.presentationPhaseSeconds, 0.0f, 0.000001f);
+        ok &= expectNear("adaptive recovery character phase", recovery.characterPresentationPhaseSeconds, 0.002997f, 0.000001f);
+        ok &= expectTrue("adaptive recovery character phase initialized", runtimeState.characterPresentationPhaseInitialized);
 
         input.nativeRawDeltaSeconds = 0.011f;
-        input.nativePreviousRemainderDeltaSeconds = 0.000332f;
-        input.nativeAccumulatedDeltaSeconds = 0.011332f;
+        input.nativePreviousRemainderDeltaSeconds = 0.0f;
+        input.nativeAccumulatedDeltaSeconds = 0.011f;
         input.nativeSubstepDeltaSeconds = 1.0f / 60.0f;
         input.nativeSubstepCount = 0;
-        const auto recovered = evaluateTimingFix(input, runtimeState);
-        ok &= expectTrue("recovered native phase", recovered.valid);
-        ok &= expectNear("recovered mean phase", recovered.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
+        const auto advanced = evaluateTimingFix(input, runtimeState);
+        ok &= expectTrue("advanced character phase", advanced.valid);
+        ok &= expectNear("advanced character phase value", advanced.characterPresentationPhaseSeconds, 0.013997f, 0.000001f);
+
+        const auto wrapped = evaluateTimingFix(input, runtimeState);
+        ok &= expectTrue("wrapped character phase", wrapped.valid);
+        ok &= expectNear("wrapped character phase value", wrapped.characterPresentationPhaseSeconds, 0.008330f, 0.000001f);
+        ok &= expectNear("wrapped global phase", wrapped.presentationPhaseSeconds, 0.0f, 0.000001f);
     }
 
     {

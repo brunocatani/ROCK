@@ -63,9 +63,13 @@ Reject-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'BSTimer::QGlobalTim
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'tryWriteBhkWorldTimingState\(coherent\)' `
     'Timing fix must publish one coherent timing state instead of independent partial writes.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'remainderDeltaSeconds = decision\.presentationPhaseSeconds[\s\S]*previousRemainderDeltaSeconds = decision\.presentationPhaseSeconds' `
-    'The coherent schedule must use one stable presentation phase for both native remainder consumers.'
-Require-Text 'src/physics-interaction/native/HavokTimingFixPolicy.h' 'presentedPosition = completedPosition \+ remainder \* velocity[\s\S]*presentationPhaseInitialized' `
-    'The timing policy must document and retain the FO4VR presentation-remainder invariant.'
+    'The coherent schedule must publish the completed-solve phase to both global remainder fields.'
+Require-Text 'src/physics-interaction/native/HavokTimingFixPolicy.h' 'Publish zero globally[\s\S]*characterPresentationPhaseInitialized' `
+    'The timing policy must separate global collision-object presentation from the player character phase.'
+Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kVtableEntry_CharProxyController_Presentation\s*=\s*0x2E894E0[\s\S]*kFunc_CharProxyController_Presentation\s*=\s*0x1E4E050[\s\S]*kVtableEntry_CharRigidBodyController_Presentation\s*=\s*0x2E89CE0[\s\S]*kFunc_CharRigidBodyController_Presentation\s*=\s*0x1E53CD0' `
+    'Both verified FO4VR character-controller presentation entries must remain explicit and version-auditable.'
+Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'isPlayerCharacterController\(controller\)[\s\S]*\*liveRemainder = characterPhase;[\s\S]*original\(controller, output, applyCenterOffset\);[\s\S]*\*liveRemainder = globalPresentationPhase;' `
+    'Only the player controller may receive the shadow native phase, and the global phase must be restored immediately.'
 Reject-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'remainderDeltaSeconds = decision\.nativeNextRemainderDeltaSeconds' `
     'The native fixed-step remainder cycle must not drive an every-frame coherent physics schedule.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'kData_BhkWorldRawDeltaSeconds[\s\S]*kData_BhkWorldSubstepDeltaSeconds[\s\S]*kData_BhkWorldRemainderDeltaSeconds[\s\S]*kData_BhkWorldPreviousRemainderDeltaSeconds[\s\S]*kData_BhkWorldAccumulatedDeltaSeconds[\s\S]*kData_BhkWorldSubstepCount' `
