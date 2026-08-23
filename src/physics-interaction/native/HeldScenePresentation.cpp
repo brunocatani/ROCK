@@ -6,6 +6,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/RendererOffsets.h"
 
 #include "RockConfig.h"
 
@@ -18,10 +19,11 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <intrin.h>
-#include <memory>
 
 namespace rock::held_scene_presentation
 {
@@ -33,6 +35,7 @@ namespace rock::held_scene_presentation
             std::uint32_t,
             float,
             float*);
+        using LightingShaderSetupGeometry = void (*)(void*, void*, void*);
 
         constexpr std::array<std::uint8_t, 19> kExpectedWriterPrefix{
             0x4C, 0x8B, 0xDC,
@@ -41,6 +44,24 @@ namespace rock::held_scene_presentation
             0x57,
             0x48, 0x81, 0xEC, 0x30, 0x01, 0x00, 0x00,
         };
+
+        constexpr std::array<std::uint8_t, 20> kExpectedLightingSetupPrefix{
+            0x48, 0x8B, 0xC4,
+            0x48, 0x89, 0x58, 0x08,
+            0x48, 0x89, 0x68, 0x18,
+            0x48, 0x89, 0x70, 0x20,
+            0x48, 0x89, 0x50, 0x10,
+            0x57,
+        };
+
+        constexpr std::size_t kRenderConsumptionCapacity = 128;
+        constexpr std::uintptr_t kRenderPassGeometryOffset = 0x18;
+        constexpr std::uintptr_t kShaderDescriptorTechniqueOffset = 0x40;
+        constexpr std::uintptr_t kGeometryShaderPropertyOffset = 0x178;
+        constexpr std::uintptr_t kShaderPropertyFlagsOffset = 0x30;
+        static_assert(
+            sizeof(RE::NiTransform) == 16 * sizeof(float),
+            "Render-consumption samples require the native 16-float NiTransform layout");
 
         struct AtomicRegisteredBody
         {
@@ -60,8 +81,28 @@ namespace rock::held_scene_presentation
             std::array<AtomicRegisteredBody, kMaxRegisteredBodies> bodies{};
             std::atomic<std::size_t> count{ 0 };
             std::atomic<std::uint64_t> traceId{ 0 };
+            std::atomic<RE::NiAVObject*> visibleGeometry{ nullptr };
             std::atomic<std::uint64_t> firstAppliedTraceId{ 0 };
-            std::atomic<std::uint64_t> firstPostSolveTraceId{ 0 };
+        };
+
+        /*
+         * The renderer hook cannot format or write logs. Each matched call
+         * claims one fixed ring slot, publishes only atomic scalar fields, and
+         * releases the completed ordinal. The game thread reads the newest
+         * stable slot and owns all diagnostic logging.
+         */
+        struct AtomicRenderConsumption
+        {
+            std::atomic<std::uint64_t> readyOrdinal{ 0 };
+            std::atomic<std::uint64_t> traceId{ 0 };
+            std::atomic<std::uint64_t> captureMicroseconds{ 0 };
+            std::atomic<std::uintptr_t> renderPass{ 0 };
+            std::atomic<std::uint32_t> threadId{ 0 };
+            std::atomic<std::uint32_t> technique{ 0 };
+            std::atomic<RE::NiAVObject*> geometry{ nullptr };
+            std::array<std::atomic<std::uint32_t>, 16> worldBits{};
+            std::atomic<std::uint64_t> shaderFlagsBefore{ 0 };
+            std::atomic<std::uint64_t> shaderFlagsAfter{ 0 };
         };
 
         struct Match
@@ -74,50 +115,121 @@ namespace rock::held_scene_presentation
         };
 
         std::array<AtomicHandRegistration, 2> s_registrations{};
+        std::array<
+            std::array<AtomicRenderConsumption, kRenderConsumptionCapacity>,
+            2>
+            s_renderConsumption{};
+        std::array<std::atomic<std::uint64_t>, 2>
+            s_renderConsumptionOrdinals{};
         std::atomic<bool> s_installed{ false };
+        std::atomic<bool> s_renderProbeInstalled{ false };
         SceneTransformWriter s_originalWriter = nullptr;
+        LightingShaderSetupGeometry s_originalLightingSetup = nullptr;
 
         AtomicHandRegistration& registrationFor(bool isLeft) noexcept
         {
             return s_registrations[isLeft ? 1u : 0u];
         }
 
-        bool copyRegistration(
-            const AtomicHandRegistration& source,
-            Registration& destination) noexcept
+        std::uint64_t readShaderPropertyFlags(
+            const RE::NiAVObject* geometry) noexcept
         {
-            constexpr int kMaxAttempts = 4;
+            if (!geometry) {
+                return 0;
+            }
+
+            const auto* geometryBytes =
+                reinterpret_cast<const std::byte*>(geometry);
+            auto* shaderProperty =
+                *reinterpret_cast<void* const*>(
+                    geometryBytes + kGeometryShaderPropertyOffset);
+            if (!shaderProperty) {
+                return 0;
+            }
+
+            const auto* propertyBytes =
+                reinterpret_cast<const std::byte*>(shaderProperty);
+            return *reinterpret_cast<const std::uint64_t*>(
+                propertyBytes + kShaderPropertyFlagsOffset);
+        }
+
+        bool matchVisibleGeometry(
+            const AtomicHandRegistration& registration,
+            RE::NiAVObject* geometry,
+            std::uint64_t& traceId) noexcept
+        {
+            constexpr int kMaxAttempts = 2;
             for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
                 const std::uint64_t begin =
-                    source.sequence.load(std::memory_order_acquire);
+                    registration.sequence.load(std::memory_order_acquire);
                 if ((begin & 1u) != 0) {
                     continue;
                 }
 
-                Registration snapshot{};
-                snapshot.count = (std::min)(
-                    source.count.load(std::memory_order_relaxed),
-                    kMaxRegisteredBodies);
-                snapshot.traceId =
-                    source.traceId.load(std::memory_order_relaxed);
-                for (std::size_t index = 0; index < snapshot.count; ++index) {
-                    const auto& entry = source.bodies[index];
-                    snapshot.bodies[index] = RegisteredBody{
-                        .collisionObject = entry.collisionObject.load(
-                            std::memory_order_relaxed),
-                        .world = entry.world.load(std::memory_order_relaxed),
-                        .bodyId = entry.bodyId.load(std::memory_order_relaxed),
-                    };
+                auto* registeredGeometry =
+                    registration.visibleGeometry.load(
+                        std::memory_order_relaxed);
+                const std::uint64_t registeredTraceId =
+                    registration.traceId.load(std::memory_order_relaxed);
+                const std::uint64_t end =
+                    registration.sequence.load(std::memory_order_acquire);
+                if (begin != end) {
+                    continue;
+                }
+                if (registeredGeometry != geometry || !registeredGeometry) {
+                    return false;
                 }
 
-                const std::uint64_t end =
-                    source.sequence.load(std::memory_order_acquire);
-                if (begin == end) {
-                    destination = snapshot;
-                    return true;
-                }
+                traceId = registeredTraceId;
+                return true;
             }
             return false;
+        }
+
+        void publishRenderConsumption(
+            std::size_t handIndex,
+            std::uint64_t traceId,
+            std::uint64_t captureMicroseconds,
+            void* renderPass,
+            std::uint32_t technique,
+            RE::NiAVObject* geometry,
+            const RE::NiTransform& world,
+            std::uint64_t shaderFlagsBefore,
+            std::uint64_t shaderFlagsAfter) noexcept
+        {
+            const std::uint64_t ordinal =
+                s_renderConsumptionOrdinals[handIndex].fetch_add(
+                    1,
+                    std::memory_order_acq_rel) +
+                1;
+            auto& destination = s_renderConsumption[handIndex]
+                [ordinal % kRenderConsumptionCapacity];
+            destination.readyOrdinal.store(0, std::memory_order_release);
+            destination.traceId.store(traceId, std::memory_order_relaxed);
+            destination.captureMicroseconds.store(
+                captureMicroseconds,
+                std::memory_order_relaxed);
+            destination.renderPass.store(
+                reinterpret_cast<std::uintptr_t>(renderPass),
+                std::memory_order_relaxed);
+            destination.threadId.store(
+                GetCurrentThreadId(),
+                std::memory_order_relaxed);
+            destination.technique.store(technique, std::memory_order_relaxed);
+            destination.geometry.store(geometry, std::memory_order_relaxed);
+            const auto* worldFloats = reinterpret_cast<const float*>(&world);
+            for (std::size_t index = 0; index < 16; ++index) {
+                destination.worldBits[index].store(
+                    std::bit_cast<std::uint32_t>(worldFloats[index]),
+                    std::memory_order_relaxed);
+            }
+            destination.shaderFlagsBefore.store(
+                shaderFlagsBefore,
+                std::memory_order_relaxed);
+            destination.shaderFlagsAfter.store(
+                shaderFlagsAfter,
+                std::memory_order_relaxed);
+            destination.readyOrdinal.store(ordinal, std::memory_order_release);
         }
 
         bool registrationContainsCollision(
@@ -321,53 +433,6 @@ namespace rock::held_scene_presentation
                 transform.rotationDeltaDegrees);
         }
 
-        void logPostSolveApplication(
-            const Match& match,
-            const held_scene_presentation_policy::TransformDecision& transform,
-            const float* originalInput,
-            const float* correctedInput) noexcept
-        {
-            auto& registration = registrationFor(match.isLeft);
-            std::uint64_t previous =
-                registration.firstPostSolveTraceId.load(
-                    std::memory_order_acquire);
-            if (previous != match.traceId &&
-                registration.firstPostSolveTraceId.compare_exchange_strong(
-                    previous,
-                    match.traceId,
-                    std::memory_order_acq_rel,
-                    std::memory_order_acquire)) {
-                ROCK_LOG_INFO(HeldScenePresentation,
-                    "HELD_SCENE_POSTSOLVE first-apply trace={} hand={} body={} delta={:.4f}gu rotation={:.3f}deg input=({:.3f},{:.3f},{:.3f}) output=({:.3f},{:.3f},{:.3f}) thread={}",
-                    match.traceId,
-                    match.isLeft ? "left" : "right",
-                    match.bodyId,
-                    transform.translationDeltaGameUnits,
-                    transform.rotationDeltaDegrees,
-                    originalInput[12],
-                    originalInput[13],
-                    originalInput[14],
-                    correctedInput[12],
-                    correctedInput[13],
-                    correctedInput[14],
-                    GetCurrentThreadId());
-            }
-
-            if (!g_rockConfig.rockDebugGrabFrameLogging &&
-                !g_rockConfig.rockDebugVerboseLogging) {
-                return;
-            }
-
-            ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
-                1000,
-                "HELD_SCENE_POSTSOLVE applied trace={} hand={} body={} delta={:.4f}gu rotation={:.3f}deg",
-                match.traceId,
-                match.isLeft ? "left" : "right",
-                match.bodyId,
-                transform.translationDeltaGameUnits,
-                transform.rotationDeltaDegrees);
-        }
-
         __declspec(noinline) void sceneTransformWriterHook(
             void* collisionObjectRaw,
             float* writerInput) noexcept
@@ -459,6 +524,81 @@ namespace rock::held_scene_presentation
             logSampledApplication(match, timing, transform);
             s_originalWriter(collisionObjectRaw, correctedInput);
         }
+
+        __declspec(noinline) void lightingShaderSetupHook(
+            void* shader,
+            void* renderPass,
+            void* shaderDescriptor) noexcept
+        {
+            if (!s_originalLightingSetup) {
+                return;
+            }
+
+            RE::NiAVObject* geometry = nullptr;
+            if (renderPass) {
+                const auto* passBytes =
+                    reinterpret_cast<const std::byte*>(renderPass);
+                geometry = *reinterpret_cast<RE::NiAVObject* const*>(
+                    passBytes + kRenderPassGeometryOffset);
+            }
+
+            std::array<bool, 2> matchedHands{};
+            std::array<std::uint64_t, 2> traceIds{};
+            bool anyMatch = false;
+            if (geometry) {
+                for (std::size_t handIndex = 0;
+                     handIndex < s_registrations.size();
+                     ++handIndex) {
+                    matchedHands[handIndex] = matchVisibleGeometry(
+                        s_registrations[handIndex],
+                        geometry,
+                        traceIds[handIndex]);
+                    anyMatch = anyMatch || matchedHands[handIndex];
+                }
+            }
+
+            if (!anyMatch) {
+                s_originalLightingSetup(shader, renderPass, shaderDescriptor);
+                return;
+            }
+
+            const auto captureMicroseconds = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
+            const RE::NiTransform consumedWorld = geometry->world;
+            const std::uint64_t shaderFlagsBefore =
+                readShaderPropertyFlags(geometry);
+            std::uint32_t technique = 0;
+            if (shaderDescriptor) {
+                const auto* descriptorBytes =
+                    reinterpret_cast<const std::byte*>(shaderDescriptor);
+                technique = *reinterpret_cast<const std::uint32_t*>(
+                    descriptorBytes + kShaderDescriptorTechniqueOffset);
+            }
+
+            s_originalLightingSetup(shader, renderPass, shaderDescriptor);
+
+            const std::uint64_t shaderFlagsAfter =
+                readShaderPropertyFlags(geometry);
+            for (std::size_t handIndex = 0;
+                 handIndex < matchedHands.size();
+                 ++handIndex) {
+                if (!matchedHands[handIndex]) {
+                    continue;
+                }
+                publishRenderConsumption(
+                    handIndex,
+                    traceIds[handIndex],
+                    captureMicroseconds,
+                    renderPass,
+                    technique,
+                    geometry,
+                    consumedWorld,
+                    shaderFlagsBefore,
+                    shaderFlagsAfter);
+            }
+        }
     }
 
     bool install() noexcept
@@ -484,6 +624,33 @@ namespace rock::held_scene_presentation
         s_originalWriter = reinterpret_cast<SceneTransformWriter>(original);
         const bool ready = installed && s_originalWriter != nullptr;
         s_installed.store(ready, std::memory_order_release);
+        return ready;
+    }
+
+    bool installRenderConsumptionProbe() noexcept
+    {
+        if (s_renderProbeInstalled.load(std::memory_order_acquire)) {
+            return true;
+        }
+        if (!REL::Module::IsVR() ||
+            REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+            ROCK_LOG_ERROR(Init,
+                "Held render-consumption probe unavailable: unsupported runtime");
+            return false;
+        }
+
+        void* original = reinterpret_cast<void*>(s_originalLightingSetup);
+        const bool installed = entry_trampoline_hook::install(
+            "held lighting-shader geometry setup",
+            renderer_offsets::kFunc_BSLightingShaderSetupGeometry,
+            kExpectedLightingSetupPrefix.data(),
+            kExpectedLightingSetupPrefix.size(),
+            reinterpret_cast<void*>(&lightingShaderSetupHook),
+            original);
+        s_originalLightingSetup =
+            reinterpret_cast<LightingShaderSetupGeometry>(original);
+        const bool ready = installed && s_originalLightingSetup != nullptr;
+        s_renderProbeInstalled.store(ready, std::memory_order_release);
         return ready;
     }
 
@@ -515,6 +682,9 @@ namespace rock::held_scene_presentation
         destination.traceId.store(
             registration.traceId,
             std::memory_order_relaxed);
+        destination.visibleGeometry.store(
+            registration.visibleGeometry,
+            std::memory_order_relaxed);
         destination.count.store(count, std::memory_order_relaxed);
         destination.sequence.fetch_add(
             1,
@@ -527,111 +697,62 @@ namespace rock::held_scene_presentation
         publishHeldBodies(isLeft, empty);
     }
 
-    void publishFinalSolvedPoses(
-        RE::hknpWorld* world,
-        std::uint32_t substepIndex,
-        std::uint32_t substepCount) noexcept
+    bool readLatestRenderConsumption(
+        bool isLeft,
+        std::uint64_t afterOrdinal,
+        RenderConsumptionSample& sample) noexcept
     {
-        if (!world || !s_installed.load(std::memory_order_acquire) ||
-            !s_originalWriter ||
-            !held_scene_presentation_policy::shouldPublishSolvedPose(
-                substepIndex,
-                substepCount)) {
-            return;
-        }
+        sample = {};
+        const std::size_t handIndex = isLeft ? 1u : 0u;
+        constexpr int kMaxAttempts = 3;
+        for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+            const std::uint64_t latestOrdinal =
+                s_renderConsumptionOrdinals[handIndex].load(
+                    std::memory_order_acquire);
+            if (latestOrdinal <= afterOrdinal) {
+                return false;
+            }
 
-        std::array<RE::NiCollisionObject*, kMaxRegisteredBodies * 2u>
-            publishedCollisionObjects{};
-        std::size_t publishedCount = 0;
-
-        static REL::Relocation<PredictBodyTransform> predictBodyTransform{
-            REL::Offset(offsets::kFunc_PredictBodyTransform)
-        };
-
-        for (std::size_t handIndex = 0;
-             handIndex < s_registrations.size();
-             ++handIndex) {
-            Registration registration{};
-            if (!copyRegistration(
-                    s_registrations[handIndex],
-                    registration)) {
+            const auto& source = s_renderConsumption[handIndex]
+                [latestOrdinal % kRenderConsumptionCapacity];
+            const std::uint64_t readyBefore =
+                source.readyOrdinal.load(std::memory_order_acquire);
+            if (readyBefore != latestOrdinal) {
                 continue;
             }
 
-            for (std::size_t bodyIndex = 0;
-                 bodyIndex < registration.count;
-                 ++bodyIndex) {
-                const RegisteredBody& entry = registration.bodies[bodyIndex];
-                if (!entry.collisionObject || entry.world != world ||
-                    entry.bodyId == 0x7FFF'FFFFu) {
-                    continue;
-                }
+            RenderConsumptionSample snapshot{};
+            snapshot.ordinal = latestOrdinal;
+            snapshot.traceId =
+                source.traceId.load(std::memory_order_relaxed);
+            snapshot.captureMicroseconds =
+                source.captureMicroseconds.load(std::memory_order_relaxed);
+            snapshot.renderPass =
+                source.renderPass.load(std::memory_order_relaxed);
+            snapshot.threadId =
+                source.threadId.load(std::memory_order_relaxed);
+            snapshot.technique =
+                source.technique.load(std::memory_order_relaxed);
+            snapshot.geometry =
+                source.geometry.load(std::memory_order_relaxed);
+            auto* worldFloats = reinterpret_cast<float*>(&snapshot.world);
+            for (std::size_t index = 0; index < 16; ++index) {
+                worldFloats[index] = std::bit_cast<float>(
+                    source.worldBits[index].load(
+                        std::memory_order_relaxed));
+            }
+            snapshot.shaderFlagsBefore =
+                source.shaderFlagsBefore.load(std::memory_order_relaxed);
+            snapshot.shaderFlagsAfter =
+                source.shaderFlagsAfter.load(std::memory_order_relaxed);
 
-                const bool alreadyPublished = std::find(
-                    publishedCollisionObjects.begin(),
-                    publishedCollisionObjects.begin() + publishedCount,
-                    entry.collisionObject) !=
-                    publishedCollisionObjects.begin() + publishedCount;
-                if (alreadyPublished) {
-                    continue;
-                }
-
-                RE::hknpWorld* resolvedWorld = nullptr;
-                RE::hknpBodyId resolvedBodyId{ 0x7FFF'FFFFu };
-                if (!havok_runtime::tryResolveCollisionObjectBody(
-                        entry.collisionObject,
-                        resolvedWorld,
-                        resolvedBodyId) ||
-                    resolvedWorld != world ||
-                    resolvedBodyId.value != entry.bodyId) {
-                    continue;
-                }
-
-                auto* ownerNode =
-                    havok_runtime::getOwnerNodeFromCollisionObject(
-                        entry.collisionObject);
-                if (!ownerNode) {
-                    continue;
-                }
-
-                alignas(16) float solvedTransform[
-                    held_scene_presentation_policy::kPredictionFloatCount]{};
-                predictBodyTransform(
-                    world,
-                    entry.bodyId,
-                    0.0f,
-                    solvedTransform);
-
-                alignas(16) float writerInput[
-                    held_scene_presentation_policy::kPredictionFloatCount]{};
-                const auto* currentWorld = reinterpret_cast<const float*>(
-                    std::addressof(ownerNode->world));
-                const auto transform =
-                    held_scene_presentation_policy::buildWriterTransform(
-                        currentWorld,
-                        solvedTransform,
-                        physics_scale::havokToGame(),
-                        writerInput);
-                if (!transform.apply) {
-                    continue;
-                }
-
-                const Match match{
-                    .valid = true,
-                    .isLeft = handIndex == 1u,
-                    .world = world,
-                    .bodyId = entry.bodyId,
-                    .traceId = registration.traceId,
-                };
-                logPostSolveApplication(
-                    match,
-                    transform,
-                    currentWorld,
-                    writerInput);
-                s_originalWriter(entry.collisionObject, writerInput);
-                publishedCollisionObjects[publishedCount++] =
-                    entry.collisionObject;
+            const std::uint64_t readyAfter =
+                source.readyOrdinal.load(std::memory_order_acquire);
+            if (readyBefore == readyAfter) {
+                sample = snapshot;
+                return true;
             }
         }
+        return false;
     }
 }

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 
 namespace rock::held_scene_presentation_policy
 {
@@ -16,15 +15,6 @@ namespace rock::held_scene_presentation_policy
     inline constexpr float kMaxRotationDeltaDegrees = 45.0f;
     inline constexpr std::size_t kWriterInputFloatCount = 15;
     inline constexpr std::size_t kPredictionFloatCount = 16;
-
-    inline constexpr bool shouldPublishSolvedPose(
-        std::uint32_t substepIndex,
-        std::uint32_t substepCount) noexcept
-    {
-        return substepCount > 0 &&
-               substepIndex < substepCount &&
-               substepIndex + 1u == substepCount;
-    }
 
     enum class RejectReason
     {

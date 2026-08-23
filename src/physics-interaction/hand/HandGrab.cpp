@@ -11237,6 +11237,10 @@ namespace rock
 
         held_scene_presentation::Registration sceneRegistration{};
         sceneRegistration.traceId = _grabFrame.traceId;
+        sceneRegistration.visibleGeometry =
+            g_rockConfig.rockDebugGrabFrameLogging ?
+                _grabFrame.gripSourceNode :
+                nullptr;
         for (const std::uint32_t heldBodyId : _heldBodyIds) {
             if (sceneRegistration.count >=
                 held_scene_presentation::kMaxRegisteredBodies) {

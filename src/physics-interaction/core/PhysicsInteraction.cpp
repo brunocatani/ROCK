@@ -7067,10 +7067,6 @@ namespace rock
             1;
         _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
-        held_scene_presentation::publishFinalSolvedPoses(
-            world,
-            timing.substepIndex,
-            timing.substepCount);
         _dynamicWeaponCollision.samplePostSolve(
             world,
             completedSolveSequence);
