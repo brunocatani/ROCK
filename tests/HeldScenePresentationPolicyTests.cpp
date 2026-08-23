@@ -66,9 +66,19 @@ int main()
             (std::numeric_limits<float>::quiet_NaN)(),
             0.0f).reason == RejectReason::InvalidRawFrame);
     ok &= expect(
-        "a negative native remainder must fail closed",
-        evaluateTiming(true, 0.011f, -0.001f).reason ==
+        "a small negative native remainder must retain the engine time sum",
+        evaluateTiming(true, 0.011f, -0.001f).apply &&
+            near(
+                evaluateTiming(true, 0.011f, -0.001f).predictionSeconds,
+                0.010f));
+    ok &= expect(
+        "an excessive negative native remainder must fail closed",
+        evaluateTiming(true, 0.011f, -0.1f).reason ==
             RejectReason::InvalidRemainder);
+    ok &= expect(
+        "a non-positive total prediction must fail closed",
+        evaluateTiming(true, 0.011f, -0.020f).reason ==
+            RejectReason::ExcessivePredictionTime);
     ok &= expect(
         "an excessive total prediction must fail closed",
         evaluateTiming(true, 0.033f, 0.020f).reason ==

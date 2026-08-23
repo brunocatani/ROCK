@@ -5385,6 +5385,45 @@ namespace rock
         return true;
     }
 
+    bool Hand::getGrabPresentationNodeDebugSnapshot(
+        GrabPresentationNodeDebugSnapshot& out) const
+    {
+        out = {};
+        if (!isHolding()) {
+            return false;
+        }
+
+        const auto sampleNode = [](const RE::NiAVObject* node) {
+            GrabPresentationNodeDebugPose pose{};
+            if (!node) {
+                return pose;
+            }
+
+            pose.node = node;
+            pose.parent = node->parent;
+            pose.local = node->local;
+            pose.world = node->world;
+            pose.previousWorld = node->previousWorld;
+            pose.valid = grab_three_phase::isFinite(pose.local) &&
+                         grab_three_phase::isFinite(pose.world) &&
+                         grab_three_phase::isFinite(pose.previousWorld);
+            return pose;
+        };
+
+        const auto* referenceRoot =
+            _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr;
+        const auto* visibleGeometry = _grabFrame.gripSourceNode;
+
+        out.collisionOwner = sampleNode(_grabFrame.heldNode);
+        out.referenceRoot = sampleNode(referenceRoot);
+        out.visibleGeometry = sampleNode(visibleGeometry);
+        out.visibleGeometryParent = sampleNode(
+            visibleGeometry ? visibleGeometry->parent : nullptr);
+        out.traceId = _grabFrame.traceId;
+        return out.collisionOwner.valid || out.referenceRoot.valid ||
+               out.visibleGeometry.valid || out.visibleGeometryParent.valid;
+    }
+
     bool Hand::getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const
     {
         out = {};

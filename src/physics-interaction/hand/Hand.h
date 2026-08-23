@@ -113,6 +113,25 @@ namespace rock
         std::uint64_t flushSequence = 0;
     };
 
+    struct GrabPresentationNodeDebugPose
+    {
+        const RE::NiAVObject* node = nullptr;
+        const RE::NiAVObject* parent = nullptr;
+        RE::NiTransform local{};
+        RE::NiTransform world{};
+        RE::NiTransform previousWorld{};
+        bool valid = false;
+    };
+
+    struct GrabPresentationNodeDebugSnapshot
+    {
+        GrabPresentationNodeDebugPose collisionOwner{};
+        GrabPresentationNodeDebugPose referenceRoot{};
+        GrabPresentationNodeDebugPose visibleGeometry{};
+        GrabPresentationNodeDebugPose visibleGeometryParent{};
+        std::uint64_t traceId = 0;
+    };
+
     struct GrabContactPatchDebugSnapshot
     {
         std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> samplePointsWorld{};
@@ -431,6 +450,7 @@ namespace rock
         bool tryGetGrabAuthorityProxyClockDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyClockDebugSnapshot& out);
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
+        bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;

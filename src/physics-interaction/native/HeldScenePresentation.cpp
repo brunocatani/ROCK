@@ -236,6 +236,7 @@ namespace rock::held_scene_presentation
 
         void logRejectedDecision(
             const Match& match,
+            const held_scene_presentation_policy::TimingDecision& timing,
             held_scene_presentation_policy::RejectReason reason) noexcept
         {
             if (!g_rockConfig.rockDebugGrabFrameLogging &&
@@ -245,11 +246,38 @@ namespace rock::held_scene_presentation
 
             ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
                 1000,
-                "HELD_SCENE_PRESENT rejected trace={} hand={} body={} reason={}",
+                "HELD_SCENE_PRESENT rejected trace={} hand={} body={} reason={} raw={:.6f}s remainder={:.9f}s prediction={:.6f}s",
                 match.traceId,
                 match.isLeft ? "left" : "right",
                 match.bodyId,
-                held_scene_presentation_policy::rejectReasonName(reason));
+                held_scene_presentation_policy::rejectReasonName(reason),
+                timing.rawFrameSeconds,
+                timing.nativeRemainderSeconds,
+                timing.predictionSeconds);
+        }
+
+        void logSampledApplication(
+            const Match& match,
+            const held_scene_presentation_policy::TimingDecision& timing,
+            const held_scene_presentation_policy::TransformDecision& transform)
+            noexcept
+        {
+            if (!g_rockConfig.rockDebugGrabFrameLogging &&
+                !g_rockConfig.rockDebugVerboseLogging) {
+                return;
+            }
+
+            ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
+                1000,
+                "HELD_SCENE_PRESENT applied trace={} hand={} body={} raw={:.6f}s remainder={:.9f}s prediction={:.6f}s delta={:.4f}gu rotation={:.3f}deg",
+                match.traceId,
+                match.isLeft ? "left" : "right",
+                match.bodyId,
+                timing.rawFrameSeconds,
+                timing.nativeRemainderSeconds,
+                timing.predictionSeconds,
+                transform.translationDeltaGameUnits,
+                transform.rotationDeltaDegrees);
         }
 
         __declspec(noinline) void sceneTransformWriterHook(
@@ -304,7 +332,7 @@ namespace rock::held_scene_presentation
                     *rawFrameSeconds,
                     *nativeRemainderSeconds);
             if (!timing.apply) {
-                logRejectedDecision(match, timing.reason);
+                logRejectedDecision(match, timing, timing.reason);
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -329,7 +357,7 @@ namespace rock::held_scene_presentation
                     physics_scale::havokToGame(),
                     correctedInput);
             if (!transform.apply) {
-                logRejectedDecision(match, transform.reason);
+                logRejectedDecision(match, timing, transform.reason);
                 s_originalWriter(collisionObjectRaw, writerInput);
                 return;
             }
@@ -340,6 +368,7 @@ namespace rock::held_scene_presentation
                 transform,
                 writerInput,
                 correctedInput);
+            logSampledApplication(match, timing, transform);
             s_originalWriter(collisionObjectRaw, correctedInput);
         }
     }

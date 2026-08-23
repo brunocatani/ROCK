@@ -9,6 +9,7 @@ namespace rock::held_scene_presentation_policy
     inline constexpr float kMinRawFrameSeconds = 0.001f;
     inline constexpr float kMaxRawFrameSeconds = 1.0f / 30.0f;
     inline constexpr float kMaxNativeRemainderSeconds = 0.050f;
+    inline constexpr float kMinPredictionSeconds = 0.001f;
     inline constexpr float kMaxPredictionSeconds = 0.050f;
     inline constexpr float kMaxTranslationDeltaGameUnits = 8.0f;
     inline constexpr float kMaxRotationDeltaDegrees = 45.0f;
@@ -70,34 +71,41 @@ namespace rock::held_scene_presentation_policy
         float rawFrameSeconds,
         float nativeRemainderSeconds)
     {
+        TimingDecision decision{
+            .rawFrameSeconds = rawFrameSeconds,
+            .nativeRemainderSeconds = nativeRemainderSeconds,
+            .predictionSeconds = rawFrameSeconds + nativeRemainderSeconds,
+        };
         if (!mainWriterCallsite) {
-            return TimingDecision{ .reason = RejectReason::UnsupportedCallsite };
+            decision.reason = RejectReason::UnsupportedCallsite;
+            return decision;
         }
         if (!std::isfinite(rawFrameSeconds) ||
             rawFrameSeconds < kMinRawFrameSeconds ||
             rawFrameSeconds > kMaxRawFrameSeconds) {
-            return TimingDecision{ .reason = RejectReason::InvalidRawFrame };
+            decision.reason = RejectReason::InvalidRawFrame;
+            return decision;
         }
         if (!std::isfinite(nativeRemainderSeconds) ||
-            nativeRemainderSeconds < 0.0f ||
-            nativeRemainderSeconds > kMaxNativeRemainderSeconds) {
-            return TimingDecision{ .reason = RejectReason::InvalidRemainder };
+            std::fabs(nativeRemainderSeconds) >
+                kMaxNativeRemainderSeconds) {
+            decision.reason = RejectReason::InvalidRemainder;
+            return decision;
         }
 
         const float predictionSeconds =
             rawFrameSeconds + nativeRemainderSeconds;
         if (!std::isfinite(predictionSeconds) ||
+            predictionSeconds < kMinPredictionSeconds ||
             predictionSeconds > kMaxPredictionSeconds) {
-            return TimingDecision{ .reason = RejectReason::ExcessivePredictionTime };
+            decision.reason = RejectReason::ExcessivePredictionTime;
+            return decision;
         }
 
-        return TimingDecision{
-            .apply = true,
-            .rawFrameSeconds = rawFrameSeconds,
-            .nativeRemainderSeconds = nativeRemainderSeconds,
-            .predictionSeconds = predictionSeconds,
-            .reason = RejectReason::None,
-        };
+        decision.apply = true;
+        decision.predictionSeconds = predictionSeconds;
+        decision.reason = RejectReason::None;
+        return decision;
     }
 
     struct TransformDecision

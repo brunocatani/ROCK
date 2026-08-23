@@ -181,6 +181,85 @@
                 rotStepRenderNode,
                 rotRenderNodeVsBody);
 
+            GrabPresentationNodeDebugSnapshot presentationNodes{};
+            if (hand.getGrabPresentationNodeDebugSnapshot(
+                    presentationNodes)) {
+                const auto nodeName = [](const GrabPresentationNodeDebugPose& pose) {
+                    if (!pose.node) {
+                        return "none";
+                    }
+                    const char* name = pose.node->name.c_str();
+                    return name && *name ? name : "(unnamed)";
+                };
+                const auto previousRotationGap = [](const GrabPresentationNodeDebugPose& pose) {
+                    return pose.valid ?
+                        grab_authority_source_clock::rotationDeltaDegrees(
+                            pose.world.rotate,
+                            pose.previousWorld.rotate) :
+                        -1.0f;
+                };
+
+                const auto& owner = presentationNodes.collisionOwner;
+                const auto& root = presentationNodes.referenceRoot;
+                const auto& geometry = presentationNodes.visibleGeometry;
+                const auto& geometryParent =
+                    presentationNodes.visibleGeometryParent;
+                ROCK_LOG_DEBUG(Hand,
+                    "{} MESH_PHASE: t={}us flushSeq={} trace={} ownerOk={} owner={:p} '{}' ownerParent={:p} ownerW=({:.3f},{:.3f},{:.3f}) ownerPrev=({:.3f},{:.3f},{:.3f}) ownerPrevRot={:.3f} rootOk={} root={:p} '{}' rootParent={:p} rootW=({:.3f},{:.3f},{:.3f}) rootPrev=({:.3f},{:.3f},{:.3f}) rootPrevRot={:.3f} meshOk={} mesh={:p} '{}' meshParent={:p} meshL=({:.3f},{:.3f},{:.3f}) meshW=({:.3f},{:.3f},{:.3f}) meshPrev=({:.3f},{:.3f},{:.3f}) meshPrevRot={:.3f} meshParentOk={} meshParentW=({:.3f},{:.3f},{:.3f}) meshParentPrev=({:.3f},{:.3f},{:.3f}) meshParentPrevRot={:.3f} same(owner/root/mesh/meshParent)={}/{}/{}/{}",
+                    hand.handName(),
+                    probeMicroseconds,
+                    sample.flushSequence,
+                    presentationNodes.traceId,
+                    owner.valid ? "y" : "n",
+                    static_cast<const void*>(owner.node),
+                    nodeName(owner),
+                    static_cast<const void*>(owner.parent),
+                    owner.world.translate.x,
+                    owner.world.translate.y,
+                    owner.world.translate.z,
+                    owner.previousWorld.translate.x,
+                    owner.previousWorld.translate.y,
+                    owner.previousWorld.translate.z,
+                    previousRotationGap(owner),
+                    root.valid ? "y" : "n",
+                    static_cast<const void*>(root.node),
+                    nodeName(root),
+                    static_cast<const void*>(root.parent),
+                    root.world.translate.x,
+                    root.world.translate.y,
+                    root.world.translate.z,
+                    root.previousWorld.translate.x,
+                    root.previousWorld.translate.y,
+                    root.previousWorld.translate.z,
+                    previousRotationGap(root),
+                    geometry.valid ? "y" : "n",
+                    static_cast<const void*>(geometry.node),
+                    nodeName(geometry),
+                    static_cast<const void*>(geometry.parent),
+                    geometry.local.translate.x,
+                    geometry.local.translate.y,
+                    geometry.local.translate.z,
+                    geometry.world.translate.x,
+                    geometry.world.translate.y,
+                    geometry.world.translate.z,
+                    geometry.previousWorld.translate.x,
+                    geometry.previousWorld.translate.y,
+                    geometry.previousWorld.translate.z,
+                    previousRotationGap(geometry),
+                    geometryParent.valid ? "y" : "n",
+                    geometryParent.world.translate.x,
+                    geometryParent.world.translate.y,
+                    geometryParent.world.translate.z,
+                    geometryParent.previousWorld.translate.x,
+                    geometryParent.previousWorld.translate.y,
+                    geometryParent.previousWorld.translate.z,
+                    previousRotationGap(geometryParent),
+                    owner.node && owner.node == root.node ? "y" : "n",
+                    owner.node && owner.node == geometry.node ? "y" : "n",
+                    root.node && root.node == geometry.node ? "y" : "n",
+                    owner.node && owner.node == geometryParent.node ? "y" : "n");
+            }
+
             const auto readBodyVelocityGameUnits = [&](RE::hknpBodyId bodyId, RE::NiPoint3& outVelocity) {
                 outVelocity = {};
                 auto* motion = havok_runtime::getBodyMotion(hknp, bodyId);
