@@ -1264,6 +1264,31 @@
                 return;
             }
             if (!decision.notify) {
+                const bool otherIsRightHand = otherIsA ? bodyAIsRight : bodyBIsRight;
+                const bool otherIsLeftHand = otherIsA ? bodyAIsLeft : bodyBIsLeft;
+                const bool otherIsRightPalm = other == rightId;
+                const bool otherIsLeftPalm = other == leftId;
+                const bool otherIsBodyCollider = otherIsA ? bodyAIsBody : bodyBIsBody;
+                const bool otherIsExternalProvider = ::rock::provider::isExternalBodyId(other);
+                const std::uint32_t heldLayer = bodyAIsHeld ? bodyALayer : bodyBLayer;
+                const std::uint32_t otherLayer = bodyAIsHeld ? bodyBLayer : bodyALayer;
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} held contact excluded from motor state: reason={} held={} other={} route={} layers={}/{} "
+                    "roles(rightHand={} leftHand={} rightPalm={} leftPalm={} bodyCollider={} externalProvider={})",
+                    hand.handName(),
+                    decision.reason,
+                    heldId,
+                    other,
+                    contact_pipeline_policy::routeName(contactRoute.route),
+                    heldLayer,
+                    otherLayer,
+                    otherIsRightHand ? "yes" : "no",
+                    otherIsLeftHand ? "yes" : "no",
+                    otherIsRightPalm ? "yes" : "no",
+                    otherIsLeftPalm ? "yes" : "no",
+                    otherIsBodyCollider ? "yes" : "no",
+                    otherIsExternalProvider ? "yes" : "no");
                 return;
             }
 
