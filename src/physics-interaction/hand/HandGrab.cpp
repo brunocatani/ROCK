@@ -11237,10 +11237,6 @@ namespace rock
 
         held_scene_presentation::Registration sceneRegistration{};
         sceneRegistration.traceId = _grabFrame.traceId;
-        sceneRegistration.visibleGeometry =
-            g_rockConfig.rockDebugGrabFrameLogging ?
-                _grabFrame.gripSourceNode :
-                nullptr;
         for (const std::uint32_t heldBodyId : _heldBodyIds) {
             if (sceneRegistration.count >=
                 held_scene_presentation::kMaxRegisteredBodies) {
@@ -11649,17 +11645,20 @@ namespace rock
         float grabRotationErrorDegrees = 0.0f;
         bool hasPivotTrackingError = false;
         RE::NiPoint3 liveGripWorldForAuthority{};
+        RE::NiTransform solvedBodyWorld{};
         {
-            RE::NiTransform grabBodyWorld{};
-            if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
-                const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(grabBodyWorld, activePivotBBodyLocalGame);
+            if (tryGetGrabDriveObjectWorldTransform(
+                    world,
+                    _savedObjectState.bodyId,
+                    solvedBodyWorld)) {
+                const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(solvedBodyWorld, activePivotBBodyLocalGame);
                 liveGripWorldForAuthority = liveGripWorld;
                 pivotTrackingErrorGameUnits = pointDistanceGameUnits(liveGripWorld, desiredTargetPointWorld);
                 hasPivotTrackingError = true;
                 if (_grabFrame.heldNode) {
                     grabRotationErrorDegrees = rotationDeltaDegrees(_grabFrame.heldNode->world.rotate, desiredObjectWorld.rotate);
                 } else {
-                    grabRotationErrorDegrees = rotationDeltaDegrees(grabBodyWorld.rotate, desiredBodyWorld.rotate);
+                    grabRotationErrorDegrees = rotationDeltaDegrees(solvedBodyWorld.rotate, desiredBodyWorld.rotate);
                 }
             }
         }
@@ -11681,6 +11680,14 @@ namespace rock
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
             return;
         }
+
+        held_scene_presentation::publishTargetTransport(
+            _isLeft,
+            world,
+            _savedObjectState.bodyId.value,
+            _grabFrame.traceId,
+            desiredBodyWorld,
+            solvedBodyWorld);
 
         const bool heldBodyColliding = isHeldBodyColliding();
         const auto heldContactSnapshot = readHeldBodyContactSnapshot();

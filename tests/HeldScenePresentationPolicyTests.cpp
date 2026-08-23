@@ -1,5 +1,7 @@
 #include "physics-interaction/grab/HeldScenePresentationPolicy.h"
 
+#include "RE/NetImmerse/NiTransform.h"
+
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -38,6 +40,45 @@ int main()
     using namespace rock::held_scene_presentation_policy;
 
     bool ok = true;
+
+    RE::NiTransform previousTarget =
+        rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    RE::NiTransform currentTarget = previousTarget;
+    RE::NiTransform previousSolvedBody = previousTarget;
+    currentTarget.translate.x = 3.0f;
+    previousSolvedBody.translate.x = 0.25f;
+    const auto targetTransport = buildTargetTransport(
+        previousTarget,
+        currentTarget,
+        previousSolvedBody);
+    ok &= expect(
+        "target transport must carry the solved physical residual onto the current target",
+        targetTransport.apply &&
+            targetTransport.reason == TargetTransportRejectReason::None &&
+            near(targetTransport.presentedWorld.translate.x, 3.25f) &&
+            near(targetTransport.targetTranslationStepGameUnits, 3.0f) &&
+            near(targetTransport.physicalResidualGameUnits, 0.25f) &&
+            near(targetTransport.transportAdvanceGameUnits, 3.0f));
+
+    RE::NiTransform discontinuousTarget = currentTarget;
+    discontinuousTarget.translate.x = 30.0f;
+    ok &= expect(
+        "a discontinuous target step must fail closed",
+        buildTargetTransport(
+            previousTarget,
+            discontinuousTarget,
+            previousSolvedBody).reason ==
+            TargetTransportRejectReason::ExcessiveTargetTranslationStep);
+
+    RE::NiTransform excessiveResidual = previousSolvedBody;
+    excessiveResidual.translate.x = 110.0f;
+    ok &= expect(
+        "an excessive physical residual must fail closed",
+        buildTargetTransport(
+            previousTarget,
+            currentTarget,
+            excessiveResidual).reason ==
+            TargetTransportRejectReason::ExcessivePhysicalResidual);
 
     const auto normalTiming = evaluateTiming(true, 0.011f, 0.002f);
     ok &= expect(

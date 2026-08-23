@@ -6,7 +6,6 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/PhysicsScale.h"
-#include "physics-interaction/native/RendererOffsets.h"
 
 #include "RockConfig.h"
 
@@ -20,10 +19,10 @@
 #include <array>
 #include <atomic>
 #include <bit>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <intrin.h>
+#include <mutex>
 
 namespace rock::held_scene_presentation
 {
@@ -35,11 +34,6 @@ namespace rock::held_scene_presentation
             std::uint32_t,
             float,
             float*);
-        using GeometryEyeTransform = void (*)(
-            const float*,
-            std::uint8_t,
-            float*,
-            void*);
 
         constexpr std::array<std::uint8_t, 19> kExpectedWriterPrefix{
             0x4C, 0x8B, 0xDC,
@@ -49,20 +43,11 @@ namespace rock::held_scene_presentation
             0x48, 0x81, 0xEC, 0x30, 0x01, 0x00, 0x00,
         };
 
-        constexpr std::array<std::uint8_t, 14> kExpectedEyeTransformPrefix{
-            0x48, 0x8B, 0xC4,
-            0x53,
-            0x48, 0x81, 0xEC, 0xE0, 0x00, 0x00, 0x00,
-            0x49, 0x8B, 0xD8,
-        };
-
-        constexpr std::size_t kRenderConsumptionCapacity = 128;
-        constexpr std::uintptr_t kNiAVObjectWorldOffset = 0x70;
-        constexpr std::uintptr_t kGeometryShaderPropertyOffset = 0x178;
-        constexpr std::uintptr_t kShaderPropertyFlagsOffset = 0x30;
+        constexpr float kTargetWriterMaxTranslationDeltaGameUnits = 50.0f;
+        constexpr float kTargetWriterMaxRotationDeltaDegrees = 75.0f;
         static_assert(
             sizeof(RE::NiTransform) == 16 * sizeof(float),
-            "Render-consumption samples require the native 16-float NiTransform layout");
+            "Target presentation requires the native 16-float NiTransform layout");
 
         struct AtomicRegisteredBody
         {
@@ -82,28 +67,43 @@ namespace rock::held_scene_presentation
             std::array<AtomicRegisteredBody, kMaxRegisteredBodies> bodies{};
             std::atomic<std::size_t> count{ 0 };
             std::atomic<std::uint64_t> traceId{ 0 };
-            std::atomic<RE::NiAVObject*> visibleGeometry{ nullptr };
             std::atomic<std::uint64_t> firstAppliedTraceId{ 0 };
+            std::atomic<std::uint64_t> firstTargetAppliedTraceId{ 0 };
         };
 
-        /*
-         * The renderer hook cannot format or write logs. Each matched call
-         * claims one fixed ring slot, publishes only atomic scalar fields, and
-         * releases the completed ordinal. The game thread reads the newest
-         * stable slot and owns all diagnostic logging.
-         */
-        struct AtomicRenderConsumption
+        struct TargetTransportHistory
         {
-            std::atomic<std::uint64_t> readyOrdinal{ 0 };
+            RE::hknpWorld* world = nullptr;
+            std::uint32_t bodyId = 0x7FFF'FFFFu;
+            std::uint64_t traceId = 0;
+            RE::NiTransform previousTargetWorld{};
+            bool valid = false;
+        };
+
+        struct AtomicTargetTransport
+        {
+            std::atomic<std::uint64_t> sequence{ 0 };
+            std::atomic<RE::hknpWorld*> world{ nullptr };
+            std::atomic<std::uint32_t> bodyId{ 0x7FFF'FFFFu };
             std::atomic<std::uint64_t> traceId{ 0 };
-            std::atomic<std::uint64_t> captureMicroseconds{ 0 };
-            std::atomic<std::uintptr_t> eyeState{ 0 };
-            std::atomic<std::uint32_t> threadId{ 0 };
-            std::atomic<std::uint32_t> transformMode{ 0 };
-            std::atomic<RE::NiAVObject*> geometry{ nullptr };
             std::array<std::atomic<std::uint32_t>, 16> worldBits{};
-            std::atomic<std::uint64_t> shaderFlagsBefore{ 0 };
-            std::atomic<std::uint64_t> shaderFlagsAfter{ 0 };
+            std::atomic<std::uint32_t> targetTranslationStepBits{ 0 };
+            std::atomic<std::uint32_t> targetRotationStepBits{ 0 };
+            std::atomic<std::uint32_t> physicalResidualBits{ 0 };
+            std::atomic<std::uint32_t> transportAdvanceBits{ 0 };
+            std::atomic<bool> valid{ false };
+        };
+
+        struct TargetTransportMatch
+        {
+            bool valid = false;
+            bool isLeft = false;
+            std::uint64_t traceId = 0;
+            RE::NiTransform presentedWorld{};
+            float targetTranslationStepGameUnits = 0.0f;
+            float targetRotationStepDegrees = 0.0f;
+            float physicalResidualGameUnits = 0.0f;
+            float transportAdvanceGameUnits = 0.0f;
         };
 
         struct Match
@@ -116,123 +116,162 @@ namespace rock::held_scene_presentation
         };
 
         std::array<AtomicHandRegistration, 2> s_registrations{};
-        std::array<
-            std::array<AtomicRenderConsumption, kRenderConsumptionCapacity>,
-            2>
-            s_renderConsumption{};
-        std::array<std::atomic<std::uint64_t>, 2>
-            s_renderConsumptionOrdinals{};
+        std::array<AtomicTargetTransport, 2> s_targetTransport{};
+        std::array<TargetTransportHistory, 2> s_targetTransportHistory{};
+        std::mutex s_targetTransportHistoryMutex;
         std::atomic<bool> s_installed{ false };
-        std::atomic<bool> s_renderProbeInstalled{ false };
         SceneTransformWriter s_originalWriter = nullptr;
-        GeometryEyeTransform s_originalEyeTransform = nullptr;
 
         AtomicHandRegistration& registrationFor(bool isLeft) noexcept
         {
             return s_registrations[isLeft ? 1u : 0u];
         }
 
-        std::uint64_t readShaderPropertyFlags(
-            const RE::NiAVObject* geometry) noexcept
+        void clearTargetTransportPublication(std::size_t handIndex) noexcept
         {
-            if (!geometry) {
-                return 0;
-            }
-
-            const auto* geometryBytes =
-                reinterpret_cast<const std::byte*>(geometry);
-            auto* shaderProperty =
-                *reinterpret_cast<void* const*>(
-                    geometryBytes + kGeometryShaderPropertyOffset);
-            if (!shaderProperty) {
-                return 0;
-            }
-
-            const auto* propertyBytes =
-                reinterpret_cast<const std::byte*>(shaderProperty);
-            return *reinterpret_cast<const std::uint64_t*>(
-                propertyBytes + kShaderPropertyFlagsOffset);
+            auto& destination = s_targetTransport[handIndex];
+            destination.sequence.fetch_add(1, std::memory_order_acq_rel);
+            destination.valid.store(false, std::memory_order_relaxed);
+            destination.world.store(nullptr, std::memory_order_relaxed);
+            destination.bodyId.store(
+                0x7FFF'FFFFu,
+                std::memory_order_relaxed);
+            destination.traceId.store(0, std::memory_order_relaxed);
+            destination.sequence.fetch_add(1, std::memory_order_release);
         }
 
-        bool matchVisibleGeometry(
-            const AtomicHandRegistration& registration,
-            RE::NiAVObject* geometry,
-            std::uint64_t& traceId) noexcept
+        void resetTargetTransport(std::size_t handIndex) noexcept
         {
-            constexpr int kMaxAttempts = 2;
-            for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
-                const std::uint64_t begin =
-                    registration.sequence.load(std::memory_order_acquire);
-                if ((begin & 1u) != 0) {
-                    continue;
-                }
-
-                auto* registeredGeometry =
-                    registration.visibleGeometry.load(
-                        std::memory_order_relaxed);
-                const std::uint64_t registeredTraceId =
-                    registration.traceId.load(std::memory_order_relaxed);
-                const std::uint64_t end =
-                    registration.sequence.load(std::memory_order_acquire);
-                if (begin != end) {
-                    continue;
-                }
-                if (registeredGeometry != geometry || !registeredGeometry) {
-                    return false;
-                }
-
-                traceId = registeredTraceId;
-                return true;
-            }
-            return false;
+            std::scoped_lock lock(s_targetTransportHistoryMutex);
+            s_targetTransportHistory[handIndex] = {};
+            clearTargetTransportPublication(handIndex);
         }
 
-        void publishRenderConsumption(
+        void publishTargetTransportDecision(
             std::size_t handIndex,
+            RE::hknpWorld* world,
+            std::uint32_t bodyId,
             std::uint64_t traceId,
-            std::uint64_t captureMicroseconds,
-            void* eyeState,
-            std::uint32_t transformMode,
-            RE::NiAVObject* geometry,
-            const RE::NiTransform& world,
-            std::uint64_t shaderFlagsBefore,
-            std::uint64_t shaderFlagsAfter) noexcept
+            const held_scene_presentation_policy::TargetTransportDecision<
+                RE::NiTransform>& decision) noexcept
         {
-            const std::uint64_t ordinal =
-                s_renderConsumptionOrdinals[handIndex].fetch_add(
-                    1,
-                    std::memory_order_acq_rel) +
-                1;
-            auto& destination = s_renderConsumption[handIndex]
-                [ordinal % kRenderConsumptionCapacity];
-            destination.readyOrdinal.store(0, std::memory_order_release);
+            auto& destination = s_targetTransport[handIndex];
+            destination.sequence.fetch_add(1, std::memory_order_acq_rel);
+            destination.valid.store(false, std::memory_order_relaxed);
+            destination.world.store(world, std::memory_order_relaxed);
+            destination.bodyId.store(bodyId, std::memory_order_relaxed);
             destination.traceId.store(traceId, std::memory_order_relaxed);
-            destination.captureMicroseconds.store(
-                captureMicroseconds,
-                std::memory_order_relaxed);
-            destination.eyeState.store(
-                reinterpret_cast<std::uintptr_t>(eyeState),
-                std::memory_order_relaxed);
-            destination.threadId.store(
-                GetCurrentThreadId(),
-                std::memory_order_relaxed);
-            destination.transformMode.store(
-                transformMode,
-                std::memory_order_relaxed);
-            destination.geometry.store(geometry, std::memory_order_relaxed);
-            const auto* worldFloats = reinterpret_cast<const float*>(&world);
+            const auto* worldFloats = reinterpret_cast<const float*>(
+                &decision.presentedWorld);
             for (std::size_t index = 0; index < 16; ++index) {
                 destination.worldBits[index].store(
                     std::bit_cast<std::uint32_t>(worldFloats[index]),
                     std::memory_order_relaxed);
             }
-            destination.shaderFlagsBefore.store(
-                shaderFlagsBefore,
+            destination.targetTranslationStepBits.store(
+                std::bit_cast<std::uint32_t>(
+                    decision.targetTranslationStepGameUnits),
                 std::memory_order_relaxed);
-            destination.shaderFlagsAfter.store(
-                shaderFlagsAfter,
+            destination.targetRotationStepBits.store(
+                std::bit_cast<std::uint32_t>(
+                    decision.targetRotationStepDegrees),
                 std::memory_order_relaxed);
-            destination.readyOrdinal.store(ordinal, std::memory_order_release);
+            destination.physicalResidualBits.store(
+                std::bit_cast<std::uint32_t>(
+                    decision.physicalResidualGameUnits),
+                std::memory_order_relaxed);
+            destination.transportAdvanceBits.store(
+                std::bit_cast<std::uint32_t>(
+                    decision.transportAdvanceGameUnits),
+                std::memory_order_relaxed);
+            destination.valid.store(true, std::memory_order_relaxed);
+            destination.sequence.fetch_add(1, std::memory_order_release);
+        }
+
+        bool copyTargetTransport(
+            const AtomicTargetTransport& source,
+            bool isLeft,
+            RE::hknpWorld* world,
+            std::uint32_t bodyId,
+            TargetTransportMatch& match) noexcept
+        {
+            constexpr int kMaxAttempts = 4;
+            for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+                const std::uint64_t begin =
+                    source.sequence.load(std::memory_order_acquire);
+                if ((begin & 1u) != 0) {
+                    continue;
+                }
+                if (!source.valid.load(std::memory_order_relaxed) ||
+                    source.world.load(std::memory_order_relaxed) != world ||
+                    source.bodyId.load(std::memory_order_relaxed) != bodyId) {
+                    return false;
+                }
+
+                TargetTransportMatch snapshot{};
+                snapshot.valid = true;
+                snapshot.isLeft = isLeft;
+                snapshot.traceId =
+                    source.traceId.load(std::memory_order_relaxed);
+                auto* worldFloats = reinterpret_cast<float*>(
+                    &snapshot.presentedWorld);
+                for (std::size_t index = 0; index < 16; ++index) {
+                    worldFloats[index] = std::bit_cast<float>(
+                        source.worldBits[index].load(
+                            std::memory_order_relaxed));
+                }
+                snapshot.targetTranslationStepGameUnits =
+                    std::bit_cast<float>(
+                        source.targetTranslationStepBits.load(
+                            std::memory_order_relaxed));
+                snapshot.targetRotationStepDegrees = std::bit_cast<float>(
+                    source.targetRotationStepBits.load(
+                        std::memory_order_relaxed));
+                snapshot.physicalResidualGameUnits = std::bit_cast<float>(
+                    source.physicalResidualBits.load(
+                        std::memory_order_relaxed));
+                snapshot.transportAdvanceGameUnits = std::bit_cast<float>(
+                    source.transportAdvanceBits.load(
+                        std::memory_order_relaxed));
+
+                const std::uint64_t end =
+                    source.sequence.load(std::memory_order_acquire);
+                if (begin == end) {
+                    match = snapshot;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool findTargetTransport(
+            RE::hknpWorld* world,
+            std::uint32_t bodyId,
+            TargetTransportMatch& match) noexcept
+        {
+            TargetTransportMatch right{};
+            TargetTransportMatch left{};
+            const bool rightValid = copyTargetTransport(
+                s_targetTransport[0],
+                false,
+                world,
+                bodyId,
+                right);
+            const bool leftValid = copyTargetTransport(
+                s_targetTransport[1],
+                true,
+                world,
+                bodyId,
+                left);
+            if (!rightValid && !leftValid) {
+                return false;
+            }
+            if (rightValid && leftValid) {
+                match = right.traceId <= left.traceId ? right : left;
+            } else {
+                match = rightValid ? right : left;
+            }
+            return true;
         }
 
         bool registrationContainsCollision(
@@ -436,6 +475,57 @@ namespace rock::held_scene_presentation
                 transform.rotationDeltaDegrees);
         }
 
+        void logTargetApplication(
+            const TargetTransportMatch& target,
+            std::uint32_t bodyId,
+            const held_scene_presentation_policy::TransformDecision& transform,
+            const float* correctedInput) noexcept
+        {
+            auto& registration = registrationFor(target.isLeft);
+            std::uint64_t previous =
+                registration.firstTargetAppliedTraceId.load(
+                    std::memory_order_acquire);
+            if (previous != target.traceId &&
+                registration.firstTargetAppliedTraceId.compare_exchange_strong(
+                    previous,
+                    target.traceId,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                ROCK_LOG_INFO(HeldScenePresentation,
+                    "HELD_SCENE_TARGET first-apply trace={} hand={} body={} targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu writerDelta={:.4f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f}) thread={}",
+                    target.traceId,
+                    target.isLeft ? "left" : "right",
+                    bodyId,
+                    target.targetTranslationStepGameUnits,
+                    target.targetRotationStepDegrees,
+                    target.physicalResidualGameUnits,
+                    target.transportAdvanceGameUnits,
+                    transform.translationDeltaGameUnits,
+                    transform.rotationDeltaDegrees,
+                    correctedInput[12],
+                    correctedInput[13],
+                    correctedInput[14],
+                    GetCurrentThreadId());
+            }
+
+            if (!g_rockConfig.rockDebugGrabFrameLogging &&
+                !g_rockConfig.rockDebugVerboseLogging) {
+                return;
+            }
+            ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
+                1000,
+                "HELD_SCENE_TARGET applied trace={} hand={} body={} targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu writerDelta={:.4f}gu/{:.3f}deg",
+                target.traceId,
+                target.isLeft ? "left" : "right",
+                bodyId,
+                target.targetTranslationStepGameUnits,
+                target.targetRotationStepDegrees,
+                target.physicalResidualGameUnits,
+                target.transportAdvanceGameUnits,
+                transform.translationDeltaGameUnits,
+                transform.rotationDeltaDegrees);
+        }
+
         __declspec(noinline) void sceneTransformWriterHook(
             void* collisionObjectRaw,
             float* writerInput) noexcept
@@ -475,6 +565,57 @@ namespace rock::held_scene_presentation
                     offsets::kReturn_SceneTransformWriterMain).address();
             const bool mainCallsite =
                 returnAddress == mainWriterReturnAddress;
+
+            TargetTransportMatch targetTransport{};
+            if (mainCallsite &&
+                findTargetTransport(
+                    world,
+                    bodyId.value,
+                    targetTransport)) {
+                const float havokToGameScale = physics_scale::havokToGame();
+                if (std::isfinite(havokToGameScale) &&
+                    havokToGameScale > 0.000001f) {
+                    alignas(16) float nativeTarget[
+                        held_scene_presentation_policy::
+                            kPredictionFloatCount]{};
+                    const auto* targetFloats =
+                        reinterpret_cast<const float*>(
+                            &targetTransport.presentedWorld);
+                    for (std::size_t index = 0;
+                         index < held_scene_presentation_policy::
+                             kPredictionFloatCount;
+                         ++index) {
+                        nativeTarget[index] = targetFloats[index];
+                    }
+                    nativeTarget[12] /= havokToGameScale;
+                    nativeTarget[13] /= havokToGameScale;
+                    nativeTarget[14] /= havokToGameScale;
+
+                    alignas(16) float targetWriterInput[
+                        held_scene_presentation_policy::
+                            kPredictionFloatCount]{};
+                    const auto targetTransform =
+                        held_scene_presentation_policy::
+                            buildWriterTransform(
+                                writerInput,
+                                nativeTarget,
+                                havokToGameScale,
+                                targetWriterInput,
+                                kTargetWriterMaxTranslationDeltaGameUnits,
+                                kTargetWriterMaxRotationDeltaDegrees);
+                    if (targetTransform.apply) {
+                        logTargetApplication(
+                            targetTransport,
+                            bodyId.value,
+                            targetTransform,
+                            targetWriterInput);
+                        s_originalWriter(
+                            collisionObjectRaw,
+                            targetWriterInput);
+                        return;
+                    }
+                }
+            }
 
             static REL::Relocation<float*> rawFrameSeconds{
                 REL::Offset(offsets::kData_BhkWorldRawDeltaSeconds)
@@ -528,81 +669,6 @@ namespace rock::held_scene_presentation
             s_originalWriter(collisionObjectRaw, correctedInput);
         }
 
-        __declspec(noinline) void geometryEyeTransformHook(
-            const float* sourceTransform,
-            std::uint8_t transformMode,
-            float* outputMatrix,
-            void* eyeState) noexcept
-        {
-            if (!s_originalEyeTransform) {
-                return;
-            }
-
-            auto* geometry = sourceTransform ?
-                reinterpret_cast<RE::NiAVObject*>(
-                    reinterpret_cast<std::uintptr_t>(sourceTransform) -
-                    kNiAVObjectWorldOffset) :
-                nullptr;
-
-            std::array<bool, 2> matchedHands{};
-            std::array<std::uint64_t, 2> traceIds{};
-            bool anyMatch = false;
-            if (geometry) {
-                for (std::size_t handIndex = 0;
-                     handIndex < s_registrations.size();
-                     ++handIndex) {
-                    matchedHands[handIndex] = matchVisibleGeometry(
-                        s_registrations[handIndex],
-                        geometry,
-                        traceIds[handIndex]);
-                    anyMatch = anyMatch || matchedHands[handIndex];
-                }
-            }
-
-            if (!anyMatch) {
-                s_originalEyeTransform(
-                    sourceTransform,
-                    transformMode,
-                    outputMatrix,
-                    eyeState);
-                return;
-            }
-
-            const auto captureMicroseconds = static_cast<std::uint64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch())
-                    .count());
-            const RE::NiTransform consumedWorld =
-                *reinterpret_cast<const RE::NiTransform*>(sourceTransform);
-            const std::uint64_t shaderFlagsBefore =
-                readShaderPropertyFlags(geometry);
-
-            s_originalEyeTransform(
-                sourceTransform,
-                transformMode,
-                outputMatrix,
-                eyeState);
-
-            const std::uint64_t shaderFlagsAfter =
-                readShaderPropertyFlags(geometry);
-            for (std::size_t handIndex = 0;
-                 handIndex < matchedHands.size();
-                 ++handIndex) {
-                if (!matchedHands[handIndex]) {
-                    continue;
-                }
-                publishRenderConsumption(
-                    handIndex,
-                    traceIds[handIndex],
-                    captureMicroseconds,
-                    eyeState,
-                    transformMode,
-                    geometry,
-                    consumedWorld,
-                    shaderFlagsBefore,
-                    shaderFlagsAfter);
-            }
-        }
     }
 
     bool install() noexcept
@@ -631,37 +697,11 @@ namespace rock::held_scene_presentation
         return ready;
     }
 
-    bool installRenderConsumptionProbe() noexcept
-    {
-        if (s_renderProbeInstalled.load(std::memory_order_acquire)) {
-            return true;
-        }
-        if (!REL::Module::IsVR() ||
-            REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
-            ROCK_LOG_ERROR(Init,
-                "Held render-consumption probe unavailable: unsupported runtime");
-            return false;
-        }
-
-        void* original = reinterpret_cast<void*>(s_originalEyeTransform);
-        const bool installed = entry_trampoline_hook::install(
-            "held common geometry eye transform",
-            renderer_offsets::kFunc_GeometryEyeTransform,
-            kExpectedEyeTransformPrefix.data(),
-            kExpectedEyeTransformPrefix.size(),
-            reinterpret_cast<void*>(&geometryEyeTransformHook),
-            original);
-        s_originalEyeTransform =
-            reinterpret_cast<GeometryEyeTransform>(original);
-        const bool ready = installed && s_originalEyeTransform != nullptr;
-        s_renderProbeInstalled.store(ready, std::memory_order_release);
-        return ready;
-    }
-
     void publishHeldBodies(
         bool isLeft,
         const Registration& registration) noexcept
     {
+        resetTargetTransport(isLeft ? 1u : 0u);
         auto& destination = registrationFor(isLeft);
         destination.sequence.fetch_add(
             1,
@@ -686,9 +726,6 @@ namespace rock::held_scene_presentation
         destination.traceId.store(
             registration.traceId,
             std::memory_order_relaxed);
-        destination.visibleGeometry.store(
-            registration.visibleGeometry,
-            std::memory_order_relaxed);
         destination.count.store(count, std::memory_order_relaxed);
         destination.sequence.fetch_add(
             1,
@@ -701,62 +738,82 @@ namespace rock::held_scene_presentation
         publishHeldBodies(isLeft, empty);
     }
 
-    bool readLatestRenderConsumption(
+    void publishTargetTransport(
         bool isLeft,
-        std::uint64_t afterOrdinal,
-        RenderConsumptionSample& sample) noexcept
+        RE::hknpWorld* world,
+        std::uint32_t bodyId,
+        std::uint64_t traceId,
+        const RE::NiTransform& targetBodyWorld,
+        const RE::NiTransform& solvedBodyWorld) noexcept
     {
-        sample = {};
         const std::size_t handIndex = isLeft ? 1u : 0u;
-        constexpr int kMaxAttempts = 3;
-        for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
-            const std::uint64_t latestOrdinal =
-                s_renderConsumptionOrdinals[handIndex].load(
-                    std::memory_order_acquire);
-            if (latestOrdinal <= afterOrdinal) {
-                return false;
+        if (!world || bodyId == 0x7FFF'FFFFu || traceId == 0) {
+            resetTargetTransport(handIndex);
+            return;
+        }
+
+        held_scene_presentation_policy::TargetTransportDecision<
+            RE::NiTransform>
+            decision{};
+        bool rebased = false;
+        {
+            std::scoped_lock lock(s_targetTransportHistoryMutex);
+            auto& history = s_targetTransportHistory[handIndex];
+            const bool sameIdentity =
+                history.valid && history.world == world &&
+                history.bodyId == bodyId && history.traceId == traceId;
+            if (!sameIdentity) {
+                history = TargetTransportHistory{
+                    .world = world,
+                    .bodyId = bodyId,
+                    .traceId = traceId,
+                    .previousTargetWorld = targetBodyWorld,
+                    .valid = held_scene_presentation_policy::finiteTransform(
+                        targetBodyWorld),
+                };
+                rebased = true;
+            } else {
+                decision = held_scene_presentation_policy::
+                    buildTargetTransport(
+                        history.previousTargetWorld,
+                        targetBodyWorld,
+                        solvedBodyWorld);
+                history.previousTargetWorld = targetBodyWorld;
+                history.valid =
+                    held_scene_presentation_policy::finiteTransform(
+                        targetBodyWorld);
             }
 
-            const auto& source = s_renderConsumption[handIndex]
-                [latestOrdinal % kRenderConsumptionCapacity];
-            const std::uint64_t readyBefore =
-                source.readyOrdinal.load(std::memory_order_acquire);
-            if (readyBefore != latestOrdinal) {
-                continue;
-            }
-
-            RenderConsumptionSample snapshot{};
-            snapshot.ordinal = latestOrdinal;
-            snapshot.traceId =
-                source.traceId.load(std::memory_order_relaxed);
-            snapshot.captureMicroseconds =
-                source.captureMicroseconds.load(std::memory_order_relaxed);
-            snapshot.eyeState =
-                source.eyeState.load(std::memory_order_relaxed);
-            snapshot.threadId =
-                source.threadId.load(std::memory_order_relaxed);
-            snapshot.transformMode =
-                source.transformMode.load(std::memory_order_relaxed);
-            snapshot.geometry =
-                source.geometry.load(std::memory_order_relaxed);
-            auto* worldFloats = reinterpret_cast<float*>(&snapshot.world);
-            for (std::size_t index = 0; index < 16; ++index) {
-                worldFloats[index] = std::bit_cast<float>(
-                    source.worldBits[index].load(
-                        std::memory_order_relaxed));
-            }
-            snapshot.shaderFlagsBefore =
-                source.shaderFlagsBefore.load(std::memory_order_relaxed);
-            snapshot.shaderFlagsAfter =
-                source.shaderFlagsAfter.load(std::memory_order_relaxed);
-
-            const std::uint64_t readyAfter =
-                source.readyOrdinal.load(std::memory_order_acquire);
-            if (readyBefore == readyAfter) {
-                sample = snapshot;
-                return true;
+            if (rebased || !decision.apply) {
+                clearTargetTransportPublication(handIndex);
+            } else {
+                publishTargetTransportDecision(
+                    handIndex,
+                    world,
+                    bodyId,
+                    traceId,
+                    decision);
             }
         }
-        return false;
+
+        if (rebased || !decision.apply) {
+            if (!rebased &&
+                (g_rockConfig.rockDebugGrabFrameLogging ||
+                    g_rockConfig.rockDebugVerboseLogging)) {
+                ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
+                    1000,
+                    "HELD_SCENE_TARGET rejected trace={} hand={} body={} reason={} targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu",
+                    traceId,
+                    isLeft ? "left" : "right",
+                    bodyId,
+                    held_scene_presentation_policy::
+                        targetTransportRejectReasonName(decision.reason),
+                    decision.targetTranslationStepGameUnits,
+                    decision.targetRotationStepDegrees,
+                    decision.physicalResidualGameUnits,
+                    decision.transportAdvanceGameUnits);
+            }
+            return;
+        }
     }
 }

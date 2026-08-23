@@ -760,12 +760,6 @@ namespace
                 logger::warn(
                     "ROCK: Held-body scene presentation hook is unavailable; native presentation remains unchanged.");
             }
-            if (g_rockConfig.rockDebugGrabFrameLogging &&
-                !rock::held_scene_presentation::
-                    installRenderConsumptionProbe()) {
-                logger::warn(
-                    "ROCK: Held render-consumption probe is unavailable; renderer-phase diagnostics are disabled.");
-            }
             runtime_state::initialize();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
             rock::input_remap_runtime::installInputRemapHooks();

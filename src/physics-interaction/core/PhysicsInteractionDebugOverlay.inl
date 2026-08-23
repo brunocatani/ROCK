@@ -54,16 +54,6 @@
         };
         static RotationStepState s_rotationStepState[2]{};
 
-        struct RenderConsumptionState
-        {
-            std::uint64_t ordinal = 0;
-            std::uint64_t traceId = 0;
-            std::uint64_t captureMicroseconds = 0;
-            RE::NiMatrix3 rotation{};
-            bool valid = false;
-        };
-        static RenderConsumptionState s_renderConsumptionState[2]{};
-
         auto logHand = [&](Hand& hand, const RE::NiTransform& rawHandWorld) {
             GrabOverlayPointProbeSample sample{};
             if (!hand.tryGetGrabOverlayPointProbeSample(hknp, sample)) {
@@ -269,96 +259,6 @@
                     root.node && root.node == geometry.node ? "y" : "n",
                     owner.node && owner.node == geometryParent.node ? "y" : "n");
 
-                const std::size_t handIndex = hand.isLeft() ? 1u : 0u;
-                auto& renderState = s_renderConsumptionState[handIndex];
-                held_scene_presentation::RenderConsumptionSample
-                    renderConsumption{};
-                if (held_scene_presentation::readLatestRenderConsumption(
-                        hand.isLeft(),
-                        renderState.ordinal,
-                        renderConsumption)) {
-                    const std::uint64_t callCount =
-                        renderConsumption.ordinal - renderState.ordinal;
-                    const bool sameTrace =
-                        renderConsumption.traceId == presentationNodes.traceId;
-                    float renderRotationStep = -1.0f;
-                    if (sameTrace && renderState.valid &&
-                        renderState.traceId == renderConsumption.traceId &&
-                        renderConsumption.captureMicroseconds >=
-                            renderState.captureMicroseconds &&
-                        renderConsumption.captureMicroseconds -
-                                renderState.captureMicroseconds <
-                            50000) {
-                        renderRotationStep =
-                            grab_authority_source_clock::rotationDeltaDegrees(
-                                renderConsumption.world.rotate,
-                                renderState.rotation);
-                    }
-                    const auto captureAgeMicroseconds =
-                        probeMicroseconds >= static_cast<long long>(
-                            renderConsumption.captureMicroseconds) ?
-                            static_cast<std::uint64_t>(probeMicroseconds) -
-                                renderConsumption.captureMicroseconds :
-                            0;
-                    const float renderToMeshDistance =
-                        sameTrace && geometry.valid ?
-                            origin_diagnostics::distance(
-                                renderConsumption.world.translate,
-                                geometry.world.translate) :
-                            -1.0f;
-                    constexpr std::uint64_t kTransformChangedFlag =
-                        1ull << 39;
-
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} RENDER_CONSUME: t={}us renderT={}us age={}us trace={}/{} calls={} ordinal={} geometry={:p}/{:p} eyeState=0x{:X} thread={} mode={} flags=0x{:016X}->0x{:016X} transformChanged={}->{} world=({:.3f},{:.3f},{:.3f}) meshNow=({:.3f},{:.3f},{:.3f}) d={:.4f}gu rotStep={:.3f}",
-                        hand.handName(),
-                        probeMicroseconds,
-                        renderConsumption.captureMicroseconds,
-                        captureAgeMicroseconds,
-                        presentationNodes.traceId,
-                        renderConsumption.traceId,
-                        callCount,
-                        renderConsumption.ordinal,
-                        static_cast<const void*>(geometry.node),
-                        static_cast<const void*>(
-                            renderConsumption.geometry),
-                        renderConsumption.eyeState,
-                        renderConsumption.threadId,
-                        renderConsumption.transformMode,
-                        renderConsumption.shaderFlagsBefore,
-                        renderConsumption.shaderFlagsAfter,
-                        (renderConsumption.shaderFlagsBefore &
-                            kTransformChangedFlag) != 0 ?
-                            "y" :
-                            "n",
-                        (renderConsumption.shaderFlagsAfter &
-                            kTransformChangedFlag) != 0 ?
-                            "y" :
-                            "n",
-                        renderConsumption.world.translate.x,
-                        renderConsumption.world.translate.y,
-                        renderConsumption.world.translate.z,
-                        geometry.world.translate.x,
-                        geometry.world.translate.y,
-                        geometry.world.translate.z,
-                        renderToMeshDistance,
-                        renderRotationStep);
-
-                    renderState.ordinal = renderConsumption.ordinal;
-                    renderState.traceId = renderConsumption.traceId;
-                    renderState.captureMicroseconds =
-                        renderConsumption.captureMicroseconds;
-                    renderState.rotation = renderConsumption.world.rotate;
-                    renderState.valid = sameTrace;
-                } else {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} RENDER_CONSUME: t={}us trace={} calls=0 ordinal={} geometry={:p} reason=no-new-eye-transform",
-                        hand.handName(),
-                        probeMicroseconds,
-                        presentationNodes.traceId,
-                        renderState.ordinal,
-                        static_cast<const void*>(geometry.node));
-                }
             }
 
             const auto readBodyVelocityGameUnits = [&](RE::hknpBodyId bodyId, RE::NiPoint3& outVelocity) {

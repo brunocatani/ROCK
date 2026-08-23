@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/TransformMath.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -13,8 +15,187 @@ namespace rock::held_scene_presentation_policy
     inline constexpr float kMaxPredictionSeconds = 0.050f;
     inline constexpr float kMaxTranslationDeltaGameUnits = 8.0f;
     inline constexpr float kMaxRotationDeltaDegrees = 45.0f;
+    inline constexpr float kMaxTargetTranslationStepGameUnits = 25.0f;
+    inline constexpr float kMaxTargetRotationStepDegrees = 75.0f;
+    inline constexpr float kMaxTargetResidualTranslationGameUnits = 100.0f;
+    inline constexpr float kMaxTargetTransportAdvanceGameUnits = 50.0f;
     inline constexpr std::size_t kWriterInputFloatCount = 15;
     inline constexpr std::size_t kPredictionFloatCount = 16;
+
+    enum class TargetTransportRejectReason
+    {
+        None,
+        InvalidTransform,
+        ExcessiveTargetTranslationStep,
+        ExcessiveTargetRotationStep,
+        ExcessivePhysicalResidual,
+        ExcessiveTransportAdvance,
+    };
+
+    inline const char* targetTransportRejectReasonName(
+        TargetTransportRejectReason reason) noexcept
+    {
+        switch (reason) {
+        case TargetTransportRejectReason::None:
+            return "none";
+        case TargetTransportRejectReason::InvalidTransform:
+            return "invalidTransform";
+        case TargetTransportRejectReason::ExcessiveTargetTranslationStep:
+            return "excessiveTargetTranslationStep";
+        case TargetTransportRejectReason::ExcessiveTargetRotationStep:
+            return "excessiveTargetRotationStep";
+        case TargetTransportRejectReason::ExcessivePhysicalResidual:
+            return "excessivePhysicalResidual";
+        case TargetTransportRejectReason::ExcessiveTransportAdvance:
+            return "excessiveTransportAdvance";
+        }
+        return "unknown";
+    }
+
+    template <class Transform>
+    inline bool finiteTransform(const Transform& transform) noexcept
+    {
+        if (!std::isfinite(transform.translate.x) ||
+            !std::isfinite(transform.translate.y) ||
+            !std::isfinite(transform.translate.z) ||
+            !std::isfinite(transform.scale) ||
+            transform.scale <= 0.000001f ||
+            transform.scale >= 10000.0f) {
+            return false;
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (!std::isfinite(
+                        transform.rotate.entry[row][column])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    template <class Point>
+    inline float pointDistance(const Point& first, const Point& second) noexcept
+    {
+        const float deltaX = first.x - second.x;
+        const float deltaY = first.y - second.y;
+        const float deltaZ = first.z - second.z;
+        return std::sqrt(
+            deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+    }
+
+    template <class Matrix>
+    inline float matrixRotationDeltaDegrees(
+        const Matrix& first,
+        const Matrix& second) noexcept
+    {
+        float frobeniusDot = 0.0f;
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                frobeniusDot += first.entry[row][column] *
+                                second.entry[row][column];
+            }
+        }
+        const float cosine = std::clamp(
+            (frobeniusDot - 1.0f) * 0.5f,
+            -1.0f,
+            1.0f);
+        return std::acos(cosine) * 57.2957795131f;
+    }
+
+    template <class Transform>
+    struct TargetTransportDecision
+    {
+        bool apply = false;
+        Transform presentedWorld{};
+        float targetTranslationStepGameUnits = 0.0f;
+        float targetRotationStepDegrees = 0.0f;
+        float physicalResidualGameUnits = 0.0f;
+        float transportAdvanceGameUnits = 0.0f;
+        TargetTransportRejectReason reason =
+            TargetTransportRejectReason::InvalidTransform;
+    };
+
+    template <class Transform>
+    inline TargetTransportDecision<Transform> buildTargetTransport(
+        const Transform& previousTargetWorld,
+        const Transform& currentTargetWorld,
+        const Transform& previousSolvedBodyWorld) noexcept
+    {
+        TargetTransportDecision<Transform> decision{};
+        if (!finiteTransform(previousTargetWorld) ||
+            !finiteTransform(currentTargetWorld) ||
+            !finiteTransform(previousSolvedBodyWorld)) {
+            return decision;
+        }
+
+        decision.targetTranslationStepGameUnits = pointDistance(
+            previousTargetWorld.translate,
+            currentTargetWorld.translate);
+        if (!std::isfinite(decision.targetTranslationStepGameUnits) ||
+            decision.targetTranslationStepGameUnits >
+                kMaxTargetTranslationStepGameUnits) {
+            decision.reason = TargetTransportRejectReason::
+                ExcessiveTargetTranslationStep;
+            return decision;
+        }
+
+        decision.targetRotationStepDegrees = matrixRotationDeltaDegrees(
+            previousTargetWorld.rotate,
+            currentTargetWorld.rotate);
+        if (!std::isfinite(decision.targetRotationStepDegrees) ||
+            decision.targetRotationStepDegrees >
+                kMaxTargetRotationStepDegrees) {
+            decision.reason =
+                TargetTransportRejectReason::ExcessiveTargetRotationStep;
+            return decision;
+        }
+
+        const Transform physicalResidual =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(previousTargetWorld),
+                previousSolvedBodyWorld);
+        if (!finiteTransform(physicalResidual)) {
+            return decision;
+        }
+        const decltype(physicalResidual.translate) residualOrigin{};
+        decision.physicalResidualGameUnits = pointDistance(
+            physicalResidual.translate,
+            residualOrigin);
+        if (!std::isfinite(decision.physicalResidualGameUnits) ||
+            decision.physicalResidualGameUnits >
+                kMaxTargetResidualTranslationGameUnits) {
+            decision.reason =
+                TargetTransportRejectReason::ExcessivePhysicalResidual;
+            return decision;
+        }
+
+        decision.presentedWorld = transform_math::composeTransforms(
+            currentTargetWorld,
+            physicalResidual);
+        if (!finiteTransform(decision.presentedWorld)) {
+            return decision;
+        }
+        decision.transportAdvanceGameUnits = pointDistance(
+            previousSolvedBodyWorld.translate,
+            decision.presentedWorld.translate);
+        const float transportRotationDegrees = matrixRotationDeltaDegrees(
+            previousSolvedBodyWorld.rotate,
+            decision.presentedWorld.rotate);
+        if (!std::isfinite(decision.transportAdvanceGameUnits) ||
+            !std::isfinite(transportRotationDegrees) ||
+            decision.transportAdvanceGameUnits >
+                kMaxTargetTransportAdvanceGameUnits ||
+            transportRotationDegrees > kMaxTargetRotationStepDegrees) {
+            decision.reason =
+                TargetTransportRejectReason::ExcessiveTransportAdvance;
+            return decision;
+        }
+
+        decision.apply = true;
+        decision.reason = TargetTransportRejectReason::None;
+        return decision;
+    }
 
     enum class RejectReason
     {
@@ -172,7 +353,10 @@ namespace rock::held_scene_presentation_policy
         const float* originalWriterInput,
         const float* nativePredictedTransformHavok,
         float havokToGameScale,
-        float* correctedWriterInput)
+        float* correctedWriterInput,
+        float maxTranslationDeltaGameUnits =
+            kMaxTranslationDeltaGameUnits,
+        float maxRotationDeltaDegrees = kMaxRotationDeltaDegrees)
     {
         if (!std::isfinite(havokToGameScale) ||
             havokToGameScale <= 0.000001f ||
@@ -216,7 +400,7 @@ namespace rock::held_scene_presentation_policy
         const float translationDelta = std::sqrt(
             deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
         if (!std::isfinite(translationDelta) ||
-            translationDelta > kMaxTranslationDeltaGameUnits) {
+            translationDelta > maxTranslationDeltaGameUnits) {
             return TransformDecision{
                 .translationDeltaGameUnits = translationDelta,
                 .reason = RejectReason::ExcessiveTranslationDelta,
@@ -227,7 +411,7 @@ namespace rock::held_scene_presentation_policy
             originalWriterInput,
             correctedWriterInput);
         if (!std::isfinite(rotationDelta) ||
-            rotationDelta > kMaxRotationDeltaDegrees) {
+            rotationDelta > maxRotationDeltaDegrees) {
             return TransformDecision{
                 .translationDeltaGameUnits = translationDelta,
                 .rotationDeltaDegrees = rotationDelta,
