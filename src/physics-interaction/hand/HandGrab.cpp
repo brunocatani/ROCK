@@ -2,6 +2,7 @@
 
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/grab/GrabCore.h"
@@ -11195,6 +11196,40 @@ namespace rock
             _isHoldingFlag.store(true, std::memory_order_release);
         }
 
+        held_scene_presentation::Registration sceneRegistration{};
+        sceneRegistration.traceId = _grabFrame.traceId;
+        for (const std::uint32_t heldBodyId : _heldBodyIds) {
+            if (sceneRegistration.count >=
+                held_scene_presentation::kMaxRegisteredBodies) {
+                break;
+            }
+
+            auto* collisionObject =
+                havok_runtime::getCollisionObjectFromBody(
+                    world,
+                    RE::hknpBodyId{ heldBodyId });
+            if (!collisionObject) {
+                continue;
+            }
+
+            sceneRegistration.bodies[sceneRegistration.count++] =
+                held_scene_presentation::RegisteredBody{
+                    .collisionObject = collisionObject,
+                    .world = world,
+                    .bodyId = heldBodyId,
+                };
+        }
+        held_scene_presentation::publishHeldBodies(
+            _isLeft,
+            sceneRegistration);
+        if (sceneRegistration.count == 0) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB could not publish held-body scene presentation identity: trace={} heldBodies={}",
+                handName(),
+                _grabFrame.traceId,
+                _heldBodyIds.size());
+        }
+
         if (g_rockConfig.rockGrabNearbyDampingEnabled) {
             object_physics_body_set::BodySetScanOptions dampingOptions{};
             dampingOptions.mode = physics_body_classifier::InteractionMode::PassivePush;
@@ -13992,6 +14027,8 @@ namespace rock
         if (!isHolding()) {
             return outcome;
         }
+
+        held_scene_presentation::clearHeldBodies(_isLeft);
 
         outcome.released = true;
         outcome.retainedRef = _savedObjectState.retainedRef;

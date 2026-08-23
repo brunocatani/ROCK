@@ -20,6 +20,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -755,6 +756,10 @@ namespace
             rock::saved_grab_offset::preload();
             rock::authored_weapon_grip_cache::preload();
             rock::installHavokTimingFixHook();
+            if (!rock::held_scene_presentation::install()) {
+                logger::warn(
+                    "ROCK: Held-body scene presentation hook is unavailable; native presentation remains unchanged.");
+            }
             runtime_state::initialize();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
             rock::input_remap_runtime::installInputRemapHooks();

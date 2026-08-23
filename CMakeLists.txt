@@ -625,6 +625,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHeldWeaponInstantTransitionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHeldWeaponInstantTransitionPolicyTests)
 
+  add_executable(ROCKHeldScenePresentationPolicyTests
+    "${ROOT_DIR}/tests/HeldScenePresentationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHeldScenePresentationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHeldScenePresentationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHeldScenePresentationPolicyTests)
+
   add_executable(ROCKWeaponTransitionAnimationAccelerationPolicyTests
     "${ROOT_DIR}/tests/WeaponTransitionAnimationAccelerationPolicyTests.cpp"
   )

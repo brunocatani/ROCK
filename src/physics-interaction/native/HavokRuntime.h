@@ -148,6 +148,10 @@ namespace rock::havok_runtime
     RE::hknpWorld* getHknpWorldFromBhk(RE::bhkWorld* bhkWorld);
     RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject);
     void* getPhysicsSystemInstance(RE::bhkPhysicsSystem* physicsSystem);
+    bool tryResolveCollisionObjectBody(
+        RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld*& outWorld,
+        RE::hknpBodyId& outBodyId);
     const char* physicsSystemBodyScanStatusName(PhysicsSystemBodyScanStatus status);
     PhysicsSystemBodyScanResult forEachPhysicsSystemBodyIdDetailed(
         RE::NiCollisionObject* collisionObject,

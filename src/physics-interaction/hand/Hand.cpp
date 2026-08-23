@@ -8,6 +8,7 @@
 
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -216,6 +217,7 @@ namespace rock
 
         stopSelectionHighlight();
         _selectionBeam.shutdown();
+        held_scene_presentation::clearHeldBodies(_isLeft);
         _isHoldingFlag.store(false, std::memory_order_release);
         _heldBodyIdsCount.store(0, std::memory_order_release);
         clearHeldBodyContactSnapshot();
@@ -341,6 +343,7 @@ namespace rock
 
     void Hand::abandonHavokStateAfterWorldLoss()
     {
+        held_scene_presentation::clearHeldBodies(_isLeft);
         _selectionBeam.abandonSceneGraph();
 
         /*

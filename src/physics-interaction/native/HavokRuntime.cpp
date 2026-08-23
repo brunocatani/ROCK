@@ -315,6 +315,55 @@ namespace rock::havok_runtime
         return pointerRangeLooksReadable(instance, sizeof(RE::hknpPhysicsSystemInstance)) ? instance : nullptr;
     }
 
+    bool tryResolveCollisionObjectBody(
+        RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld*& outWorld,
+        RE::hknpBodyId& outBodyId)
+    {
+        outWorld = nullptr;
+        outBodyId = RE::hknpBodyId{ body_frame::kInvalidBodyId };
+
+        auto* physicsSystem = getPhysicsSystemFromCollisionObject(collisionObject);
+        auto* instance = static_cast<RE::hknpPhysicsSystemInstance*>(
+            getPhysicsSystemInstance(physicsSystem));
+        if (!physicsSystem || !instance) {
+            return false;
+        }
+
+        std::int32_t systemBodyIndex = -1;
+        std::int32_t bodyCount = 0;
+        RE::hknpWorld* world = nullptr;
+        if (!tryReadField(
+                collisionObject,
+                offsets::kCollisionObject_SystemBodyIndex,
+                systemBodyIndex) ||
+            !tryReadValue(&instance->bodyCount, bodyCount) ||
+            !tryReadValue(&instance->world, world) ||
+            !world || systemBodyIndex < 0 || systemBodyIndex >= bodyCount) {
+            return false;
+        }
+
+        using PhysicsSystemGetBodyId = void (*)(
+            void*,
+            RE::hknpBodyId*,
+            std::int32_t);
+        static REL::Relocation<PhysicsSystemGetBodyId> getBodyId{
+            REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId)
+        };
+
+        RE::hknpBodyId bodyId{ body_frame::kInvalidBodyId };
+        getBodyId(physicsSystem, &bodyId, systemBodyIndex);
+        if (!isValidBodyId(bodyId) ||
+            !bodySlotLooksReadable(world, bodyId) ||
+            getCollisionObjectFromBody(world, bodyId) != collisionObject) {
+            return false;
+        }
+
+        outWorld = world;
+        outBodyId = bodyId;
+        return true;
+    }
+
     const char* physicsSystemBodyScanStatusName(PhysicsSystemBodyScanStatus status)
     {
         switch (status) {

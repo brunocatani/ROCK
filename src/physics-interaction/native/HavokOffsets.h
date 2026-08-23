@@ -10,6 +10,13 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kCollisionObject_PhysSystemPtr = 0x20;
 
+    /*
+     * FO4VR's collision-object-local body index. The two independent native
+     * scene-update callers load this dword before resolving the corresponding
+     * hknp body through bhkPhysicsSystem.
+     */
+    constexpr std::uintptr_t kCollisionObject_SystemBodyIndex = 0x28;
+
     constexpr std::uintptr_t kBhkPhysicsSystem_Instance = 0x18;
 
     constexpr std::uintptr_t kHknpPhysicsSystemInstance_World = 0x18;
@@ -141,6 +148,18 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_PhysicsSystem_Ctor = 0x1E0C2B0;
 
     constexpr std::uintptr_t kFunc_PhysicsSystem_GetBodyId = 0x1E0C460;
+
+    /*
+     * FO4VR held-body presentation boundary. Blind raw-disassembly
+     * verification on 2026-08-23 established the scene transform writer ABI,
+     * its main/proxy return sites, and the native full-transform predictor.
+     * The main caller predicts by the residual Havok time before writing a
+     * 3x4 rotation/translation transform to the collision object's owner node.
+     */
+    constexpr std::uintptr_t kFunc_SceneTransformWriter = 0x1E06B00;
+    constexpr std::uintptr_t kReturn_SceneTransformWriterMain = 0x1E09B5B;
+    constexpr std::uintptr_t kReturn_SceneTransformWriterProxy = 0x1E0A585;
+    constexpr std::uintptr_t kFunc_PredictBodyTransform = 0x15451A0;
 
     constexpr std::uintptr_t kFunc_PhysicsSystemData_Ctor = 0x5EAB0;
 
