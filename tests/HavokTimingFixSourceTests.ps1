@@ -50,10 +50,20 @@ Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'kHookSite_BhkWorld
     'The verified main update call site must be named explicitly near the hook.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'validateBhkWorldSetDeltaTimeMainCallSite[\s\S]*0x140D84BD0[\s\S]*0x141DF7120' `
     'Timing fix must validate the verified call site before installing.'
-Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'g_originalBhkWorldSetDeltaTime\(rawDeltaSeconds\);[\s\S]*writeBhkWorldFloatGlobal\(offsets::kData_BhkWorldSubstepDeltaSeconds' `
-    'Timing fix must call the original SetDeltaTime before overriding current timing globals.'
-Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'writeBhkWorldUintGlobal\(offsets::kData_BhkWorldSubstepCount' `
-    'Timing fix must override FO4VR substep count together with substep delta.'
+Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'g_originalBhkWorldSetDeltaTime\(rawDeltaSeconds\);[\s\S]*tryReadBhkWorldTimingState' `
+    'Timing hook must call native SetDeltaTime and preserve its state before the late coherent decision.'
+Require-Text 'src/ROCKMain.cpp' 'beginFrameTiming\([\s\S]*applyHavokTimingFixForGameFrame\(frameTiming\)[\s\S]*BeforeRock' `
+    'The coherent schedule must be applied after the shared source sample and before target publication.'
+Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'tryReadGlobalSimulationTimeMultiplier\(globalTimeMultiplier\)[\s\S]*sourceDeltaSeconds = frameTiming\.deltaSeconds' `
+    'The late decision must scale the authoritative source interval only by the verified native global simulation multiplier.'
+Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kData_GlobalSimulationTimeMultiplier\s*=\s*0x3881630' `
+    'The FO4VR global simulation multiplier offset must remain explicit and version-auditable.'
+Reject-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'BSTimer::QGlobalTimeMultiplier' `
+    'CommonLibF4VR leaves the VR multiplier relocation unresolved and this accessor crashes.'
+Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'tryWriteBhkWorldTimingState\(coherent\)' `
+    'Timing fix must publish one coherent timing state instead of independent partial writes.'
+Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'kData_BhkWorldRawDeltaSeconds[\s\S]*kData_BhkWorldSubstepDeltaSeconds[\s\S]*kData_BhkWorldRemainderDeltaSeconds[\s\S]*kData_BhkWorldPreviousRemainderDeltaSeconds[\s\S]*kData_BhkWorldAccumulatedDeltaSeconds[\s\S]*kData_BhkWorldSubstepCount' `
+    'The coherent timing transaction must own every native delta, remainder, accumulated-time, and substep-count field.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'rockDebugVerboseLogging[\s\S]*rockDebugGrabFrameLogging[\s\S]*HAVOK_TIMING_FIX' `
     'Timing-fix diagnostics must remain behind existing explicit debug logging gates.'
 Require-Text 'src/RockConfig.h' 'rockHavokTimingFixEnabled[\s\S]*rockHavokTimingFixMinPhysicsFrameRate[\s\S]*rockHavokTimingFixMaxSubsteps' `

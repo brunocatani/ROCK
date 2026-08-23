@@ -585,6 +585,13 @@ namespace
          */
         const auto& frameTiming = runtime_state::beginFrameTiming(
             input_remap_runtime::isMenuInputActive());
+        /*
+         * Native SetDeltaTime ran earlier in this outer frame. The target
+         * source interval is authoritative only now, after the shared game
+         * clock sample exists and before any ROCK target is queued or the
+         * native world update starts.
+         */
+        applyHavokTimingFixForGameFrame(frameTiming);
 
         rock::provider::refreshNativeAnimationAuthorityLeasesV1();
         rock::provider::dispatchAnimationPhaseCallbacksV1(

@@ -17,8 +17,8 @@
 
 #include "RockConfig.h"
 
-#include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/InputEvent.h"
+#include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/Settings.h"
 
 #include <algorithm>
@@ -47,7 +47,30 @@ namespace rock
         static NativeVrMeleeImpactCallback_t g_originalVrMeleeImpactCallback = nullptr;
         static BhkWorldSetDeltaTime_t g_originalBhkWorldSetDeltaTime = nullptr;
         static std::atomic<bool> g_havokTimingFixMissingOriginalLogged{ false };
+        static std::atomic<bool> g_havokTimingFixMultiplierReadFailureLogged{ false };
         static std::atomic<bool> g_havokTimingFixWriteFailureLogged{ false };
+
+        struct BhkWorldTimingState
+        {
+            float rawDeltaSeconds = 0.0f;
+            float substepDeltaSeconds = 0.0f;
+            float remainderDeltaSeconds = 0.0f;
+            float previousRemainderDeltaSeconds = 0.0f;
+            float accumulatedDeltaSeconds = 0.0f;
+            std::uint32_t substepCount = 0;
+        };
+
+        struct PendingNativeTimingFrame
+        {
+            BhkWorldTimingState native{};
+            std::uint64_t sequence = 0;
+            bool valid = false;
+        };
+
+        // The verified main SetDeltaTime call and ROCK's later game-frame hook
+        // execute on the same game thread before the native world update.
+        static PendingNativeTimingFrame g_pendingNativeTimingFrame{};
+        static std::uint64_t g_appliedNativeTimingSequence = 0;
 
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
         constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
@@ -194,35 +217,60 @@ namespace rock
             return true;
         }
 
-        float readBhkWorldFloatGlobal(std::uintptr_t offset, float fallback)
+        bool tryReadBhkWorldTimingState(BhkWorldTimingState& out)
         {
-            REL::Relocation<float*> value{ REL::Offset(offset) };
-            return value.address() ? *value : fallback;
-        }
-
-        std::uint32_t readBhkWorldUintGlobal(std::uintptr_t offset, std::uint32_t fallback)
-        {
-            REL::Relocation<std::uint32_t*> value{ REL::Offset(offset) };
-            return value.address() ? *value : fallback;
-        }
-
-        bool writeBhkWorldFloatGlobal(std::uintptr_t offset, float newValue)
-        {
-            REL::Relocation<float*> value{ REL::Offset(offset) };
-            if (!value.address()) {
+            static REL::Relocation<float*> raw{ REL::Offset(offsets::kData_BhkWorldRawDeltaSeconds) };
+            static REL::Relocation<float*> substep{ REL::Offset(offsets::kData_BhkWorldSubstepDeltaSeconds) };
+            static REL::Relocation<float*> remainder{ REL::Offset(offsets::kData_BhkWorldRemainderDeltaSeconds) };
+            static REL::Relocation<float*> previousRemainder{ REL::Offset(offsets::kData_BhkWorldPreviousRemainderDeltaSeconds) };
+            static REL::Relocation<float*> accumulated{ REL::Offset(offsets::kData_BhkWorldAccumulatedDeltaSeconds) };
+            static REL::Relocation<std::uint32_t*> count{ REL::Offset(offsets::kData_BhkWorldSubstepCount) };
+            if (!raw.address() || !substep.address() || !remainder.address() || !previousRemainder.address() || !accumulated.address() || !count.address()) {
                 return false;
             }
-            *value = newValue;
+
+            out = BhkWorldTimingState{
+                .rawDeltaSeconds = *raw,
+                .substepDeltaSeconds = *substep,
+                .remainderDeltaSeconds = *remainder,
+                .previousRemainderDeltaSeconds = *previousRemainder,
+                .accumulatedDeltaSeconds = *accumulated,
+                .substepCount = *count,
+            };
             return true;
         }
 
-        bool writeBhkWorldUintGlobal(std::uintptr_t offset, std::uint32_t newValue)
+        bool tryWriteBhkWorldTimingState(const BhkWorldTimingState& value)
         {
-            REL::Relocation<std::uint32_t*> value{ REL::Offset(offset) };
-            if (!value.address()) {
+            static REL::Relocation<float*> raw{ REL::Offset(offsets::kData_BhkWorldRawDeltaSeconds) };
+            static REL::Relocation<float*> substep{ REL::Offset(offsets::kData_BhkWorldSubstepDeltaSeconds) };
+            static REL::Relocation<float*> remainder{ REL::Offset(offsets::kData_BhkWorldRemainderDeltaSeconds) };
+            static REL::Relocation<float*> previousRemainder{ REL::Offset(offsets::kData_BhkWorldPreviousRemainderDeltaSeconds) };
+            static REL::Relocation<float*> accumulated{ REL::Offset(offsets::kData_BhkWorldAccumulatedDeltaSeconds) };
+            static REL::Relocation<std::uint32_t*> count{ REL::Offset(offsets::kData_BhkWorldSubstepCount) };
+            if (!raw.address() || !substep.address() || !remainder.address() || !previousRemainder.address() || !accumulated.address() || !count.address()) {
                 return false;
             }
-            *value = newValue;
+
+            *raw = value.rawDeltaSeconds;
+            *substep = value.substepDeltaSeconds;
+            *remainder = value.remainderDeltaSeconds;
+            *previousRemainder = value.previousRemainderDeltaSeconds;
+            *accumulated = value.accumulatedDeltaSeconds;
+            *count = value.substepCount;
+            return true;
+        }
+
+        bool tryReadGlobalSimulationTimeMultiplier(float& out)
+        {
+            static REL::Relocation<float*> multiplier{
+                REL::Offset(offsets::kData_GlobalSimulationTimeMultiplier)
+            };
+            if (!multiplier.address()) {
+                return false;
+            }
+
+            out = *multiplier;
             return true;
         }
 
@@ -278,65 +326,11 @@ namespace rock
 
             g_originalBhkWorldSetDeltaTime(rawDeltaSeconds);
 
-            if (!g_rockConfig.rockHavokTimingFixEnabled) {
-                return;
-            }
-
-            const float accumulatedDeltaSeconds =
-                readBhkWorldFloatGlobal(offsets::kData_BhkWorldAccumulatedDeltaSeconds, rawDeltaSeconds);
-            const float oldSubstepDeltaSeconds =
-                readBhkWorldFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, rawDeltaSeconds);
-            const auto oldSubstepCount =
-                readBhkWorldUintGlobal(offsets::kData_BhkWorldSubstepCount, 1);
-            const auto decision = havok_timing_fix_policy::evaluateTimingFix(havok_timing_fix_policy::TimingFixInput{
-                .rawDeltaSeconds = rawDeltaSeconds,
-                .accumulatedDeltaSeconds = accumulatedDeltaSeconds,
-                .minPhysicsFrameRate = g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
-                .maxSubsteps = g_rockConfig.rockHavokTimingFixMaxSubsteps,
-            });
-
-            if (!decision.valid) {
-                if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_SAMPLE_DEBUG(Physics,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "HAVOK_TIMING_FIX skipped reason={} rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={}",
-                        decision.reason,
-                        rawDeltaSeconds,
-                        accumulatedDeltaSeconds,
-                        oldSubstepDeltaSeconds,
-                        oldSubstepCount);
-                }
-                return;
-            }
-
-            const bool wroteSubstepDelta =
-                writeBhkWorldFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, decision.substepDeltaSeconds);
-            const bool wroteSubstepCount =
-                writeBhkWorldUintGlobal(offsets::kData_BhkWorldSubstepCount, decision.substepCount);
-            if (!wroteSubstepDelta || !wroteSubstepCount) {
-                if (!g_havokTimingFixWriteFailureLogged.exchange(true, std::memory_order_acq_rel)) {
-                    ROCK_LOG_ERROR(Init,
-                        "HAVOK_TIMING_FIX failed to write FO4VR timing globals: wroteSubstepDelta={} wroteSubstepCount={}",
-                        wroteSubstepDelta ? "yes" : "no",
-                        wroteSubstepCount ? "yes" : "no");
-                }
-                return;
-            }
-
-            if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
-                ROCK_LOG_SAMPLE_DEBUG(Physics,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "HAVOK_TIMING_FIX rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={} newSubDt={:.6f} newSubsteps={} minHz={:.2f} maxFrameDt={:.6f} maxSubsteps={}",
-                    rawDeltaSeconds,
-                    accumulatedDeltaSeconds,
-                    oldSubstepDeltaSeconds,
-                    oldSubstepCount,
-                    decision.substepDeltaSeconds,
-                    decision.substepCount,
-                    g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
-                    decision.maxPhysicsFrameSeconds,
-                    decision.clampedMaxSubsteps);
-            }
+            BhkWorldTimingState native{};
+            const bool valid = tryReadBhkWorldTimingState(native);
+            g_pendingNativeTimingFrame.native = native;
+            g_pendingNativeTimingFrame.valid = valid;
+            ++g_pendingNativeTimingFrame.sequence;
         }
 
         const RE::Actor* resolveNativePlayerActorGlobal()
@@ -1516,6 +1510,118 @@ namespace rock
         }
     }
 
+    void applyHavokTimingFixForGameFrame(const game_frame_timing_policy::GameFrameTiming& frameTiming)
+    {
+        if (!g_rockConfig.rockHavokTimingFixEnabled) {
+            return;
+        }
+
+        const auto pending = g_pendingNativeTimingFrame;
+        if (!pending.valid || pending.sequence == 0 || pending.sequence == g_appliedNativeTimingSequence) {
+            if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+                ROCK_LOG_SAMPLE_DEBUG(Physics,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "HAVOK_TIMING_FIX late apply skipped reason={} pendingSeq={} appliedSeq={}",
+                    pending.valid ? "no-new-native-frame" : "native-state-unavailable",
+                    pending.sequence,
+                    g_appliedNativeTimingSequence);
+            }
+            return;
+        }
+        g_appliedNativeTimingSequence = pending.sequence;
+
+        /*
+         * BSTimer::delta is the native real frame interval multiplied by the
+         * global simulation multiplier. ROCK measures the same target-source
+         * interval later in the frame with a monotonic clock, so applying the
+         * native multiplier here preserves slow motion without importing the
+         * differently phased native timer window. Calendar::timeScale is a
+         * separate game-world clock and is never read or changed.
+         */
+        float globalTimeMultiplier = 0.0f;
+        if (!tryReadGlobalSimulationTimeMultiplier(globalTimeMultiplier)) {
+            if (!g_havokTimingFixMultiplierReadFailureLogged.exchange(true, std::memory_order_acq_rel)) {
+                ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX global simulation multiplier is unavailable; native schedule preserved");
+            }
+            return;
+        }
+        const auto decision = havok_timing_fix_policy::evaluateTimingFix(
+            havok_timing_fix_policy::TimingFixInput{
+                .sourceDeltaSeconds = frameTiming.deltaSeconds,
+                .globalTimeMultiplier = globalTimeMultiplier,
+                .nativeRemainderDeltaSeconds = pending.native.remainderDeltaSeconds,
+                .nativePreviousRemainderDeltaSeconds = pending.native.previousRemainderDeltaSeconds,
+                .nativeAccumulatedDeltaSeconds = pending.native.accumulatedDeltaSeconds,
+                .nativeSubstepDeltaSeconds = pending.native.substepDeltaSeconds,
+                .nativeSubstepCount = pending.native.substepCount,
+                .minPhysicsFrameRate = g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
+                .maxSubsteps = g_rockConfig.rockHavokTimingFixMaxSubsteps,
+                .sourceValid = frameTiming.valid,
+                .sourceDiscontinuity = frameTiming.discontinuity,
+                .sourcePaused = frameTiming.menuPaused,
+            });
+        if (!decision.valid) {
+            if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+                ROCK_LOG_SAMPLE_DEBUG(Physics,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "HAVOK_TIMING_FIX source schedule skipped reason={} sourceDt={:.6f} sourceRawDt={:.6f} globalScale={:.4f} "
+                    "nativeRawDt={:.6f} nativeAccumDt={:.6f} nativeSubDt={:.6f} nativeSubsteps={}",
+                    decision.reason,
+                    frameTiming.deltaSeconds,
+                    frameTiming.rawDeltaSeconds,
+                    globalTimeMultiplier,
+                    pending.native.rawDeltaSeconds,
+                    pending.native.accumulatedDeltaSeconds,
+                    pending.native.substepDeltaSeconds,
+                    pending.native.substepCount);
+            }
+            return;
+        }
+
+        const BhkWorldTimingState coherent{
+            .rawDeltaSeconds = decision.coherentDeltaSeconds,
+            .substepDeltaSeconds = decision.substepDeltaSeconds,
+            .remainderDeltaSeconds = decision.nativeNextRemainderDeltaSeconds,
+            .previousRemainderDeltaSeconds = decision.nativePreviousRemainderDeltaSeconds,
+            .accumulatedDeltaSeconds = decision.simulatedDeltaSeconds,
+            .substepCount = decision.substepCount,
+        };
+        if (!tryWriteBhkWorldTimingState(coherent)) {
+            if (!g_havokTimingFixWriteFailureLogged.exchange(true, std::memory_order_acq_rel)) {
+                ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX failed to write the coherent FO4VR timing state; native schedule preserved");
+            }
+            return;
+        }
+
+        if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+            const float nativeToSourceRatio =
+                decision.coherentDeltaSeconds > havok_timing_fix_policy::kMinAcceptedFrameDeltaSeconds ?
+                    pending.native.rawDeltaSeconds / decision.coherentDeltaSeconds :
+                    0.0f;
+            ROCK_LOG_SAMPLE_DEBUG(Physics,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "HAVOK_TIMING_FIX sourceDt={:.6f} globalScale={:.4f} coherentDt={:.6f} nativeRawDt={:.6f} nativeAccumDt={:.6f} "
+                "nativeSubDt={:.6f} nativeSubsteps={} nativePrevRem={:.6f} nativeNextRem={:.6f} native/source={:.3f} "
+                "newSubDt={:.6f} newSubsteps={} simulatedDt={:.6f} "
+                "minHz={:.2f} maxSubsteps={}",
+                decision.sourceDeltaSeconds,
+                decision.globalTimeMultiplier,
+                decision.coherentDeltaSeconds,
+                pending.native.rawDeltaSeconds,
+                pending.native.accumulatedDeltaSeconds,
+                pending.native.substepDeltaSeconds,
+                pending.native.substepCount,
+                decision.nativePreviousRemainderDeltaSeconds,
+                decision.nativeNextRemainderDeltaSeconds,
+                nativeToSourceRatio,
+                decision.substepDeltaSeconds,
+                decision.substepCount,
+                decision.simulatedDeltaSeconds,
+                g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
+                decision.clampedMaxSubsteps);
+        }
+    }
+
     bool installHavokTimingFixHook()
     {
         static bool installed = false;
@@ -1545,7 +1651,8 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Init,
-            "HAVOK_TIMING_FIX hook installed at 0x{:X}; original=0x{:X} enabled={} minHz={:.2f} maxSubsteps={}",
+            "HAVOK_TIMING_FIX capture hook installed at 0x{:X}; original=0x{:X} enabled={} minHz={:.2f} maxSubsteps={} "
+            "schedule=game-source-late-apply",
             hookCallSite.address(),
             original,
             g_rockConfig.rockHavokTimingFixEnabled ? "yes" : "no",

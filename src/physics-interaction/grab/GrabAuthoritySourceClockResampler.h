@@ -3,9 +3,11 @@
 /*
  * Game-clock phase lock for the grab-authority proxy target.
  *
- * The held-object target is sampled on the game/source clock (precise wall
- * intervals, ~11ms) but consumed on the physics-substep clock (quantized
- * 10/11/12ms). The previous design here -- a source-to-physics-clock
+ * The held-object target is sampled on the game/source clock and consumed on
+ * the physics-substep clock. The global coherent timing schedule makes the
+ * coming world's total simulated duration equal to the source duration,
+ * scaled only by the native global simulation multiplier. The previous design
+ * here -- a source-to-physics-clock
  * trajectory resampler -- played the sampled trajectory back on the PHYSICS
  * clock: the commanded velocity was smooth, but the commanded POSITION
  * deviated from the wand's game-time path by v x (clock mismatch) on every
@@ -22,8 +24,9 @@
  * newest queued game-frame sample (segment fraction (index+1)/count reaches
  * 1), so frame-end proxy positions lie on the sampled wand path exactly like
  * the hand collider's. Intra-frame substeps command the linear interpolation
- * between the previous and newest sample. The commanded velocity absorbs the
- * substep-dt quantization (~+-10%). Discontinuity gates (teleport, snap turn,
+ * between the previous and newest sample. Because every substep divides the
+ * same complete source duration, this fraction no longer compresses a full
+ * source segment into a shorter residual solve. Discontinuity gates (teleport, snap turn,
  * source hitch, proxy rebuild) snap to the new sample instead of interpolating
  * across the jump.
  * Rotation is deliberately not interpolated; it stays on the sampled path and

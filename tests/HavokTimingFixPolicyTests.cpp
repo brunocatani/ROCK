@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <tuple>
 
 namespace
 {
@@ -11,7 +12,6 @@ namespace
         if (value) {
             return true;
         }
-
         std::printf("%s expected true\n", label);
         return false;
     }
@@ -21,7 +21,6 @@ namespace
         if (!value) {
             return true;
         }
-
         std::printf("%s expected false\n", label);
         return false;
     }
@@ -31,7 +30,6 @@ namespace
         if (actual == expected) {
             return true;
         }
-
         std::printf("%s expected %u got %u\n", label, expected, actual);
         return false;
     }
@@ -41,248 +39,149 @@ namespace
         if (std::fabs(actual - expected) <= epsilon) {
             return true;
         }
-
         std::printf("%s expected %.6f got %.6f\n", label, expected, actual);
         return false;
+    }
+
+    rock::havok_timing_fix_policy::TimingFixDecision evaluate(
+        float sourceDelta,
+        float multiplier = 1.0f,
+        float minHz = 70.0f,
+        int maxSubsteps = 3)
+    {
+        return rock::havok_timing_fix_policy::evaluateTimingFix(
+            rock::havok_timing_fix_policy::TimingFixInput{
+                .sourceDeltaSeconds = sourceDelta,
+                .globalTimeMultiplier = multiplier,
+                .nativeRemainderDeltaSeconds = 0.0f,
+                .nativePreviousRemainderDeltaSeconds = 0.004f,
+                .nativeAccumulatedDeltaSeconds = 1.0f / 90.0f,
+                .nativeSubstepDeltaSeconds = 1.0f / 60.0f,
+                .nativeSubstepCount = 0,
+                .minPhysicsFrameRate = minHz,
+                .maxSubsteps = maxSubsteps,
+                .sourceValid = true,
+                .sourceDiscontinuity = false,
+                .sourcePaused = false,
+            });
     }
 }
 
 int main()
 {
     using namespace rock::havok_timing_fix_policy;
-
     bool ok = true;
 
-    {
-        constexpr float rawDelta = 1.0f / 90.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
+    for (const auto [label, sourceDelta, expectedCount] : {
+             std::tuple{ "120hz", 1.0f / 120.0f, 1u },
+             std::tuple{ "90hz", 1.0f / 90.0f, 1u },
+             std::tuple{ "72hz", 1.0f / 72.0f, 1u },
+             std::tuple{ "60hz", 1.0f / 60.0f, 2u },
+             std::tuple{ "45hz", 1.0f / 45.0f, 2u },
+             std::tuple{ "30hz", 1.0f / 30.0f, 3u },
+         }) {
+        const auto decision = evaluate(sourceDelta);
+        ok &= expectTrue(label, decision.valid);
+        ok &= expectEqual(label, decision.substepCount, expectedCount);
+        ok &= expectNear(label, decision.simulatedDeltaSeconds, sourceDelta, 0.000001f);
+        ok &= expectNear(label, decision.substepDeltaSeconds, sourceDelta / static_cast<float>(expectedCount), 0.000001f);
+        ok &= expectNear(label, decision.nativePreviousRemainderDeltaSeconds, 0.004f, 0.000001f);
+        ok &= expectNear(label, decision.nativeNextRemainderDeltaSeconds, 1.0f / 90.0f, 0.000001f);
+    }
 
-        ok &= expectTrue("90hz frame is valid", decision.valid);
-        ok &= expectNear("90hz stays single substep", decision.substepDeltaSeconds, rawDelta, 0.000001f);
-        ok &= expectEqual("90hz count", decision.substepCount, 1);
+    // Ordinary pacing variation must always preserve the complete source
+    // interval, even when the substep count changes at the configured bound.
+    for (const float sourceDelta : { 0.006f, 0.007f, 0.008f, 0.0108f, 0.0115f, 0.0139f, 0.0142f, 0.015f }) {
+        const auto decision = evaluate(sourceDelta);
+        ok &= expectTrue("irregular source frame", decision.valid);
+        ok &= expectNear("irregular simulated duration", decision.simulatedDeltaSeconds, sourceDelta, 0.000001f);
+    }
+
+    // The global simulation multiplier scales physics time. Calendar
+    // TimeScale is deliberately absent from this policy.
+    {
+        constexpr float sourceDelta = 1.0f / 90.0f;
+        const auto halfSpeed = evaluate(sourceDelta, 0.5f);
+        ok &= expectTrue("half-speed multiplier", halfSpeed.valid);
+        ok &= expectNear("half-speed coherent duration", halfSpeed.coherentDeltaSeconds, sourceDelta * 0.5f, 0.000001f);
+        ok &= expectEqual("half-speed substeps", halfSpeed.substepCount, 1);
+
+        const auto doubleSpeed = evaluate(sourceDelta, 2.0f);
+        ok &= expectTrue("double-speed multiplier", doubleSpeed.valid);
+        ok &= expectNear("double-speed coherent duration", doubleSpeed.coherentDeltaSeconds, sourceDelta * 2.0f, 0.000001f);
+        ok &= expectEqual("double-speed substeps", doubleSpeed.substepCount, 2);
     }
 
     {
-        constexpr float rawDelta = 1.0f / 60.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("60hz frame is valid", decision.valid);
-        ok &= expectNear("60hz splits into two", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
-        ok &= expectEqual("60hz count", decision.substepCount, 2);
+        const auto clamped = evaluate(1.0f / 20.0f, 1.0f, 120.0f, 99);
+        ok &= expectTrue("engine max-substep clamp", clamped.valid);
+        ok &= expectEqual("engine max-substep count", clamped.substepCount, 6);
+        ok &= expectNear("engine max-substep duration", clamped.simulatedDeltaSeconds, 1.0f / 20.0f, 0.000001f);
     }
 
     {
-        constexpr float rawDelta = 1.0f / 30.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("30hz frame is valid", decision.valid);
-        ok &= expectNear("30hz uses max three substeps", decision.substepDeltaSeconds, rawDelta / 3.0f, 0.000001f);
-        ok &= expectEqual("30hz count", decision.substepCount, 3);
-    }
-
-    {
-        constexpr float rawDelta = 1.0f / 20.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta,
-            .minPhysicsFrameRate = 120.0f,
-            .maxSubsteps = 99,
-        });
-
-        ok &= expectTrue("max substeps clamp is valid", decision.valid);
-        ok &= expectNear("max substeps clamp uses six", decision.substepDeltaSeconds, rawDelta / 6.0f, 0.000001f);
-        ok &= expectEqual("max substeps clamp count", decision.substepCount, 6);
-    }
-
-    {
-        constexpr float rawDelta = 1.0f / 90.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta * 2.0f,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("accumulated 90hz two-step frame is valid", decision.valid);
-        ok &= expectNear("accumulated 90hz keeps frame delta", decision.substepDeltaSeconds, rawDelta, 0.000001f);
-        ok &= expectEqual("accumulated 90hz count", decision.substepCount, 2);
-    }
-
-    {
-        constexpr float rawDelta = 1.0f / 60.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta * 1.5f,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("accumulated 60hz clamp frame is valid", decision.valid);
-        ok &= expectNear("accumulated 60hz keeps split delta", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
-        ok &= expectEqual("accumulated 60hz count clamps to max", decision.substepCount, 3);
-    }
-
-    {
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = 0.0f,
-            .accumulatedDeltaSeconds = 1.0f / 90.0f,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectFalse("zero raw delta is invalid", decision.valid);
-    }
-
-    {
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = 1.0f / 90.0f,
-            .accumulatedDeltaSeconds = 0.0f,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectFalse("zero accumulated delta is invalid", decision.valid);
-    }
-
-    {
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = kMinAcceptedFrameDeltaSeconds,
-            .accumulatedDeltaSeconds = 1.0f / 90.0f,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectFalse("minimum threshold raw delta is invalid", decision.valid);
-    }
-
-    /*
-     * Supported-rate matrix rows for the timing-normalization project. The
-     * 45 FPS row also covers 45 FPS game cadence under 90 Hz headset
-     * reprojection: reprojection produces no extra game or physics callbacks,
-     * so the raw delta ROCK receives is identical.
-     */
-    {
-        constexpr float rawDelta = 1.0f / 45.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("45hz frame is valid", decision.valid);
-        ok &= expectNear("45hz splits into two 90hz substeps", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
-        ok &= expectEqual("45hz count", decision.substepCount, 2);
-    }
-
-    {
-        constexpr float rawDelta = 1.0f / 72.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("72hz frame is valid", decision.valid);
-        ok &= expectNear("72hz stays single substep", decision.substepDeltaSeconds, rawDelta, 0.000001f);
-        ok &= expectEqual("72hz count", decision.substepCount, 1);
-    }
-
-    {
-        constexpr float rawDelta = 1.0f / 120.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("120hz frame is valid", decision.valid);
-        ok &= expectNear("120hz stays single substep", decision.substepDeltaSeconds, rawDelta, 0.000001f);
-        ok &= expectEqual("120hz count", decision.substepCount, 1);
-    }
-
-    // Irregular pacing: jitter around the 72 Hz and 90 Hz cadences must not
-    // flip the substep decision.
-    {
-        for (const float rawDelta : { 0.0134f, 0.0142f, 0.0139f }) {
-            const auto decision = evaluateTimingFix(TimingFixInput{
-                .rawDeltaSeconds = rawDelta,
-                .accumulatedDeltaSeconds = rawDelta,
-                .minPhysicsFrameRate = 70.0f,
-                .maxSubsteps = 3,
-            });
-            ok &= expectTrue("72hz jitter frame is valid", decision.valid);
-            ok &= expectEqual("72hz jitter stays single substep", decision.substepCount, 1);
-        }
-        for (const float rawDelta : { 0.0108f, 0.0115f, 0.0111f }) {
-            const auto decision = evaluateTimingFix(TimingFixInput{
-                .rawDeltaSeconds = rawDelta,
-                .accumulatedDeltaSeconds = rawDelta,
-                .minPhysicsFrameRate = 70.0f,
-                .maxSubsteps = 3,
-            });
-            ok &= expectTrue("90hz jitter frame is valid", decision.valid);
-            ok &= expectEqual("90hz jitter stays single substep", decision.substepCount, 1);
-        }
-    }
-
-    // Accumulated delta producing three substeps at the 45 FPS split delta.
-    {
-        constexpr float rawDelta = 1.0f / 45.0f;
-        const auto decision = evaluateTimingFix(TimingFixInput{
-            .rawDeltaSeconds = rawDelta,
-            .accumulatedDeltaSeconds = rawDelta * 1.5f,
-            .minPhysicsFrameRate = 70.0f,
-            .maxSubsteps = 3,
-        });
-
-        ok &= expectTrue("accumulated 45hz frame is valid", decision.valid);
-        ok &= expectNear("accumulated 45hz keeps split delta", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
-        ok &= expectEqual("accumulated 45hz count", decision.substepCount, 3);
-    }
-
-    // Non-finite and negative inputs must stay invalid instead of becoming a
-    // usable-looking schedule.
-    {
-        const float invalidValues[] = {
-            -0.011f,
-            std::numeric_limits<float>::quiet_NaN(),
-            std::numeric_limits<float>::infinity(),
+        auto input = TimingFixInput{
+            .sourceDeltaSeconds = 1.0f / 90.0f,
+            .globalTimeMultiplier = 1.0f,
+            .nativeRemainderDeltaSeconds = 0.0f,
+            .nativePreviousRemainderDeltaSeconds = 1.0f / 90.0f,
+            .nativeAccumulatedDeltaSeconds = 2.0f / 90.0f,
+            .nativeSubstepDeltaSeconds = 1.0f / 60.0f,
+            .nativeSubstepCount = 1,
+            .sourceValid = true,
+            .sourceDiscontinuity = false,
+            .sourcePaused = false,
         };
-        for (const float rawDelta : invalidValues) {
-            const auto rawDecision = evaluateTimingFix(TimingFixInput{
-                .rawDeltaSeconds = rawDelta,
-                .accumulatedDeltaSeconds = 1.0f / 90.0f,
-                .minPhysicsFrameRate = 70.0f,
-                .maxSubsteps = 3,
-            });
-            ok &= expectFalse("non-finite or negative raw delta is invalid", rawDecision.valid);
+        const auto decision = evaluateTimingFix(input);
+        ok &= expectTrue("native remainder phase", decision.valid);
+        ok &= expectNear(
+            "native previous remainder",
+            decision.nativePreviousRemainderDeltaSeconds,
+            1.0f / 90.0f,
+            0.000001f);
+        ok &= expectNear(
+            "native next remainder",
+            decision.nativeNextRemainderDeltaSeconds,
+            (2.0f / 90.0f) - (1.0f / 60.0f),
+            0.000001f);
 
-            const auto accumulatedDecision = evaluateTimingFix(TimingFixInput{
-                .rawDeltaSeconds = 1.0f / 90.0f,
-                .accumulatedDeltaSeconds = rawDelta,
-                .minPhysicsFrameRate = 70.0f,
-                .maxSubsteps = 3,
-            });
-            ok &= expectFalse("non-finite or negative accumulated delta is invalid", accumulatedDecision.valid);
-        }
+        input.nativeAccumulatedDeltaSeconds = 0.0f;
+        input.nativeSubstepCount = 1;
+        ok &= expectFalse("negative native remainder", evaluateTimingFix(input).valid);
+    }
+
+    {
+        auto input = TimingFixInput{
+            .sourceDeltaSeconds = 1.0f / 90.0f,
+            .globalTimeMultiplier = 1.0f,
+            .nativeRemainderDeltaSeconds = 0.0f,
+            .nativePreviousRemainderDeltaSeconds = 0.004f,
+            .nativeAccumulatedDeltaSeconds = 1.0f / 90.0f,
+            .nativeSubstepDeltaSeconds = 1.0f / 60.0f,
+            .nativeSubstepCount = 0,
+            .sourceValid = true,
+            .sourceDiscontinuity = false,
+            .sourcePaused = false,
+        };
+        input.sourceValid = false;
+        ok &= expectFalse("invalid source frame", evaluateTimingFix(input).valid);
+        input.sourceValid = true;
+        input.sourceDiscontinuity = true;
+        ok &= expectFalse("source discontinuity", evaluateTimingFix(input).valid);
+        input.sourceDiscontinuity = false;
+        input.sourcePaused = true;
+        ok &= expectFalse("source pause", evaluateTimingFix(input).valid);
+    }
+
+    for (const float invalid : {
+             0.0f,
+             kMinAcceptedFrameDeltaSeconds,
+             -0.011f,
+             std::numeric_limits<float>::quiet_NaN(),
+             std::numeric_limits<float>::infinity(),
+         }) {
+        ok &= expectFalse("invalid source delta", evaluate(invalid).valid);
+        ok &= expectFalse("invalid global multiplier", evaluate(1.0f / 90.0f, invalid).valid);
     }
 
     return ok ? 0 : 1;

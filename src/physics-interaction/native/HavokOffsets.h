@@ -196,9 +196,21 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kData_BhkWorldRemainderDeltaSeconds = 0x65A3D7C;
 
+    // Native SetDeltaTime stores the prior remainder here before clearing the
+    // live field. FO4VR passes this value into player/presentation updates, so
+    // ROCK preserves it while replacing only the simulated interval.
+    constexpr std::uintptr_t kData_BhkWorldPreviousRemainderDeltaSeconds = 0x65A3D80;
+
     constexpr std::uintptr_t kData_BhkWorldAccumulatedDeltaSeconds = 0x65A3D84;
 
     constexpr std::uintptr_t kData_BhkWorldSubstepCount = 0x65A3D8C;
+
+    // BSTimer multiplies its real frame delta by this value before the main
+    // update passes that delta to bhkWorld::SetDeltaTime. The CommonLibF4VR
+    // relocation ID for QGlobalTimeMultiplier is unresolved in FO4VR 1.2.72,
+    // so timing code must use this verified VR offset and fail closed if its
+    // address is unavailable.
+    constexpr std::uintptr_t kData_GlobalSimulationTimeMultiplier = 0x3881630;
 
     constexpr std::uintptr_t kData_BethesdaAllocatorPool = 0x392E400;
 
