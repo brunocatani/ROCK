@@ -14,6 +14,8 @@ namespace rock::havok_timing_fix_policy
     constexpr float kMinAcceptedFrameDeltaSeconds = 0.000001f;
     constexpr float kMaxAcceptedFrameDeltaSeconds = 0.25f;
     constexpr float kMaxNativeAnchorDeltaSeconds = 0.1f;
+    constexpr float kStablePresentationPhaseFraction = 0.5f;
+    constexpr float kMaxNativeSubstepToRawAnchorRatio = 2.5f;
 
     struct TimingFixRuntimeState
     {
@@ -173,12 +175,17 @@ namespace rock::havok_timing_fix_policy
          * frame, so carrying that unrelated native cycle forward moves every
          * presented Havok body by a second, discontinuous clock.
          *
-         * Anchor one normal native phase and keep it stable while ordinary
-         * coherent frames run. This is the behavior the previous timing fix
-         * reached naturally after it forced at least one raw-duration step:
-         * accumulated - consumed became the prior remainder. A zero phase is
-         * not fabricated; if native timing is exactly on a step boundary,
-         * preserve the native schedule until it supplies a usable phase.
+         * The native remainder is a sawtooth over one fixed step. Its cycling
+         * value is required by a fixed-step schedule, but publishing it after
+         * ROCK completes one source interval every outer frame adds visible
+         * phase vibration to every presented Havok body. The time-average of
+         * that native sawtooth is the middle of the fixed step. Keep that mean
+         * phase stable so character-controller presentation retains the
+         * native amount of advance without reintroducing the cycle.
+         *
+         * Do not anchor while the adaptive native timer is still carrying a
+         * loading-frame substep. A recovered fixed step stays within the
+         * bounded ratio below; the observed load-recovery state does not.
          */
         bool presentationPhaseInitializedThisFrame = false;
         bool presentationPhaseRescaled = false;
@@ -192,15 +199,13 @@ namespace rock::havok_timing_fix_policy
                 presentationPhaseRescaled = true;
             }
         } else {
-            float phaseCandidate = input.nativePreviousRemainderDeltaSeconds;
-            if (phaseCandidate <= kMinAcceptedFrameDeltaSeconds) {
-                phaseCandidate = nativeNextRemainderDeltaSeconds;
-            }
-            if (phaseCandidate <= kMinAcceptedFrameDeltaSeconds) {
+            if (input.nativeSubstepDeltaSeconds >
+                input.nativeRawDeltaSeconds * kMaxNativeSubstepToRawAnchorRatio) {
                 return invalid("nativePresentationPhaseNotReady");
             }
 
-            phaseCandidate = std::fmod(phaseCandidate, coherentDeltaSeconds);
+            const float phaseCandidate =
+                input.nativeSubstepDeltaSeconds * kStablePresentationPhaseFraction;
             if (!isUsableDeltaSeconds(phaseCandidate)) {
                 return invalid("nativePresentationPhaseNotReady");
             }
@@ -210,13 +215,8 @@ namespace rock::havok_timing_fix_policy
             presentationPhaseInitializedThisFrame = true;
         }
 
-        if (runtimeState.presentationPhaseSeconds >= coherentDeltaSeconds) {
-            const float foldedPhase =
-                std::fmod(runtimeState.presentationPhaseSeconds, coherentDeltaSeconds);
-            if (!isUsableDeltaSeconds(foldedPhase)) {
-                return resetAndInvalidate("invalidPresentationPhase");
-            }
-            runtimeState.presentationPhaseSeconds = foldedPhase;
+        if (!isUsableDeltaSeconds(runtimeState.presentationPhaseSeconds)) {
+            return resetAndInvalidate("invalidPresentationPhase");
         }
         const float presentationPhaseSeconds = runtimeState.presentationPhaseSeconds;
 

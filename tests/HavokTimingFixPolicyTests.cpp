@@ -90,7 +90,7 @@ int main()
         ok &= expectNear(label, decision.substepDeltaSeconds, sourceDelta / static_cast<float>(expectedCount), 0.000001f);
         ok &= expectNear(label, decision.nativePreviousRemainderDeltaSeconds, 0.004f, 0.000001f);
         ok &= expectNear(label, decision.nativeNextRemainderDeltaSeconds, 1.0f / 90.0f, 0.000001f);
-        ok &= expectNear(label, decision.presentationPhaseSeconds, 0.004f, 0.000001f);
+        ok &= expectNear(label, decision.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
     }
 
     // Ordinary pacing variation must always preserve the complete source
@@ -150,7 +150,7 @@ int main()
             decision.nativeNextRemainderDeltaSeconds,
             (2.0f / 90.0f) - (1.0f / 60.0f),
             0.000001f);
-        ok &= expectNear("stable presentation phase", decision.presentationPhaseSeconds, 0.004f, 0.000001f);
+        ok &= expectNear("stable presentation phase", decision.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
         ok &= expectTrue("presentation phase initialized", decision.presentationPhaseInitializedThisFrame);
 
         input.nativePreviousRemainderDeltaSeconds = 0.010f;
@@ -158,7 +158,7 @@ int main()
         input.nativeSubstepCount = 0;
         const auto continued = evaluateTimingFix(input, runtimeState);
         ok &= expectTrue("continued presentation phase", continued.valid);
-        ok &= expectNear("continued presentation phase", continued.presentationPhaseSeconds, 0.004f, 0.000001f);
+        ok &= expectNear("continued presentation phase", continued.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
         ok &= expectFalse("continued phase not reinitialized", continued.presentationPhaseInitializedThisFrame);
 
         input.nativeAccumulatedDeltaSeconds = 0.0f;
@@ -182,8 +182,42 @@ int main()
             .sourcePaused = false,
         };
         TimingFixRuntimeState runtimeState{};
-        ok &= expectFalse("native phase not ready", evaluateTimingFix(input, runtimeState).valid);
-        ok &= expectFalse("native phase remains uninitialized", runtimeState.presentationPhaseInitialized);
+        const auto decision = evaluateTimingFix(input, runtimeState);
+        ok &= expectTrue("native phase on step boundary", decision.valid);
+        ok &= expectNear("mean native presentation phase", decision.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
+        ok &= expectTrue("mean native phase initialized", runtimeState.presentationPhaseInitialized);
+    }
+
+    // The first normal source frame after loading can still carry the native
+    // adaptive timer's much larger recovery substep. Do not freeze that load
+    // phase into the presentation clock; initialize after native timing has
+    // returned to its ordinary fixed step.
+    {
+        auto input = TimingFixInput{
+            .sourceDeltaSeconds = 0.012251f,
+            .globalTimeMultiplier = 1.0f,
+            .nativeRawDeltaSeconds = 0.009f,
+            .nativeRemainderDeltaSeconds = 0.0f,
+            .nativePreviousRemainderDeltaSeconds = 0.024833f,
+            .nativeAccumulatedDeltaSeconds = 0.033833f,
+            .nativeSubstepDeltaSeconds = 0.033167f,
+            .nativeSubstepCount = 1,
+            .sourceValid = true,
+            .sourceDiscontinuity = false,
+            .sourcePaused = false,
+        };
+        TimingFixRuntimeState runtimeState{};
+        ok &= expectFalse("adaptive recovery phase rejected", evaluateTimingFix(input, runtimeState).valid);
+        ok &= expectFalse("adaptive recovery phase not initialized", runtimeState.presentationPhaseInitialized);
+
+        input.nativeRawDeltaSeconds = 0.011f;
+        input.nativePreviousRemainderDeltaSeconds = 0.000332f;
+        input.nativeAccumulatedDeltaSeconds = 0.011332f;
+        input.nativeSubstepDeltaSeconds = 1.0f / 60.0f;
+        input.nativeSubstepCount = 0;
+        const auto recovered = evaluateTimingFix(input, runtimeState);
+        ok &= expectTrue("recovered native phase", recovered.valid);
+        ok &= expectNear("recovered mean phase", recovered.presentationPhaseSeconds, 1.0f / 120.0f, 0.000001f);
     }
 
     {
