@@ -40,6 +40,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -368,6 +369,25 @@ namespace rock
         void clearSelectedCloseFingerPose();
     public:
         const std::vector<std::uint32_t>& getHeldBodyIds() const { return _heldBodyIds; }
+
+        std::size_t copyHeldBodyIdsForPhysics(std::span<std::uint32_t> destination) const
+        {
+            if (!_isHoldingFlag.load(std::memory_order_acquire) || destination.empty()) {
+                return 0;
+            }
+
+            const int publishedCount = _heldBodyIdsCount.load(std::memory_order_acquire);
+            const std::size_t count = (std::min)(
+                destination.size(),
+                publishedCount > 0 ? static_cast<std::size_t>(publishedCount) : std::size_t{ 0 });
+            for (std::size_t index = 0; index < count; ++index) {
+                destination[index] = _heldBodyIdsSnapshot[index];
+            }
+
+            // Release publishes isHolding=false before it clears the count.
+            // Reject a snapshot that overlapped that transition.
+            return _isHoldingFlag.load(std::memory_order_acquire) ? count : 0;
+        }
 
         bool isHeldBodyId(std::uint32_t bodyId) const
         {

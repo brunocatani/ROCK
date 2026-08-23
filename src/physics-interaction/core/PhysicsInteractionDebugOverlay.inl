@@ -189,6 +189,30 @@
         if (probeLeft) {
             logHand(_leftHand, context.left.rawHandWorld);
         }
+
+        const auto transport = _heldPlayerSpaceTransport.telemetrySnapshot();
+        ROCK_LOG_DEBUG(Hand,
+            "PLAYER_SPACE_TRANSPORT: action={} sourceSeq={} step={} sourceOk={} velocityOk={} roomVel=({:.3f},{:.3f},{:.3f}) maxDelta=({:.3f},{:.3f},{:.3f}) sourceDelta={:.3f}gu/{:.3f}deg requested={} motions={} velocityWrites={} warpWrites={} failures={} warps={} invalidVelocity={}",
+            HeldPlayerSpaceTransport::actionName(transport.action),
+            transport.sourceSequence,
+            transport.physicsStepSequence,
+            transport.sourceValid ? "y" : "n",
+            transport.controllerVelocityValid ? "y" : "n",
+            transport.roomVelocityGameUnitsPerSecond.x,
+            transport.roomVelocityGameUnitsPerSecond.y,
+            transport.roomVelocityGameUnitsPerSecond.z,
+            transport.largestVelocityDeltaGameUnitsPerSecond.x,
+            transport.largestVelocityDeltaGameUnitsPerSecond.y,
+            transport.largestVelocityDeltaGameUnitsPerSecond.z,
+            transport.sourceTranslationDeltaGameUnits,
+            transport.sourceRotationDeltaDegrees,
+            transport.requestedBodyCount,
+            transport.uniqueMotionCount,
+            transport.velocityWriteCount,
+            transport.warpWriteCount,
+            transport.failedWriteCount,
+            transport.warpCount,
+            transport.invalidVelocityCount);
     }
 
     void PhysicsInteraction::publishDebugBodyOverlay(const PhysicsFrameContext& context)

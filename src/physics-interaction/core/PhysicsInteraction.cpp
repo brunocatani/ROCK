@@ -1539,6 +1539,7 @@ namespace rock
         // Close callback entry and drain any native step already traversing
         // ROCK-owned body banks before clearing registry or wrapper state.
         _generatedBodyStepDrive.reset();
+        _heldPlayerSpaceTransport.reset();
         clearGeneratedBodyContactRegistry();
         const bool generatedWorldStillLive =
             currentBhkWorld &&
@@ -2191,6 +2192,10 @@ namespace rock
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
+        _heldPlayerSpaceTransport.queueSourceFrame(
+            runtime.playerSpace.world,
+            runtime.playerSpace.valid,
+            runtime.timing.sequence);
         const auto retireDynamicWeaponForInterruptedFrame = [this]() {
             if (!_initialized.load(std::memory_order_acquire)) {
                 return;
@@ -5807,6 +5812,7 @@ namespace rock
         // No generated-body owner may be torn down while a native listener is
         // still executing or eligible to enter its ROCK callback.
         _generatedBodyStepDrive.reset();
+        _heldPlayerSpaceTransport.reset();
 
         dispatchPhysicsMessage(kPhysMsg_OnPhysicsShutdown, false);
 
@@ -6995,6 +7001,24 @@ namespace rock
          * callback quiescence gate.
          */
         self->refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(world, "native-player-body-pre-collide");
+
+        /*
+         * Player-space transport must run before collision generation. The
+         * held body and proxy then enter contact generation and solve with the
+         * same common locomotion component. The centralized union prevents a
+         * shared two-hand body from receiving the transport twice.
+         */
+        std::array<std::uint32_t, 128> heldBodyIds{};
+        std::size_t heldBodyCount = self->_rightHand.copyHeldBodyIdsForPhysics(
+            std::span<std::uint32_t>{ heldBodyIds });
+        if (heldBodyCount < heldBodyIds.size()) {
+            heldBodyCount += self->_leftHand.copyHeldBodyIdsForPhysics(
+                std::span<std::uint32_t>{ heldBodyIds }.subspan(heldBodyCount));
+        }
+        self->_heldPlayerSpaceTransport.flushPreCollide(
+            world,
+            std::span<const std::uint32_t>{ heldBodyIds.data(), heldBodyCount },
+            timing);
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }
 
