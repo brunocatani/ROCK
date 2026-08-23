@@ -2389,6 +2389,9 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabAuthorityProxyTarget:
             case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
                 return 13.0f;
+            case AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget:
+            case AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
+                return 9.0f;
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 15.0f;
@@ -2472,6 +2475,9 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabAuthorityProxyTarget:
             case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
                 return 0.88f;
+            case AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget:
+            case AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
+                return 0.98f;
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 0.72f;
@@ -2745,16 +2751,25 @@ namespace rock::debug
                 color[3] = 0.96f;
                 break;
             case MarkerOverlayRole::RightGrabAuthorityProxyTarget:
-                color[0] = 0.10f;
-                color[1] = 0.95f;
-                color[2] = 1.0f;
-                color[3] = 0.98f;
-                break;
             case MarkerOverlayRole::LeftGrabAuthorityProxyTarget:
                 color[0] = 1.0f;
-                color[1] = 0.20f;
-                color[2] = 0.95f;
+                color[1] = 0.88f;
+                color[2] = 0.05f;
                 color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::RightGrabAuthorityProxyAppliedTarget:
+            case MarkerOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
+                color[0] = 1.0f;
+                color[1] = 0.42f;
+                color[2] = 0.02f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabAuthorityProxyClockDelta:
+            case MarkerOverlayRole::LeftGrabAuthorityProxyClockDelta:
+                color[0] = 1.0f;
+                color[1] = 1.0f;
+                color[2] = 1.0f;
+                color[3] = 0.96f;
                 break;
             case MarkerOverlayRole::RightGrabAuthorityProxyOffset:
             case MarkerOverlayRole::LeftGrabAuthorityProxyOffset:

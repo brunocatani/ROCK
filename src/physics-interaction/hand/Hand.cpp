@@ -1719,6 +1719,36 @@ namespace rock
         return true;
     }
 
+    bool Hand::tryGetGrabAuthorityProxyClockDebugSnapshot(
+        RE::hknpWorld* world,
+        GrabAuthorityProxyClockDebugSnapshot& out)
+    {
+        out = {};
+        if (!world) {
+            return false;
+        }
+
+        std::scoped_lock lock(_grabAuthorityProxyMutex);
+        if (!_grabAuthorityProxy.isValid() || _grabAuthorityProxyHknpWorld != world) {
+            return false;
+        }
+
+        out.proxyBodyId = _grabAuthorityProxy.getBodyId();
+        out.queuedSequence = _grabAuthorityProxyQueuedSequence;
+        out.flushSequence = _grabAuthorityProxyFlushSequence;
+        if (_grabAuthorityPendingTarget.valid) {
+            out.queuedProxyTargetWorld = _grabAuthorityPendingTarget.proxyWorld;
+            out.queuedRawHandWorld = _grabAuthorityPendingTarget.rawHandWorld;
+            out.hasQueuedTarget = true;
+        }
+        if (_hasLastAppliedGrabAuthorityProxyWorld) {
+            out.appliedProxyTargetWorld = _lastAppliedGrabAuthorityProxyWorld;
+            out.appliedRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
+            out.hasAppliedTarget = true;
+        }
+        return out.hasQueuedTarget || out.hasAppliedTarget;
+    }
+
     void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata,
         std::uint32_t otherBodyId,
         const hand_semantic_contact_state::SemanticContactVector* contactPointGame,

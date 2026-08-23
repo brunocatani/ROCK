@@ -80,6 +80,26 @@ namespace rock
         std::uint32_t palmMotionIndex{ body_frame::kFreeMotionIndex };
     };
 
+    /*
+     * Exact grab-proxy clock state. Unlike GrabAuthorityProxyDebugSnapshot,
+     * this never recomputes a target from the live palm body. The queued value
+     * is the current game-frame command waiting for the physics flush, and the
+     * applied value is the command that the last between-collide-and-solve
+     * flush actually gave to the proxy drive and constraint.
+     */
+    struct GrabAuthorityProxyClockDebugSnapshot
+    {
+        RE::NiTransform queuedProxyTargetWorld{};
+        RE::NiTransform queuedRawHandWorld{};
+        RE::NiTransform appliedProxyTargetWorld{};
+        RE::NiTransform appliedRawHandWorld{};
+        RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
+        std::uint64_t queuedSequence = 0;
+        std::uint64_t flushSequence = 0;
+        bool hasQueuedTarget = false;
+        bool hasAppliedTarget = false;
+    };
+
     // The LAST APPLIED grab-authority state (what the most recent physics flush
     // actually drove toward), not a live recompute like the proxy debug snapshot
     // above. The OVERLAY-POINT stutter probe differences this against the current
@@ -420,6 +440,8 @@ namespace rock
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
         bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
+        // Non-const: takes _grabAuthorityProxyMutex to copy queued/applied clocks.
+        bool tryGetGrabAuthorityProxyClockDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyClockDebugSnapshot& out);
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;

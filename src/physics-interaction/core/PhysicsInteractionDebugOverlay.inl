@@ -1718,6 +1718,15 @@
                     addMarkerLine(palmRadiusRole,
                         palmPocket.pocketCenterWorld - palmPocket.crossPalmWorld * palmPocket.pocketRadiusGameUnits,
                         palmPocket.pocketCenterWorld + palmPocket.crossPalmWorld * palmPocket.pocketRadiusGameUnits);
+                    constexpr float livePocketLabelColor[4]{ 1.0f, 0.08f, 0.58f, 0.96f };
+                    RE::NiPoint3 pocketLabel = palmPocket.pocketCenterWorld;
+                    pocketLabel.z += 3.0f;
+                    addTextLineSized(
+                        pocketLabel,
+                        1.35f,
+                        livePocketLabelColor,
+                        "POCKET %s LIVE-PALM/PRE",
+                        isLeft ? "L" : "R");
                 }
 
                 if (!handInput.hasPinchPocketWorld) {
@@ -3547,35 +3556,109 @@
                     }
                 };
 
-                auto addGrabAuthorityProxyTarget = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
+                auto addGrabAuthorityProxyClock = [&](Hand& hand, const RE::NiTransform& rawHandWorld) {
                     if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
                         return;
                     }
 
-                    GrabAuthorityProxyDebugSnapshot snapshot{};
-                    if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, rawHandWorld, snapshot)) {
+                    GrabAuthorityProxyClockDebugSnapshot snapshot{};
+                    if (!hand.tryGetGrabAuthorityProxyClockDebugSnapshot(hknp, snapshot)) {
                         return;
                     }
 
                     const bool isLeft = hand.isLeft();
+                    const RE::NiTransform* currentTarget = snapshot.hasQueuedTarget ?
+                        &snapshot.queuedProxyTargetWorld :
+                        (snapshot.hasAppliedTarget ? &snapshot.appliedProxyTargetWorld : nullptr);
                     addBodyWithTarget(
-                        hand.getGrabAuthorityProxyBodyId(),
+                        snapshot.proxyBodyId,
                         isLeft ?
                             debug::BodyOverlayRole::LeftGrabAuthorityProxy :
                             debug::BodyOverlayRole::RightGrabAuthorityProxy,
-                        &snapshot.proxyTargetWorld);
-                    addAxisTransform(snapshot.proxyTargetWorld,
-                        isLeft ? debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget : debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
-                        snapshot.palmAuthorityBaseWorld.translate,
-                        true);
-                    addMarkerPoint(
-                        isLeft ? debug::MarkerOverlayRole::LeftGrabAuthorityProxyTarget : debug::MarkerOverlayRole::RightGrabAuthorityProxyTarget,
-                        snapshot.proxyTargetWorld.translate,
-                        3.4f);
-                    addMarkerLine(
-                        isLeft ? debug::MarkerOverlayRole::LeftGrabAuthorityProxyOffset : debug::MarkerOverlayRole::RightGrabAuthorityProxyOffset,
-                        snapshot.palmAuthorityBaseWorld.translate,
-                        snapshot.proxyTargetWorld.translate);
+                        currentTarget);
+
+                    RE::NiTransform currentPalmTarget{};
+                    const bool hasCurrentPalmTarget = hand.tryGetPalmAnchorTarget(currentPalmTarget);
+                    const RE::NiTransform currentPalmAuthority = hasCurrentPalmTarget ?
+                        hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(currentPalmTarget) :
+                        rawHandWorld;
+
+                    if (snapshot.hasQueuedTarget) {
+                        addAxisTransform(
+                            snapshot.queuedProxyTargetWorld,
+                            isLeft ?
+                                debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget :
+                                debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
+                            currentPalmAuthority.translate,
+                            true);
+                        addMarkerPoint(
+                            isLeft ?
+                                debug::MarkerOverlayRole::LeftGrabAuthorityProxyTarget :
+                                debug::MarkerOverlayRole::RightGrabAuthorityProxyTarget,
+                            snapshot.queuedProxyTargetWorld.translate,
+                            4.0f);
+                        addMarkerLine(
+                            isLeft ?
+                                debug::MarkerOverlayRole::LeftGrabAuthorityProxyOffset :
+                                debug::MarkerOverlayRole::RightGrabAuthorityProxyOffset,
+                            currentPalmAuthority.translate,
+                            snapshot.queuedProxyTargetWorld.translate);
+                    }
+                    if (snapshot.hasAppliedTarget) {
+                        addAxisTransform(
+                            snapshot.appliedProxyTargetWorld,
+                            isLeft ?
+                                debug::AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget :
+                                debug::AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget,
+                            snapshot.appliedRawHandWorld.translate,
+                            true);
+                        addMarkerPoint(
+                            isLeft ?
+                                debug::MarkerOverlayRole::LeftGrabAuthorityProxyAppliedTarget :
+                                debug::MarkerOverlayRole::RightGrabAuthorityProxyAppliedTarget,
+                            snapshot.appliedProxyTargetWorld.translate,
+                            3.0f);
+                    }
+                    if (snapshot.hasQueuedTarget && snapshot.hasAppliedTarget) {
+                        addMarkerLine(
+                            isLeft ?
+                                debug::MarkerOverlayRole::LeftGrabAuthorityProxyClockDelta :
+                                debug::MarkerOverlayRole::RightGrabAuthorityProxyClockDelta,
+                            snapshot.appliedProxyTargetWorld.translate,
+                            snapshot.queuedProxyTargetWorld.translate);
+                    }
+
+                    RE::NiTransform liveProxyWorld{};
+                    const bool liveProxyOk = tryResolveLiveBodyWorldTransform(
+                        hknp,
+                        snapshot.proxyBodyId,
+                        liveProxyWorld);
+                    const float queuedToApplied =
+                        snapshot.hasQueuedTarget && snapshot.hasAppliedTarget ?
+                        origin_diagnostics::distance(
+                            snapshot.queuedProxyTargetWorld.translate,
+                            snapshot.appliedProxyTargetWorld.translate) :
+                        -1.0f;
+                    const float appliedToPre =
+                        snapshot.hasAppliedTarget && liveProxyOk ?
+                        origin_diagnostics::distance(
+                            snapshot.appliedProxyTargetWorld.translate,
+                            liveProxyWorld.translate) :
+                        -1.0f;
+                    constexpr float clockTextColor[4]{ 1.0f, 0.92f, 0.10f, 0.98f };
+                    const RE::NiPoint3 clockLabel = snapshot.hasQueuedTarget ?
+                        snapshot.queuedProxyTargetWorld.translate :
+                        snapshot.appliedProxyTargetWorld.translate;
+                    addTextLineSized(
+                        clockLabel + RE::NiPoint3{ 0.0f, 0.0f, 6.0f },
+                        1.45f,
+                        clockTextColor,
+                        "PROXY CLOCK %s Q=%llu F=%llu Q-A=%.2f A-PRE=%.2f",
+                        isLeft ? "L" : "R",
+                        static_cast<unsigned long long>(snapshot.queuedSequence),
+                        static_cast<unsigned long long>(snapshot.flushSequence),
+                        queuedToApplied,
+                        appliedToPre);
 
                 };
 
@@ -3609,19 +3692,15 @@
                     addAxisBody(leftPalm, debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame, context.left.rawHandWorld.translate, true);
                 }
 
-                const RE::hknpBodyId rightProxy = _rightHand.getGrabAuthorityProxyBodyId();
-                const RE::hknpBodyId leftProxy = _leftHand.getGrabAuthorityProxyBodyId();
-                if (rightProxy.value != INVALID_BODY_ID) {
-                    addBody(rightProxy, debug::BodyOverlayRole::RightGrabAuthorityProxy);
-                    addAxisBody(rightProxy, debug::AxisOverlayRole::RightGrabProxyReadback, context.right.rawHandWorld.translate, true);
-                }
-                if (leftProxy.value != INVALID_BODY_ID) {
-                    addBody(leftProxy, debug::BodyOverlayRole::LeftGrabAuthorityProxy);
-                    addAxisBody(leftProxy, debug::AxisOverlayRole::LeftGrabProxyReadback, context.left.rawHandWorld.translate, true);
-                }
+                addGrabAuthorityProxyClock(_rightHand, context.right.rawHandWorld);
+                addGrabAuthorityProxyClock(_leftHand, context.left.rawHandWorld);
 
-                addGrabAuthorityProxyTarget(_rightHand, context.right.rawHandWorld);
-                addGrabAuthorityProxyTarget(_leftHand, context.left.rawHandWorld);
+                const float proxyClockLegendColor[4]{ 1.0f, 1.0f, 1.0f, 0.98f };
+                addScreenTextLine(
+                    18.0f,
+                    76.0f,
+                    proxyClockLegendColor,
+                    "GRAB PROXY CLOCK  QUEUED=YELLOW  APPLIED=ORANGE  PRE=MAGENTA  POST=CYAN");
             }
 
             if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandColliders) &&
