@@ -49,10 +49,12 @@ namespace
         float minHz = 70.0f,
         int maxSubsteps = 3)
     {
+        rock::havok_timing_fix_policy::TimingFixRuntimeState runtimeState{};
         return rock::havok_timing_fix_policy::evaluateTimingFix(
             rock::havok_timing_fix_policy::TimingFixInput{
                 .sourceDeltaSeconds = sourceDelta,
                 .globalTimeMultiplier = multiplier,
+                .nativeRawDeltaSeconds = 1.0f / 90.0f,
                 .nativeRemainderDeltaSeconds = 0.0f,
                 .nativePreviousRemainderDeltaSeconds = 0.004f,
                 .nativeAccumulatedDeltaSeconds = 1.0f / 90.0f,
@@ -63,7 +65,8 @@ namespace
                 .sourceValid = true,
                 .sourceDiscontinuity = false,
                 .sourcePaused = false,
-            });
+            },
+            runtimeState);
     }
 }
 
@@ -87,6 +90,7 @@ int main()
         ok &= expectNear(label, decision.substepDeltaSeconds, sourceDelta / static_cast<float>(expectedCount), 0.000001f);
         ok &= expectNear(label, decision.nativePreviousRemainderDeltaSeconds, 0.004f, 0.000001f);
         ok &= expectNear(label, decision.nativeNextRemainderDeltaSeconds, 1.0f / 90.0f, 0.000001f);
+        ok &= expectNear(label, decision.presentationPhaseSeconds, 0.004f, 0.000001f);
     }
 
     // Ordinary pacing variation must always preserve the complete source
@@ -123,8 +127,9 @@ int main()
         auto input = TimingFixInput{
             .sourceDeltaSeconds = 1.0f / 90.0f,
             .globalTimeMultiplier = 1.0f,
+            .nativeRawDeltaSeconds = 1.0f / 90.0f,
             .nativeRemainderDeltaSeconds = 0.0f,
-            .nativePreviousRemainderDeltaSeconds = 1.0f / 90.0f,
+            .nativePreviousRemainderDeltaSeconds = 0.004f,
             .nativeAccumulatedDeltaSeconds = 2.0f / 90.0f,
             .nativeSubstepDeltaSeconds = 1.0f / 60.0f,
             .nativeSubstepCount = 1,
@@ -132,28 +137,60 @@ int main()
             .sourceDiscontinuity = false,
             .sourcePaused = false,
         };
-        const auto decision = evaluateTimingFix(input);
+        TimingFixRuntimeState runtimeState{};
+        const auto decision = evaluateTimingFix(input, runtimeState);
         ok &= expectTrue("native remainder phase", decision.valid);
         ok &= expectNear(
             "native previous remainder",
             decision.nativePreviousRemainderDeltaSeconds,
-            1.0f / 90.0f,
+            0.004f,
             0.000001f);
         ok &= expectNear(
             "native next remainder",
             decision.nativeNextRemainderDeltaSeconds,
             (2.0f / 90.0f) - (1.0f / 60.0f),
             0.000001f);
+        ok &= expectNear("stable presentation phase", decision.presentationPhaseSeconds, 0.004f, 0.000001f);
+        ok &= expectTrue("presentation phase initialized", decision.presentationPhaseInitializedThisFrame);
+
+        input.nativePreviousRemainderDeltaSeconds = 0.010f;
+        input.nativeAccumulatedDeltaSeconds = 0.010f;
+        input.nativeSubstepCount = 0;
+        const auto continued = evaluateTimingFix(input, runtimeState);
+        ok &= expectTrue("continued presentation phase", continued.valid);
+        ok &= expectNear("continued presentation phase", continued.presentationPhaseSeconds, 0.004f, 0.000001f);
+        ok &= expectFalse("continued phase not reinitialized", continued.presentationPhaseInitializedThisFrame);
 
         input.nativeAccumulatedDeltaSeconds = 0.0f;
         input.nativeSubstepCount = 1;
-        ok &= expectFalse("negative native remainder", evaluateTimingFix(input).valid);
+        ok &= expectFalse("negative native remainder", evaluateTimingFix(input, runtimeState).valid);
+        ok &= expectFalse("invalid native state resets phase", runtimeState.presentationPhaseInitialized);
+    }
+
+    {
+        auto input = TimingFixInput{
+            .sourceDeltaSeconds = 1.0f / 60.0f,
+            .globalTimeMultiplier = 1.0f,
+            .nativeRawDeltaSeconds = 1.0f / 60.0f,
+            .nativeRemainderDeltaSeconds = 0.0f,
+            .nativePreviousRemainderDeltaSeconds = 0.0f,
+            .nativeAccumulatedDeltaSeconds = 1.0f / 60.0f,
+            .nativeSubstepDeltaSeconds = 1.0f / 60.0f,
+            .nativeSubstepCount = 1,
+            .sourceValid = true,
+            .sourceDiscontinuity = false,
+            .sourcePaused = false,
+        };
+        TimingFixRuntimeState runtimeState{};
+        ok &= expectFalse("native phase not ready", evaluateTimingFix(input, runtimeState).valid);
+        ok &= expectFalse("native phase remains uninitialized", runtimeState.presentationPhaseInitialized);
     }
 
     {
         auto input = TimingFixInput{
             .sourceDeltaSeconds = 1.0f / 90.0f,
             .globalTimeMultiplier = 1.0f,
+            .nativeRawDeltaSeconds = 1.0f / 90.0f,
             .nativeRemainderDeltaSeconds = 0.0f,
             .nativePreviousRemainderDeltaSeconds = 0.004f,
             .nativeAccumulatedDeltaSeconds = 1.0f / 90.0f,
@@ -163,14 +200,15 @@ int main()
             .sourceDiscontinuity = false,
             .sourcePaused = false,
         };
+        TimingFixRuntimeState runtimeState{};
         input.sourceValid = false;
-        ok &= expectFalse("invalid source frame", evaluateTimingFix(input).valid);
+        ok &= expectFalse("invalid source frame", evaluateTimingFix(input, runtimeState).valid);
         input.sourceValid = true;
         input.sourceDiscontinuity = true;
-        ok &= expectFalse("source discontinuity", evaluateTimingFix(input).valid);
+        ok &= expectFalse("source discontinuity", evaluateTimingFix(input, runtimeState).valid);
         input.sourceDiscontinuity = false;
         input.sourcePaused = true;
-        ok &= expectFalse("source pause", evaluateTimingFix(input).valid);
+        ok &= expectFalse("source pause", evaluateTimingFix(input, runtimeState).valid);
     }
 
     for (const float invalid : {

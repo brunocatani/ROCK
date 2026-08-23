@@ -71,6 +71,7 @@ namespace rock
         // execute on the same game thread before the native world update.
         static PendingNativeTimingFrame g_pendingNativeTimingFrame{};
         static std::uint64_t g_appliedNativeTimingSequence = 0;
+        static havok_timing_fix_policy::TimingFixRuntimeState g_havokTimingFixRuntimeState{};
 
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
         constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
@@ -1513,6 +1514,7 @@ namespace rock
     void applyHavokTimingFixForGameFrame(const game_frame_timing_policy::GameFrameTiming& frameTiming)
     {
         if (!g_rockConfig.rockHavokTimingFixEnabled) {
+            havok_timing_fix_policy::resetTimingFixRuntimeState(g_havokTimingFixRuntimeState);
             return;
         }
 
@@ -1540,6 +1542,7 @@ namespace rock
          */
         float globalTimeMultiplier = 0.0f;
         if (!tryReadGlobalSimulationTimeMultiplier(globalTimeMultiplier)) {
+            havok_timing_fix_policy::resetTimingFixRuntimeState(g_havokTimingFixRuntimeState);
             if (!g_havokTimingFixMultiplierReadFailureLogged.exchange(true, std::memory_order_acq_rel)) {
                 ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX global simulation multiplier is unavailable; native schedule preserved");
             }
@@ -1549,6 +1552,7 @@ namespace rock
             havok_timing_fix_policy::TimingFixInput{
                 .sourceDeltaSeconds = frameTiming.deltaSeconds,
                 .globalTimeMultiplier = globalTimeMultiplier,
+                .nativeRawDeltaSeconds = pending.native.rawDeltaSeconds,
                 .nativeRemainderDeltaSeconds = pending.native.remainderDeltaSeconds,
                 .nativePreviousRemainderDeltaSeconds = pending.native.previousRemainderDeltaSeconds,
                 .nativeAccumulatedDeltaSeconds = pending.native.accumulatedDeltaSeconds,
@@ -1559,7 +1563,8 @@ namespace rock
                 .sourceValid = frameTiming.valid,
                 .sourceDiscontinuity = frameTiming.discontinuity,
                 .sourcePaused = frameTiming.menuPaused,
-            });
+            },
+            g_havokTimingFixRuntimeState);
         if (!decision.valid) {
             if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_SAMPLE_DEBUG(Physics,
@@ -1581,12 +1586,13 @@ namespace rock
         const BhkWorldTimingState coherent{
             .rawDeltaSeconds = decision.coherentDeltaSeconds,
             .substepDeltaSeconds = decision.substepDeltaSeconds,
-            .remainderDeltaSeconds = decision.nativeNextRemainderDeltaSeconds,
-            .previousRemainderDeltaSeconds = decision.nativePreviousRemainderDeltaSeconds,
+            .remainderDeltaSeconds = decision.presentationPhaseSeconds,
+            .previousRemainderDeltaSeconds = decision.presentationPhaseSeconds,
             .accumulatedDeltaSeconds = decision.simulatedDeltaSeconds,
             .substepCount = decision.substepCount,
         };
         if (!tryWriteBhkWorldTimingState(coherent)) {
+            havok_timing_fix_policy::resetTimingFixRuntimeState(g_havokTimingFixRuntimeState);
             if (!g_havokTimingFixWriteFailureLogged.exchange(true, std::memory_order_acq_rel)) {
                 ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX failed to write the coherent FO4VR timing state; native schedule preserved");
             }
@@ -1601,7 +1607,8 @@ namespace rock
             ROCK_LOG_SAMPLE_DEBUG(Physics,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "HAVOK_TIMING_FIX sourceDt={:.6f} globalScale={:.4f} coherentDt={:.6f} nativeRawDt={:.6f} nativeAccumDt={:.6f} "
-                "nativeSubDt={:.6f} nativeSubsteps={} nativePrevRem={:.6f} nativeNextRem={:.6f} native/source={:.3f} "
+                "nativeSubDt={:.6f} nativeSubsteps={} nativePrevRem={:.6f} predictedNativeNextRem={:.6f} "
+                "presentationPhase={:.6f} phaseInit={} phaseRescaled={} native/source={:.3f} "
                 "newSubDt={:.6f} newSubsteps={} simulatedDt={:.6f} "
                 "minHz={:.2f} maxSubsteps={}",
                 decision.sourceDeltaSeconds,
@@ -1613,6 +1620,9 @@ namespace rock
                 pending.native.substepCount,
                 decision.nativePreviousRemainderDeltaSeconds,
                 decision.nativeNextRemainderDeltaSeconds,
+                decision.presentationPhaseSeconds,
+                decision.presentationPhaseInitializedThisFrame ? "yes" : "no",
+                decision.presentationPhaseRescaled ? "yes" : "no",
                 nativeToSourceRatio,
                 decision.substepDeltaSeconds,
                 decision.substepCount,
