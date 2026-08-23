@@ -412,36 +412,6 @@ namespace rock
         float rockGrabPhysicsRateForceScaleExponent = 0.5f;
         float rockGrabPhysicsRateMinForceScale = 0.75f;
         float rockGrabPhysicsRateMaxForceScale = 1.35f;
-        bool rockGrabRoomVelocityFeedForward = false;
-        /*
-         * Held-object locomotion jag correction. Delivers, as POSITION, the
-         * per-frame room jag the motors measurably drop (exactly half of it;
-         * 2026-07-25 camera-relative decomposition). Identically zero standing
-         * and under even frame pacing -- see GrabLocomotionJag.h. Ships off
-         * until the speed-binned obj-cam roughness table confirms it.
-         */
-        bool rockGrabLocomotionJagCorrection = false;
-        float rockGrabLocomotionJagMaxCorrectionGameUnits = 2.0f;
-        float rockGrabLocomotionJagGain = 1.0f;
-        /*
-         * Room anchor: 0 = player actor position (game/render update), 1 =
-         * character-controller position (inside the physics step). The first
-         * session with the controller anchor delivered only 6-15% of the
-         * measured artifact, consistent with both correction terms sharing the
-         * physics clock and cancelling. Both anchors are sampled and logged
-         * every flush regardless of this setting; REMOVE the loser and this key
-         * once the logged deltas name which one carries the camera's staircase.
-         */
-        std::uint32_t rockGrabLocomotionJagAnchor = 0;
-        // Opt-in bounded predictor-corrector on the commanded grab target:
-        // smooths the commanded VELOCITY (removing the phase lock's accepted
-        // substep-dt quantization -- the measured stick-locomotion along-track
-        // stutter) while soft-correcting the POSITION back to the game-clock
-        // sample. Gain 1.0 == raw phase lock (no smoothing); lower gain ==
-        // smoother velocity, larger constant (invisible) position lag.
-        bool rockGrabSmoothVelocityDrive = false;
-        float rockGrabSmoothVelocityCorrectorGain = 0.2f;
-
         float rockGrabForceFadeInTime = 0.1f;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);

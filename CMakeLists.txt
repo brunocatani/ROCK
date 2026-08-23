@@ -504,13 +504,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabAuthoritySourceClockPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabAuthoritySourceClockPolicyTests)
 
-  add_executable(ROCKGrabLocomotionJagPolicyTests
-    "${ROOT_DIR}/tests/GrabLocomotionJagPolicyTests.cpp"
-  )
-  target_compile_features(ROCKGrabLocomotionJagPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKGrabLocomotionJagPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKGrabLocomotionJagPolicyTests)
-
   add_executable(ROCKHandColliderFramePolicyTests
     "${ROOT_DIR}/tests/HandColliderFramePolicyTests.cpp"
   )
@@ -751,7 +744,6 @@ if(BUILD_ROCK_TESTS)
     ROCKArticulatedAcquisitionPolicyTests
     ROCKGrabAuthorityProxyPolicyTests
     ROCKGrabAuthoritySourceClockPolicyTests
-    ROCKGrabLocomotionJagPolicyTests
     ROCKHandColliderFramePolicyTests
     ROCKHknpBodyFramePolicyTests
     ROCKGrabNodeNamePolicyTests

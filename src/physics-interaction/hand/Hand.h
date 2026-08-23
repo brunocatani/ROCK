@@ -111,17 +111,6 @@ namespace rock
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
         RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
         std::uint64_t flushSequence = 0;
-        // Magnitude of the locomotion jag correction applied to the held body
-        // this step, game units; -1 when no correction was applied. This is the
-        // validation channel: it must be ~0 standing and ~0.4-0.65 gu at
-        // sprint, and must never sit at the clamp.
-        float jagCorrectionGameUnits = -1.0f;
-        // Both room-anchor candidates as sampled at the flush, so one session
-        // decides which one carries the camera's per-frame staircase.
-        RE::NiPoint3 jagActorAnchorGameUnits{};
-        RE::NiPoint3 jagControllerAnchorGameUnits{};
-        bool jagActorAnchorValid = false;
-        bool jagControllerAnchorValid = false;
     };
 
     struct GrabContactPatchDebugSnapshot
@@ -402,7 +391,6 @@ namespace rock
             float physicsHz = 0.0f;
             float physicsRateForceScale = 1.0f;
             float sourceIntervalSeconds = 0.0f;
-            float feedForwardLeadSeconds = 0.0f;
         };
         GrabClockTelemetry getGrabClockTelemetry() const
         {
@@ -410,7 +398,6 @@ namespace rock
                 .physicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed),
                 .physicsRateForceScale = _lastGrabPhysicsRateForceScale.load(std::memory_order_relaxed),
                 .sourceIntervalSeconds = _lastGrabSourceIntervalSeconds.load(std::memory_order_relaxed),
-                .feedForwardLeadSeconds = _lastGrabFeedForwardLeadSeconds.load(std::memory_order_relaxed),
             };
         }
 
@@ -776,10 +763,6 @@ namespace rock
         void clearGrabAuthorityProxyRuntimeLocked();
         void beginGrabVisualReturn();
         void clearGrabVisualReturn(const char* reason, bool logCancellation);
-        void applyHeldLocomotionJagCorrectionLocked(RE::hknpWorld* world,
-            bool roomVelocityOk,
-            const RE::NiPoint3& roomVelocityGameUnitsPerSecond,
-            float stepDeltaSeconds);
         bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
@@ -1071,7 +1054,6 @@ namespace rock
         // Grab source-clock telemetry mirrors published by the physics-side
         // flush for the game-thread timing report.
         std::atomic<float> _lastGrabSourceIntervalSeconds{ 0.0f };
-        std::atomic<float> _lastGrabFeedForwardLeadSeconds{ 0.0f };
         BethesdaPhysicsBody _grabAuthorityProxy;
         RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;
         RE::hknpWorld* _grabAuthorityProxyHknpWorld = nullptr;
@@ -1100,42 +1082,6 @@ namespace rock
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
-        /*
-         * Locomotion transport (HIGGS SimulatePlayerSpace parity): the standing
-         * room-velocity contribution currently carried by the held body set, in
-         * game units/s. Guarded by _grabAuthorityProxyMutex like the pending
-         * target: written only by the physics flush, reset with the proxy
-         * runtime. The contribution is REAL world-space velocity (the object
-         * genuinely travels with the player), so release deliberately keeps it.
-         */
-        /*
-         * Locomotion jag correction state. The previous anchor is the ONLY
-         * history kept, and it is invalidated on every skip, so nothing can
-         * accumulate or bridge a gap (see GrabLocomotionJag.h).
-         */
-        RE::NiPoint3 _grabJagPreviousAnchorGameUnits{};
-        RE::NiPoint3 _grabJagLastCorrectionGameUnits{};
-        // Both anchor candidates, sampled every flush for the probe regardless
-        // of which one is selected. Delete the loser once the data decides.
-        RE::NiPoint3 _grabJagActorAnchorGameUnits{};
-        RE::NiPoint3 _grabJagControllerAnchorGameUnits{};
-        bool _grabJagActorAnchorValid = false;
-        bool _grabJagControllerAnchorValid = false;
-        std::uint64_t _grabJagLastQueuedSequence = 0;
-        std::uint32_t _grabJagAnchorReadFailures = 0;
-        std::uint32_t _grabJagClampCount = 0;
-        std::uint32_t _grabJagImplausibleCount = 0;
-        bool _grabJagPreviousAnchorValid = false;
-        bool _grabJagLastApplied = false;
-        /*
-         * Bounded velocity-smoother state (opt-in rockGrabSmoothVelocityDrive):
-         * the persistent commanded target the predictor-corrector advances by
-         * the smooth game-clock segment velocity and re-anchors toward the
-         * phase-locked sample. Guarded by _grabAuthorityProxyMutex; written only
-         * by the physics flush, reset with the proxy runtime.
-         */
-        RE::NiPoint3 _grabSmoothCommandedTranslation{};
-        bool _grabSmoothCommandedInitialized = false;
         struct RagdollAngularProbePreSolve
         {
             RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };

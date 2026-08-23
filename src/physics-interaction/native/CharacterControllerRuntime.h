@@ -21,12 +21,11 @@ namespace rock::character_controller_runtime
     // CommonLibF4VR's MiddleHighProcessData::charController (declared 0x3E0, flat) because VR is 0x3E8 --
     // reading through the CommonLib member yields a bad pointer. Per-hop null gates fail closed; SEH-guarded.
     //
-    // Consumer: the grab-authority room-velocity feed-forward (one-substep target prediction at the
-    // physics flush). This is a physics-clock signal read on the physics thread by design.
+    // This is a physics-clock signal and must only be read from an engine-owned
+    // phase where the controller state is stable.
     bool tryGetPlayerLocomotionVelocityRawGameUnits(RE::NiPoint3& outVelocityGameUnits) noexcept;
 
-    // Player ROOM ANCHOR world position, GAME UNITS -- the locomotion anchor the held-object jag
-    // correction differences per physics flush (never integrates; see GrabLocomotionJag.h).
+    // Player character-controller world position, in game units.
     //
     // Raw read: the velocity chain above, then -> +0x470 (character impl) -> +0x70 (hkVector4f
     // position, HAVOK units, converted here). Both offsets were read out of
@@ -36,16 +35,11 @@ namespace rock::character_controller_runtime
     // mirror SetPositionImpl (0x141e4df60), GetKeepDistanceImpl (0x141e4df40), InitPhysicsSystemImpl
     // (0x141e4da60), and by this+0x1A0 matching CommonLib's declared rotCenter.
     //
-    // The member read is deliberate rather than a vtable call: a wrong vtable index would CALL an
-    // arbitrary function, while a wrong member offset only yields implausible floats that the
-    // caller's plausibility gate rejects. Fails closed, SEH-guarded, per-hop null gates.
+    // The member read is deliberate rather than a vtable call: a wrong vtable
+    // index would call an arbitrary function. The read fails closed, is
+    // SEH-guarded, and checks each pointer hop.
     bool tryGetPlayerRoomAnchorPositionGameUnits(RE::NiPoint3& outPositionGameUnits) noexcept;
 
-    // Player ACTOR world position (TESObjectREFR::data.location), GAME UNITS -- the second room
-    // anchor candidate for the jag correction. Unlike the controller position above this advances on
-    // the game/render update rather than inside the physics step, which is the side of the clock
-    // boundary the camera follows. Which of the two actually carries the camera's per-frame staircase
-    // is decided by logged data, not by argument: both are sampled and logged every flush while
-    // iGrabLocomotionJagAnchor selects the one that drives the correction.
+    // Player actor world position (TESObjectREFR::data.location), in game units.
     bool tryGetPlayerActorPositionGameUnits(RE::NiPoint3& outPositionGameUnits) noexcept;
 }

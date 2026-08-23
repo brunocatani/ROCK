@@ -4029,7 +4029,7 @@ namespace rock
             const float physicsHz = physicsTelemetry.substepDeltaSeconds > 0.0f ? 1.0f / physicsTelemetry.substepDeltaSeconds : 0.0f;
             ROCK_LOG_SAMPLE_DEBUG(Update,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "TIMING game: seq={} dt={:.6f} hz={:.1f} valid={} paused={} elapsed={:.2f}s disc={} invalid={} | physics: step={} solve={} rawDt={:.6f} subDt={:.6f} substeps={} hz={:.1f} fallback={} fallbackCount={} simulated={:.2f}s | phaseIdentity={} | grabR: hz={:.1f} scale={:.3f} srcInt={:.4f} lead={:.4f} | grabL: hz={:.1f} scale={:.3f} srcInt={:.4f} lead={:.4f}",
+                "TIMING game: seq={} dt={:.6f} hz={:.1f} valid={} paused={} elapsed={:.2f}s disc={} invalid={} | physics: step={} solve={} rawDt={:.6f} subDt={:.6f} substeps={} hz={:.1f} fallback={} fallbackCount={} simulated={:.2f}s | phaseIdentity={} | grabR: hz={:.1f} scale={:.3f} srcInt={:.4f} | grabL: hz={:.1f} scale={:.3f} srcInt={:.4f}",
                 gameTelemetry.sequence,
                 gameTelemetry.deltaSeconds,
                 gameHz,
@@ -4051,11 +4051,9 @@ namespace rock
                 rightGrabClock.physicsHz,
                 rightGrabClock.physicsRateForceScale,
                 rightGrabClock.sourceIntervalSeconds,
-                rightGrabClock.feedForwardLeadSeconds,
                 leftGrabClock.physicsHz,
                 leftGrabClock.physicsRateForceScale,
-                leftGrabClock.sourceIntervalSeconds,
-                leftGrabClock.feedForwardLeadSeconds);
+                leftGrabClock.sourceIntervalSeconds);
         }
 
         _deltaLogCounter++;

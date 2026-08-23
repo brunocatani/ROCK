@@ -130,7 +130,7 @@
             rotationState.valid = objectOk && handBodyOk;
 
             ROCK_LOG_DEBUG(Hand,
-                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f} jag={:.4f}",
+                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f}",
                 hand.handName(),
                 probeMicroseconds,
                 sample.flushSequence,
@@ -162,8 +162,7 @@
                 rotStepWand,
                 rotStepTarget,
                 rotStepObject,
-                rotStepHandBody,
-                sample.jagCorrectionGameUnits);
+                rotStepHandBody);
 
             ROCK_LOG_DEBUG(Hand,
                 "{} RENDER_READ: t={}us flushSeq={} nodeOk={} node=({:.3f},{:.3f},{:.3f}) nodeSrc={} body=({:.3f},{:.3f},{:.3f}) d={:.3f} rotNode={:.3f} rotNB={:.3f}",
@@ -182,31 +181,6 @@
                 rotStepRenderNode,
                 rotRenderNodeVsBody);
 
-            /*
-             * Anchor decision data. The jag correction needs the room anchor
-             * the CAMERA follows; the first session's controller anchor
-             * delivered only 6-15% of the measured artifact, consistent with
-             * its delta and v_room*dt sharing the physics clock and cancelling.
-             * Both candidates are logged every frame beside the camera (already
-             * in OVERLAY_POINT above), so differencing them offline names the
-             * anchor whose per-frame step actually tracks the camera's
-             * staircase -- regardless of which one drove the correction.
-             */
-            ROCK_LOG_DEBUG(Hand,
-                "{} JAG_ANCHOR: t={}us flushSeq={} active={} actorOk={} actor=({:.4f},{:.4f},{:.4f}) ccOk={} cc=({:.4f},{:.4f},{:.4f}) corr={:.4f}",
-                hand.handName(),
-                probeMicroseconds,
-                sample.flushSequence,
-                g_rockConfig.rockGrabLocomotionJagAnchor == 1 ? "controller" : "actor",
-                sample.jagActorAnchorValid ? "y" : "n",
-                sample.jagActorAnchorGameUnits.x,
-                sample.jagActorAnchorGameUnits.y,
-                sample.jagActorAnchorGameUnits.z,
-                sample.jagControllerAnchorValid ? "y" : "n",
-                sample.jagControllerAnchorGameUnits.x,
-                sample.jagControllerAnchorGameUnits.y,
-                sample.jagControllerAnchorGameUnits.z,
-                sample.jagCorrectionGameUnits);
         };
 
         if (probeRight) {
