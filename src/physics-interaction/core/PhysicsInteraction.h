@@ -13,7 +13,6 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
-#include "physics-interaction/grab/HeldPlayerSpaceTransport.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/TouchGrabRuntime.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
@@ -439,7 +438,6 @@ namespace rock
 
         Hand _rightHand{ false };
         Hand _leftHand{ true };
-        HeldPlayerSpaceTransport _heldPlayerSpaceTransport;
         TouchGrabRuntime _touchGrabRuntime;
 
         BodyBoneColliderSet _bodyBoneColliders;

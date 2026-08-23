@@ -181,6 +181,74 @@
                 rotStepRenderNode,
                 rotRenderNodeVsBody);
 
+            const auto readBodyVelocityGameUnits = [&](RE::hknpBodyId bodyId, RE::NiPoint3& outVelocity) {
+                outVelocity = {};
+                auto* motion = havok_runtime::getBodyMotion(hknp, bodyId);
+                if (!motion) {
+                    return false;
+                }
+                const float havokToGame = physics_scale::havokToGame();
+                if (!std::isfinite(havokToGame) || havokToGame <= 0.0f) {
+                    return false;
+                }
+                outVelocity = RE::NiPoint3{
+                    motion->linearVelocity.x * havokToGame,
+                    motion->linearVelocity.y * havokToGame,
+                    motion->linearVelocity.z * havokToGame,
+                };
+                return std::isfinite(outVelocity.x) &&
+                       std::isfinite(outVelocity.y) &&
+                       std::isfinite(outVelocity.z);
+            };
+
+            RE::NiPoint3 controllerVelocityGameUnits{};
+            RE::NiPoint3 objectVelocityGameUnits{};
+            RE::NiPoint3 proxyVelocityGameUnits{};
+            const bool controllerVelocityOk =
+                character_controller_runtime::
+                    tryGetPlayerLocomotionVelocityRawGameUnits(
+                        controllerVelocityGameUnits);
+            const bool objectVelocityOk = readBodyVelocityGameUnits(
+                sample.objectBodyId,
+                objectVelocityGameUnits);
+            const bool proxyVelocityOk = readBodyVelocityGameUnits(
+                sample.proxyBodyId,
+                proxyVelocityGameUnits);
+            const auto& runtime = runtime_state::currentFrame();
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} LOCOMOTION_PHASE: t={}us gameSeq={} gameDt={:.6f} flushSeq={} playerSpaceOk={} playerSpaceSrc={} roomDelta=({:.4f},{:.4f},{:.4f}) controllerOk={} controllerVel=({:.3f},{:.3f},{:.3f}) objectVelOk={} objectVel=({:.3f},{:.3f},{:.3f}) proxyVelOk={} proxyVel=({:.3f},{:.3f},{:.3f}) objectTargetGap={:.3f} proxyTargetGap={:.3f}",
+                hand.handName(),
+                probeMicroseconds,
+                runtime.timing.sequence,
+                runtime.deltaSeconds,
+                sample.flushSequence,
+                runtime.playerSpace.valid ? "y" : "n",
+                runtime.playerSpace.source,
+                runtime.playerSpace.deltaGameUnits.x,
+                runtime.playerSpace.deltaGameUnits.y,
+                runtime.playerSpace.deltaGameUnits.z,
+                controllerVelocityOk ? "y" : "n",
+                controllerVelocityGameUnits.x,
+                controllerVelocityGameUnits.y,
+                controllerVelocityGameUnits.z,
+                objectVelocityOk ? "y" : "n",
+                objectVelocityGameUnits.x,
+                objectVelocityGameUnits.y,
+                objectVelocityGameUnits.z,
+                proxyVelocityOk ? "y" : "n",
+                proxyVelocityGameUnits.x,
+                proxyVelocityGameUnits.y,
+                proxyVelocityGameUnits.z,
+                objectOk ? origin_diagnostics::distance(
+                               objectWorld.translate,
+                               sample.appliedProxyTargetWorld.translate) :
+                           -1.0f,
+                proxyOk ? origin_diagnostics::distance(
+                              proxyWorld.translate,
+                              sample.appliedProxyTargetWorld.translate) :
+                          -1.0f);
+
         };
 
         if (probeRight) {
@@ -190,29 +258,6 @@
             logHand(_leftHand, context.left.rawHandWorld);
         }
 
-        const auto transport = _heldPlayerSpaceTransport.telemetrySnapshot();
-        ROCK_LOG_DEBUG(Hand,
-            "PLAYER_SPACE_TRANSPORT: action={} sourceSeq={} step={} sourceOk={} velocityOk={} roomVel=({:.3f},{:.3f},{:.3f}) maxDelta=({:.3f},{:.3f},{:.3f}) sourceDelta={:.3f}gu/{:.3f}deg requested={} motions={} velocityWrites={} warpWrites={} failures={} warps={} invalidVelocity={}",
-            HeldPlayerSpaceTransport::actionName(transport.action),
-            transport.sourceSequence,
-            transport.physicsStepSequence,
-            transport.sourceValid ? "y" : "n",
-            transport.controllerVelocityValid ? "y" : "n",
-            transport.roomVelocityGameUnitsPerSecond.x,
-            transport.roomVelocityGameUnitsPerSecond.y,
-            transport.roomVelocityGameUnitsPerSecond.z,
-            transport.largestVelocityDeltaGameUnitsPerSecond.x,
-            transport.largestVelocityDeltaGameUnitsPerSecond.y,
-            transport.largestVelocityDeltaGameUnitsPerSecond.z,
-            transport.sourceTranslationDeltaGameUnits,
-            transport.sourceRotationDeltaDegrees,
-            transport.requestedBodyCount,
-            transport.uniqueMotionCount,
-            transport.velocityWriteCount,
-            transport.warpWriteCount,
-            transport.failedWriteCount,
-            transport.warpCount,
-            transport.invalidVelocityCount);
     }
 
     void PhysicsInteraction::publishDebugBodyOverlay(const PhysicsFrameContext& context)
