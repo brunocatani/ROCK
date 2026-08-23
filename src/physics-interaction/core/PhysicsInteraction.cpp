@@ -53,6 +53,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
@@ -7066,6 +7067,10 @@ namespace rock
             1;
         _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
+        held_scene_presentation::publishFinalSolvedPoses(
+            world,
+            timing.substepIndex,
+            timing.substepCount);
         _dynamicWeaponCollision.samplePostSolve(
             world,
             completedSolveSequence);

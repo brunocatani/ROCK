@@ -10,6 +10,7 @@
 #include "RockConfig.h"
 
 #include "RE/Havok/hknpBodyId.h"
+#include "RE/NetImmerse/NiAVObject.h"
 #include "REL/Relocation.h"
 
 #include <Windows.h>
@@ -20,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <intrin.h>
+#include <memory>
 
 namespace rock::held_scene_presentation
 {
@@ -59,6 +61,7 @@ namespace rock::held_scene_presentation
             std::atomic<std::size_t> count{ 0 };
             std::atomic<std::uint64_t> traceId{ 0 };
             std::atomic<std::uint64_t> firstAppliedTraceId{ 0 };
+            std::atomic<std::uint64_t> firstPostSolveTraceId{ 0 };
         };
 
         struct Match
@@ -77,6 +80,44 @@ namespace rock::held_scene_presentation
         AtomicHandRegistration& registrationFor(bool isLeft) noexcept
         {
             return s_registrations[isLeft ? 1u : 0u];
+        }
+
+        bool copyRegistration(
+            const AtomicHandRegistration& source,
+            Registration& destination) noexcept
+        {
+            constexpr int kMaxAttempts = 4;
+            for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+                const std::uint64_t begin =
+                    source.sequence.load(std::memory_order_acquire);
+                if ((begin & 1u) != 0) {
+                    continue;
+                }
+
+                Registration snapshot{};
+                snapshot.count = (std::min)(
+                    source.count.load(std::memory_order_relaxed),
+                    kMaxRegisteredBodies);
+                snapshot.traceId =
+                    source.traceId.load(std::memory_order_relaxed);
+                for (std::size_t index = 0; index < snapshot.count; ++index) {
+                    const auto& entry = source.bodies[index];
+                    snapshot.bodies[index] = RegisteredBody{
+                        .collisionObject = entry.collisionObject.load(
+                            std::memory_order_relaxed),
+                        .world = entry.world.load(std::memory_order_relaxed),
+                        .bodyId = entry.bodyId.load(std::memory_order_relaxed),
+                    };
+                }
+
+                const std::uint64_t end =
+                    source.sequence.load(std::memory_order_acquire);
+                if (begin == end) {
+                    destination = snapshot;
+                    return true;
+                }
+            }
+            return false;
         }
 
         bool registrationContainsCollision(
@@ -280,6 +321,53 @@ namespace rock::held_scene_presentation
                 transform.rotationDeltaDegrees);
         }
 
+        void logPostSolveApplication(
+            const Match& match,
+            const held_scene_presentation_policy::TransformDecision& transform,
+            const float* originalInput,
+            const float* correctedInput) noexcept
+        {
+            auto& registration = registrationFor(match.isLeft);
+            std::uint64_t previous =
+                registration.firstPostSolveTraceId.load(
+                    std::memory_order_acquire);
+            if (previous != match.traceId &&
+                registration.firstPostSolveTraceId.compare_exchange_strong(
+                    previous,
+                    match.traceId,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                ROCK_LOG_INFO(HeldScenePresentation,
+                    "HELD_SCENE_POSTSOLVE first-apply trace={} hand={} body={} delta={:.4f}gu rotation={:.3f}deg input=({:.3f},{:.3f},{:.3f}) output=({:.3f},{:.3f},{:.3f}) thread={}",
+                    match.traceId,
+                    match.isLeft ? "left" : "right",
+                    match.bodyId,
+                    transform.translationDeltaGameUnits,
+                    transform.rotationDeltaDegrees,
+                    originalInput[12],
+                    originalInput[13],
+                    originalInput[14],
+                    correctedInput[12],
+                    correctedInput[13],
+                    correctedInput[14],
+                    GetCurrentThreadId());
+            }
+
+            if (!g_rockConfig.rockDebugGrabFrameLogging &&
+                !g_rockConfig.rockDebugVerboseLogging) {
+                return;
+            }
+
+            ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
+                1000,
+                "HELD_SCENE_POSTSOLVE applied trace={} hand={} body={} delta={:.4f}gu rotation={:.3f}deg",
+                match.traceId,
+                match.isLeft ? "left" : "right",
+                match.bodyId,
+                transform.translationDeltaGameUnits,
+                transform.rotationDeltaDegrees);
+        }
+
         __declspec(noinline) void sceneTransformWriterHook(
             void* collisionObjectRaw,
             float* writerInput) noexcept
@@ -437,5 +525,113 @@ namespace rock::held_scene_presentation
     {
         Registration empty{};
         publishHeldBodies(isLeft, empty);
+    }
+
+    void publishFinalSolvedPoses(
+        RE::hknpWorld* world,
+        std::uint32_t substepIndex,
+        std::uint32_t substepCount) noexcept
+    {
+        if (!world || !s_installed.load(std::memory_order_acquire) ||
+            !s_originalWriter ||
+            !held_scene_presentation_policy::shouldPublishSolvedPose(
+                substepIndex,
+                substepCount)) {
+            return;
+        }
+
+        std::array<RE::NiCollisionObject*, kMaxRegisteredBodies * 2u>
+            publishedCollisionObjects{};
+        std::size_t publishedCount = 0;
+
+        static REL::Relocation<PredictBodyTransform> predictBodyTransform{
+            REL::Offset(offsets::kFunc_PredictBodyTransform)
+        };
+
+        for (std::size_t handIndex = 0;
+             handIndex < s_registrations.size();
+             ++handIndex) {
+            Registration registration{};
+            if (!copyRegistration(
+                    s_registrations[handIndex],
+                    registration)) {
+                continue;
+            }
+
+            for (std::size_t bodyIndex = 0;
+                 bodyIndex < registration.count;
+                 ++bodyIndex) {
+                const RegisteredBody& entry = registration.bodies[bodyIndex];
+                if (!entry.collisionObject || entry.world != world ||
+                    entry.bodyId == 0x7FFF'FFFFu) {
+                    continue;
+                }
+
+                const bool alreadyPublished = std::find(
+                    publishedCollisionObjects.begin(),
+                    publishedCollisionObjects.begin() + publishedCount,
+                    entry.collisionObject) !=
+                    publishedCollisionObjects.begin() + publishedCount;
+                if (alreadyPublished) {
+                    continue;
+                }
+
+                RE::hknpWorld* resolvedWorld = nullptr;
+                RE::hknpBodyId resolvedBodyId{ 0x7FFF'FFFFu };
+                if (!havok_runtime::tryResolveCollisionObjectBody(
+                        entry.collisionObject,
+                        resolvedWorld,
+                        resolvedBodyId) ||
+                    resolvedWorld != world ||
+                    resolvedBodyId.value != entry.bodyId) {
+                    continue;
+                }
+
+                auto* ownerNode =
+                    havok_runtime::getOwnerNodeFromCollisionObject(
+                        entry.collisionObject);
+                if (!ownerNode) {
+                    continue;
+                }
+
+                alignas(16) float solvedTransform[
+                    held_scene_presentation_policy::kPredictionFloatCount]{};
+                predictBodyTransform(
+                    world,
+                    entry.bodyId,
+                    0.0f,
+                    solvedTransform);
+
+                alignas(16) float writerInput[
+                    held_scene_presentation_policy::kPredictionFloatCount]{};
+                const auto* currentWorld = reinterpret_cast<const float*>(
+                    std::addressof(ownerNode->world));
+                const auto transform =
+                    held_scene_presentation_policy::buildWriterTransform(
+                        currentWorld,
+                        solvedTransform,
+                        physics_scale::havokToGame(),
+                        writerInput);
+                if (!transform.apply) {
+                    continue;
+                }
+
+                const Match match{
+                    .valid = true,
+                    .isLeft = handIndex == 1u,
+                    .world = world,
+                    .bodyId = entry.bodyId,
+                    .traceId = registration.traceId,
+                };
+                logPostSolveApplication(
+                    match,
+                    transform,
+                    currentWorld,
+                    writerInput);
+                s_originalWriter(entry.collisionObject, writerInput);
+                publishedCollisionObjects[publishedCount++] =
+                    entry.collisionObject;
+            }
+        }
     }
 }

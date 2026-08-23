@@ -39,6 +39,21 @@ int main()
 
     bool ok = true;
 
+    ok &= expect(
+        "a single physics substep must publish its solved pose",
+        shouldPublishSolvedPose(0, 1));
+    ok &= expect(
+        "an early physics substep must not publish a partial pose",
+        !shouldPublishSolvedPose(0, 3) &&
+            !shouldPublishSolvedPose(1, 3));
+    ok &= expect(
+        "the final physics substep must publish its solved pose",
+        shouldPublishSolvedPose(2, 3));
+    ok &= expect(
+        "invalid physics substep metadata must fail closed",
+        !shouldPublishSolvedPose(0, 0) &&
+            !shouldPublishSolvedPose(3, 3));
+
     const auto normalTiming = evaluateTiming(true, 0.011f, 0.002f);
     ok &= expect(
         "the main scene writer must use raw frame time plus native remainder",

@@ -30,4 +30,8 @@ namespace rock::held_scene_presentation
     [[nodiscard]] bool install() noexcept;
     void publishHeldBodies(bool isLeft, const Registration& registration) noexcept;
     void clearHeldBodies(bool isLeft) noexcept;
+    void publishFinalSolvedPoses(
+        RE::hknpWorld* world,
+        std::uint32_t substepIndex,
+        std::uint32_t substepCount) noexcept;
 }
