@@ -66,6 +66,10 @@ namespace rock::debug
         constexpr std::uintptr_t kBodyMotionPropertiesOffset = 0x72;
         constexpr std::uintptr_t kMotionPositionOffset = 0x00;
         constexpr std::uintptr_t kMotionOrientationOffset = 0x10;
+        // hknpMotion +0x40 world-space linear velocity (Havok units/s).
+        // Layout Ghidra-verified in CommonLibF4VR RE/Havok/hknpMotion.h;
+        // +0x20 is packed inverse inertia, never velocity.
+        constexpr std::uintptr_t kMotionLinearVelocityOffset = 0x40;
         // Concrete scaled/compound layouts are absent from CommonLibF4VR.
         // These FO4VR offsets were independently verified in the constructors,
         // alloc/copy helpers, key-mask code, and shape consumers recorded in
@@ -89,7 +93,8 @@ namespace rock::debug
         constexpr float kBodyAxisLength = 16.0f;
         constexpr float kTargetAxisLength = 20.0f;
         constexpr std::size_t kBodySourceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
-        constexpr std::size_t kBodyDiagnosticPhaseCount = 3;
+        // CurrentTarget, PreStep, PostSolve, PredictedPresentation shells.
+        constexpr std::size_t kBodyDiagnosticPhaseCount = 4;
         constexpr std::size_t kBodyInstanceCapacity = kBodySourceCapacity * kBodyDiagnosticPhaseCount;
         static_assert(kBodySourceCapacity == debug_overlay_runtime::kMaxBodyInstances);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
@@ -182,7 +187,11 @@ namespace rock::debug
             RoleColor,
             CurrentTarget,
             PreStep,
-            PostSolve
+            PostSolve,
+            // Post-solve pose extrapolated by the remainder bhkWorld::Update
+            // publishes at exit: the pose the engine's vfunction44 scene
+            // writer gives the render node this frame.
+            PredictedPresentation
         };
 
         struct PublishedBodyEntry
@@ -226,11 +235,14 @@ namespace rock::debug
             DirectX::XMFLOAT4X4 currentTargetWorldMatrix{};
             DirectX::XMFLOAT4X4 preStepWorldMatrix{};
             DirectX::XMFLOAT4X4 postSolveWorldMatrix{};
+            DirectX::XMFLOAT4X4 predictedPresentationWorldMatrix{};
             RE::hknpBodyId bodyId{ kInvalidBodyId };
             BodyOverlayRole role{ BodyOverlayRole::Target };
+            float predictedOffsetGameUnits{ 0.0f };
             bool hasCurrentTarget{ false };
             bool preStepValid{ false };
             bool postSolveValid{ false };
+            bool predictedPresentationValid{ false };
         };
 
         struct CompletedBodyPhaseFrame
@@ -243,6 +255,8 @@ namespace rock::debug
             std::uint32_t substepCount{ 0 };
             std::uint32_t count{ 0 };
             std::uint32_t validCount{ 0 };
+            float presentationRemainderSeconds{ 0.0f };
+            bool presentationRemainderValid{ false };
         };
 
         class AtomicFlagLease
@@ -820,6 +834,44 @@ namespace rock::debug
                 out.worldMatrix = bodyToWorldMatrix(transform);
             }
 
+            return true;
+        }
+
+        // Reads the body's motion-record world-space linear velocity (Havok
+        // units/s). Same guarded walk as extractBody; fails closed on any
+        // missing array, freed motion, or non-finite component.
+        bool tryReadMotionLinearVelocityHavok(
+            RE::hknpWorld* world,
+            RE::hknpBodyId bodyId,
+            float outVelocity[3]) noexcept
+        {
+            if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
+                return false;
+            }
+
+            auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
+            auto bodyArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kBodyArrayOffset);
+            auto motionArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kMotionArrayOffset);
+            auto highWaterMark = *reinterpret_cast<std::uint32_t*>(worldAddress + kHighWaterMarkOffset);
+            if (!bodyArray || !motionArray || bodyId.value > highWaterMark || highWaterMark > kMaxBodyIndex) {
+                return false;
+            }
+
+            const auto bodyAddress = bodyArray + static_cast<std::uintptr_t>(bodyId.value) * kBodyStride;
+            const auto motionIndex = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyMotionIndexOffset);
+            if (motionIndex == kFreeMotionIndex || motionIndex == 0 || motionIndex >= kMaxMotionIndex) {
+                return false;
+            }
+
+            const auto motionAddress = motionArray + static_cast<std::uintptr_t>(motionIndex) * kMotionStride;
+            const auto* velocity = reinterpret_cast<const float*>(motionAddress + kMotionLinearVelocityOffset);
+            if (!std::isfinite(velocity[0]) || !std::isfinite(velocity[1]) || !std::isfinite(velocity[2])) {
+                return false;
+            }
+
+            outVelocity[0] = velocity[0];
+            outVelocity[1] = velocity[1];
+            outVelocity[2] = velocity[2];
             return true;
         }
 
@@ -2308,6 +2360,12 @@ namespace rock::debug
                 color[2] = 0.72f;
                 color[3] = 0.96f;
                 return;
+            case BodyRenderPhase::PredictedPresentation:
+                color[0] = 1.0f;
+                color[1] = 0.32f;
+                color[2] = 0.02f;
+                color[3] = 0.92f;
+                return;
             case BodyRenderPhase::RoleColor:
                 break;
             }
@@ -3521,6 +3579,8 @@ namespace rock::debug
              * shells around that origin.
              */
             switch (phase) {
+            case BodyRenderPhase::PredictedPresentation:
+                return 1.045f;
             case BodyRenderPhase::CurrentTarget:
                 return 1.030f;
             case BodyRenderPhase::PreStep:
@@ -3942,6 +4002,75 @@ namespace rock::debug
                         maxVertices,
                         rejectedVertices);
                 }
+
+                if (completedPhaseFrame) {
+                    TextOverlayEntry present{};
+                    present.x = 18.0f;
+                    present.y = 94.0f;
+                    present.size = 2.0f;
+                    present.worldAnchored = false;
+                    if (completedPhaseFrame->presentationRemainderValid) {
+                        float maxOffsetGameUnits = 0.0f;
+                        std::uint32_t predictedBodies = 0;
+                        for (std::uint32_t index = 0;
+                             index < completedPhaseFrame->count &&
+                             index < completedPhaseFrame->entries.size();
+                             ++index) {
+                            const auto& entry =
+                                completedPhaseFrame->entries[index];
+                            if (!entry.predictedPresentationValid) {
+                                continue;
+                            }
+                            ++predictedBodies;
+                            maxOffsetGameUnits = (std::max)(
+                                maxOffsetGameUnits,
+                                entry.predictedOffsetGameUnits);
+                        }
+                        present.color[0] = 1.0f;
+                        present.color[1] = 0.32f;
+                        present.color[2] = 0.02f;
+                        present.color[3] = 0.92f;
+                        std::snprintf(
+                            present.text,
+                            sizeof(present.text),
+                            "PRESENT rem=%+.2fms predicted=%u maxoff=%.2fgu",
+                            completedPhaseFrame->presentationRemainderSeconds *
+                                1000.0f,
+                            predictedBodies,
+                            maxOffsetGameUnits);
+                    } else {
+                        present.color[0] = 1.0f;
+                        present.color[1] = 0.45f;
+                        present.color[2] = 0.10f;
+                        present.color[3] = 0.96f;
+                        std::snprintf(
+                            present.text,
+                            sizeof(present.text),
+                            "PRESENT remainder unavailable (fallback timing)");
+                    }
+                    appendTextGlyphs(
+                        vertices,
+                        present,
+                        present.x,
+                        present.y,
+                        eyeWidth - 8.0f,
+                        textureWidth,
+                        textureHeight,
+                        maxVertices,
+                        rejectedVertices);
+                    if (duplicatePerEye) {
+                        appendTextGlyphs(
+                            vertices,
+                            present,
+                            present.x + eyeWidth,
+                            present.y,
+                            textureWidth - 8.0f,
+                            textureWidth,
+                            textureHeight,
+                            maxVertices,
+                            rejectedVertices);
+                    }
+                }
                 if (rejectedVertices != rejectedBefore) {
                     ++stats.textVertexTruncations;
                 }
@@ -4118,6 +4247,13 @@ namespace rock::debug
                                 &completed->postSolveWorldMatrix),
                             BodyRenderPhase::PostSolve,
                             false);
+                        if (completed->predictedPresentationValid) {
+                            appendPhase(
+                                DirectX::XMLoadFloat4x4(
+                                    &completed->predictedPresentationWorldMatrix),
+                                BodyRenderPhase::PredictedPresentation,
+                                false);
+                        }
                         continue;
                     }
                 }
@@ -4558,6 +4694,30 @@ namespace rock::debug
             return;
         }
 
+        /*
+         * Reproduce the remainder bhkWorld::Update publishes at exit
+         * (liveRemainder += accumulated - substepCount x substepDelta; FO4VR
+         * 1.2.72, ADD at 0x141DF74BD). This callback runs before that ADD,
+         * so the live global cannot be read directly here. vfunction44 hands
+         * every dynamic body's render node to the scene writer 0x141E06B00
+         * as predict(motion, thatRemainder) (0x141E09ADE..0x141E09B56), so
+         * the PredictedPresentation shell below is the pose the engine will
+         * render this frame, while PostSolve stays the true solver pose.
+         * Position-only extrapolation: the discriminating signal is the
+         * velocity x remainder translation, not the quaternion integration.
+         */
+        float presentationRemainderSeconds = 0.0f;
+        bool presentationRemainderValid = false;
+        if (!timing.usedFallback) {
+            const float remainder =
+                timing.remainderDeltaSeconds +
+                (timing.accumulatedDeltaSeconds - timing.simulatedDeltaSeconds);
+            if (std::isfinite(remainder) && std::fabs(remainder) <= 0.25f) {
+                presentationRemainderSeconds = remainder;
+                presentationRemainderValid = true;
+            }
+        }
+
         AtomicFlagLease lease(s_physicsPhaseCaptureGate);
         if (!lease ||
             s_physicsPhaseCaptureRequest.worldIdentity !=
@@ -4573,6 +4733,8 @@ namespace rock::debug
         captured.solveSequence = solveSequence;
         captured.substepIndex = timing.substepIndex;
         captured.substepCount = substepCount;
+        captured.presentationRemainderSeconds = presentationRemainderSeconds;
+        captured.presentationRemainderValid = presentationRemainderValid;
         for (std::uint32_t index = 0;
              index < s_physicsPhaseCaptureRequest.count &&
              index < s_physicsPhaseCaptureRequest.entries.size();
@@ -4604,6 +4766,34 @@ namespace rock::debug
                 body.worldMatrix);
             destination.postSolveValid = true;
             ++captured.validCount;
+
+            if (!presentationRemainderValid) {
+                continue;
+            }
+            float velocityHavok[3]{};
+            if (!tryReadMotionLinearVelocityHavok(
+                    world,
+                    request.bodyId,
+                    velocityHavok)) {
+                continue;
+            }
+            const float offsetScale =
+                presentationRemainderSeconds * havokToGameScale();
+            const float dx = velocityHavok[0] * offsetScale;
+            const float dy = velocityHavok[1] * offsetScale;
+            const float dz = velocityHavok[2] * offsetScale;
+            if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) {
+                continue;
+            }
+
+            destination.predictedPresentationWorldMatrix =
+                destination.postSolveWorldMatrix;
+            destination.predictedPresentationWorldMatrix._41 += dx;
+            destination.predictedPresentationWorldMatrix._42 += dy;
+            destination.predictedPresentationWorldMatrix._43 += dz;
+            destination.predictedOffsetGameUnits =
+                std::sqrt(dx * dx + dy * dy + dz * dz);
+            destination.predictedPresentationValid = true;
         }
 
         s_completedBodyPhaseFrame = captured;
