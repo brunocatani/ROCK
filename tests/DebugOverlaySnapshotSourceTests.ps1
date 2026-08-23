@@ -36,6 +36,14 @@ Require-Pattern 'buildPublishedFrame[\s\S]*extractBody\(source\.world' `
     'Live Havok body state must be resolved while building the game-thread publication.'
 Require-Pattern 'buildPublishedFrame[\s\S]*captureBodyWorldAabb\(source\.world' `
     'The publication must capture the real body AABB before crossing into the compositor thread.'
+Require-Pattern 'niStoredBodyAxesToWorldMatrix[\s\S]*currentTargetToWorldMatrix[\s\S]*BodyOverlayRole::Target' `
+    'Held BODY targets must render from stored BODY axes instead of the generated-collider transpose convention.'
+Require-Pattern 'stagePhysicsPhaseCapture\(const PublishedOverlayFrame& frame\)[\s\S]*preStepWorldMatrix[\s\S]*currentTargetWorldMatrix' `
+    'Physics phase capture must freeze the matching published pre-step and target matrices before the solve.'
+Require-Pattern 'CompletedBodyPhaseFrame[\s\S]*postSolveWorldMatrix[\s\S]*kMaxCompletedPhaseAgeFrames' `
+    'The compositor must retain one bounded completed target/pre/post packet across the next publication boundary.'
+Require-Pattern 'findCompletedBodyPhaseEntry[\s\S]*BodyRenderPhase::CurrentTarget[\s\S]*BodyRenderPhase::PreStep[\s\S]*BodyRenderPhase::PostSolve' `
+    'Phase rendering must draw one internally matched completed yellow/magenta/cyan triplet.'
 Require-Pattern 'world->GetBodyAabb\(bodyId,\s*&raw\)' `
     'Body bounds must use the current CommonLibF4VR world wrapper instead of imported raw standalone offsets.'
 Require-Pattern 'captureOverlayRenderSettings[\s\S]*g_rockConfig' `
