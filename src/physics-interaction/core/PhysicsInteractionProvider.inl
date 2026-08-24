@@ -283,16 +283,27 @@
         using Source = WeaponClassificationSource;
         using Provenance =
             ::rock::provider::RockProviderWeaponClassificationProvenanceFlagV1;
+        if (identity.keywordFlags != 0) {
+            outResult.provenanceFlags |= static_cast<std::uint32_t>(
+                Provenance::KeywordEvidence);
+        }
+        if (identity.usedEffectiveInstanceKeywordData) {
+            outResult.provenanceFlags |= static_cast<std::uint32_t>(
+                Provenance::EffectiveInstanceKeywordEvidence);
+        }
         switch (identity.classificationSource) {
         case Source::Keyword:
             outResult.confidence = 1.0f;
-            outResult.provenanceFlags |= static_cast<std::uint32_t>(
-                Provenance::KeywordEvidence);
             break;
-        case Source::WeightFallback:
-            outResult.confidence = 0.65f;
+        case Source::WeaponData:
+            outResult.confidence = 1.0f;
             outResult.provenanceFlags |= static_cast<std::uint32_t>(
-                Provenance::MeshBoundsFallback);
+                Provenance::WeaponDataEvidence);
+            break;
+        case Source::EquipSlot:
+            outResult.confidence = 0.85f;
+            outResult.provenanceFlags |= static_cast<std::uint32_t>(
+                Provenance::EquipSlotEvidence);
             break;
         case Source::Default:
             outResult.confidence = 0.35f;

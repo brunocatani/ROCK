@@ -64,43 +64,41 @@ namespace rock
     };
 
     /*
-     * Coarse physical size class for the whole equipped weapon, distinct from
-     * WeaponPartKind (which classifies individual nodes). Published as equipped
-     * weapon identity evidence and consumed by size-sensitive interaction policy.
+     * Coarse whole-weapon handling class, distinct from WeaponPartKind, which
+     * classifies individual generated bodies. The V1 name is retained for ABI
+     * compatibility; this is not inferred from physical weight.
      */
     enum class WeaponSizeClass : std::uint8_t
     {
-        Melee,
-        Pistol,
-        Rifle,
-        Heavy
+        Melee = 0,
+        Pistol = 1,
+        Rifle = 2,
+        Heavy = 3,
     };
 
     /*
-     * Records which signal produced a WeaponSizeClass decision. RE::WEAPON_TYPE
-     * collapses every firearm to kGun, and Fallout4.esm's WeaponType* keyword
-     * convention is author-discretion on modded weapons (verified 2026-07-03:
-     * of two installed Glock pistol mods, one tags WeaponTypePistol on every
-     * weapon, the other tags none), so classification must degrade gracefully
-     * rather than silently trusting an absent or partial signal.
+     * Records the authored runtime signal that produced a WeaponSizeClass
+     * decision. Values are aligned with RockProviderWeaponClassificationSourceV1.
+     * Value 2 remains reserved for V1 compatibility and is never emitted.
      */
     enum class WeaponClassificationSource : std::uint8_t
     {
-        None,
-        Keyword,
-        WeightFallback,
-        Default
+        None = 0,
+        Keyword = 1,
+        WeightFallback = 2,
+        Default = 3,
+        WeaponData = 4,
+        EquipSlot = 5,
     };
 
     /*
-     * One bit per Fallout4.esm WeaponType* keyword ROCK checks on the equipped
-     * weapon's own form (verified directly against Fallout4.esm; no OMOD/template
-     * indirection was observed for any sampled weapon). A bitmask instead of a
-     * single enum value because vanilla weapons can legitimately carry more than
-     * one bucket keyword at once (e.g. CombatShotgun carries both
+     * One bit per Fallout4.esm WeaponType* keyword ROCK checks through the
+     * equipped weapon's effective instance keyword form. The engine applies
+     * installed OMOD keyword changes to this data and falls back to the base WEAP
+     * keyword form when instance keyword data is absent. A bitmask instead of a
+     * single enum value preserves valid combinations such as CombatShotgun's
      * WeaponTypeRifle, the grip/animation category, and WeaponTypeShotgun, the
-     * specific family) - collapsing that to one value would silently discard the
-     * more specific tag that a future reload/scope consumer would want.
+     * specific family.
      */
     enum class WeaponKeywordFlag : std::uint64_t
     {

@@ -67,6 +67,16 @@ namespace
     static_assert(static_cast<std::uint32_t>(
                       RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureFault) ==
                   (1u << 6));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::Keyword) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::Keyword));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::WeightFallback) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::WeightFallback));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::Default) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::Default));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::WeaponData) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::WeaponData));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::EquipSlot) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::EquipSlot));
     // Public V1 part-kind / action-role values are a wire contract for
     // external consumers (PAPER_Toolkit); pin every enumerator to the internal
     // classification enums so a reorder breaks this build, not a consumer.

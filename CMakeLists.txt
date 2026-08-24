@@ -638,6 +638,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKAuthoredWeaponGripCapturePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKAuthoredWeaponGripCapturePolicyTests)
 
+  add_executable(ROCKWeaponClassificationPolicyTests
+    "${ROOT_DIR}/tests/WeaponClassificationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKWeaponClassificationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponClassificationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponClassificationPolicyTests)
+
   add_executable(ROCKAuthoredWeaponGripActivationPolicyTests
     "${ROOT_DIR}/tests/AuthoredWeaponGripActivationPolicyTests.cpp"
   )
@@ -755,6 +762,7 @@ if(BUILD_ROCK_TESTS)
     ROCKWeaponTransitionAnimationAccelerationPolicyTests
     ROCKWeaponInventoryStackSelectionPolicyTests
     ROCKAuthoredWeaponGripCapturePolicyTests
+    ROCKWeaponClassificationPolicyTests
     ROCKAuthoredWeaponGripActivationPolicyTests
     ROCKNativeIdleGripPreharvestPolicyTests
     ROCKAuthoredWeaponGripAuthorityPolicyTests

@@ -121,8 +121,6 @@ namespace rock
         float rockWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
         float rockWeaponCollisionMaxLinearVelocity = 50.0f;
         float rockWeaponCollisionMaxAngularVelocity = 100.0f;
-        float rockWeaponSizeClassPistolMaxWeight = 6.0f;
-        float rockWeaponSizeClassRifleMaxWeight = 20.0f;
         float rockWeaponInteractionTouchRadius = 2.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
         float rockFiringGripProximitySupportRadius = 6.0f;

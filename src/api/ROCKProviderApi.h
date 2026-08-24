@@ -728,10 +728,8 @@ namespace rock::provider
     };
 
     /*
-     * Coarse physical size class for the currently equipped weapon. ROCK uses
-     * this to pick a generated-collision max-distance-from-origin budget;
-     * exposed here so other providers (reload/scope logic) don't need to
-     * reimplement weapon-size classification.
+     * Coarse whole-weapon handling class retained by the V1 contract. This is
+     * resolved from authored runtime data, not from weight or mesh dimensions.
      */
     enum class RockProviderWeaponSizeClassV1 : std::uint32_t
     {
@@ -742,11 +740,9 @@ namespace rock::provider
     };
 
     /*
-     * Fallout4.esm's WeaponType* keyword tagging is reliable on vanilla weapons
-     * but author-discretion on mods (verified directly: of two installed real
-     * pistol mods, one tags every weapon, the other tags none). This records
-     * which signal actually produced the size class so a consumer can tell a
-     * confident keyword match from a weight-based guess.
+     * Records the authored runtime signal that produced the handling class.
+     * WeightFallback keeps its V1 numeric value for binary compatibility but is
+     * retired and never emitted by current ROCK builds.
      */
     enum class RockProviderWeaponClassificationSourceV1 : std::uint32_t
     {
@@ -754,17 +750,15 @@ namespace rock::provider
         Keyword = 1,
         WeightFallback = 2,
         Default = 3,
+        WeaponData = 4,
+        EquipSlot = 5,
     };
 
     /*
-     * One bit per Fallout4.esm WeaponType* keyword found on the equipped
-     * weapon's own form. A bitmask rather than a single value because vanilla
-     * weapons can legitimately carry more than one bucket keyword at once
-     * (e.g. CombatShotgun carries both Rifle, the grip/animation category, and
-     * Shotgun, the specific family) - callers that need the more specific tag
-     * (e.g. a future reload/scope mod picking a shotgun-specific animation)
-     * should prefer the most specific flag present rather than assuming
-     * mutual exclusivity.
+     * One bit per Fallout4.esm WeaponType* keyword found through the equipped
+     * weapon's effective instance keyword form. Installed OMOD keyword changes
+     * are already applied by the engine. A bitmask preserves valid combinations
+     * such as CombatShotgun's Rifle and Shotgun keywords.
      */
     enum class RockProviderWeaponKeywordFlagV1 : std::uint64_t
     {
@@ -1049,8 +1043,12 @@ namespace rock::provider
     {
         None = 0,
         KeywordEvidence = 1u << 0,
+        // Legacy V1 bit. Current ROCK builds never emit it.
         MeshBoundsFallback = 1u << 1,
         GenerationBound = 1u << 2,
+        EffectiveInstanceKeywordEvidence = 1u << 3,
+        WeaponDataEvidence = 1u << 4,
+        EquipSlotEvidence = 1u << 5,
     };
 
     enum class RockProviderWeaponCompositionFlagV1 : std::uint32_t

@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
+#include "physics-interaction/weapon/WeaponClassificationPolicy.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
@@ -1318,14 +1319,16 @@ namespace rock
             return resolved;
         }
 
-        std::uint64_t computeWeaponKeywordFlags(const RE::TESObjectWEAP* weapon)
+        std::uint64_t computeWeaponKeywordFlags(
+            const RE::TESObjectWEAP* weapon,
+            const RE::TBO_InstanceData* instanceData)
         {
             std::uint64_t flags = 0;
             if (!weapon) {
                 return flags;
             }
             for (const auto& entry : resolvedWeaponKeywordForms()) {
-                if (entry.keyword && weapon->HasKeyword(entry.keyword)) {
+                if (entry.keyword && weapon->HasKeyword(entry.keyword, instanceData)) {
                     flags |= static_cast<std::uint64_t>(entry.flag);
                 }
             }
@@ -1337,65 +1340,42 @@ namespace rock
             WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
             WeaponClassificationSource source{ WeaponClassificationSource::Default };
             std::uint64_t keywordFlags{ 0 };
+            bool usedEffectiveInstanceKeywordData{ false };
         };
 
         /*
-         * Keyword-primary, weight-fallback: vanilla Fallout4.esm tags every
-         * sampled weapon with exactly one (occasionally two, e.g. CombatShotgun
-         * carries both Rifle and Shotgun) bucket keyword, but tagging on
-         * player-installed weapon mods is author-discretion and unreliable
-         * (verified directly: of two installed Glock pistol mods, one tags every
-         * weapon with WeaponTypePistol, the other tags none). So a bucket
-         * keyword is trusted when present; when absent, this falls back to the
-         * existing weight heuristic rather than defaulting blindly.
+         * FO4VR 1.2.72 BGSKeywordForm::HasKeyword at 0x140147F50 selects
+         * TBO_InstanceData::GetKeywordData() when available. This reads the
+         * engine-assembled keyword set after installed OMOD property changes.
+         * Untagged weapons then use native instance weapon data and the
+         * instance-aware equip slot. Weight is not classification evidence.
          */
-        WeaponClassificationResult classifyEquippedWeapon(const RE::TESObjectWEAP* weapon, float weightGame)
+        WeaponClassificationResult classifyEquippedWeapon(
+            const RE::TESObjectWEAP* weapon,
+            const RE::TBO_InstanceData* instanceData,
+            const std::uint32_t effectiveEquipSlotFormID)
         {
             WeaponClassificationResult result{};
             if (!weapon) {
                 return result;
             }
 
-            result.keywordFlags = computeWeaponKeywordFlags(weapon);
-            const auto has = [&](WeaponKeywordFlag flag) { return hasWeaponKeywordFlag(result.keywordFlags, flag); };
-
-            if (has(WeaponKeywordFlag::Melee1H) || has(WeaponKeywordFlag::Melee2H) ||
-                has(WeaponKeywordFlag::Unarmed) || has(WeaponKeywordFlag::HandToHand)) {
-                result.sizeClass = WeaponSizeClass::Melee;
-                result.source = WeaponClassificationSource::Keyword;
-                return result;
-            }
-            if (has(WeaponKeywordFlag::HeavyGun)) {
-                result.sizeClass = WeaponSizeClass::Heavy;
-                result.source = WeaponClassificationSource::Keyword;
-                return result;
-            }
-            if (has(WeaponKeywordFlag::Pistol)) {
-                result.sizeClass = WeaponSizeClass::Pistol;
-                result.source = WeaponClassificationSource::Keyword;
-                return result;
-            }
-            if (has(WeaponKeywordFlag::Rifle) || has(WeaponKeywordFlag::Shotgun) ||
-                has(WeaponKeywordFlag::AssaultRifle) || has(WeaponKeywordFlag::Sniper) ||
-                has(WeaponKeywordFlag::GaussRifle) || has(WeaponKeywordFlag::LaserMusket)) {
-                result.sizeClass = WeaponSizeClass::Rifle;
-                result.source = WeaponClassificationSource::Keyword;
-                return result;
-            }
-
-            if (weapon_type_policy::isMelee(weapon->weaponData.type.get())) {
-                result.sizeClass = WeaponSizeClass::Melee;
-                result.source = WeaponClassificationSource::WeightFallback;
-                return result;
-            }
-            result.source = WeaponClassificationSource::WeightFallback;
-            if (weightGame <= g_rockConfig.rockWeaponSizeClassPistolMaxWeight) {
-                result.sizeClass = WeaponSizeClass::Pistol;
-            } else if (weightGame <= g_rockConfig.rockWeaponSizeClassRifleMaxWeight) {
-                result.sizeClass = WeaponSizeClass::Rifle;
-            } else {
-                result.sizeClass = WeaponSizeClass::Heavy;
-            }
+            const auto* effectiveData = instanceData ?
+                static_cast<const RE::TESObjectWEAP::InstanceData*>(instanceData) :
+                static_cast<const RE::TESObjectWEAP::InstanceData*>(&weapon->weaponData);
+            result.keywordFlags = computeWeaponKeywordFlags(weapon, instanceData);
+            const auto policyResult = weapon_classification_policy::classify({
+                .keywordFlags = result.keywordFlags,
+                .effectiveEquipSlotFormID = effectiveEquipSlotFormID,
+                .nativeMeleeType = effectiveData &&
+                    (effectiveData->type == RE::WEAPON_TYPE::kHandToHand ||
+                     weapon_type_policy::isMelee(effectiveData->type.get())),
+            });
+            result.sizeClass = policyResult.sizeClass;
+            result.source = policyResult.source;
+            result.usedEffectiveInstanceKeywordData =
+                result.keywordFlags != 0 && instanceData &&
+                instanceData->GetKeywordData();
             return result;
         }
 
@@ -1479,10 +1459,15 @@ namespace rock
                     weightGame = weapon->weaponData.weight;
                 }
                 identity.weightGame = std::isfinite(weightGame) && weightGame > 0.0f ? weightGame : 0.0f;
-                const auto classification = classifyEquippedWeapon(weapon, weightGame);
+                const auto classification = classifyEquippedWeapon(
+                    weapon,
+                    instanceData,
+                    identity.effectiveEquipSlotFormID);
                 identity.sizeClass = classification.sizeClass;
                 identity.classificationSource = classification.source;
                 identity.keywordFlags = classification.keywordFlags;
+                identity.usedEffectiveInstanceKeywordData =
+                    classification.usedEffectiveInstanceKeywordData;
             } else {
                 identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(nullptr, instanceData, objectInstanceExtra);
             }

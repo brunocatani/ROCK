@@ -300,8 +300,6 @@ namespace rock
         rockWeaponCollisionVisualStabilizationSeconds = kDefaultWeaponCollisionVisualStabilizationSeconds;
         rockWeaponCollisionMaxLinearVelocity = 50.0f;
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
-        rockWeaponSizeClassPistolMaxWeight = 6.0f;
-        rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionTouchRadius = 2.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockFiringGripProximitySupportRadius = 6.0f;
@@ -924,28 +922,6 @@ namespace rock
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxLinearVelocity", rockWeaponCollisionMaxLinearVelocity));
         rockWeaponCollisionMaxAngularVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
-        rockWeaponSizeClassPistolMaxWeight = readClampedFloat(ini,
-            SECTION,
-            "fWeaponSizeClassPistolMaxWeight",
-            rockWeaponSizeClassPistolMaxWeight,
-            6.0f,
-            0.0f,
-            200.0f);
-        rockWeaponSizeClassRifleMaxWeight = readClampedFloat(ini,
-            SECTION,
-            "fWeaponSizeClassRifleMaxWeight",
-            rockWeaponSizeClassRifleMaxWeight,
-            20.0f,
-            0.0f,
-            200.0f);
-        if (rockWeaponSizeClassPistolMaxWeight >= rockWeaponSizeClassRifleMaxWeight) {
-            ROCK_LOG_WARN(Config,
-                "Invalid weapon size class weight thresholds: fWeaponSizeClassPistolMaxWeight={:.2f} >= fWeaponSizeClassRifleMaxWeight={:.2f} - using defaults",
-                rockWeaponSizeClassPistolMaxWeight,
-                rockWeaponSizeClassRifleMaxWeight);
-            rockWeaponSizeClassPistolMaxWeight = 6.0f;
-            rockWeaponSizeClassRifleMaxWeight = 20.0f;
-        }
         rockWeaponInteractionTouchRadius = readClampedFloat(ini,
             SECTION,
             "fWeaponInteractionTouchRadius",

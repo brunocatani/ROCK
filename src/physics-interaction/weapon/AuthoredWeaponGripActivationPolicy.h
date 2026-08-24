@@ -1,12 +1,16 @@
 #pragma once
 
+#include "physics-interaction/weapon/WeaponClassificationPolicy.h"
+
 #include <cmath>
 #include <cstdint>
 
 namespace rock::authored_weapon_grip_activation_policy
 {
-    inline constexpr std::uint32_t kRightHandEquipSlotFormID = 0x00013F42u;
-    inline constexpr std::uint32_t kBothHandsEquipSlotFormID = 0x00013F45u;
+    inline constexpr std::uint32_t kRightHandEquipSlotFormID =
+        weapon_classification_policy::kRightHandEquipSlotFormID;
+    inline constexpr std::uint32_t kBothHandsEquipSlotFormID =
+        weapon_classification_policy::kBothHandsEquipSlotFormID;
     inline constexpr float kActivationHalfAngleDegrees = 45.0f;
     inline constexpr float kActivationConeMinimumDot = 0.70710678118654752440f;
     inline constexpr float kMinimumDirectionDistanceGameUnits = 0.25f;
