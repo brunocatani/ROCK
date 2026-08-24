@@ -2354,8 +2354,7 @@ namespace rock
                 std::clamp(g_rockConfig.rockGrabContactPatchProbeCount, 1, static_cast<int>(kMaxGrabContactPatchSamples)),
                 static_cast<int>(probePatternCount));
 
-            const float configuredNearDistance =
-                g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : g_rockConfig.rockNearDetectionRange;
+            const float configuredNearDistance = selection_query_policy::kNearCastDistanceGameUnits;
             const float selectionDistance = selection.hasHitPoint ? pointDistanceGameUnits(grabPivotAWorld, selection.hitPointWorld) : 0.0f;
             const float castDistance =
                 (std::max)(10.0f, (std::max)(configuredNearDistance, selectionDistance + radius * 4.0f + spacing));
@@ -2374,7 +2373,7 @@ namespace rock
                             .directionGame = palmNormal,
                             .distanceGame = castDistance,
                             .radiusGame = radius,
-                            .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                            .collisionFilterInfo = selection_query_policy::kShapeCastFilterInfo },
                         collector,
                         &diagnostics)) {
                     continue;
@@ -7168,7 +7167,11 @@ namespace rock
         const float pullDistance = (grabPivotPointHavok - objectPointHavok).Length();
 
         _pullElapsedSeconds = 0.0f;
-        _pullDurationSeconds = pull_motion_math::computePullDurationSeconds(pullDistance, g_rockConfig.rockPullDurationA, g_rockConfig.rockPullDurationB, g_rockConfig.rockPullDurationC);
+        _pullDurationSeconds = pull_motion_math::computePullDurationSeconds(
+            pullDistance,
+            pull_motion_math::kDurationA,
+            pull_motion_math::kDurationB,
+            pull_motion_math::kDurationC);
         _pullTargetHavok = {};
         _pullHasTarget = false;
         const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::BeginPull });
@@ -7244,7 +7247,7 @@ namespace rock
 
         const float distanceGameUnits = (grabPivotHavok - objectPointHavok).Length() * havokToGameScale();
         _currentSelection.distance = distanceGameUnits;
-        const float configuredAutoGrabDistance = (std::max)(0.1f, g_rockConfig.rockPullAutoGrabDistanceGameUnits);
+        const float configuredAutoGrabDistance = pull_motion_math::kAutoGrabDistanceGameUnits;
         const float nearConvergeDistance = (std::max)(configuredAutoGrabDistance, g_rockConfig.rockGrabNearConvergeDistanceGameUnits);
         const float pocketBand = (std::max)(0.0f, g_rockConfig.rockGrabPocketRadiusGameUnits);
         const float arrivalDistance = (std::max)(configuredAutoGrabDistance, (std::min)(nearConvergeDistance, configuredAutoGrabDistance + pocketBand));
@@ -7280,11 +7283,11 @@ namespace rock
                 .previousTargetHavok = _pullTargetHavok,
                 .elapsedSeconds = _pullElapsedSeconds,
                 .durationSeconds = _pullDurationSeconds,
-                .applyVelocitySeconds = g_rockConfig.rockPullApplyVelocityTime,
-                .ownerGraceSeconds = g_rockConfig.rockPullOwnerGraceSeconds,
-                .trackHandSeconds = g_rockConfig.rockPullTrackHandTime,
-                .destinationOffsetHavok = g_rockConfig.rockPullDestinationZOffsetHavok,
-                .maxVelocityHavok = g_rockConfig.rockPullMaxVelocityHavok,
+                .applyVelocitySeconds = pull_motion_math::kApplyVelocitySeconds,
+                .ownerGraceSeconds = pull_motion_math::kOwnerGraceSeconds,
+                .trackHandSeconds = pull_motion_math::kTrackHandSeconds,
+                .destinationOffsetHavok = pull_motion_math::kDestinationZOffsetHavok,
+                .maxVelocityHavok = pull_motion_math::kMaximumVelocityHavok,
                 .hasPreviousTarget = _pullHasTarget,
             });
 
@@ -7302,7 +7305,7 @@ namespace rock
                 arrivalDistance,
                 _pullElapsedSeconds,
                 _pullDurationSeconds,
-                g_rockConfig.rockPullOwnerGraceSeconds);
+                pull_motion_math::kOwnerGraceSeconds);
             finishPullPrepAsPhysicalDropIfActive("pull-owner-expired");
             clearSelectionState(true);
             return false;

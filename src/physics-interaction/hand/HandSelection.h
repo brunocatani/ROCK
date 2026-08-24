@@ -12,21 +12,34 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 
 #include "RE/NetImmerse/NiPoint.h"
 
 namespace rock::selection_query_policy
 {
-    constexpr std::uint32_t kDefaultShapeCastFilterInfo = 0x000B002D;
-    constexpr std::uint32_t kDefaultFarClipRayFilterInfo = 0x02420028;
-    constexpr float kDefaultFarSelectionHmdConeHalfAngleDegrees = 50.0f;
+    constexpr float kNearDetectionRangeGameUnits = 25.0f;
+    constexpr float kFarDetectionRangeGameUnits = 350.0f;
+    constexpr float kNearCastRadiusGameUnits = 3.5f;
+    constexpr float kNearCastDistanceGameUnits = 7.0f;
+    constexpr float kFarCastRadiusGameUnits = 21.0f;
+    constexpr int kCloseSelectionAimAngleDegrees = 0;
+    constexpr int kFarSelectionAimAngleDegrees = 0;
+    constexpr bool kFarSelectionHmdConeEnabled = true;
+    constexpr float kFarSelectionHmdConeHalfAngleDegrees = 50.0f;
+    constexpr std::string_view kFarSelectionBlockedReferenceFormIds{};
+    constexpr std::string_view kFarSelectionBlockedBaseFormIds{};
+    constexpr std::string_view kFarSelectionBlockedFormTypes{};
+    constexpr std::string_view kFarSelectionBlockedLayers{};
+    constexpr float kCloseSelectionBehindPalmToleranceGameUnits = 2.0f;
+    constexpr std::uint32_t kShapeCastFilterInfo = 0x000B002D;
+    constexpr std::uint32_t kFarClipRayFilterInfo = 0x02420028;
     constexpr float kMinFarSelectionHmdConeHalfAngleDegrees = 1.0f;
     constexpr float kMaxFarSelectionHmdConeHalfAngleDegrees = 89.0f;
     constexpr float kDegreesToRadians = 0.017453292519943295769f;
     constexpr std::size_t kMaxShapeCastPrecisionCandidates = 4;
     constexpr float kShapeCastCandidateScoreTieEpsilon = 0.0001f;
     constexpr float kCloseSelectionCandidateSwitchScoreRatio = 0.70f;
-    constexpr int kDefaultSelectionAimAngleDegrees = 0;
 
     struct ShapeCastCandidateScoringInput
     {
@@ -55,7 +68,7 @@ namespace rock::selection_query_policy
 
     inline int sanitizeSelectionAimAngleDegrees(int angleDegrees)
     {
-        return isAllowedSelectionAimAngleDegrees(angleDegrees) ? angleDegrees : kDefaultSelectionAimAngleDegrees;
+        return isAllowedSelectionAimAngleDegrees(angleDegrees) ? angleDegrees : kCloseSelectionAimAngleDegrees;
     }
 
     template <class Vector>
@@ -67,11 +80,6 @@ namespace rock::selection_query_policy
         result.y = -std::cos(radians);
         result.z = 0.0f;
         return result;
-    }
-
-    inline std::uint32_t sanitizeFilterInfo(std::uint32_t configuredValue, std::uint32_t fallback)
-    {
-        return configuredValue != 0 ? configuredValue : fallback;
     }
 
     inline bool shouldReplaceSelectionForSameRef(bool currentIsFarSelection, bool nextIsFarSelection, std::uint32_t currentBodyId, std::uint32_t nextBodyId)
@@ -211,7 +219,7 @@ namespace rock::selection_query_policy
     inline float sanitizeFarSelectionHmdConeHalfAngleDegrees(float halfAngleDegrees)
     {
         if (!std::isfinite(halfAngleDegrees)) {
-            return kDefaultFarSelectionHmdConeHalfAngleDegrees;
+            return kFarSelectionHmdConeHalfAngleDegrees;
         }
 
         return std::clamp(halfAngleDegrees, kMinFarSelectionHmdConeHalfAngleDegrees, kMaxFarSelectionHmdConeHalfAngleDegrees);
@@ -311,7 +319,7 @@ namespace rock
         bool hasHmdFrame = false;
         RE::NiPoint3 hmdPositionWorld{};
         RE::NiPoint3 hmdForwardWorld{};
-        float minDot = selection_query_policy::farSelectionHmdConeMinDot(selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees);
+        float minDot = selection_query_policy::farSelectionHmdConeMinDot(selection_query_policy::kFarSelectionHmdConeHalfAngleDegrees);
 
         [[nodiscard]] bool acceptsHitPoint(const RE::NiPoint3& hitPointWorld, float* outDot = nullptr) const
         {

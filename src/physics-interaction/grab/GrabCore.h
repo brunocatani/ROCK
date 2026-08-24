@@ -1411,6 +1411,21 @@ namespace rock::grab_authority_frame_math
 
 namespace rock::pull_motion_math
 {
+    inline constexpr float kApplyVelocitySeconds = 0.2f;
+    inline constexpr float kOwnerGraceSeconds = 1.0f;
+    inline constexpr float kTrackHandSeconds = 0.1f;
+    inline constexpr float kDestinationZOffsetHavok = 0.01f;
+    inline constexpr float kDurationA = 0.715619f;
+    inline constexpr float kDurationB = -0.415619f;
+    inline constexpr float kDurationC = 0.656256f;
+    inline constexpr float kMaximumVelocityHavok = 10.0f;
+    inline constexpr float kAutoGrabDistanceGameUnits = 18.0f;
+    inline constexpr float kCatchRetryMaximumTimeSeconds = 0.65f;
+    inline constexpr bool kCatchWideReacquireEnabled = true;
+    inline constexpr float kCatchWideReacquireRadiusGameUnits = 32.0f;
+    inline constexpr float kCatchWideReacquireMaximumBodyDistanceGameUnits = 42.0f;
+    inline constexpr float kAngularDamping = 8.0f;
+
     template <class Vec3>
     struct PullMotionInput
     {
@@ -1419,11 +1434,11 @@ namespace rock::pull_motion_math
         Vec3 previousTargetHavok{};
         float elapsedSeconds = 0.0f;
         float durationSeconds = 0.0f;
-        float applyVelocitySeconds = 0.2f;
-        float ownerGraceSeconds = 1.0f;
-        float trackHandSeconds = 0.1f;
-        float destinationOffsetHavok = 0.01f;
-        float maxVelocityHavok = 10.0f;
+        float applyVelocitySeconds = kApplyVelocitySeconds;
+        float ownerGraceSeconds = kOwnerGraceSeconds;
+        float trackHandSeconds = kTrackHandSeconds;
+        float destinationOffsetHavok = kDestinationZOffsetHavok;
+        float maxVelocityHavok = kMaximumVelocityHavok;
         bool hasPreviousTarget = false;
     };
 

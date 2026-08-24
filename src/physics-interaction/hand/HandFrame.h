@@ -47,6 +47,7 @@ namespace rock::handspace_convention
 
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/HandSelection.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -147,12 +148,12 @@ namespace rock
 
     inline RE::NiPoint3 computeCloseSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return computeSelectionDirectionFromHandBasis(handTransform, g_rockConfig.rockCloseSelectionAngleDegrees, isLeft);
+        return computeSelectionDirectionFromHandBasis(handTransform, selection_query_policy::kCloseSelectionAimAngleDegrees, isLeft);
     }
 
     inline RE::NiPoint3 computeFarSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return computeSelectionDirectionFromHandBasis(handTransform, g_rockConfig.rockFarSelectionAngleDegrees, isLeft);
+        return computeSelectionDirectionFromHandBasis(handTransform, selection_query_policy::kFarSelectionAimAngleDegrees, isLeft);
     }
 
     inline RE::NiPoint3 computePinchDetectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)

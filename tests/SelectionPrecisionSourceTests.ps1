@@ -34,10 +34,8 @@ Require-Text 'src/physics-interaction/hand/HandSelection.h' 'shouldKeepCurrentCl
     'Close-selection stickiness must use candidate confidence before falling back to distance.'
 Require-Text 'src/physics-interaction/hand/HandSelection.h' 'sanitizeSelectionAimAngleDegrees' `
     'Fixed selection aim angles must be sanitized by the selection policy.'
-Require-Text 'src/RockConfig.cpp' 'iCloseSelectionAngleDegrees' `
-    'Runtime config loading must read the close selection aim angle.'
-Require-Text 'src/RockConfig.cpp' 'iFarSelectionAngleDegrees' `
-    'Runtime config loading must read the far selection aim angle.'
+Require-Text 'src/physics-interaction/hand/HandSelection.h' 'kCloseSelectionAimAngleDegrees\s*=\s*0[\s\S]*kFarSelectionAimAngleDegrees\s*=\s*0' `
+    'Close and far selection aim must remain fixed compiled policy.'
 
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'std::array<RankedSelectionCandidate,\s*selection_query_policy::kMaxShapeCastPrecisionCandidates>' `
     'Shape-cast selection must keep a bounded top-candidate shortlist instead of one mutable winner.'

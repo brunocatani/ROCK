@@ -25,7 +25,6 @@
 #undef ROCK_DEFINED_MAX_PATH_FOR_FILEWATCH
 #endif
 
-#include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/SelectionBeamPolicy.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
@@ -289,35 +288,6 @@ namespace rock
         float rockHandBoneColliderMaxLinearVelocity = 200.0f;
         float rockHandBoneColliderMaxAngularVelocity = 500.0f;
 
-        float rockNearDetectionRange = 25.0f;
-        float rockFarDetectionRange = 350.0f;
-        float rockNearCastRadiusGameUnits = 3.5f;
-        float rockNearCastDistanceGameUnits = 7.0f;
-        float rockFarCastRadiusGameUnits = 21.0f;
-        int rockCloseSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
-        int rockFarSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
-        bool rockFarSelectionHmdConeEnabled = true;
-        float rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
-        std::string rockFarSelectionBlockedReferenceFormIds = "";
-        std::string rockFarSelectionBlockedBaseFormIds = "";
-        std::string rockFarSelectionBlockedFormTypes = "";
-        std::string rockFarSelectionBlockedLayers = "";
-        float rockCloseSelectionBehindPalmToleranceGameUnits = 2.0f;
-        std::uint32_t rockSelectionShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
-        std::uint32_t rockFarClipRayFilterInfo = selection_query_policy::kDefaultFarClipRayFilterInfo;
-        float rockPullApplyVelocityTime = 0.2f;
-        float rockPullOwnerGraceSeconds = 1.0f;
-        float rockPullTrackHandTime = 0.1f;
-        float rockPullDestinationZOffsetHavok = 0.01f;
-        float rockPullDurationA = 0.715619f;
-        float rockPullDurationB = -0.415619f;
-        float rockPullDurationC = 0.656256f;
-        float rockPullMaxVelocityHavok = 10.0f;
-        float rockPullAutoGrabDistanceGameUnits = 18.0f;
-        float rockPullCatchRetryMaxTimeSeconds = 0.65f;
-        bool rockPullCatchWideReacquireEnabled = true;
-        float rockPullCatchWideReacquireRadiusGameUnits = 32.0f;
-        float rockPullCatchWideReacquireMaxBodyDistanceGameUnits = 42.0f;
         int rockObjectPhysicsTreeMaxDepth = 12;
         bool rockDynamicPushAssistEnabled = true;
         float rockDynamicPushMinSpeed = 0.35f;
@@ -510,7 +480,6 @@ namespace rock
         bool rockSelectedCloseFingerCurlEnabled = true;
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;
-        float rockPulledAngularDamping = 8.0f;
         bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
         bool rockForceGrabSeatAlignmentEnabled = true;

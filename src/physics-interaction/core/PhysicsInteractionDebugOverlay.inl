@@ -1779,8 +1779,8 @@
                 const RE::NiPoint3 grabAnchor = handInput.grabAnchorWorld;
                 const RE::NiPoint3 closeSelectionDirection = handInput.closeSelectionDirectionWorld;
                 const RE::NiPoint3 farSelectionDirection = handInput.farSelectionDirectionWorld;
-                const float palmNormalLength = (std::max)(5.0f, g_rockConfig.rockNearDetectionRange);
-                const float pointingLength = (std::min)(90.0f, (std::max)(20.0f, g_rockConfig.rockFarDetectionRange));
+                const float palmNormalLength = (std::max)(5.0f, selection_query_policy::kNearDetectionRangeGameUnits);
+                const float pointingLength = (std::min)(90.0f, (std::max)(20.0f, selection_query_policy::kFarDetectionRangeGameUnits));
 
                 addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabAnchor : debug::MarkerOverlayRole::RightGrabAnchor, grabAnchor, 2.0f);
                 addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftPalmNormal : debug::MarkerOverlayRole::RightPalmNormal, grabAnchor,
@@ -1847,7 +1847,7 @@
                 const RE::NiPoint3 pinchDetection =
                     grab_pinch_pocket_policy::normalizeOrFallback(pinchAxis * axisBlend + handInput.pinchDirectionWorld * (1.0f - axisBlend), pinchAxis);
                 const float directionLength =
-                    (std::max)(g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits, g_rockConfig.rockNearCastDistanceGameUnits);
+                    (std::max)(g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits, selection_query_policy::kNearCastDistanceGameUnits);
 
                 addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftPinchPocketCenter : debug::MarkerOverlayRole::RightPinchPocketCenter, handInput.pinchPocketWorld, 2.2f);
                 addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftPinchPocketAxis : debug::MarkerOverlayRole::RightPinchPocketAxis, handInput.thumbPadWorld, handInput.indexPadWorld);

@@ -516,7 +516,7 @@ namespace rock
 
         float configuredNearReachDistance()
         {
-            return g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : g_rockConfig.rockNearDetectionRange;
+            return selection_query_policy::kNearCastDistanceGameUnits;
         }
 
         bool promotesFarHitToCloseSelection(const GrabTargetClassification& classification, const RE::NiPoint3& start, const RE::NiPoint3& hitPoint, float nearReachDistance)
@@ -629,8 +629,8 @@ namespace rock
 
                 const bool farBlacklistConfigured =
                     isFarSelection &&
-                    (!g_rockConfig.rockFarSelectionBlockedReferenceFormIds.empty() || !g_rockConfig.rockFarSelectionBlockedBaseFormIds.empty() ||
-                        !g_rockConfig.rockFarSelectionBlockedFormTypes.empty() || !g_rockConfig.rockFarSelectionBlockedLayers.empty());
+                    (!selection_query_policy::kFarSelectionBlockedReferenceFormIds.empty() || !selection_query_policy::kFarSelectionBlockedBaseFormIds.empty() ||
+                        !selection_query_policy::kFarSelectionBlockedFormTypes.empty() || !selection_query_policy::kFarSelectionBlockedLayers.empty());
                 if (farBlacklistConfigured) {
                     const auto farRejectTelemetry = makeSelectionRejectTelemetry(ref, hitNode, hknpWorld, hitBodyId);
                     const auto farBlacklistDecision =
@@ -640,10 +640,10 @@ namespace rock
                             .baseFormId = baseForm ? baseForm->formID : 0,
                             .collisionLayer = farRejectTelemetry.layer,
                             .formType = baseForm && baseForm->GetFormTypeString() ? baseForm->GetFormTypeString() : "",
-                            .blockedReferenceFormIds = g_rockConfig.rockFarSelectionBlockedReferenceFormIds,
-                            .blockedBaseFormIds = g_rockConfig.rockFarSelectionBlockedBaseFormIds,
-                            .blockedFormTypes = g_rockConfig.rockFarSelectionBlockedFormTypes,
-                            .blockedLayers = g_rockConfig.rockFarSelectionBlockedLayers,
+                            .blockedReferenceFormIds = selection_query_policy::kFarSelectionBlockedReferenceFormIds,
+                            .blockedBaseFormIds = selection_query_policy::kFarSelectionBlockedBaseFormIds,
+                            .blockedFormTypes = selection_query_policy::kFarSelectionBlockedFormTypes,
+                            .blockedLayers = selection_query_policy::kFarSelectionBlockedLayers,
                         });
                     if (farBlacklistDecision.blocked) {
                         ++outRejectedNotGrabbable;
@@ -676,7 +676,10 @@ namespace rock
                 ++outCandidates;
                 const float lateralDistance = lateralDistanceToRay(start, directionUnit, hitPoint);
                 const float signedAlongDistance = signedAlongDistanceOnRay(start, directionUnit, hitPoint);
-                if (selection_query_policy::shouldRejectBehindPalmHit(isFarSelection, signedAlongDistance, g_rockConfig.rockCloseSelectionBehindPalmToleranceGameUnits)) {
+                if (selection_query_policy::shouldRejectBehindPalmHit(
+                        isFarSelection,
+                        signedAlongDistance,
+                        selection_query_policy::kCloseSelectionBehindPalmToleranceGameUnits)) {
                     ++outRejectedBehindPalm;
                     if (logRejectTelemetry) {
                         logSelectionRejectTelemetry(queryName, "behind-palm", i, ref, hitNode, hknpWorld, hitBodyId, &classification, "behind-palm", isFarSelection, signedAlongDistance,
@@ -703,8 +706,8 @@ namespace rock
                 const bool hasHitNormal = normalizeGameDirection(hkDirectionToNiPoint(hit.normal), hitNormal);
                 const std::uint32_t shapeKey = hit.hitBodyInfo.m_shapeKey.storage;
                 const float normalDotDirection = hasHitNormal ? hitNormal.x * directionUnit.x + hitNormal.y * directionUnit.y + hitNormal.z * directionUnit.z : 0.0f;
-                const float lateralScoreScale = isFarSelection ? g_rockConfig.rockFarCastRadiusGameUnits : g_rockConfig.rockNearCastRadiusGameUnits;
-                const float alongScoreScale = isFarSelection ? g_rockConfig.rockFarDetectionRange : configuredNearReachDistance();
+                const float lateralScoreScale = isFarSelection ? selection_query_policy::kFarCastRadiusGameUnits : selection_query_policy::kNearCastRadiusGameUnits;
+                const float alongScoreScale = isFarSelection ? selection_query_policy::kFarDetectionRangeGameUnits : configuredNearReachDistance();
                 const auto candidateScore = selection_query_policy::scoreShapeCastCandidate(selection_query_policy::ShapeCastCandidateScoringInput{
                     .isFarSelection = isFarSelection,
                     .lateralDistance = lateralDistance,
@@ -752,7 +755,7 @@ namespace rock
         }
     }
 
-    SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, float nearRange, bool isLeft,
+    SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, bool isLeft,
         const OtherHandSelectionContext& otherHandContext, const char* debugQueryName)
     {
         SelectedObject result;
@@ -764,9 +767,8 @@ namespace rock
         if (!normalizeGameDirection(palmForward, direction))
             return result;
 
-        const float configuredCastDistance = g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : nearRange;
-        const float castDistance = (std::max)(0.0f, configuredCastDistance);
-        const float castRadius = (std::max)(0.0f, g_rockConfig.rockNearCastRadiusGameUnits);
+        const float castDistance = selection_query_policy::kNearCastDistanceGameUnits;
+        const float castRadius = selection_query_policy::kNearCastRadiusGameUnits;
 
         RE::hknpAllHitsCollector collector;
         physics_shape_cast::SphereCastDiagnostics diagnostics;
@@ -776,7 +778,7 @@ namespace rock
                     .directionGame = direction,
                     .distanceGame = castDistance,
                     .radiusGame = castRadius,
-                    .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                    .collisionFilterInfo = selection_query_policy::kShapeCastFilterInfo },
                 collector,
                 &diagnostics)) {
             return result;
@@ -819,7 +821,7 @@ namespace rock
         return result;
     }
 
-    SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir, float farRange,
+    SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir,
         const FarSelectionHmdConeGate& hmdConeGate,
         const OtherHandSelectionContext& otherHandContext)
     {
@@ -832,6 +834,7 @@ namespace rock
         if (!normalizeGameDirection(pointingDir, direction))
             return result;
 
+        constexpr float farRange = selection_query_policy::kFarDetectionRangeGameUnits;
         float clippedFarRange = farRange;
         RE::NiPoint3 rayEnd(handPos.x + direction.x * farRange, handPos.y + direction.y * farRange, handPos.z + direction.z * farRange);
 
@@ -840,7 +843,7 @@ namespace rock
                 bhkWorld,
                 handPos,
                 rayEnd,
-                g_rockConfig.rockFarClipRayFilterInfo,
+                selection_query_policy::kFarClipRayFilterInfo,
                 rayResult) &&
             rayResult.hit) {
             clippedFarRange = (std::max)(
@@ -855,8 +858,8 @@ namespace rock
                 physics_shape_cast::SphereCastInput{ .startGame = handPos,
                     .directionGame = direction,
                     .distanceGame = clippedFarRange,
-                    .radiusGame = g_rockConfig.rockFarCastRadiusGameUnits,
-                    .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                    .radiusGame = selection_query_policy::kFarCastRadiusGameUnits,
+                    .collisionFilterInfo = selection_query_policy::kShapeCastFilterInfo },
                 collector,
                 &diagnostics)) {
             return result;
@@ -896,7 +899,7 @@ namespace rock
                     .isFarSelection = false,
                     .lateralDistance = result.lateralDistance,
                     .alongDistance = hitDistance,
-                    .lateralScale = g_rockConfig.rockNearCastRadiusGameUnits,
+                    .lateralScale = selection_query_policy::kNearCastRadiusGameUnits,
                     .alongScale = configuredNearReach,
                     .normalDotDirection = normalDotDirection,
                     .hasHitNormal = result.hasHitNormal,
@@ -911,7 +914,7 @@ namespace rock
                     "Far shape cast: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f}/{:.1f} "
                     "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} rejectBehind={} rejectHmdCone={} hmdGate={} hmdDot={:.3f} selected={} formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f} "
                     "score={:.4f} normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
-                    handPos.x, handPos.y, handPos.z, direction.x, direction.y, direction.z, g_rockConfig.rockFarCastRadiusGameUnits, clippedFarRange, farRange,
+                    handPos.x, handPos.y, handPos.z, direction.x, direction.y, direction.z, selection_query_policy::kFarCastRadiusGameUnits, clippedFarRange, farRange,
                     diagnostics.collisionFilterInfo, diagnostics.hitCount, candidatesChecked, duplicateBodies, rejectedInvalidBody, rejectedNoRef, rejectedNotGrabbable,
                     rejectedBehindPalm, rejectedHmdCone, hmdConeGate.enabled ? (hmdConeGate.hasHmdFrame ? "ready" : "missing") : "off",
                     result.hasHmdConeDot ? result.hmdConeDot : -1.0f,

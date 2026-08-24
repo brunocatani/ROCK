@@ -10,7 +10,7 @@
 
 namespace rock::physics_shape_cast
 {
-    constexpr std::uint32_t kSelectionQueryCollisionFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
+    constexpr std::uint32_t kSelectionQueryCollisionFilterInfo = selection_query_policy::kShapeCastFilterInfo;
 
     struct SphereCastInput
     {

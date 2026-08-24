@@ -69,7 +69,7 @@ Reject-Match 'Ray helper source' $raySource `
     '(CastRay|castRay)\s*\(' `
     'The provider must not bypass Bethesda synchronization with a direct hknp cast.'
 Require-Match 'Provider glue' $providerGlue `
-    'queryProviderWorldRaycastV1[\s\S]*castClosestSegment[\s\S]*rockFarClipRayFilterInfo' `
+    'queryProviderWorldRaycastV1[\s\S]*castClosestSegment[\s\S]*kFarClipRayFilterInfo' `
     'The provider query must use ROCK''s validated far-world filter.'
 Require-Match 'Selection source' $selectionSource `
     'findFarObject[\s\S]*castClosestSegment' `

@@ -158,7 +158,7 @@
                 _cachedBhkWorld,
                 start,
                 end,
-                g_rockConfig.rockFarClipRayFilterInfo,
+                selection_query_policy::kFarClipRayFilterInfo,
                 rayResult)) {
             return false;
         }

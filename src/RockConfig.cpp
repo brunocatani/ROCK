@@ -5,7 +5,6 @@
 #include <SimpleIni.h>
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <stdexcept>
@@ -63,8 +62,6 @@ namespace
     constexpr float kDefaultGrabWeakPivotTwistScale = 0.35f;
     constexpr float kDefaultGrabMinInertia = 0.01f;
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
-    constexpr float kDefaultNearCastRadiusGameUnits = 3.5f;
-    constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
     constexpr int kDefaultHighlightIntensityMode = 3;
     constexpr const char* kDefaultHighlightColor = "orange";
 
@@ -208,16 +205,6 @@ namespace
             value = fallback;
         }
         return std::clamp(value, minValue, maxValue);
-    }
-
-    int readSelectionAimAngleDegrees(RockIniReader& ini, const char* section, const char* key, int currentValue)
-    {
-        const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
-        const int sanitizedValue = rock::selection_query_policy::sanitizeSelectionAimAngleDegrees(configuredValue);
-        if (configuredValue != sanitizedValue) {
-            ROCK_LOG_WARN(Config, "Invalid {}={} -- using {}", key, configuredValue, sanitizedValue);
-        }
-        return sanitizedValue;
     }
 
     int readHighlightIntensityMode(RockIniReader& ini, const char* section, const char* key, int currentValue)
@@ -449,35 +436,6 @@ namespace rock
         rockHandBoneColliderMaxLinearVelocity = 200.0f;
         rockHandBoneColliderMaxAngularVelocity = 500.0f;
 
-        rockNearDetectionRange = 25.0f;
-        rockFarDetectionRange = 350.0f;
-        rockNearCastRadiusGameUnits = kDefaultNearCastRadiusGameUnits;
-        rockNearCastDistanceGameUnits = kDefaultNearCastDistanceGameUnits;
-        rockFarCastRadiusGameUnits = 21.0f;
-        rockCloseSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
-        rockFarSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
-        rockFarSelectionHmdConeEnabled = true;
-        rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
-        rockFarSelectionBlockedReferenceFormIds.clear();
-        rockFarSelectionBlockedBaseFormIds.clear();
-        rockFarSelectionBlockedFormTypes.clear();
-        rockFarSelectionBlockedLayers.clear();
-        rockCloseSelectionBehindPalmToleranceGameUnits = 2.0f;
-        rockSelectionShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
-        rockFarClipRayFilterInfo = selection_query_policy::kDefaultFarClipRayFilterInfo;
-        rockPullApplyVelocityTime = 0.2f;
-        rockPullOwnerGraceSeconds = 1.0f;
-        rockPullTrackHandTime = 0.1f;
-        rockPullDestinationZOffsetHavok = 0.01f;
-        rockPullDurationA = 0.715619f;
-        rockPullDurationB = -0.415619f;
-        rockPullDurationC = 0.656256f;
-        rockPullMaxVelocityHavok = 10.0f;
-        rockPullAutoGrabDistanceGameUnits = 18.0f;
-        rockPullCatchRetryMaxTimeSeconds = 0.65f;
-        rockPullCatchWideReacquireEnabled = true;
-        rockPullCatchWideReacquireRadiusGameUnits = 32.0f;
-        rockPullCatchWideReacquireMaxBodyDistanceGameUnits = 42.0f;
         rockObjectPhysicsTreeMaxDepth = 12;
         rockDynamicPushAssistEnabled = true;
         rockDynamicPushMinSpeed = 0.35f;
@@ -659,7 +617,6 @@ namespace rock
         rockSelectedCloseFingerCurlEnabled = true;
         rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         rockSelectedCloseFingerAnimValue = 0.9f;
-        rockPulledAngularDamping = 8.0f;
         rockPullToObjectCenterEnabled = true;
         rockPullLongAxisPresentationEnabled = true;
         rockForceGrabSeatAlignmentEnabled = true;
@@ -753,16 +710,6 @@ namespace rock
                     rockMouthConsumeHmdOffsetGameUnits.y,
                     rockMouthConsumeHmdOffsetGameUnits.z);
             }
-        };
-        auto readHexFilter = [&](const char* key, std::uint32_t currentValue, std::uint32_t fallback) {
-            char hexBuf[16] = {};
-            snprintf(hexBuf, sizeof(hexBuf), "%08X", currentValue);
-            const char* hexStr = ini.GetValue(SECTION, key, hexBuf);
-            if (!hexStr || !hexStr[0]) {
-                return selection_query_policy::sanitizeFilterInfo(currentValue, fallback);
-            }
-
-            return selection_query_policy::sanitizeFilterInfo(static_cast<std::uint32_t>(std::strtoul(hexStr, nullptr, 16)), fallback);
         };
         rockDeveloperModeEnabled = ini.GetBoolValue(DEBUG_SECTION, "bDeveloperModeEnabled", rockDeveloperModeEnabled);
         rockLogLevel = logging_policy::clampLogLevel(static_cast<int>(ini.GetLongValue(LOGGING_SECTION, "iLogLevel", rockLogLevel)));
@@ -1377,87 +1324,6 @@ namespace rock
             rockHandBoneColliderMaxAngularVelocity = 500.0f;
         }
 
-        rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
-        rockFarDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange", rockFarDetectionRange));
-        rockNearCastRadiusGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fNearCastRadiusGameUnits",
-            rockNearCastRadiusGameUnits,
-            kDefaultNearCastRadiusGameUnits,
-            0.0f,
-            kDefaultNearCastRadiusGameUnits);
-        rockNearCastDistanceGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fNearCastDistanceGameUnits",
-            rockNearCastDistanceGameUnits,
-            kDefaultNearCastDistanceGameUnits,
-            0.1f,
-            kDefaultNearCastDistanceGameUnits);
-        rockFarCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarCastRadiusGameUnits", rockFarCastRadiusGameUnits));
-        rockCloseSelectionAngleDegrees =
-            readSelectionAimAngleDegrees(ini, SECTION, "iCloseSelectionAngleDegrees", rockCloseSelectionAngleDegrees);
-        rockFarSelectionAngleDegrees =
-            readSelectionAimAngleDegrees(ini, SECTION, "iFarSelectionAngleDegrees", rockFarSelectionAngleDegrees);
-        rockFarSelectionHmdConeEnabled = ini.GetBoolValue(SECTION, "bFarSelectionHmdConeEnabled", rockFarSelectionHmdConeEnabled);
-        rockFarSelectionHmdConeHalfAngleDegrees =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fFarSelectionHmdConeHalfAngleDegrees", rockFarSelectionHmdConeHalfAngleDegrees));
-        rockFarSelectionBlockedReferenceFormIds =
-            ini.GetValue(SECTION, "sFarSelectionBlockedReferenceFormIDs", rockFarSelectionBlockedReferenceFormIds.c_str());
-        rockFarSelectionBlockedBaseFormIds = ini.GetValue(SECTION, "sFarSelectionBlockedBaseFormIDs", rockFarSelectionBlockedBaseFormIds.c_str());
-        rockFarSelectionBlockedFormTypes = ini.GetValue(SECTION, "sFarSelectionBlockedFormTypes", rockFarSelectionBlockedFormTypes.c_str());
-        rockFarSelectionBlockedLayers = ini.GetValue(SECTION, "sFarSelectionBlockedLayers", rockFarSelectionBlockedLayers.c_str());
-        const float sanitizedFarSelectionHmdConeHalfAngleDegrees =
-            selection_query_policy::sanitizeFarSelectionHmdConeHalfAngleDegrees(rockFarSelectionHmdConeHalfAngleDegrees);
-        if (sanitizedFarSelectionHmdConeHalfAngleDegrees != rockFarSelectionHmdConeHalfAngleDegrees) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fFarSelectionHmdConeHalfAngleDegrees={} -- using {}",
-                rockFarSelectionHmdConeHalfAngleDegrees,
-                sanitizedFarSelectionHmdConeHalfAngleDegrees);
-            rockFarSelectionHmdConeHalfAngleDegrees = sanitizedFarSelectionHmdConeHalfAngleDegrees;
-        }
-        rockCloseSelectionBehindPalmToleranceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fCloseSelectionBehindPalmToleranceGameUnits", rockCloseSelectionBehindPalmToleranceGameUnits));
-        if (!std::isfinite(rockCloseSelectionBehindPalmToleranceGameUnits) || rockCloseSelectionBehindPalmToleranceGameUnits < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fCloseSelectionBehindPalmToleranceGameUnits={} -- using 2.0", rockCloseSelectionBehindPalmToleranceGameUnits);
-            rockCloseSelectionBehindPalmToleranceGameUnits = 2.0f;
-        }
-        rockSelectionShapeCastFilterInfo =
-            readHexFilter("sSelectionShapeCastFilterInfo", rockSelectionShapeCastFilterInfo, selection_query_policy::kDefaultShapeCastFilterInfo);
-        rockFarClipRayFilterInfo = readHexFilter("sFarClipRayFilterInfo", rockFarClipRayFilterInfo, selection_query_policy::kDefaultFarClipRayFilterInfo);
-        rockPullApplyVelocityTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullApplyVelocityTime", rockPullApplyVelocityTime));
-        rockPullOwnerGraceSeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullOwnerGraceSeconds", rockPullOwnerGraceSeconds));
-        if (!std::isfinite(rockPullOwnerGraceSeconds) || rockPullOwnerGraceSeconds < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fPullOwnerGraceSeconds={} -- using 1.0", rockPullOwnerGraceSeconds);
-            rockPullOwnerGraceSeconds = 1.0f;
-        }
-        rockPullOwnerGraceSeconds = std::clamp(rockPullOwnerGraceSeconds, 0.0f, 3.0f);
-        rockPullTrackHandTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullTrackHandTime", rockPullTrackHandTime));
-        rockPullDestinationZOffsetHavok = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDestinationZOffsetHavok", rockPullDestinationZOffsetHavok));
-        rockPullDurationA = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDurationA", rockPullDurationA));
-        rockPullDurationB = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDurationB", rockPullDurationB));
-        rockPullDurationC = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDurationC", rockPullDurationC));
-        rockPullMaxVelocityHavok = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullMaxVelocityHavok", rockPullMaxVelocityHavok));
-        rockPullAutoGrabDistanceGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullAutoGrabDistanceGameUnits", rockPullAutoGrabDistanceGameUnits));
-        rockPullCatchRetryMaxTimeSeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullCatchRetryMaxTimeSeconds", rockPullCatchRetryMaxTimeSeconds));
-        if (!std::isfinite(rockPullCatchRetryMaxTimeSeconds) || rockPullCatchRetryMaxTimeSeconds < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fPullCatchRetryMaxTimeSeconds={} -- using 0.65", rockPullCatchRetryMaxTimeSeconds);
-            rockPullCatchRetryMaxTimeSeconds = 0.65f;
-        }
-        rockPullCatchWideReacquireEnabled = ini.GetBoolValue(SECTION, "bPullCatchWideReacquireEnabled", rockPullCatchWideReacquireEnabled);
-        rockPullCatchWideReacquireRadiusGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fPullCatchWideReacquireRadiusGameUnits", rockPullCatchWideReacquireRadiusGameUnits));
-        if (!std::isfinite(rockPullCatchWideReacquireRadiusGameUnits) || rockPullCatchWideReacquireRadiusGameUnits < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fPullCatchWideReacquireRadiusGameUnits={} -- using 32.0", rockPullCatchWideReacquireRadiusGameUnits);
-            rockPullCatchWideReacquireRadiusGameUnits = 32.0f;
-        }
-        rockPullCatchWideReacquireRadiusGameUnits = std::clamp(rockPullCatchWideReacquireRadiusGameUnits, 0.0f, 120.0f);
-        rockPullCatchWideReacquireMaxBodyDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fPullCatchWideReacquireMaxBodyDistanceGameUnits", rockPullCatchWideReacquireMaxBodyDistanceGameUnits));
-        if (!std::isfinite(rockPullCatchWideReacquireMaxBodyDistanceGameUnits) || rockPullCatchWideReacquireMaxBodyDistanceGameUnits < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fPullCatchWideReacquireMaxBodyDistanceGameUnits={} -- using 42.0", rockPullCatchWideReacquireMaxBodyDistanceGameUnits);
-            rockPullCatchWideReacquireMaxBodyDistanceGameUnits = 42.0f;
-        }
-        rockPullCatchWideReacquireMaxBodyDistanceGameUnits = std::clamp(rockPullCatchWideReacquireMaxBodyDistanceGameUnits, 0.0f, 160.0f);
         rockObjectPhysicsTreeMaxDepth = static_cast<int>(ini.GetLongValue(SECTION, "iObjectPhysicsTreeMaxDepth", rockObjectPhysicsTreeMaxDepth));
         rockDynamicPushAssistEnabled = ini.GetBoolValue(SECTION, "bDynamicPushAssistEnabled", rockDynamicPushAssistEnabled);
         rockDynamicPushMinSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fDynamicPushMinSpeed", rockDynamicPushMinSpeed));
@@ -2152,7 +2018,6 @@ namespace rock
             rockSelectedCloseFingerAnimValue = 0.9f;
         }
         rockSelectedCloseFingerAnimValue = std::clamp(rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
-        rockPulledAngularDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fPulledAngularDamping", rockPulledAngularDamping));
         rockPullToObjectCenterEnabled = ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled = ini.GetBoolValue(SECTION, "bPullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
         rockForceGrabSeatAlignmentEnabled = ini.GetBoolValue(SECTION, "bForceGrabSeatAlignmentEnabled", rockForceGrabSeatAlignmentEnabled);
@@ -2186,7 +2051,7 @@ namespace rock
         }
         rockPullPresentationGripAxisTiltDegrees = static_cast<float>(
             ini.GetDoubleValue(SECTION, "fPullPresentationGripAxisTiltDegrees", rockPullPresentationGripAxisTiltDegrees));
-        if (!std::isfinite(rockPullPresentationGripAxisTiltDegrees) || rockPullPresentationGripAxisTiltDegrees < -45.0f ||
+        if (!std::isfinite(rockPullPresentationGripAxisTiltDegrees) || rockPullPresentationGripAxisTiltDegrees < 0.0f ||
             rockPullPresentationGripAxisTiltDegrees > 45.0f) {
             ROCK_LOG_WARN(Config, "Invalid fPullPresentationGripAxisTiltDegrees={} -- using 10.0", rockPullPresentationGripAxisTiltDegrees);
             rockPullPresentationGripAxisTiltDegrees = 10.0f;

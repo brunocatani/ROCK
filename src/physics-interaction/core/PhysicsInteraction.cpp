@@ -282,11 +282,11 @@ namespace rock
         FarSelectionHmdConeGate makeFarSelectionHmdConeGate(const PhysicsFrameContext& frame)
         {
             FarSelectionHmdConeGate gate{};
-            gate.enabled = g_rockConfig.rockFarSelectionHmdConeEnabled;
+            gate.enabled = selection_query_policy::kFarSelectionHmdConeEnabled;
             gate.hasHmdFrame = frame.hasHmdFrame;
             gate.hmdPositionWorld = frame.hmdPositionWorld;
             gate.hmdForwardWorld = frame.hmdForwardWorld;
-            gate.minDot = selection_query_policy::farSelectionHmdConeMinDot(g_rockConfig.rockFarSelectionHmdConeHalfAngleDegrees);
+            gate.minDot = selection_query_policy::farSelectionHmdConeMinDot(selection_query_policy::kFarSelectionHmdConeHalfAngleDegrees);
             return gate;
         }
 
@@ -7118,8 +7118,6 @@ namespace rock
                 frame.right.pinchDirectionWorld,
                 frame.right.hasPinchPocketWorld,
                 farHmdConeGate,
-                g_rockConfig.rockNearDetectionRange,
-                g_rockConfig.rockFarDetectionRange,
                 frame.deltaSeconds,
                 leftHandContext);
             _rightHand.updateSelectionBeam(frame.hknpWorld, frame.right.grabAnchorWorld);
@@ -7142,8 +7140,6 @@ namespace rock
                 frame.left.pinchDirectionWorld,
                 frame.left.hasPinchPocketWorld,
                 farHmdConeGate,
-                g_rockConfig.rockNearDetectionRange,
-                g_rockConfig.rockFarDetectionRange,
                 frame.deltaSeconds,
                 rightHandContext);
             _leftHand.updateSelectionBeam(frame.hknpWorld, frame.left.grabAnchorWorld);
@@ -10114,13 +10110,13 @@ namespace rock
 
             if (hand.hasArrivedPullCatchIntent() && !hand.hasPendingPullCatchCommit()) {
                 auto* pullCatchRef = hand.getPullCatchIntentRef();
-                if (g_rockConfig.rockPullCatchWideReacquireEnabled &&
+                if (pull_motion_math::kCatchWideReacquireEnabled &&
                     hand.reacquirePullCatchCloseSelection(frame.bhkWorld,
                         frame.hknpWorld,
                         handInput.grabAnchorWorld,
                         handInput.closeSelectionDirectionWorld,
-                        g_rockConfig.rockPullCatchWideReacquireRadiusGameUnits,
-                        g_rockConfig.rockPullCatchWideReacquireMaxBodyDistanceGameUnits)) {
+                        pull_motion_math::kCatchWideReacquireRadiusGameUnits,
+                        pull_motion_math::kCatchWideReacquireMaximumBodyDistanceGameUnits)) {
                     ROCK_LOG_DEBUG(Hand,
                         "{} hand restored stale pull catch commit with target-specific wide close reacquire",
                         hand.handName());
@@ -10218,7 +10214,7 @@ namespace rock
                     peer.getHeldBodyIds(),
                     handInput.grabAnchorWorld,
                     handInput.closeSelectionDirectionWorld,
-                    g_rockConfig.rockNearDetectionRange,
+                    selection_query_policy::kNearDetectionRangeGameUnits,
                     outRefusalReason);
                 if (!refreshedPeerHeldSelection && hadPeerHeldCloseSelection) {
                     hand.clearSelectionState(false);
@@ -11045,9 +11041,7 @@ namespace rock
             }
 
             auto actorEquipmentHandoffMaxSeconds = []() -> float {
-                return (std::isfinite(g_rockConfig.rockPullCatchRetryMaxTimeSeconds) && g_rockConfig.rockPullCatchRetryMaxTimeSeconds > 0.0f) ?
-                           g_rockConfig.rockPullCatchRetryMaxTimeSeconds :
-                           0.65f;
+                return pull_motion_math::kCatchRetryMaximumTimeSeconds;
             };
 
             if (!hand.isHolding() && selection_state_policy::canProcessSelectedState(hand.getState()) && hand.hasSelection()) {
@@ -11062,11 +11056,11 @@ namespace rock
                         releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                         return;
                     }
-                    if (!hand.advancePullCatchCommit(frame.deltaSeconds, g_rockConfig.rockPullCatchRetryMaxTimeSeconds)) {
+                    if (!hand.advancePullCatchCommit(frame.deltaSeconds, pull_motion_math::kCatchRetryMaximumTimeSeconds)) {
                         ROCK_LOG_DEBUG(Hand,
                             "{} hand cancelled pull catch commit because retry window expired ({:.3f}s)",
                             hand.handName(),
-                            g_rockConfig.rockPullCatchRetryMaxTimeSeconds);
+                            pull_motion_math::kCatchRetryMaximumTimeSeconds);
                         hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-retry-expired");
                         hand.clearSelectionState(true);
                         releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
@@ -11110,12 +11104,12 @@ namespace rock
 
                 if (grabInput.pressed || peerHeldRetryCommitIntent || (pullCatchCommitPending && grabInput.held) || (actorEquipmentDropHandoffReady && grabInput.held)) {
                     if (!grab_interaction_policy::canAttemptSelectedObjectGrab(
-                            hand.getSelection().isFarSelection, hand.getSelection().distance, g_rockConfig.rockFarDetectionRange)) {
+                            hand.getSelection().isFarSelection, hand.getSelection().distance, selection_query_policy::kFarDetectionRangeGameUnits)) {
                         ROCK_LOG_DEBUG(Hand,
                             "{} hand: far grab blocked (dist={:.1f}, configuredFarRange={:.1f})",
                             hand.handName(),
                             hand.getSelection().distance,
-                            g_rockConfig.rockFarDetectionRange);
+                            selection_query_policy::kFarDetectionRangeGameUnits);
                         return;
                     }
 

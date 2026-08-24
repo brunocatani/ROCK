@@ -1166,7 +1166,7 @@ namespace rock
                                            RE::NiPoint3(primaryRecord->positionGame.x, primaryRecord->positionGame.y, primaryRecord->positionGame.z) :
                                            sourcePointWorld;
         const float distance = pointDistanceGameUnits(sourcePointWorld, bodyPoint);
-        const float acceptedDistance = std::isfinite(maxDistanceGame) && maxDistanceGame > 0.0f ? maxDistanceGame : g_rockConfig.rockNearDetectionRange;
+        const float acceptedDistance = std::isfinite(maxDistanceGame) && maxDistanceGame > 0.0f ? maxDistanceGame : selection_query_policy::kNearDetectionRangeGameUnits;
         if (acceptedDistance > 0.0f && distance > acceptedDistance) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand force-grab selection rejected by distance: target={:08X} body={} distance={:.1f} max={:.1f}",
@@ -2239,7 +2239,7 @@ namespace rock
 
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,
         const RE::NiPoint3& farSelectionDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
-        const FarSelectionHmdConeGate& farHmdConeGate, float nearRange, float farRange, float deltaTime, const OtherHandSelectionContext& otherHandContext)
+        const FarSelectionHmdConeGate& farHmdConeGate, float deltaTime, const OtherHandSelectionContext& otherHandContext)
     {
         if (!selection_state_policy::canUpdateSelectionFromState(_state))
             return;
@@ -2302,7 +2302,7 @@ namespace rock
             return true;
         };
 
-        auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, closeSelectionDirection, nearRange, _isLeft, otherHandContext);
+        auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, closeSelectionDirection, _isLeft, otherHandContext);
         if (!nearCandidate.isValid() &&
             g_rockConfig.rockGrabPinchPocketEnabled &&
             g_rockConfig.rockGrabPinchCloseSelectionEnabled &&
@@ -2311,7 +2311,6 @@ namespace rock
                 hknpWorld,
                 resolvedPinchOrigin,
                 pinchDirection,
-                nearRange,
                 _isLeft,
                 otherHandContext,
                 _isLeft ? "pinch-near-L" : "pinch-near-R");
@@ -2337,7 +2336,7 @@ namespace rock
             _farDetectCounter++;
             if (_farDetectCounter >= 3) {
                 _farDetectCounter = 0;
-                farCandidate = findFarObject(bhkWorld, hknpWorld, selectionOrigin, farSelectionDirection, farRange, farHmdConeGate, otherHandContext);
+                farCandidate = findFarObject(bhkWorld, hknpWorld, selectionOrigin, farSelectionDirection, farHmdConeGate, otherHandContext);
                 _cachedFarCandidate = farCandidate;
             } else {
                 farCandidate = _cachedFarCandidate;
@@ -2459,7 +2458,9 @@ namespace rock
                 return;
             }
 
-            float hysteresisRange = _currentSelection.isFarSelection ? farRange * 2.5f : nearRange * 2.5f;
+            const float hysteresisRange = _currentSelection.isFarSelection ?
+                                              selection_query_policy::kFarDetectionRangeGameUnits * 2.5f :
+                                              selection_query_policy::kNearDetectionRangeGameUnits * 2.5f;
 
             if (_currentSelection.bodyId.value != 0x7FFF'FFFF && hknpWorld) {
                 RE::NiTransform bodyWorld{};
@@ -2595,9 +2596,9 @@ namespace rock
         }
 
         const float closeReach = (std::max)(
-            (std::max)(nearRange, g_rockConfig.rockNearCastDistanceGameUnits),
-            g_rockConfig.rockNearDetectionRange) +
-                                 (std::max)(g_rockConfig.rockNearCastRadiusGameUnits, g_rockConfig.rockGrabTouchAcquireDistanceGameUnits);
+            (std::max)(nearRange, selection_query_policy::kNearCastDistanceGameUnits),
+            selection_query_policy::kNearDetectionRangeGameUnits) +
+                                 (std::max)(selection_query_policy::kNearCastRadiusGameUnits, g_rockConfig.rockGrabTouchAcquireDistanceGameUnits);
 
         std::vector<std::uint32_t> candidateBodyIds;
         candidateBodyIds.reserve(peerHeldBodyIds.size() + 1);
