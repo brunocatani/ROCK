@@ -10,6 +10,14 @@
 
 namespace rock::dynamic_weapon_collision_policy
 {
+    inline constexpr bool kDynamicCompoundEnabled = true;
+    inline constexpr float kInertiaEnvelopePaddingGameUnits = 0.5f;
+    inline constexpr float kInverseInertiaMultiplier = 1.2f;
+    inline constexpr float kMaximumLinearVelocityHavok = 15.0f;
+    inline constexpr float kMaximumAngularVelocityRadiansPerSecond = 35.0f;
+    inline constexpr float kDivergenceTeleportDistanceGameUnits = 80.0f;
+    inline constexpr float kMinimumVisualCorrectionTranslationGameUnits = 0.05f;
+    inline constexpr float kMinimumVisualCorrectionRotationDegrees = 0.25f;
     inline constexpr float kMinimumBoundingBoxHalfExtentGameUnits = 0.25f;
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;

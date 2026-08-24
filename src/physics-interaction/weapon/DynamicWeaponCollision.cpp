@@ -263,16 +263,8 @@ namespace rock
                 return false;
             }
 
-            const float inverseInertiaMultiplier =
-                g_rockConfig.rockWeaponCollisionDynamicInverseInertiaMultiplier;
-            if (!std::isfinite(inverseInertiaMultiplier) || inverseInertiaMultiplier <= 0.0f) {
-                ROCK_LOG_ERROR(
-                    Weapon,
-                    "Dynamic weapon inverse-inertia multiplier invalid: body={} multiplier={}",
-                    bodyId.value,
-                    inverseInertiaMultiplier);
-                return false;
-            }
+            constexpr float inverseInertiaMultiplier =
+                dynamic_weapon_collision_policy::kInverseInertiaMultiplier;
 
             const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
                 envelopeMassProperties.inverseInertia.x * inverseInertiaMultiplier,
@@ -476,7 +468,7 @@ namespace rock
             _authorityDriveState,
             requestedAuthorityTarget,
             frame.deltaSeconds,
-            g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits);
+            dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits);
         if (!queueResult.queued) {
             _rebuildRequestedAtomic.store(true, std::memory_order_release);
         }
@@ -632,8 +624,8 @@ namespace rock
         }
 
         const bool correctionVisible =
-            result.translationCorrectionGameUnits >= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits ||
-            result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees;
+            result.translationCorrectionGameUnits >= dynamic_weapon_collision_policy::kMinimumVisualCorrectionTranslationGameUnits ||
+            result.rotationCorrectionDegrees >= dynamic_weapon_collision_policy::kMinimumVisualCorrectionRotationDegrees;
         if (correctionVisible) {
             result.applyVisualCorrection = true;
             result.resolvedWeaponWorld = resolvedWeaponWorld;
@@ -699,10 +691,8 @@ namespace rock
         }
 
         const float scale = std::abs(requestedWeaponWorld.scale);
-        // The serialized key retains its original Box name so the active test
-        // configuration is not silently disabled. It now affects only the
-        // already-qualified bounding-envelope inertia, never child geometry.
-        const float inertiaEnvelopePadding = g_rockConfig.rockWeaponCollisionDynamicBoxPaddingGameUnits;
+        constexpr float inertiaEnvelopePadding =
+            dynamic_weapon_collision_policy::kInertiaEnvelopePaddingGameUnits;
         const bool bodyMatches =
             _created &&
             _body.isValid() &&
@@ -713,7 +703,6 @@ namespace rock
             _createdBhkWorld == frame.bhkWorld &&
             _createdGenerationKey == bounds.generationKey &&
             std::abs(_createdWeaponScale - scale) <= 0.0001f &&
-            std::abs(_createdInertiaEnvelopePaddingGameUnits - inertiaEnvelopePadding) <= 0.0001f &&
             !_rebuildRequestedAtomic.load(std::memory_order_acquire);
         if (bodyMatches) {
             return true;
@@ -868,7 +857,6 @@ namespace rock
         _createdCenterWeaponLocal = geometry.centerWeaponLocal;
         _createdHalfExtentsWeaponLocal = geometry.halfExtentsWeaponLocal;
         _createdWeaponScale = scale;
-        _createdInertiaEnvelopePaddingGameUnits = inertiaEnvelopePadding;
         _createdCompoundChildCount = static_cast<std::uint32_t>(compoundGeometry.children.size());
         _createdCompoundPointCount = compoundGeometry.sourcePointCount;
         _created = true;
@@ -995,7 +983,7 @@ namespace rock
             bodyMass,
             motorTuning.linearMaxForce,
             motorTuning.angularMaxForce,
-            _createdInertiaEnvelopePaddingGameUnits,
+            inertiaEnvelopePadding,
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         return true;
     }
@@ -1046,8 +1034,8 @@ namespace rock
             timing,
             "DynamicWeaponGripAuthority",
             0,
-            g_rockConfig.rockWeaponCollisionDynamicMaxLinearVelocityHavok,
-            g_rockConfig.rockWeaponCollisionDynamicMaxAngularVelocityRadians);
+            dynamic_weapon_collision_policy::kMaximumLinearVelocityHavok,
+            dynamic_weapon_collision_policy::kMaximumAngularVelocityRadiansPerSecond);
         if (driveResult.shouldRequestRebuild()) {
             _rebuildRequestedAtomic.store(true, std::memory_order_release);
             _droveThisSubstep = false;
@@ -1402,7 +1390,6 @@ namespace rock
         _createdCenterWeaponLocal = {};
         _createdHalfExtentsWeaponLocal = {};
         _createdWeaponScale = 1.0f;
-        _createdInertiaEnvelopePaddingGameUnits = 0.0f;
         _createdCompoundChildCount = 0;
         _createdCompoundPointCount = 0;
         _created = false;

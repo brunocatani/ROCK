@@ -116,15 +116,6 @@ namespace rock
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
-        bool rockWeaponCollisionDynamicBoxEnabled = true;
-        float rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
-        float rockWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
-        float rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
-        float rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
-        float rockWeaponCollisionDynamicDivergenceTeleportGameUnits = 80.0f;
-        float rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
-        float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
-        float rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
         // Elapsed stable-witness window before a generation-driven weapon
         // visual rebuild commits (historical 8-frame tuning at 90 Hz).
         float rockWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;

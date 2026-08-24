@@ -2708,7 +2708,7 @@ namespace rock
             bhk,
             weaponNode,
             currentWeaponGenerationKey,
-            g_rockConfig.rockWeaponCollisionDynamicBoxEnabled &&
+            dynamic_weapon_collision_policy::kDynamicCompoundEnabled &&
                 runtime.weaponDrawn &&
                 !frame.menuBlocked &&
                 physicsWritesAllowedForWorld(frame.hknpWorld),

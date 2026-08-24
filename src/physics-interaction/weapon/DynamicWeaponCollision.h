@@ -244,7 +244,6 @@ namespace rock
         RE::NiPoint3 _createdCenterWeaponLocal{};
         RE::NiPoint3 _createdHalfExtentsWeaponLocal{};
         float _createdWeaponScale{ 1.0f };
-        float _createdInertiaEnvelopePaddingGameUnits{ 0.0f };
         std::uint32_t _createdCompoundChildCount{ 0 };
         std::size_t _createdCompoundPointCount{ 0 };
         bool _created{ false };

@@ -58,25 +58,24 @@ $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 
-# The validated dynamic compound and hand-interaction graph ship enabled.
-# Layer-44 weapon hulls continue to own ordinary gameplay contact evidence.
-Require-Pattern 'src/RockConfig.h' `
-    'rockWeaponCollisionDynamicBoxEnabled\s*=\s*true' `
-    'Dynamic weapon collision must default enabled in compiled configuration.'
-foreach ($ini in @('data/config/ROCK_example.ini')) {
-    Require-Pattern $ini `
-        '(?m)^bWeaponCollisionDynamicBoxEnabled\s*=\s*true\s*$' `
-        "$ini must ship dynamic weapon collision enabled."
-    Require-Pattern $ini `
-        '(?m)^fWeaponCollisionDynamicInverseInertiaMultiplier\s*=\s*1\.2\s*$' `
-        "$ini must ship the qualified dynamic-weapon rotational compliance multiplier."
-}
-Require-Pattern 'src/RockConfig.h' `
-    'rockWeaponCollisionDynamicInverseInertiaMultiplier\s*=\s*1\.2f' `
-    'The compiled dynamic-weapon rotational compliance default must match the qualified runtime value.'
-Require-Pattern 'src/RockConfig.cpp' `
-    'fWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*kDefaultWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*0\.25f[\s\S]*4\.0f' `
-    'The dynamic-weapon rotational compliance setting must load through a finite positive range.'
+# The validated dynamic compound and hand-interaction graph are fixed production
+# policy. Layer-44 weapon hulls continue to own ordinary gameplay contact
+# evidence, and the user INI cannot disable or retune the dynamic compound.
+Require-Pattern $runtimePolicy `
+    'kDynamicCompoundEnabled\s*=\s*true[\s\S]*kInertiaEnvelopePaddingGameUnits\s*=\s*0\.5f[\s\S]*kInverseInertiaMultiplier\s*=\s*1\.2f[\s\S]*kMaximumLinearVelocityHavok\s*=\s*15\.0f[\s\S]*kMaximumAngularVelocityRadiansPerSecond\s*=\s*35\.0f[\s\S]*kDivergenceTeleportDistanceGameUnits\s*=\s*80\.0f[\s\S]*kMinimumVisualCorrectionTranslationGameUnits\s*=\s*0\.05f[\s\S]*kMinimumVisualCorrectionRotationDegrees\s*=\s*0\.25f' `
+    'Dynamic weapon compound production constants must retain the qualified values.'
+Require-Pattern $interaction `
+    'dynamic_weapon_collision_policy::kDynamicCompoundEnabled[\s\S]*runtime\.weaponDrawn' `
+    'Dynamic weapon compound activation must use fixed compiled policy.'
+Reject-Pattern 'src/RockConfig.h' `
+    'rockWeaponCollisionDynamic' `
+    'Dynamic weapon compound production policy must not remain in RockConfig state.'
+Reject-Pattern 'src/RockConfig.cpp' `
+    'bWeaponCollisionDynamicBoxEnabled|fWeaponCollisionDynamic' `
+    'Dynamic weapon compound production policy must not be parsed from the user INI.'
+Reject-Pattern 'data/config/ROCK_example.ini' `
+    'bWeaponCollisionDynamicBoxEnabled|fWeaponCollisionDynamic' `
+    'The example INI must not expose dynamic weapon compound production policy.'
 Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY\s*=\s*51' `
     'The dynamic weapon proxy must retain its dedicated layer-51 row.'
@@ -166,7 +165,7 @@ Require-Pattern $runtimeSource `
     'applyWeaponEnvelopeMassProperties\([\s\S]*makeBoundingBoxMassProperties\([\s\S]*normalizeInverseInertiaAxesForGrab\([\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*MOTION_PACKED_INERTIA_OFFSET[\s\S]*rebuildMotionMassProperties\(world,\s*initialMotion\.motionIndex\)[\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*rebuiltPacked\[0\]\s*=\s*desiredPackedInertia\[0\][\s\S]*rebuiltPacked\[3\]\s*=\s*desiredPackedMass[\s\S]*Dynamic weapon compound envelope mass properties:' `
     'The runtime must rebuild and then reapply the bounding-envelope tensor and authored mass through the verified hknp motion path.'
 Require-Pattern $runtimeSource `
-    'rockWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.x\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.y\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.z\s*\*\s*inverseInertiaMultiplier[\s\S]*multiplier=\{:\.3f\}' `
+    'kInverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.x\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.y\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.z\s*\*\s*inverseInertiaMultiplier[\s\S]*multiplier=\{:\.3f\}' `
     'Dynamic weapon tuning must scale only the qualified envelope inverse inertia and expose the applied multiplier.'
 
 # One-way publication is the core anti-feedback invariant: all native/ROCK
