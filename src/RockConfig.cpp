@@ -65,7 +65,6 @@ namespace
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
     constexpr float kDefaultNearCastRadiusGameUnits = 3.5f;
     constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
-    const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 1.0f, 0.0f };
     constexpr int kDefaultHighlightIntensityMode = 3;
     constexpr const char* kDefaultHighlightColor = "orange";
 
@@ -276,11 +275,6 @@ namespace rock
         rockPerformanceProfilerLogIntervalFrames = 300;
         rockPerformanceProfilerWarmupFrames = 120;
         rockPerformanceProfilerOverlayText = false;
-
-        rockPalmNormalHandspace = kDefaultPalmNormalHandspace;
-        rockPointingVectorHandspace = RE::NiPoint3(0.0f, 1.0f, 0.0f);
-        rockReversePalmNormal = true;
-        rockReverseFarGrabNormal = true;
 
         rockLeftHandedMode = false;
         rockGunstockModeEnabled = false;
@@ -813,11 +807,6 @@ namespace rock
             rockGrabInputForceSeconds = 0.08f;
         }
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
-
-        readVec3("fPalmNormalHandspaceX", "fPalmNormalHandspaceY", "fPalmNormalHandspaceZ", rockPalmNormalHandspace);
-        readVec3("fPointingVectorHandspaceX", "fPointingVectorHandspaceY", "fPointingVectorHandspaceZ", rockPointingVectorHandspace);
-        rockReversePalmNormal = ini.GetBoolValue(SECTION, "bReversePalmNormal", rockReversePalmNormal);
-        rockReverseFarGrabNormal = ini.GetBoolValue(SECTION, "bReverseFarGrabNormal", rockReverseFarGrabNormal);
 
         rockLeftHandedMode = ini.GetBoolValue(
             WEAPON_HANDEDNESS_SECTION,

@@ -41,27 +41,6 @@ namespace rock::handspace_convention
     }
 }
 
-// ---- PointingDirectionMath.h ----
-
-namespace rock::pointing_direction_math
-{
-    /*
-     * ROCK keeps the legacy pointing vector independent from palm-facing
-     * behavior. Object selection now uses fixed-angle selection directions.
-     */
-    template <class Vector>
-    inline Vector applyFarGrabNormalReversal(Vector direction, bool reverse)
-    {
-        if (reverse) {
-            direction.x *= -1.0f;
-            direction.y *= -1.0f;
-            direction.z *= -1.0f;
-        }
-
-        return direction;
-    }
-}
-
 // ---- PalmTransform.h ----
 
 #include <cmath>
@@ -73,6 +52,16 @@ namespace rock::pointing_direction_math
 
 namespace rock
 {
+    inline RE::NiPoint3 palmNormalHandspace() noexcept
+    {
+        return RE::NiPoint3{ 0.0f, -1.0f, 0.0f };
+    }
+
+    inline RE::NiPoint3 legacyPointingVectorHandspace() noexcept
+    {
+        return RE::NiPoint3{ 0.0f, -1.0f, 0.0f };
+    }
+
     inline RE::NiPoint3 authoredHandspaceToRawHandspace(RE::NiPoint3 value)
     {
         return handspace_convention::authoredToRaw(value);
@@ -140,20 +129,12 @@ namespace rock
          * ROCK root-flattened game hand frame already carries left/right handedness,
          * so applying a separate authored Z mirror sends palm evidence across the hand.
          */
-        const RE::NiPoint3 authoredNormal = g_rockConfig.rockPalmNormalHandspace;
-        RE::NiPoint3 normal = transformHandspaceDirection(handTransform, authoredNormal, isLeft);
-        if (g_rockConfig.rockReversePalmNormal) {
-            normal.x *= -1.0f;
-            normal.y *= -1.0f;
-            normal.z *= -1.0f;
-        }
-        return normal;
+        return transformHandspaceDirection(handTransform, palmNormalHandspace(), isLeft);
     }
 
     inline RE::NiPoint3 computePointingVectorFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return pointing_direction_math::applyFarGrabNormalReversal(
-            transformHandspaceDirection(handTransform, g_rockConfig.rockPointingVectorHandspace, isLeft), g_rockConfig.rockReverseFarGrabNormal);
+        return transformHandspaceDirection(handTransform, legacyPointingVectorHandspace(), isLeft);
     }
 
     inline RE::NiPoint3 computeSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, int angleDegrees, bool isLeft)

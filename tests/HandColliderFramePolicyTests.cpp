@@ -150,12 +150,12 @@ int main()
         ok &= expectVectorNear("migrated left pivot preserves old raw point",
             rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 6.0f, -2.0f, -0.2f }),
             RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
-        ok &= expectVectorNear("default palm normal uses authored palm depth",
-            rock::g_rockConfig.rockPalmNormalHandspace,
-            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
-        ok &= expectVectorNear("default pointing vector uses authored palm depth",
-            rock::g_rockConfig.rockPointingVectorHandspace,
-            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("fixed palm normal includes final reversal",
+            rock::palmNormalHandspace(),
+            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        ok &= expectVectorNear("fixed legacy pointing vector includes final reversal",
+            rock::legacyPointingVectorHandspace(),
+            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
         ok &= expectNear("default close selection angle is -Y", static_cast<float>(rock::g_rockConfig.rockCloseSelectionAngleDegrees), 0.0f);
         ok &= expectNear("default far selection angle is -Y", static_cast<float>(rock::g_rockConfig.rockFarSelectionAngleDegrees), 0.0f);
         ok &= expectVectorNear("default right pivot uses migrated handspace",
