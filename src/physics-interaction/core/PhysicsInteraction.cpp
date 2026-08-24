@@ -45,7 +45,6 @@
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
-#include "physics-interaction/grab/GrabNodeInfoMath.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
@@ -3590,12 +3589,12 @@ namespace rock
                             finiteNiTransform(_equippedWeaponReleaseCapture.weaponWorld)) {
                             releaseWeaponWorld = _equippedWeaponReleaseCapture.weaponWorld;
                             releaseLoc = _equippedWeaponReleaseCapture.weaponWorld.translate;
-                            releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(_equippedWeaponReleaseCapture.weaponWorld.rotate);
+                            releaseRot = transform_math::matrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(_equippedWeaponReleaseCapture.weaponWorld.rotate);
                             hasReleaseRot = true;
                         } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
                             releaseWeaponWorld = weaponNode->world;
                             releaseLoc = weaponNode->world.translate;
-                            releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
+                            releaseRot = transform_math::matrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
                             hasReleaseRot = true;
                         }
                         const std::size_t releaseHandIndex = equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u;

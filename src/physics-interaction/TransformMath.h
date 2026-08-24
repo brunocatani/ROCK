@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <type_traits>
 
@@ -203,6 +204,37 @@ namespace rock::transform_math
         result.scale = detail::narrowDouble<decltype(result.scale)>((std::abs(scale) > 0.0001) ? (1.0 / scale) : 1.0);
         const decltype(transform.translate) origin{};
         result.translate = worldPointToLocal(transform, origin);
+        return result;
+    }
+
+    template <class Matrix, class Vector>
+    inline Vector matrixToEulerRadians(const Matrix& matrix)
+    {
+        Vector result{};
+        const float m02 = std::clamp(matrix.entry[0][2], -1.0f, 1.0f);
+
+        if (m02 < 1.0f) {
+            if (m02 > -1.0f) {
+                result.x = std::atan2(-matrix.entry[1][2], matrix.entry[2][2]);
+                result.y = std::asin(m02);
+                result.z = std::atan2(-matrix.entry[0][1], matrix.entry[0][0]);
+            } else {
+                result.x = -std::atan2(-matrix.entry[1][0], matrix.entry[1][1]);
+                result.y = -1.5707963267948966f;
+                result.z = 0.0f;
+            }
+        } else {
+            result.x = std::atan2(matrix.entry[1][0], matrix.entry[1][1]);
+            result.y = 1.5707963267948966f;
+            result.z = 0.0f;
+        }
+
+        const auto sanitizeZero = [](float value) {
+            return std::abs(value) < 0.00001f ? 0.0f : value;
+        };
+        result.x = sanitizeZero(result.x);
+        result.y = sanitizeZero(result.y);
+        result.z = sanitizeZero(result.z);
         return result;
     }
 

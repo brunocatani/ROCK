@@ -60,7 +60,6 @@ namespace rock::grab_pinch_pocket_policy
         MeshExtentMetrics mesh{};
         bool closeGrab = false;
         bool handPocketOnlyGrab = false;
-        bool authoredGrabNode = false;
         bool looseWeaponGrab = false;
         bool ownerMatchesResolvedBody = false;
         bool hasFingerSnapshot = false;

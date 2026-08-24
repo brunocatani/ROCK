@@ -1,6 +1,6 @@
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 
-#include "physics-interaction/grab/GrabNodeInfoMath.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -431,7 +431,7 @@ namespace rock::actor_equipment_grab
         RE::NiPoint3 dropRot{};
         const RE::NiPoint3* dropRotPtr = nullptr;
         if (selection.disconnected && selection.visualNode) {
-            dropRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(selection.visualNode->world.rotate);
+            dropRot = transform_math::matrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(selection.visualNode->world.rotate);
             dropRotPtr = &dropRot;
         }
 

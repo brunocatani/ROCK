@@ -510,13 +510,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHknpBodyFramePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHknpBodyFramePolicyTests)
 
-  add_executable(ROCKGrabNodeNamePolicyTests
-    "${ROOT_DIR}/tests/GrabNodeNamePolicyTests.cpp"
-  )
-  target_compile_features(ROCKGrabNodeNamePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKGrabNodeNamePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKGrabNodeNamePolicyTests)
-
   add_executable(ROCKShoulderStashPolicyTests
     "${ROOT_DIR}/tests/ShoulderStashPolicyTests.cpp"
   )
@@ -745,7 +738,6 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabAuthoritySourceClockPolicyTests
     ROCKHandColliderFramePolicyTests
     ROCKHknpBodyFramePolicyTests
-    ROCKGrabNodeNamePolicyTests
     ROCKShoulderStashPolicyTests
     ROCKMouthConsumePolicyTests
     ROCKFeedbackHapticsPolicyTests

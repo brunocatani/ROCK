@@ -30,20 +30,13 @@ namespace rock::grab_contact_source_policy
         const char* reason = "compatContactSources";
     };
 
-    inline GrabContactSourcePolicy evaluateGrabContactSourcePolicy(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact, bool hasAuthoredGrabNode)
+    inline GrabContactSourcePolicy evaluateGrabContactSourcePolicy(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact)
     {
         GrabContactSourcePolicy policy{};
         policy.allowCollisionGrabPoint = !meshContactOnly;
         policy.allowContactPatchPivot = true;
-        policy.requireContactPatchMeshSnap = meshContactOnly && !hasAuthoredGrabNode;
-        policy.requireMeshSurface = meshContactOnly && requireMeshContact && !hasAuthoredGrabNode;
-
-        if (hasAuthoredGrabNode) {
-            policy.requireContactPatchMeshSnap = false;
-            policy.failWithoutMesh = false;
-            policy.reason = "authoredGrabNode";
-            return policy;
-        }
+        policy.requireContactPatchMeshSnap = meshContactOnly;
+        policy.requireMeshSurface = meshContactOnly && requireMeshContact;
 
         if (!meshContactOnly) {
             policy.failWithoutMesh = false;
@@ -70,9 +63,9 @@ namespace rock::grab_contact_source_policy
         return !policy.requireContactPatchMeshSnap || meshSnapped;
     }
 
-    inline bool shouldRejectMeshOwnerMismatch(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact, bool hasAuthoredGrabNode, bool ownerMatchesResolvedBody)
+    inline bool shouldRejectMeshOwnerMismatch(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact, bool ownerMatchesResolvedBody)
     {
-        return meshContactOnly && requireMeshContact && hasMeshContact && !hasAuthoredGrabNode && !ownerMatchesResolvedBody;
+        return meshContactOnly && requireMeshContact && hasMeshContact && !ownerMatchesResolvedBody;
     }
 }
 

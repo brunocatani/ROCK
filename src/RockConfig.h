@@ -532,12 +532,6 @@ namespace rock
         float rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
         float rockGrabContactPatchMaxNormalAngleDegrees = 35.0f;
         float rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
-        bool rockGrabNodeAnchorsEnabled = true;
-        bool rockGrabNodeRejectOppositeHandAnchor = true;
-        bool rockPrintGrabNodeInfo = false;
-        std::string rockGrabNodeNameRight = "ROCK:GrabR";
-        std::string rockGrabNodeNameLeft = "ROCK:GrabL";
-        std::string rockGrabNodeNameBlacklist = "ROCK:GrabR,ROCK:GrabL";
         bool rockSelectedCloseFingerCurlEnabled = true;
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;

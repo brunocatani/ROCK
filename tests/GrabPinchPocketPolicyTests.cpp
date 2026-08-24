@@ -58,7 +58,6 @@ namespace
             .mesh = mesh,
             .closeGrab = true,
             .handPocketOnlyGrab = false,
-            .authoredGrabNode = false,
             .looseWeaponGrab = false,
             .ownerMatchesResolvedBody = true,
             .hasFingerSnapshot = true,
@@ -140,12 +139,6 @@ int main()
     decision = evaluateObject(looseWeapon);
     ok &= expectTrue("loose weapon can use pinch geometry", decision.accept);
     ok &= expectReason("loose weapon pinch reason", decision.reason, "pinchCompact");
-
-    auto authoredGrabNode = validInput(bounds(5.0f, 4.0f, 2.0f));
-    authoredGrabNode.authoredGrabNode = true;
-    decision = evaluateObject(authoredGrabNode);
-    ok &= expectTrue("authored node can use pinch geometry", decision.accept);
-    ok &= expectReason("authored node pinch reason", decision.reason, "pinchCompact");
 
     auto multiBody = validInput(bounds(5.0f, 4.0f, 2.0f));
     multiBody.multipleAcceptedBodies = true;

@@ -12,7 +12,6 @@
 #include <thread>
 
 #include "rock_support/ResourceUtils.h"
-#include "physics-interaction/grab/GrabNodeNamePolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
@@ -684,12 +683,6 @@ namespace rock
         rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
         rockGrabContactPatchMaxNormalAngleDegrees = 35.0f;
         rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
-        rockGrabNodeAnchorsEnabled = true;
-        rockGrabNodeRejectOppositeHandAnchor = true;
-        rockPrintGrabNodeInfo = false;
-        rockGrabNodeNameRight = grab_node_name_policy::defaultGrabNodeName(false);
-        rockGrabNodeNameLeft = grab_node_name_policy::defaultGrabNodeName(true);
-        rockGrabNodeNameBlacklist = std::string(grab_node_name_policy::kDefaultGrabNodeNameBlacklist);
         rockSelectedCloseFingerCurlEnabled = true;
         rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         rockSelectedCloseFingerAnimValue = 0.9f;
@@ -2303,13 +2296,6 @@ namespace rock
         if (!std::isfinite(rockGrabAlignmentMaxSelectionToMeshDistance)) {
             rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
         }
-        rockGrabNodeAnchorsEnabled = ini.GetBoolValue(SECTION, "bGrabNodeAnchorsEnabled", rockGrabNodeAnchorsEnabled);
-        rockGrabNodeRejectOppositeHandAnchor = ini.GetBoolValue(SECTION, "bGrabNodeRejectOppositeHandAnchor", rockGrabNodeRejectOppositeHandAnchor);
-        rockPrintGrabNodeInfo = ini.GetBoolValue(SECTION, "bPrintGrabNodeInfo", rockPrintGrabNodeInfo);
-        rockGrabNodeNameRight =
-            grab_node_name_policy::sanitizeConfiguredGrabNodeName(ini.GetValue(SECTION, "sGrabNodeNameRight", rockGrabNodeNameRight.c_str()), false);
-        rockGrabNodeNameLeft = grab_node_name_policy::sanitizeConfiguredGrabNodeName(ini.GetValue(SECTION, "sGrabNodeNameLeft", rockGrabNodeNameLeft.c_str()), true);
-        rockGrabNodeNameBlacklist = ini.GetValue(SECTION, "sGrabNodeNameBlacklist", rockGrabNodeNameBlacklist.c_str());
         rockSelectedCloseFingerCurlEnabled = ini.GetBoolValue(SECTION, "bSelectedCloseFingerCurlEnabled", rockSelectedCloseFingerCurlEnabled);
         rockSelectedCloseFingerAnimMaxHandSpeed =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fSelectedCloseFingerAnimMaxHandSpeed", rockSelectedCloseFingerAnimMaxHandSpeed));

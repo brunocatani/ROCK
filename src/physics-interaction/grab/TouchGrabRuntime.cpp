@@ -152,7 +152,6 @@ namespace rock
                 (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth),
                 kMaximumShapes,
                 maximumTriangles,
-                g_rockConfig.rockGrabNodeNameBlacklist,
                 true);
             outAcquisition.sourceTriangleCount =
                 static_cast<std::uint32_t>(worldTriangles.size());

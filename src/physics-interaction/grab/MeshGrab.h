@@ -1,7 +1,6 @@
 #pragma once
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/grab/GrabNodeNamePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "RE/Fallout.h"
 
@@ -12,7 +11,6 @@
 #include <cstring>
 #include <functional>
 #include <limits>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -94,7 +92,6 @@ namespace rock
         Dynamic,
         Skinned,
         CollisionQuery,
-        AuthoredNode,
         Fallback
     };
 
@@ -151,8 +148,6 @@ namespace rock
             return "skinned";
         case GrabSurfaceSourceKind::CollisionQuery:
             return "collisionQuery";
-        case GrabSurfaceSourceKind::AuthoredNode:
-            return "authoredNode";
         case GrabSurfaceSourceKind::Fallback:
         default:
             return "fallback";
@@ -259,34 +254,9 @@ namespace rock
         std::uint32_t staticTriangles = 0;
         std::uint32_t dynamicTriangles = 0;
         std::uint32_t skinnedTriangles = 0;
-        std::uint32_t blacklistedShapes = 0;
 
         [[nodiscard]] std::uint32_t totalTriangles() const noexcept { return staticTriangles + dynamicTriangles + skinnedTriangles; }
     };
-
-    inline std::string_view meshExtractionNodeName(const RE::NiAVObject* node)
-    {
-        if (!node || !node->name.c_str()) {
-            return {};
-        }
-        return std::string_view(node->name.c_str());
-    }
-
-    inline bool shouldSkipMeshExtractionNode(RE::NiAVObject* node, std::string_view grabNodeNameBlacklist, MeshExtractionStats* stats)
-    {
-        if (!node || !node->IsTriShape()) {
-            return false;
-        }
-
-        if (!grab_node_name_policy::shouldSkipNodeForMeshSurface(grabNodeNameBlacklist, meshExtractionNodeName(node))) {
-            return false;
-        }
-
-        if (stats) {
-            ++stats->blacklistedShapes;
-        }
-        return true;
-    }
 
     inline bool readTriShapeRawGeometry(RE::BSTriShape* triShape, TriShapeRawGeometry& out)
     {
@@ -947,16 +917,12 @@ namespace rock
     inline void extractAllTriangles(RE::NiAVObject* root,
         std::vector<TriangleData>& outTriangles,
         int maxDepth = 10,
-        MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {})
+        MeshExtractionStats* stats = nullptr)
     {
         if (!root || maxDepth <= 0)
             return;
 
         if (root->flags.flags & 1)
-            return;
-
-        if (shouldSkipMeshExtractionNode(root, grabNodeNameBlacklist, stats))
             return;
 
         auto* triShape = root->IsTriShape();
@@ -1011,7 +977,7 @@ namespace rock
             for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
                 auto* kid = kids[i].get();
                 if (kid)
-                    extractAllTriangles(kid, outTriangles, maxDepth - 1, stats, grabNodeNameBlacklist);
+                    extractAllTriangles(kid, outTriangles, maxDepth - 1, stats);
             }
         }
     }
@@ -1074,16 +1040,12 @@ namespace rock
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         int maxDepth = 10,
         MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         if (!root || maxDepth <= 0)
             return;
 
         if (root->flags.flags & 1)
-            return;
-
-        if (shouldSkipMeshExtractionNode(root, grabNodeNameBlacklist, stats))
             return;
 
         auto* triShape = root->IsTriShape();
@@ -1098,7 +1060,7 @@ namespace rock
             for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
                 auto* kid = kids[i].get();
                 if (kid)
-                    extractAllSurfaceTrianglesRecursive(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+                    extractAllSurfaceTrianglesRecursive(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, allowPositionOnlySkinnedSurface);
             }
         }
     }
@@ -1107,7 +1069,6 @@ namespace rock
         std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         if (!root) {
@@ -1134,10 +1095,6 @@ namespace rock
                 return RE::BSVisit::BSVisitControl::kContinue;
             }
 
-            if (shouldSkipMeshExtractionNode(triShape, grabNodeNameBlacklist, stats)) {
-                return RE::BSVisit::BSVisitControl::kContinue;
-            }
-
             extractSurfaceTrianglesFromTriShape(triShape, outTriangles, outSurfaceTriangles, stats, allowPositionOnlySkinnedSurface);
             return RE::BSVisit::BSVisitControl::kContinue;
         });
@@ -1148,16 +1105,15 @@ namespace rock
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         int maxDepth = 10,
         MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         const auto beforeTriangles = outTriangles.size();
-        extractAllSurfaceTrianglesRecursive(root, outTriangles, outSurfaceTriangles, maxDepth, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+        extractAllSurfaceTrianglesRecursive(root, outTriangles, outSurfaceTriangles, maxDepth, stats, allowPositionOnlySkinnedSurface);
         if (outTriangles.size() != beforeTriangles || !root || maxDepth <= 0) {
             return;
         }
 
-        extractAllSurfaceTrianglesWithScenegraphVisitor(root, outTriangles, outSurfaceTriangles, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+        extractAllSurfaceTrianglesWithScenegraphVisitor(root, outTriangles, outSurfaceTriangles, stats, allowPositionOnlySkinnedSurface);
     }
 
     struct BoundedSurfaceMeshExtraction
@@ -1182,7 +1138,6 @@ namespace rock
         std::uint32_t maxShapes,
         std::uint32_t maxTriangles,
         BoundedSurfaceMeshExtraction& result,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         if (!root || maxDepth <= 0 || maxShapes == 0 || maxTriangles == 0) {
@@ -1191,13 +1146,6 @@ namespace rock
         if (root->flags.flags & 1) {
             return;
         }
-        if (shouldSkipMeshExtractionNode(
-                root,
-                grabNodeNameBlacklist,
-                &result.stats)) {
-            return;
-        }
-
         if (auto* triShape = root->IsTriShape()) {
             if (result.candidateShapes >= maxShapes) {
                 result.shapeBudgetExceeded = true;
@@ -1253,7 +1201,6 @@ namespace rock
                 maxShapes,
                 maxTriangles,
                 result,
-                grabNodeNameBlacklist,
                 allowPositionOnlySkinnedSurface);
         }
     }
@@ -1265,7 +1212,6 @@ namespace rock
         int maxDepth,
         std::uint32_t maxShapes,
         std::uint32_t maxTriangles,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         BoundedSurfaceMeshExtraction result{};
@@ -1277,7 +1223,6 @@ namespace rock
             maxShapes,
             maxTriangles,
             result,
-            grabNodeNameBlacklist,
             allowPositionOnlySkinnedSurface);
         return result;
     }

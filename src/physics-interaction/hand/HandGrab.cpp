@@ -18,8 +18,6 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
-#include "physics-interaction/grab/GrabNodeInfoMath.h"
-#include "physics-interaction/grab/GrabNodeNamePolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
@@ -1506,7 +1504,6 @@ namespace rock
             bool isLeft,
             bool closeGrab,
             bool handPocketOnlyGrab,
-            bool authoredGrabNode,
             bool looseWeaponGrab)
         {
             RuntimePinchPocketCandidate candidate{};
@@ -1571,7 +1568,6 @@ namespace rock
                 .mesh = candidate.meshExtents,
                 .closeGrab = closeGrab,
                 .handPocketOnlyGrab = handPocketOnlyGrab,
-                .authoredGrabNode = authoredGrabNode,
                 .looseWeaponGrab = looseWeaponGrab,
                 .ownerMatchesResolvedBody = ownerMatchesResolvedBody,
                 .hasFingerSnapshot = hasFingerSnapshot,
@@ -3081,56 +3077,6 @@ namespace rock
             return selectedTriangles;
         }
 
-        RE::NiAVObject* findNamedNodeRecursive(RE::NiAVObject* root, std::string_view name, int maxDepth = 12)
-        {
-            if (!root || name.empty() || maxDepth < 0) {
-                return nullptr;
-            }
-
-            const char* nodeName = root->name.c_str();
-            if (nodeName && name == nodeName) {
-                return root;
-            }
-
-            auto* node = root->IsNode();
-            if (!node) {
-                return nullptr;
-            }
-
-            auto& children = node->GetRuntimeData().children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                if (auto* found = findNamedNodeRecursive(children[i].get(), name, maxDepth - 1)) {
-                    return found;
-                }
-            }
-            return nullptr;
-        }
-
-        RE::NiAVObject* findAuthoredGrabNodeRecursive(RE::NiAVObject* root,
-            std::string_view name,
-            bool isLeft,
-            bool rejectOppositeHandAnchor,
-            int maxDepth = 12)
-        {
-            /*
-             * ROCK gives authored grab nodes priority over mesh-derived contact
-             * and keeps marker names out of mesh selection. A hand-side guard is
-             * still required because FO4VR assets can legitimately carry both
-             * ROCK:GrabR and ROCK:GrabL markers; the right hand should never bind
-             * to the left marker because that silently flips authored poses.
-             */
-            auto* found = findNamedNodeRecursive(root, name, maxDepth);
-            if (!found || !rejectOppositeHandAnchor) {
-                return found;
-            }
-
-            const char* foundName = found->name.c_str();
-            if (foundName && grab_node_name_policy::isOppositeHandGrabNodeName(foundName, isLeft)) {
-                return nullptr;
-            }
-            return found;
-        }
-
         RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
             RE::NiTransform result = makeIdentityTransform();
@@ -3193,7 +3139,6 @@ namespace rock
         enum class GrabPivotAuthoritySource : std::uint8_t
         {
             None,
-            AuthoredGrabNode,
             ContactPatchMeshSnap,
             ContactPatchPositionOnly,
             SelectionHitMeshSnap,
@@ -3208,8 +3153,6 @@ namespace rock
         const char* grabPivotAuthoritySourceName(GrabPivotAuthoritySource source)
         {
             switch (source) {
-            case GrabPivotAuthoritySource::AuthoredGrabNode:
-                return "authoredGrabNode";
             case GrabPivotAuthoritySource::ContactPatchMeshSnap:
                 return "contactPatchMeshSnap";
             case GrabPivotAuthoritySource::ContactPatchPositionOnly:
@@ -3266,9 +3209,6 @@ namespace rock
         {
             if (!mode) {
                 return GrabPivotAuthoritySource::None;
-            }
-            if (std::strcmp(mode, "grabNodeAnchor") == 0 || std::strcmp(mode, "authoredGrabNodeFrame") == 0) {
-                return GrabPivotAuthoritySource::AuthoredGrabNode;
             }
             if (std::strcmp(mode, "contactPatchMeshSnap") == 0 || std::strcmp(mode, "contactPatchMeshSnapPositionOnly") == 0 ||
                 std::strcmp(mode, "contactPatch") == 0 || std::strcmp(mode, "contactPatchSamplePivot") == 0) {
@@ -3333,7 +3273,6 @@ namespace rock
             case GrabPivotAuthoritySource::CollisionFallback:
             case GrabPivotAuthoritySource::None:
                 return true;
-            case GrabPivotAuthoritySource::AuthoredGrabNode:
             case GrabPivotAuthoritySource::PalmPocketMeshPoint:
             case GrabPivotAuthoritySource::PinchPocketMeshPoint:
             case GrabPivotAuthoritySource::GripSupportModel:
@@ -4155,45 +4094,6 @@ namespace rock
             result.valid = true;
             result.reason = result.normalTrusted ? "seatedPalmPocketSupportPatch" : "seatedPalmPocketSupportPositionOnly";
             return result;
-        }
-
-        void logGrabNodeInfo(const char* handName,
-            bool isLeft,
-            const RE::NiAVObject* parentNode,
-            const RE::NiAVObject* authoredGrabNode,
-            const RE::NiTransform& desiredObjectWorld,
-            const RE::NiTransform& handWorldTransform,
-            const RE::NiPoint3& grabPivotAWorld,
-            const char* grabPointMode)
-        {
-            if (!g_rockConfig.rockPrintGrabNodeInfo) {
-                return;
-            }
-
-            const RE::NiTransform grabNodeLocal =
-                grab_node_info_math::computeGrabNodeLocalTransformForCurrentGrab(desiredObjectWorld, handWorldTransform, grabPivotAWorld);
-            const auto nifskopeEulerDegrees = grab_node_info_math::nifskopeMatrixToEulerDegrees(grabNodeLocal.rotate);
-            const char* configuredNodeName = isLeft ? g_rockConfig.rockGrabNodeNameLeft.c_str() : g_rockConfig.rockGrabNodeNameRight.c_str();
-
-            ROCK_LOG_INFO(Hand, "{} ROCK GRAB NODE INFO BEGIN", handName);
-            ROCK_LOG_INFO(Hand, "Parent: {}", nodeDebugName(parentNode));
-            ROCK_LOG_INFO(Hand, "Name: {}", configuredNodeName);
-            ROCK_LOG_INFO(Hand,
-                "Translation: {:.4f} {:.4f} {:.4f}",
-                grabNodeLocal.translate.x,
-                grabNodeLocal.translate.y,
-                grabNodeLocal.translate.z);
-            ROCK_LOG_INFO(Hand,
-                "Rotation: {:.4f} {:.4f} {:.4f}",
-                nifskopeEulerDegrees.x,
-                nifskopeEulerDegrees.y,
-                nifskopeEulerDegrees.z);
-            ROCK_LOG_INFO(Hand,
-                "Source: authoredNode={} authoredName={} pointMode={}",
-                authoredGrabNode ? "yes" : "no",
-                authoredGrabNode ? nodeDebugName(authoredGrabNode) : "none",
-                grabPointMode ? grabPointMode : "unknown");
-            ROCK_LOG_INFO(Hand, "{} ROCK GRAB NODE INFO END", handName);
         }
 
         struct HeldMotionCompensationResult
@@ -7235,7 +7135,6 @@ namespace rock
                     presentationSurfaceTriangles,
                     (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth),
                     &presentationMeshStats,
-                    g_rockConfig.rockGrabNodeNameBlacklist,
                     false);
                 const auto longAxis = computeGrabMeshLongAxis(presentationTriangles);
                 if (longAxis.valid && longAxis.elongationRatio >= g_rockConfig.rockPullPresentationMinElongationRatio) {
@@ -7923,7 +7822,6 @@ namespace rock
         float pivotAuthoritySelectionDeltaGameUnits = std::numeric_limits<float>::max();
         float pivotAuthorityLongLeverGameUnits = 0.0f;
         RE::NiAVObject* surfaceOwnerNode = nullptr;
-        RE::NiAVObject* authoredGrabNode = nullptr;
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
         const char* grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "noContactPointPending";
         const char* grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
@@ -8006,7 +7904,7 @@ namespace rock
         /*
          * hknp selection identifies the object/body. In mesh-authoritative mode
          * it is logged as collision evidence only; the grabbed point and frame
-         * must come from visual geometry or an authored ROCK grab node.
+         * must come from visual geometry.
          */
         if (sel.hasHitPoint && sel.hasHitNormal) {
             const auto collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
@@ -8051,7 +7949,6 @@ namespace rock
                 grabSurfaceTriangles,
                 meshExtractionDepth,
                 &meshStats,
-                g_rockConfig.rockGrabNodeNameBlacklist,
                 handPocketOnlyGrab);
 
             const bool primaryMeshExtractionFound = grabMeshTriangles.size() != primaryBeforeTriangles;
@@ -8075,7 +7972,6 @@ namespace rock
                     grabSurfaceTriangles,
                     meshExtractionDepth,
                     &meshStats,
-                    g_rockConfig.rockGrabNodeNameBlacklist,
                     handPocketOnlyGrab);
 
                 if (grabMeshTriangles.size() == beforeTriangles) {
@@ -8107,11 +8003,11 @@ namespace rock
 
             ROCK_LOG_DEBUG(Hand,
                 "{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} "
-                "source={} attempts={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} blacklisted={} totalTris={}",
+                "source={} attempts={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} totalTris={}",
                 handName(), nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes, meshExtractionSource,
                 meshExtractionAttemptCount, meshStats.staticShapes,
                 meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes, meshStats.skinnedTriangles,
-                meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, meshStats.blacklistedShapes, meshStats.totalTriangles());
+                meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, meshStats.totalTriangles());
             performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshTriangles, meshStats.totalTriangles());
 
             {
@@ -8161,35 +8057,7 @@ namespace rock
                 }
             }
 
-            if (!handPocketOnlyGrab && g_rockConfig.rockGrabNodeAnchorsEnabled) {
-                const std::string_view primaryNodeName = _isLeft ? std::string_view(g_rockConfig.rockGrabNodeNameLeft) : std::string_view(g_rockConfig.rockGrabNodeNameRight);
-                const std::string_view fallbackNodeName = grab_node_name_policy::defaultGrabNodeName(_isLeft);
-                RE::NiAVObject* grabNode = findAuthoredGrabNodeRecursive(
-                    meshSourceNode, primaryNodeName, _isLeft, g_rockConfig.rockGrabNodeRejectOppositeHandAnchor, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
-                if (!grabNode && fallbackNodeName != primaryNodeName) {
-                    grabNode = findAuthoredGrabNodeRecursive(
-                        meshSourceNode, fallbackNodeName, _isLeft, g_rockConfig.rockGrabNodeRejectOppositeHandAnchor, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
-                }
-                if (grabNode) {
-                    authoredGrabNode = grabNode;
-                    surfaceOwnerNode = grabNode;
-                    grabSurfaceHit = {};
-                    grabGripPoint = grabNode->world.translate;
-                    meshGrabFound = true;
-                    grabPointMode = "grabNodeAnchor";
-                    grabFallbackReason = "none";
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand GRAB NODE: node='{}' point=({:.1f},{:.1f},{:.1f})",
-                        handName(),
-                        nodeDebugName(grabNode),
-                        grabGripPoint.x,
-                        grabGripPoint.y,
-                        grabGripPoint.z);
-                }
-            }
-
             const bool closeGrabNeedsPalmPocketMeshAuthority =
-                !authoredGrabNode &&
                 !grabSurfaceTriangles.empty() &&
                 (handPocketOnlyGrab ||
                     (!sel.isFarSelection &&
@@ -8348,11 +8216,11 @@ namespace rock
         if (!meshGrabFound) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB POINT FALLBACK: mode={} reason={} meshNode='{}' ownerNode='{}' rootNode='{}' "
-                "shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} blacklisted={} "
+                "shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} "
                 "fallbackPoint=({:.1f},{:.1f},{:.1f})",
                 handName(), grabPointMode, grabFallbackReason, nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes,
                 meshStats.staticShapes, meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes, meshStats.skinnedTriangles,
-                meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, meshStats.blacklistedShapes, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
+                meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
         }
 
         const bool hasMeshSurfaceContact =
@@ -8360,13 +8228,11 @@ namespace rock
         const auto contactSourcePolicy = grab_contact_source_policy::evaluateGrabContactSourcePolicy(
             meshContactOnly,
             g_rockConfig.rockGrabRequireMeshContact,
-            hasMeshSurfaceContact,
-            authoredGrabNode != nullptr);
+            hasMeshSurfaceContact);
         const auto grabContactQualityMode = grab_contact_evidence_policy::sanitizeQualityMode(g_rockConfig.rockGrabContactQualityMode);
         const bool multiFingerEvidenceEnabled =
             g_rockConfig.rockGrabMultiFingerContactValidationEnabled &&
             grabContactQualityMode != grab_contact_evidence_policy::GrabContactQualityMode::LegacyPermissive &&
-            !authoredGrabNode &&
             !handPocketOnlyGrab &&
             meshContactOnly &&
             g_rockConfig.rockGrabRequireMeshContact;
@@ -8397,11 +8263,9 @@ namespace rock
         const auto* surfaceOwnerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(surfaceOwnerNode);
         const auto skinnedBodyResolution = skinned_body_resolver::resolvePrimaryBody(skinned_body_resolver::ResolutionInput{
             .targetKind = sel.targetKind,
-            .authoredBodyId = authoredGrabNode && surfaceOwnerRecord ? surfaceOwnerRecord->bodyId : object_physics_body_set::INVALID_BODY_ID,
             .surfaceOwnerBodyId = surfaceOwnerRecord ? surfaceOwnerRecord->bodyId : object_physics_body_set::INVALID_BODY_ID,
             .selectedBodyId = sel.bodyId.value,
             .nearestBodyId = nearestPrimaryChoice.bodyId,
-            .authoredUsable = authoredGrabNode != nullptr && surfaceOwnerRecord != nullptr,
             .surfaceOwnerUsable = surfaceOwnerRecord != nullptr,
             .selectedUsable = preparedBodySet.containsAcceptedBody(sel.bodyId.value),
             .nearestUsable = nearestPrimaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID,
@@ -8411,8 +8275,7 @@ namespace rock
         const object_physics_body_set::PrimaryBodyChoice primaryChoice{
             .bodyId = skinnedBodyResolution.bodyId,
             .reason = skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::WeightedSkinOwner ||
-                    skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::TriangleOwner ||
-                    skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::AuthoredNode ?
+                    skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::TriangleOwner ?
                 object_physics_body_set::PrimaryBodyChoiceReason::SurfaceOwnerAccepted :
                 (skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::SelectedBody ?
                         object_physics_body_set::PrimaryBodyChoiceReason::PreferredHitAccepted :
@@ -8450,7 +8313,7 @@ namespace rock
             skinnedBodyResolution.reason,
             skinnedBodyResolution.usedSkinInfluences ? "weighted" : (grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned ? "positionOnly" : "no"),
             nodeDebugName(surfaceOwnerNode),
-            grabSurfaceHit.valid ? grabSurfaceSourceKindName(grabSurfaceHit.sourceKind) : (authoredGrabNode ? "authoredNode" : "fallback"),
+            grabSurfaceHit.valid ? grabSurfaceSourceKindName(grabSurfaceHit.sourceKind) : "fallback",
             surfaceOwnerMatchesResolvedBody ? "yes" : "no",
             primaryChoiceTarget.x,
             primaryChoiceTarget.y,
@@ -8513,7 +8376,6 @@ namespace rock
         if (grab_contact_source_policy::shouldRejectMeshOwnerMismatch(meshContactOnly,
                 g_rockConfig.rockGrabRequireMeshContact,
                 hasMeshSurfaceContact,
-                authoredGrabNode != nullptr,
                 surfaceOwnerMatchesResolvedBody) &&
             !relaxedArticulatedAuthority) {
             ROCK_LOG_WARN(Hand,
@@ -8535,15 +8397,15 @@ namespace rock
         }
 
         /*
-         * Dynamic grab pivot authority is one coherent position source. Authored
-         * nodes still win, and weak close-grab mesh starts can yield to the
-         * palm-pocket mesh point that was selected before body resolution.
+         * Dynamic grab pivot authority is one coherent position source. Weak
+         * close-grab mesh starts can yield to the palm-pocket mesh point that was
+         * selected before body resolution.
          * Contact patches stay validation/pose evidence; small or corner patches
          * must not replace the frozen BODY-local pivot by themselves.
          */
         const bool collisionFallbackPivotAllowed =
             !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
-        const bool visualMeshPivotAvailable = authoredGrabNode != nullptr || hasMeshSurfaceContact;
+        const bool visualMeshPivotAvailable = hasMeshSurfaceContact;
         const bool canonicalPivotAvailable = visualMeshPivotAvailable || collisionFallbackPivotAllowed;
         RE::NiPoint3 canonicalPivotPointWorld = grabGripPoint;
         RE::NiPoint3 canonicalPivotNormalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{};
@@ -8617,7 +8479,7 @@ namespace rock
             g_rockConfig.rockGrabPocketRadiusGameUnits);
         GrabSurfaceHit palmPocketSurfaceHit{};
         bool palmPocketMeshAvailable = false;
-        if (!authoredGrabNode && acquisitionPocket.valid && !grabSurfaceTriangles.empty()) {
+        if (acquisitionPocket.valid && !grabSurfaceTriangles.empty()) {
             const float palmPocketSnapDistance = (std::max)(
                 g_rockConfig.rockGrabPocketRadiusGameUnits,
                 (std::max)(
@@ -8650,7 +8512,7 @@ namespace rock
             }
         }
 
-        if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !authoredGrabNode && !sel.isFarSelection) {
+        if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !sel.isFarSelection) {
             const RE::NiPoint3 palmNormalWorld = acquisitionPocket.palmNormalWorld;
             const RE::NiPoint3 palmTangentWorld = acquisitionPocket.fingerForwardWorld;
             const RE::NiPoint3 palmBitangentWorld = acquisitionPocket.crossPalmWorld;
@@ -8920,7 +8782,7 @@ namespace rock
                 sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
         }
 
-        if (!meshGrabFound && !sel.hasHitPoint && !authoredGrabNode && !handPocketOnlyGrab) {
+        if (!meshGrabFound && !sel.hasHitPoint && !handPocketOnlyGrab) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: no object-side contact point for '{}' formID={:08X}; object origin/COM fallback is not valid dynamic grab authority reason={} meshNode='{}' ownerNode='{}' rootNode='{}'",
                 handName(),
@@ -8947,7 +8809,6 @@ namespace rock
             _isLeft,
             !sel.isFarSelection && !grabbedFromPullCatch,
             handPocketOnlyGrab,
-            authoredGrabNode != nullptr,
             looseWeaponGrab);
         if (pinchPocketCandidate.valid) {
             ROCK_LOG_DEBUG(Hand,
@@ -9473,8 +9334,7 @@ namespace rock
                     hasStablePocketTouchContact ||
                     meshSurfaceAuthorityEvidence ||
                     contactPatchEvidenceAvailable ||
-                    multiFingerGripUsed ||
-                    authoredGrabNode != nullptr;
+                    multiFingerGripUsed;
                 const auto phaseDecision = grab_three_phase::classifyAcquisitionPhase(grab_three_phase::PhaseClassificationInput{
                     .pocket = pocket,
                     .gripSeedWorld = phaseGripSeed,
@@ -10454,15 +10314,6 @@ namespace rock
                     return false;
                 }
             }
-
-            logGrabNodeInfo(handName(),
-                _isLeft,
-                collidableNode,
-                authoredGrabNode,
-                desiredObjectWorld,
-                handWorldTransform,
-                grabPivotAWorld,
-                grabPointMode);
 
             const RE::NiPoint3 frozenVisualNormalWorld = gripEvidenceNormalWorld(_grabFrame, objectWorldTransform);
             const auto frozenAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(

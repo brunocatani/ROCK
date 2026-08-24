@@ -81,22 +81,6 @@ int main()
     ok &= expectTrue("dead actor relaxes strict authority", weightedDeadActor.relaxedMechanicalAuthority);
     ok &= expectReason("weighted dead actor reason", weightedDeadActor.reason, "weightedSkinOwner");
 
-    const auto authoredWins = resolvePrimaryBody(ResolutionInput{
-        .targetKind = Kind::DeadActorBody,
-        .authoredBodyId = 404u,
-        .surfaceOwnerBodyId = 202u,
-        .selectedBodyId = 101u,
-        .nearestBodyId = 303u,
-        .authoredUsable = true,
-        .surfaceOwnerUsable = true,
-        .selectedUsable = true,
-        .nearestUsable = true,
-        .surfaceIsSkinned = true,
-        .hasSkinInfluences = true,
-    });
-    ok &= expectBody("authored node wins over skin owner", authoredWins.bodyId, 404u);
-    ok &= expectSource("authored node source", authoredWins.source, ResolutionSource::AuthoredNode);
-
     const auto positionOnlySkinned = resolvePrimaryBody(ResolutionInput{
         .targetKind = Kind::DeadActorBody,
         .surfaceOwnerBodyId = 202u,
