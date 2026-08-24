@@ -2584,9 +2584,6 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
             case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
                 return 16.0f;
-            case AxisOverlayRole::RightCustomCalibrationOffset:
-            case AxisOverlayRole::LeftCustomCalibrationOffset:
-                return kColliderAxisLength;
             case AxisOverlayRole::GunstockSupportInputBone:
                 return 14.0f;
             case AxisOverlayRole::GunstockLeftHand:
@@ -2672,9 +2669,6 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
             case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
                 return 0.98f;
-            case AxisOverlayRole::RightCustomCalibrationOffset:
-            case AxisOverlayRole::LeftCustomCalibrationOffset:
-                return 0.92f;
             case AxisOverlayRole::GunstockSupportInputBone:
             case AxisOverlayRole::GunstockLeftHand:
             case AxisOverlayRole::GunstockFiringHand:

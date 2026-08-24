@@ -460,11 +460,11 @@ namespace rock
                 palmPlaneCenter,
                 hand_bone_collider_geometry_math::mul(rawPalmDepthAxis, -0.25f));
             /*
-             * Palm roles now take roll from the same normal Ni frame as
-             * CustomOGA, but generated hand collider bodies still consume the
-             * legacy column-authored rotation convention before the shared
-             * Ni-to-Havok conversion. Convert only this palm target; segment
-             * colliders already build their frames through matrixFromAxes.
+             * Palm roles take roll from the normal Ni frame, but generated hand
+             * collider bodies still consume the legacy column-authored rotation
+             * convention before the shared Ni-to-Havok conversion. Convert only
+             * this palm target; segment colliders already build their frames
+             * through matrixFromAxes.
              */
             outFrame.transform.rotate =
                 hand_bone_collider_geometry_math::transposeStoredRotation(lookup.rollAuthorityWorld.rotate);

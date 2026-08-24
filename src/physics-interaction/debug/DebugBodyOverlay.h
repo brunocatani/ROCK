@@ -94,8 +94,6 @@ namespace rock::debug
         LeftGrabMotorRelationInverseBody,
         RightGrabMotorSolverEffectiveBody,
         LeftGrabMotorSolverEffectiveBody,
-        RightCustomCalibrationOffset,
-        LeftCustomCalibrationOffset,
         GunstockLeftHand,
         GunstockFiringHand,
         GunstockRenderedFiringHand,
