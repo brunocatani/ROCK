@@ -79,16 +79,13 @@ namespace rock
     /*
      * Records the authored runtime signal that produced a WeaponSizeClass
      * decision. Values are aligned with RockProviderWeaponClassificationSourceV1.
-     * Value 2 remains reserved for V1 compatibility and is never emitted.
      */
     enum class WeaponClassificationSource : std::uint8_t
     {
         None = 0,
         Keyword = 1,
-        WeightFallback = 2,
-        Default = 3,
-        WeaponData = 4,
-        EquipSlot = 5,
+        WeaponData = 2,
+        EquipSlot = 3,
     };
 
     /*

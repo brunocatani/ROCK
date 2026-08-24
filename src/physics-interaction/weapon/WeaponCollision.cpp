@@ -1338,17 +1338,19 @@ namespace rock
         struct WeaponClassificationResult
         {
             WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
-            WeaponClassificationSource source{ WeaponClassificationSource::Default };
+            WeaponClassificationSource source{ WeaponClassificationSource::None };
             std::uint64_t keywordFlags{ 0 };
             bool usedEffectiveInstanceKeywordData{ false };
+            bool resolved{ false };
         };
 
         /*
          * FO4VR 1.2.72 BGSKeywordForm::HasKeyword at 0x140147F50 selects
          * TBO_InstanceData::GetKeywordData() when available. This reads the
          * engine-assembled keyword set after installed OMOD property changes.
-         * Untagged weapons then use native instance weapon data and the
-         * instance-aware equip slot. Weight is not classification evidence.
+         * Native instance weapon data resolves melee weapons. The effective
+         * equip slot only disambiguates conflicting pistol and rifle tags.
+         * Inconclusive weapons remain unclassified.
          */
         WeaponClassificationResult classifyEquippedWeapon(
             const RE::TESObjectWEAP* weapon,
@@ -1373,6 +1375,7 @@ namespace rock
             });
             result.sizeClass = policyResult.sizeClass;
             result.source = policyResult.source;
+            result.resolved = policyResult.resolved;
             result.usedEffectiveInstanceKeywordData =
                 result.keywordFlags != 0 && instanceData &&
                 instanceData->GetKeywordData();
@@ -1468,6 +1471,7 @@ namespace rock
                 identity.keywordFlags = classification.keywordFlags;
                 identity.usedEffectiveInstanceKeywordData =
                     classification.usedEffectiveInstanceKeywordData;
+                identity.classificationResolved = classification.resolved;
             } else {
                 identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(nullptr, instanceData, objectInstanceExtra);
             }

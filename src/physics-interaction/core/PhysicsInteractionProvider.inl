@@ -273,7 +273,10 @@
     {
         outResult = {};
         const auto identity = _weaponCollision.getEquippedWeaponClassification();
-        outResult.valid = identity.hasEquippedWeapon ? 1u : 0u;
+        outResult.valid = identity.hasEquippedWeapon &&
+                identity.classificationResolved ?
+            1u :
+            0u;
         outResult.formId = identity.formID;
         outResult.keywordFlags = identity.keywordFlags;
         outResult.sizeClass = static_cast<::rock::provider::RockProviderWeaponSizeClassV1>(identity.sizeClass);
@@ -304,9 +307,6 @@
             outResult.confidence = 0.85f;
             outResult.provenanceFlags |= static_cast<std::uint32_t>(
                 Provenance::EquipSlotEvidence);
-            break;
-        case Source::Default:
-            outResult.confidence = 0.35f;
             break;
         default:
             outResult.confidence = 0.0f;

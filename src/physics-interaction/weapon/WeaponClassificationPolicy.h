@@ -19,7 +19,8 @@ namespace rock::weapon_classification_policy
     struct Result
     {
         WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
-        WeaponClassificationSource source{ WeaponClassificationSource::Default };
+        WeaponClassificationSource source{ WeaponClassificationSource::None };
+        bool resolved{ false };
     };
 
     [[nodiscard]] constexpr Result classify(const Input& input) noexcept
@@ -32,6 +33,7 @@ namespace rock::weapon_classification_policy
             return {
                 .sizeClass = WeaponSizeClass::Melee,
                 .source = WeaponClassificationSource::WeaponData,
+                .resolved = true,
             };
         }
 
@@ -44,6 +46,7 @@ namespace rock::weapon_classification_policy
             return {
                 .sizeClass = WeaponSizeClass::Melee,
                 .source = WeaponClassificationSource::Keyword,
+                .resolved = true,
             };
         }
 
@@ -59,6 +62,7 @@ namespace rock::weapon_classification_policy
             return {
                 .sizeClass = WeaponSizeClass::Heavy,
                 .source = WeaponClassificationSource::Keyword,
+                .resolved = true,
             };
         }
 
@@ -82,12 +86,14 @@ namespace rock::weapon_classification_policy
                 return {
                     .sizeClass = WeaponSizeClass::Pistol,
                     .source = WeaponClassificationSource::EquipSlot,
+                    .resolved = true,
                 };
             }
             if (input.effectiveEquipSlotFormID == kBothHandsEquipSlotFormID) {
                 return {
                     .sizeClass = WeaponSizeClass::Rifle,
                     .source = WeaponClassificationSource::EquipSlot,
+                    .resolved = true,
                 };
             }
         }
@@ -96,6 +102,7 @@ namespace rock::weapon_classification_policy
             return {
                 .sizeClass = WeaponSizeClass::Pistol,
                 .source = WeaponClassificationSource::Keyword,
+                .resolved = true,
             };
         }
 
@@ -103,20 +110,7 @@ namespace rock::weapon_classification_policy
             return {
                 .sizeClass = WeaponSizeClass::Rifle,
                 .source = WeaponClassificationSource::Keyword,
-            };
-        }
-
-        if (input.effectiveEquipSlotFormID == kRightHandEquipSlotFormID) {
-            return {
-                .sizeClass = WeaponSizeClass::Pistol,
-                .source = WeaponClassificationSource::EquipSlot,
-            };
-        }
-
-        if (input.effectiveEquipSlotFormID == kBothHandsEquipSlotFormID) {
-            return {
-                .sizeClass = WeaponSizeClass::Rifle,
-                .source = WeaponClassificationSource::EquipSlot,
+                .resolved = true,
             };
         }
 

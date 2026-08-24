@@ -741,17 +741,13 @@ namespace rock::provider
 
     /*
      * Records the authored runtime signal that produced the handling class.
-     * WeightFallback keeps its V1 numeric value for binary compatibility but is
-     * retired and never emitted by current ROCK builds.
      */
     enum class RockProviderWeaponClassificationSourceV1 : std::uint32_t
     {
         None = 0,
         Keyword = 1,
-        WeightFallback = 2,
-        Default = 3,
-        WeaponData = 4,
-        EquipSlot = 5,
+        WeaponData = 2,
+        EquipSlot = 3,
     };
 
     /*
@@ -1043,12 +1039,10 @@ namespace rock::provider
     {
         None = 0,
         KeywordEvidence = 1u << 0,
-        // Legacy V1 bit. Current ROCK builds never emit it.
-        MeshBoundsFallback = 1u << 1,
-        GenerationBound = 1u << 2,
-        EffectiveInstanceKeywordEvidence = 1u << 3,
-        WeaponDataEvidence = 1u << 4,
-        EquipSlotEvidence = 1u << 5,
+        EffectiveInstanceKeywordEvidence = 1u << 1,
+        WeaponDataEvidence = 1u << 2,
+        EquipSlotEvidence = 1u << 3,
+        GenerationBound = 1u << 4,
     };
 
     enum class RockProviderWeaponCompositionFlagV1 : std::uint32_t
@@ -1768,10 +1762,11 @@ namespace rock::provider
 
     /*
      * Weapon size class plus the raw keyword bitmask it was (or wasn't) derived
-     * from. Consumers that only need the collider-style bucket can read
+     * from. Consumers that only need the coarse handling bucket can read
      * sizeClass directly; consumers that need finer distinctions (e.g. a future
      * reload/scope mod picking a shotgun- or minigun-specific behavior) can
-     * inspect keywordFlags with hasWeaponKeywordFlagV1.
+     * inspect keywordFlags with hasWeaponKeywordFlagV1. When no conclusive
+     * authored signal exists, valid is zero and sizeClass is not authoritative.
      */
     struct RockProviderWeaponClassificationV1
     {

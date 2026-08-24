@@ -45,13 +45,14 @@ int main()
     static_assert(convertedPistol.sizeClass == WeaponSizeClass::Rifle);
     static_assert(convertedPistol.source == WeaponClassificationSource::EquipSlot);
 
-    static_assert(classify({
+    static_assert(!classify({
         .effectiveEquipSlotFormID = kRightHandEquipSlotFormID,
-    }).sizeClass == WeaponSizeClass::Pistol);
-    static_assert(classify({
+    }).resolved);
+    static_assert(!classify({
         .effectiveEquipSlotFormID = kBothHandsEquipSlotFormID,
-    }).sizeClass == WeaponSizeClass::Rifle);
-    static_assert(classify({}).source == WeaponClassificationSource::Default);
+    }).resolved);
+    static_assert(!classify({}).resolved);
+    static_assert(classify({}).source == WeaponClassificationSource::None);
 
     return 0;
 }
