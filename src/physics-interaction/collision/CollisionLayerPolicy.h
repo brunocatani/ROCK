@@ -444,14 +444,11 @@ namespace rock::collision_layer_policy
         return mask;
     }
 
-    inline constexpr std::uint64_t buildRockWeaponExpectedMask(bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true, bool includeBodyLayer = false)
+    inline constexpr std::uint64_t buildRockWeaponExpectedMask(bool blocksProjectiles, bool blocksSpells, bool includeBodyLayer = false)
     {
+        // Static and animstatic world collision are mandatory for generated weapons.
         std::uint64_t mask = allConfiguredLayerBits();
         mask = withoutLayer(mask, FO4_LAYER_UNIDENTIFIED);
-        if (!includeStaticWorld) {
-            mask = withoutLayer(mask, FO4_LAYER_STATIC);
-            mask = withoutLayer(mask, FO4_LAYER_ANIMSTATIC);
-        }
         mask = withoutLayer(mask, FO4_LAYER_NONCOLLIDABLE);
         mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
         mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
@@ -472,13 +469,12 @@ namespace rock::collision_layer_policy
         return mask;
     }
 
-    inline constexpr std::uint64_t buildRockBodyExpectedMask(bool includeStaticWorld = true)
+    inline constexpr std::uint64_t buildRockBodyExpectedMask()
     {
+        // Generated body colliders always retain static and animstatic contact.
         std::uint64_t mask = 0;
-        if (includeStaticWorld) {
-            mask = withLayer(mask, FO4_LAYER_STATIC);
-            mask = withLayer(mask, FO4_LAYER_ANIMSTATIC);
-        }
+        mask = withLayer(mask, FO4_LAYER_STATIC);
+        mask = withLayer(mask, FO4_LAYER_ANIMSTATIC);
         mask = withLayer(mask, FO4_LAYER_CLUTTER);
         mask = withLayer(mask, FO4_LAYER_WEAPON);
         mask = withLayer(mask, FO4_LAYER_DEBRIS_SMALL);
@@ -494,7 +490,7 @@ namespace rock::collision_layer_policy
         if constexpr (ROCK_LAYER_RELOAD == ROCK_LAYER_HAND) {
             return buildRockHandExpectedMask(true, includeStaticWorld);
         } else {
-            return buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells, includeStaticWorld);
+            return buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells);
         }
     }
 
@@ -608,9 +604,9 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(includeWeaponLayer, includeStaticWorld));
     }
 
-    inline void applyRockWeaponLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true)
+    inline void applyRockWeaponLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells)
     {
-        applyLayerExpectedMask(matrix, ROCK_LAYER_WEAPON, buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells, includeStaticWorld));
+        applyLayerExpectedMask(matrix, ROCK_LAYER_WEAPON, buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells));
     }
 
     inline void applyRockReloadLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true)
@@ -618,9 +614,9 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_RELOAD, buildRockReloadExpectedMask(blocksProjectiles, blocksSpells, includeStaticWorld));
     }
 
-    inline void applyRockBodyLayerPolicy(std::uint64_t* matrix, bool includeStaticWorld = true)
+    inline void applyRockBodyLayerPolicy(std::uint64_t* matrix)
     {
-        applyLayerExpectedMask(matrix, ROCK_LAYER_BODY, buildRockBodyExpectedMask(includeStaticWorld));
+        applyLayerExpectedMask(matrix, ROCK_LAYER_BODY, buildRockBodyExpectedMask());
     }
 
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask(
@@ -765,8 +761,6 @@ namespace rock::collision_layer_policy
     inline void applyRockGeneratedLayerPolicies(
         std::uint64_t* matrix,
         bool handStaticWorld,
-        bool weaponStaticWorld,
-        bool bodyStaticWorld,
         bool weaponBlocksProjectiles,
         bool weaponBlocksSpells,
         bool dynamicHandInteractionsEnabled)
@@ -780,9 +774,9 @@ namespace rock::collision_layer_policy
         applyRockHandLayerPolicy(matrix, true, handStaticWorld);
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_WEAPON,
-            buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, weaponStaticWorld, true));
+            buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, true));
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
-        applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
+        applyRockBodyLayerPolicy(matrix);
         applyRockDynamicHandProxyLayerPolicies(
             matrix,
             dynamicHandInteractionsEnabled);

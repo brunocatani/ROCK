@@ -59,6 +59,11 @@ namespace rock
     {
         constexpr std::size_t MAX_CONVEX_HULL_POINTS = 0xFC;
         constexpr float MIN_HULL_DIAGONAL_GAME_UNITS = 0.5f;
+        // Generated weapon collision has one fixed production geometry policy.
+        constexpr float WEAPON_COLLISION_CONVEX_RADIUS_HAVOK = 0.01f;
+        constexpr float WEAPON_COLLISION_POINT_DEDUP_GRID_HAVOK = 0.002f;
+        constexpr std::size_t WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS = 96;
+        constexpr float WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS = 0.5f;
         constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
         constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
         constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
@@ -756,12 +761,12 @@ namespace rock
                 return false;
             }
 
-            const auto targetPoints = static_cast<std::size_t>((std::max)(4, g_rockConfig.rockWeaponCollisionSupportFitTargetPoints));
+            constexpr auto targetPoints = WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS;
             const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
                 sourcePoints,
                 targetPoints,
                 MAX_CONVEX_HULL_POINTS,
-                g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits);
+                WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS);
             if (fit.accepted && pointCloudCanBuildHull(fit.points)) {
                 const std::size_t previousCount = clusters.size();
                 clusters.clear();
@@ -1491,12 +1496,12 @@ namespace rock
         GeneratedPointCloudClusterSet splitGeneratedWeaponPointCloudForCollision(const std::vector<RE::NiPoint3>& localPoints)
         {
             GeneratedPointCloudClusterSet result{};
-            const auto targetPoints = static_cast<std::size_t>((std::max)(4, g_rockConfig.rockWeaponCollisionSupportFitTargetPoints));
+            constexpr auto targetPoints = WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS;
             const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
                 localPoints,
                 targetPoints,
                 MAX_CONVEX_HULL_POINTS,
-                g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits);
+                WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS);
             result.supportFitAttempted = fit.attempted;
             result.supportFitAccepted = fit.accepted;
             result.supportFitMaxError = fit.maxSupportError;
@@ -1519,7 +1524,7 @@ namespace rock
                     splitCluster,
                     targetPoints,
                     MAX_CONVEX_HULL_POINTS,
-                    g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits);
+                    WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS);
                 if (childFit.accepted && !childFit.points.empty()) {
                     result.clusters.push_back(childFit.points);
                 } else {
@@ -2925,10 +2930,6 @@ namespace rock
         return _generatedSourceCache.valid &&
                _generatedSourceCache.equippedKey == equippedKey &&
                _generatedSourceCache.visualKey == visualKey &&
-               std::abs(_generatedSourceCache.convexRadius - g_rockConfig.rockWeaponCollisionConvexRadius) <= 0.00001f &&
-               std::abs(_generatedSourceCache.pointDedupGrid - g_rockConfig.rockWeaponCollisionPointDedupGrid) <= 0.00001f &&
-               _generatedSourceCache.supportFitTargetPoints == g_rockConfig.rockWeaponCollisionSupportFitTargetPoints &&
-               std::abs(_generatedSourceCache.supportFitMaxErrorGameUnits - g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits) <= 0.00001f &&
                !_generatedSourceCache.sources.empty() &&
                _generatedSourceCache.summary.signature != 0;
     }
@@ -2946,10 +2947,6 @@ namespace rock
         _generatedSourceCache.valid = true;
         _generatedSourceCache.equippedKey = equippedKey;
         _generatedSourceCache.visualKey = visualKey;
-        _generatedSourceCache.convexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
-        _generatedSourceCache.pointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
-        _generatedSourceCache.supportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
-        _generatedSourceCache.supportFitMaxErrorGameUnits = g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits;
         _generatedSourceCache.sources = std::move(sources);
         _generatedSourceCache.summary = summary;
     }
@@ -2973,7 +2970,6 @@ namespace rock
         std::uint32_t weaponFormID,
         const WeaponVisualKeyStats& visualKeyStats,
         bool replacingExisting,
-        bool settingsChanged,
         bool driveRequestedRebuild,
         std::vector<GeneratedHullSource> sources,
         const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary)
@@ -2985,7 +2981,6 @@ namespace rock
         _pendingGeneratedWeaponBuild = {};
         _pendingGeneratedWeaponBuild.active = true;
         _pendingGeneratedWeaponBuild.replacingExisting = replacingExisting;
-        _pendingGeneratedWeaponBuild.settingsChanged = settingsChanged;
         _pendingGeneratedWeaponBuild.driveRequestedRebuild = driveRequestedRebuild;
         _pendingGeneratedWeaponBuild.equippedKey = equippedKey;
         _pendingGeneratedWeaponBuild.visualKey = visualKey;
@@ -2994,10 +2989,6 @@ namespace rock
         _pendingGeneratedWeaponBuild.weaponFormID = weaponFormID;
         _pendingGeneratedWeaponBuild.visualRootCount = visualKeyStats.rootCount;
         _pendingGeneratedWeaponBuild.visibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
-        _pendingGeneratedWeaponBuild.convexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
-        _pendingGeneratedWeaponBuild.pointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
-        _pendingGeneratedWeaponBuild.supportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
-        _pendingGeneratedWeaponBuild.supportFitMaxErrorGameUnits = g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits;
         _pendingGeneratedWeaponBuild.sources = std::move(sources);
         _pendingGeneratedWeaponBuild.summary = summary;
         return true;
@@ -3011,11 +3002,7 @@ namespace rock
         return _pendingGeneratedWeaponBuild.active &&
                _pendingGeneratedWeaponBuild.equippedKey == equippedKey &&
                _pendingGeneratedWeaponBuild.ownershipKey == ownershipKey &&
-               _pendingGeneratedWeaponBuild.weaponFormID == weaponFormID &&
-               std::abs(_pendingGeneratedWeaponBuild.convexRadius - g_rockConfig.rockWeaponCollisionConvexRadius) <= 0.00001f &&
-               std::abs(_pendingGeneratedWeaponBuild.pointDedupGrid - g_rockConfig.rockWeaponCollisionPointDedupGrid) <= 0.00001f &&
-               _pendingGeneratedWeaponBuild.supportFitTargetPoints == g_rockConfig.rockWeaponCollisionSupportFitTargetPoints &&
-               std::abs(_pendingGeneratedWeaponBuild.supportFitMaxErrorGameUnits - g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits) <= 0.00001f;
+               _pendingGeneratedWeaponBuild.weaponFormID == weaponFormID;
     }
 
     bool WeaponCollision::advancePendingGeneratedWeaponBuild(RE::hknpWorld* world)
@@ -3080,7 +3067,6 @@ namespace rock
         const auto visualRootCount = pending.visualRootCount;
         const auto visibleTriShapeCount = pending.visibleTriShapeCount;
         const bool replacingExisting = pending.replacingExisting;
-        const bool settingsChanged = pending.settingsChanged;
         const bool driveRequestedRebuild = pending.driveRequestedRebuild;
         const auto summary = pending.summary;
         const auto ownershipKey = pending.ownershipKey;
@@ -3092,12 +3078,11 @@ namespace rock
 
         if (replacingExisting) {
             ROCK_LOG_INFO(Weapon,
-                "Replacing generated weapon collision bodies cachedKey={:016X} observedKey={:016X} sources={} replacementBodies={} settingsChanged={} driveRebuild={} staged=yes",
+                "Replacing generated weapon collision bodies cachedKey={:016X} observedKey={:016X} sources={} replacementBodies={} driveRebuild={} staged=yes",
                 _cachedWeaponKey,
                 equippedKey,
                 sourceCount,
                 createdCount,
-                settingsChanged,
                 driveRequestedRebuild);
             clearAtomicBodyIds();
             destroyWeaponBodyBank(activeWeaponBodies(), true);
@@ -3124,10 +3109,6 @@ namespace rock
         publishWeaponBodySetGeneration(summary);
         publishAtomicBodyIds(activeWeaponBodies());
         setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-        _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
-        _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
-        _cachedSupportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
-        _cachedSupportFitMaxErrorGameUnits = g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits;
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildCompleted);
@@ -3138,14 +3119,6 @@ namespace rock
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildBodyCount, finalBodyCount);
         _pendingGeneratedWeaponBuild = {};
         return true;
-    }
-
-    void WeaponCollision::resetWeaponCollisionSettingsCache()
-    {
-        _cachedConvexRadius = -1.0f;
-        _cachedPointDedupGrid = -1.0f;
-        _cachedSupportFitTargetPoints = -1;
-        _cachedSupportFitMaxErrorGameUnits = -1.0f;
     }
 
     void WeaponCollision::resetWeaponBodySetGeneration()
@@ -4579,9 +4552,7 @@ namespace rock
 
     void WeaponCollision::init(RE::hknpWorld* world, void* bhkWorld)
     {
-        // Cache the Havok context even while the feature is disabled so the INI
-        // watcher can hot-enable weapon collision without requiring a physics
-        // module restart.
+        // Cache the Havok context for the generated weapon-collision lifetime.
         _cachedWorld = world;
         _cachedBhkWorld = bhkWorld;
         _cachedWeaponKey = 0;
@@ -4608,15 +4579,9 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
-        resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
         clearAtomicBodyIds();
-
-        if (!g_rockConfig.rockWeaponCollisionEnabled) {
-            ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via config — context cached for hot reload");
-            return;
-        }
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
     }
@@ -4654,7 +4619,6 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
-        resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
         clearWeaponEmitterSnapshot();
@@ -4717,7 +4681,6 @@ namespace rock
             clearPendingGeneratedWeaponBuild(world, true);
             resetVisualSourceUnavailableRetention();
             resetWeaponBodySetGeneration();
-            resetWeaponCollisionSettingsCache();
             _driveRebuildRequested.store(false, std::memory_order_release);
             _workbenchExitRebuildRequested.store(false, std::memory_order_release);
             _driveFailureCount.store(0, std::memory_order_release);
@@ -4725,16 +4688,6 @@ namespace rock
             _omodPrebuildAuditRoot = nullptr;
             clearWeaponEmitterSnapshot();
         };
-
-        if (!g_rockConfig.rockWeaponCollisionEnabled) {
-            if (hasWeaponBody() && world) {
-                ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via hot reload - destroying generated weapon bodies");
-                destroyWeaponBody(world);
-            }
-            _generatedRecaptureDiagnostic = {};
-            clearCurrentWeaponState();
-            return;
-        }
 
         if (!world) {
             return;
@@ -4786,14 +4739,13 @@ namespace rock
         _observedEquippedWeaponInstanceContentKey = observedInstanceContentKey;
         updateWeaponEmitterSnapshot(weaponNode, observedKey);
 
-        const bool settingsChanged = weaponCollisionSettingsChanged();
         const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool workbenchExitRequested =
             weaponNode != nullptr && _workbenchExitRebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool keyChanged = observedKey != 0 && observedKey != _cachedWeaponKey;
         const bool missingBodies = observedKey != 0 && !hasWeaponBody();
         const bool identityKeyChanged = observedIdentityKey != 0 && observedIdentityKey != _cachedWeaponIdentityKey;
-        bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || settingsChanged || keyChanged || missingBodies;
+        bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || keyChanged || missingBodies;
         bool rebuildDiagnosticsRecorded = false;
 
         const auto recordRebuildDiagnostics = [&]() {
@@ -4801,9 +4753,6 @@ namespace rock
                 return;
             }
 
-            if (settingsChanged) {
-                performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildReasonSettingsChanged);
-            }
             if (driveRequestedRebuild) {
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildReasonDriveRequested);
             }
@@ -4855,7 +4804,7 @@ namespace rock
         }
 
         if (!weaponNode) {
-            if (hasWeaponBody() && !keyChanged && !missingBodies && !settingsChanged && !driveRequestedRebuild) {
+            if (hasWeaponBody() && !keyChanged && !missingBodies && !driveRequestedRebuild) {
                 /*
                  * Reload animation can briefly hide or detach the first-person
                  * weapon visual while the equipped identity is unchanged. Keep
@@ -4874,11 +4823,10 @@ namespace rock
 
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon,
-                    "Weapon visual node absent while rebuild required - destroying generated weapon bodies cachedKey={:016X} observedKey={:016X} missingBodies={} settingsChanged={} driveRebuild={} identityChanged={}",
+                    "Weapon visual node absent while rebuild required - destroying generated weapon bodies cachedKey={:016X} observedKey={:016X} missingBodies={} driveRebuild={} identityChanged={}",
                     _cachedWeaponKey,
                     observedKey,
                     missingBodies ? "yes" : "no",
-                    settingsChanged ? "yes" : "no",
                     driveRequestedRebuild ? "yes" : "no",
                     identityKeyChanged ? "yes" : "no");
                 destroyWeaponBody(world);
@@ -5052,7 +5000,6 @@ namespace rock
                         sameEquippedIdentity &&
                         visualKeyChanged &&
                         retainedPackageRootStillCurrent &&
-                        !settingsChanged &&
                         !driveRequestedRebuild;
                     const float visualSourceMissRetainSecondsLimit = (std::max)(0.011f, requiredStableSeconds);
                     if (retainCandidate &&
@@ -5062,9 +5009,9 @@ namespace rock
                          * The visible tree can briefly report no extractable
                          * TriShapes while the same equipped weapon identity and
                          * package root are still live. Keep the current body set
-                         * only for a bounded window; actual identity/root,
-                         * settings, or drive changes still fall through and
-                         * destroy stale collision.
+                         * only for a bounded window; actual identity, root, or
+                         * drive changes still fall through and destroy stale
+                         * collision.
                          */
                         ROCK_LOG_SAMPLE_INFO(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
@@ -5132,7 +5079,6 @@ namespace rock
                         observedFormID,
                         visualKeyStats,
                         replacingExisting,
-                        settingsChanged,
                         driveRequestedRebuild,
                         std::move(generatedSources),
                         generatedSummary)) {
@@ -5158,12 +5104,11 @@ namespace rock
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildQueued);
 
                 ROCK_LOG_INFO(Weapon,
-                    "Generated weapon collision staged create queued cachedKey={:016X} observedKey={:016X} sources={} replacingExisting={} settingsChanged={} driveRebuild={} workbenchExit={} cachedSources={} batch={}",
+                    "Generated weapon collision staged create queued cachedKey={:016X} observedKey={:016X} sources={} replacingExisting={} driveRebuild={} workbenchExit={} cachedSources={} batch={}",
                     _cachedWeaponKey,
                     observedKey,
                     generatedCount,
                     replacingExisting ? "yes" : "no",
-                    settingsChanged ? "yes" : "no",
                     driveRequestedRebuild ? "yes" : "no",
                     workbenchExitRequested ? "yes" : "no",
                     usedCachedSources ? "yes" : "no",
@@ -5417,7 +5362,7 @@ namespace rock
         std::uint32_t totalVisitedShapes = 0;
         std::uint32_t totalExtractedTriangles = 0;
         std::uint32_t totalCulledForEffectGeometry = 0;
-        const auto groupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(g_rockConfig.rockWeaponCollisionGroupingMode);
+        constexpr auto groupingMode = weapon_collision_grouping_policy::kProductionWeaponCollisionGroupingMode;
         for (const auto& candidate : candidates) {
             std::vector<GeneratedHullSource> candidateSources;
             std::unordered_set<std::uintptr_t> candidateExtractedSourceGroups;
@@ -5926,7 +5871,7 @@ namespace rock
                 sourceLocalTriangles.push_back(sourceLocalTriangle);
             }
 
-            const float dedupGridGame = (std::max)(g_rockConfig.rockWeaponCollisionPointDedupGrid * havokToGameScale(), 0.01f);
+            const float dedupGridGame = (std::max)(WEAPON_COLLISION_POINT_DEDUP_GRID_HAVOK * havokToGameScale(), 0.01f);
             localPoints = dedupePointCloud(localPoints, dedupGridGame);
             if (!pointCloudCanBuildHull(localPoints)) {
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
@@ -5986,7 +5931,7 @@ namespace rock
                     clusterSet.supportFitOutputPoints,
                     clusterSet.clusters.size(),
                     clusterSet.supportFitMaxError,
-                    g_rockConfig.rockWeaponCollisionSupportFitTargetPoints,
+                    WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS,
                     clusterSet.supportFitRepairPoints,
                     clusterSet.supportFitValidationDirections);
             }
@@ -6082,18 +6027,6 @@ namespace rock
         return result;
     }
 
-    bool WeaponCollision::weaponCollisionSettingsChanged() const
-    {
-        if (_cachedConvexRadius < 0.0f || _cachedPointDedupGrid < 0.0f || _cachedSupportFitTargetPoints < 0 ||
-            _cachedSupportFitMaxErrorGameUnits < 0.0f) {
-            return false;
-        }
-        return std::abs(g_rockConfig.rockWeaponCollisionConvexRadius - _cachedConvexRadius) > 0.00001f ||
-               std::abs(g_rockConfig.rockWeaponCollisionPointDedupGrid - _cachedPointDedupGrid) > 0.00001f ||
-               g_rockConfig.rockWeaponCollisionSupportFitTargetPoints != _cachedSupportFitTargetPoints ||
-               std::abs(g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits - _cachedSupportFitMaxErrorGameUnits) > 0.00001f;
-    }
-
     std::size_t WeaponCollision::createGeneratedWeaponBodiesInBank(RE::hknpWorld* world,
         const std::vector<GeneratedHullSource>& sources,
         WeaponBodyBank& bank,
@@ -6136,7 +6069,7 @@ namespace rock
                 const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
                 const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
                 auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
-                return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
+                return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK);
             }
 
             std::vector<RE::hknpShape*> childShapes;
@@ -6152,7 +6085,7 @@ namespace rock
                 const auto childCenterGame = weapon_collision_geometry_math::pointCenter(childLocalPointsGame);
                 auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame);
                 auto* childShape =
-                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
+                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK);
                 if (!childShape) {
                     ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
                     continue;
@@ -6349,7 +6282,6 @@ namespace rock
         clearGeneratedSourceCache();
         clearPendingGeneratedWeaponBuild(world, true);
         resetVisualSourceUnavailableRetention();
-        resetWeaponCollisionSettingsCache();
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
     }

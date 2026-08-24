@@ -2781,11 +2781,6 @@ namespace rock
             return false;
         }
 
-        if (g_rockConfig.rockHandColliderRuntimeMode == 0) {
-            ROCK_LOG_WARN(Hand, "{} bone-derived hand collision disabled by iHandColliderRuntimeMode=0", handName());
-            return false;
-        }
-
         if (!_boneColliders.create(world, bhkWorld, _isLeft, rollAuthorityWorld, _handBody)) {
             ROCK_LOG_ERROR(Hand, "{} bone-derived hand collision create failed", handName());
             return false;

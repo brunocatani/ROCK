@@ -15,7 +15,6 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
@@ -32,12 +31,8 @@ namespace
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr auto EXPERIMENTAL_SECTION = "Experimental";
-    constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
-    constexpr int kMinWeaponCollisionSupportFitTargetPoints = 4;
-    constexpr int kMaxWeaponCollisionSupportFitTargetPoints = 252;
     constexpr float kDefaultWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
     constexpr float kMaxWeaponCollisionVisualStabilizationSeconds = 60.0f / 90.0f;
-    constexpr float kDefaultWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
     constexpr float kDefaultWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
@@ -186,10 +181,8 @@ namespace rock
         rockLeftFiringAimOffsetXGameUnits = 0.0f;
         rockLeftFiringAimOffsetYGameUnits = 0.0f;
         rockLeftFiringAimOffsetZGameUnits = 0.0f;
-        rockWeaponCollisionEnabled = true;
         rockWeaponCollisionBlocksProjectiles = false;
         rockWeaponCollisionBlocksSpells = false;
-        rockWeaponCollisionStaticWorldEnabled = true;
         rockWeaponCollisionDynamicBoxEnabled = true;
         rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
         rockWeaponCollisionDynamicInverseInertiaMultiplier = kDefaultWeaponCollisionDynamicInverseInertiaMultiplier;
@@ -199,12 +192,7 @@ namespace rock
         rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
         rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
-        rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         rockWeaponCollisionVisualStabilizationSeconds = kDefaultWeaponCollisionVisualStabilizationSeconds;
-        rockWeaponCollisionConvexRadius = 0.01f;
-        rockWeaponCollisionPointDedupGrid = 0.002f;
-        rockWeaponCollisionSupportFitTargetPoints = kDefaultWeaponCollisionSupportFitTargetPoints;
-        rockWeaponCollisionSupportFitMaxErrorGameUnits = kDefaultWeaponCollisionSupportFitMaxErrorGameUnits;
         rockWeaponCollisionMaxLinearVelocity = 50.0f;
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
         rockWeaponSizeClassPistolMaxWeight = 6.0f;
@@ -242,23 +230,7 @@ namespace rock
         rockNativeScopeOverlayYawDegrees = 0.0f;
         rockNativeScopeOverlayRollDegrees = 0.0f;
 
-        rockHandCollisionDynamicDrive = true;
         rockHandDynamicInteractionsEnabled = true;
-        rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
-        rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
-        rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
-        rockHandCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
-        rockHandCollisionDynamicTeleportRecoverySeconds = 0.25f;
-        rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
-        rockHandCollisionDynamicRenderFollowSmoothingSpeed = 45.0f;
-        rockHandCollisionDynamicVisualPriority = 80;
-        rockHandCollisionDynamicHapticsEnabled = true;
-        rockHandCollisionDynamicHapticDurationSeconds = 0.035f;
-        rockHandCollisionDynamicHapticBaseIntensity = 0.18f;
-        rockHandCollisionDynamicHapticMaxIntensity = 0.55f;
-        rockHandCollisionDynamicHapticSpeedScale = 0.006f;
-        rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
-        rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
         rockHandCollisionSurfaceFingerResponseEnabled = true;
         rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = 0.10f;
         rockHandCollisionSurfaceFingerResponseGain = 1.0f;
@@ -368,10 +340,8 @@ namespace rock
         rockDebugSkeletonBoneLogFilter = "RArm_Hand,LArm_Hand,RArm_Finger23,LArm_Finger23,Chest,Pelvis";
         rockDebugSkeletonAxisBoneFilter = "";
 
-        rockHandColliderRuntimeMode = 1;
         rockBodyBoneCollidersEnabled = true;
         rockBodyBoneLegAndFootCollidersEnabled = false;
-        rockBodyBoneCollisionStaticWorldEnabled = true;
         rockBodyBoneColliderStandardRadiusScale = 1.0f;
         rockBodyBoneColliderStandardLengthScale = 1.0f;
         rockBodyBoneColliderStandardConvexRadiusScale = 1.0f;
@@ -486,7 +456,6 @@ namespace rock
 
         rockGrabMaxDeviation = 50.0f;
         rockGrabMaxDeviationTime = 2.0f;
-        rockGrabButtonID = 2;
         rockThrowVelocityMultiplier = 1.5f;
         rockGrabControllerDerivedThrowVelocityEnabled = true;
         rockGrabThrowObjectVelocityBlend = kDefaultGrabThrowObjectVelocityBlend;
@@ -859,10 +828,8 @@ namespace rock
             0.0f,
             -15.0f,
             15.0f);
-        rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
-        rockWeaponCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionStaticWorldEnabled", rockWeaponCollisionStaticWorldEnabled);
         rockWeaponCollisionDynamicBoxEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionDynamicBoxEnabled", rockWeaponCollisionDynamicBoxEnabled);
         rockWeaponCollisionDynamicBoxPaddingGameUnits = readClampedFloat(ini,
             SECTION,
@@ -920,15 +887,6 @@ namespace rock
             0.25f,
             0.0f,
             45.0f);
-        rockWeaponCollisionGroupingMode = static_cast<int>(ini.GetLongValue(SECTION, "iWeaponCollisionGroupingMode", rockWeaponCollisionGroupingMode));
-        const auto sanitizedWeaponCollisionGroupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(rockWeaponCollisionGroupingMode);
-        if (static_cast<int>(sanitizedWeaponCollisionGroupingMode) != rockWeaponCollisionGroupingMode) {
-            ROCK_LOG_WARN(Config,
-                "Unsupported iWeaponCollisionGroupingMode={} - using {}",
-                rockWeaponCollisionGroupingMode,
-                weapon_collision_grouping_policy::weaponCollisionGroupingModeName(sanitizedWeaponCollisionGroupingMode));
-            rockWeaponCollisionGroupingMode = static_cast<int>(sanitizedWeaponCollisionGroupingMode);
-        }
         rockWeaponCollisionVisualStabilizationSeconds =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionVisualStabilizationSeconds", rockWeaponCollisionVisualStabilizationSeconds));
         if (!std::isfinite(rockWeaponCollisionVisualStabilizationSeconds) ||
@@ -939,27 +897,6 @@ namespace rock
                 rockWeaponCollisionVisualStabilizationSeconds,
                 kDefaultWeaponCollisionVisualStabilizationSeconds);
             rockWeaponCollisionVisualStabilizationSeconds = kDefaultWeaponCollisionVisualStabilizationSeconds;
-        }
-        rockWeaponCollisionConvexRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionConvexRadius", rockWeaponCollisionConvexRadius));
-        rockWeaponCollisionPointDedupGrid = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionPointDedupGrid", rockWeaponCollisionPointDedupGrid));
-        rockWeaponCollisionSupportFitTargetPoints =
-            static_cast<int>(ini.GetLongValue(SECTION, "iWeaponCollisionSupportFitTargetPoints", rockWeaponCollisionSupportFitTargetPoints));
-        if (rockWeaponCollisionSupportFitTargetPoints < kMinWeaponCollisionSupportFitTargetPoints ||
-            rockWeaponCollisionSupportFitTargetPoints > kMaxWeaponCollisionSupportFitTargetPoints) {
-            ROCK_LOG_WARN(Config,
-                "Invalid iWeaponCollisionSupportFitTargetPoints={} - using {}",
-                rockWeaponCollisionSupportFitTargetPoints,
-                kDefaultWeaponCollisionSupportFitTargetPoints);
-            rockWeaponCollisionSupportFitTargetPoints = kDefaultWeaponCollisionSupportFitTargetPoints;
-        }
-        rockWeaponCollisionSupportFitMaxErrorGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionSupportFitMaxErrorGameUnits", rockWeaponCollisionSupportFitMaxErrorGameUnits));
-        if (!std::isfinite(rockWeaponCollisionSupportFitMaxErrorGameUnits) || rockWeaponCollisionSupportFitMaxErrorGameUnits < 0.0f) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fWeaponCollisionSupportFitMaxErrorGameUnits={} - using {:.2f}",
-                rockWeaponCollisionSupportFitMaxErrorGameUnits,
-                kDefaultWeaponCollisionSupportFitMaxErrorGameUnits);
-            rockWeaponCollisionSupportFitMaxErrorGameUnits = kDefaultWeaponCollisionSupportFitMaxErrorGameUnits;
         }
         rockWeaponCollisionMaxLinearVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxLinearVelocity", rockWeaponCollisionMaxLinearVelocity));
@@ -1191,106 +1128,10 @@ namespace rock
             -180.0f,
             180.0f);
 
-        rockHandCollisionDynamicDrive = ini.GetBoolValue(SECTION, "bHandCollisionDynamicDrive", rockHandCollisionDynamicDrive);
         rockHandDynamicInteractionsEnabled = ini.GetBoolValue(
             SECTION,
             "bHandDynamicInteractionsEnabled",
             rockHandDynamicInteractionsEnabled);
-        rockHandCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicMaxLinearVelocityHavok",
-            rockHandCollisionDynamicMaxLinearVelocityHavok,
-            15.0f,
-            0.0f,
-            200.0f);
-        rockHandCollisionDynamicContactPressMaxVelocityHavok = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicContactPressMaxVelocityHavok",
-            rockHandCollisionDynamicContactPressMaxVelocityHavok,
-            1.0f,
-            0.0f,
-            50.0f);
-        rockHandCollisionDynamicDivergenceTeleportGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicDivergenceTeleportGameUnits",
-            rockHandCollisionDynamicDivergenceTeleportGameUnits,
-            40.0f,
-            0.0f,
-            500.0f);
-        rockHandCollisionDynamicDivergenceTeleportDwellSeconds = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicDivergenceTeleportDwellSeconds",
-            rockHandCollisionDynamicDivergenceTeleportDwellSeconds,
-            0.3f,
-            0.0f,
-            5.0f);
-        rockHandCollisionDynamicTeleportRecoverySeconds = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicTeleportRecoverySeconds",
-            rockHandCollisionDynamicTeleportRecoverySeconds,
-            0.25f,
-            0.0f,
-            2.0f);
-        rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicRenderFollowMinDeviationGameUnits",
-            rockHandCollisionDynamicRenderFollowMinDeviationGameUnits,
-            0.05f,
-            0.0f,
-            5.0f);
-        rockHandCollisionDynamicRenderFollowSmoothingSpeed = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicRenderFollowSmoothingSpeed",
-            rockHandCollisionDynamicRenderFollowSmoothingSpeed,
-            45.0f,
-            0.0f,
-            240.0f);
-        rockHandCollisionDynamicVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iHandCollisionDynamicVisualPriority", rockHandCollisionDynamicVisualPriority));
-        rockHandCollisionDynamicVisualPriority = std::clamp(rockHandCollisionDynamicVisualPriority, 0, 99);
-        rockHandCollisionDynamicHapticsEnabled =
-            ini.GetBoolValue(SECTION, "bHandCollisionDynamicHapticsEnabled", rockHandCollisionDynamicHapticsEnabled);
-        rockHandCollisionDynamicHapticDurationSeconds = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicHapticDurationSeconds",
-            rockHandCollisionDynamicHapticDurationSeconds,
-            0.035f,
-            0.0f,
-            0.2f);
-        rockHandCollisionDynamicHapticBaseIntensity = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicHapticBaseIntensity",
-            rockHandCollisionDynamicHapticBaseIntensity,
-            0.18f,
-            0.0f,
-            1.0f);
-        rockHandCollisionDynamicHapticMaxIntensity = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicHapticMaxIntensity",
-            rockHandCollisionDynamicHapticMaxIntensity,
-            0.55f,
-            rockHandCollisionDynamicHapticBaseIntensity,
-            1.0f);
-        rockHandCollisionDynamicHapticSpeedScale = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicHapticSpeedScale",
-            rockHandCollisionDynamicHapticSpeedScale,
-            0.006f,
-            0.0f,
-            1.0f);
-        rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond",
-            rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond,
-            3.0f,
-            0.0f,
-            5000.0f);
-        rockHandCollisionDynamicHapticCooldownSeconds = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicHapticCooldownSeconds",
-            rockHandCollisionDynamicHapticCooldownSeconds,
-            0.12f,
-            0.0f,
-            5.0f);
         rockHandCollisionSurfaceFingerResponseEnabled = ini.GetBoolValue(
             SECTION,
             "bHandCollisionSurfaceFingerResponseEnabled",
@@ -1566,15 +1407,9 @@ namespace rock
             rockDebugSkeletonBoneAxisLength = 0.1f;
         }
 
-        rockHandColliderRuntimeMode = static_cast<int>(ini.GetLongValue(SECTION, "iHandColliderRuntimeMode", rockHandColliderRuntimeMode));
-        if (rockHandColliderRuntimeMode < 0 || rockHandColliderRuntimeMode > 1) {
-            ROCK_LOG_WARN(Config, "Invalid iHandColliderRuntimeMode={} - using BoneDerivedHands", rockHandColliderRuntimeMode);
-            rockHandColliderRuntimeMode = 1;
-        }
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);
-        rockBodyBoneCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bBodyBoneCollisionStaticWorldEnabled", rockBodyBoneCollisionStaticWorldEnabled);
         auto readBodyBoneScale = [&](const char* key, float currentValue) {
             const auto value = static_cast<float>(ini.GetDoubleValue(SECTION, key, currentValue));
             if (!std::isfinite(value)) {
@@ -1955,11 +1790,6 @@ namespace rock
 
         rockGrabMaxDeviation = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation", rockGrabMaxDeviation));
         rockGrabMaxDeviationTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime", rockGrabMaxDeviationTime));
-        rockGrabButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iGrabButtonID", rockGrabButtonID));
-        if (!input_remap_policy::isAllowedGrabButtonId(rockGrabButtonID)) {
-            ROCK_LOG_WARN(Config, "iGrabButtonID must be 0..63 and cannot be SteamVR trigger button {}; using 2", input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-            rockGrabButtonID = 2;
-        }
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabControllerDerivedThrowVelocityEnabled =
             ini.GetBoolValue(SECTION, "bGrabControllerDerivedThrowVelocityEnabled", rockGrabControllerDerivedThrowVelocityEnabled);

@@ -637,7 +637,7 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::Settings{
                 .enabled = g_rockConfig.rockInputRemapEnabled,
-                .grabButtonId = g_rockConfig.rockGrabButtonID,
+                .grabButtonId = input_remap_policy::kGrabButtonId,
                 .suppressRightGrabGameInput = g_rockConfig.rockSuppressRightGrabGameInput,
                 .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,

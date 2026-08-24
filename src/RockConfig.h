@@ -30,7 +30,6 @@
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
-#include "physics-interaction/weapon/WeaponSemantics.h"
 
 namespace rock
 {
@@ -121,10 +120,8 @@ namespace rock
         float rockLeftFiringAimOffsetXGameUnits = 0.0f;
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
-        bool rockWeaponCollisionEnabled = true;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
-        bool rockWeaponCollisionStaticWorldEnabled = true;
         bool rockWeaponCollisionDynamicBoxEnabled = true;
         float rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
         float rockWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
@@ -134,14 +131,9 @@ namespace rock
         float rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
         float rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
-        int rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         // Elapsed stable-witness window before a generation-driven weapon
         // visual rebuild commits (historical 8-frame tuning at 90 Hz).
         float rockWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
-        float rockWeaponCollisionConvexRadius = 0.01f;
-        float rockWeaponCollisionPointDedupGrid = 0.002f;
-        int rockWeaponCollisionSupportFitTargetPoints = 96;
-        float rockWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
         float rockWeaponCollisionMaxLinearVelocity = 50.0f;
         float rockWeaponCollisionMaxAngularVelocity = 100.0f;
         float rockWeaponSizeClassPistolMaxWeight = 6.0f;
@@ -197,23 +189,7 @@ namespace rock
          * bodies are solver-clipped by static world surfaces and drive the
          * rendered hand through one-way visual authority.
          */
-        bool rockHandCollisionDynamicDrive = true;
         bool rockHandDynamicInteractionsEnabled = true;
-        float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
-        float rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
-        float rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
-        float rockHandCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
-        float rockHandCollisionDynamicTeleportRecoverySeconds = 0.25f;
-        float rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
-        float rockHandCollisionDynamicRenderFollowSmoothingSpeed = 45.0f;
-        int rockHandCollisionDynamicVisualPriority = 80;
-        bool rockHandCollisionDynamicHapticsEnabled = true;
-        float rockHandCollisionDynamicHapticDurationSeconds = 0.035f;
-        float rockHandCollisionDynamicHapticBaseIntensity = 0.18f;
-        float rockHandCollisionDynamicHapticMaxIntensity = 0.55f;
-        float rockHandCollisionDynamicHapticSpeedScale = 0.006f;
-        float rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
-        float rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
         bool rockHandCollisionSurfaceFingerResponseEnabled = true;
         float rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = 0.10f;
         float rockHandCollisionSurfaceFingerResponseGain = 1.0f;
@@ -323,10 +299,8 @@ namespace rock
         std::string rockDebugSkeletonBoneLogFilter = "RArm_Hand,LArm_Hand,RArm_Finger23,LArm_Finger23,Chest,Pelvis";
         std::string rockDebugSkeletonAxisBoneFilter = "";
 
-        int rockHandColliderRuntimeMode = 1;
         bool rockBodyBoneCollidersEnabled = true;
         bool rockBodyBoneLegAndFootCollidersEnabled = false;
-        bool rockBodyBoneCollisionStaticWorldEnabled = true;
         float rockBodyBoneColliderStandardRadiusScale = 1.0f;
         float rockBodyBoneColliderStandardLengthScale = 1.0f;
         float rockBodyBoneColliderStandardConvexRadiusScale = 1.0f;
@@ -441,7 +415,6 @@ namespace rock
 
         float rockGrabMaxDeviation = 50.0f;
         float rockGrabMaxDeviationTime = 2.0f;
-        int rockGrabButtonID = 2;
         float rockThrowVelocityMultiplier = 1.5f;
         bool rockGrabControllerDerivedThrowVelocityEnabled = true;
         float rockGrabThrowObjectVelocityBlend = 0.35f;

@@ -9,6 +9,7 @@
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
+#include "physics-interaction/hand/DynamicHandCollisionPolicy.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
@@ -527,12 +528,12 @@ namespace rock
         handTelemetry.entryContactMask = handSlots.contactEntryMaskAtomic.load(std::memory_order_relaxed);
 
         const dynamic_hand_collision_feedback::ContactPulseConfig config{
-            .enabled = g_rockConfig.rockHandCollisionDynamicHapticsEnabled,
-            .baseIntensity = g_rockConfig.rockHandCollisionDynamicHapticBaseIntensity,
-            .maxIntensity = g_rockConfig.rockHandCollisionDynamicHapticMaxIntensity,
-            .speedScale = g_rockConfig.rockHandCollisionDynamicHapticSpeedScale,
-            .minApproachSpeedGameUnitsPerSecond = g_rockConfig.rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond,
-            .cooldownSeconds = g_rockConfig.rockHandCollisionDynamicHapticCooldownSeconds,
+            .enabled = true,
+            .baseIntensity = dynamic_hand_collision_policy::kHapticBaseIntensity,
+            .maxIntensity = dynamic_hand_collision_policy::kHapticMaximumIntensity,
+            .speedScale = dynamic_hand_collision_policy::kHapticSpeedScale,
+            .minApproachSpeedGameUnitsPerSecond = dynamic_hand_collision_policy::kHapticMinimumApproachSpeedGameUnitsPerSecond,
+            .cooldownSeconds = dynamic_hand_collision_policy::kHapticCooldownSeconds,
         };
         const auto decision = dynamic_hand_collision_feedback::updateContactPulse(
             handSlots.hapticState,
@@ -777,8 +778,7 @@ namespace rock
 
         const bool isLeft = source.isLeft;
         const std::uint32_t sourceBodyId = source.bodyId;
-        if (!g_rockConfig.rockHandCollisionDynamicDrive ||
-            !frik_visual_authority::isAvailable() ||
+        if (!frik_visual_authority::isAvailable() ||
             !world || targetBodyId == hand_semantic_contact_state::kInvalidBodyId ||
             sourceBodyId == hand_semantic_contact_state::kInvalidBodyId ||
             sourceBodyId == targetBodyId) {
@@ -1769,7 +1769,7 @@ namespace rock
                 frik_visual_authority::handFromBool(isLeft),
                 frik_visual_authority::makeHandPoseDataFromJointValues(
                     jointValues),
-                g_rockConfig.rockHandCollisionDynamicVisualPriority)) {
+                dynamic_hand_collision_policy::kVisualPriority)) {
             clearSurfaceFingerResponse(handSlots, isLeft);
             return 0;
         }
@@ -1963,16 +1963,14 @@ namespace rock
             _surfaceEligiblePairSequenceAtomic.load(std::memory_order_acquire);
         telemetry.surfaceContactPublishSequence =
             _surfaceContactPublishSequenceAtomic.load(std::memory_order_acquire);
-        telemetry.runtimeEnabled = g_rockConfig.rockHandCollisionDynamicDrive;
+        telemetry.runtimeEnabled = true;
         telemetry.worldReady = frame.worldReady;
         telemetry.menuBlocked = frame.menuBlocked;
         telemetry.physicsWritesAllowed = physicsWritesAllowed;
         telemetry.hands[0].isLeft = false;
         telemetry.hands[1].isLeft = true;
 
-        const bool dynamicInteractionsEnabled =
-            g_rockConfig.rockHandDynamicInteractionsEnabled &&
-            g_rockConfig.rockHandCollisionDynamicDrive;
+        const bool dynamicInteractionsEnabled = g_rockConfig.rockHandDynamicInteractionsEnabled;
         _dynamicInteractionsEnabledAtomic.store(
             dynamicInteractionsEnabled,
             std::memory_order_release);
@@ -2031,27 +2029,6 @@ namespace rock
                     hand == 1);
         }
 
-        if (!g_rockConfig.rockHandCollisionDynamicDrive) {
-            const auto hasCreatedTwin = [](const HandSlots& handSlots) {
-                return std::any_of(handSlots.bodies.begin(), handSlots.bodies.end(), [](const ProxySlot& slot) {
-                    return slot.created;
-                });
-            };
-            if (hasCreatedTwin(_hands[0]) || hasCreatedTwin(_hands[1])) {
-                retireAll(frame.bhkWorld);
-            }
-            _hands[0].hapticState = {};
-            _hands[1].hapticState = {};
-            _transitionState = {};
-            _transitionCollisionSuppressed = false;
-            _transitionCollisionSuppressedAtomic.store(
-                false,
-                std::memory_order_release);
-            telemetry.transitionCollisionSuppressed = false;
-            _telemetrySnapshot = telemetry;
-            return;
-        }
-
         if (!frame.worldReady || frame.menuBlocked || !physicsWritesAllowed) {
             clearVisual(_hands[0], false);
             clearVisual(_hands[1], true);
@@ -2077,12 +2054,12 @@ namespace rock
             ROCK_LOG_DEBUG(Hand,
                 "DynamicHandCollision active: twinsPerHand={} maxLinVelHk={:.1f} divergenceTeleport={:.1f} minDeviation={:.3f} smoothingSpeed={:.1f} haptics={} priority={} palmCreated R={} L={} surfaceCallbacks(impulse/manifold/eligible/published)={}/{}/{}/{}",
                 kBodiesPerHand,
-                g_rockConfig.rockHandCollisionDynamicMaxLinearVelocityHavok,
-                g_rockConfig.rockHandCollisionDynamicDivergenceTeleportGameUnits,
-                g_rockConfig.rockHandCollisionDynamicRenderFollowMinDeviationGameUnits,
-                g_rockConfig.rockHandCollisionDynamicRenderFollowSmoothingSpeed,
-                g_rockConfig.rockHandCollisionDynamicHapticsEnabled ? "yes" : "no",
-                g_rockConfig.rockHandCollisionDynamicVisualPriority,
+                dynamic_hand_collision_policy::kMaximumLinearVelocityHavok,
+                dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits,
+                dynamic_hand_collision_policy::kRenderFollowMinimumDeviationGameUnits,
+                dynamic_hand_collision_policy::kRenderFollowSmoothingSpeed,
+                "yes",
+                dynamic_hand_collision_policy::kVisualPriority,
                 _hands[0].bodies[kPalmSlot].created ? "yes" : "no",
                 _hands[1].bodies[kPalmSlot].created ? "yes" : "no",
                 telemetry.surfaceImpulsePairSequence,
@@ -2278,8 +2255,7 @@ namespace rock
                 compoundOwner.driveState,
                 compoundRootTarget,
                 frame.deltaSeconds,
-                g_rockConfig.
-                    rockHandCollisionDynamicDivergenceTeleportGameUnits);
+                dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits);
 
             for (std::size_t bodyIndex = 0;
                  bodyIndex < kBodiesPerHand;
@@ -2526,7 +2502,7 @@ namespace rock
                     teleportedThisFrame = true;
                 }
             }
-            const float recoveryDuration = g_rockConfig.rockHandCollisionDynamicTeleportRecoverySeconds;
+            constexpr float recoveryDuration = dynamic_hand_collision_policy::kTeleportRecoverySeconds;
             if (teleportedThisFrame && recoveryDuration > 0.0f) {
                 handSlots.teleportRecoverySecondsRemaining = recoveryDuration;
             }
@@ -2537,14 +2513,11 @@ namespace rock
                     0.0f,
                 0.0f,
                 0.1f);
-            float smoothingSpeed = handTelemetry.anyContact ?
-                0.0f :
-                g_rockConfig.
-                    rockHandCollisionDynamicRenderFollowSmoothingSpeed;
+            float smoothingSpeed = handTelemetry.anyContact ? 0.0f : dynamic_hand_collision_policy::kRenderFollowSmoothingSpeed;
             if (handSlots.teleportRecoverySecondsRemaining > 0.0f) {
                 handSlots.teleportRecoverySecondsRemaining = std::max(0.0f, handSlots.teleportRecoverySecondsRemaining - frameDt);
                 const float recoverySpeed = 3.0f / std::max(recoveryDuration, 0.05f);
-                smoothingSpeed = g_rockConfig.rockHandCollisionDynamicRenderFollowSmoothingSpeed;
+                smoothingSpeed = dynamic_hand_collision_policy::kRenderFollowSmoothingSpeed;
                 smoothingSpeed = smoothingSpeed > 0.0f ? std::min(smoothingSpeed, recoverySpeed) : recoverySpeed;
             }
 
@@ -2557,7 +2530,7 @@ namespace rock
 
             const auto& applied = handSlots.appliedDeviation;
             const float appliedLengthSq = applied.x * applied.x + applied.y * applied.y + applied.z * applied.z;
-            const float minDeviation = g_rockConfig.rockHandCollisionDynamicRenderFollowMinDeviationGameUnits;
+            constexpr float minDeviation = dynamic_hand_collision_policy::kRenderFollowMinimumDeviationGameUnits;
             if (!std::isfinite(appliedLengthSq) || appliedLengthSq <= minDeviation * minDeviation) {
                 clearVisual(handSlots, isLeft);
                 handTelemetry.appliedVisualDeviationWorldGame = handSlots.appliedDeviation;
@@ -2588,7 +2561,7 @@ namespace rock
                     dynamicHandTag(isLeft),
                     frik_visual_authority::handFromBool(isLeft),
                     target,
-                    g_rockConfig.rockHandCollisionDynamicVisualPriority)) {
+                    dynamic_hand_collision_policy::kVisualPriority)) {
                 handSlots.visualActive = true;
             } else {
                 ROCK_LOG_SAMPLE_WARN(Hand, 2000, "{} dynamic hand render-follow apply failed", isLeft ? "Left" : "Right");
@@ -2653,7 +2626,7 @@ namespace rock
                 std::memory_order_release);
         }
 
-        if (!g_rockConfig.rockHandCollisionDynamicDrive || !world) {
+        if (!world) {
             return;
         }
 
@@ -2692,13 +2665,10 @@ namespace rock
                 }
             }
 
-            const float divergenceThreshold =
-                g_rockConfig.
-                    rockHandCollisionDynamicDivergenceTeleportGameUnits;
+            constexpr float divergenceThreshold = dynamic_hand_collision_policy::kDivergenceTeleportDistanceGameUnits;
             const bool teleportArmed =
                 slot.divergenceDwellSeconds >=
-                g_rockConfig.
-                    rockHandCollisionDynamicDivergenceTeleportDwellSeconds;
+                dynamic_hand_collision_policy::kDivergenceTeleportDwellSeconds;
             GeneratedBodyDriveMode mode{
                 .dynamicVelocity = true,
                 .divergenceTeleportGameUnits =
@@ -2706,9 +2676,7 @@ namespace rock
             };
 
             constexpr float kPressCapActivationDeviationGameUnits = 0.25f;
-            const float pressCapHavok =
-                g_rockConfig.
-                    rockHandCollisionDynamicContactPressMaxVelocityHavok;
+            constexpr float pressCapHavok = dynamic_hand_collision_policy::kContactPressMaximumVelocityHavok;
             if (pressCapHavok > 0.0f &&
                 slot.lastPostSolveDeviationValid) {
                 const auto& deviation = slot.lastPostSolveDeviationGame;
@@ -2739,8 +2707,7 @@ namespace rock
                     "LeftHandDynamicCompound" :
                     "RightHandDynamicCompound",
                 0,
-                g_rockConfig.
-                    rockHandCollisionDynamicMaxLinearVelocityHavok,
+                dynamic_hand_collision_policy::kMaximumLinearVelocityHavok,
                 0.0f,
                 mode);
 
@@ -2818,7 +2785,7 @@ namespace rock
         performance_profiler::ScopedTimer profilerTimer(
             performance_profiler::Scope::DynamicHandCollisionPostSolve);
 
-        if (!g_rockConfig.rockHandCollisionDynamicDrive || !world) {
+        if (!world) {
             return;
         }
 
@@ -3013,10 +2980,7 @@ namespace rock
             owner.lastPostSolveContact = contactMask != 0;
 
             const bool anyContact = contactMask != 0;
-            const float entryGateSpeed = std::max(
-                0.0f,
-                g_rockConfig.
-                    rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond);
+            constexpr float entryGateSpeed = dynamic_hand_collision_policy::kHapticMinimumApproachSpeedGameUnitsPerSecond;
             if (anyContact && !handSlots.physicsContactActive &&
                 maxEntryApproachSpeed >= entryGateSpeed &&
                 maxEntryApproachSpeed > 0.0f) {

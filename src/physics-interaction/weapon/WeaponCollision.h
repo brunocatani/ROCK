@@ -428,10 +428,6 @@ namespace rock
             bool valid{ false };
             std::uint64_t equippedKey{ 0 };
             std::uint64_t visualKey{ 0 };
-            float convexRadius{ -1.0f };
-            float pointDedupGrid{ -1.0f };
-            int supportFitTargetPoints{ -1 };
-            float supportFitMaxErrorGameUnits{ -1.0f };
             std::vector<GeneratedHullSource> sources;
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
@@ -468,7 +464,6 @@ namespace rock
         {
             bool active{ false };
             bool replacingExisting{ false };
-            bool settingsChanged{ false };
             bool driveRequestedRebuild{ false };
             std::uint64_t equippedKey{ 0 };
             std::uint64_t visualKey{ 0 };
@@ -477,10 +472,6 @@ namespace rock
             std::uint32_t weaponFormID{ 0 };
             std::uint32_t visualRootCount{ 0 };
             std::uint32_t visibleTriShapeCount{ 0 };
-            float convexRadius{ -1.0f };
-            float pointDedupGrid{ -1.0f };
-            int supportFitTargetPoints{ -1 };
-            float supportFitMaxErrorGameUnits{ -1.0f };
             std::size_t nextSourceIndex{ 0 };
             std::size_t createdCount{ 0 };
             std::vector<GeneratedHullSource> sources;
@@ -563,7 +554,6 @@ namespace rock
             std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
             std::uint32_t& culledForEffectGeometry);
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
-        bool weaponCollisionSettingsChanged() const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
@@ -589,7 +579,6 @@ namespace rock
             std::uint32_t weaponFormID,
             const WeaponVisualKeyStats& visualKeyStats,
             bool replacingExisting,
-            bool settingsChanged,
             bool driveRequestedRebuild,
             std::vector<GeneratedHullSource> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
@@ -598,7 +587,6 @@ namespace rock
             std::uint64_t equippedKey,
             std::uint64_t ownershipKey,
             std::uint32_t weaponFormID) const;
-        void resetWeaponCollisionSettingsCache();
 
         std::uint64_t getEquippedWeaponIdentityKey(
             std::uint64_t* outIdentityKey = nullptr,
@@ -702,10 +690,6 @@ namespace rock
         std::unordered_set<std::uint64_t> _omodSelfHealAttempted;
         int _posLogCounter{ 0 };
 
-        float _cachedConvexRadius{ -1.0f };
-        float _cachedPointDedupGrid{ -1.0f };
-        int _cachedSupportFitTargetPoints{ -1 };
-        float _cachedSupportFitMaxErrorGameUnits{ -1.0f };
         std::uint64_t _pendingWeaponVisualRebuildKey{ 0 };
         std::uint64_t _pendingWeaponVisualWitnessKey{ 0 };
         std::size_t _pendingWeaponVisualVisibleTriShapeCount{ 0 };

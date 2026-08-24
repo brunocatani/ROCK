@@ -49,6 +49,7 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
+#include "physics-interaction/hand/DynamicHandCollisionPolicy.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
@@ -2481,7 +2482,7 @@ namespace rock
                 _fixedFiringHandIsLeft;
             const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(
                 firingHandIsLeft,
-                g_rockConfig.rockGrabButtonID);
+                input_remap_policy::kGrabButtonId);
             _pendingEquippedWeaponPrimaryOnlyGripStart = PendingEquippedWeaponPrimaryOnlyGripStart{
                 .pending = _equippedWeaponHandlingSettings.primaryDetachEnabled &&
                     primaryGrabHeld,
@@ -2504,13 +2505,12 @@ namespace rock
             const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
-                g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
                 true);
             const auto desiredReloadMask = collision_layer_policy::buildRockReloadExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
-            const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+            const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
             const auto desiredDynamicRightHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                     false,
@@ -2723,8 +2723,7 @@ namespace rock
             bhk,
             weaponNode,
             currentWeaponGenerationKey,
-            g_rockConfig.rockWeaponCollisionEnabled &&
-                g_rockConfig.rockWeaponCollisionDynamicBoxEnabled &&
+            g_rockConfig.rockWeaponCollisionDynamicBoxEnabled &&
                 runtime.weaponDrawn &&
                 !frame.menuBlocked &&
                 physicsWritesAllowedForWorld(frame.hknpWorld),
@@ -2910,9 +2909,9 @@ namespace rock
                 (_twoHandedGrip.isPartCarryActive() || firingHandIsLeft);
             (void)consumeWeaponContactForHand(false, frame.right, rightWeaponContactProbeAllowed, rightWeaponContact);
 
-            const bool gripPressed = readGrabButtonHeld(true, g_rockConfig.rockGrabButtonID);
-            const bool rightGripHeld = readGrabButtonHeld(false, g_rockConfig.rockGrabButtonID);
-            const bool gripConfirmPressed = readGrabButtonPressedEdge(true, g_rockConfig.rockGrabButtonID);
+            const bool gripPressed = readGrabButtonHeld(true, input_remap_policy::kGrabButtonId);
+            const bool rightGripHeld = readGrabButtonHeld(false, input_remap_policy::kGrabButtonId);
+            const bool gripConfirmPressed = readGrabButtonPressedEdge(true, input_remap_policy::kGrabButtonId);
             (void)gripConfirmPressed;
 
             WeaponInteractionRuntimeState providerInteractionState{};
@@ -2984,11 +2983,11 @@ namespace rock
             _firingHandGrabButtonFrameState = {};
             auto readPrimaryGrabState = [&]() -> const GrabButtonState& {
                 if (!primaryGrabStateRead) {
-                    primaryGrabState = readGrabButtonState(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
+                    primaryGrabState = readGrabButtonState(firingHandIsLeft, input_remap_policy::kGrabButtonId);
                     // Menu rearm intentionally masks gameplay edges, but
                     // firing-grip ownership still follows the physical hand
                     // state after the menu closes.
-                    primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
+                    primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, input_remap_policy::kGrabButtonId);
                     primaryGrabStateRead = true;
                     // Publish the consumed snapshot so the normal grab pipeline
                     // sees the same edges instead of re-consuming cleared ones.
@@ -3024,7 +3023,7 @@ namespace rock
                 !equipped_weapon_manual_ownership_policy::shouldKeepPendingPrimaryOnlyStart(
                     equipped_weapon_manual_ownership_policy::PendingPrimaryOnlyStartInput{
                         .pending = _pendingEquippedWeaponPrimaryOnlyGripStart.pending,
-                        .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID),
+                        .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, input_remap_policy::kGrabButtonId),
                         .committedTransfer =
                             _pendingEquippedWeaponPrimaryOnlyGripStart.
                                 committedTransfer,
@@ -3226,7 +3225,7 @@ namespace rock
                     equippedWeaponStashCommitDecisions[stashHandIndex] = stashDecision;
 
                     const bool gripPhysicallyHeld =
-                        input_remap_runtime::isRawButtonPhysicallyHeld(stashHandIsLeft, g_rockConfig.rockGrabButtonID);
+                        input_remap_runtime::isRawButtonPhysicallyHeld(stashHandIsLeft, input_remap_policy::kGrabButtonId);
                     if (gripPhysicallyHeld) {
                         commitLease = {};
                     } else if (!stashDecision.confirmedForCommit) {
@@ -3989,7 +3988,7 @@ namespace rock
             }
             (void)_feedbackHaptics.queue(
                 pulse.isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
-                g_rockConfig.rockHandCollisionDynamicHapticDurationSeconds,
+                dynamic_hand_collision_policy::kHapticDurationSeconds,
                 pulse.intensity);
         }
         updateFeedbackHaptics(frame.deltaSeconds);
@@ -5024,7 +5023,7 @@ namespace rock
             const bool gripPhysicallyHeld =
                 input_remap_runtime::isRawButtonPhysicallyHeld(
                     isLeft,
-                    g_rockConfig.rockGrabButtonID);
+                    input_remap_policy::kGrabButtonId);
             candidates[handIndex] =
                 equipped_weapon_drop_policy::ShoulderRetrievalCandidate{
                     .eligible = equipped_weapon_drop_policy::
@@ -6269,8 +6268,6 @@ namespace rock
         collision_layer_policy::applyRockGeneratedLayerPolicies(
             matrix,
             g_rockConfig.rockHandCollisionStaticWorldEnabled,
-            g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
-            g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             g_rockConfig.rockWeaponCollisionBlocksSpells,
             g_rockConfig.rockHandDynamicInteractionsEnabled);
@@ -6284,14 +6281,13 @@ namespace rock
             collision_layer_policy::buildRockWeaponExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
-                g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
                 true);
         _expectedReloadLayerMask =
             collision_layer_policy::buildRockReloadExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
-        _expectedBodyLayerMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+        _expectedBodyLayerMask = collision_layer_policy::buildRockBodyExpectedMask();
         _expectedDynamicHandProxyLayerMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                 false,
@@ -6404,8 +6400,8 @@ namespace rock
                 "ok" :
                 "bad",
             g_rockConfig.rockHandCollisionStaticWorldEnabled ? "enabled" : "disabled",
-            g_rockConfig.rockWeaponCollisionStaticWorldEnabled ? "enabled" : "disabled",
-            g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled ? "enabled" : "disabled",
+            "enabled",
+            "enabled",
             g_rockConfig.rockWeaponCollisionBlocksProjectiles ? "enabled" : "disabled",
             g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled",
             nativeControllerObjectStatus);
@@ -6441,10 +6437,9 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Hand,
-            "Bone-derived hand collision created: rightBodies={} leftBodies={} mode={} requireAnchor={} requireAllFingerBones={}",
+            "Bone-derived hand collision created: rightBodies={} leftBodies={} requireAnchor={} requireAllFingerBones={}",
             _rightHand.getHandColliderBodyCount(),
             _leftHand.getHandColliderBodyCount(),
-            g_rockConfig.rockHandColliderRuntimeMode,
             g_rockConfig.rockHandBoneCollidersRequirePalmAnchor ? "true" : "false",
             g_rockConfig.rockHandBoneCollidersRequireAllFingerBones ? "true" : "false");
 
@@ -9635,7 +9630,7 @@ namespace rock
                     HandUnavailable,
                 collisionGeneration);
         }
-        int grabButton = g_rockConfig.rockGrabButtonID;
+        constexpr int grabButton = input_remap_policy::kGrabButtonId;
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
         const bool ambidextrousHandoffAvailable =
             _equippedWeaponHandlingSettings.ambidextrousHandoffEnabled &&

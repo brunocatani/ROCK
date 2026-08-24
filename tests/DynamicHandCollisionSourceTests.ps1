@@ -254,7 +254,7 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'const bool rigidPrimary = bodyIndex == kPalmSlot \|\|[\s\S]{0,180}bodyIndex >= kFirstForearmSlot' `
     'Palm and forearm must remain the only unconditional rigid-hand collision channels.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'setHandPoseCustomWithPriority\([\s\S]{0,400}rockHandCollisionDynamicVisualPriority' `
+    'setHandPoseCustomWithPriority\([\s\S]{0,400}dynamic_hand_collision_policy::kVisualPriority' `
     'Surface finger response must use the existing priority-arbitrated FRIK pose authority.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'setHandPoseCustomWithPriority\(',
@@ -273,7 +273,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'combineTwinDeviations\(',
     'float smoothingSpeed = handTelemetry\.anyContact \?',
     '0\.0f',
-    'rockHandCollisionDynamicRenderFollowSmoothingSpeed',
+    'dynamic_hand_collision_policy::kRenderFollowSmoothingSpeed',
     'teleportRecoverySecondsRemaining > 0\.0f',
     'smoothAppliedDeviation\(',
     'applyExternalHandWorldTransform\('
@@ -364,17 +364,28 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' `
     'DynamicHandCollisionPostSolve' `
     'Dynamic hand post-solve sampling must have a dedicated profiler scope.'
 
-# Every shipped config enables the canonical runtime and carries its haptics.
+# Dynamic world collision and haptic tuning are fixed production policy, not
+# user configuration.
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollisionPolicy.h' @(
+    'kMaximumLinearVelocityHavok = 15\.0f',
+    'kContactPressMaximumVelocityHavok = 1\.0f',
+    'kDivergenceTeleportDistanceGameUnits = 40\.0f',
+    'kDivergenceTeleportDwellSeconds = 0\.3f',
+    'kTeleportRecoverySeconds = 0\.25f',
+    'kRenderFollowMinimumDeviationGameUnits = 0\.05f',
+    'kRenderFollowSmoothingSpeed = 45\.0f',
+    'kVisualPriority = 80',
+    'kHapticDurationSeconds = 0\.035f',
+    'kHapticBaseIntensity = 0\.18f',
+    'kHapticMaximumIntensity = 0\.55f',
+    'kHapticSpeedScale = 0\.006f',
+    'kHapticMinimumApproachSpeedGameUnitsPerSecond = 3\.0f',
+    'kHapticCooldownSeconds = 0\.12f'
+) 'Dynamic hand collision must keep its fixed production constants together.'
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
-    Require-Text $configPath `
-        'bHandCollisionDynamicDrive\s*=\s*true' `
-        "$configPath must enable canonical dynamic world collision by default."
-    Require-Text $configPath `
-        'bHandCollisionDynamicHapticsEnabled\s*=\s*true' `
-        "$configPath must ship the dynamic hand haptic enable key."
-    Require-Text $configPath `
-        'fHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond' `
-        "$configPath must document the dynamic hand haptic speed units."
+    Reject-Text $configPath `
+        'bHandCollisionDynamicDrive|fHandCollisionDynamic|iHandCollisionDynamicVisualPriority|bHandCollisionDynamicHapticsEnabled' `
+        "$configPath must not expose fixed dynamic hand collision or haptic policy."
     Reject-Text $configPath `
         'SoftContact|ContactTargetIdentity' `
         "$configPath must not retain legacy soft-contact or target-identity keys."

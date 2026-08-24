@@ -61,7 +61,8 @@ int main()
     Settings settings{};
     settings.enabled = true;
 
-    ok &= expectTrue("normal grab button id is accepted", isAllowedGrabButtonId(2));
+    ok &= expectTrue("fixed grab button is OpenVR grip", kGrabButtonId == 2);
+    ok &= expectTrue("fixed grab button id is accepted", isAllowedGrabButtonId(kGrabButtonId));
     ok &= expectFalse("SteamVR trigger button id is reserved and rejected for grab", isAllowedGrabButtonId(kOpenVrSteamVrTriggerButtonId));
     ok &= expectTrue("grenade quick draw owns OpenVR button 1", buttonMask(kOpenVrGrenadeQuickDrawButtonId) == (std::uint64_t{ 1 } << 1));
 
@@ -76,7 +77,7 @@ int main()
                                             },
         settings);
     ok &= expectFalse("SteamVR trigger does not act as ROCK grab input", triggerGrabDecision.grabPressed);
-    settings.grabButtonId = 2;
+    settings.grabButtonId = kGrabButtonId;
 
     NativeActionSuppressionInput base{
         .remapEnabled = true,

@@ -4,6 +4,9 @@
 
 namespace rock::input_remap_policy
 {
+    // ROCK uses the OpenVR grip button as its fixed grab input.
+    inline constexpr int kGrabButtonId = 2;
+
     enum class Hand : std::uint8_t
     {
         Left,
@@ -13,7 +16,7 @@ namespace rock::input_remap_policy
     struct Settings
     {
         bool enabled{ true };
-        int grabButtonId{ 2 };
+        int grabButtonId{ kGrabButtonId };
         bool suppressRightGrabGameInput{ true };
         bool suppressRightFavoritesGameInput{ true };
         bool suppressRightTriggerGameInput{ true };
