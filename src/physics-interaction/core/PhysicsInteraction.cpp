@@ -6418,11 +6418,10 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Hand,
-            "Bone-derived hand collision created: rightBodies={} leftBodies={} requireAnchor={} requireAllFingerBones={}",
+            "Bone-derived hand collision created: rightBodies={} leftBodies={} requireAnchor={} completeFingerSkeleton=true",
             _rightHand.getHandColliderBodyCount(),
             _leftHand.getHandColliderBodyCount(),
-            g_rockConfig.rockHandBoneCollidersRequirePalmAnchor ? "true" : "false",
-            g_rockConfig.rockHandBoneCollidersRequireAllFingerBones ? "true" : "false");
+            g_rockConfig.rockHandBoneCollidersRequirePalmAnchor ? "true" : "false");
 
         _handColliderCreateRetryFrames = 0;
         return true;

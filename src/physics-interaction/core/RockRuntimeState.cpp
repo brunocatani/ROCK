@@ -171,7 +171,7 @@ namespace rock::runtime_state
             const bool hasHands = captured && snapshotHasBone(boneSnapshot, "RArm_Hand") && snapshotHasBone(boneSnapshot, "LArm_Hand");
             const bool handBonesReady =
                 hasHands &&
-                (!g_rockConfig.rockHandBoneCollidersRequireAllFingerBones || snapshotHasRequiredFingerBones(boneSnapshot));
+                snapshotHasRequiredFingerBones(boneSnapshot);
 
             snapshot.localSkeletonRequiredHandBonesReady = handBonesReady;
             readinessInput.requiredHandBonesResolved = handBonesReady;

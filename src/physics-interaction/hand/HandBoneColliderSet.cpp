@@ -416,7 +416,7 @@ namespace rock
             outLookup.fingerBases[fingerIndex] = fingerValid ? outLookup.fingers[fingerIndex][0].translate : outLookup.hand.translate;
         }
 
-        if (g_rockConfig.rockHandBoneCollidersRequireAllFingerBones && !allFingerBones) {
+        if (!allFingerBones) {
             return false;
         }
 
@@ -744,13 +744,9 @@ namespace rock
         for (const auto role : hand_collider_semantics::kHandNonAnchorColliderRoles) {
             RoleFrameResult frame{};
             if (!makeRoleFrame(lookup, isLeft, role, frame)) {
-                if (g_rockConfig.rockHandBoneCollidersRequireAllFingerBones) {
-                    ROCK_LOG_ERROR(Hand, "{} {} collider frame missing; destroying bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
-                    destroy(bhkWorld, palmAnchorBody);
-                    return false;
-                }
-                ROCK_LOG_WARN(Hand, "{} {} collider frame missing; continuing with partial bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
-                continue;
+                ROCK_LOG_ERROR(Hand, "{} {} collider frame missing; destroying bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
+                destroy(bhkWorld, palmAnchorBody);
+                return false;
             }
 
             if (createdCount >= _bodies.size()) {

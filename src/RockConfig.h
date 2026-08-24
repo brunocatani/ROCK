@@ -286,7 +286,6 @@ namespace rock
         std::string rockHandBoneColliderRadiusScaleOverrides = "";
         std::string rockHandPalmColliderDimensionScaleOverrides = "";
         bool rockHandBoneCollidersRequirePalmAnchor = true;
-        bool rockHandBoneCollidersRequireAllFingerBones = true;
         float rockHandBoneColliderMaxLinearVelocity = 200.0f;
         float rockHandBoneColliderMaxAngularVelocity = 500.0f;
 

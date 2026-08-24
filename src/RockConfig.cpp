@@ -446,7 +446,6 @@ namespace rock
         rockHandBoneColliderRadiusScaleOverrides = "";
         rockHandPalmColliderDimensionScaleOverrides = "";
         rockHandBoneCollidersRequirePalmAnchor = true;
-        rockHandBoneCollidersRequireAllFingerBones = true;
         rockHandBoneColliderMaxLinearVelocity = 200.0f;
         rockHandBoneColliderMaxAngularVelocity = 500.0f;
 
@@ -1367,7 +1366,6 @@ namespace rock
         rockHandPalmColliderDimensionScaleOverrides =
             ini.GetValue(SECTION, "sHandPalmColliderDimensionScaleOverrides", rockHandPalmColliderDimensionScaleOverrides.c_str());
         rockHandBoneCollidersRequirePalmAnchor = ini.GetBoolValue(SECTION, "bHandBoneCollidersRequirePalmAnchor", rockHandBoneCollidersRequirePalmAnchor);
-        rockHandBoneCollidersRequireAllFingerBones = ini.GetBoolValue(SECTION, "bHandBoneCollidersRequireAllFingerBones", rockHandBoneCollidersRequireAllFingerBones);
         rockHandBoneColliderMaxLinearVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fHandBoneColliderMaxLinearVelocity", rockHandBoneColliderMaxLinearVelocity));
         rockHandBoneColliderMaxAngularVelocity =
