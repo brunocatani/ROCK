@@ -70,7 +70,7 @@ Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapturePolicy.
 
 Reject-Text 'src/RockConfig.h' 'rockNativeReloadAnimationAuthorityTestEnabled|rockNativeReloadAnimationPartialAuthorityTestEnabled' 'Reload validation configuration must not remain in ROCK.'
 Reject-Text 'src/RockConfig.h' 'rockAuthoredPrimaryFiringGripTestEnabled' 'The production authored primary/equipped-grip path must not retain an experimental config switch.'
-Reject-Text 'data/config/ROCK.ini' 'bAuthoredPrimaryFiringGripTestEnabled' 'Users must not be able to disable the production authored primary/equipped-grip path.'
+Reject-Text 'data/config/ROCK_example.ini' 'bAuthoredPrimaryFiringGripTestEnabled' 'Users must not be able to disable the production authored primary/equipped-grip path.'
 Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' 'input\.enabled|experiment-disabled' 'The production authored primary grip runtime must not retain its removed experimental gate.'
 
 if ($failures.Count -gt 0) {

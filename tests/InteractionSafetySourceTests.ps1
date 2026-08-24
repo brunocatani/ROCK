@@ -342,8 +342,7 @@ foreach ($relativePath in @(
     'src/physics-interaction/weapon/WeaponSupport.h',
     'tests/InputRemapPolicyTests.cpp',
     'tests/WeaponInteractionPolicyTests.cpp',
-    'data/config/ROCK.ini',
-    'data/mod/ROCK_Config/ROCK.ini'
+    'data/config/ROCK_example.ini'
 )) {
     Reject-Text (Read-Source $relativePath) `
         'VirtualHolsters|virtualHolsters|VHAPI_GetApi' `

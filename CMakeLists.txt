@@ -82,27 +82,19 @@ add_library(ROCK::OpenVR ALIAS ROCKOpenVR)
 
 configure_file(${ROOT_DIR}/cmake/version.rc.in  ${BUILD_DIR}/version.rc  @ONLY)
 configure_file(${ROOT_DIR}/cmake/Version.h.in   ${BUILD_DIR}/include/Version.h @ONLY)
-configure_file(${ROOT_DIR}/cmake/resources.rc.in ${BUILD_DIR}/resources.rc @ONLY)
-source_group(TREE ${BUILD_DIR} FILES ${BUILD_DIR}/include/Version.h ${BUILD_DIR}/resources.rc)
+source_group(TREE ${BUILD_DIR} FILES ${BUILD_DIR}/include/Version.h)
 
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "${SOURCE_DIR}/*.h")
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${SOURCE_DIR}/*.cpp")
 file(GLOB_RECURSE inls    CONFIGURE_DEPENDS "${SOURCE_DIR}/*.inl")
 source_group(TREE ${ROOT_DIR} FILES ${headers} ${sources} ${inls})
 
-list(APPEND resource_files
-  "${ROOT_DIR}/data/config/${NAME}.ini"
-)
-source_group("Resource Files" FILES ${resource_files})
-
 add_library(${PROJECT_NAME} SHARED
   ${headers}
   ${sources}
   ${inls}
-  ${resource_files}
   ${BUILD_DIR}/include/Version.h
   ${BUILD_DIR}/version.rc
-  ${BUILD_DIR}/resources.rc
   "${ROOT_DIR}/.clang-format"
   "${ROOT_DIR}/.editorconfig"
 )

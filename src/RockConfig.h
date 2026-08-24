@@ -597,7 +597,9 @@ namespace rock
     private:
         void resetToDefaults();
 
-        void readValuesFromIni(CSimpleIniA& ini);
+        void readValuesFromIni(CSimpleIniA& ini, bool materializeMissingDefaults = false);
+
+        [[nodiscard]] bool createDefaultIniIfMissing();
 
         [[nodiscard]] bool saveRuntimeIni(CSimpleIniA& ini, const char* reason);
 

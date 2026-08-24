@@ -157,12 +157,9 @@ Require-Text 'src/RockConfig.h' `
 Require-Text 'src/RockConfig.cpp' `
     'GetBoolValue\(\s*SECTION,\s*"bEquippedWeaponShoulderStashEnabled"' `
     'RockConfig must load equipped-weapon shoulder stash from [PhysicsInteraction].'
-Require-Text 'data/config/ROCK.ini' `
+Require-Text 'data/config/ROCK_example.ini' `
     '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$' `
     'The reference INI must expose ROCK''s standalone equipped-weapon sheath switch.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' `
-    '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$' `
-    'The packaged INI must expose ROCK''s standalone equipped-weapon sheath switch.'
 Require-Text 'src/RockConfig.h' `
     'rockShoulderStashHmdBackRightOffsetGameUnits\s*=\s*RE::NiPoint3\(14\.0f,\s*-18\.0f,\s*-6\.85f\)' `
     'RockConfig header default should match the behind-shoulder HMD right volume.'

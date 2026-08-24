@@ -55,21 +55,19 @@ Require-Text 'src/RockConfig.h' 'rockNativeScopeForceFiringGripFallback\s*=\s*fa
     'Missing-optic fallback must expose one force switch and a neutral six-degree-of-freedom Weapon-local firing-grip frame.'
 Require-Text 'src/RockConfig.cpp' 'bNativeScopeForceFiringGripFallback[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits[\s\S]*fNativeScopeFiringGripFallbackPitchDegrees[\s\S]*fNativeScopeFiringGripFallbackYawDegrees[\s\S]*fNativeScopeFiringGripFallbackRollDegrees' `
     'Firing-grip fallback position and rotation controls must load from the NativeScopes section.'
-Require-Text 'data/config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
-    'The development config template must keep the native-scope diagnostic disabled by default.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
-    'The packaged config template must keep the native-scope diagnostic disabled by default.'
+Require-Text 'data/config/ROCK_example.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
+    'The example config must keep the native-scope diagnostic disabled by default.'
 Require-Text 'src/RockConfig.h' 'rockNativeScopeOverlayOffsetXGameUnits[\s\S]*rockNativeScopeOverlayOffsetYGameUnits[\s\S]*rockNativeScopeOverlayOffsetZGameUnits[\s\S]*rockNativeScopeOverlayPitchDegrees[\s\S]*rockNativeScopeOverlayYawDegrees[\s\S]*rockNativeScopeOverlayRollDegrees' `
     'Native scope overlay placement must expose three model-local position and three rotation tuning values.'
 Require-Text 'src/RockConfig.cpp' 'NATIVE_SCOPES_SECTION\s*=\s*"NativeScopes"[\s\S]*fNativeScopeOverlayOffsetXGameUnits[\s\S]*fNativeScopeOverlayOffsetYGameUnits[\s\S]*fNativeScopeOverlayOffsetZGameUnits[\s\S]*fNativeScopeOverlayPitchDegrees[\s\S]*fNativeScopeOverlayYawDegrees[\s\S]*fNativeScopeOverlayRollDegrees' `
     'Native scope overlay tuning must load from its independent NativeScopes INI section.'
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath '\[NativeScopes\][\s\S]*fManualScopeHoldSeconds\s*=\s*0\.30' `
-        'Native scope templates must expose the sole A/X hold threshold.'
+        'The example INI must expose the sole A/X hold threshold.'
     Reject-Text $configPath 'bAutoActivateScope' `
-        'Native scope templates must not advertise the retired cone activation path.'
+        'The example INI must not advertise the retired cone activation path.'
     Require-Text $configPath '\[NativeScopes\][\s\S]*bNativeScopeForceFiringGripFallback\s*=\s*false[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackPitchDegrees\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackYawDegrees\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackRollDegrees\s*=\s*0\.0' `
-        'Native scope templates must expose a neutral, opt-in-force six-degree-of-freedom firing-grip fallback.'
+        'The example INI must expose a neutral, opt-in-force six-degree-of-freedom firing-grip fallback.'
     Require-Text $configPath '\[NativeScopes\][\s\S]*fNativeScopeOverlayOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetZGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayPitchDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayYawDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayRollDegrees\s*=\s*0\.0' `
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }

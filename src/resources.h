@@ -1,1 +1,0 @@
-#define IDR_ROCK_INI 101

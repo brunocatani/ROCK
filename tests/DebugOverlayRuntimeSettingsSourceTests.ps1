@@ -11,8 +11,7 @@ $configSource = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/RockConfig.c
 $overlay = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/debug/DebugBodyOverlay.cpp')
 $policy = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/debug/DebugOverlayPolicy.h')
 $runtime = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/debug/DebugOverlayRuntimeSettings.h')
-$repoIni = Get-Content -Raw -LiteralPath (Join-Path $Root 'data/config/ROCK.ini')
-$modIni = Get-Content -Raw -LiteralPath (Join-Path $Root 'data/mod/ROCK_Config/ROCK.ini')
+$exampleIni = Get-Content -Raw -LiteralPath (Join-Path $Root 'data/config/ROCK_example.ini')
 
 function Require-In {
     param([string]$Text, [string]$Pattern, [string]$Message)
@@ -45,8 +44,7 @@ $keys = @(
 
 foreach ($key in $keys) {
     Require-In $configSource ([regex]::Escape($key)) "RockConfig does not load $key."
-    Require-In $repoIni "(?m)^$([regex]::Escape($key))\s*=" "Repository config is missing $key."
-    Require-In $modIni "(?m)^$([regex]::Escape($key))\s*=" "Packaged config is missing $key."
+    Require-In $exampleIni "(?m)^$([regex]::Escape($key))\s*=" "Example config is missing $key."
 }
 
 Require-In $configHeader 'DebugOverlayRuntimeSettings\.h' `
@@ -68,7 +66,7 @@ Require-In $overlay 'maxVertices\s*=\s*frame\.settings\.limits\.maxTextVertices'
 Require-In $runtime 'maxShapeCompletedJobs\s*>\s*limits\.maxShapeQueuedJobs[\s\S]*maxShapeCompletedJobs\s*=\s*limits\.maxShapeQueuedJobs' `
     'Completed CPU meshes must remain part of the total bounded shape backlog.'
 
-$all = $configHeader + $configSource + $overlay + $policy + $runtime + $repoIni + $modIni
+$all = $configHeader + $configSource + $overlay + $policy + $runtime + $exampleIni
 Reject-In $all 'iDebugMaxShapeGenerationsPerFrame|rockDebugMaxShapeGenerationsPerFrame|makeOverlaySettingsKey|clampShapeGenerationsPerFrame' `
     'Stale generation naming/settings helpers must not survive the capture-budget migration.'
 Reject-In $overlay 'kTextVertexCapacity|lineVertexBudget\(' `

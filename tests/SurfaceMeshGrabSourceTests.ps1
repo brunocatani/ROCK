@@ -31,7 +31,7 @@ Require-Text 'src/RockConfig.cpp' `
     'rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits[\s\S]*std::clamp[\s\S]*1\.0f[\s\S]*128\.0f' `
     'The shell-to-mesh projection distance must be bounded.'
 
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     $text = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
     $experimentalMatch = [regex]::Match(
         $text,

@@ -87,7 +87,7 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'physicallyOwnedByStrongerSystem[\s\S]*visuallyOwnedByStrongerSystem\s*=\s*physicallyOwnedByStrongerSystem\s*\|\|\s*visualReturnActive[\s\S]*!physicallyOwnedByStrongerSystem[\s\S]*if \(visuallyOwnedByStrongerSystem' `
     'Visual return must suppress only the competing dynamic-hand visual writer, not free-hand haptics or proxy tracking.'
 
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `
         'bWeaponVisualReturnEnabled\s*=\s*true[\s\S]*fWeaponVisualReturnMaxAngleDegrees[\s\S]*bGrabHandReturnEnabled\s*=\s*true[\s\S]*fGrabHandReturnMaxAngleDegrees' `
         "$configPath must publish both visual-return setting families."

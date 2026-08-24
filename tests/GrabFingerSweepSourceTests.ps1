@@ -309,7 +309,7 @@ Require-Text 'tools/generate_grab_finger_calibration.py' `
 Require-Text 'src/RockConfig.h' `
     'rockGrabFingerSweepMaxOpenValue = 2\.0f' `
     'Normal fingers must default to the same full 2.0 sweep ceiling as the calibration.'
-foreach ($path in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($path in @('data/config/ROCK_example.ini')) {
     Require-Text $path 'fGrabFingerSweepMaxOpenValue\s*=\s*2\.0' 'Reference INIs must expose the full 2.0 normal-finger sweep by default.'
 }
 

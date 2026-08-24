@@ -76,9 +76,9 @@ foreach ($file in $sourceFiles) {
 }
 
 # Packaged INIs must not carry the removed keys back.
-foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($ini in @('data/config/ROCK_example.ini')) {
     Reject-Text $ini 'GrabPlayerSpace|GrabLocomotionAuthority|GrabAlignedRoom|LocomotionStutterProbe|GrabVelocityDamping|GrabResidualVelocityDamping' `
-        'Removed compensation/probe settings must not reappear in packaged INIs.'
+        'Removed compensation/probe settings must not reappear in the example INI.'
 }
 
 if ($failures.Count -gt 0) {

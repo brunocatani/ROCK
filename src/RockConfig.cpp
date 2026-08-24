@@ -2,12 +2,13 @@
 
 #include "RockConfig.h"
 
-#include <ShlObj.h>
 #include <SimpleIni.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
+#include <stdexcept>
 #include <thread>
 
 #include "rock_support/ResourceUtils.h"
@@ -18,7 +19,6 @@
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
-#include "resources.h"
 
 namespace
 {
@@ -73,16 +73,137 @@ namespace
 
     std::string resolveIniPath()
     {
-        char documents[MAX_PATH];
-        if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_MYDOCUMENTS, nullptr, 0, documents))) {
-            return std::string(documents) + R"(\My Games\Fallout4VR\ROCK_Config\ROCK.ini)";
+        try {
+            return rock::resources::getPathInDocuments(
+                R"(\My Games\Fallout4VR\ROCK_Config\ROCK.ini)");
+        } catch (const std::exception& error) {
+            ROCK_LOG_ERROR(Config,
+                "Failed to resolve the only supported ROCK.ini path: {}",
+                error.what());
+            return {};
         }
-
-        ROCK_LOG_WARN(Config, "SHGetFolderPath failed — using fallback ROCK.ini path");
-        return R"(Data\F4SE\Plugins\ROCK.ini)";
     }
 
-    float readClampedFloat(CSimpleIniA& ini, const char* section, const char* key, float currentValue, float fallback, float minValue, float maxValue)
+    class RockIniReader
+    {
+    public:
+        RockIniReader(CSimpleIniA& storage, const bool materializeMissingDefaults) noexcept :
+            _storage(storage),
+            _materializeMissingDefaults(materializeMissingDefaults)
+        {}
+
+        [[nodiscard]] bool GetBoolValue(
+            const char* section,
+            const char* key,
+            const bool defaultValue)
+        {
+            if (shouldMaterialize(section, key)) {
+                requireSet(
+                    _storage.SetBoolValue(
+                        section,
+                        key,
+                        defaultValue,
+                        nullptr,
+                        true),
+                    section,
+                    key);
+            }
+            return _storage.GetBoolValue(section, key, defaultValue);
+        }
+
+        [[nodiscard]] long GetLongValue(
+            const char* section,
+            const char* key,
+            const long defaultValue)
+        {
+            if (shouldMaterialize(section, key)) {
+                requireSet(
+                    _storage.SetLongValue(
+                        section,
+                        key,
+                        defaultValue,
+                        nullptr,
+                        false,
+                        true),
+                    section,
+                    key);
+            }
+            return _storage.GetLongValue(section, key, defaultValue);
+        }
+
+        [[nodiscard]] double GetDoubleValue(
+            const char* section,
+            const char* key,
+            const double defaultValue)
+        {
+            if (shouldMaterialize(section, key)) {
+                requireSet(
+                    _storage.SetDoubleValue(
+                        section,
+                        key,
+                        defaultValue,
+                        nullptr,
+                        true),
+                    section,
+                    key);
+            }
+            return _storage.GetDoubleValue(section, key, defaultValue);
+        }
+
+        [[nodiscard]] const char* GetValue(
+            const char* section,
+            const char* key,
+            const char* defaultValue)
+        {
+            if (defaultValue && shouldMaterialize(section, key)) {
+                requireSet(
+                    _storage.SetValue(
+                        section,
+                        key,
+                        defaultValue,
+                        nullptr,
+                        true),
+                    section,
+                    key);
+            }
+            return _storage.GetValue(section, key, defaultValue);
+        }
+
+        [[nodiscard]] bool materializingMissingDefaults() const noexcept
+        {
+            return _materializeMissingDefaults;
+        }
+
+    private:
+        [[nodiscard]] bool shouldMaterialize(
+            const char* section,
+            const char* key) const noexcept
+        {
+            return _materializeMissingDefaults &&
+                   section && section[0] && key && key[0] &&
+                   !_storage.GetValue(section, key, nullptr);
+        }
+
+        static void requireSet(
+            const SI_Error result,
+            const char* section,
+            const char* key)
+        {
+            if (result >= 0) {
+                return;
+            }
+
+            throw std::runtime_error(
+                "Failed to materialize compiled ROCK.ini default [" +
+                std::string(section ? section : "") + "] " +
+                std::string(key ? key : ""));
+        }
+
+        CSimpleIniA& _storage;
+        bool _materializeMissingDefaults = false;
+    };
+
+    float readClampedFloat(RockIniReader& ini, const char* section, const char* key, float currentValue, float fallback, float minValue, float maxValue)
     {
         float value = static_cast<float>(ini.GetDoubleValue(section, key, currentValue));
         if (!std::isfinite(value)) {
@@ -92,7 +213,7 @@ namespace
         return std::clamp(value, minValue, maxValue);
     }
 
-    int readSelectionAimAngleDegrees(CSimpleIniA& ini, const char* section, const char* key, int currentValue)
+    int readSelectionAimAngleDegrees(RockIniReader& ini, const char* section, const char* key, int currentValue)
     {
         const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
         const int sanitizedValue = rock::selection_query_policy::sanitizeSelectionAimAngleDegrees(configuredValue);
@@ -102,7 +223,7 @@ namespace
         return sanitizedValue;
     }
 
-    int readHighlightIntensityMode(CSimpleIniA& ini, const char* section, const char* key, int currentValue)
+    int readHighlightIntensityMode(RockIniReader& ini, const char* section, const char* key, int currentValue)
     {
         const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
         if (configuredValue >= 1 && configuredValue <= 4) {
@@ -113,7 +234,7 @@ namespace
         return kDefaultHighlightIntensityMode;
     }
 
-    std::string readHighlightColor(CSimpleIniA& ini, const char* section, const char* key, const std::string& currentValue)
+    std::string readHighlightColor(RockIniReader& ini, const char* section, const char* key, const std::string& currentValue)
     {
         std::string configuredValue = ini.GetValue(section, key, currentValue.c_str());
         for (auto& ch : configuredValue) {
@@ -625,8 +746,11 @@ namespace rock
 
     }
 
-    void RockConfig::readValuesFromIni(CSimpleIniA& ini)
+    void RockConfig::readValuesFromIni(
+        CSimpleIniA& storage,
+        const bool materializeMissingDefaults)
     {
+        RockIniReader ini(storage, materializeMissingDefaults);
         auto readVec3 = [&](const char* keyX, const char* keyY, const char* keyZ, RE::NiPoint3& value) {
             value.x = static_cast<float>(ini.GetDoubleValue(SECTION, keyX, value.x));
             value.y = static_cast<float>(ini.GetDoubleValue(SECTION, keyY, value.y));
@@ -634,7 +758,7 @@ namespace rock
         };
         auto readOptionalVec3 = [&](const char* keyX, const char* keyY, const char* keyZ, RE::NiPoint3& value) {
             const bool hasAny = ini.GetValue(SECTION, keyX, nullptr) || ini.GetValue(SECTION, keyY, nullptr) || ini.GetValue(SECTION, keyZ, nullptr);
-            if (!hasAny) {
+            if (!hasAny && !ini.materializingMissingDefaults()) {
                 return false;
             }
 
@@ -2362,20 +2486,99 @@ namespace rock
 
     }
 
+    bool RockConfig::createDefaultIniIfMissing()
+    {
+        if (_iniFilePath.empty()) {
+            return false;
+        }
+
+        const std::filesystem::path targetPath(_iniFilePath);
+        std::error_code ec;
+        const bool targetExists = std::filesystem::exists(targetPath, ec);
+        if (ec) {
+            ROCK_LOG_ERROR(Config,
+                "Cannot inspect the production ROCK.ini path '{}': {}",
+                _iniFilePath,
+                ec.message());
+            return false;
+        }
+        if (targetExists) {
+            return true;
+        }
+
+        try {
+            rock::resources::createDirectoryTreeForFile(_iniFilePath);
+
+            CSimpleIniA defaults;
+            defaults.SetUnicode(false);
+            resetToDefaults();
+            readValuesFromIni(defaults, true);
+
+            auto temporaryPath = targetPath;
+            temporaryPath += ".creating";
+            const SI_Error saveResult =
+                defaults.SaveFile(temporaryPath.string().c_str(), false);
+            if (saveResult < 0) {
+                std::filesystem::remove(temporaryPath, ec);
+                ROCK_LOG_ERROR(Config,
+                    "Failed to write complete compiled ROCK.ini defaults to temporary file '{}' (code {})",
+                    temporaryPath.string(),
+                    static_cast<int>(saveResult));
+                return false;
+            }
+
+            ec.clear();
+            std::filesystem::rename(temporaryPath, targetPath, ec);
+            if (ec) {
+                std::error_code targetCheckError;
+                const bool createdElsewhere =
+                    std::filesystem::exists(targetPath, targetCheckError) &&
+                    !targetCheckError;
+                std::error_code cleanupError;
+                std::filesystem::remove(temporaryPath, cleanupError);
+                if (createdElsewhere) {
+                    return true;
+                }
+
+                ROCK_LOG_ERROR(Config,
+                    "Failed to publish generated ROCK.ini '{}': {}",
+                    _iniFilePath,
+                    ec.message());
+                return false;
+            }
+
+            ROCK_LOG_INFO(Config,
+                "Created complete production ROCK.ini from compiled C++ defaults: {}",
+                _iniFilePath);
+            return true;
+        } catch (const std::exception& error) {
+            ROCK_LOG_ERROR(Config,
+                "Failed to create production ROCK.ini '{}': {}",
+                _iniFilePath,
+                error.what());
+            return false;
+        }
+    }
+
     void RockConfig::load()
     {
         _iniFilePath = resolveIniPath();
-        ROCK_LOG_INFO(Config, "Loading ROCK config from: {}", _iniFilePath);
+        resetToDefaults();
+        if (_iniFilePath.empty()) {
+            ROCK_LOG_ERROR(Config,
+                "ROCK.ini path is unavailable; using compiled defaults in memory without creating a fallback file");
+            return;
+        }
 
-        rock::resources::createDirectoryTreeForFile(_iniFilePath);
-
-        rock::resources::createFileFromResourceIfMissing(_iniFilePath, "ROCK", IDR_ROCK_INI, true);
+        ROCK_LOG_INFO(Config, "Loading the only active ROCK config from: {}", _iniFilePath);
+        (void)createDefaultIniIfMissing();
 
         CSimpleIniA ini;
         ini.SetUnicode(false);
         const SI_Error rc = ini.LoadFile(_iniFilePath.c_str());
         if (rc < 0) {
             ROCK_LOG_WARN(Config, "ROCK.ini not found or unreadable (code {}), using compiled-in defaults", static_cast<int>(rc));
+            return;
         }
 
         resetToDefaults();
@@ -2426,6 +2629,12 @@ namespace rock
     bool RockConfig::saveRuntimeIni(CSimpleIniA& ini, const char* reason)
     {
         const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
+        if (path.empty()) {
+            ROCK_LOG_WARN(Config,
+                "Cannot persist ROCK.ini runtime change '{}': production path is unavailable",
+                reason ? reason : "unknown");
+            return false;
+        }
         _selfIniWriteInProgress.store(true, std::memory_order_release);
         suppressNextFileWatchReload();
 
@@ -2456,6 +2665,12 @@ namespace rock
         }
 
         const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
+        if (path.empty()) {
+            ROCK_LOG_WARN(Config,
+                "Cannot persist ROCK.ini bool '{}': production path is unavailable",
+                key);
+            return false;
+        }
         CSimpleIniA ini;
         ini.SetUnicode(false);
         const SI_Error loadRc = ini.LoadFile(path.c_str());
@@ -2476,6 +2691,12 @@ namespace rock
     bool RockConfig::persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value)
     {
         const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
+        if (path.empty()) {
+            ROCK_LOG_WARN(Config,
+                "Cannot persist ROCK.ini {} legacy palm pivot A: production path is unavailable",
+                isLeft ? "left" : "right");
+            return false;
+        }
         CSimpleIniA ini;
         ini.SetUnicode(false);
         const SI_Error loadRc = ini.LoadFile(path.c_str());

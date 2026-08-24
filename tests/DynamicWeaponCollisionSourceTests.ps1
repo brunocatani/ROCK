@@ -63,7 +63,7 @@ $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 Require-Pattern 'src/RockConfig.h' `
     'rockWeaponCollisionDynamicBoxEnabled\s*=\s*true' `
     'Dynamic weapon collision must default enabled in compiled configuration.'
-foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($ini in @('data/config/ROCK_example.ini')) {
     Require-Pattern $ini `
         '(?m)^bWeaponCollisionDynamicBoxEnabled\s*=\s*true\s*$' `
         "$ini must ship dynamic weapon collision enabled."
@@ -290,7 +290,7 @@ Require-Pattern $runtimeSource `
 Reject-Pattern $runtimeSource `
     'updateWeaponGripConstraintContactTau\([\s\S]{0,400}(requestedTarget|proportionalRecoveryVelocity|constantRecoveryVelocity|maxForce)\s*=' `
     'Contact authority adaptation must not mutate targets, recovery velocities, or force limits.'
-foreach ($path in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($path in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK_example.ini')) {
     Reject-Pattern $path `
         'WeaponCollisionDynamicContactPressMaxVelocityHavok' `
         "$path must not retain the unused direct-velocity weapon contact cap after the constraint architecture replacement."

@@ -32,7 +32,7 @@ function Reject-Text {
 # The new diagnostic suite has its own master and subordinate switches. The
 # legacy straight/pad overlay remains a separate switch and cannot implicitly
 # enable or disable swept-arc capture.
-foreach ($path in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($path in @('data/config/ROCK_example.ini')) {
     Require-Text $path 'NEW SWEPT-ARC FINGER SOLVER VISUALIZATION' 'Swept-arc visualization must have a clearly separated INI block.'
     Require-Text $path 'bDebugShowGrabFingerSweptArc\s*=\s*false' 'Reference INIs must expose the swept-arc master switch disabled by default.'
     Require-Text $path 'bDebugShowGrabFingerSweptArcText\s*=\s*true' 'Reference INIs must expose swept-arc labels independently.'

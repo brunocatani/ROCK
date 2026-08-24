@@ -75,17 +75,14 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'shouldInstallPipboyPauseArbitrationHooks\(settings\.enabled\)[\s\S]{0,180}installPipboyPauseArbitrationHooks' `
     'Enabled ROCK input remapping must always install the three arbitration hooks.'
 
-# The only tuning surface is a bounded duration; both shipped configs must
-# expose the same default and the policy tests must lock the state transitions.
+# The only tuning surface is a bounded duration; the example config must expose
+# the default and the policy tests must lock the state transitions.
 Require-Text 'src/RockConfig.cpp' `
     'sanitizedHoldSeconds\([\s\S]{0,180}fPipboyPauseHoldSeconds' `
     'Configured hold duration must be sanitized before runtime use.'
-Require-Text 'data/config/ROCK.ini' `
+Require-Text 'data/config/ROCK_example.ini' `
     '(?m)^fPipboyPauseHoldSeconds\s*=\s*0\.35\s*$' `
-    'Developer config must ship the 0.35-second hold default.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' `
-    '(?m)^fPipboyPauseHoldSeconds\s*=\s*0\.35\s*$' `
-    'Packaged config must ship the 0.35-second hold default.'
+    'The example config must retain the 0.35-second hold default.'
 Require-Text 'tests/InputRemapPolicyTests.cpp' `
     'short Pause-button release opens the Pip-Boy[\s\S]{0,2200}hold threshold opens native Pause exactly once[\s\S]{0,1800}release after Pause hold cannot open the Pip-Boy' `
     'Policy tests must cover tap, hold, one-shot dispatch, and release suppression.'

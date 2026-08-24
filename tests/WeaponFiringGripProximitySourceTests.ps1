@@ -80,7 +80,7 @@ Require-Text 'src/api/ROCKProviderApi.h' `
 Require-Text 'src/RockConfig.cpp' `
     'fFiringGripProximitySupportRadius[\s\S]{0,180}0\.25f,[\s\S]{0,40}30\.0f' `
     'ROCK must load and bound its core firing-grip proximity radius.'
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `
         'fFiringGripProximitySupportRadius\s*=\s*6\.0' `
         'ROCK config must publish the core firing-grip proximity radius.'
@@ -93,7 +93,7 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'AnimsGripPistol|classifyEquippedWeaponForSupportGrip|resolveEquippedWeaponSupportAuthorityMode' `
     'Runtime support authority must not retain the superseded pistol classifier.'
 
-Reject-Text 'data/config/ROCK.ini' `
+Reject-Text 'data/config/ROCK_example.ini' `
     'VisualOnlySidearmSupportGrip|SidearmVisualOnlySupportGrip' `
     'The source config must not retain obsolete sidearm-only contract keys.'
 

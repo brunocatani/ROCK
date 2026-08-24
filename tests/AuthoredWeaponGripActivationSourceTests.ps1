@@ -54,7 +54,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `
     'The pre-grab overlay must be independently enabled and explicitly identify its enforced verdict.'
 
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `
         'bDebugDrawAuthoredGripActivationZones\s*=\s*false' `
         'The authored-grip activation visualizer must remain default-off.'

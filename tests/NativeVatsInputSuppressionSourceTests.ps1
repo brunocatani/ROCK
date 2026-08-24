@@ -61,13 +61,13 @@ Require-Text 'src/RockConfig.cpp' `
     '^(?![\s\S]*bSuppressNativeVans)[\s\S]*$' `
     'RockConfig must not parse a V.A.N.S. setting.'
 
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `
         'bSuppressNativeVats\s*=\s*false' `
-        'Shipped ROCK.ini must expose optional VATS suppression with a safe default.'
+        'ROCK_example.ini must expose optional VATS suppression with a safe default.'
     Require-Text $configPath `
         '^(?![\s\S]*bSuppressNativeVans)[\s\S]*$' `
-        'Shipped ROCK.ini must not expose mandatory V.A.N.S. suppression.'
+        'ROCK_example.ini must not expose mandatory V.A.N.S. suppression.'
 }
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `

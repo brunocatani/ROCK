@@ -40,7 +40,7 @@ $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $provider = 'src/physics-interaction/core/PhysicsInteractionProvider.inl'
 $api = 'src/api/ROCKProviderApi.h'
 
-foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($ini in @('data/config/ROCK_example.ini')) {
     Reject-Pattern $ini `
         '(?m)^bHandDynamicInteractionsEnabled\s*=' `
         "$ini must not expose the mandatory dynamic interaction graph."

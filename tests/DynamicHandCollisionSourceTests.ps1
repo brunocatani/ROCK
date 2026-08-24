@@ -382,7 +382,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollisionPolicy.h' 
     'kHapticMinimumApproachSpeedGameUnitsPerSecond = 3\.0f',
     'kHapticCooldownSeconds = 0\.12f'
 ) 'Dynamic hand collision must keep its fixed production constants together.'
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Reject-Text $configPath `
         'bHandCollisionDynamicDrive|fHandCollisionDynamic|iHandCollisionDynamicVisualPriority|bHandCollisionDynamicHapticsEnabled' `
         "$configPath must not expose fixed dynamic hand collision or haptic policy."
@@ -585,14 +585,14 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'kSurfaceLatchVisualPriority[\s\S]*applyExternalHandWorldTransform\(' `
     'Surface latches must hold the rendered hand through the existing FRIK visual authority bridge.'
 
-# The opt-in API remains authoritative, while the shipped INI enables a
-# built-in world-surface fallback for direct play and testing.
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+# The opt-in API remains authoritative, while the example INI documents the
+# built-in world-surface fallback default for direct play and testing.
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `
         'bGlobalSurfaceGrabEnabled\s*=\s*true' `
         "$configPath must globally enable fixed-surface grabs."
 }
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Reject-Text $configPath `
         'bHandCollisionSurfaceFingerResponseEnabled|fHandCollisionSurfaceFinger' `
         "$configPath must not expose mandatory surface finger response policy."
@@ -654,7 +654,7 @@ Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
 # A successful fixed-surface latch owns the feedback for that hand. Its
 # one-shot confirmation is intentionally stronger and longer than the dynamic
 # touch pulse, and both values remain user-tunable.
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `
         'bSurfaceGrabHapticsEnabled\s*=\s*true[\s\S]*fSurfaceGrabHapticDurationSeconds\s*=\s*0\.075[\s\S]*fSurfaceGrabHapticIntensity\s*=\s*0\.85' `
         "$configPath must ship the distinct surface-latch confirmation pulse."

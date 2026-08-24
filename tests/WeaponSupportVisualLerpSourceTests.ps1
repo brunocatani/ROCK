@@ -82,7 +82,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'dynamic support
     'Dynamic acquisition lifecycle cleanup must emit an event-scoped cancellation record.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'handLerp=\(' `
     'Two-handed weapon telemetry must retain sampled hand interpolation alpha/duration.'
-Require-Text 'data/config/ROCK.ini' 'Normal dynamic full-authority grabs[\s\S]*authored,[\s\S]*provider-owned,[\s\S]*AttachOnly,[\s\S]*visual-only' `
+Require-Text 'data/config/ROCK_example.ini' 'Normal dynamic full-authority grabs[\s\S]*authored,[\s\S]*provider-owned,[\s\S]*AttachOnly,[\s\S]*visual-only' `
     'Repository config must describe the synchronized dynamic-acquisition semantics and unchanged paths.'
 
 $weaponText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp')
