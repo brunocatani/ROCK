@@ -136,16 +136,11 @@ namespace rock
 
     void RockConfig::resetToDefaults()
     {
-        rockEnabled = true;
         rockHavokTimingFixEnabled = true;
         rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
         rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
-        rockInputRemapEnabled = true;
-        rockSuppressRightGrabGameInput = true;
         rockSuppressRightFavoritesGameInput = true;
-        rockSuppressNativeReadyWeaponAutoReady = true;
-        rockSuppressNativeMeleeThrowGameInput = true;
         rockSuppressPipboyGameInputWhileHolding = true;
         rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         rockSuppressTakeEquipGameInputWhileHolding = true;
@@ -229,16 +224,6 @@ namespace rock
         rockNativeScopeOverlayPitchDegrees = 0.0f;
         rockNativeScopeOverlayYawDegrees = 0.0f;
         rockNativeScopeOverlayRollDegrees = 0.0f;
-
-        rockHandDynamicInteractionsEnabled = true;
-        rockHandCollisionSurfaceFingerResponseEnabled = true;
-        rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = 0.10f;
-        rockHandCollisionSurfaceFingerResponseGain = 1.0f;
-        rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = 0.85f;
-        rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
-        rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = 0.10f;
-        rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
-        rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 
         rockNativeMeleeSuppressionEnabled = true;
         rockNativeMeleeFullSuppression = true;
@@ -705,19 +690,13 @@ namespace rock
         rockPerformanceProfilerOverlayText = ini.GetBoolValue(DEBUG_SECTION, "bPerformanceProfilerOverlayText", rockPerformanceProfilerOverlayText);
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
 
-        rockEnabled = ini.GetBoolValue(SECTION, "bEnabled", rockEnabled);
         rockHavokTimingFixEnabled = ini.GetBoolValue(SECTION, "bHavokTimingFixEnabled", rockHavokTimingFixEnabled);
         rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::sanitizeMinPhysicsFrameRate(
             static_cast<float>(ini.GetDoubleValue(SECTION, "fHavokTimingFixMinPhysicsFrameRate", rockHavokTimingFixMinPhysicsFrameRate)));
         rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::sanitizeMaxSubsteps(
             static_cast<int>(ini.GetLongValue(SECTION, "iHavokTimingFixMaxSubsteps", rockHavokTimingFixMaxSubsteps)));
-        rockInputRemapEnabled = ini.GetBoolValue(SECTION, "bInputRemapEnabled", rockInputRemapEnabled);
-        rockSuppressRightGrabGameInput = ini.GetBoolValue(SECTION, "bSuppressRightGrabGameInput", rockSuppressRightGrabGameInput);
         rockSuppressRightFavoritesGameInput = ini.GetBoolValue(SECTION, "bSuppressRightFavoritesGameInput", rockSuppressRightFavoritesGameInput);
-        rockSuppressNativeReadyWeaponAutoReady = ini.GetBoolValue(SECTION, "bSuppressNativeReadyWeaponAutoReady", rockSuppressNativeReadyWeaponAutoReady);
-        rockSuppressNativeMeleeThrowGameInput = ini.GetBoolValue(SECTION, "bSuppressNativeMeleeThrowGameInput", rockSuppressNativeMeleeThrowGameInput);
         rockSuppressNativeVats = ini.GetBoolValue(SECTION, "bSuppressNativeVats", rockSuppressNativeVats);
-        rockSuppressNativeVans = ini.GetBoolValue(SECTION, "bSuppressNativeVans", rockSuppressNativeVans);
         rockSuppressPipboyGameInputWhileHolding = ini.GetBoolValue(SECTION, "bSuppressPipboyGameInputWhileHolding", rockSuppressPipboyGameInputWhileHolding);
         rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));
@@ -1127,64 +1106,6 @@ namespace rock
             0.0f,
             -180.0f,
             180.0f);
-
-        rockHandDynamicInteractionsEnabled = ini.GetBoolValue(
-            SECTION,
-            "bHandDynamicInteractionsEnabled",
-            rockHandDynamicInteractionsEnabled);
-        rockHandCollisionSurfaceFingerResponseEnabled = ini.GetBoolValue(
-            SECTION,
-            "bHandCollisionSurfaceFingerResponseEnabled",
-            rockHandCollisionSurfaceFingerResponseEnabled);
-        rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerProbeDeltaOpenUnits",
-            rockHandCollisionSurfaceFingerProbeDeltaOpenUnits,
-            0.10f,
-            0.01f,
-            0.50f);
-        rockHandCollisionSurfaceFingerResponseGain = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerResponseGain",
-            rockHandCollisionSurfaceFingerResponseGain,
-            1.0f,
-            0.0f,
-            4.0f);
-        rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits",
-            rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits,
-            0.85f,
-            0.0f,
-            1.0f);
-        rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits",
-            rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits,
-            0.01f,
-            0.0001f,
-            1.0f);
-        rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction",
-            rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction,
-            0.10f,
-            0.0f,
-            0.5f);
-        rockHandCollisionSurfaceFingerSmoothingSpeed = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerSmoothingSpeed",
-            rockHandCollisionSurfaceFingerSmoothingSpeed,
-            30.0f,
-            0.0f,
-            240.0f);
-        rockHandCollisionSurfaceFingerReleaseDelaySeconds = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerReleaseDelaySeconds",
-            rockHandCollisionSurfaceFingerReleaseDelaySeconds,
-            0.12f,
-            0.0f,
-            2.0f);
 
         rockNativeMeleeSuppressionEnabled = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressionEnabled", rockNativeMeleeSuppressionEnabled);
         rockNativeMeleeFullSuppression = ini.GetBoolValue(SECTION, "bNativeMeleeFullSuppression", rockNativeMeleeFullSuppression);
@@ -2461,8 +2382,7 @@ namespace rock
         readValuesFromIni(ini);
 
         ROCK_LOG_INFO(Config,
-            "ROCK config loaded (rockEnabled={}, logLevel={} {}, sample={}ms)",
-            rockEnabled,
+            "ROCK config loaded (logLevel={} {}, sample={}ms)",
             rockLogLevel,
             logging_policy::logLevelName(rockLogLevel),
             rockLogSampleMilliseconds);
@@ -2489,8 +2409,7 @@ namespace rock
         resetToDefaults();
         readValuesFromIni(ini);
         ROCK_LOG_INFO(Config,
-            "ROCK config reloaded (rockEnabled={}, logLevel={} {}, sample={}ms)",
-            rockEnabled,
+            "ROCK config reloaded (logLevel={} {}, sample={}ms)",
             rockLogLevel,
             logging_policy::logLevelName(rockLogLevel),
             rockLogSampleMilliseconds);

@@ -291,7 +291,7 @@ Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     '1\.0f\s*/\s*90\.0f' `
     'Dynamic hand collision must not assume a 90 Hz physics or render cadence.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'dynamicInteractionFingerContact[\s\S]{0,500}dynamicInteractionFingerContact\s*\?[\s\S]{0,80}0\.0f[\s\S]{0,120}rockHandCollisionSurfaceFingerSmoothingSpeed' `
+    'dynamicInteractionFingerContact[\s\S]{0,500}dynamicInteractionFingerContact\s*\?[\s\S]{0,80}0\.0f[\s\S]{0,160}kSurfaceFingerSmoothingSpeed' `
     'Hand/hand and hand/weapon finger contacts must publish their collision pose without presentation lag.'
 Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     'shoulderBone = isLeft \? "LArm_UpperArm" : "RArm_UpperArm"',
@@ -488,8 +488,8 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' `
     'const GeneratedBodyDriveMode& mode = \{\}' `
     'driveGeneratedKeyframedBody must default to keyframe placement for existing callers.'
 
-# Each hand keeps a stable row. Both retain world/car collision while the
-# experimental graph gates only the opposite hand and weapon edges.
+# Each hand keeps a stable row. Both retain world/car collision and admit only
+# the opposite hand and weapon interaction edges.
 Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @(
     'ROCK_LAYER_DYNAMIC_HAND_PROXY = 48',
     'ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49',
@@ -500,9 +500,8 @@ Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @
     'isWorldSurfaceLayer\(layer\)',
     'withLayer\(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER\)',
     'withLayer\(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER\)',
-    'interactionsEnabled',
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY'
-) 'Dynamic hand proxy rows must preserve world/car collision and explicitly gate cross-owner interaction edges.'
+) 'Dynamic hand proxy rows must preserve world/car collision and fixed cross-owner interaction edges.'
 Require-Text 'src/physics-interaction/object/DynamicWorldCarCollision.cpp' `
     'isExplodableCarReference[\s\S]*dynamicWorldCarLayerForNativeLayer[\s\S]*setFilterInfo' `
     'Only verified ExplodableCar references may be tagged onto dynamic-world car layers.'
@@ -529,8 +528,7 @@ Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' `
     'Character-controller contact identity must be evaluated only on dedicated car rows.'
 Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @(
     'inline void applyRockGeneratedLayerPolicies\(',
-    'applyRockDynamicHandProxyLayerPolicies\(',
-    'dynamicHandInteractionsEnabled'
+    'applyRockDynamicHandProxyLayerPolicies\(matrix\)'
 ) 'Both dynamic hand rows must be applied with the other generated layer rows.'
 
 # The proxy drive flush must run beside the other generated collider flushes.
@@ -595,25 +593,25 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         "$configPath must globally enable fixed-surface grabs."
 }
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
-    Require-Text $configPath `
-        'bHandCollisionSurfaceFingerResponseEnabled\s*=\s*true[\s\S]*fHandCollisionSurfaceFingerProbeDeltaOpenUnits[\s\S]*fHandCollisionSurfaceFingerResponseGain[\s\S]*fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits[\s\S]*fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits[\s\S]*fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction[\s\S]*fHandCollisionSurfaceFingerSmoothingSpeed[\s\S]*fHandCollisionSurfaceFingerReleaseDelaySeconds' `
-        "$configPath must ship the globally enabled, bounded experimental surface finger response."
+    Reject-Text $configPath `
+        'bHandCollisionSurfaceFingerResponseEnabled|fHandCollisionSurfaceFinger' `
+        "$configPath must not expose mandatory surface finger response policy."
 }
-Require-Text 'src/RockConfig.h' `
-    'rockHandCollisionSurfaceFingerResponseEnabled\s*=\s*true' `
-    'Older INIs must inherit the enabled surface finger response default.'
-Require-Text 'src/RockConfig.cpp' `
-    'GetBoolValue\(\s*SECTION,\s*"bHandCollisionSurfaceFingerResponseEnabled"' `
-    'The surface finger feature switch must load through the ROCK INI path.'
-Require-OrderedText 'src/RockConfig.cpp' @(
-    'fHandCollisionSurfaceFingerProbeDeltaOpenUnits',
-    'fHandCollisionSurfaceFingerResponseGain',
-    'fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits',
-    'fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits',
-    'fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction',
-    'fHandCollisionSurfaceFingerSmoothingSpeed',
-    'fHandCollisionSurfaceFingerReleaseDelaySeconds'
-) 'Every bounded surface finger control must load through the ROCK INI path.'
+Reject-Text 'src/RockConfig.h' `
+    'rockHandCollisionSurfaceFinger' `
+    'RockConfig must not retain surface finger response authority.'
+Reject-Text 'src/RockConfig.cpp' `
+    'bHandCollisionSurfaceFingerResponseEnabled|fHandCollisionSurfaceFinger' `
+    'The surface finger response must not load through ROCK.ini.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollisionPolicy.h' @(
+    'kSurfaceFingerProbeDeltaOpenUnits\s*=\s*0\.10f',
+    'kSurfaceFingerResponseGain\s*=\s*1\.0f',
+    'kSurfaceFingerMaximumDeflectionOpenUnits\s*=\s*0\.85f',
+    'kSurfaceFingerMinimumHelpfulTravelGameUnits\s*=\s*0\.01f',
+    'kSurfaceFingerDirectionSwitchHysteresisFraction\s*=\s*0\.10f',
+    'kSurfaceFingerSmoothingSpeed\s*=\s*30\.0f',
+    'kSurfaceFingerReleaseDelaySeconds\s*=\s*0\.12f'
+) 'Surface finger response must retain one fixed production policy.'
 Require-Text 'src/RockConfig.h' `
     'rockGlobalSurfaceGrabEnabled\s*=\s*true' `
     'The compiled global surface-grab default must remain enabled when an older INI lacks the key.'

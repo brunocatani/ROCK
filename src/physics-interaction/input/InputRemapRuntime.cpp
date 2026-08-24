@@ -591,7 +591,6 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldRemapLeftHandFireTriggerForGame()
         {
             return s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
-                g_rockConfig.rockInputRemapEnabled &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) &&
                 !isInputBlockingMenuActive();
         }
@@ -636,12 +635,8 @@ namespace rock::input_remap_runtime
         [[nodiscard]] input_remap_policy::Settings makeSettings()
         {
             return input_remap_policy::Settings{
-                .enabled = g_rockConfig.rockInputRemapEnabled,
                 .grabButtonId = input_remap_policy::kGrabButtonId,
-                .suppressRightGrabGameInput = g_rockConfig.rockSuppressRightGrabGameInput,
                 .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
-                .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
-                .suppressNativeMeleeThrowGameInput = g_rockConfig.rockSuppressNativeMeleeThrowGameInput,
                 .suppressPipboyGameInputWhileHolding = g_rockConfig.rockSuppressPipboyGameInputWhileHolding,
             };
         }
@@ -993,7 +988,7 @@ namespace rock::input_remap_runtime
         [[nodiscard]] input_remap_policy::NativeActionSuppressionInput makeNativeActionSuppressionInput(bool suppressionEnabled, bool eventMatched)
         {
             return input_remap_policy::NativeActionSuppressionInput{
-                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .remapEnabled = true,
                 .suppressionEnabled = suppressionEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
@@ -1030,13 +1025,13 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldSuppressNativeGripReadyAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeGripReadyAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightGrabGameInput, eventNameMatches(event, kNativeEventWandGrip)));
+                makeNativeActionSuppressionInput(true, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeGripReloadAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeGripReloadAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightGrabGameInput, event, eventNameMatches(event, kNativeEventWandGrip)));
+                makeNativeActionSuppressionInput(true, event, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
@@ -1049,7 +1044,7 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::shouldSuppressNativeTriggerAction(
                 makeNativeActionSuppressionInput(
-                    g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
+                    true,
                     event,
                     eventNameMatches(event, kNativeEventWandTrigger)));
         }
@@ -1086,7 +1081,7 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldSuppressLegacyPipboyTriggerOpenEvent(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressLegacyPipboyTriggerOpen(input_remap_policy::LegacyPipboyTriggerOpenInput{
-                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .remapEnabled = true,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .eventMatched = eventNameMatches(event, kNativeEventWandTrigger),
@@ -1098,7 +1093,7 @@ namespace rock::input_remap_runtime
         {
             // FO4VR's verified MeleeThrow handler accepts its grenade/throw action from WandGrip.
             return input_remap_policy::shouldSuppressNativeMeleeThrowAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeMeleeThrowGameInput, eventNameMatches(event, kNativeEventWandGrip)));
+                makeNativeActionSuppressionInput(true, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
         [[nodiscard]] bool shouldRouteFiringHandActivateReload(const RE::InputEvent* event)
@@ -1116,7 +1111,7 @@ namespace rock::input_remap_runtime
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
             const bool firingHandIsPrimaryHand = firingHandIsLeft == primaryHandIsLeft;
             const bool route = input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
-                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .remapEnabled = true,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
@@ -1697,9 +1692,6 @@ namespace rock::input_remap_runtime
                     flags,
                     provider::RockProviderHandInputSuppressionFlagV1::
                         SuppressOpenVrGameInput);
-            // While ROCK gameplay is active, physical right B belongs to
-            // grenade quick draw for the complete press/hold/release gesture.
-            const bool grenadeQuickDrawOwnsButton = g_rockConfig.rockEnabled;
             const auto decision =
                 native_vats_input_suppression_policy::update(
                     s_nativeVatsInputSuppressionState,
@@ -1710,21 +1702,13 @@ namespace rock::input_remap_runtime
                             !button->QPressed() &&
                             button->QHeldDownSecs() >= 0.0f,
                         .suppressVats =
-                            grenadeQuickDrawOwnsButton ||
                             g_rockConfig.rockSuppressNativeVats ||
                             provider::hasHandInputSuppressionFlagV1(
                                 flags,
                                 provider::
                                     RockProviderHandInputSuppressionFlagV1::
                                         SuppressNativeVats),
-                        .suppressVans =
-                            grenadeQuickDrawOwnsButton ||
-                            g_rockConfig.rockSuppressNativeVans ||
-                            provider::hasHandInputSuppressionFlagV1(
-                                flags,
-                                provider::
-                                    RockProviderHandInputSuppressionFlagV1::
-                                        SuppressNativeVans),
+                        .suppressVans = true,
                         .suppressAll = suppressAll,
                     });
 
@@ -1757,7 +1741,7 @@ namespace rock::input_remap_runtime
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressedAtDispatch();
             const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
                 pipboy_pause_gesture_policy::Input{
-                    .enabled = g_rockConfig.rockInputRemapEnabled,
+                    .enabled = true,
                     .eligible = gameplayInputAllowed && !menuInputActive,
                     .pressed = button->QJustPressed(),
                     .held = button->QPressed(),
@@ -2080,22 +2064,15 @@ namespace rock::input_remap_runtime
         bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings)
         {
             bool ready = installNativeVatsVansInputSuppressionHook();
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightGrabGameInput)) {
-                ready = installReadyWeaponEventSuppressionHook() && ready;
-            }
+            ready = installReadyWeaponEventSuppressionHook() && ready;
             ready = installActivateEventReloadHook() && ready;
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightFavoritesGameInput)) {
+            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(true, settings.suppressRightFavoritesGameInput)) {
                 ready = installFavoritesEventSuppressionHook() && ready;
             }
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressNativeMeleeThrowGameInput)) {
-                ready = installMeleeThrowEventSuppressionHook() && ready;
-            }
-            if (input_remap_policy::shouldInstallPipboyPauseArbitrationHooks(settings.enabled)) {
-                ready = installPipboyPauseArbitrationHooks() && ready;
-            }
+            ready = installMeleeThrowEventSuppressionHook() && ready;
+            ready = installPipboyPauseArbitrationHooks() && ready;
 
-            const bool suppressTriggerFallbacks = input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightTriggerGameInput);
-            ready = updateMeleeThrowFallbackPatches(suppressTriggerFallbacks) && ready;
+            ready = updateMeleeThrowFallbackPatches(true) && ready;
             return ready;
         }
 

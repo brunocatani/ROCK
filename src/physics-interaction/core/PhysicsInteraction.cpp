@@ -2314,17 +2314,6 @@ namespace rock
             return;
         }
 
-        if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
-                false,
-                !g_rockConfig.rockEnabled,
-                false)) {
-            if (_initialized) {
-                shutdown();
-            }
-            debug::ClearFrame();
-            return;
-        }
-
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
             _dynamicWorldCarCollision.abandon();
@@ -2513,15 +2502,12 @@ namespace rock
             const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
             const auto desiredDynamicRightHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    false,
-                    g_rockConfig.rockHandDynamicInteractionsEnabled);
+                    false);
             const auto desiredDynamicLeftHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    true,
-                    g_rockConfig.rockHandDynamicInteractionsEnabled);
+                    true);
             const auto desiredDynamicWeaponProxyMask =
-                collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
-                    g_rockConfig.rockHandDynamicInteractionsEnabled);
+                collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
             const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             const bool nativeControllerPolicyModeChanged =
                 _nativeCharacterControllerLayerPolicyCaptured &&
@@ -6269,8 +6255,7 @@ namespace rock
             matrix,
             g_rockConfig.rockHandCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-            g_rockConfig.rockWeaponCollisionBlocksSpells,
-            g_rockConfig.rockHandDynamicInteractionsEnabled);
+            g_rockConfig.rockWeaponCollisionBlocksSpells);
         collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(
             matrix,
             g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
@@ -6290,15 +6275,12 @@ namespace rock
         _expectedBodyLayerMask = collision_layer_policy::buildRockBodyExpectedMask();
         _expectedDynamicHandProxyLayerMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                false,
-                g_rockConfig.rockHandDynamicInteractionsEnabled);
+                false);
         _expectedDynamicLeftHandProxyLayerMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                true,
-                g_rockConfig.rockHandDynamicInteractionsEnabled);
+                true);
         _expectedDynamicWeaponProxyLayerMask =
-            collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
-                g_rockConfig.rockHandDynamicInteractionsEnabled);
+            collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
         _expectedDynamicWorldCarClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
         _expectedDynamicWorldCarLargeClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
         _expectedNativeCharacterControllerLayerMask =
@@ -7259,7 +7241,7 @@ namespace rock
         }
 
         if (!bare_fist_guard_policy::shouldHolster(bare_fist_guard_policy::Witness{
-                .rockEnabled = g_rockConfig.rockEnabled,
+                .rockEnabled = true,
                 .weaponDrawn = weaponDrawn,
                 .actorUsingMelee = actorUsingMelee,
                 .realMeleeWeaponEquipped = realMeleeWeaponEquipped,
@@ -7410,7 +7392,7 @@ namespace rock
         const auto buttonState = input_remap_runtime::consumeRawButtonState(
             false,
             input_remap_policy::kOpenVrGrenadeQuickDrawButtonId);
-        if (!g_rockConfig.rockEnabled || !buttonState.available || !buttonState.pressed) {
+        if (!buttonState.available || !buttonState.pressed) {
             return;
         }
 
@@ -10528,7 +10510,6 @@ namespace rock
             RE::TESObjectREFR* gripZoneHoverCandidate = nullptr;
             if (_equippedWeaponHandlingSettings.gripZoneHoverHapticsEnabled &&
                 gripZoneSettleEquipEnabled &&
-                g_rockConfig.rockInputRemapEnabled &&
                 !hand.isHolding() &&
                 hand.hasSelection() &&
                 !input_remap_runtime::isMenuInputActive()) {
@@ -10565,7 +10546,7 @@ namespace rock
                         isLeft,
                         _equippedWeaponHandlingSettings.gripZoneEquipSettleSeconds);
                 const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
-                    .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                    .remapEnabled = true,
                     .gameplayInputAllowed = true,
                     .menuInputActive = input_remap_runtime::isMenuInputActive(),
                     .heldWeaponAtFrameStart = heldWeaponAtFrameStart,

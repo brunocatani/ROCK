@@ -59,7 +59,6 @@ int main()
     bool ok = true;
 
     Settings settings{};
-    settings.enabled = true;
 
     ok &= expectTrue("fixed grab button is OpenVR grip", kGrabButtonId == 2);
     ok &= expectTrue("fixed grab button id is accepted", isAllowedGrabButtonId(kGrabButtonId));

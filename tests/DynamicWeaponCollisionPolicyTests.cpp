@@ -52,7 +52,7 @@ int main()
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);
-        const bool expected = rock::collision_layer_policy::isDynamicWeaponProxyObstacleLayer(layer);
+        const bool expected = rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(layer);
         if (enabled != expected) {
             std::printf("dynamic weapon layer mismatch at row %u expected=%d actual=%d\n", layer, expected ? 1 : 0, enabled ? 1 : 0);
             ok = false;
@@ -71,16 +71,11 @@ int main()
         dynamicWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
 
-    constexpr auto interactiveWeaponMask =
-        rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
-            true);
     constexpr auto rightHandMask =
         rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-            false,
-            true);
+            false);
     constexpr auto leftHandMask =
         rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-            true,
             true);
     ok &= rock::collision_layer_policy::maskEnablesLayer(
         rightHandMask,
@@ -101,10 +96,10 @@ int main()
         leftHandMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
     ok &= rock::collision_layer_policy::maskEnablesLayer(
-        interactiveWeaponMask,
+        dynamicWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
     ok &= rock::collision_layer_policy::maskEnablesLayer(
-        interactiveWeaponMask,
+        dynamicWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
 
     const auto geometry = makeBoundingBoxGeometry(

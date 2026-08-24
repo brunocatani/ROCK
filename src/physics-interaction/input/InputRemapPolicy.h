@@ -15,12 +15,8 @@ namespace rock::input_remap_policy
 
     struct Settings
     {
-        bool enabled{ true };
         int grabButtonId{ kGrabButtonId };
-        bool suppressRightGrabGameInput{ true };
         bool suppressRightFavoritesGameInput{ true };
-        bool suppressRightTriggerGameInput{ true };
-        bool suppressNativeMeleeThrowGameInput{ true };
         bool suppressPipboyGameInputWhileHolding{ true };
     };
 
@@ -145,9 +141,9 @@ namespace rock::input_remap_policy
 
     /*
      * OpenVR k_EButton_ApplicationMenu: physical right B on the supported
-     * controller layouts. ROCK owns this button for grenade quick draw while
-     * the main feature is enabled; the native VATS/V.A.N.S. phases are
-     * suppressed separately at their verified game helper.
+     * controller layouts. ROCK owns this button for grenade quick draw. The
+     * native VATS/V.A.N.S. phases are suppressed separately at their verified
+     * game helper.
      */
     inline constexpr int kOpenVrGrenadeQuickDrawButtonId = 1;
 

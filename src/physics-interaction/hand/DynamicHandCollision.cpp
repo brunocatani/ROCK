@@ -646,10 +646,6 @@ namespace rock
                 slotBit,
                 std::memory_order_release);
         }
-        if (!_dynamicInteractionsEnabledAtomic.load(
-                std::memory_order_acquire)) {
-            return;
-        }
         if (otherIsHand) {
             hand.pendingOtherHandContactMaskAtomic.fetch_or(
                 slotBit,
@@ -1431,19 +1427,20 @@ namespace rock
             surface_finger_collision_policy::sanitize(
                 surface_finger_collision_policy::Config{
                     .probeDeltaOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerProbeDeltaOpenUnits,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerProbeDeltaOpenUnits,
                     .responseGain =
-                        g_rockConfig.rockHandCollisionSurfaceFingerResponseGain,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerResponseGain,
                     .maximumDeflectionOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerMaximumDeflectionOpenUnits,
                     .minimumHelpfulProbeTravelGameUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerMinimumHelpfulTravelGameUnits,
                     .directionSwitchHysteresisFraction =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerDirectionSwitchHysteresisFraction,
                 });
         auto closingProbeOpenValues = candidate.baselineOpenValues;
         auto openingProbeOpenValues = candidate.baselineOpenValues;
@@ -1579,11 +1576,6 @@ namespace rock
         const float deltaSeconds,
         const bool freezeCurrentPose)
     {
-        if (!g_rockConfig.rockHandCollisionSurfaceFingerResponseEnabled) {
-            clearSurfaceFingerResponse(handSlots, isLeft);
-            return 0;
-        }
-
         bool anyFingerContact = false;
         for (std::size_t bodyIndex =
                  dynamic_hand_collision_telemetry::kFirstFingerSlot;
@@ -1680,19 +1672,20 @@ namespace rock
                 response.lastDirections,
                 surface_finger_collision_policy::Config{
                     .probeDeltaOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerProbeDeltaOpenUnits,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerProbeDeltaOpenUnits,
                     .responseGain =
-                        g_rockConfig.rockHandCollisionSurfaceFingerResponseGain,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerResponseGain,
                     .maximumDeflectionOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerMaximumDeflectionOpenUnits,
                     .minimumHelpfulProbeTravelGameUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerMinimumHelpfulTravelGameUnits,
                     .directionSwitchHysteresisFraction =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction,
+                        dynamic_hand_collision_policy::
+                            kSurfaceFingerDirectionSwitchHysteresisFraction,
                 });
         const auto previousDirections = response.lastDirections;
         if (!freezeCurrentPose) {
@@ -1715,8 +1708,8 @@ namespace rock
                 targetOpenValues,
                 dynamicInteractionFingerContact ?
                     0.0f :
-                    g_rockConfig.
-                        rockHandCollisionSurfaceFingerSmoothingSpeed,
+                    dynamic_hand_collision_policy::
+                        kSurfaceFingerSmoothingSpeed,
                 deltaSeconds);
         if (response.lastDirections != previousDirections) {
             ROCK_LOG_SAMPLE_DEBUG(
@@ -1752,8 +1745,8 @@ namespace rock
                 0.1f);
             response.noContactSeconds += dt;
             if (response.noContactSeconds >=
-                g_rockConfig.
-                    rockHandCollisionSurfaceFingerReleaseDelaySeconds) {
+                dynamic_hand_collision_policy::
+                    kSurfaceFingerReleaseDelaySeconds) {
                 clearSurfaceFingerResponse(handSlots, isLeft);
                 return 0;
             }
@@ -1914,7 +1907,6 @@ namespace rock
         _transitionCollisionSuppressed = false;
         _transitionCollisionSuppressedAtomic.store(false, std::memory_order_release);
         _weaponOwnershipCollisionSuppressed = {};
-        _dynamicInteractionsEnabledAtomic.store(false, std::memory_order_release);
         _desiredWeaponBodyIdAtomic.store(
             hand_semantic_contact_state::kInvalidBodyId,
             std::memory_order_release);
@@ -1970,10 +1962,6 @@ namespace rock
         telemetry.hands[0].isLeft = false;
         telemetry.hands[1].isLeft = true;
 
-        const bool dynamicInteractionsEnabled = g_rockConfig.rockHandDynamicInteractionsEnabled;
-        _dynamicInteractionsEnabledAtomic.store(
-            dynamicInteractionsEnabled,
-            std::memory_order_release);
         _desiredWeaponBodyIdAtomic.store(
             dynamicWeaponBodyId,
             std::memory_order_release);
@@ -2012,8 +2000,7 @@ namespace rock
                 slots.weaponContactMask,
                 slots.weaponContactGraceFrames);
             auto& handTelemetry = telemetry.hands[hand];
-            handTelemetry.dynamicInteractionsEnabled =
-                dynamicInteractionsEnabled;
+            handTelemetry.dynamicInteractionsEnabled = true;
             handTelemetry.pairFilterReady =
                 _pairFilterReadyAtomic.load(std::memory_order_acquire);
             handTelemetry.otherHandContactMask =
@@ -2587,12 +2574,9 @@ namespace rock
             HavokPairCollisionLeaseSet::kMaximumPairs>
             desiredPairs{};
         std::size_t desiredPairCount = 0;
-        const bool interactionsEnabled =
-            _dynamicInteractionsEnabledAtomic.load(
-                std::memory_order_acquire);
         const std::uint32_t weaponBodyId =
             _desiredWeaponBodyIdAtomic.load(std::memory_order_acquire);
-        if (interactionsEnabled && world &&
+        if (world &&
             weaponBodyId != hand_semantic_contact_state::kInvalidBodyId) {
             for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
                 if (!_weaponOwnedAtomic[hand].load(

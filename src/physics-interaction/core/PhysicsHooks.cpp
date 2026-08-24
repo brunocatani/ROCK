@@ -411,7 +411,7 @@ namespace rock
         native_melee_suppression::NativeMeleeInputGatePolicyInput makeNativeMeleeInputGatePolicyInput(
             native_melee_suppression::NativeMeleeInputEvent event)
         {
-            return native_melee_suppression::NativeMeleeInputGatePolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
+            return native_melee_suppression::NativeMeleeInputGatePolicyInput{ .rockEnabled = true,
                 .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
                 .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
                 .inputEvent = event };
@@ -419,7 +419,7 @@ namespace rock
 
         native_melee_suppression::NativeMeleeImpactPolicyInput makeNativeMeleeImpactPolicyInput(const RE::Actor* actor)
         {
-            return native_melee_suppression::NativeMeleeImpactPolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
+            return native_melee_suppression::NativeMeleeImpactPolicyInput{ .rockEnabled = true,
                 .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
                 .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
                 .actorIsPlayer = isPlayerActor(actor) };
@@ -850,7 +850,7 @@ namespace rock
         native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(
             const native_melee_suppression::NativeMeleeEvent event, const RE::Actor* actor, const RE::BSFixedString* side)
         {
-            return native_melee_suppression::NativeMeleePolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
+            return native_melee_suppression::NativeMeleePolicyInput{ .rockEnabled = true,
                 .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
                 .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
                 .suppressWeaponSwing = g_rockConfig.rockNativeMeleeSuppressWeaponSwing,
@@ -1163,7 +1163,7 @@ namespace rock
          */
         const native_melee_suppression::NativeMeleeRuntimeSettingPolicyInput input{
             .hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire),
-            .rockEnabled = g_rockConfig.rockEnabled,
+            .rockEnabled = true,
             .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
             .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
         };
@@ -1217,7 +1217,7 @@ namespace rock
          * through its feedback pipeline instead of through native rollover UI.
          */
         const native_grab_haptic_suppression::RuntimeInput input{
-            .rockEnabled = g_rockConfig.rockEnabled,
+            .rockEnabled = true,
             .suppressionEnabled = g_rockConfig.rockSuppressNativeGrabHoverHaptics,
         };
         const bool shouldSuppress = native_grab_haptic_suppression::shouldSuppressNativeGrabHoverHaptics(input);

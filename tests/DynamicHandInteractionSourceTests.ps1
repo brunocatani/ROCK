@@ -41,23 +41,26 @@ $provider = 'src/physics-interaction/core/PhysicsInteractionProvider.inl'
 $api = 'src/api/ROCKProviderApi.h'
 
 foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
-    Require-Pattern $ini `
-        '(?m)^bHandDynamicInteractionsEnabled\s*=\s*true\s*$' `
-        "$ini must ship the experimental dynamic interaction graph enabled."
+    Reject-Pattern $ini `
+        '(?m)^bHandDynamicInteractionsEnabled\s*=' `
+        "$ini must not expose the mandatory dynamic interaction graph."
 }
-Require-Pattern 'src/RockConfig.h' `
-    'rockHandDynamicInteractionsEnabled\s*=\s*true' `
-    'The compiled dynamic interaction graph default must remain enabled.'
+Reject-Pattern 'src/RockConfig.h' `
+    'rockHandDynamicInteractionsEnabled' `
+    'RockConfig must not retain dynamic interaction graph authority.'
 
 Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY\s*=\s*[\s\S]*ROCK_LAYER_DYNAMIC_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\s*=\s*52' `
     'Right and left dynamic twins must retain stable rows 48 and 52.'
 Require-Pattern $layers `
-    'buildRockDynamicHandProxyExpectedMask\([\s\S]*isLeft[\s\S]*interactionsEnabled[\s\S]*isLeft\s*\?\s*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY\s*:[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_WEAPON_PROXY' `
+    'buildRockDynamicHandProxyExpectedMask\([\s\S]*isLeft[\s\S]*isLeft\s*\?\s*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY\s*:[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_WEAPON_PROXY' `
     'Each hand row must enable only the opposite hand and weapon interaction edges.'
 Require-Pattern $layers `
-    'buildRockDynamicWeaponProxyExpectedMask\([\s\S]*interactionsEnabled[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
+    'buildRockDynamicWeaponProxyExpectedMask\(\)[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
     'The weapon row must symmetrically enable both hand rows.'
+Reject-Pattern $layers `
+    'interactionsEnabled|dynamicHandInteractionsEnabled' `
+    'The generated collision graph must not retain a disabled mode.'
 Require-Pattern $handSource `
     'dynamicHandProxyFilterInfo\([\s\S]*bool isLeft[\s\S]*dynamicHandProxyLayerForHand\(isLeft\)' `
     'Dynamic twin creation and transition restoration must preserve the side-specific stable row.'
@@ -123,6 +126,9 @@ Reject-Pattern $contacts `
 Require-Pattern $handHeader `
     'pendingOtherHandContactMaskAtomic[\s\S]*pendingWeaponContactMaskAtomic' `
     'Dynamic pair contact publication must use bounded atomic slot masks.'
+Reject-Pattern $handHeader `
+    '_dynamicInteractionsEnabledAtomic' `
+    'The mandatory interaction graph must not retain a runtime enable atomic.'
 
 Require-Pattern $api `
     'DynamicOtherHandContact\s*=\s*1u\s*<<\s*19[\s\S]*DynamicWeaponContact\s*=\s*1u\s*<<\s*20[\s\S]*DynamicWeaponPairSuppressed\s*=\s*1u\s*<<\s*21' `

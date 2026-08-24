@@ -45,28 +45,34 @@ Require-Text 'src/api/ROCKProviderApi.cpp' `
     'kImplementedHandInputSuppressionFlagsV1[\s\S]{0,500}SuppressNativeVats[\s\S]{0,220}SuppressNativeVans' `
     'The provider must accept both new flags through the existing lease setter.'
 
-# ROCK.ini exposes the same two independent function-level controls without
-# routing through the raw OpenVR suppression path.
+# ROCK.ini retains only the optional release-to-VATS control. V.A.N.S.
+# suppression is mandatory and does not route through raw OpenVR state.
 Require-Text 'src/RockConfig.h' `
-    'rockSuppressNativeVats\s*=\s*false[\s\S]{0,180}rockSuppressNativeVans\s*=\s*false' `
-    'RockConfig must default both local native-action suppression controls off.'
+    'rockSuppressNativeVats\s*=\s*false' `
+    'RockConfig must default the optional native VATS suppression control off.'
+Require-Text 'src/RockConfig.h' `
+    '^(?![\s\S]*rockSuppressNativeVans)[\s\S]*$' `
+    'RockConfig must not retain local V.A.N.S. configuration authority.'
 
 Require-Text 'src/RockConfig.cpp' `
-    'rockSuppressNativeVats\s*=\s*ini\.GetBoolValue\(SECTION,\s*"bSuppressNativeVats",\s*rockSuppressNativeVats\);[\s\S]{0,300}rockSuppressNativeVans\s*=\s*ini\.GetBoolValue\(SECTION,\s*"bSuppressNativeVans",\s*rockSuppressNativeVans\);' `
-    'RockConfig must load both local native-action suppression controls.'
+    'rockSuppressNativeVats\s*=\s*ini\.GetBoolValue\(SECTION,\s*"bSuppressNativeVats",\s*rockSuppressNativeVats\);' `
+    'RockConfig must load the optional native VATS suppression control.'
+Require-Text 'src/RockConfig.cpp' `
+    '^(?![\s\S]*bSuppressNativeVans)[\s\S]*$' `
+    'RockConfig must not parse a V.A.N.S. setting.'
 
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Text $configPath `
-        'bSuppressNativeVats\s*=\s*false[\s\S]{0,500}bSuppressNativeVans\s*=\s*false' `
-        'Shipped ROCK.ini must expose both native-action controls with safe defaults.'
+        'bSuppressNativeVats\s*=\s*false' `
+        'Shipped ROCK.ini must expose optional VATS suppression with a safe default.'
     Require-Text $configPath `
-        'automatically suppresses ordinary VATS while ROCK is enabled[\s\S]{0,500}automatically suppresses V\.A\.N\.S\. while ROCK is enabled' `
-        'Shipped ROCK.ini must explain automatic VATS/V.A.N.S. ownership for grenade quick draw.'
+        '^(?![\s\S]*bSuppressNativeVans)[\s\S]*$' `
+        'Shipped ROCK.ini must not expose mandatory V.A.N.S. suppression.'
 }
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'hookedNativeVatsVansDecision[\s\S]{0,1800}SuppressOpenVrGameInput[\s\S]{0,600}grenadeQuickDrawOwnsButton\s*=\s*g_rockConfig\.rockEnabled[\s\S]{0,500}native_vats_input_suppression_policy::update[\s\S]{0,1000}\.suppressVats\s*=\s*grenadeQuickDrawOwnsButton\s*\|\|[\s\S]{0,250}g_rockConfig\.rockSuppressNativeVats\s*\|\|[\s\S]{0,500}SuppressNativeVats[\s\S]{0,500}\.suppressVans\s*=\s*grenadeQuickDrawOwnsButton\s*\|\|[\s\S]{0,250}g_rockConfig\.rockSuppressNativeVans\s*\|\|[\s\S]{0,500}SuppressNativeVans' `
-    'The native helper hook must combine automatic quick-draw ownership, local INI controls, and provider leases.'
+    'hookedNativeVatsVansDecision[\s\S]{0,2400}native_vats_input_suppression_policy::update[\s\S]{0,1000}\.suppressVats\s*=\s*g_rockConfig\.rockSuppressNativeVats\s*\|\|[\s\S]{0,500}SuppressNativeVats[\s\S]{0,300}\.suppressVans\s*=\s*true' `
+    'The native helper hook must keep VATS optional while suppressing V.A.N.S. unconditionally.'
 
 # The policy is deliberately orthogonal: VATS-only forwards down samples so
 # V.A.N.S. remains available; V.A.N.S.-only forwards release so normal VATS

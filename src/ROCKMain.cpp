@@ -158,17 +158,11 @@ namespace
 
     void ensurePhysicsInteractionForReadySkeleton(const runtime_state::RuntimeFrameSnapshot& runtime)
     {
-        /*
-         * ROCK creation is event-driven when FRIK first announces skeleton
-         * readiness, but config hot reload can disable the module during that
-         * event and re-enable it later. The frame loop is the only place that
-         * sees the current config and live FRIK readiness together, so it owns
-         * this narrow recovery path instead of forcing users to reload a save
-         * to receive a second skeleton-ready message.
-         */
+        // ROCK creation is event-driven when FRIK first announces skeleton
+        // readiness. The frame loop also recovers a missed lifecycle message
+        // when the live skeleton becomes ready later.
         if (!s_physicsCreationRequested.load(std::memory_order_acquire) &&
             !s_physicsInteraction &&
-            g_rockConfig.rockEnabled &&
             runtime.visualAuthorityAvailable &&
             runtime.localSkeletonReady) {
             s_physicsCreationRequested.store(true, std::memory_order_release);
@@ -182,7 +176,7 @@ namespace
         const auto worlds = samplePlayerPhysicsWorlds();
         const auto readyDeferralFrames = s_physicsCreationReadyDeferralFrames.load(std::memory_order_acquire);
         const physics_creation_gate_policy::CreationGateInput gateInput{
-            .rockEnabled = g_rockConfig.rockEnabled,
+            .rockEnabled = true,
             .providerAvailable = s_frikAvailable && runtime.visualAuthorityAvailable,
             .skeletonReady = runtime.localSkeletonReady,
             .runtimeMenuBlocking = runtime.localMenuBlocking,
@@ -297,37 +291,22 @@ namespace
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
         });
         const auto& runtime = runtime_state::currentFrame();
-        if (g_rockConfig.rockEnabled &&
-            runtime.localSkeletonReady &&
+        if (runtime.localSkeletonReady &&
             !runtime.compatibilityConfigBlocking) {
             native_wand_visual_suppression::enforce();
         }
         const bool authoredGripCaptureRuntimeEnabled =
-            g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
             !runtime.compatibilityConfigBlocking;
         authored_weapon_grip_capture::setEnabled(
             authoredGripCaptureRuntimeEnabled);
         const bool gameplayInputAllowed =
-            g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
             !runtime.localMenuBlocking &&
             !runtime.compatibilityConfigBlocking;
         input_remap_runtime::setWeaponDrawn(runtime.weaponDrawn);
         input_remap_runtime::setGameplayInputAllowed(gameplayInputAllowed);
         debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
-
-        if (!g_rockConfig.rockEnabled) {
-            authored_weapon_grip_capture::setEnabled(false);
-            pipboy_equip_runtime::setLeftHandEquipAvailable(false);
-            s_physicsCreationRequested.store(false, std::memory_order_release);
-            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
-            resetPhysicsCreationGate();
-            if (s_physicsInteraction) {
-                destroyPhysicsInteraction();
-            }
-            return;
-        }
 
         ensurePhysicsInteractionForReadySkeleton(runtime);
 
@@ -446,7 +425,7 @@ namespace
         std::uint8_t nativeScopeFlags = 0;
         const bool nativeForceDecision = rock::native_memory::tryReadField(player, rock::offsets::kPlayerCharacter_NativeScopeFlags, nativeScopeFlags) &&
             (nativeScopeFlags & rock::offsets::kPlayerCharacter_NativeScopeForceDecisionMask) != 0;
-        if (!nativeForceDecision && s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled) {
+        if (!nativeForceDecision && s_pluginLoaded && s_frikAvailable) {
             // The native geometry callback remains installed only as the
             // verified transition boundary. ROCK deliberately discards its
             // cone result and feeds the held firing-hand button level instead.
@@ -485,7 +464,7 @@ namespace
 
         std::uint64_t targetWeaponGenerationKey = 0;
         std::uint32_t targetOverlayIndex = 0;
-        const bool targetAvailable = s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
+        const bool targetAvailable = s_pluginLoaded && s_frikAvailable &&
             s_physicsInteraction &&
             s_physicsInteraction->tryGetManualScopeDirectTransitionTarget(targetWeaponGenerationKey, targetOverlayIndex);
         const bool requested = targetAvailable &&
@@ -592,7 +571,7 @@ namespace
             rock::provider::RockProviderAnimationPhaseV1::BeforeRock,
             frameTiming);
 
-        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
+        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
 
@@ -605,7 +584,7 @@ namespace
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::AfterRock,
             frameTiming);
-        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
+        if (s_pluginLoaded && s_frikAvailable &&
             s_physicsInteraction) {
             s_physicsInteraction->
                 finalizeGunstockPresentationAfterNativeAnimation();
@@ -651,12 +630,7 @@ namespace
                 logger::error(
                     "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
             }
-            authored_weapon_grip_capture::setEnabled(
-                g_rockConfig.rockEnabled);
-            if (!g_rockConfig.rockEnabled) {
-                logger::info("ROCK: Physics disabled in config, skipping creation.");
-                break;
-            }
+            authored_weapon_grip_capture::setEnabled(true);
             if (s_physicsInteraction) {
                 logger::warn("ROCK: PhysicsInteraction already exists on kSkeletonReady; deferring recreation to ROCK frame gate.");
             }
@@ -761,7 +735,7 @@ namespace
                     "ROCK: Held-body scene presentation hook is unavailable; native presentation remains unchanged.");
             }
             runtime_state::initialize();
-            logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
+            logger::info("ROCK: Config loaded.");
             rock::input_remap_runtime::installInputRemapHooks();
             rock::debug::Install();
 

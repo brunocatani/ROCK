@@ -55,19 +55,13 @@ namespace rock
         [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
         [[nodiscard]] bool persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
 
-        bool rockEnabled = true;
         bool rockHavokTimingFixEnabled = true;
         float rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
         int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
-        bool rockInputRemapEnabled = true;
-        bool rockSuppressRightGrabGameInput = true;
         bool rockSuppressRightFavoritesGameInput = true;
-        bool rockSuppressNativeReadyWeaponAutoReady = true;
-        bool rockSuppressNativeMeleeThrowGameInput = true;
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
-        bool rockSuppressNativeVans = false;
         bool rockSuppressPipboyGameInputWhileHolding = true;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
@@ -189,16 +183,6 @@ namespace rock
          * bodies are solver-clipped by static world surfaces and drive the
          * rendered hand through one-way visual authority.
          */
-        bool rockHandDynamicInteractionsEnabled = true;
-        bool rockHandCollisionSurfaceFingerResponseEnabled = true;
-        float rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = 0.10f;
-        float rockHandCollisionSurfaceFingerResponseGain = 1.0f;
-        float rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = 0.85f;
-        float rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
-        float rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = 0.10f;
-        float rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
-        float rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
-
         bool rockNativeMeleeSuppressionEnabled = true;
         bool rockNativeMeleeFullSuppression = true;
         bool rockNativeMeleeSuppressWeaponSwing = true;

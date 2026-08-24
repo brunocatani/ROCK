@@ -81,13 +81,13 @@ Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY\s*=\s*51' `
     'The dynamic weapon proxy must retain its dedicated layer-51 row.'
 Require-Pattern $layers `
-    'isDynamicWeaponProxyObstacleLayer\(std::uint32_t layer\)[\s\S]*isWorldSurfaceLayer\(layer\)[\s\S]*isDynamicWorldCarLayer\(layer\)[\s\S]*buildRockDynamicWeaponProxyExpectedMask\([\s\S]*interactionsEnabled[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
-    'The dynamic weapon proxy row must retain world/car obstacles and explicitly gate both dynamic hands.'
+    'isDynamicWeaponProxySolverObstacleLayer\([\s\S]*isDynamicWeaponProxyObstacleLayer\(layer\)[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY[\s\S]*buildRockDynamicWeaponProxyExpectedMask\(\)' `
+    'The dynamic weapon proxy row must retain world/car obstacles and both dynamic hands.'
 Require-Pattern $layers `
     'buildRockDynamicWorldCarExpectedMask[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)[\s\S]*withLayer\(mask, FO4_LAYER_CHARCONTROLLER\)' `
     'Tagged car rows must symmetrically admit both hands and the dynamic weapon without exposing generated gameplay colliders.'
 Require-Pattern $layers `
-    'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\([\s\S]*dynamicHandInteractionsEnabled' `
+    'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\(matrix\)' `
     'Layer 51 must be registered with the other generated collision rows.'
 
 # World contact remains exactly one dynamic body whose child instances follow

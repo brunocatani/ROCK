@@ -468,7 +468,6 @@ namespace rock
         bool _transitionCollisionSuppressed = false;
         std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
         std::array<bool, 2> _weaponOwnershipCollisionSuppressed{};
-        std::atomic<bool> _dynamicInteractionsEnabledAtomic{ false };
         std::atomic<std::uint32_t> _desiredWeaponBodyIdAtomic{
             hand_semantic_contact_state::kInvalidBodyId
         };

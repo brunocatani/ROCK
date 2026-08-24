@@ -5689,10 +5689,8 @@ namespace rock::provider
             s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
 
         const auto& runtime = runtime_state::currentFrame();
-        if (g_rockConfig.rockEnabled) {
-            context.flags |= static_cast<std::uint32_t>(
-                RockProviderAnimationPhaseContextFlagV1::RockEnabled);
-        }
+        context.flags |= static_cast<std::uint32_t>(
+            RockProviderAnimationPhaseContextFlagV1::RockEnabled);
         if (apiIsProviderReady()) {
             context.flags |= static_cast<std::uint32_t>(
                 RockProviderAnimationPhaseContextFlagV1::ProviderReady);
