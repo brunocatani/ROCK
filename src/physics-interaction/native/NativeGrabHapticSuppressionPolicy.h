@@ -5,6 +5,7 @@
 
 namespace rock::native_grab_haptic_suppression
 {
+    inline constexpr bool kSuppressionEnabled = true;
     inline constexpr char kRolloverRumbleEnabledSetting[] = "bRumbleOnRollover:VRInterface";
     inline constexpr char kHoverRumbleIntensitySetting[] = "fVRInputHoverRumbleIntensity:VRWand";
     inline constexpr char kHoverRumbleDurationSetting[] = "fVRInputHoverRumbleDuration:VRWand";
@@ -21,7 +22,7 @@ namespace rock::native_grab_haptic_suppression
     struct RuntimeInput
     {
         bool rockEnabled{ true };
-        bool suppressionEnabled{ true };
+        bool suppressionEnabled{ kSuppressionEnabled };
     };
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGrabHoverHaptics(RuntimeInput input) noexcept

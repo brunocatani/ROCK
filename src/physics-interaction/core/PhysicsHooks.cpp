@@ -1218,7 +1218,7 @@ namespace rock
          */
         const native_grab_haptic_suppression::RuntimeInput input{
             .rockEnabled = true,
-            .suppressionEnabled = g_rockConfig.rockSuppressNativeGrabHoverHaptics,
+            .suppressionEnabled = native_grab_haptic_suppression::kSuppressionEnabled,
         };
         const bool shouldSuppress = native_grab_haptic_suppression::shouldSuppressNativeGrabHoverHaptics(input);
         const bool shouldRestore = native_grab_haptic_suppression::shouldRestoreNativeGrabHoverHaptics(nativeGrabHapticSuppressionApplied(), input);

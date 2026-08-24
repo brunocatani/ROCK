@@ -99,7 +99,7 @@ namespace rock
             SurfaceMeshAcquisition& outAcquisition)
         {
             outAcquisition = {};
-            if (!g_rockConfig.rockExperimentalSurfaceMeshGrabEnabled) {
+            if (!g_rockConfig.rockSurfaceMeshGrabEnabled) {
                 outAcquisition.failure =
                     surface_mesh_grab_policy::Failure::Disabled;
                 return false;
@@ -143,7 +143,7 @@ namespace rock
                 (std::max)(
                     256,
                     g_rockConfig.
-                        rockExperimentalSurfaceMeshGrabMaxTriangles));
+                        rockSurfaceMeshGrabMaxTriangles));
             constexpr std::uint32_t kMaximumShapes = 256;
             outAcquisition.extraction = extractBoundedSurfaceTriangles(
                 ownerNode,
@@ -193,7 +193,7 @@ namespace rock
                         .meshNormalWorld = meshHit.normal,
                         .maximumProjectionDistanceGameUnits =
                             g_rockConfig.
-                                rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits,
+                                rockSurfaceMeshGrabMaxProjectionDistanceGameUnits,
                         .hasCollisionNormal = hasCollisionNormal,
                         .hasMeshNormal = true,
                     });
@@ -209,7 +209,7 @@ namespace rock
                     (std::max)(
                         64,
                         g_rockConfig.
-                            rockExperimentalSurfaceMeshGrabMaxPatchTriangles));
+                            rockSurfaceMeshGrabMaxPatchTriangles));
                 localPatch = surface_mesh_grab_policy::buildTargetLocalPatch(
                     worldTriangles,
                     targetWorld,
@@ -1214,7 +1214,7 @@ namespace rock
                 return false;
             }
             bool meshPresentationAvailable = false;
-            if (g_rockConfig.rockExperimentalSurfaceMeshGrabEnabled) {
+            if (g_rockConfig.rockSurfaceMeshGrabEnabled) {
                 if (hasContactPoint) {
                     meshPresentationAvailable =
                         tryAcquireSurfaceMeshPresentation(

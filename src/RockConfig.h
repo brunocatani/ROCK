@@ -66,7 +66,6 @@ namespace rock
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
         std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
-        bool rockSuppressNativeGrabHoverHaptics = true;
         bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
@@ -285,10 +284,10 @@ namespace rock
         std::string rockBodyBoneColliderRadiusScaleOverrides = "";
         bool rockHandCollisionStaticWorldEnabled = true;
         bool rockGlobalSurfaceGrabEnabled = true;
-        bool rockExperimentalSurfaceMeshGrabEnabled = false;
-        float rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
-        int rockExperimentalSurfaceMeshGrabMaxTriangles = 20000;
-        int rockExperimentalSurfaceMeshGrabMaxPatchTriangles = 2048;
+        bool rockSurfaceMeshGrabEnabled = false;
+        float rockSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
+        int rockSurfaceMeshGrabMaxTriangles = 20000;
+        int rockSurfaceMeshGrabMaxPatchTriangles = 2048;
         std::string rockHandBoneColliderRadiusScaleOverrides = "";
         std::string rockHandPalmColliderDimensionScaleOverrides = "";
         bool rockHandBoneCollidersRequirePalmAnchor = true;

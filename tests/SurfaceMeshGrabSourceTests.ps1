@@ -22,32 +22,35 @@ function Require-Text {
 }
 
 Require-Text 'src/RockConfig.h' `
-    'rockExperimentalSurfaceMeshGrabEnabled\s*=\s*false' `
-    'The mesh-authoritative surface grab must remain experimental and default off.'
+    'rockSurfaceMeshGrabEnabled\s*=\s*false' `
+    'The mesh-authoritative surface grab must default off.'
 Require-Text 'src/RockConfig.cpp' `
-    'GetBoolValue\(\s*EXPERIMENTAL_SECTION,\s*"bExperimentalSurfaceMeshGrabEnabled"[\s\S]*rockExperimentalSurfaceMeshGrabEnabled' `
-    'The experimental toggle must load exclusively from [Experimental].'
+    'GetBoolValue\(\s*SECTION,\s*"bSurfaceMeshGrabEnabled"[\s\S]*rockSurfaceMeshGrabEnabled' `
+    'The surface mesh toggle must load from [PhysicsInteraction].'
 Require-Text 'src/RockConfig.cpp' `
-    'rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits[\s\S]*std::clamp[\s\S]*1\.0f[\s\S]*128\.0f' `
+    'rockSurfaceMeshGrabMaxProjectionDistanceGameUnits[\s\S]*std::clamp[\s\S]*1\.0f[\s\S]*128\.0f' `
     'The shell-to-mesh projection distance must be bounded.'
 
 foreach ($configPath in @('data/config/ROCK_example.ini')) {
     $text = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
-    $experimentalMatch = [regex]::Match(
+    $physicsMatch = [regex]::Match(
         $text,
-        '(?ms)^\[Experimental\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
-    if (!$experimentalMatch.Success) {
-        $failures.Add("$configPath`: Missing [Experimental] section.")
+        '(?ms)^\[PhysicsInteraction\]\s*(?<body>.*?)(?=^\[[^\]]+\]|\z)')
+    if (!$physicsMatch.Success) {
+        $failures.Add("$configPath`: Missing [PhysicsInteraction] section.")
         continue
     }
-    $experimentalBody = $experimentalMatch.Groups['body'].Value
-    if ($experimentalBody -notmatch
-        '(?m)^bExperimentalSurfaceMeshGrabEnabled\s*=\s*false\s*$') {
-        $failures.Add("$configPath`: Mesh-grab toggle must default off under [Experimental].")
+    $physicsBody = $physicsMatch.Groups['body'].Value
+    if ($physicsBody -notmatch
+        '(?m)^bSurfaceMeshGrabEnabled\s*=\s*false\s*$') {
+        $failures.Add("$configPath`: Mesh-grab toggle must default off under [PhysicsInteraction].")
     }
-    if ($experimentalBody -notmatch
-        '(?m)^iExperimentalSurfaceMeshGrabMaxTriangles\s*=\s*20000\s*$') {
-        $failures.Add("$configPath`: Mesh-grab triangle budget must be under [Experimental].")
+    if ($physicsBody -notmatch
+        '(?m)^iSurfaceMeshGrabMaxTriangles\s*=\s*20000\s*$') {
+        $failures.Add("$configPath`: Mesh-grab triangle budget must be under [PhysicsInteraction].")
+    }
+    if ($text -match '(?m)^\[Experimental\]\s*$|ExperimentalSurfaceMesh') {
+        $failures.Add("$configPath`: Retired experimental surface-grab names must stay removed.")
     }
 }
 
@@ -64,8 +67,8 @@ Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
     'isSurfaceLatchMeshAuthoritative\(isLeft\)[\s\S]*contactPoint\s*=\s*meshAcquisition\.presentation\.meshAnchorWorld' `
     'The API contact point must become the mesh hit only after mesh authority is accepted.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
-    'rockExperimentalSurfaceMeshGrabEnabled[\s\S]*surfaceGripMode\s*=[\s\S]*CollisionFallback' `
-    'An enabled experiment must report collision fallback when mesh acquisition is unavailable.'
+    'rockSurfaceMeshGrabEnabled[\s\S]*surfaceGripMode\s*=[\s\S]*CollisionFallback' `
+    'An enabled mesh-authoritative grab must report collision fallback when mesh acquisition is unavailable.'
 
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'candidate\.lastHandWorld\s*=\s*meshPresentationRequested[\s\S]*presentation->handWorld[\s\S]*candidate\.lastProxyWorld\[bodyIndex\]\s*=\s*proxyWorld' `
