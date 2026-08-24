@@ -478,7 +478,7 @@ namespace rock
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
-        struct OmodCoverageAuditResult
+        struct OmodReconciliationResult
         {
             bool ran{ false };
             bool sceneEnriched{ false };
@@ -535,7 +535,7 @@ namespace rock
         void clearWeaponEmitterSnapshot();
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
-        OmodCoverageAuditResult maybeRunWeaponOmodCoverageAudit(
+        OmodReconciliationResult maybeRunWeaponOmodReconciliation(
             RE::NiAVObject* weaponNode,
             std::uint64_t auditedEquippedKey,
             bool forceBeforeInitialBuild = false);
@@ -668,18 +668,17 @@ namespace rock
         // Debug OMOD evidence dump fires once per weapon generation key.
         std::uint64_t _lastOmodDumpGenerationKey{ 0 };
         /*
-         * Post-build OMOD coverage audit cadence (bDebugWeaponOmodCoverageAudit).
-         * Unlike the one-shot build-time dump, the audit re-observes the live
-         * scene graphs seconds after publication to catch part models that the
-         * engine attaches after ROCK's build window has closed.
+         * Functional OMOD reconciliation runs before initial collider capture
+         * and once after publication. Coverage diagnostics may repeat on their
+         * configured interval without owning self-heal scheduling.
          */
-        std::uint64_t _omodCoverageAuditBodySetKey{ 0 };
-        int _omodCoverageAuditFrameCounter{ 0 };
-        std::uint32_t _omodCoverageAuditRunIndex{ 0 };
-        // Run the mutating pre-build audit once for an exact equipped identity
-        // and assembled root; the later cadence remains a safety net.
-        std::uint64_t _omodPrebuildAuditEquippedKey{ 0 };
-        RE::NiAVObject* _omodPrebuildAuditRoot{ nullptr };
+        std::uint64_t _omodReconciliationBodySetKey{ 0 };
+        int _omodReconciliationFrameCounter{ 0 };
+        std::uint32_t _omodReconciliationRunIndex{ 0 };
+        // Cache only a non-mutating pre-build pass for an exact equipped
+        // identity and assembled root.
+        std::uint64_t _omodPrebuildReconciliationEquippedKey{ 0 };
+        RE::NiAVObject* _omodPrebuildReconciliationRoot{ nullptr };
         /*
          * Self-heal attempts are keyed by (weapon instance node address ^
          * OMOD formID): the same assembled tree is never retried (a failed or

@@ -4553,8 +4553,8 @@ namespace rock
         _observedEquippedWeaponOwnershipKey = 0;
         _observedEquippedWeaponFormID = 0;
         _observedEquippedWeaponInstanceContentKey = 0;
-        _omodPrebuildAuditEquippedKey = 0;
-        _omodPrebuildAuditRoot = nullptr;
+        _omodPrebuildReconciliationEquippedKey = 0;
+        _omodPrebuildReconciliationRoot = nullptr;
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -4591,8 +4591,8 @@ namespace rock
         _observedEquippedWeaponOwnershipKey = 0;
         _observedEquippedWeaponFormID = 0;
         _observedEquippedWeaponInstanceContentKey = 0;
-        _omodPrebuildAuditEquippedKey = 0;
-        _omodPrebuildAuditRoot = nullptr;
+        _omodPrebuildReconciliationEquippedKey = 0;
+        _omodPrebuildReconciliationRoot = nullptr;
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -4673,8 +4673,8 @@ namespace rock
             _driveRebuildRequested.store(false, std::memory_order_release);
             _workbenchExitRebuildRequested.store(false, std::memory_order_release);
             _driveFailureCount.store(0, std::memory_order_release);
-            _omodPrebuildAuditEquippedKey = 0;
-            _omodPrebuildAuditRoot = nullptr;
+            _omodPrebuildReconciliationEquippedKey = 0;
+            _omodPrebuildReconciliationRoot = nullptr;
             clearWeaponEmitterSnapshot();
         };
 
@@ -4829,12 +4829,13 @@ namespace rock
             const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, visualKeyStats);
             const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _cachedWeaponVisualKey;
             const bool generationDrivenRebuild = keyChanged || missingBodies;
-            const bool omodPrebuildAuditCurrent =
-                _omodPrebuildAuditEquippedKey == observedKey && _omodPrebuildAuditRoot == weaponNode;
-            if (generationDrivenRebuild && !omodPrebuildAuditCurrent &&
-                g_rockConfig.rockDebugWeaponOmodCoverageAudit && g_rockConfig.rockDebugWeaponOmodSelfHeal) {
-                const auto auditResult = maybeRunWeaponOmodCoverageAudit(weaponNode, observedKey, true);
-                if (auditResult.sceneEnriched) {
+            const bool omodPrebuildReconciliationCurrent =
+                _omodPrebuildReconciliationEquippedKey == observedKey &&
+                _omodPrebuildReconciliationRoot == weaponNode;
+            if (generationDrivenRebuild && !omodPrebuildReconciliationCurrent &&
+                g_rockConfig.rockWeaponOmodSelfHealEnabled) {
+                const auto reconciliation = maybeRunWeaponOmodReconciliation(weaponNode, observedKey, true);
+                if (reconciliation.sceneEnriched) {
                     /*
                      * TryAttach3DRecurse mutates the assembled tree. Let the
                      * engine settle transforms once, then run the unchanged
@@ -4846,12 +4847,12 @@ namespace rock
                         observedKey);
                     return;
                 }
-                if (auditResult.ran) {
+                if (reconciliation.ran) {
                     // Cache only a non-mutating pass. A successful attachment
                     // must be followed by another pre-build pass so batches
-                    // larger than the per-audit cap fully converge.
-                    _omodPrebuildAuditEquippedKey = observedKey;
-                    _omodPrebuildAuditRoot = weaponNode;
+                    // larger than the per-pass cap fully converge.
+                    _omodPrebuildReconciliationEquippedKey = observedKey;
+                    _omodPrebuildReconciliationRoot = weaponNode;
                 }
             }
             const float requiredStableSeconds = (std::max)(0.0f, g_rockConfig.rockWeaponCollisionVisualStabilizationSeconds);
@@ -5106,7 +5107,7 @@ namespace rock
             }
         }
 
-        maybeRunWeaponOmodCoverageAudit(weaponNode, observedKey);
+        maybeRunWeaponOmodReconciliation(weaponNode, observedKey);
     }
 
 
@@ -6264,8 +6265,8 @@ namespace rock
         _observedEquippedWeaponOwnershipKey = 0;
         _observedEquippedWeaponFormID = 0;
         _observedEquippedWeaponInstanceContentKey = 0;
-        _omodPrebuildAuditEquippedKey = 0;
-        _omodPrebuildAuditRoot = nullptr;
+        _omodPrebuildReconciliationEquippedKey = 0;
+        _omodPrebuildReconciliationRoot = nullptr;
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
@@ -7834,25 +7835,19 @@ namespace rock
     }
 
     /*
-     * Periodic research audit (gated on bDebugWeaponOmodCoverageAudit) that
-     * re-diffs record truth against the live scene graphs while a generated
-     * weapon body set is active. The build-time OMOD-DUMP can only show what
-     * the tree looked like when the body set was published; this audit exists
-     * to catch the missing-part failure where the engine attaches an OMOD's
-     * model subtree after ROCK's build window closed and nothing ever looks
-     * again. Per installed OMOD it reports whether a node matching the model
-     * NIF exists under any audited root, whether it is visible, and whether
-     * any generated collider evidence source lives beneath it; the P-* census
-     * covers parts whose mesh names do not contain the model basename. The
-     * visual-key drift line on each audit is the decisive signal: drift=YES
-     * with an unchanged body set means geometry arrived or changed after the
-     * build and current triggers never rescanned it.
+     * Reconcile installed OMOD records against the assembled scene graph before
+     * collider capture and once after publication. Self-heal owns these
+     * functional passes. bDebugWeaponOmodCoverageAudit independently enables
+     * verbose evidence logging and repeated diagnostic passes.
      */
-    WeaponCollision::OmodCoverageAuditResult WeaponCollision::maybeRunWeaponOmodCoverageAudit(
+    WeaponCollision::OmodReconciliationResult WeaponCollision::maybeRunWeaponOmodReconciliation(
         RE::NiAVObject* weaponNode, std::uint64_t auditedEquippedKey, bool forceBeforeInitialBuild)
     {
-        OmodCoverageAuditResult result{};
-        if (!g_rockConfig.rockDebugWeaponOmodCoverageAudit) {
+        OmodReconciliationResult result{};
+        const bool emitCoverageDiagnostics = g_rockConfig.rockDebugWeaponOmodCoverageAudit;
+        const bool selfHealEnabled = g_rockConfig.rockWeaponOmodSelfHealEnabled;
+        if ((!forceBeforeInitialBuild && !emitCoverageDiagnostics && !selfHealEnabled) ||
+            (forceBeforeInitialBuild && !selfHealEnabled)) {
             return result;
         }
         if (!weaponNode || auditedEquippedKey == 0 ||
@@ -7860,21 +7855,31 @@ namespace rock
             return result;
         }
 
-        if (!forceBeforeInitialBuild && _omodCoverageAuditBodySetKey != _cachedWeaponBodySetKey) {
-            _omodCoverageAuditBodySetKey = _cachedWeaponBodySetKey;
-            _omodCoverageAuditFrameCounter = 0;
-            _omodCoverageAuditRunIndex = 0;
+        if (!forceBeforeInitialBuild && _omodReconciliationBodySetKey != _cachedWeaponBodySetKey) {
+            _omodReconciliationBodySetKey = _cachedWeaponBodySetKey;
+            _omodReconciliationFrameCounter = 0;
+            _omodReconciliationRunIndex = 0;
         }
 
-        const int intervalFrames = (std::max)(30, g_rockConfig.rockDebugWeaponOmodCoverageAuditIntervalFrames);
-        // First audit fires ~1s after publication so late model streaming is
-        // observed quickly; later audits repeat at the configured interval.
-        const int dueFrames = _omodCoverageAuditRunIndex == 0 ? (std::min)(90, intervalFrames) : intervalFrames;
-        if (!forceBeforeInitialBuild && ++_omodCoverageAuditFrameCounter < dueFrames) {
+        const int diagnosticIntervalFrames =
+            (std::max)(30, g_rockConfig.rockDebugWeaponOmodCoverageAuditIntervalFrames);
+        constexpr int kPostBuildSelfHealCheckFrames = 90;
+        // Self-heal owns one fixed post-build check. Coverage diagnostics may
+        // continue at their configured interval after that functional pass.
+        if (!forceBeforeInitialBuild && !emitCoverageDiagnostics &&
+            _omodReconciliationRunIndex != 0) {
             return result;
         }
-        _omodCoverageAuditFrameCounter = 0;
-        const std::uint32_t runIndex = _omodCoverageAuditRunIndex++;
+        const int dueFrames = _omodReconciliationRunIndex == 0 ?
+            (emitCoverageDiagnostics ?
+                    (std::min)(kPostBuildSelfHealCheckFrames, diagnosticIntervalFrames) :
+                    kPostBuildSelfHealCheckFrames) :
+            diagnosticIntervalFrames;
+        if (!forceBeforeInitialBuild && ++_omodReconciliationFrameCounter < dueFrames) {
+            return result;
+        }
+        _omodReconciliationFrameCounter = 0;
+        const std::uint32_t runIndex = _omodReconciliationRunIndex++;
         result.ran = true;
 
         auto* player = f4vr::getPlayer();
@@ -7882,34 +7887,39 @@ namespace rock
         auto* weaponForm = equipData ? equipData->item.object : nullptr;
         auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
 
-        WeaponVisualKeyStats visualStatsNow{};
-        const std::uint64_t visualKeyNow = getWeaponVisualCompositionKey(weaponNode, visualStatsNow);
-        const bool visualDrift = visualKeyNow != 0 && _cachedWeaponVisualKey != 0 && visualKeyNow != _cachedWeaponVisualKey;
-
-        const RE::NiAVObject* rootHiddenAncestor = findOmodAuditHiddenAncestor(weaponNode);
-        const RE::NiPoint3 cameraPosition = f4vr::getCameraPosition();
-        ROCK_LOG_INFO(Weapon,
-            "OMOD-AUDIT begin run={} bodySetKey={:016X} weapon={:08X} '{}' bodies={} visualKeyNow={:016X} visualKeyAtBuild={:016X} drift={} visibleTriShapes={} nodes={} invisibleNodes={} rootVisible={} rootHiddenAncestor='{}' rootWorldT=({:.2f},{:.2f},{:.2f}) rootWorldScale={:.3f} cameraT=({:.2f},{:.2f},{:.2f})",
-            runIndex,
-            _cachedWeaponBodySetKey,
-            weaponForm ? weaponForm->formID : 0u,
-            weaponForm ? RE::TESFullName::GetFullName(*weaponForm) : std::string_view{},
-            getWeaponBodyCount(),
-            visualKeyNow,
-            _cachedWeaponVisualKey,
-            visualDrift ? "YES" : "no",
-            visualStatsNow.visibleTriShapeCount,
-            visualStatsNow.nodeCount,
-            visualStatsNow.invisibleNodeCount,
-            weaponVisualNodeVisible(weaponNode) ? "yes" : "no",
-            rootHiddenAncestor ? safeNodeName(const_cast<RE::NiAVObject*>(rootHiddenAncestor)) : "none",
-            weaponNode->world.translate.x,
-            weaponNode->world.translate.y,
-            weaponNode->world.translate.z,
-            weaponNode->world.scale,
-            cameraPosition.x,
-            cameraPosition.y,
-            cameraPosition.z);
+        if (emitCoverageDiagnostics) {
+            WeaponVisualKeyStats visualStatsNow{};
+            const std::uint64_t visualKeyNow =
+                getWeaponVisualCompositionKey(weaponNode, visualStatsNow);
+            const bool visualDrift = visualKeyNow != 0 &&
+                _cachedWeaponVisualKey != 0 &&
+                visualKeyNow != _cachedWeaponVisualKey;
+            const RE::NiAVObject* rootHiddenAncestor =
+                findOmodAuditHiddenAncestor(weaponNode);
+            const RE::NiPoint3 cameraPosition = f4vr::getCameraPosition();
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-AUDIT begin run={} bodySetKey={:016X} weapon={:08X} '{}' bodies={} visualKeyNow={:016X} visualKeyAtBuild={:016X} drift={} visibleTriShapes={} nodes={} invisibleNodes={} rootVisible={} rootHiddenAncestor='{}' rootWorldT=({:.2f},{:.2f},{:.2f}) rootWorldScale={:.3f} cameraT=({:.2f},{:.2f},{:.2f})",
+                runIndex,
+                _cachedWeaponBodySetKey,
+                weaponForm ? weaponForm->formID : 0u,
+                weaponForm ? RE::TESFullName::GetFullName(*weaponForm) : std::string_view{},
+                getWeaponBodyCount(),
+                visualKeyNow,
+                _cachedWeaponVisualKey,
+                visualDrift ? "YES" : "no",
+                visualStatsNow.visibleTriShapeCount,
+                visualStatsNow.nodeCount,
+                visualStatsNow.invisibleNodeCount,
+                weaponVisualNodeVisible(weaponNode) ? "yes" : "no",
+                rootHiddenAncestor ? safeNodeName(const_cast<RE::NiAVObject*>(rootHiddenAncestor)) : "none",
+                weaponNode->world.translate.x,
+                weaponNode->world.translate.y,
+                weaponNode->world.translate.z,
+                weaponNode->world.scale,
+                cameraPosition.x,
+                cameraPosition.y,
+                cameraPosition.z);
+        }
 
         /*
          * Stored sourceNode pointers are compared by address during tree walks
@@ -7936,7 +7946,7 @@ namespace rock
                     ++bodiesByAttachPointFormId[instance.semantic.attachPointFormId];
                 }
             }
-        } else if (hasWeaponBody()) {
+        } else if (emitCoverageDiagnostics && hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon,
                 "OMOD-AUDIT run={} ignoring published body evidence from a different equipped generation auditedKey={:016X} publishedKey={:016X} bodySetKey={:016X}",
                 runIndex,
@@ -7969,11 +7979,11 @@ namespace rock
                 }
                 records.push_back(std::move(record));
             }
-        } else {
+        } else if (emitCoverageDiagnostics) {
             ROCK_LOG_INFO(Weapon, "OMOD-AUDIT run={} no object instance extra available", runIndex);
         }
 
-        if (g_rockConfig.rockDebugWeaponOmodSelfHeal) {
+        if (selfHealEnabled) {
             std::unordered_set<std::uint32_t> activeOmodFormIds;
             activeOmodFormIds.reserve(records.size());
             for (const auto& record : records) {
@@ -7985,7 +7995,7 @@ namespace rock
                 removeStaleRockOmodEnrichmentContainers(weaponNode, activeOmodFormIds);
             if (staleEnrichmentCount != 0) {
                 ROCK_LOG_INFO(Weapon,
-                    "OMOD-AUDIT run={} removed {} stale ROCK-owned enrichment container(s); requesting collider rebuild",
+                    "OMOD-HEAL run={} removed {} stale ROCK-owned enrichment container(s); requesting collider rebuild",
                     runIndex,
                     staleEnrichmentCount);
                 requestWorkbenchExitRebuild();
@@ -8106,26 +8116,32 @@ namespace rock
                     const char* who = firstPerson ? "1st" : "3rd";
                     RE::NiAVObject* actor3D = get3D ? get3D(player, firstPerson) : nullptr;
                     RE::NiAVObject* actor3DRoot = climbToAbsoluteRoot(actor3D);
-                    ROCK_LOG_INFO(Weapon,
-                        "OMOD-AUDIT biped probe person={} get3D={:x} name='{}' absRoot='{}'/{:x}",
-                        who,
-                        reinterpret_cast<std::uintptr_t>(actor3D),
-                        actor3D ? safeNodeName(actor3D) : "null",
-                        actor3DRoot ? safeNodeName(actor3DRoot) : "null",
-                        reinterpret_cast<std::uintptr_t>(actor3DRoot));
+                    if (emitCoverageDiagnostics) {
+                        ROCK_LOG_INFO(Weapon,
+                            "OMOD-AUDIT biped probe person={} get3D={:x} name='{}' absRoot='{}'/{:x}",
+                            who,
+                            reinterpret_cast<std::uintptr_t>(actor3D),
+                            actor3D ? safeNodeName(actor3D) : "null",
+                            actor3DRoot ? safeNodeName(actor3DRoot) : "null",
+                            reinterpret_cast<std::uintptr_t>(actor3DRoot));
+                    }
                     addRoot(firstPerson ? "playerGet3D-1st" : "playerGet3D-3rd", actor3DRoot, kOmodAuditSceneRootMaxVisited);
 
                     void** bipedMember = getBiped ? getBiped(player, firstPerson) : nullptr;
                     void* container = bipedMember && plausiblePointer(bipedMember) ? *bipedMember : nullptr;
                     if (!container || !plausiblePointer(container)) {
-                        ROCK_LOG_INFO(Weapon, "OMOD-AUDIT biped person={} container implausible member={:x} container={:x}",
-                            who, reinterpret_cast<std::uintptr_t>(bipedMember), reinterpret_cast<std::uintptr_t>(container));
+                        if (emitCoverageDiagnostics) {
+                            ROCK_LOG_INFO(Weapon, "OMOD-AUDIT biped person={} container implausible member={:x} container={:x}",
+                                who, reinterpret_cast<std::uintptr_t>(bipedMember), reinterpret_cast<std::uintptr_t>(container));
+                        }
                         continue;
                     }
                     const int refCount = *reinterpret_cast<const int*>(container);
                     if (refCount <= 0 || refCount > 1000000) {
-                        ROCK_LOG_INFO(Weapon, "OMOD-AUDIT biped person={} container={:x} refCount {} implausible - skipping",
-                            who, reinterpret_cast<std::uintptr_t>(container), refCount);
+                        if (emitCoverageDiagnostics) {
+                            ROCK_LOG_INFO(Weapon, "OMOD-AUDIT biped person={} container={:x} refCount {} implausible - skipping",
+                                who, reinterpret_cast<std::uintptr_t>(container), refCount);
+                        }
                         continue;
                     }
                     const auto containerBase = reinterpret_cast<std::uintptr_t>(container);
@@ -8139,18 +8155,20 @@ namespace rock
                         }
                         const bool built3DPlausible = built3D && plausiblePointer(built3D) && plausiblePointer(*reinterpret_cast<void* const*>(built3D));
                         RE::NiAVObject* builtRoot = built3DPlausible ? climbToAbsoluteRoot(built3D) : nullptr;
-                        ROCK_LOG_INFO(Weapon,
-                            "OMOD-AUDIT biped person={} container={:x} slot={} item={:x} itemIsEquippedWeapon={} instanceData={:x} built3D={:x} name='{}' absRoot='{}'/{:x}",
-                            who,
-                            containerBase,
-                            slot,
-                            reinterpret_cast<std::uintptr_t>(item),
-                            item == static_cast<const void*>(weaponForm) ? "YES" : "no",
-                            reinterpret_cast<std::uintptr_t>(instanceData),
-                            reinterpret_cast<std::uintptr_t>(built3D),
-                            built3DPlausible ? safeNodeName(built3D) : "implausible",
-                            builtRoot ? safeNodeName(builtRoot) : "null",
-                            reinterpret_cast<std::uintptr_t>(builtRoot));
+                        if (emitCoverageDiagnostics) {
+                            ROCK_LOG_INFO(Weapon,
+                                "OMOD-AUDIT biped person={} container={:x} slot={} item={:x} itemIsEquippedWeapon={} instanceData={:x} built3D={:x} name='{}' absRoot='{}'/{:x}",
+                                who,
+                                containerBase,
+                                slot,
+                                reinterpret_cast<std::uintptr_t>(item),
+                                item == static_cast<const void*>(weaponForm) ? "YES" : "no",
+                                reinterpret_cast<std::uintptr_t>(instanceData),
+                                reinterpret_cast<std::uintptr_t>(built3D),
+                                built3DPlausible ? safeNodeName(built3D) : "implausible",
+                                builtRoot ? safeNodeName(builtRoot) : "null",
+                                reinterpret_cast<std::uintptr_t>(builtRoot));
+                        }
                         if (built3DPlausible && item == static_cast<const void*>(weaponForm)) {
                             addRoot(firstPerson ? "bipedWeapon3D-1st" : "bipedWeapon3D-3rd", built3D, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
                             addRoot(firstPerson ? "bipedWeapon3DRoot-1st" : "bipedWeapon3DRoot-3rd", builtRoot, kOmodAuditSceneRootMaxVisited);
@@ -8161,37 +8179,41 @@ namespace rock
         }
 
         auto* fpWeaponNode = f4vr::getWeaponNode();
-        ROCK_LOG_INFO(Weapon,
-            "OMOD-AUDIT topology run={} getWeaponNode={:x} fpSkeleton={:x} cameraNode={:x}",
-            runIndex,
-            reinterpret_cast<std::uintptr_t>(fpWeaponNode),
-            reinterpret_cast<std::uintptr_t>(f4vr::getFirstPersonSkeleton()),
-            reinterpret_cast<std::uintptr_t>(playerCamera ? playerCamera->cameraRoot.get() : nullptr));
-        for (const auto& root : roots) {
-            std::uint32_t depth = 0;
-            for (const RE::NiAVObject* node = root.root; node && node->parent && depth < 64; node = node->parent) {
-                ++depth;
-            }
-            RE::NiAVObject* absRoot = climbToAbsoluteRoot(root.root);
+        if (emitCoverageDiagnostics) {
             ROCK_LOG_INFO(Weapon,
-                "OMOD-AUDIT topology root='{}' addr={:x} name='{}' depth={} absRoot='{}' absAddr={:x}",
-                root.label,
-                reinterpret_cast<std::uintptr_t>(root.root),
-                safeNodeName(root.root),
-                depth,
-                safeNodeName(absRoot),
-                reinterpret_cast<std::uintptr_t>(absRoot));
+                "OMOD-AUDIT topology run={} getWeaponNode={:x} fpSkeleton={:x} cameraNode={:x}",
+                runIndex,
+                reinterpret_cast<std::uintptr_t>(fpWeaponNode),
+                reinterpret_cast<std::uintptr_t>(f4vr::getFirstPersonSkeleton()),
+                reinterpret_cast<std::uintptr_t>(playerCamera ? playerCamera->cameraRoot.get() : nullptr));
+            for (const auto& root : roots) {
+                std::uint32_t depth = 0;
+                for (const RE::NiAVObject* node = root.root; node && node->parent && depth < 64; node = node->parent) {
+                    ++depth;
+                }
+                RE::NiAVObject* absRoot = climbToAbsoluteRoot(root.root);
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-AUDIT topology root='{}' addr={:x} name='{}' depth={} absRoot='{}' absAddr={:x}",
+                    root.label,
+                    reinterpret_cast<std::uintptr_t>(root.root),
+                    safeNodeName(root.root),
+                    depth,
+                    safeNodeName(absRoot),
+                    reinterpret_cast<std::uintptr_t>(absRoot));
+            }
         }
 
         for (const auto& root : roots) {
             std::size_t visited = 0;
             scanOmodAuditTreeRecursive(root.root, 0, visited, root.maxVisited, root.label, tokenSlots, connectPointMatches);
-            ROCK_LOG_INFO(Weapon,
-                "OMOD-AUDIT scan root='{}' addr={:x} visitedNodes={} capHit={}",
-                root.label,
-                reinterpret_cast<std::uintptr_t>(root.root),
-                visited,
-                visited >= root.maxVisited ? "YES" : "no");
+            if (emitCoverageDiagnostics) {
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-AUDIT scan root='{}' addr={:x} visitedNodes={} capHit={}",
+                    root.label,
+                    reinterpret_cast<std::uintptr_t>(root.root),
+                    visited,
+                    visited >= root.maxVisited ? "YES" : "no");
+            }
         }
 
         std::vector<std::size_t> selfHealCandidates;
@@ -8218,7 +8240,8 @@ namespace rock
                 evidenceUnderMatches += evidenceSources;
                 const bool matchVisible = weaponVisualNodeVisible(match.node);
                 anyMatchVisible = anyMatchVisible || matchVisible || stats.visibleTriShapeCount > 0;
-                if (loggedMatches < OMOD_AUDIT_MAX_LOGGED_MATCHES_PER_OMOD) {
+                if (emitCoverageDiagnostics &&
+                    loggedMatches < OMOD_AUDIT_MAX_LOGGED_MATCHES_PER_OMOD) {
                     ++loggedMatches;
                     ROCK_LOG_INFO(Weapon,
                         "OMOD-AUDIT match omod={:08X} root='{}' path='{}' addr={:x} visible={} flags=0x{:X} appCulled={} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={}",
@@ -8251,71 +8274,40 @@ namespace rock
             if (coverageDecision.selfHealCandidate) {
                 selfHealCandidates.push_back(i);
             }
-            const char* verdict = weapon_omod_audit_policy::coverageVerdictName(coverageDecision.verdict);
-
-            ROCK_LOG_INFO(Weapon,
-                "OMOD-AUDIT omod={:08X} '{}' index={} rank={} disabled={} attachPoint={:08X} attachPointIndex={} model='{}' token='{}' pairedBodies={} nodeMatches={} evidenceUnderMatches={} verdict={}",
-                record.formId,
-                record.name,
-                record.modIndex,
-                record.rank,
-                record.disabled,
-                record.attachPointFormId,
-                record.attachPointIndex,
-                record.modelPath,
-                slot.lowerToken,
-                pairedBodies,
-                slot.matches.size(),
-                evidenceUnderMatches,
-                verdict);
+            if (emitCoverageDiagnostics) {
+                const char* verdict =
+                    weapon_omod_audit_policy::coverageVerdictName(coverageDecision.verdict);
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-AUDIT omod={:08X} '{}' index={} rank={} disabled={} attachPoint={:08X} attachPointIndex={} model='{}' token='{}' pairedBodies={} nodeMatches={} evidenceUnderMatches={} verdict={}",
+                    record.formId,
+                    record.name,
+                    record.modIndex,
+                    record.rank,
+                    record.disabled,
+                    record.attachPointFormId,
+                    record.attachPointIndex,
+                    record.modelPath,
+                    slot.lowerToken,
+                    pairedBodies,
+                    slot.matches.size(),
+                    evidenceUnderMatches,
+                    verdict);
+            }
         }
 
-        for (const auto& match : connectPointMatches) {
-            const auto stats = summarizeWeaponAnimNodeSubtree(match.node);
-            std::size_t evidenceVisited = 0;
-            const std::size_t evidenceSources =
-                countOmodAuditEvidenceSourcesInSubtree(match.node, evidenceSourceAddresses, evidenceVisited);
-            ROCK_LOG_INFO(Weapon,
-                "OMOD-AUDIT pnode name='{}' root='{}' path='{}' addr={:x} visible={} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
-                safeNodeName(match.node),
-                match.rootLabel,
-                buildOmodAuditNodePath(match.node),
-                reinterpret_cast<std::uintptr_t>(match.node),
-                weaponVisualNodeVisible(match.node) ? "yes" : "no",
-                stats.nodeCount,
-                stats.triShapeCount,
-                stats.visibleTriShapeCount,
-                stats.hiddenFlagCount,
-                stats.appCulledCount,
-                evidenceSources,
-                weaponAnimNodeImmediateChildNames(match.node));
-        }
-
-        std::size_t weaponInstanceCount = 0;
-        if (weaponForm && tokenSlots.size() > records.size()) {
-            const auto& instanceSlot = tokenSlots.back();
-            weaponInstanceCount = instanceSlot.matches.size();
-            for (const auto& match : instanceSlot.matches) {
+        if (emitCoverageDiagnostics) {
+            for (const auto& match : connectPointMatches) {
                 const auto stats = summarizeWeaponAnimNodeSubtree(match.node);
                 std::size_t evidenceVisited = 0;
                 const std::size_t evidenceSources =
                     countOmodAuditEvidenceSourcesInSubtree(match.node, evidenceSourceAddresses, evidenceVisited);
-                const RE::NiAVObject* hiddenAncestor = findOmodAuditHiddenAncestor(match.node);
                 ROCK_LOG_INFO(Weapon,
-                    "OMOD-AUDIT instance name='{}' root='{}' path='{}' addr={:x} visible={} flags=0x{:X} appCulled={} hiddenAncestor='{}' worldT=({:.2f},{:.2f},{:.2f}) worldScale={:.3f} localScale={:.3f} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
+                    "OMOD-AUDIT pnode name='{}' root='{}' path='{}' addr={:x} visible={} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
                     safeNodeName(match.node),
                     match.rootLabel,
                     buildOmodAuditNodePath(match.node),
                     reinterpret_cast<std::uintptr_t>(match.node),
                     weaponVisualNodeVisible(match.node) ? "yes" : "no",
-                    static_cast<std::uint32_t>(match.node->flags.flags),
-                    match.node->GetAppCulled() ? "yes" : "no",
-                    hiddenAncestor ? safeNodeName(const_cast<RE::NiAVObject*>(hiddenAncestor)) : "none",
-                    match.node->world.translate.x,
-                    match.node->world.translate.y,
-                    match.node->world.translate.z,
-                    match.node->world.scale,
-                    match.node->local.scale,
                     stats.nodeCount,
                     stats.triShapeCount,
                     stats.visibleTriShapeCount,
@@ -8323,6 +8315,43 @@ namespace rock
                     stats.appCulledCount,
                     evidenceSources,
                     weaponAnimNodeImmediateChildNames(match.node));
+            }
+        }
+
+        std::size_t weaponInstanceCount = 0;
+        if (weaponForm && tokenSlots.size() > records.size()) {
+            const auto& instanceSlot = tokenSlots.back();
+            weaponInstanceCount = instanceSlot.matches.size();
+            if (emitCoverageDiagnostics) {
+                for (const auto& match : instanceSlot.matches) {
+                    const auto stats = summarizeWeaponAnimNodeSubtree(match.node);
+                    std::size_t evidenceVisited = 0;
+                    const std::size_t evidenceSources =
+                        countOmodAuditEvidenceSourcesInSubtree(match.node, evidenceSourceAddresses, evidenceVisited);
+                    const RE::NiAVObject* hiddenAncestor = findOmodAuditHiddenAncestor(match.node);
+                    ROCK_LOG_INFO(Weapon,
+                        "OMOD-AUDIT instance name='{}' root='{}' path='{}' addr={:x} visible={} flags=0x{:X} appCulled={} hiddenAncestor='{}' worldT=({:.2f},{:.2f},{:.2f}) worldScale={:.3f} localScale={:.3f} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
+                        safeNodeName(match.node),
+                        match.rootLabel,
+                        buildOmodAuditNodePath(match.node),
+                        reinterpret_cast<std::uintptr_t>(match.node),
+                        weaponVisualNodeVisible(match.node) ? "yes" : "no",
+                        static_cast<std::uint32_t>(match.node->flags.flags),
+                        match.node->GetAppCulled() ? "yes" : "no",
+                        hiddenAncestor ? safeNodeName(const_cast<RE::NiAVObject*>(hiddenAncestor)) : "none",
+                        match.node->world.translate.x,
+                        match.node->world.translate.y,
+                        match.node->world.translate.z,
+                        match.node->world.scale,
+                        match.node->local.scale,
+                        stats.nodeCount,
+                        stats.triShapeCount,
+                        stats.visibleTriShapeCount,
+                        stats.hiddenFlagCount,
+                        stats.appCulledCount,
+                        evidenceSources,
+                        weaponAnimNodeImmediateChildNames(match.node));
+                }
             }
         }
 
@@ -8346,51 +8375,53 @@ namespace rock
             { "firstPersonBoneTree", f4vr::getFirstPersonBoneTree() },
         } };
         constexpr std::size_t OMOD_AUDIT_MAX_FLAT_MATCHES = 48;
-        for (const auto& flatRoot : flatRoots) {
-            if (!weaponAnimFlattenedTreeValid(flatRoot.tree)) {
-                continue;
-            }
-            for (int index = 0; index < flatRoot.tree->numTransforms && flatMatchCount < OMOD_AUDIT_MAX_FLAT_MATCHES; ++index) {
-                const auto& transform = flatRoot.tree->transforms[index];
-                const char* boneName = transform.name.c_str();
-                auto* refNode = transform.refNode;
-                const char* refNodeName = safeNodeName(refNode);
-                bool matched = omodAuditNameIsConnectPoint(boneName) || omodAuditNameIsConnectPoint(refNodeName);
-                if (!matched) {
-                    for (const auto& slot : tokenSlots) {
-                        if (slot.lowerToken.empty()) {
-                            continue;
-                        }
-                        if (omodAuditNameContainsToken(boneName, slot.lowerToken) ||
-                            omodAuditNameContainsToken(refNodeName, slot.lowerToken)) {
-                            matched = true;
-                            break;
-                        }
-                    }
-                }
-                if (!matched) {
+        if (emitCoverageDiagnostics) {
+            for (const auto& flatRoot : flatRoots) {
+                if (!weaponAnimFlattenedTreeValid(flatRoot.tree)) {
                     continue;
                 }
-                ++flatMatchCount;
-                ROCK_LOG_INFO(Weapon,
-                    "OMOD-AUDIT flatbone root='{}' index={} name='{}' parentIndex={} parentName='{}' refNode={:x} refNodeName='{}' refParent='{}' refVisible={} worldT=({:.2f},{:.2f},{:.2f})",
-                    flatRoot.label,
-                    index,
-                    boneName && boneName[0] != '\0' ? boneName : "(unnamed)",
-                    transform.parPos,
-                    weaponAnimFlattenedParentName(flatRoot.tree, transform.parPos),
-                    reinterpret_cast<std::uintptr_t>(refNode),
-                    refNodeName,
-                    refNode ? safeNodeName(refNode->parent) : "(null)",
-                    refNode && weaponVisualNodeVisible(refNode) ? "yes" : "no",
-                    transform.world.translate.x,
-                    transform.world.translate.y,
-                    transform.world.translate.z);
+                for (int index = 0; index < flatRoot.tree->numTransforms && flatMatchCount < OMOD_AUDIT_MAX_FLAT_MATCHES; ++index) {
+                    const auto& transform = flatRoot.tree->transforms[index];
+                    const char* boneName = transform.name.c_str();
+                    auto* refNode = transform.refNode;
+                    const char* refNodeName = safeNodeName(refNode);
+                    bool matched = omodAuditNameIsConnectPoint(boneName) || omodAuditNameIsConnectPoint(refNodeName);
+                    if (!matched) {
+                        for (const auto& slot : tokenSlots) {
+                            if (slot.lowerToken.empty()) {
+                                continue;
+                            }
+                            if (omodAuditNameContainsToken(boneName, slot.lowerToken) ||
+                                omodAuditNameContainsToken(refNodeName, slot.lowerToken)) {
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!matched) {
+                        continue;
+                    }
+                    ++flatMatchCount;
+                    ROCK_LOG_INFO(Weapon,
+                        "OMOD-AUDIT flatbone root='{}' index={} name='{}' parentIndex={} parentName='{}' refNode={:x} refNodeName='{}' refParent='{}' refVisible={} worldT=({:.2f},{:.2f},{:.2f})",
+                        flatRoot.label,
+                        index,
+                        boneName && boneName[0] != '\0' ? boneName : "(unnamed)",
+                        transform.parPos,
+                        weaponAnimFlattenedParentName(flatRoot.tree, transform.parPos),
+                        reinterpret_cast<std::uintptr_t>(refNode),
+                        refNodeName,
+                        refNode ? safeNodeName(refNode->parent) : "(null)",
+                        refNode && weaponVisualNodeVisible(refNode) ? "yes" : "no",
+                        transform.world.translate.x,
+                        transform.world.translate.y,
+                        transform.world.translate.z);
+                }
             }
         }
 
         /*
-         * Self-heal (bDebugWeaponOmodSelfHeal): reattach missing OMOD models
+         * Functional self-heal: reattach missing OMOD models
          * with the engine's own primitive. Ghidra-verified (raw disasm +
          * decompiler + address database, refreshed 2026-07-20):
          *   bool BGSMod::Attachment::Mod::TryAttach3DRecurse(
@@ -8413,7 +8444,7 @@ namespace rock
          */
         std::size_t selfHealAttemptCount = 0;
         std::size_t selfHealSuccessCount = 0;
-        if (g_rockConfig.rockDebugWeaponOmodSelfHeal && !selfHealCandidates.empty()) {
+        if (selfHealEnabled && !selfHealCandidates.empty()) {
             RE::NiNode* healTargetNode = nullptr;
             const char* healTargetRootLabel = "";
             if (weaponForm && tokenSlots.size() > records.size()) {
@@ -8441,7 +8472,7 @@ namespace rock
             } else {
                 using TryAttach3DRecurseFn = bool (*)(RE::BGSMod::Attachment::Mod*, RE::NiNode*, const char*, RE::TBO_InstanceData*);
                 static REL::Relocation<TryAttach3DRecurseFn> tryAttach3DRecurse{ REL::Offset(0x2D9140) };
-                constexpr std::size_t OMOD_SELF_HEAL_MAX_PER_AUDIT = 4;
+                constexpr std::size_t OMOD_SELF_HEAL_MAX_PER_RECONCILIATION = 4;
 
                 std::vector<std::size_t> orderedSelfHealCandidates = selfHealCandidates;
                 std::stable_sort(
@@ -8549,7 +8580,7 @@ namespace rock
                     _omodSelfHealAttempted.clear();
                 }
                 for (const std::size_t candidateIndex : orderedSelfHealCandidates) {
-                    if (selfHealAttemptCount >= OMOD_SELF_HEAL_MAX_PER_AUDIT) {
+                    if (selfHealAttemptCount >= OMOD_SELF_HEAL_MAX_PER_RECONCILIATION) {
                         break;
                     }
                     const auto& record = records[candidateIndex];
@@ -8767,17 +8798,19 @@ namespace rock
             }
         }
 
-        ROCK_LOG_INFO(Weapon,
-            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={} flatMatches={} healCandidates={} healAttempted={} healed={}",
-            runIndex,
-            _cachedWeaponBodySetKey,
-            records.size(),
-            connectPointMatches.size(),
-            weaponInstanceCount,
-            flatMatchCount,
-            selfHealCandidates.size(),
-            selfHealAttemptCount,
-            selfHealSuccessCount);
+        if (emitCoverageDiagnostics) {
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={} flatMatches={} healCandidates={} healAttempted={} healed={}",
+                runIndex,
+                _cachedWeaponBodySetKey,
+                records.size(),
+                connectPointMatches.size(),
+                weaponInstanceCount,
+                flatMatchCount,
+                selfHealCandidates.size(),
+                selfHealAttemptCount,
+                selfHealSuccessCount);
+        }
         return result;
     }
 

@@ -404,7 +404,7 @@ namespace rock
         rockDebugWeaponOmodDumpEnabled = false;
         rockDebugWeaponOmodCoverageAudit = false;
         rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
-        rockDebugWeaponOmodSelfHeal = false;
+        rockWeaponOmodSelfHealEnabled = true;
         rockDebugWorkbenchWeaponReattach = false;
         rockDebugHandTransformParity = false;
         rockDebugWorldObjectOriginDiagnostics = false;
@@ -1241,7 +1241,7 @@ namespace rock
         if (rockDebugWeaponOmodCoverageAuditIntervalFrames < 30) {
             rockDebugWeaponOmodCoverageAuditIntervalFrames = 30;
         }
-        rockDebugWeaponOmodSelfHeal = ini.GetBoolValue(SECTION, "bDebugWeaponOmodSelfHeal", rockDebugWeaponOmodSelfHeal);
+        rockWeaponOmodSelfHealEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodSelfHeal", rockWeaponOmodSelfHealEnabled);
         rockDebugWorkbenchWeaponReattach = ini.GetBoolValue(SECTION, "bDebugWorkbenchWeaponReattach", rockDebugWorkbenchWeaponReattach);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
         rockDebugWorldObjectOriginDiagnostics =
