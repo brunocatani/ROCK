@@ -3650,27 +3650,6 @@ namespace rock
             return result;
         }
 
-        /*
-         * Grip-axis tilt is measured FROM the cross-palm axis, and that axis
-         * comes from the non-mirrored authored handspace convention
-         * (HandFrame.h): the live bone transform already carries handedness, so
-         * authored +Z is thumbward on one hand and pinkyward on the other. One
-         * shared tilt therefore rotates the target axis toward the fingers on
-         * one hand and away from them on the other - the config value cannot be
-         * hand-neutral, so the sign follows the hand here.
-         *
-         * Ground truth, 59 user-verified holds captured 2026-07-25, measured in
-         * this exact convention: right-hand rods sit at +34 deg (n=15, IQR
-         * +23..+45), left-hand rods at -29 deg (n=2). Same magnitude, mirrored
-         * sign, which is what this helper encodes.
-         */
-        [[nodiscard]] float gripAxisTiltRadiansForHand(bool isLeft)
-        {
-            const float degrees = isLeft ? -g_rockConfig.rockPullPresentationGripAxisTiltDegrees
-                                         : g_rockConfig.rockPullPresentationGripAxisTiltDegrees;
-            return degrees * 0.01745329252f;
-        }
-
         struct GrabMeshLongAxisResult
         {
             RE::NiPoint3 axisWorld{};
@@ -7320,7 +7299,7 @@ namespace rock
                 arrivalDistance,
                 _pullElapsedSeconds,
                 _pullDurationSeconds,
-                g_rockConfig.rockPullOwnerGraceSeconds);
+                pull_motion_math::kOwnerGraceSeconds);
             for (const auto bodyId : _pulledBodyIds) {
                 physics_recursive_wrappers::activateBody(world, bodyId);
             }
@@ -7348,11 +7327,14 @@ namespace rock
                  * way, so the natural long-object hold tilts a few degrees
                  * toward the fingers-forward X axis (Bruno-tuned via INI).
                  */
-                const float gripAxisTiltRadians = gripAxisTiltRadiansForHand(_isLeft);
-                RE::NiPoint3 targetAxisWorld = normalizeOrZero(
-                    transformHandspaceDirection(handWorldTransform,
-                        RE::NiPoint3{ std::sin(gripAxisTiltRadians), 0.0f, std::cos(gripAxisTiltRadians) },
-                        _isLeft));
+                const RE::NiPoint3 crossPalmWorld =
+                    transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, _isLeft);
+                const RE::NiPoint3 fingerForwardWorld =
+                    transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
+                RE::NiPoint3 targetAxisWorld = grab_three_phase::buildGripPresentationAxisTowardFingertips(
+                    crossPalmWorld,
+                    fingerForwardWorld,
+                    g_rockConfig.rockPullPresentationGripAxisTiltDegrees);
                 if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
                     // The mesh axis has no sign: always rotate toward the nearest hemisphere.
                     if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
@@ -7386,7 +7368,7 @@ namespace rock
                 _pullDriveDecision.includeConnectedAngularVelocity);
         } else {
             setHeldLinearVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok,
-                pull_motion_math::angularVelocityKeepForDamping(g_rockConfig.rockPulledAngularDamping, deltaTime),
+                pull_motion_math::angularVelocityKeepForDamping(pull_motion_math::kAngularDamping, deltaTime),
                 _pullDriveDecision.includeConnectedLinearVelocity);
         }
         for (const auto bodyId : _pulledBodyIds) {
@@ -9804,11 +9786,12 @@ namespace rock
                         RE::NiPoint3 currentSecondAxisWorld = normalizeOrZero(seatLongAxis.secondAxisWorld);
                         if (seatRodShape) {
                             if (seatSwingAlignmentWanted) {
-                                // Same hand-signed thumb-clearance tilt as the flight servo.
-                                const float gripAxisTiltRadians = gripAxisTiltRadiansForHand(_isLeft);
-                                RE::NiPoint3 targetAxisWorld = normalizeOrZero(
-                                    pocket.crossPalmWorld * std::cos(gripAxisTiltRadians) +
-                                    pocket.fingerForwardWorld * std::sin(gripAxisTiltRadians));
+                                // Same hand-neutral, +X-toward-fingertips tilt as the flight servo.
+                                RE::NiPoint3 targetAxisWorld =
+                                    grab_three_phase::buildGripPresentationAxisTowardFingertips(
+                                        pocket.crossPalmWorld,
+                                        pocket.fingerForwardWorld,
+                                        g_rockConfig.rockPullPresentationGripAxisTiltDegrees);
                                 if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
                                     if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
                                         targetAxisWorld = RE::NiPoint3{ -targetAxisWorld.x, -targetAxisWorld.y, -targetAxisWorld.z };

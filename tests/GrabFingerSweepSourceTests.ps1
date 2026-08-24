@@ -314,13 +314,13 @@ foreach ($path in @('data/config/ROCK_example.ini')) {
 }
 
 # The presentation grip axis is not pure cross-palm Z (the thumb occupies that
-# line): both alignment sites must apply the configurable tilt toward X.
+# line): both alignment sites must apply one anatomical magnitude toward +X.
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'std::sin\(gripAxisTiltRadians\), 0\.0f, std::cos\(gripAxisTiltRadians\)' `
-    'The pull-flight presentation servo must use the tilted grip axis.'
+    'buildGripPresentationAxisTowardFingertips\(\s*crossPalmWorld,\s*fingerForwardWorld,\s*g_rockConfig\.rockPullPresentationGripAxisTiltDegrees\)' `
+    'The pull-flight presentation servo must resolve the live signed Z and tilt it toward that hand fingers-forward +X.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'pocket\.crossPalmWorld \* std::cos\(gripAxisTiltRadians\) \+\s*pocket\.fingerForwardWorld \* std::sin\(gripAxisTiltRadians\)' `
-    'The force-grab seat alignment must use the same tilted grip axis.'
+    'buildGripPresentationAxisTowardFingertips\(\s*pocket\.crossPalmWorld,\s*pocket\.fingerForwardWorld,\s*g_rockConfig\.rockPullPresentationGripAxisTiltDegrees\)' `
+    'The force-grab seat alignment must use the same hand-neutral tilted grip axis.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Grab finger sweep source boundary failed:'
