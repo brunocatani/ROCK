@@ -29,9 +29,15 @@ Require-Text 'src/physics-interaction/hand/HandVisual.h' `
     'struct VisualReturnTransition[\s\S]*lastApplied[\s\S]*computeVisualReturnDuration[\s\S]*\(std::max\)\(linearDuration, angularDuration\)[\s\S]*advanceVisualReturn' `
     'The shared return transition must retain its last applied pose and choose the greater translation/rotation duration.'
 
-Require-Text 'src/RockConfig.cpp' `
-    'bWeaponVisualReturnEnabled[\s\S]*fWeaponVisualReturnTimeMin[\s\S]*fWeaponVisualReturnTimeMax[\s\S]*fWeaponVisualReturnMinDistance[\s\S]*fWeaponVisualReturnMaxDistance[\s\S]*fWeaponVisualReturnMinAngleDegrees[\s\S]*fWeaponVisualReturnMaxAngleDegrees' `
-    'Equipped-weapon visual return must have an independently loaded and clamped setting family.'
+Require-Text 'src/physics-interaction/hand/HandVisual.h' `
+    'kEquippedWeaponReturnEnabled\s*=\s*true[\s\S]*kEquippedWeaponReturnConfig[\s\S]*\.minSeconds\s*=\s*0\.12f[\s\S]*\.maxSeconds\s*=\s*0\.20f[\s\S]*\.minDistanceGameUnits\s*=\s*1\.0f[\s\S]*\.maxDistanceGameUnits\s*=\s*14\.0f[\s\S]*\.minAngleDegrees\s*=\s*5\.0f[\s\S]*\.maxAngleDegrees\s*=\s*90\.0f' `
+    'Equipped-weapon visual return must retain its fixed compiled production policy.'
+Reject-Text 'src/RockConfig.h' `
+    'rockWeaponVisualReturn' `
+    'Equipped-weapon visual return must not remain in RockConfig state.'
+Reject-Text 'src/RockConfig.cpp' `
+    'bWeaponVisualReturnEnabled|fWeaponVisualReturn' `
+    'Equipped-weapon visual return must not be parsed from the user INI.'
 Require-Text 'src/RockConfig.cpp' `
     'bGrabHandReturnEnabled[\s\S]*fGrabHandReturnTimeMin[\s\S]*fGrabHandReturnTimeMax[\s\S]*fGrabHandReturnMinDistance[\s\S]*fGrabHandReturnMaxDistance[\s\S]*fGrabHandReturnMinAngleDegrees[\s\S]*fGrabHandReturnMaxAngleDegrees' `
     'Generic grabbed-hand return must have an independently loaded and clamped setting family.'
@@ -82,6 +88,9 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'clearAllVisualReturns\("equipped-weapon-identity-changed"' `
     'Weapon generation or ownership changes must clear the complete visual-return overlay.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'kEquippedWeaponReturnEnabled[\s\S]*kEquippedWeaponReturnConfig' `
+    'Equipped-weapon hand and weapon returns must consume the fixed compiled policy.'
 
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'physicallyOwnedByStrongerSystem[\s\S]*visuallyOwnedByStrongerSystem\s*=\s*physicallyOwnedByStrongerSystem\s*\|\|\s*visualReturnActive[\s\S]*!physicallyOwnedByStrongerSystem[\s\S]*if \(visuallyOwnedByStrongerSystem' `
@@ -89,8 +98,11 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
 
 foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `
-        'bWeaponVisualReturnEnabled\s*=\s*true[\s\S]*fWeaponVisualReturnMaxAngleDegrees[\s\S]*bGrabHandReturnEnabled\s*=\s*true[\s\S]*fGrabHandReturnMaxAngleDegrees' `
-        "$configPath must publish both visual-return setting families."
+        'bGrabHandReturnEnabled\s*=\s*true[\s\S]*fGrabHandReturnMaxAngleDegrees' `
+        "$configPath must continue to publish the generic grabbed-hand return family."
+    Reject-Text $configPath `
+        'bWeaponVisualReturnEnabled|fWeaponVisualReturn' `
+        "$configPath must not expose fixed equipped-weapon visual-return policy."
 }
 
 if ($failures.Count -gt 0) {

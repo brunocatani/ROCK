@@ -313,13 +313,6 @@ namespace rock
         rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
         rockWeaponSupportSurfaceSeatEnabled = true;
         rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
-        rockWeaponVisualReturnEnabled = true;
-        rockWeaponVisualReturnTimeMin = 0.12f;
-        rockWeaponVisualReturnTimeMax = 0.20f;
-        rockWeaponVisualReturnMinDistance = 1.0f;
-        rockWeaponVisualReturnMaxDistance = 14.0f;
-        rockWeaponVisualReturnMinAngleDegrees = 5.0f;
-        rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
         rockManualScopeHoldSeconds = 0.30f;
         rockNativeScopeForceFiringGripFallback = false;
         rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
@@ -1016,50 +1009,6 @@ namespace rock
             35.0f,
             0.0f,
             75.0f);
-        rockWeaponVisualReturnEnabled = ini.GetBoolValue(SECTION, "bWeaponVisualReturnEnabled", rockWeaponVisualReturnEnabled);
-        rockWeaponVisualReturnTimeMin = readClampedFloat(ini,
-            SECTION,
-            "fWeaponVisualReturnTimeMin",
-            rockWeaponVisualReturnTimeMin,
-            0.12f,
-            0.0f,
-            1.0f);
-        rockWeaponVisualReturnTimeMax = readClampedFloat(ini,
-            SECTION,
-            "fWeaponVisualReturnTimeMax",
-            rockWeaponVisualReturnTimeMax,
-            0.20f,
-            rockWeaponVisualReturnTimeMin,
-            1.0f);
-        rockWeaponVisualReturnMinDistance = readClampedFloat(ini,
-            SECTION,
-            "fWeaponVisualReturnMinDistance",
-            rockWeaponVisualReturnMinDistance,
-            1.0f,
-            0.0f,
-            80.0f);
-        rockWeaponVisualReturnMaxDistance = readClampedFloat(ini,
-            SECTION,
-            "fWeaponVisualReturnMaxDistance",
-            rockWeaponVisualReturnMaxDistance,
-            14.0f,
-            rockWeaponVisualReturnMinDistance,
-            120.0f);
-        rockWeaponVisualReturnMinAngleDegrees = readClampedFloat(ini,
-            SECTION,
-            "fWeaponVisualReturnMinAngleDegrees",
-            rockWeaponVisualReturnMinAngleDegrees,
-            5.0f,
-            0.0f,
-            180.0f);
-        rockWeaponVisualReturnMaxAngleDegrees = readClampedFloat(ini,
-            SECTION,
-            "fWeaponVisualReturnMaxAngleDegrees",
-            rockWeaponVisualReturnMaxAngleDegrees,
-            90.0f,
-            rockWeaponVisualReturnMinAngleDegrees,
-            180.0f);
-
         rockManualScopeHoldSeconds = readClampedFloat(ini,
             NATIVE_SCOPES_SECTION,
             "fManualScopeHoldSeconds",

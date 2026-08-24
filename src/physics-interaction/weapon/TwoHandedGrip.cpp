@@ -3547,7 +3547,7 @@ namespace rock
     {
         const std::size_t index = isLeft ? 0u : 1u;
         auto& state = _returningHandVisuals[index].transition;
-        if (!g_rockConfig.rockWeaponVisualReturnEnabled ||
+        if (!hand_visual_lerp_math::kEquippedWeaponReturnEnabled ||
             !_hasLastPublishedHandWorld[index] ||
             !isUsableHandAuthorityTransform(_lastPublishedHandWorld[index]) ||
             !frik_visual_authority::isAvailable()) {
@@ -3608,14 +3608,7 @@ namespace rock
                 state,
                 targetWorld,
                 dt,
-                hand_visual_lerp_math::VisualReturnConfig{
-                    .minSeconds = g_rockConfig.rockWeaponVisualReturnTimeMin,
-                    .maxSeconds = g_rockConfig.rockWeaponVisualReturnTimeMax,
-                    .minDistanceGameUnits = g_rockConfig.rockWeaponVisualReturnMinDistance,
-                    .maxDistanceGameUnits = g_rockConfig.rockWeaponVisualReturnMaxDistance,
-                    .minAngleDegrees = g_rockConfig.rockWeaponVisualReturnMinAngleDegrees,
-                    .maxAngleDegrees = g_rockConfig.rockWeaponVisualReturnMaxAngleDegrees,
-                });
+                hand_visual_lerp_math::kEquippedWeaponReturnConfig);
             if (timingPending) {
                 ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: hand return timing hand={} distance={:.2f}gu angle={:.1f}deg duration={:.3f}s",
@@ -3670,7 +3663,7 @@ namespace rock
 
     void TwoHandedGrip::beginWeaponVisualReturn(const char* reason)
     {
-        if (!g_rockConfig.rockWeaponVisualReturnEnabled ||
+        if (!hand_visual_lerp_math::kEquippedWeaponReturnEnabled ||
             _returningWeaponVisual.localTransition.active ||
             !_activeWeaponNode ||
             !_hasWeaponNodeLocalBaseline ||
@@ -3727,14 +3720,7 @@ namespace rock
         returnState.localTransition.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
             startLocal,
             returnState.nativeBaselineLocal,
-            hand_visual_lerp_math::VisualReturnConfig{
-                .minSeconds = g_rockConfig.rockWeaponVisualReturnTimeMin,
-                .maxSeconds = g_rockConfig.rockWeaponVisualReturnTimeMax,
-                .minDistanceGameUnits = g_rockConfig.rockWeaponVisualReturnMinDistance,
-                .maxDistanceGameUnits = g_rockConfig.rockWeaponVisualReturnMaxDistance,
-                .minAngleDegrees = g_rockConfig.rockWeaponVisualReturnMinAngleDegrees,
-                .maxAngleDegrees = g_rockConfig.rockWeaponVisualReturnMaxAngleDegrees,
-            });
+            hand_visual_lerp_math::kEquippedWeaponReturnConfig);
         returnState.localTransition.durationInitialized = true;
         if (!moveWeaponPresentationRigidly(_activeWeaponNode, startWorld)) {
             ROCK_LOG_SAMPLE_WARN(
@@ -3780,14 +3766,7 @@ namespace rock
             state.localTransition,
             state.nativeBaselineLocal,
             dt,
-            hand_visual_lerp_math::VisualReturnConfig{
-                .minSeconds = g_rockConfig.rockWeaponVisualReturnTimeMin,
-                .maxSeconds = g_rockConfig.rockWeaponVisualReturnTimeMax,
-                .minDistanceGameUnits = g_rockConfig.rockWeaponVisualReturnMinDistance,
-                .maxDistanceGameUnits = g_rockConfig.rockWeaponVisualReturnMaxDistance,
-                .minAngleDegrees = g_rockConfig.rockWeaponVisualReturnMinAngleDegrees,
-                .maxAngleDegrees = g_rockConfig.rockWeaponVisualReturnMaxAngleDegrees,
-            });
+            hand_visual_lerp_math::kEquippedWeaponReturnConfig);
         if (!isFiniteTransform(result.transform)) {
             clearWeaponVisualReturn("non-finite-return-transform", true, true);
             return;

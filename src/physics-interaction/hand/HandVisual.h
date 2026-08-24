@@ -40,6 +40,16 @@ namespace rock::hand_visual_lerp_math
         float maxAngleDegrees = 0.0f;
     };
 
+    inline constexpr bool kEquippedWeaponReturnEnabled = true;
+    inline constexpr VisualReturnConfig kEquippedWeaponReturnConfig{
+        .minSeconds = 0.12f,
+        .maxSeconds = 0.20f,
+        .minDistanceGameUnits = 1.0f,
+        .maxDistanceGameUnits = 14.0f,
+        .minAngleDegrees = 5.0f,
+        .maxAngleDegrees = 90.0f,
+    };
+
     /*
      * Visual-only release state. It deliberately owns transform values only:
      * no scene nodes, Havok bodies, constraints, or object identity can leak

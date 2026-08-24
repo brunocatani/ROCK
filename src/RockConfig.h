@@ -134,13 +134,6 @@ namespace rock
         float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
         bool rockWeaponSupportSurfaceSeatEnabled = true;
         float rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
-        bool rockWeaponVisualReturnEnabled = true;
-        float rockWeaponVisualReturnTimeMin = 0.12f;
-        float rockWeaponVisualReturnTimeMax = 0.20f;
-        float rockWeaponVisualReturnMinDistance = 1.0f;
-        float rockWeaponVisualReturnMaxDistance = 14.0f;
-        float rockWeaponVisualReturnMinAngleDegrees = 5.0f;
-        float rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
 
         // The held firing-hand A/X gesture is the sole native-scope activation
         // path. A release before the threshold remains reload input.
