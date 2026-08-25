@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <utility>
 
 namespace rock::hand_visual_lerp_math
 {
@@ -346,6 +348,74 @@ namespace rock::hand_visual_lerp_math
         state.lastApplied = result.transform;
         state.lastAlpha = timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
         return result;
+    }
+
+    enum class VisualReturnDriveStatus : std::uint8_t
+    {
+        Inactive,
+        InvalidTransform,
+        PublishFailed,
+        Active,
+        Completed,
+    };
+
+    template <class Transform>
+    struct VisualReturnDriveResult
+    {
+        Transform transform{};
+        VisualReturnDriveStatus status = VisualReturnDriveStatus::Inactive;
+        float initialDistanceGameUnits = 0.0f;
+        float initialAngleDegrees = 0.0f;
+        float durationSeconds = 0.0f;
+        bool timingInitializedThisFrame = false;
+    };
+
+    template <class Transform, class ValidateTransform, class PublishTransform>
+    inline VisualReturnDriveResult<Transform> driveVisualReturn(
+        VisualReturnTransition<Transform>& state,
+        const Transform& movingTarget,
+        float deltaTime,
+        const VisualReturnConfig& config,
+        ValidateTransform&& validateTransform,
+        PublishTransform&& publishTransform)
+    {
+        VisualReturnDriveResult<Transform> output{};
+        if (!state.active) {
+            return output;
+        }
+
+        output.timingInitializedThisFrame = !state.durationInitialized;
+        if (output.timingInitializedThisFrame) {
+            output.initialDistanceGameUnits =
+                distanceGameUnits(state.start.translate, movingTarget.translate);
+            output.initialAngleDegrees =
+                rotationDistanceDegrees(state.start, movingTarget);
+        }
+
+        const auto advanced = advanceVisualReturn(
+            state,
+            movingTarget,
+            deltaTime,
+            config);
+        output.transform = advanced.transform;
+        output.durationSeconds = state.durationSeconds;
+        if (!std::invoke(
+                std::forward<ValidateTransform>(validateTransform),
+                output.transform)) {
+            output.status = VisualReturnDriveStatus::InvalidTransform;
+            return output;
+        }
+        if (!std::invoke(
+                std::forward<PublishTransform>(publishTransform),
+                output.transform)) {
+            output.status = VisualReturnDriveStatus::PublishFailed;
+            return output;
+        }
+
+        output.status = advanced.reachedTarget ?
+            VisualReturnDriveStatus::Completed :
+            VisualReturnDriveStatus::Active;
+        return output;
     }
 
     template <class Vector>

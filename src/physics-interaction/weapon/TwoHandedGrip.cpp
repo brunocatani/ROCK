@@ -3420,38 +3420,37 @@ namespace rock
                 continue;
             }
 
-            const bool timingPending = !state.durationInitialized;
-            const float initialDistance = timingPending ?
-                hand_visual_lerp_math::distanceGameUnits(state.start.translate, targetWorld.translate) :
-                0.0f;
-            const float initialAngleDegrees = timingPending ?
-                hand_visual_lerp_math::rotationDistanceDegrees(state.start, targetWorld) :
-                0.0f;
-            const auto result = hand_visual_lerp_math::advanceVisualReturn(
+            const auto result = hand_visual_lerp_math::driveVisualReturn(
                 state,
                 targetWorld,
                 dt,
-                hand_visual_lerp_math::kEquippedWeaponReturnConfig);
-            if (timingPending) {
+                hand_visual_lerp_math::kEquippedWeaponReturnConfig,
+                [](const RE::NiTransform& transform) {
+                    return isUsableHandAuthorityTransform(transform);
+                },
+                [isLeft](const RE::NiTransform& transform) {
+                    return frik_visual_authority::applyExternalHandWorldTransform(
+                        RETURN_HAND_TAG,
+                        handFromBool(isLeft),
+                        transform,
+                        RETURN_HAND_VISUAL_PRIORITY);
+                });
+            if (result.timingInitializedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: hand return timing hand={} distance={:.2f}gu angle={:.1f}deg duration={:.3f}s",
                     isLeft ? "left" : "right",
-                    initialDistance,
-                    initialAngleDegrees,
-                    state.durationSeconds);
+                    result.initialDistanceGameUnits,
+                    result.initialAngleDegrees,
+                    result.durationSeconds);
             }
-            if (!isUsableHandAuthorityTransform(result.transform) ||
-                !frik_visual_authority::applyExternalHandWorldTransform(
-                    RETURN_HAND_TAG,
-                    handFromBool(isLeft),
-                    result.transform,
-                    RETURN_HAND_VISUAL_PRIORITY)) {
+            if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::InvalidTransform ||
+                result.status == hand_visual_lerp_math::VisualReturnDriveStatus::PublishFailed) {
                 clearHandVisualReturn(isLeft, "publish-failed", true);
                 continue;
             }
 
-            if (result.reachedTarget) {
-                const float completedDuration = state.durationSeconds;
+            if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::Completed) {
+                const float completedDuration = result.durationSeconds;
                 (void)frik_visual_authority::clearExternalHandWorldTransform(RETURN_HAND_TAG, handFromBool(isLeft));
                 state.clear();
                 _hasLastPublishedHandWorld[index] = false;
@@ -3585,26 +3584,36 @@ namespace rock
             return;
         }
 
-        const auto result = hand_visual_lerp_math::advanceVisualReturn(
+        const auto result = hand_visual_lerp_math::driveVisualReturn(
             state.localTransition,
             state.nativeBaselineLocal,
             dt,
-            hand_visual_lerp_math::kEquippedWeaponReturnConfig);
-        if (!isFiniteTransform(result.transform)) {
+            hand_visual_lerp_math::kEquippedWeaponReturnConfig,
+            [](const RE::NiTransform& transform) {
+                return isFiniteTransform(transform);
+            },
+            [this, currentWeaponNode, &state](const RE::NiTransform& transform) {
+                const RE::NiTransform returnedWeaponWorld =
+                    transform_math::composeTransforms(
+                        state.nativeParent->world,
+                        transform);
+                return applyWeaponVisualAuthority(
+                    currentWeaponNode,
+                    returnedWeaponWorld,
+                    state.weaponGenerationKey);
+            });
+        if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::InvalidTransform) {
             clearWeaponVisualReturn("non-finite-return-transform", true, true);
             return;
         }
-
-        const RE::NiTransform returnedWeaponWorld =
-            transform_math::composeTransforms(state.nativeParent->world, result.transform);
-        if (!applyWeaponVisualAuthority(currentWeaponNode, returnedWeaponWorld, state.weaponGenerationKey)) {
+        if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::PublishFailed) {
             clearWeaponVisualReturn("weapon-return-publish-failed", true, true);
             return;
         }
         _lastSolvedWeaponTransform = currentWeaponNode->world;
         _hasSolvedWeaponTransform = true;
-        if (result.reachedTarget) {
-            const float completedDuration = state.localTransition.durationSeconds;
+        if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::Completed) {
+            const float completedDuration = result.durationSeconds;
             clearWeaponVisualReturn("completed", false, true);
             ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: weapon return completed duration={:.3f}s", completedDuration);
         }

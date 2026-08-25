@@ -4632,14 +4632,7 @@ namespace rock
             return;
         }
 
-        const bool timingPending = !_grabVisualReturn.durationInitialized;
-        const float initialDistance = timingPending ?
-            hand_visual_lerp_math::distanceGameUnits(_grabVisualReturn.start.translate, trackedHandWorld.translate) :
-            0.0f;
-        const float initialAngleDegrees = timingPending ?
-            hand_visual_lerp_math::rotationDistanceDegrees(_grabVisualReturn.start, trackedHandWorld) :
-            0.0f;
-        const auto result = hand_visual_lerp_math::advanceVisualReturn(
+        const auto result = hand_visual_lerp_math::driveVisualReturn(
             _grabVisualReturn,
             trackedHandWorld,
             deltaTime,
@@ -4650,26 +4643,32 @@ namespace rock
                 .maxDistanceGameUnits = g_rockConfig.rockGrabHandReturnMaxDistance,
                 .minAngleDegrees = g_rockConfig.rockGrabHandReturnMinAngleDegrees,
                 .maxAngleDegrees = g_rockConfig.rockGrabHandReturnMaxAngleDegrees,
+            },
+            [](const RE::NiTransform& transform) {
+                return isUsableGrabVisualTransform(transform);
+            },
+            [this](const RE::NiTransform& transform) {
+                return applyGrabReturnHandWorldTransform(_isLeft, transform);
             });
-        if (timingPending) {
+        if (result.timingInitializedThisFrame) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand visual return timing distance={:.2f}gu angle={:.1f}deg duration={:.3f}s",
                 handName(),
-                initialDistance,
-                initialAngleDegrees,
-                _grabVisualReturn.durationSeconds);
+                result.initialDistanceGameUnits,
+                result.initialAngleDegrees,
+                result.durationSeconds);
         }
-        if (!isUsableGrabVisualTransform(result.transform) ||
-            !applyGrabReturnHandWorldTransform(_isLeft, result.transform)) {
+        if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::InvalidTransform ||
+            result.status == hand_visual_lerp_math::VisualReturnDriveStatus::PublishFailed) {
             clearGrabVisualReturn("publish-failed", true);
             return;
         }
 
-        if (!result.reachedTarget) {
+        if (result.status != hand_visual_lerp_math::VisualReturnDriveStatus::Completed) {
             return;
         }
 
-        const float completedDuration = _grabVisualReturn.durationSeconds;
+        const float completedDuration = result.durationSeconds;
         clearGrabReturnHandWorldTransform(_isLeft);
         _grabVisualReturn.clear();
         ROCK_LOG_DEBUG(Hand, "{} hand visual return completed duration={:.3f}s", handName(), completedDuration);
