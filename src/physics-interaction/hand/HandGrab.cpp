@@ -7223,6 +7223,110 @@ namespace rock
 
     }
 
+    struct Hand::GrabBodyResolution
+    {
+        object_physics_body_set::PrimaryBodyChoice primaryChoice{};
+        mechanical_connected_body_set::MechanicalScope mechanicalScope{};
+        RE::NiPoint3 primaryChoiceTarget{};
+        bool surfaceOwnerMatchesResolvedBody = true;
+        bool relaxedArticulatedAuthority = false;
+    };
+
+    void Hand::resolveGrabBodyAndContactPolicy(
+        const ValidatedGrabSelection& selection,
+        const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
+        const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
+        const active_grab_body_lifecycle::BodyLifecycleSnapshot& activeLifecycle,
+        const GrabProxyPreparation& proxy,
+        GrabSurfaceEvidence& surface,
+        GrabBodyResolution& outResolution)
+    {
+        outResolution = {};
+        const auto& selectedObject = _currentSelection;
+        outResolution.primaryChoiceTarget = surface.meshGrabFound ?
+            surface.gripPoint :
+            (selectedObject.hasHitPoint ? selectedObject.hitPointWorld : proxy.grabPivotAForPrimaryChoice);
+        const auto nearestPrimaryChoice = preparedBodySet.choosePrimaryBody(
+            object_physics_body_set::INVALID_BODY_ID,
+            object_physics_body_set::PurePoint3{ outResolution.primaryChoiceTarget });
+        const auto* surfaceOwnerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(surface.surfaceOwnerNode);
+        const auto skinnedResolution = skinned_body_resolver::resolvePrimaryBody(skinned_body_resolver::ResolutionInput{
+            .targetKind = selectedObject.targetKind,
+            .surfaceOwnerBodyId = surfaceOwnerRecord ? surfaceOwnerRecord->bodyId : object_physics_body_set::INVALID_BODY_ID,
+            .selectedBodyId = selectedObject.bodyId.value,
+            .nearestBodyId = nearestPrimaryChoice.bodyId,
+            .surfaceOwnerUsable = surfaceOwnerRecord != nullptr,
+            .selectedUsable = preparedBodySet.containsAcceptedBody(selectedObject.bodyId.value),
+            .nearestUsable = nearestPrimaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID,
+            .surfaceIsSkinned = surface.surfaceHit.valid && surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned,
+            .hasSkinInfluences = surface.surfaceHit.valid && surface.surfaceHit.hasSkinInfluences,
+        });
+        outResolution.primaryChoice.bodyId = skinnedResolution.bodyId;
+        outResolution.primaryChoice.reason =
+            skinnedResolution.source == skinned_body_resolver::ResolutionSource::WeightedSkinOwner ||
+                skinnedResolution.source == skinned_body_resolver::ResolutionSource::TriangleOwner ?
+            object_physics_body_set::PrimaryBodyChoiceReason::SurfaceOwnerAccepted :
+            (skinnedResolution.source == skinned_body_resolver::ResolutionSource::SelectedBody ?
+                    object_physics_body_set::PrimaryBodyChoiceReason::PreferredHitAccepted :
+                    (skinnedResolution.source == skinned_body_resolver::ResolutionSource::NearestAccepted ?
+                            object_physics_body_set::PrimaryBodyChoiceReason::NearestAcceptedFallback :
+                            object_physics_body_set::PrimaryBodyChoiceReason::NoAcceptedBody));
+
+        if (surface.surfaceHit.valid) {
+            const bool handPocketPositionOnlySkinnedSurface =
+                selection.handPocketOnlyGrab &&
+                surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned &&
+                !surface.surfaceHit.hasSkinInfluences;
+            if (surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery) {
+                outResolution.surfaceOwnerMatchesResolvedBody =
+                    outResolution.primaryChoice.bodyId == selectedObject.bodyId.value;
+            } else if (handPocketPositionOnlySkinnedSurface) {
+                outResolution.surfaceOwnerMatchesResolvedBody =
+                    outResolution.primaryChoice.bodyId == selectedObject.bodyId.value &&
+                    preparedBodySet.containsAcceptedBody(selectedObject.bodyId.value);
+            } else {
+                outResolution.surfaceOwnerMatchesResolvedBody =
+                    (surfaceOwnerRecord && surfaceOwnerRecord->bodyId == outResolution.primaryChoice.bodyId) ||
+                    acceptsSelectedMultibodyOwnerlessVisualMesh(
+                        selectedObject,
+                        preparedBodySet,
+                        outResolution.primaryChoice.bodyId,
+                        surface.surfaceOwnerNode,
+                        surfaceOwnerRecord);
+            }
+            surface.surfaceHit.resolvedOwnerMatchesBody = outResolution.surfaceOwnerMatchesResolvedBody;
+        }
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand GRAB BODY RESOLUTION: selectedBody={} resolvedBody={} reason={} resolver={} resolverReason={} skin={} sourceNode='{}' sourceKind={} ownerMatch={} target=({:.1f},{:.1f},{:.1f})",
+            handName(),
+            selectedObject.bodyId.value,
+            outResolution.primaryChoice.bodyId,
+            primaryBodyChoiceReasonName(outResolution.primaryChoice.reason),
+            skinned_body_resolver::sourceName(skinnedResolution.source),
+            skinnedResolution.reason,
+            skinnedResolution.usedSkinInfluences ? "weighted" :
+                (surface.surfaceHit.valid && surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned ? "positionOnly" : "no"),
+            nodeDebugName(surface.surfaceOwnerNode),
+            surface.surfaceHit.valid ? grabSurfaceSourceKindName(surface.surfaceHit.sourceKind) : "fallback",
+            outResolution.surfaceOwnerMatchesResolvedBody ? "yes" : "no",
+            outResolution.primaryChoiceTarget.x,
+            outResolution.primaryChoiceTarget.y,
+            outResolution.primaryChoiceTarget.z);
+
+        if (outResolution.primaryChoice.bodyId != INVALID_BODY_ID) {
+            outResolution.mechanicalScope = mechanical_connected_body_set::buildFromPreparedBodySet(
+                beforePrepBodySet,
+                preparedBodySet,
+                outResolution.primaryChoice.bodyId,
+                selectedObject.targetKind,
+                activeLifecycle.hasIncompleteNativeScan());
+            outResolution.relaxedArticulatedAuthority =
+                outResolution.mechanicalScope.strictPocketAuthorityRelaxed &&
+                outResolution.primaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID;
+        }
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -7433,7 +7537,6 @@ namespace rock
         const auto& proxyAuthorityFrameWorldAtGrab = proxyPreparation.proxyAuthorityFrameWorldAtGrab;
         const auto& grabAuthorityPivotAWorld = proxyPreparation.grabAuthorityPivotAWorld;
         const auto& palmPocketPivotAWorld = proxyPreparation.palmPocketPivotAWorld;
-        const auto& grabPivotAForPrimaryChoice = proxyPreparation.grabPivotAForPrimaryChoice;
         const auto& grabPalmBasisDelta = proxyPreparation.palmBasisDelta;
         const char* proxyFrameSourceAtGrab = proxyPreparation.proxyFrameSourceAtGrab;
         const float palmPocketToProxyDeltaGameUnits = proxyPreparation.palmPocketToProxyDeltaGameUnits;
@@ -7624,67 +7727,20 @@ namespace rock
             return false;
         }
 
-        const RE::NiPoint3 primaryChoiceTarget = meshGrabFound ? grabGripPoint : (sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice);
-        const auto nearestPrimaryChoice =
-            preparedBodySet.choosePrimaryBody(object_physics_body_set::INVALID_BODY_ID, object_physics_body_set::PurePoint3{ primaryChoiceTarget });
-        const auto* surfaceOwnerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(surfaceOwnerNode);
-        const auto skinnedBodyResolution = skinned_body_resolver::resolvePrimaryBody(skinned_body_resolver::ResolutionInput{
-            .targetKind = sel.targetKind,
-            .surfaceOwnerBodyId = surfaceOwnerRecord ? surfaceOwnerRecord->bodyId : object_physics_body_set::INVALID_BODY_ID,
-            .selectedBodyId = sel.bodyId.value,
-            .nearestBodyId = nearestPrimaryChoice.bodyId,
-            .surfaceOwnerUsable = surfaceOwnerRecord != nullptr,
-            .selectedUsable = preparedBodySet.containsAcceptedBody(sel.bodyId.value),
-            .nearestUsable = nearestPrimaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID,
-            .surfaceIsSkinned = grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned,
-            .hasSkinInfluences = grabSurfaceHit.valid && grabSurfaceHit.hasSkinInfluences,
-        });
-        const object_physics_body_set::PrimaryBodyChoice primaryChoice{
-            .bodyId = skinnedBodyResolution.bodyId,
-            .reason = skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::WeightedSkinOwner ||
-                    skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::TriangleOwner ?
-                object_physics_body_set::PrimaryBodyChoiceReason::SurfaceOwnerAccepted :
-                (skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::SelectedBody ?
-                        object_physics_body_set::PrimaryBodyChoiceReason::PreferredHitAccepted :
-                        (skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::NearestAccepted ?
-                                object_physics_body_set::PrimaryBodyChoiceReason::NearestAcceptedFallback :
-                                object_physics_body_set::PrimaryBodyChoiceReason::NoAcceptedBody)),
-        };
-        bool surfaceOwnerMatchesResolvedBody = true;
-        if (grabSurfaceHit.valid) {
-            const bool handPocketPositionOnlySkinnedSurface =
-                handPocketOnlyGrab && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned && !grabSurfaceHit.hasSkinInfluences;
-            if (grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery) {
-                surfaceOwnerMatchesResolvedBody = primaryChoice.bodyId == sel.bodyId.value;
-            } else if (handPocketPositionOnlySkinnedSurface) {
-                surfaceOwnerMatchesResolvedBody =
-                    primaryChoice.bodyId == sel.bodyId.value && preparedBodySet.containsAcceptedBody(sel.bodyId.value);
-            } else {
-                surfaceOwnerMatchesResolvedBody =
-                    (surfaceOwnerRecord && surfaceOwnerRecord->bodyId == primaryChoice.bodyId) ||
-                    acceptsSelectedMultibodyOwnerlessVisualMesh(sel,
-                        preparedBodySet,
-                        primaryChoice.bodyId,
-                        surfaceOwnerNode,
-                        surfaceOwnerRecord);
-            }
-            grabSurfaceHit.resolvedOwnerMatchesBody = surfaceOwnerMatchesResolvedBody;
-        }
-        ROCK_LOG_DEBUG(Hand,
-            "{} hand GRAB BODY RESOLUTION: selectedBody={} resolvedBody={} reason={} resolver={} resolverReason={} skin={} sourceNode='{}' sourceKind={} ownerMatch={} target=({:.1f},{:.1f},{:.1f})",
-            handName(),
-            sel.bodyId.value,
-            primaryChoice.bodyId,
-            primaryBodyChoiceReasonName(primaryChoice.reason),
-            skinned_body_resolver::sourceName(skinnedBodyResolution.source),
-            skinnedBodyResolution.reason,
-            skinnedBodyResolution.usedSkinInfluences ? "weighted" : (grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned ? "positionOnly" : "no"),
-            nodeDebugName(surfaceOwnerNode),
-            grabSurfaceHit.valid ? grabSurfaceSourceKindName(grabSurfaceHit.sourceKind) : "fallback",
-            surfaceOwnerMatchesResolvedBody ? "yes" : "no",
-            primaryChoiceTarget.x,
-            primaryChoiceTarget.y,
-            primaryChoiceTarget.z);
+        GrabBodyResolution bodyResolution{};
+        resolveGrabBodyAndContactPolicy(
+            validatedSelection,
+            beforePrepBodySet,
+            preparedBodySet,
+            activeLifecycle,
+            proxyPreparation,
+            surfaceEvidence,
+            bodyResolution);
+        const auto& primaryChoice = bodyResolution.primaryChoice;
+        const auto& primaryChoiceTarget = bodyResolution.primaryChoiceTarget;
+        bool& surfaceOwnerMatchesResolvedBody = bodyResolution.surfaceOwnerMatchesResolvedBody;
+        const auto& mechanicalScope = bodyResolution.mechanicalScope;
+        const bool relaxedArticulatedAuthority = bodyResolution.relaxedArticulatedAuthority;
 
         if (primaryChoice.bodyId == INVALID_BODY_ID) {
             const auto* rejectedBody = diagnosticRejectedBodyRecord(preparedBodySet, sel.bodyId.value);
@@ -7715,14 +7771,6 @@ namespace rock
             return false;
         }
 
-        const auto mechanicalScope = mechanical_connected_body_set::buildFromPreparedBodySet(
-            beforePrepBodySet,
-            preparedBodySet,
-            primaryChoice.bodyId,
-            sel.targetKind,
-            activeLifecycle.hasIncompleteNativeScan());
-        const bool relaxedArticulatedAuthority =
-            mechanicalScope.strictPocketAuthorityRelaxed && primaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID;
         ROCK_LOG_DEBUG(Hand,
             "{} hand MECHANICAL SCOPE: targetKind={} kind={} reason={} primaryBody={} bodies={} accepted={} motions={} fixedRejects={} incomplete={} driveMode={} linearScope={} angularScope={} massScope={}",
             handName(),

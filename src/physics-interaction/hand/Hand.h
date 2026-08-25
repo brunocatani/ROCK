@@ -728,6 +728,7 @@ namespace rock
         struct GrabMeshCaptureSetup;
         struct GrabMeshExtraction;
         struct GrabSurfaceEvidence;
+        struct GrabBodyResolution;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -762,6 +763,14 @@ namespace rock
             const GrabMeshExtraction& mesh,
             bool meshContactOnly,
             GrabSurfaceEvidence& outEvidence);
+        void resolveGrabBodyAndContactPolicy(
+            const ValidatedGrabSelection& selection,
+            const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
+            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
+            const active_grab_body_lifecycle::BodyLifecycleSnapshot& activeLifecycle,
+            const GrabProxyPreparation& proxy,
+            GrabSurfaceEvidence& surface,
+            GrabBodyResolution& outResolution);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
