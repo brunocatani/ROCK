@@ -283,6 +283,13 @@ namespace rock
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
+        struct GrabInputHandContext;
+        void clearShoulderStashForHand(Hand& hand, bool isLeft);
+        void clearMouthConsumeForHand(Hand& hand, bool isLeft);
+        void clearGameplayCandidatesForHand(Hand& hand, bool isLeft);
+        void publishHandInputOwnership(const Hand& hand, bool isLeft);
+        void releaseSuppressedHeldObject(RE::hknpWorld* world, Hand& hand, bool isLeft, const char* reason);
+        void processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft, const GrabInputHandContext& context);
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
