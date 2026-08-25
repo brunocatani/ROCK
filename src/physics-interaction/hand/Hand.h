@@ -724,6 +724,7 @@ namespace rock
     private:
         struct ValidatedGrabSelection;
         struct GrabBodyPreparation;
+        struct GrabProxyPreparation;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -733,6 +734,10 @@ namespace rock
             const GrabSharedObjectContext& sharedContext,
             const ValidatedGrabSelection& selection,
             GrabBodyPreparation& outPreparation);
+        bool prepareGrabProxyAuthority(
+            RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            GrabProxyPreparation& outPreparation);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 

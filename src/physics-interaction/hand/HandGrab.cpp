@@ -6692,6 +6692,50 @@ namespace rock
         }
     }
 
+    struct Hand::GrabProxyPreparation
+    {
+        RE::NiTransform handBodyWorldAtGrab{};
+        RE::NiTransform proxyFrameWorldAtGrab{};
+        RE::NiTransform proxyAuthorityFrameWorldAtGrab{};
+        RE::NiPoint3 grabAuthorityPivotAWorld{};
+        RE::NiPoint3 palmPocketPivotAWorld{};
+        RE::NiPoint3 grabPivotAForPrimaryChoice{};
+        GrabPalmBasisDelta palmBasisDelta{};
+        const char* proxyFrameSourceAtGrab = "unresolved";
+        float palmPocketToProxyDeltaGameUnits = 0.0f;
+        bool hasPalmProxyFrameAtGrab = false;
+    };
+
+    bool Hand::prepareGrabProxyAuthority(
+        RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        GrabProxyPreparation& outPreparation)
+    {
+        outPreparation = {};
+        outPreparation.handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
+        outPreparation.proxyFrameWorldAtGrab = outPreparation.handBodyWorldAtGrab;
+        if (!resolveGrabAuthorityProxyFrame(
+                world,
+                handWorldTransform,
+                &outPreparation.handBodyWorldAtGrab,
+                outPreparation.proxyFrameWorldAtGrab,
+                outPreparation.proxyFrameSourceAtGrab,
+                GrabAuthorityProxyFramePolicy::LivePalmOnly)) {
+            return false;
+        }
+
+        outPreparation.grabAuthorityPivotAWorld = outPreparation.proxyFrameWorldAtGrab.translate;
+        outPreparation.palmPocketPivotAWorld = outPreparation.proxyFrameWorldAtGrab.translate;
+        outPreparation.palmPocketToProxyDeltaGameUnits = pointDistanceGameUnits(
+            outPreparation.grabAuthorityPivotAWorld,
+            outPreparation.palmPocketPivotAWorld);
+        outPreparation.palmBasisDelta = computeGrabPalmBasisDelta(handWorldTransform, outPreparation.proxyFrameWorldAtGrab);
+        outPreparation.grabPivotAForPrimaryChoice = outPreparation.palmPocketPivotAWorld;
+        outPreparation.proxyAuthorityFrameWorldAtGrab = makeGeneratedProxyAuthorityRelationFrame(outPreparation.proxyFrameWorldAtGrab);
+        outPreparation.hasPalmProxyFrameAtGrab = true;
+        return true;
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -6881,24 +6925,14 @@ namespace rock
         };
         GrabPreparationTransaction grabPreparationTransaction{ restoreFailedGrabPrep };
 
-        const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
-        RE::NiTransform proxyFrameWorldAtGrab = handBodyWorldAtGrab;
-        const char* proxyFrameSourceAtGrab = "unresolved";
-        const bool hasPalmProxyFrameAtGrab =
-            resolveGrabAuthorityProxyFrame(
-                world,
-                handWorldTransform,
-                &handBodyWorldAtGrab,
-                proxyFrameWorldAtGrab,
-                proxyFrameSourceAtGrab,
-                GrabAuthorityProxyFramePolicy::LivePalmOnly);
-        if (!hasPalmProxyFrameAtGrab) {
+        GrabProxyPreparation proxyPreparation{};
+        if (!prepareGrabProxyAuthority(world, handWorldTransform, proxyPreparation)) {
             ROCK_LOG_ERROR(Hand,
                 "{} hand GRAB FAILED: live palm anchor frame unavailable before grab evidence capture bodyId={} handBody={} source={} formID={:08X}",
                 handName(),
                 objectBodyId.value,
                 _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID,
-                proxyFrameSourceAtGrab,
+                proxyPreparation.proxyFrameSourceAtGrab,
                 sel.refr ? sel.refr->GetFormID() : 0);
             _grabFrame.clear();
             _heldBodyIds.clear();
@@ -6907,19 +6941,21 @@ namespace rock
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
+        const auto& handBodyWorldAtGrab = proxyPreparation.handBodyWorldAtGrab;
+        const auto& proxyFrameWorldAtGrab = proxyPreparation.proxyFrameWorldAtGrab;
+        const auto& proxyAuthorityFrameWorldAtGrab = proxyPreparation.proxyAuthorityFrameWorldAtGrab;
+        const auto& grabAuthorityPivotAWorld = proxyPreparation.grabAuthorityPivotAWorld;
+        const auto& palmPocketPivotAWorld = proxyPreparation.palmPocketPivotAWorld;
+        const auto& grabPivotAForPrimaryChoice = proxyPreparation.grabPivotAForPrimaryChoice;
+        const auto& grabPalmBasisDelta = proxyPreparation.palmBasisDelta;
+        const char* proxyFrameSourceAtGrab = proxyPreparation.proxyFrameSourceAtGrab;
+        const float palmPocketToProxyDeltaGameUnits = proxyPreparation.palmPocketToProxyDeltaGameUnits;
+        const bool hasPalmProxyFrameAtGrab = proxyPreparation.hasPalmProxyFrameAtGrab;
         /*
          * Live proxy motion and close-grab pocket acquisition both resolve the
          * configured seat offset in generated/proxy local space. The generated
          * collision body path and hidden proxy seat now agree at startup.
          */
-        const RE::NiPoint3 grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
-        const RE::NiPoint3 palmPocketPivotAWorld = proxyFrameWorldAtGrab.translate;
-        const float palmPocketToProxyDeltaGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, palmPocketPivotAWorld);
-        const GrabPalmBasisDelta grabPalmBasisDelta = computeGrabPalmBasisDelta(handWorldTransform, proxyFrameWorldAtGrab);
-        const RE::NiPoint3 grabPivotAForPrimaryChoice = palmPocketPivotAWorld;
-        const RE::NiTransform proxyAuthorityFrameWorldAtGrab =
-            makeGeneratedProxyAuthorityRelationFrame(proxyFrameWorldAtGrab);
-
         if (grabPalmBasisDelta.rotationDegrees > kGrabFrameMismatchRawProxyRotationWarnDegrees) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
