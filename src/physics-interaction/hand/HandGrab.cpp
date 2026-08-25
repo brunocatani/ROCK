@@ -8062,7 +8062,7 @@ namespace rock
     {
         const auto& handWorldTransform = *input.handWorldTransform;
         auto* collidableNode = input.collidableNode;
-        const auto objectBodyId = input.objectBodyId;
+        auto objectBodyId = input.objectBodyId;
         const auto& objectName = *input.objectName;
         const auto* motionType = input.motionType;
         const auto& mechanicalScope = *input.mechanicalScope;
@@ -8117,6 +8117,262 @@ namespace rock
         _grabStartTime = 0.0f;
         _grabConvergeStableInsidePocketSeconds = 0.0f;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+    }
+
+    struct Hand::GrabBodyFrameCaptureInput
+    {
+        const RE::NiTransform* handWorldTransform = nullptr;
+        const GrabProxyPreparation* proxy = nullptr;
+        const GrabMeshCaptureSetup* meshCapture = nullptr;
+        const GrabMeshExtraction* mesh = nullptr;
+        GrabSurfaceEvidence* surface = nullptr;
+        const GrabPivotEvidence* pivotEvidence = nullptr;
+        const GrabFingerEvidence* fingerEvidence = nullptr;
+        const GrabBodyResolution* bodyResolution = nullptr;
+        const std::vector<GrabLocalTriangle>* localMeshTriangles = nullptr;
+        RE::NiAVObject* rootNode = nullptr;
+        RE::hknpBodyId objectBodyId{};
+        std::uint64_t traceId = 0;
+        const std::string* objectName = nullptr;
+    };
+
+    struct Hand::GrabBodyFrameCapture
+    {
+        RE::NiPoint3 palmPosition{};
+        RE::NiTransform grabBodyWorld{};
+        RE::NiTransform motionBodyWorld{};
+        body_frame::BodyFrameSource motionBodySource = body_frame::BodyFrameSource::Fallback;
+        bool hasMotionBodyWorld = false;
+        bool constraintUsesMotionBody = false;
+        RE::NiTransform constraintBodyWorld{};
+        RE::NiPoint3 grabPivotAWorld{};
+        RE::bhkNPCollisionObject* bodyCollisionObject = nullptr;
+        RE::NiAVObject* ownerNode = nullptr;
+        RE::NiTransform objectToBody{};
+        RE::NiTransform ownerBodyLocal{};
+        RE::NiTransform rootBodyLocal{};
+        RE::NiPoint3 selectedGripPointLocal{};
+        RE::NiPoint3 selectedPivotBBodyLocalGame{};
+        std::vector<TriangleData> fingerPoseMeshTriangles{};
+        std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles{};
+        bool clearExternalOnFailure = false;
+    };
+
+    bool Hand::captureGrabBodyFrame(
+        RE::hknpWorld* world,
+        const GrabBodyFrameCaptureInput& input,
+        GrabBodyFrameCapture& outCapture)
+    {
+        outCapture = {};
+        const auto& handWorldTransform = *input.handWorldTransform;
+        const auto& proxy = *input.proxy;
+        const auto& meshCapture = *input.meshCapture;
+        const auto& mesh = *input.mesh;
+        auto& surface = *input.surface;
+        const auto& pivotEvidence = *input.pivotEvidence;
+        const auto& fingerEvidence = *input.fingerEvidence;
+        const auto& bodyResolution = *input.bodyResolution;
+        const auto& grabLocalMeshTriangles = *input.localMeshTriangles;
+        const auto& sel = _currentSelection;
+        auto* collidableNode = meshCapture.collidableNode;
+        const auto& objectWorldTransform = meshCapture.objectWorldTransform;
+        const auto& grabMeshTriangles = mesh.meshTriangles;
+        auto& grabSurfaceHit = surface.surfaceHit;
+        auto& grabGripPoint = surface.gripPoint;
+        const auto& contactPatchRuntime = pivotEvidence.contactPatch;
+        const bool contactPatchEvidenceAvailable = pivotEvidence.contactPatchEvidenceAvailable;
+        const auto& multiFingerGripRuntime = fingerEvidence.multiFingerGrip;
+        const bool multiFingerGripUsed = fingerEvidence.multiFingerGripUsed;
+        const auto& palmSeatPointWorld = fingerEvidence.palmSeatPointWorld;
+        const auto& fingerEvidencePointWorld = fingerEvidence.fingerEvidencePointWorld;
+        const bool palmSeatPointValid = fingerEvidence.palmSeatPointValid;
+        const bool fingerEvidencePointValid = fingerEvidence.fingerEvidencePointValid;
+        const auto* palmSeatPointMode = fingerEvidence.palmSeatPointMode;
+        const auto* fingerEvidencePointMode = fingerEvidence.fingerEvidencePointMode;
+        const auto pivotAuthoritySource = pivotEvidence.authoritySource;
+        const bool pivotAuthorityPositionOnly = pivotEvidence.authorityPositionOnly;
+        const bool pivotAuthorityNormalTrusted = pivotEvidence.authorityNormalTrusted;
+        const float pivotAuthorityPositionConfidence = pivotEvidence.authorityPositionConfidence;
+        const auto& primaryChoice = bodyResolution.primaryChoice;
+        const auto& palmPocketPivotAWorld = proxy.palmPocketPivotAWorld;
+        auto* rootNode = input.rootNode;
+        auto objectBodyId = input.objectBodyId;
+        const auto grabTraceId = input.traceId;
+        const auto& objName = *input.objectName;
+        const char* grabPointMode = surface.pointMode;
+        const bool activeGrabPointUsesMultiFingerEvidence = false;
+        auto& palmPos = outCapture.palmPosition;
+        auto& grabBodyWorldAtGrab = outCapture.grabBodyWorld;
+        auto& motionBodyWorldAtGrab = outCapture.motionBodyWorld;
+        auto& motionBodySourceAtGrab = outCapture.motionBodySource;
+        auto& hasMotionBodyWorldAtGrab = outCapture.hasMotionBodyWorld;
+        auto& constraintUsesMotionBodyAtGrab = outCapture.constraintUsesMotionBody;
+        auto& constraintBodyWorldAtGrab = outCapture.constraintBodyWorld;
+        auto& grabPivotAWorld = outCapture.grabPivotAWorld;
+        RE::TESObjectCELL* ownerCellAtGrab = nullptr;
+        RE::bhkWorld* bhkWorldAtGrab = nullptr;
+        auto*& bodyCollisionObjectAtGrab = outCapture.bodyCollisionObject;
+        auto*& ownerNodeAtGrab = outCapture.ownerNode;
+        auto& objectToBodyAtGrab = outCapture.objectToBody;
+        auto& ownerBodyLocalAtGrab = outCapture.ownerBodyLocal;
+        auto& rootBodyLocalAtGrab = outCapture.rootBodyLocal;
+        auto& selectedGripPointLocal = outCapture.selectedGripPointLocal;
+        auto& selectedPivotBBodyLocalGame = outCapture.selectedPivotBBodyLocalGame;
+        auto& grabFingerPoseMeshTriangles = outCapture.fingerPoseMeshTriangles;
+        auto& grabFingerPoseLocalMeshTriangles = outCapture.fingerPoseLocalMeshTriangles;
+                palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorldTransform, _isLeft);
+                if (!tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, grabBodyWorldAtGrab)) {
+                    ROCK_LOG_ERROR(Hand,
+                        "{} hand GRAB FAILED: native grab BODY frame unreadable bodyId={} formID={:08X}",
+                        handName(),
+                        objectBodyId.value,
+                        sel.refr ? sel.refr->GetFormID() : 0);
+                    _grabFrame.clear();
+                    _heldBodyIds.clear();
+                    _heldDriveDecision = {};
+                    _heldBodyIdsCount.store(0, std::memory_order_release);
+                    return false;
+                }
+                hasMotionBodyWorldAtGrab =
+                    tryResolveLiveBodyWorldTransform(world, objectBodyId, motionBodyWorldAtGrab, &motionBodySourceAtGrab);
+                /*
+                 * Custom constraint body-B data is authored in the hknp BODY frame.
+                 * HIGGS does the same kind of thing on Skyrim's hkp side: it freezes
+                 * pivot B from the rigid body transform and treats COM/motion as mass
+                 * data, not as a local-frame owner. A runtime MOTION-frame experiment
+                 * made the object settle at the wrong rotation even when the proxy
+                 * target was stable, so the live motion transform remains diagnostic
+                 * evidence only.
+                 */
+                constraintUsesMotionBodyAtGrab = false;
+                constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
+                /*
+                 * The hidden proxy is body A for dynamic grab. The close-grab
+                 * pocket pivot is captured from the same generated/proxy-local
+                 * seat frame. The proxy body keeps its seat offset, and transform A
+                 * carries the selected pivot as an explicit local point on body A.
+                 */
+                grabPivotAWorld = palmPocketPivotAWorld;
+                ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
+                bhkWorldAtGrab = ownerCellAtGrab ? ownerCellAtGrab->GetbhkWorld() : nullptr;
+                bodyCollisionObjectAtGrab = bhkWorldAtGrab ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtGrab, objectBodyId) : nullptr;
+                ownerNodeAtGrab = bodyCollisionObjectAtGrab ? bodyCollisionObjectAtGrab->sceneObject : nullptr;
+                if (ownerNodeAtGrab && ownerNodeAtGrab != collidableNode) {
+                    GrabCaptureTransformRefreshResult ownerAtGrabRefresh{};
+                    refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab);
+                    logGrabCaptureRefresh(handName(), _isLeft, grabTraceId, ownerAtGrabRefresh);
+                    if (!ownerAtGrabRefresh.ok) {
+                        ROCK_LOG_WARN(Hand,
+                            "{} hand GRAB failed: owner-at-grab transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
+                            handName(),
+                            objName,
+                            sel.refr ? sel.refr->GetFormID() : 0,
+                            nodeDebugName(ownerNodeAtGrab));
+                        outCapture.clearExternalOnFailure = true;
+                        return false;
+                    }
+                }
+                _grabFrame.heldNode = collidableNode;
+                objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab);
+                /*
+                 * ROCK dynamic grab has one production authority convention:
+                 * the generated/proxy palm frame seats the selected BODY-local grip
+                 * point and owns the object angular relation through a row-view of
+                 * its generated local axes. The custom constraint stores body-B local
+                 * data in the rigid BODY frame. MOTION and COM are mass/diagnostic
+                 * data only.
+                 */
+                ownerBodyLocalAtGrab =
+                    ownerNodeAtGrab ? computeRuntimeBodyLocalTransform(ownerNodeAtGrab->world, grabBodyWorldAtGrab) : makeIdentityTransform();
+                rootBodyLocalAtGrab =
+                    rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, grabBodyWorldAtGrab) : makeIdentityTransform();
+                selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
+                selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
+                if (!grabMeshTriangles.empty()) {
+                    grabFingerPoseMeshTriangles = selectNearestGrabFingerPoseTriangles(
+                        grabMeshTriangles,
+                        grabGripPoint,
+                        kMaxGrabRuntimeFingerPoseTriangles);
+                    grabFingerPoseLocalMeshTriangles = cacheTrianglesInLocalSpace(grabFingerPoseMeshTriangles, objectWorldTransform);
+                    if (grabFingerPoseMeshTriangles.size() != grabMeshTriangles.size()) {
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand MESH FINGER POSE TRIANGLES: sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
+                            handName(),
+                            grabMeshTriangles.size(),
+                            grabFingerPoseMeshTriangles.size(),
+                            grabGripPoint.x,
+                            grabGripPoint.y,
+                            grabGripPoint.z);
+                    }
+                }
+                _grabFrame.localMeshTriangles.clear();
+                _grabFrame.fingerPoseLocalMeshTriangles.clear();
+                _grabFrame.gripEvidence.gripEvidenceLocal = selectedGripPointLocal;
+                _grabFrame.gripEvidence.gripNormalLocal = grabSurfaceHit.valid ? transform_math::worldVectorToLocal(objectWorldTransform, grabSurfaceHit.normal) : RE::NiPoint3{};
+                storeGripSourceEvidence(_grabFrame,
+                    grabSurfaceHit.sourceNode ? grabSurfaceHit.sourceNode : collidableNode,
+                    objectWorldTransform,
+                    grabGripPoint,
+                    grabSurfaceHit.normal,
+                    grabSurfaceHit.valid && lengthSquared(grabSurfaceHit.normal) > 0.000001f);
+                _grabFrame.gripEvidence.gripEvidenceTriangleIndex = grabSurfaceHit.valid && grabSurfaceHit.hasTriangle ? static_cast<std::uint32_t>(grabSurfaceHit.triangleIndex) : 0xFFFF'FFFF;
+                _grabFrame.gripEvidence.gripEvidenceShapeKey = grabSurfaceHit.valid ? grabSurfaceHit.shapeKey : 0xFFFF'FFFF;
+                _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo = grabSurfaceHit.valid ? grabSurfaceHit.shapeCollisionFilterInfo : 0;
+                _grabFrame.gripEvidence.gripEvidenceHitFraction = grabSurfaceHit.valid ? grabSurfaceHit.hitFraction : 1.0f;
+                _grabFrame.gripEvidence.hasGripEvidenceShapeKey = grabSurfaceHit.valid && grabSurfaceHit.hasShapeKey;
+                _grabFrame.contactPatchSamples = {};
+                _grabFrame.contactPatchSampleCount = 0;
+                _grabFrame.hasContactPatch = contactPatchEvidenceAvailable;
+                _grabFrame.hasContactPatchEvidence = contactPatchEvidenceAvailable;
+                _grabFrame.contactPatchMeshSnapDeltaGameUnits = contactPatchRuntime.patch.meshSnapDeltaGameUnits;
+                _grabFrame.hasMultiFingerContactPatch = multiFingerGripUsed;
+                _grabFrame.multiFingerContactGroupCount = multiFingerGripRuntime.gripSet.groupCount;
+                _grabFrame.multiFingerContactReason = multiFingerGripRuntime.reason ? multiFingerGripRuntime.reason : "none";
+                _grabFrame.multiFingerContactSpreadGameUnits = multiFingerGripRuntime.gripSet.spreadGameUnits;
+                _grabFrame.multiFingerGripCenterWorldAtGrab = multiFingerGripRuntime.gripSet.contactCenterWorld;
+                _grabFrame.multiFingerHandCenterWorldAtGrab = multiFingerGripRuntime.gripSet.handCenterWorld;
+                _grabFrame.multiFingerAverageNormalWorldAtGrab = multiFingerGripRuntime.gripSet.averageNormalWorld;
+                _grabFrame.seat.palmSeatPointWorldAtGrab = palmSeatPointWorld;
+                _grabFrame.fingerEvidencePointWorldAtGrab = fingerEvidencePointWorld;
+                _grabFrame.seat.hasPalmSeatPoint = palmSeatPointValid;
+                _grabFrame.hasFingerEvidencePoint = fingerEvidencePointValid;
+                _grabFrame.activeGrabPointUsesMultiFingerEvidence = activeGrabPointUsesMultiFingerEvidence;
+                _grabFrame.seat.activeGrabPointMode = grabPointMode;
+                _grabFrame.pivotAuthority.source = pivotAuthoritySource;
+                _grabFrame.pivotAuthority.positionOnly = pivotAuthorityPositionOnly;
+                _grabFrame.pivotAuthority.normalTrusted = pivotAuthorityNormalTrusted;
+                _grabFrame.pivotAuthority.positionConfidence = pivotAuthorityPositionConfidence;
+                _grabFrame.seat.palmSeatPointMode = palmSeatPointMode;
+                _grabFrame.fingerEvidencePointMode = fingerEvidencePointMode;
+                if (contactPatchEvidenceAvailable) {
+                    const std::uint32_t copyCount = (std::min)(contactPatchRuntime.sampleCount, static_cast<std::uint32_t>(_grabFrame.contactPatchSamples.size()));
+                    for (std::uint32_t i = 0; i < copyCount; ++i) {
+                        auto sample = contactPatchRuntime.samples[i];
+                        sample.point = transform_math::worldPointToLocal(grabBodyWorldAtGrab, sample.point);
+                        sample.normal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, sample.normal);
+                        _grabFrame.contactPatchSamples[i] = sample;
+                    }
+                    _grabFrame.contactPatchSampleCount = copyCount;
+                }
+                _grabFrame.bodyResolutionReason = primaryBodyChoiceReasonName(primaryChoice.reason);
+                _grabFrame.pivotAuthority.pocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
+                _grabFrame.pivotAuthority.selectionDistanceGameUnits =
+                    grabSurfaceHit.valid && grabSurfaceHit.hasSelectionHit ? grabSurfaceHit.selectionToMeshDistanceGameUnits : (sel.hasHitPoint ? 0.0f : std::numeric_limits<float>::max());
+                if (grabSurfaceHit.valid) {
+                    grabSurfaceHit.pivotToSurfaceDistanceGameUnits = _grabFrame.pivotAuthority.pocketDistanceGameUnits;
+                }
+                _grabFrame.hasMeshPoseData = false;
+                if (!grabLocalMeshTriangles.empty()) {
+                    _grabFrame.localMeshTriangles = grabLocalMeshTriangles;
+                }
+                if (!grabFingerPoseLocalMeshTriangles.empty()) {
+                    _grabFrame.fingerPoseLocalMeshTriangles = grabFingerPoseLocalMeshTriangles;
+                }
+                _grabFrame.hasMeshPoseData =
+                    !_grabFrame.localMeshTriangles.empty() ||
+                    !_grabFrame.fingerPoseLocalMeshTriangles.empty();
+
+        return true;
     }
 
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
@@ -8746,7 +9002,6 @@ namespace rock
             _savedObjectState.clear();
             return false;
         }
-        auto& multiFingerGripRuntime = fingerEvidence.multiFingerGrip;
         auto& palmSeatPointWorld = fingerEvidence.palmSeatPointWorld;
         auto& fingerEvidencePointWorld = fingerEvidence.fingerEvidencePointWorld;
         auto& palmSeatSurfaceHit = fingerEvidence.palmSeatSurfaceHit;
@@ -8808,162 +9063,46 @@ namespace rock
         beginResolvedGrabCommit(commitPreparationInput);
 
         {
-            const RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorldTransform, _isLeft);
-            RE::NiTransform grabBodyWorldAtGrab{};
-            if (!tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, grabBodyWorldAtGrab)) {
-                ROCK_LOG_ERROR(Hand,
-                    "{} hand GRAB FAILED: native grab BODY frame unreadable bodyId={} formID={:08X}",
-                    handName(),
-                    objectBodyId.value,
-                    sel.refr ? sel.refr->GetFormID() : 0);
-                _grabFrame.clear();
-                _heldBodyIds.clear();
-                _heldDriveDecision = {};
-                _heldBodyIdsCount.store(0, std::memory_order_release);
+            GrabBodyFrameCaptureInput bodyFrameInput{
+                .handWorldTransform = &handWorldTransform,
+                .proxy = &proxyPreparation,
+                .meshCapture = &meshCaptureSetup,
+                .mesh = &meshExtraction,
+                .surface = &surfaceEvidence,
+                .pivotEvidence = &pivotEvidence,
+                .fingerEvidence = &fingerEvidence,
+                .bodyResolution = &bodyResolution,
+                .localMeshTriangles = &grabLocalMeshTriangles,
+                .rootNode = rootNode,
+                .objectBodyId = objectBodyId,
+                .traceId = grabTraceId,
+                .objectName = &objName,
+            };
+            GrabBodyFrameCapture bodyFrameCapture{};
+            if (!captureGrabBodyFrame(world, bodyFrameInput, bodyFrameCapture)) {
                 grabPreparationTransaction.rollback();
+                if (bodyFrameCapture.clearExternalOnFailure) {
+                    clearGrabExternalHandWorldTransform(_isLeft);
+                }
                 return false;
             }
-            RE::NiTransform motionBodyWorldAtGrab{};
-            body_frame::BodyFrameSource motionBodySourceAtGrab = body_frame::BodyFrameSource::Fallback;
-            const bool hasMotionBodyWorldAtGrab =
-                tryResolveLiveBodyWorldTransform(world, objectBodyId, motionBodyWorldAtGrab, &motionBodySourceAtGrab);
-            /*
-             * Custom constraint body-B data is authored in the hknp BODY frame.
-             * HIGGS does the same kind of thing on Skyrim's hkp side: it freezes
-             * pivot B from the rigid body transform and treats COM/motion as mass
-             * data, not as a local-frame owner. A runtime MOTION-frame experiment
-             * made the object settle at the wrong rotation even when the proxy
-             * target was stable, so the live motion transform remains diagnostic
-             * evidence only.
-             */
-            const bool constraintUsesMotionBodyAtGrab = false;
-            const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
-            /*
-             * The hidden proxy is body A for dynamic grab. The close-grab
-             * pocket pivot is captured from the same generated/proxy-local
-             * seat frame. The proxy body keeps its seat offset, and transform A
-             * carries the selected pivot as an explicit local point on body A.
-             */
-            RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
-            auto* ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
-            auto* bhkWorldAtGrab = ownerCellAtGrab ? ownerCellAtGrab->GetbhkWorld() : nullptr;
-            auto* bodyCollisionObjectAtGrab = bhkWorldAtGrab ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtGrab, objectBodyId) : nullptr;
-            auto* ownerNodeAtGrab = bodyCollisionObjectAtGrab ? bodyCollisionObjectAtGrab->sceneObject : nullptr;
-            if (ownerNodeAtGrab && ownerNodeAtGrab != collidableNode) {
-                GrabCaptureTransformRefreshResult ownerAtGrabRefresh{};
-                refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab);
-                logGrabCaptureRefresh(handName(), _isLeft, grabTraceId, ownerAtGrabRefresh);
-                if (!ownerAtGrabRefresh.ok) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand GRAB failed: owner-at-grab transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
-                        handName(),
-                        objName,
-                        sel.refr ? sel.refr->GetFormID() : 0,
-                        nodeDebugName(ownerNodeAtGrab));
-                    grabPreparationTransaction.rollback();
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    return false;
-                }
-            }
-            _grabFrame.heldNode = collidableNode;
-            const RE::NiTransform objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab);
-            /*
-             * ROCK dynamic grab has one production authority convention:
-             * the generated/proxy palm frame seats the selected BODY-local grip
-             * point and owns the object angular relation through a row-view of
-             * its generated local axes. The custom constraint stores body-B local
-             * data in the rigid BODY frame. MOTION and COM are mass/diagnostic
-             * data only.
-             */
-            const RE::NiTransform ownerBodyLocalAtGrab =
-                ownerNodeAtGrab ? computeRuntimeBodyLocalTransform(ownerNodeAtGrab->world, grabBodyWorldAtGrab) : makeIdentityTransform();
-            const RE::NiTransform rootBodyLocalAtGrab =
-                rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, grabBodyWorldAtGrab) : makeIdentityTransform();
-            RE::NiPoint3 selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
-            RE::NiPoint3 selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
-            if (!grabMeshTriangles.empty()) {
-                grabFingerPoseMeshTriangles = selectNearestGrabFingerPoseTriangles(
-                    grabMeshTriangles,
-                    grabGripPoint,
-                    kMaxGrabRuntimeFingerPoseTriangles);
-                grabFingerPoseLocalMeshTriangles = cacheTrianglesInLocalSpace(grabFingerPoseMeshTriangles, objectWorldTransform);
-                if (grabFingerPoseMeshTriangles.size() != grabMeshTriangles.size()) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand MESH FINGER POSE TRIANGLES: sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
-                        handName(),
-                        grabMeshTriangles.size(),
-                        grabFingerPoseMeshTriangles.size(),
-                        grabGripPoint.x,
-                        grabGripPoint.y,
-                        grabGripPoint.z);
-                }
-            }
-            _grabFrame.localMeshTriangles.clear();
-            _grabFrame.fingerPoseLocalMeshTriangles.clear();
-            _grabFrame.gripEvidence.gripEvidenceLocal = selectedGripPointLocal;
-            _grabFrame.gripEvidence.gripNormalLocal = grabSurfaceHit.valid ? transform_math::worldVectorToLocal(objectWorldTransform, grabSurfaceHit.normal) : RE::NiPoint3{};
-            storeGripSourceEvidence(_grabFrame,
-                grabSurfaceHit.sourceNode ? grabSurfaceHit.sourceNode : collidableNode,
-                objectWorldTransform,
-                grabGripPoint,
-                grabSurfaceHit.normal,
-                grabSurfaceHit.valid && lengthSquared(grabSurfaceHit.normal) > 0.000001f);
-            _grabFrame.gripEvidence.gripEvidenceTriangleIndex = grabSurfaceHit.valid && grabSurfaceHit.hasTriangle ? static_cast<std::uint32_t>(grabSurfaceHit.triangleIndex) : 0xFFFF'FFFF;
-            _grabFrame.gripEvidence.gripEvidenceShapeKey = grabSurfaceHit.valid ? grabSurfaceHit.shapeKey : 0xFFFF'FFFF;
-            _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo = grabSurfaceHit.valid ? grabSurfaceHit.shapeCollisionFilterInfo : 0;
-            _grabFrame.gripEvidence.gripEvidenceHitFraction = grabSurfaceHit.valid ? grabSurfaceHit.hitFraction : 1.0f;
-            _grabFrame.gripEvidence.hasGripEvidenceShapeKey = grabSurfaceHit.valid && grabSurfaceHit.hasShapeKey;
-            _grabFrame.contactPatchSamples = {};
-            _grabFrame.contactPatchSampleCount = 0;
-            _grabFrame.hasContactPatch = contactPatchEvidenceAvailable;
-            _grabFrame.hasContactPatchEvidence = contactPatchEvidenceAvailable;
-            _grabFrame.contactPatchMeshSnapDeltaGameUnits = contactPatchRuntime.patch.meshSnapDeltaGameUnits;
-            _grabFrame.hasMultiFingerContactPatch = multiFingerGripUsed;
-            _grabFrame.multiFingerContactGroupCount = multiFingerGripRuntime.gripSet.groupCount;
-            _grabFrame.multiFingerContactReason = multiFingerGripRuntime.reason ? multiFingerGripRuntime.reason : "none";
-            _grabFrame.multiFingerContactSpreadGameUnits = multiFingerGripRuntime.gripSet.spreadGameUnits;
-            _grabFrame.multiFingerGripCenterWorldAtGrab = multiFingerGripRuntime.gripSet.contactCenterWorld;
-            _grabFrame.multiFingerHandCenterWorldAtGrab = multiFingerGripRuntime.gripSet.handCenterWorld;
-            _grabFrame.multiFingerAverageNormalWorldAtGrab = multiFingerGripRuntime.gripSet.averageNormalWorld;
-            _grabFrame.seat.palmSeatPointWorldAtGrab = palmSeatPointWorld;
-            _grabFrame.fingerEvidencePointWorldAtGrab = fingerEvidencePointWorld;
-            _grabFrame.seat.hasPalmSeatPoint = palmSeatPointValid;
-            _grabFrame.hasFingerEvidencePoint = fingerEvidencePointValid;
-            _grabFrame.activeGrabPointUsesMultiFingerEvidence = activeGrabPointUsesMultiFingerEvidence;
-            _grabFrame.seat.activeGrabPointMode = grabPointMode;
-            _grabFrame.pivotAuthority.source = pivotAuthoritySource;
-            _grabFrame.pivotAuthority.positionOnly = pivotAuthorityPositionOnly;
-            _grabFrame.pivotAuthority.normalTrusted = pivotAuthorityNormalTrusted;
-            _grabFrame.pivotAuthority.positionConfidence = pivotAuthorityPositionConfidence;
-            _grabFrame.seat.palmSeatPointMode = palmSeatPointMode;
-            _grabFrame.fingerEvidencePointMode = fingerEvidencePointMode;
-            if (contactPatchEvidenceAvailable) {
-                const std::uint32_t copyCount = (std::min)(contactPatchRuntime.sampleCount, static_cast<std::uint32_t>(_grabFrame.contactPatchSamples.size()));
-                for (std::uint32_t i = 0; i < copyCount; ++i) {
-                    auto sample = contactPatchRuntime.samples[i];
-                    sample.point = transform_math::worldPointToLocal(grabBodyWorldAtGrab, sample.point);
-                    sample.normal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, sample.normal);
-                    _grabFrame.contactPatchSamples[i] = sample;
-                }
-                _grabFrame.contactPatchSampleCount = copyCount;
-            }
-            _grabFrame.bodyResolutionReason = primaryBodyChoiceReasonName(primaryChoice.reason);
-            _grabFrame.pivotAuthority.pocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
-            _grabFrame.pivotAuthority.selectionDistanceGameUnits =
-                grabSurfaceHit.valid && grabSurfaceHit.hasSelectionHit ? grabSurfaceHit.selectionToMeshDistanceGameUnits : (sel.hasHitPoint ? 0.0f : std::numeric_limits<float>::max());
-            if (grabSurfaceHit.valid) {
-                grabSurfaceHit.pivotToSurfaceDistanceGameUnits = _grabFrame.pivotAuthority.pocketDistanceGameUnits;
-            }
-            _grabFrame.hasMeshPoseData = false;
-            if (!grabLocalMeshTriangles.empty()) {
-                _grabFrame.localMeshTriangles = grabLocalMeshTriangles;
-            }
-            if (!grabFingerPoseLocalMeshTriangles.empty()) {
-                _grabFrame.fingerPoseLocalMeshTriangles = grabFingerPoseLocalMeshTriangles;
-            }
-            _grabFrame.hasMeshPoseData =
-                !_grabFrame.localMeshTriangles.empty() ||
-                !_grabFrame.fingerPoseLocalMeshTriangles.empty();
+            const auto& palmPos = bodyFrameCapture.palmPosition;
+            const auto& grabBodyWorldAtGrab = bodyFrameCapture.grabBodyWorld;
+            const auto& motionBodyWorldAtGrab = bodyFrameCapture.motionBodyWorld;
+            const auto motionBodySourceAtGrab = bodyFrameCapture.motionBodySource;
+            const bool hasMotionBodyWorldAtGrab = bodyFrameCapture.hasMotionBodyWorld;
+            const bool constraintUsesMotionBodyAtGrab = bodyFrameCapture.constraintUsesMotionBody;
+            const auto& constraintBodyWorldAtGrab = bodyFrameCapture.constraintBodyWorld;
+            auto& grabPivotAWorld = bodyFrameCapture.grabPivotAWorld;
+            auto* bodyCollisionObjectAtGrab = bodyFrameCapture.bodyCollisionObject;
+            auto* ownerNodeAtGrab = bodyFrameCapture.ownerNode;
+            const auto& objectToBodyAtGrab = bodyFrameCapture.objectToBody;
+            const auto& ownerBodyLocalAtGrab = bodyFrameCapture.ownerBodyLocal;
+            const auto& rootBodyLocalAtGrab = bodyFrameCapture.rootBodyLocal;
+            auto& selectedGripPointLocal = bodyFrameCapture.selectedGripPointLocal;
+            auto& selectedPivotBBodyLocalGame = bodyFrameCapture.selectedPivotBBodyLocalGame;
+            grabFingerPoseMeshTriangles = std::move(bodyFrameCapture.fingerPoseMeshTriangles);
+            grabFingerPoseLocalMeshTriangles = std::move(bodyFrameCapture.fingerPoseLocalMeshTriangles);
 
             RE::NiTransform desiredObjectWorld = objectWorldTransform;
             RE::NiTransform desiredBodyWorld = grabBodyWorldAtGrab;

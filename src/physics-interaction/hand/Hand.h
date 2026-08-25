@@ -734,6 +734,8 @@ namespace rock
         struct GrabFingerEvidenceInput;
         struct GrabFingerEvidence;
         struct GrabCommitPreparationInput;
+        struct GrabBodyFrameCaptureInput;
+        struct GrabBodyFrameCapture;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -811,6 +813,10 @@ namespace rock
             GrabFingerEvidence& outEvidence);
         void beginResolvedGrabCommit(
             const GrabCommitPreparationInput& input);
+        bool captureGrabBodyFrame(
+            RE::hknpWorld* world,
+            const GrabBodyFrameCaptureInput& input,
+            GrabBodyFrameCapture& outCapture);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
