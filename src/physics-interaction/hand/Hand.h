@@ -730,6 +730,7 @@ namespace rock
         struct GrabSurfaceEvidence;
         struct GrabBodyResolution;
         struct ResolvedGrabBodyCapture;
+        struct GrabPivotEvidence;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -783,6 +784,22 @@ namespace rock
             std::uint64_t traceId,
             const std::string& objectName,
             ResolvedGrabBodyCapture& outCapture);
+        void resolveGrabPivotEvidence(
+            RE::hknpWorld* world,
+            const ValidatedGrabSelection& selection,
+            const GrabProxyPreparation& proxy,
+            const GrabMeshExtraction& mesh,
+            const ResolvedGrabBodyCapture& bodyCapture,
+            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
+            const grab_contact_source_policy::GrabContactSourcePolicy& contactSourcePolicy,
+            bool canonicalPivotAvailable,
+            const RE::NiPoint3& canonicalPivotPointWorld,
+            const RE::NiPoint3& canonicalPivotNormalWorld,
+            const char* canonicalPivotMode,
+            grab_authority_frame_math::GrabAuthorityPivotSource canonicalPivotAuthoritySource,
+            GrabSurfaceEvidence& surface,
+            GrabBodyResolution& bodyResolution,
+            GrabPivotEvidence& outEvidence);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
