@@ -299,6 +299,11 @@ namespace rock
             bool isLeft,
             const GrabInputHandContext& context,
             GrabInputHandPrelude& outPrelude);
+        bool processTouchGrabInput(const PhysicsFrameContext& frame,
+            Hand& hand,
+            bool isLeft,
+            const GrabInputHandContext& context,
+            const GrabInputHandPrelude& prelude);
         void processGrabInputHand(const PhysicsFrameContext& frame, Hand& hand, bool isLeft, const GrabInputHandContext& context);
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);

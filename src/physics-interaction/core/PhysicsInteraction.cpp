@@ -9826,37 +9826,22 @@ namespace rock
         return true;
     }
 
-    void PhysicsInteraction::processGrabInputHand(
+    bool PhysicsInteraction::processTouchGrabInput(
         const PhysicsFrameContext& frame,
         Hand& hand,
         bool isLeft,
-        const GrabInputHandContext& context)
+        const GrabInputHandContext& context,
+        const GrabInputHandPrelude& prelude)
     {
-        GrabInputHandPrelude prelude{};
-        if (!prepareGrabInputHand(frame, hand, isLeft, context, prelude)) {
-            return;
-        }
-
-        auto* hknp = context.hknp;
-        const bool ambidextrousHandoffAvailable = context.ambidextrousHandoffAvailable;
-        const auto& firingGripModes = context.firingGripModes;
-        const bool gripZoneSettleEquipEnabled = context.gripZoneSettleEquipEnabled;
-        const auto& farHmdConeGate = context.farHmdConeGate;
+        const auto rawGrabInput = prelude.rawGrabInput;
+        const auto handIndex = isLeft ? 1u : 0u;
         const auto worldGeneration = context.worldGeneration;
         const auto skeletonGeneration = context.skeletonGeneration;
         const auto providerGeneration = context.providerGeneration;
         const auto collisionGeneration = context.collisionGeneration;
-        const auto& handInput = isLeft ? frame.left : frame.right;
-        auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
-        auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
-        auto& triggerEquipIntent = _heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
-        auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
-        auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
-        const auto handIndex = isLeft ? 1u : 0u;
-        const bool heldWeaponAtFrameStart = prelude.heldWeaponAtFrameStart;
-        const bool heldWeaponEquipTriggerPressedEdge = prelude.heldWeaponEquipTriggerPressedEdge;
-        auto grabInput = prelude.grabInput;
-        const auto rawGrabInput = prelude.rawGrabInput;
+        auto& inputIntentState = _grabInputIntentStates[handIndex];
+        auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[handIndex];
+
         const auto handState = hand.getState();
         const bool touchGrabStateAvailable =
             handState == HandState::Idle ||
@@ -9990,7 +9975,7 @@ namespace rock
                     "touch-grab-acquired");
                 hand.cancelGrabVisualReturn(
                     "touch-grab-acquired");
-                return;
+                return false;
             }
             const auto attempt =
                 _touchGrabRuntime.getAttemptReport();
@@ -10012,6 +9997,39 @@ namespace rock
                 attempt.surfaceMeshFailure);
         }
 
+
+        return true;
+    }
+
+    void PhysicsInteraction::processGrabInputHand(
+        const PhysicsFrameContext& frame,
+        Hand& hand,
+        bool isLeft,
+        const GrabInputHandContext& context)
+    {
+        GrabInputHandPrelude prelude{};
+        if (!prepareGrabInputHand(frame, hand, isLeft, context, prelude)) {
+            return;
+        }
+
+        auto* hknp = context.hknp;
+        const bool ambidextrousHandoffAvailable = context.ambidextrousHandoffAvailable;
+        const auto& firingGripModes = context.firingGripModes;
+        const bool gripZoneSettleEquipEnabled = context.gripZoneSettleEquipEnabled;
+        const auto& farHmdConeGate = context.farHmdConeGate;
+        const auto& handInput = isLeft ? frame.left : frame.right;
+        auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
+        auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
+        auto& triggerEquipIntent = _heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
+        auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
+        auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
+        const bool heldWeaponAtFrameStart = prelude.heldWeaponAtFrameStart;
+        const bool heldWeaponEquipTriggerPressedEdge = prelude.heldWeaponEquipTriggerPressedEdge;
+        auto grabInput = prelude.grabInput;
+        const auto rawGrabInput = prelude.rawGrabInput;
+        if (!processTouchGrabInput(frame, hand, isLeft, context, prelude)) {
+            return;
+        }
         if (triggerEquipIntent.pending) {
             triggerEquipIntent.remainingSeconds -= (std::max)(0.0f, frame.deltaSeconds);
             if (triggerEquipIntent.remainingSeconds <= 0.0f) {
