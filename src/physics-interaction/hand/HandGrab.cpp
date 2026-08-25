@@ -6973,6 +6973,256 @@ namespace rock
         }
     }
 
+    struct Hand::GrabSurfaceEvidence
+    {
+        RE::NiPoint3 gripPoint{};
+        float selectionToMeshDistanceGameUnits = 0.0f;
+        bool meshGrabFound = false;
+        GrabSurfaceHit surfaceHit{};
+        RE::NiAVObject* surfaceOwnerNode = nullptr;
+        const char* pointMode = "noContactPointPending";
+        GrabPivotAuthoritySource pointAuthoritySource = GrabPivotAuthoritySource::None;
+        const char* fallbackReason = "noMeshSourceNode";
+    };
+
+    void Hand::resolveGrabSurfaceEvidence(
+        const ValidatedGrabSelection& selection,
+        const GrabProxyPreparation& proxy,
+        const GrabMeshCaptureSetup& capture,
+        const GrabMeshExtraction& mesh,
+        bool meshContactOnly,
+        GrabSurfaceEvidence& outEvidence)
+    {
+        const auto& sel = _currentSelection;
+        auto* rootNode = selection.rootNode;
+        auto* collidableNode = capture.collidableNode;
+        auto* meshSourceNode = mesh.meshSourceNode;
+        const auto& grabMeshTriangles = mesh.meshTriangles;
+        const auto& grabSurfaceTriangles = mesh.surfaceTriangles;
+        const auto& meshStats = mesh.stats;
+        const bool handPocketOnlyGrab = selection.handPocketOnlyGrab;
+        const auto& palmPocketPivotAWorld = proxy.palmPocketPivotAWorld;
+        const auto& proxyAuthorityFrameWorldAtGrab = proxy.proxyAuthorityFrameWorldAtGrab;
+        auto& grabGripPoint = outEvidence.gripPoint;
+        auto& selectionToMeshDistanceGameUnits = outEvidence.selectionToMeshDistanceGameUnits;
+        auto& meshGrabFound = outEvidence.meshGrabFound;
+        auto& grabSurfaceHit = outEvidence.surfaceHit;
+        auto& surfaceOwnerNode = outEvidence.surfaceOwnerNode;
+        auto& grabPointMode = outEvidence.pointMode;
+        auto& grabPointAuthoritySource = outEvidence.pointAuthoritySource;
+        auto& grabFallbackReason = outEvidence.fallbackReason;
+        grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : proxy.grabPivotAForPrimaryChoice;
+        grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "noContactPointPending";
+        grabPointAuthoritySource = sel.hasHitPoint ? GrabPivotAuthoritySource::CollisionFallback : GrabPivotAuthoritySource::None;
+        grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
+            /*
+             * hknp selection identifies the object/body. In mesh-authoritative mode
+             * it is logged as collision evidence only; the grabbed point and frame
+             * must come from visual geometry.
+             */
+            if (sel.hasHitPoint && sel.hasHitNormal) {
+                const auto collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
+                if (collisionSurfaceHit.valid) {
+                    if (!meshContactOnly && !handPocketOnlyGrab) {
+                        grabSurfaceHit = collisionSurfaceHit;
+                        grabGripPoint = grabSurfaceHit.position;
+                        surfaceOwnerNode = grabSurfaceHit.sourceNode;
+                        meshGrabFound = true;
+                        grabPointMode = "collisionSurface";
+                        grabPointAuthoritySource = GrabPivotAuthoritySource::CollisionFallback;
+                        grabFallbackReason = "none";
+                    }
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand COLLISION SELECTION HIT: body={} activeGrabPoint={} point=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) "
+                        "fraction={:.4f} shapeKey=0x{:08X} filter=0x{:08X} owner='{}'",
+                        handName(),
+                        sel.bodyId.value,
+                        meshContactOnly ? "no" : "yes",
+                        collisionSurfaceHit.position.x,
+                        collisionSurfaceHit.position.y,
+                        collisionSurfaceHit.position.z,
+                        collisionSurfaceHit.normal.x,
+                        collisionSurfaceHit.normal.y,
+                        collisionSurfaceHit.normal.z,
+                        collisionSurfaceHit.hitFraction,
+                        collisionSurfaceHit.shapeKey,
+                        collisionSurfaceHit.shapeCollisionFilterInfo,
+                        nodeDebugName(collisionSurfaceHit.sourceNode));
+                }
+            }
+
+            if (meshSourceNode) {
+                const bool closeGrabNeedsPalmPocketMeshAuthority =
+                    !grabSurfaceTriangles.empty() &&
+                    (handPocketOnlyGrab ||
+                        (!sel.isFarSelection &&
+                            (!meshGrabFound || grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery)));
+                if (closeGrabNeedsPalmPocketMeshAuthority) {
+                    /*
+                     * Close seated grabs need one position authority before visual
+                     * attach and pivot-B freeze. Use the palm-pocket mesh point first
+                     * so collision selection, contact patches, and finger evidence do
+                     * not fight over different corners of the same object.
+                     */
+                    const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
+                    const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
+                    const auto closePocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+                        proxyAuthorityFrameWorldAtGrab,
+                        _isLeft,
+                        grabPivotAWorld,
+                        g_rockConfig.rockGrabPocketDepthGameUnits,
+                        g_rockConfig.rockGrabPocketRadiusGameUnits);
+                    const RE::NiPoint3 pocketAuthorityPoint = closePocket.valid ? closePocket.palmCenterWorld : grabPivotAWorld;
+                    const RE::NiPoint3 pocketAuthorityNormal = closePocket.valid ? closePocket.palmNormalWorld : palmDir;
+                    const float palmPocketSnapDistance = (std::max)(
+                        finitePositiveOr(g_rockConfig.rockGrabPocketRadiusGameUnits, 6.0f),
+                        (std::max)(
+                            finitePositiveOr(g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance, 8.0f),
+                            (std::max)(
+                                finitePositiveOr(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, 10.0f),
+                                finitePositiveOr(g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits, 4.0f) +
+                                    finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f))));
+
+                    if (findClosestGrabSurfaceHitToPointPositionOnly(
+                            grabSurfaceTriangles,
+                            pocketAuthorityPoint,
+                            pocketAuthorityNormal,
+                            palmPocketSnapDistance,
+                            grabSurfaceHit)) {
+                        grabGripPoint = grabSurfaceHit.position;
+                        selectionToMeshDistanceGameUnits =
+                            sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
+                        grabSurfaceHit.hasSelectionHit = sel.hasHitPoint;
+                        grabSurfaceHit.selectionToMeshDistanceGameUnits = selectionToMeshDistanceGameUnits;
+                        grabSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
+                        grabSurfaceHit.shapeKey = sel.hitShapeKey;
+                        grabSurfaceHit.shapeCollisionFilterInfo = sel.hitShapeCollisionFilterInfo;
+                        grabSurfaceHit.hitFraction = sel.hitFraction;
+                        grabSurfaceHit.hasShapeKey = sel.hasHitShapeKey;
+                        surfaceOwnerNode = grabSurfaceHit.sourceNode;
+                        meshGrabFound = true;
+                        grabPointMode = "palmPocketMeshSurface";
+                        grabPointAuthoritySource = GrabPivotAuthoritySource::PalmPocketMeshPoint;
+                        grabFallbackReason = "closePalmPocketMeshAuthority";
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' shape='{}' "
+                            "pocket=({:.1f},{:.1f},{:.1f}) snapLimit={:.1f} selectionHit={} selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f}",
+                            handName(),
+                            grabPointMode,
+                            grabMeshTriangles.size(),
+                            grabSurfaceHit.position.x,
+                            grabSurfaceHit.position.y,
+                            grabSurfaceHit.position.z,
+                            grabSurfaceHit.triangleIndex,
+                            grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
+                            nodeDebugName(grabSurfaceHit.sourceNode),
+                            nodeDebugName(grabSurfaceHit.sourceShape),
+                            pocketAuthorityPoint.x,
+                            pocketAuthorityPoint.y,
+                            pocketAuthorityPoint.z,
+                            palmPocketSnapDistance,
+                            sel.hasHitPoint ? "yes" : "no",
+                            sel.hasHitPoint ? selectionToMeshDistanceGameUnits : -1.0f,
+                            grabSurfaceHit.signedAlongPalmDistanceGameUnits,
+                            grabSurfaceHit.lateralPalmDistanceGameUnits);
+                    }
+                }
+
+                if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
+                    const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
+                    RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
+                    const RE::NiPoint3 expectedNormal =
+                        sel.hasHitNormal && lengthSquared(sel.hitNormalWorld) > 0.0f ? sel.hitNormalWorld : palmDir;
+
+                    if (findClosestGrabSurfaceHitToPoint(grabSurfaceTriangles,
+                            sel.hitPointWorld,
+                            expectedNormal,
+                            g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance,
+                            g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees,
+                            grabSurfaceHit)) {
+                        grabGripPoint = grabSurfaceHit.position;
+                        selectionToMeshDistanceGameUnits = pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint);
+                        grabSurfaceHit.hasSelectionHit = true;
+                        grabSurfaceHit.selectionToMeshDistanceGameUnits = selectionToMeshDistanceGameUnits;
+                        grabSurfaceHit.signedAlongPalmDistanceGameUnits = sel.signedAlongDistance;
+                        grabSurfaceHit.lateralPalmDistanceGameUnits = sel.lateralDistance;
+                        grabSurfaceHit.shapeKey = sel.hitShapeKey;
+                        grabSurfaceHit.shapeCollisionFilterInfo = sel.hitShapeCollisionFilterInfo;
+                        grabSurfaceHit.hitFraction = sel.hitFraction;
+                        grabSurfaceHit.hasShapeKey = sel.hasHitShapeKey;
+                        surfaceOwnerNode = grabSurfaceHit.sourceNode;
+                        meshGrabFound = true;
+                        grabPointMode = "selectionHitMeshSnap";
+                        grabPointAuthoritySource = GrabPivotAuthoritySource::SelectionHitMeshSnap;
+                        grabFallbackReason = "selectionHitMeshSnap";
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' shape='{}' selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f}",
+                            handName(),
+                            grabPointMode,
+                            grabMeshTriangles.size(),
+                            grabSurfaceHit.position.x,
+                            grabSurfaceHit.position.y,
+                            grabSurfaceHit.position.z,
+                            grabSurfaceHit.triangleIndex,
+                            grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
+                            nodeDebugName(grabSurfaceHit.sourceNode),
+                            nodeDebugName(grabSurfaceHit.sourceShape),
+                            selectionToMeshDistanceGameUnits,
+                            grabSurfaceHit.signedAlongPalmDistanceGameUnits,
+                            grabSurfaceHit.lateralPalmDistanceGameUnits);
+                    }
+                }
+
+                if (!meshGrabFound && !grabSurfaceTriangles.empty()) {
+                    const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
+                    RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
+
+                    int rejectedBehindSurface = 0;
+                    if (findClosestGrabSurfaceHit(grabSurfaceTriangles,
+                            grabPivotAWorld,
+                            palmDir,
+                            g_rockConfig.rockGrabLateralWeight,
+                            g_rockConfig.rockGrabDirectionalWeight,
+                            grabSurfaceHit,
+                            g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits,
+                            &rejectedBehindSurface)) {
+                        grabGripPoint = grabSurfaceHit.position;
+                        selectionToMeshDistanceGameUnits =
+                            sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
+                        grabSurfaceHit.hasSelectionHit = sel.hasHitPoint;
+                        grabSurfaceHit.selectionToMeshDistanceGameUnits = selectionToMeshDistanceGameUnits;
+                        surfaceOwnerNode = grabSurfaceHit.sourceNode;
+                        meshGrabFound = true;
+                        grabPointMode = "meshSurface";
+                        grabPointAuthoritySource = GrabPivotAuthoritySource::PalmRayMeshPoint;
+                        grabFallbackReason = "none";
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand MESH GRAB: mode={} tris={} staticTris={} dynamicTris={} skinnedTris={} "
+                            "closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' shape='{}' selectionHit={} selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f} rejectBehind={}",
+                            handName(), grabPointMode, grabMeshTriangles.size(), meshStats.staticTriangles, meshStats.dynamicTriangles, meshStats.skinnedTriangles, grabSurfaceHit.position.x,
+                            grabSurfaceHit.position.y, grabSurfaceHit.position.z, grabSurfaceHit.triangleIndex, grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
+                            nodeDebugName(grabSurfaceHit.sourceNode), nodeDebugName(grabSurfaceHit.sourceShape), sel.hasHitPoint ? "yes" : "no",
+                            sel.hasHitPoint ? selectionToMeshDistanceGameUnits : -1.0f, grabSurfaceHit.signedAlongPalmDistanceGameUnits, grabSurfaceHit.lateralPalmDistanceGameUnits,
+                            rejectedBehindSurface);
+                    } else {
+                        grabFallbackReason = "noClosestSurfacePoint";
+                    }
+                } else if (!meshGrabFound) {
+                    grabFallbackReason = "noTriangles";
+                }
+            }
+            if (!meshGrabFound) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand GRAB POINT FALLBACK: mode={} reason={} meshNode='{}' ownerNode='{}' rootNode='{}' "
+                    "shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} "
+                    "fallbackPoint=({:.1f},{:.1f},{:.1f})",
+                    handName(), grabPointMode, grabFallbackReason, nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes,
+                    meshStats.staticShapes, meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes, meshStats.skinnedTriangles,
+                    meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
+            }
+
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -7273,9 +7523,6 @@ namespace rock
         auto* meshSourceNode = meshCaptureSetup.meshSourceNode;
         RE::NiTransform objectWorldTransform = meshCaptureSetup.objectWorldTransform;
 
-        RE::NiPoint3 grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice;
-        float selectionToMeshDistanceGameUnits = 0.0f;
-        bool meshGrabFound = false;
         GrabMeshExtraction meshExtraction{};
         auto& meshStats = meshExtraction.stats;
         auto& grabMeshTriangles = meshExtraction.meshTriangles;
@@ -7283,7 +7530,6 @@ namespace rock
         auto& grabSurfaceTriangles = meshExtraction.surfaceTriangles;
         std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
         std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
-        GrabSurfaceHit grabSurfaceHit{};
         RuntimeGrabContactPatch contactPatchRuntime{};
         RuntimeMultiFingerGripContact multiFingerGripRuntime{};
         RE::NiPoint3 palmSeatPointWorld{};
@@ -7303,13 +7549,25 @@ namespace rock
         float pivotAuthorityPocketDistanceGameUnits = std::numeric_limits<float>::max();
         float pivotAuthoritySelectionDeltaGameUnits = std::numeric_limits<float>::max();
         float pivotAuthorityLongLeverGameUnits = 0.0f;
-        RE::NiAVObject* surfaceOwnerNode = nullptr;
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
-        const char* grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "noContactPointPending";
-        GrabPivotAuthoritySource grabPointAuthoritySource = sel.hasHitPoint ?
-            GrabPivotAuthoritySource::CollisionFallback :
-            GrabPivotAuthoritySource::None;
-        const char* grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
+        extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, meshExtraction);
+        meshSourceNode = meshExtraction.meshSourceNode;
+        GrabSurfaceEvidence surfaceEvidence{};
+        resolveGrabSurfaceEvidence(
+            validatedSelection,
+            proxyPreparation,
+            meshCaptureSetup,
+            meshExtraction,
+            meshContactOnly,
+            surfaceEvidence);
+        auto& grabGripPoint = surfaceEvidence.gripPoint;
+        auto& selectionToMeshDistanceGameUnits = surfaceEvidence.selectionToMeshDistanceGameUnits;
+        auto& meshGrabFound = surfaceEvidence.meshGrabFound;
+        auto& grabSurfaceHit = surfaceEvidence.surfaceHit;
+        auto*& surfaceOwnerNode = surfaceEvidence.surfaceOwnerNode;
+        const char*& grabPointMode = surfaceEvidence.pointMode;
+        auto& grabPointAuthoritySource = surfaceEvidence.pointAuthoritySource;
+        const char*& grabFallbackReason = surfaceEvidence.fallbackReason;
         const char* palmSeatPointMode = grabPointMode;
         const char* palmSeatFallbackReason = grabFallbackReason;
         const char* fingerEvidencePointMode = "none";
@@ -7331,214 +7589,6 @@ namespace rock
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         };
-
-        /*
-         * hknp selection identifies the object/body. In mesh-authoritative mode
-         * it is logged as collision evidence only; the grabbed point and frame
-         * must come from visual geometry.
-         */
-        if (sel.hasHitPoint && sel.hasHitNormal) {
-            const auto collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
-            if (collisionSurfaceHit.valid) {
-                if (!meshContactOnly && !handPocketOnlyGrab) {
-                    grabSurfaceHit = collisionSurfaceHit;
-                    grabGripPoint = grabSurfaceHit.position;
-                    surfaceOwnerNode = grabSurfaceHit.sourceNode;
-                    meshGrabFound = true;
-                    grabPointMode = "collisionSurface";
-                    grabPointAuthoritySource = GrabPivotAuthoritySource::CollisionFallback;
-                    grabFallbackReason = "none";
-                }
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand COLLISION SELECTION HIT: body={} activeGrabPoint={} point=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) "
-                    "fraction={:.4f} shapeKey=0x{:08X} filter=0x{:08X} owner='{}'",
-                    handName(),
-                    sel.bodyId.value,
-                    meshContactOnly ? "no" : "yes",
-                    collisionSurfaceHit.position.x,
-                    collisionSurfaceHit.position.y,
-                    collisionSurfaceHit.position.z,
-                    collisionSurfaceHit.normal.x,
-                    collisionSurfaceHit.normal.y,
-                    collisionSurfaceHit.normal.z,
-                    collisionSurfaceHit.hitFraction,
-                    collisionSurfaceHit.shapeKey,
-                    collisionSurfaceHit.shapeCollisionFilterInfo,
-                    nodeDebugName(collisionSurfaceHit.sourceNode));
-            }
-        }
-
-        extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, meshExtraction);
-        meshSourceNode = meshExtraction.meshSourceNode;
-        if (meshSourceNode) {
-            const bool closeGrabNeedsPalmPocketMeshAuthority =
-                !grabSurfaceTriangles.empty() &&
-                (handPocketOnlyGrab ||
-                    (!sel.isFarSelection &&
-                        (!meshGrabFound || grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery)));
-            if (closeGrabNeedsPalmPocketMeshAuthority) {
-                /*
-                 * Close seated grabs need one position authority before visual
-                 * attach and pivot-B freeze. Use the palm-pocket mesh point first
-                 * so collision selection, contact patches, and finger evidence do
-                 * not fight over different corners of the same object.
-                 */
-                const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
-                const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
-                const auto closePocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
-                    proxyAuthorityFrameWorldAtGrab,
-                    _isLeft,
-                    grabPivotAWorld,
-                    g_rockConfig.rockGrabPocketDepthGameUnits,
-                    g_rockConfig.rockGrabPocketRadiusGameUnits);
-                const RE::NiPoint3 pocketAuthorityPoint = closePocket.valid ? closePocket.palmCenterWorld : grabPivotAWorld;
-                const RE::NiPoint3 pocketAuthorityNormal = closePocket.valid ? closePocket.palmNormalWorld : palmDir;
-                const float palmPocketSnapDistance = (std::max)(
-                    finitePositiveOr(g_rockConfig.rockGrabPocketRadiusGameUnits, 6.0f),
-                    (std::max)(
-                        finitePositiveOr(g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance, 8.0f),
-                        (std::max)(
-                            finitePositiveOr(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, 10.0f),
-                            finitePositiveOr(g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits, 4.0f) +
-                                finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f))));
-
-                if (findClosestGrabSurfaceHitToPointPositionOnly(
-                        grabSurfaceTriangles,
-                        pocketAuthorityPoint,
-                        pocketAuthorityNormal,
-                        palmPocketSnapDistance,
-                        grabSurfaceHit)) {
-                    grabGripPoint = grabSurfaceHit.position;
-                    selectionToMeshDistanceGameUnits =
-                        sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
-                    grabSurfaceHit.hasSelectionHit = sel.hasHitPoint;
-                    grabSurfaceHit.selectionToMeshDistanceGameUnits = selectionToMeshDistanceGameUnits;
-                    grabSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
-                    grabSurfaceHit.shapeKey = sel.hitShapeKey;
-                    grabSurfaceHit.shapeCollisionFilterInfo = sel.hitShapeCollisionFilterInfo;
-                    grabSurfaceHit.hitFraction = sel.hitFraction;
-                    grabSurfaceHit.hasShapeKey = sel.hasHitShapeKey;
-                    surfaceOwnerNode = grabSurfaceHit.sourceNode;
-                    meshGrabFound = true;
-                    grabPointMode = "palmPocketMeshSurface";
-                    grabPointAuthoritySource = GrabPivotAuthoritySource::PalmPocketMeshPoint;
-                    grabFallbackReason = "closePalmPocketMeshAuthority";
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' shape='{}' "
-                        "pocket=({:.1f},{:.1f},{:.1f}) snapLimit={:.1f} selectionHit={} selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f}",
-                        handName(),
-                        grabPointMode,
-                        grabMeshTriangles.size(),
-                        grabSurfaceHit.position.x,
-                        grabSurfaceHit.position.y,
-                        grabSurfaceHit.position.z,
-                        grabSurfaceHit.triangleIndex,
-                        grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
-                        nodeDebugName(grabSurfaceHit.sourceNode),
-                        nodeDebugName(grabSurfaceHit.sourceShape),
-                        pocketAuthorityPoint.x,
-                        pocketAuthorityPoint.y,
-                        pocketAuthorityPoint.z,
-                        palmPocketSnapDistance,
-                        sel.hasHitPoint ? "yes" : "no",
-                        sel.hasHitPoint ? selectionToMeshDistanceGameUnits : -1.0f,
-                        grabSurfaceHit.signedAlongPalmDistanceGameUnits,
-                        grabSurfaceHit.lateralPalmDistanceGameUnits);
-                }
-            }
-
-            if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
-                const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
-                RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
-                const RE::NiPoint3 expectedNormal =
-                    sel.hasHitNormal && lengthSquared(sel.hitNormalWorld) > 0.0f ? sel.hitNormalWorld : palmDir;
-
-                if (findClosestGrabSurfaceHitToPoint(grabSurfaceTriangles,
-                        sel.hitPointWorld,
-                        expectedNormal,
-                        g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance,
-                        g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees,
-                        grabSurfaceHit)) {
-                    grabGripPoint = grabSurfaceHit.position;
-                    selectionToMeshDistanceGameUnits = pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint);
-                    grabSurfaceHit.hasSelectionHit = true;
-                    grabSurfaceHit.selectionToMeshDistanceGameUnits = selectionToMeshDistanceGameUnits;
-                    grabSurfaceHit.signedAlongPalmDistanceGameUnits = sel.signedAlongDistance;
-                    grabSurfaceHit.lateralPalmDistanceGameUnits = sel.lateralDistance;
-                    grabSurfaceHit.shapeKey = sel.hitShapeKey;
-                    grabSurfaceHit.shapeCollisionFilterInfo = sel.hitShapeCollisionFilterInfo;
-                    grabSurfaceHit.hitFraction = sel.hitFraction;
-                    grabSurfaceHit.hasShapeKey = sel.hasHitShapeKey;
-                    surfaceOwnerNode = grabSurfaceHit.sourceNode;
-                    meshGrabFound = true;
-                    grabPointMode = "selectionHitMeshSnap";
-                    grabPointAuthoritySource = GrabPivotAuthoritySource::SelectionHitMeshSnap;
-                    grabFallbackReason = "selectionHitMeshSnap";
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand MESH GRAB: mode={} tris={} closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' shape='{}' selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f}",
-                        handName(),
-                        grabPointMode,
-                        grabMeshTriangles.size(),
-                        grabSurfaceHit.position.x,
-                        grabSurfaceHit.position.y,
-                        grabSurfaceHit.position.z,
-                        grabSurfaceHit.triangleIndex,
-                        grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
-                        nodeDebugName(grabSurfaceHit.sourceNode),
-                        nodeDebugName(grabSurfaceHit.sourceShape),
-                        selectionToMeshDistanceGameUnits,
-                        grabSurfaceHit.signedAlongPalmDistanceGameUnits,
-                        grabSurfaceHit.lateralPalmDistanceGameUnits);
-                }
-            }
-
-            if (!meshGrabFound && !grabSurfaceTriangles.empty()) {
-                const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
-                RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
-
-                int rejectedBehindSurface = 0;
-                if (findClosestGrabSurfaceHit(grabSurfaceTriangles,
-                        grabPivotAWorld,
-                        palmDir,
-                        g_rockConfig.rockGrabLateralWeight,
-                        g_rockConfig.rockGrabDirectionalWeight,
-                        grabSurfaceHit,
-                        g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits,
-                        &rejectedBehindSurface)) {
-                    grabGripPoint = grabSurfaceHit.position;
-                    selectionToMeshDistanceGameUnits =
-                        sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
-                    grabSurfaceHit.hasSelectionHit = sel.hasHitPoint;
-                    grabSurfaceHit.selectionToMeshDistanceGameUnits = selectionToMeshDistanceGameUnits;
-                    surfaceOwnerNode = grabSurfaceHit.sourceNode;
-                    meshGrabFound = true;
-                    grabPointMode = "meshSurface";
-                    grabPointAuthoritySource = GrabPivotAuthoritySource::PalmRayMeshPoint;
-                    grabFallbackReason = "none";
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand MESH GRAB: mode={} tris={} staticTris={} dynamicTris={} skinnedTris={} "
-                        "closest=({:.1f},{:.1f},{:.1f}) tri={} source={} owner='{}' shape='{}' selectionHit={} selectionDelta={:.1f}gu surfaceAlong={:.1f} surfaceLateral={:.1f} rejectBehind={}",
-                        handName(), grabPointMode, grabMeshTriangles.size(), meshStats.staticTriangles, meshStats.dynamicTriangles, meshStats.skinnedTriangles, grabSurfaceHit.position.x,
-                        grabSurfaceHit.position.y, grabSurfaceHit.position.z, grabSurfaceHit.triangleIndex, grabSurfaceSourceKindName(grabSurfaceHit.sourceKind),
-                        nodeDebugName(grabSurfaceHit.sourceNode), nodeDebugName(grabSurfaceHit.sourceShape), sel.hasHitPoint ? "yes" : "no",
-                        sel.hasHitPoint ? selectionToMeshDistanceGameUnits : -1.0f, grabSurfaceHit.signedAlongPalmDistanceGameUnits, grabSurfaceHit.lateralPalmDistanceGameUnits,
-                        rejectedBehindSurface);
-                } else {
-                    grabFallbackReason = "noClosestSurfacePoint";
-                }
-            } else if (!meshGrabFound) {
-                grabFallbackReason = "noTriangles";
-            }
-        }
-        if (!meshGrabFound) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB POINT FALLBACK: mode={} reason={} meshNode='{}' ownerNode='{}' rootNode='{}' "
-                "shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} "
-                "fallbackPoint=({:.1f},{:.1f},{:.1f})",
-                handName(), grabPointMode, grabFallbackReason, nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes,
-                meshStats.staticShapes, meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes, meshStats.skinnedTriangles,
-                meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
-        }
 
         const bool hasMeshSurfaceContact =
             meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery;

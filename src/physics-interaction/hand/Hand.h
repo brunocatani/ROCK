@@ -727,6 +727,7 @@ namespace rock
         struct GrabProxyPreparation;
         struct GrabMeshCaptureSetup;
         struct GrabMeshExtraction;
+        struct GrabSurfaceEvidence;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -754,6 +755,13 @@ namespace rock
             RE::NiAVObject* meshSourceNode,
             bool handPocketOnlyGrab,
             GrabMeshExtraction& outExtraction);
+        void resolveGrabSurfaceEvidence(
+            const ValidatedGrabSelection& selection,
+            const GrabProxyPreparation& proxy,
+            const GrabMeshCaptureSetup& capture,
+            const GrabMeshExtraction& mesh,
+            bool meshContactOnly,
+            GrabSurfaceEvidence& outEvidence);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
