@@ -57,6 +57,10 @@ Require-Text 'src/physics-interaction/grab/GeneratedGrabFingerCalibration.h' 'kG
     'Generated calibration data must record the source hash used for the bake.'
 Require-Text 'src/physics-interaction/grab/GeneratedGrabFingerCalibration.h' 'BakedGrabThumbLane[\s\S]*Opposition[\s\S]*SidePad' `
     'Generated calibration data must include baked thumb opposition and side-pad lane metadata.'
+Require-Text 'src/physics-interaction/grab/GeneratedGrabFingerCalibration.cpp' 'kBakedGrabFingerHandProfiles' `
+    'Baked grab-finger calibration payload must have one translation-unit owner.'
+Reject-Text 'src/physics-interaction/grab/GeneratedGrabFingerCalibration.h' 'kBakedGrabFingerHandProfiles' `
+    'The generated header must not materialize the baked calibration payload in every including translation unit.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'kGrabFingerCalibrationSampleCount[\s\S]*kCalibratedFingerCurveSampleCount' `
     'Gameplay must assert that generated and runtime calibration sample counts match.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'makeBakedCalibratedFingerCurve' `

@@ -302,6 +302,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKGrabFingerLocalTransformPolicyTests
     "${ROOT_DIR}/tests/GrabFingerLocalTransformPolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/GeneratedGrabFingerCalibration.cpp"
   )
   target_compile_features(ROCKGrabFingerLocalTransformPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKGrabFingerLocalTransformPolicyTests PRIVATE ${SOURCE_DIR})
