@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/VectorMath.h"
 
 #include <algorithm>
 #include <array>
@@ -102,10 +103,7 @@ namespace rock::grab_pinch_pocket_policy
         config.thumbIndexMaxOpenValue = std::clamp(finiteOr(config.thumbIndexMaxOpenValue, kDefaultThumbIndexMaxOpenValue), 0.0f, 1.0f);
         config.otherFingerCurlValue = std::clamp(finiteOr(config.otherFingerCurlValue, kDefaultOtherFingerCurlValue), 0.0f, 1.0f);
         config.surfaceInsetGameUnits = std::clamp(finiteOr(config.surfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f);
-        const float directionLenSq =
-            config.detectionDirectionHandspace.x * config.detectionDirectionHandspace.x +
-            config.detectionDirectionHandspace.y * config.detectionDirectionHandspace.y +
-            config.detectionDirectionHandspace.z * config.detectionDirectionHandspace.z;
+        const float directionLenSq = vector_math::lengthSquared(config.detectionDirectionHandspace);
         if (!std::isfinite(directionLenSq) || directionLenSq <= 0.000001f) {
             config.detectionDirectionHandspace = RE::NiPoint3{
                 kDefaultDetectionDirectionHandspaceX,
@@ -126,12 +124,12 @@ namespace rock::grab_pinch_pocket_policy
 
     [[nodiscard]] inline bool isFinitePoint(const RE::NiPoint3& point)
     {
-        return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     [[nodiscard]] inline float distance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)

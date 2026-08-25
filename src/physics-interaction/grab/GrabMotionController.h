@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -597,13 +599,13 @@ namespace rock::grab_motion_controller
     template <class Vector>
     inline float vectorDot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline float vectorLengthSquared(const Vector& value)
     {
-        return vectorDot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>

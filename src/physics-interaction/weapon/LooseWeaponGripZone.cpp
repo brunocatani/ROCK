@@ -5,6 +5,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
@@ -47,7 +48,7 @@ namespace rock::loose_weapon_grip_zone
 
         bool isFinitePoint(const RE::NiPoint3& point)
         {
-            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+            return vector_math::hasFiniteComponents(point);
         }
 
         bool isUsableWorldTransform(const RE::NiTransform& transform)

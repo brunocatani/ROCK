@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Game-clock phase lock for the grab-authority proxy target.
  *
@@ -92,7 +94,7 @@ namespace rock::grab_authority_source_clock
 
     inline bool isFiniteVector(const RE::NiPoint3& value) noexcept
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     struct GameClockPhaseLock

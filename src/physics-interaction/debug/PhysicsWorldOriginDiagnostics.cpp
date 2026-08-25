@@ -8,6 +8,7 @@
 
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
@@ -48,7 +49,7 @@ namespace rock::origin_diagnostics
 
         bool isFinitePoint(const RE::NiPoint3& value)
         {
-            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+            return vector_math::hasFiniteComponents(value);
         }
 
         RE::NiPoint3 readHavokPointAsGameUnits(const void* base, std::uintptr_t offset)

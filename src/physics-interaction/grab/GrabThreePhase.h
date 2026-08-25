@@ -12,6 +12,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/hand/HandFrame.h"
 
 #include <algorithm>
@@ -50,7 +51,7 @@ namespace rock::grab_three_phase
 
     inline float lengthSquared(const RE::NiPoint3& value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     inline float length(const RE::NiPoint3& value)
@@ -60,12 +61,12 @@ namespace rock::grab_three_phase
 
     inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     inline bool isFinite(const RE::NiPoint3& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     inline bool isFinite(const RE::NiTransform& transform)
@@ -112,11 +113,7 @@ namespace rock::grab_three_phase
 
     inline RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
     {
-        return RE::NiPoint3{
-            lhs.y * rhs.z - lhs.z * rhs.y,
-            lhs.z * rhs.x - lhs.x * rhs.z,
-            lhs.x * rhs.y - lhs.y * rhs.x,
-        };
+        return vector_math::cross(lhs, rhs);
     }
 
     inline RE::NiPoint3 rejectFromAxis(const RE::NiPoint3& value, const RE::NiPoint3& axis)

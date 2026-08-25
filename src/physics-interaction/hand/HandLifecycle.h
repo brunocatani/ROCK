@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Hand lifecycle helpers are grouped here so lifecycle state, semantic contact state, and collision suppression share one hand-state policy surface.
  */
@@ -171,7 +173,7 @@ namespace rock::hand_semantic_contact_state
 
     inline bool isFiniteVector(const SemanticContactVector& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     inline bool hasUsableContactPoint(const SemanticContactRecord& record)
@@ -184,10 +186,7 @@ namespace rock::hand_semantic_contact_state
         if (!record.valid || !record.hasContactNormalGame || !isFiniteVector(record.contactNormalGame)) {
             return false;
         }
-        const float lengthSquared =
-            record.contactNormalGame.x * record.contactNormalGame.x +
-            record.contactNormalGame.y * record.contactNormalGame.y +
-            record.contactNormalGame.z * record.contactNormalGame.z;
+        const float lengthSquared = vector_math::lengthSquared(record.contactNormalGame);
         return std::isfinite(lengthSquared) && lengthSquared > 1.0e-6f;
     }
 

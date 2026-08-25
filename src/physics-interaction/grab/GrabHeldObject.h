@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Held-object helpers are grouped here because body-set policy, damping, physics math, player-space math, and character-controller contact policy shape the same held-object behavior.
  */
@@ -252,13 +254,13 @@ namespace rock::held_object_contact_policy
     template <class Vec3>
     inline float dot(const Vec3& lhs, const Vec3& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vec3>
     inline float lengthSquared(const Vec3& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vec3>
@@ -370,7 +372,7 @@ namespace rock::held_object_physics_math
     template <class Vec3>
     inline float lengthSquared(const Vec3& value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vec3>
@@ -673,22 +675,19 @@ namespace rock::grab_held_response
     template <class Vec3>
     inline float dot(const Vec3& lhs, const Vec3& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vec3>
     inline Vec3 cross(const Vec3& lhs, const Vec3& rhs)
     {
-        return makeVector<Vec3>(
-            lhs.y * rhs.z - lhs.z * rhs.y,
-            lhs.z * rhs.x - lhs.x * rhs.z,
-            lhs.x * rhs.y - lhs.y * rhs.x);
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vec3>
     inline float lengthSquared(const Vec3& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vec3>

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -27,20 +29,14 @@ namespace rock::touch_grab_math
         const Vector3& left,
         const Vector3& right)
     {
-        return left.x * right.x +
-               left.y * right.y +
-               left.z * right.z;
+        return vector_math::dot(left, right);
     }
 
     [[nodiscard]] inline constexpr Vector3 cross(
         const Vector3& left,
         const Vector3& right)
     {
-        return {
-            left.y * right.z - left.z * right.y,
-            left.z * right.x - left.x * right.z,
-            left.x * right.y - left.y * right.x
-        };
+        return vector_math::cross(left, right);
     }
 
     [[nodiscard]] inline bool normalize(

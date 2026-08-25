@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/body/BodyZone.h"
+#include "physics-interaction/VectorMath.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -209,7 +210,7 @@ namespace rock::shoulder_stash
 
     [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& value) noexcept
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     [[nodiscard]] inline RE::NiPoint3 add(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
@@ -229,21 +230,17 @@ namespace rock::shoulder_stash
 
     [[nodiscard]] inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     [[nodiscard]] inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
     {
-        return RE::NiPoint3{
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x,
-        };
+        return vector_math::cross(a, b);
     }
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value) noexcept
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     [[nodiscard]] inline float length(const RE::NiPoint3& value) noexcept

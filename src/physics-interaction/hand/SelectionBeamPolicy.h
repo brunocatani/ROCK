@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -33,7 +35,7 @@ namespace rock::selection_beam_policy
 
     [[nodiscard]] inline bool isFinitePoint(const RE::NiPoint3& point) noexcept
     {
-        return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     [[nodiscard]] inline float distanceGameUnits(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) noexcept

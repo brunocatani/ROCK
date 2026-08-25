@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/weapon/WeaponClassificationPolicy.h"
+#include "physics-interaction/VectorMath.h"
 
 #include <cmath>
 #include <cstdint>
@@ -70,7 +71,7 @@ namespace rock::authored_weapon_grip_activation_policy
 
     [[nodiscard]] constexpr float dot(const Vec3& lhs, const Vec3& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     [[nodiscard]] inline float length(const Vec3& value)

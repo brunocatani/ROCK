@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Grab core policy is grouped here to keep object preparation, lifecycle, canonical frames, frame math, interaction decisions, and pull motion together.
  */
@@ -1156,7 +1158,7 @@ namespace rock::grab_authority_frame_math
     template <class Vector>
     inline bool isFiniteVector(const Vector& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     template <class Transform>

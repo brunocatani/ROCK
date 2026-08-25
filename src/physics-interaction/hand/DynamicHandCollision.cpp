@@ -3,6 +3,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
@@ -72,7 +73,7 @@ namespace rock
 
         bool isFinitePoint(const RE::NiPoint3& value)
         {
-            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+            return vector_math::hasFiniteComponents(value);
         }
 
         bool isFiniteTransform(const RE::NiTransform& transform)
@@ -281,7 +282,7 @@ namespace rock
 
         float dotPoints(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
         {
-            return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+            return vector_math::dot(lhs, rhs);
         }
 
         bool buildPoseFingerSegmentCenters(

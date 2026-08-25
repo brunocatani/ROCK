@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 #include <cmath>
 #include <cstdint>
 
@@ -25,7 +27,7 @@ namespace rock::runtime_state_policy
 
     [[nodiscard]] inline float lengthSquared(Vec3 value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     struct PlayerSpaceTrackerState

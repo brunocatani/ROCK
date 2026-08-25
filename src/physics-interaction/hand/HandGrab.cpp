@@ -50,6 +50,7 @@
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <cmath>
@@ -140,21 +141,17 @@ namespace rock
 
         float lengthSquared(const RE::NiPoint3& value)
         {
-            return value.x * value.x + value.y * value.y + value.z * value.z;
+            return vector_math::lengthSquared(value);
         }
 
         RE::NiPoint3 crossProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
         {
-            return RE::NiPoint3{
-                lhs.y * rhs.z - lhs.z * rhs.y,
-                lhs.z * rhs.x - lhs.x * rhs.z,
-                lhs.x * rhs.y - lhs.y * rhs.x,
-            };
+            return vector_math::cross(lhs, rhs);
         }
 
         float dotProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
         {
-            return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+            return vector_math::dot(lhs, rhs);
         }
 
         float maxAbsDelta(const std::array<float, 12>& lhs, const std::array<float, 12>& rhs)
@@ -3622,17 +3619,13 @@ namespace rock
             double weightSum = 0.0;
             double meanAccum[3] = {};
             auto isFinitePoint = [](const RE::NiPoint3& p) {
-                return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
+                return vector_math::hasFiniteComponents(p);
             };
             auto triangleArea = [](const TriangleData& tri) {
                 const RE::NiPoint3 e0 = tri.v1 - tri.v0;
                 const RE::NiPoint3 e1 = tri.v2 - tri.v0;
-                const RE::NiPoint3 n{
-                    e0.y * e1.z - e0.z * e1.y,
-                    e0.z * e1.x - e0.x * e1.z,
-                    e0.x * e1.y - e0.y * e1.x,
-                };
-                return 0.5f * std::sqrt((std::max)(0.0f, n.x * n.x + n.y * n.y + n.z * n.z));
+                const RE::NiPoint3 n = vector_math::cross(e0, e1);
+                return 0.5f * std::sqrt((std::max)(0.0f, vector_math::lengthSquared(n)));
             };
             for (const auto& tri : worldTriangles) {
                 if (!isFinitePoint(tri.v0) || !isFinitePoint(tri.v1) || !isFinitePoint(tri.v2)) {
@@ -5156,7 +5149,7 @@ namespace rock
 
         const RE::NiPoint3 pivotBLocal = activeProxyConstraintPivotBLocalGame();
         outPivotWorld = transform_math::localPointToWorld(objectBodyWorld, pivotBLocal);
-        return std::isfinite(outPivotWorld.x) && std::isfinite(outPivotWorld.y) && std::isfinite(outPivotWorld.z);
+        return vector_math::hasFiniteComponents(outPivotWorld);
     }
 
     bool Hand::getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const

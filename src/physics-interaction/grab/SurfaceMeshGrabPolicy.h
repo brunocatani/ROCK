@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/MeshGrab.h"
 
@@ -51,9 +52,7 @@ namespace rock::surface_mesh_grab_policy
 
     [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& point)
     {
-        return std::isfinite(point.x) &&
-               std::isfinite(point.y) &&
-               std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     [[nodiscard]] inline bool finiteTransform(const RE::NiTransform& value)
@@ -74,7 +73,7 @@ namespace rock::surface_mesh_grab_policy
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     [[nodiscard]] inline RE::NiPoint3 normalizedOrZero(

@@ -17,6 +17,7 @@
  */
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 
 #include <cstdint>
 
@@ -637,13 +638,13 @@ namespace rock
     template <class Vector>
     inline float weaponSolverDot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline Vector weaponSolverCross(const Vector& lhs, const Vector& rhs)
     {
-        return Vector{ lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x };
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vector>

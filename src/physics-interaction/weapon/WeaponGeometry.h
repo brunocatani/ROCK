@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Weapon geometry helpers are grouped here because collision hull construction and interaction probe math are one geometry policy surface.
  */
@@ -350,16 +352,12 @@ namespace rock::weapon_collision_geometry_math
 
     inline float supportDirectionDot(const SupportDirection& a, const SupportDirection& b)
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     inline SupportDirection supportDirectionCross(const SupportDirection& a, const SupportDirection& b)
     {
-        return SupportDirection{
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x,
-        };
+        return vector_math::cross(a, b);
     }
 
     inline SupportDirection supportDirectionScale(const SupportDirection& direction, float scale)

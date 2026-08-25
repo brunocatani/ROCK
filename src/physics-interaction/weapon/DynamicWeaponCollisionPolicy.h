@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -117,7 +118,7 @@ namespace rock::dynamic_weapon_collision_policy
 
     inline bool isFinitePoint(const RE::NiPoint3& point)
     {
-        return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     inline bool isFiniteTransform(const RE::NiTransform& transform)

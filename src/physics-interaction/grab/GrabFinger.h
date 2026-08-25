@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "physics-interaction/grab/GeneratedGrabFingerCalibration.h"
+#include "physics-interaction/VectorMath.h"
 
 namespace rock::grab_finger_pose_math
 {
@@ -124,13 +125,13 @@ namespace rock::grab_finger_pose_math
     template <class Vector>
     inline Vector cross(const Vector& a, const Vector& b)
     {
-        return Vector{ a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
+        return vector_math::cross(a, b);
     }
 
     template <class Vector>
     inline float dot(const Vector& a, const Vector& b)
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     template <class Vector>
@@ -142,7 +143,7 @@ namespace rock::grab_finger_pose_math
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>
@@ -1953,17 +1954,17 @@ namespace rock::grab_finger_pose_runtime
 
     inline RE::NiPoint3 crossPoint(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
-        return RE::NiPoint3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+        return vector_math::cross(a, b);
     }
 
     inline float dotPoint(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     inline RE::NiPoint3 normalizedOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
     {
-        const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
+        const float lengthSquared = vector_math::lengthSquared(value);
         if (lengthSquared <= 0.000001f) {
             return normalizeDirection(fallback);
         }
@@ -1995,7 +1996,7 @@ namespace rock::grab_finger_pose_runtime
 
     inline bool isFinitePoint(const RE::NiPoint3& point)
     {
-        return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     [[nodiscard]] inline FingerSweepDebugState classifyFingerSweepDebugState(const grab_finger_pose_math::FingerCurlValue& solved, float minValue)
@@ -3471,17 +3472,13 @@ namespace rock::grab_finger_local_transform_math
     template <class Vector>
     [[nodiscard]] inline float vectorDot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     [[nodiscard]] inline Vector vectorCross(const Vector& lhs, const Vector& rhs)
     {
-        return Vector{
-            lhs.y * rhs.z - lhs.z * rhs.y,
-            lhs.z * rhs.x - lhs.x * rhs.z,
-            lhs.x * rhs.y - lhs.y * rhs.x,
-        };
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vector>
@@ -3694,21 +3691,17 @@ namespace rock::grab_finger_local_transform_runtime
 
     [[nodiscard]] inline float dot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     [[nodiscard]] inline RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
     {
-        return RE::NiPoint3{
-            lhs.y * rhs.z - lhs.z * rhs.y,
-            lhs.z * rhs.x - lhs.x * rhs.z,
-            lhs.x * rhs.y - lhs.y * rhs.x,
-        };
+        return vector_math::cross(lhs, rhs);
     }
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     [[nodiscard]] inline RE::NiPoint3 normalizeOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)

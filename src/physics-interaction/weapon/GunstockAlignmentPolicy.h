@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
 #include <algorithm>
@@ -119,9 +120,7 @@ namespace rock::gunstock_alignment_policy
     template <class Vector>
     [[nodiscard]] inline bool finiteVector(const Vector& value)
     {
-        return std::isfinite(value.x) &&
-               std::isfinite(value.y) &&
-               std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     template <class Matrix>

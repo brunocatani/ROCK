@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Grab contact policy is grouped here because contact source, evidence, patch, surface, opposition, and multi-finger contact math are one contact interpretation pipeline.
  */
@@ -540,19 +542,19 @@ namespace rock::grab_contact_patch_math
     template <class Vector>
     inline float dot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline Vector cross(const Vector& lhs, const Vector& rhs)
     {
-        return Vector{ lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x };
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>
@@ -564,7 +566,7 @@ namespace rock::grab_contact_patch_math
     template <class Vector>
     inline bool finiteVector(const Vector& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     template <class Vector>
@@ -1663,13 +1665,13 @@ namespace rock::grab_multi_finger_contact_math
     template <class Vector>
     inline float dot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>

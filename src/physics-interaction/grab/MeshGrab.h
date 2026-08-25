@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "RE/Fallout.h"
 
@@ -1227,13 +1228,13 @@ namespace rock
         return result;
     }
 
-    inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+    inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) { return vector_math::dot(a, b); }
 
-    inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) { return RE::NiPoint3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
+    inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) { return vector_math::cross(a, b); }
 
     inline RE::NiPoint3 normalize(const RE::NiPoint3& v)
     {
-        float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        float len = std::sqrt(vector_math::lengthSquared(v));
         if (len < 1e-8f)
             return RE::NiPoint3(0, 0, 0);
         return RE::NiPoint3(v.x / len, v.y / len, v.z / len);
