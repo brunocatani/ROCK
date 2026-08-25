@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+
 #include <array>
 #include <atomic>
 #include <mutex>
@@ -689,13 +691,21 @@ namespace rock
         std::atomic<bool> _rightWeaponSupportCollisionSuppressed{ false };
         std::atomic<bool> _rightEquippedWeaponDropCollisionSuppressed{ false };
         std::atomic<bool> _leftEquippedWeaponDropCollisionSuppressed{ false };
-        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightDominantWeaponCollisionSuppression{};
-        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftWeaponSupportCollisionSuppression{};
-        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightWeaponSupportCollisionSuppression{};
-        hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _rightEquippedWeaponDropCollisionSuppression{};
-        hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _leftEquippedWeaponDropCollisionSuppression{};
-        hand_collision_suppression_math::DelayedRestoreState _rightEquippedWeaponDropDelayedRestore{};
-        hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
+        collision_suppression_registry::SuppressionLeaseSet<hand_collider_semantics::kHandColliderBodyCountPerHand>
+            _rightDominantWeaponCollisionSuppression{
+                collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand };
+        collision_suppression_registry::SuppressionLeaseSet<hand_collider_semantics::kHandColliderBodyCountPerHand>
+            _leftWeaponSupportCollisionSuppression{
+                collision_suppression_registry::CollisionSuppressionOwner::WeaponSupportHand };
+        collision_suppression_registry::SuppressionLeaseSet<hand_collider_semantics::kHandColliderBodyCountPerHand>
+            _rightWeaponSupportCollisionSuppression{
+                collision_suppression_registry::CollisionSuppressionOwner::WeaponSupportHand };
+        collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
+            _rightEquippedWeaponDropCollisionSuppression{
+                collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand };
+        collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
+            _leftEquippedWeaponDropCollisionSuppression{
+                collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand };
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         PendingEquippedWeaponPrimaryOnlyGripStart _pendingEquippedWeaponPrimaryOnlyGripStart{};
         enum class EquippedWeaponHandAssignmentSource : std::uint8_t

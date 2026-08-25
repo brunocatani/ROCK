@@ -234,6 +234,57 @@ namespace rock::collision_suppression_registry
 
     CollisionSuppressionRegistry& globalCollisionSuppressionRegistry();
 
+    struct DelayedRestoreTimer
+    {
+        bool pending = false;
+        float remainingSeconds = 0.0f;
+        std::uint32_t firstBodyId = kInvalidBodyId;
+        std::uint32_t bodyCount = 0;
+
+        bool begin(
+            std::uint32_t bodyId,
+            std::size_t activeBodyCount,
+            float delaySeconds) noexcept
+        {
+            const float delay =
+                std::isfinite(delaySeconds) && delaySeconds > 0.0f ?
+                    delaySeconds : 0.0f;
+            if (bodyId == kInvalidBodyId || activeBodyCount == 0 || delay <= 0.0f) {
+                clear();
+                return false;
+            }
+            pending = true;
+            remainingSeconds = delay;
+            firstBodyId = bodyId;
+            bodyCount = static_cast<std::uint32_t>(activeBodyCount);
+            return true;
+        }
+
+        bool advance(bool hasActiveBodies, float deltaSeconds) noexcept
+        {
+            if (!pending) {
+                return false;
+            }
+            if (!hasActiveBodies) {
+                clear();
+                return false;
+            }
+            const float delta =
+                std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ?
+                    deltaSeconds : 0.0f;
+            remainingSeconds = (std::max)(0.0f, remainingSeconds - delta);
+            return remainingSeconds <= 0.0f;
+        }
+
+        void clear() noexcept
+        {
+            pending = false;
+            remainingSeconds = 0.0f;
+            firstBodyId = kInvalidBodyId;
+            bodyCount = 0;
+        }
+    };
+
     template <std::size_t Capacity>
     class SuppressionLeaseSet
     {
@@ -251,11 +302,11 @@ namespace rock::collision_suppression_registry
         }
         [[nodiscard]] bool delayedRestorePending() const noexcept
         {
-            return _delayedRestorePending;
+            return _delayedRestore.pending;
         }
         [[nodiscard]] float delayedRestoreRemainingSeconds() const noexcept
         {
-            return _delayedRestoreRemainingSeconds;
+            return _delayedRestore.remainingSeconds;
         }
 
         [[nodiscard]] bool contains(std::uint32_t bodyId) const noexcept
@@ -307,10 +358,7 @@ namespace rock::collision_suppression_registry
                         bodyId,
                         _owner,
                         context);
-                std::invoke(
-                    std::forward<OnRelease>(onRelease),
-                    bodyId,
-                    result);
+                std::invoke(onRelease, bodyId, result);
                 if (result.readFailed &&
                     globalCollisionSuppressionRegistry().hasLease(
                         bodyId,
@@ -326,40 +374,55 @@ namespace rock::collision_suppression_registry
             return _count == 0;
         }
 
+        template <class ShouldRelease, class OnRelease>
+        void releaseWhere(
+            RE::hknpWorld* world,
+            const char* context,
+            ShouldRelease&& shouldRelease,
+            OnRelease&& onRelease)
+        {
+            std::array<std::uint32_t, Capacity> retained{};
+            std::size_t retainedCount = 0;
+            for (std::size_t index = 0; index < _count; ++index) {
+                const auto bodyId = _bodyIds[index];
+                if (!std::invoke(shouldRelease, bodyId)) {
+                    retained[retainedCount++] = bodyId;
+                    continue;
+                }
+                const auto result =
+                    globalCollisionSuppressionRegistry().release(
+                        world,
+                        bodyId,
+                        _owner,
+                        context);
+                std::invoke(onRelease, bodyId, result);
+                if (result.readFailed &&
+                    globalCollisionSuppressionRegistry().hasLease(
+                        bodyId,
+                        _owner)) {
+                    retained[retainedCount++] = bodyId;
+                }
+            }
+            _bodyIds = retained;
+            _count = retainedCount;
+            if (_count == 0) {
+                cancelDelayedRestore();
+            }
+        }
+
         bool beginDelayedRestore(float delaySeconds) noexcept
         {
-            const float delay =
-                std::isfinite(delaySeconds) && delaySeconds > 0.0f ?
-                    delaySeconds : 0.0f;
-            if (empty() || delay <= 0.0f) {
-                cancelDelayedRestore();
-                return false;
-            }
-            _delayedRestorePending = true;
-            _delayedRestoreRemainingSeconds = delay;
-            return true;
+            return _delayedRestore.begin(firstBodyId(), size(), delaySeconds);
         }
 
         bool advanceDelayedRestore(float deltaSeconds) noexcept
         {
-            if (!_delayedRestorePending || empty()) {
-                if (empty()) {
-                    cancelDelayedRestore();
-                }
-                return false;
-            }
-            const float delta =
-                std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ?
-                    deltaSeconds : 0.0f;
-            _delayedRestoreRemainingSeconds =
-                (std::max)(0.0f, _delayedRestoreRemainingSeconds - delta);
-            return _delayedRestoreRemainingSeconds <= 0.0f;
+            return _delayedRestore.advance(!empty(), deltaSeconds);
         }
 
         void cancelDelayedRestore() noexcept
         {
-            _delayedRestorePending = false;
-            _delayedRestoreRemainingSeconds = 0.0f;
+            _delayedRestore.clear();
         }
 
         void clearTracking() noexcept
@@ -373,7 +436,6 @@ namespace rock::collision_suppression_registry
         CollisionSuppressionOwner _owner;
         std::array<std::uint32_t, Capacity> _bodyIds{};
         std::size_t _count = 0;
-        float _delayedRestoreRemainingSeconds = 0.0f;
-        bool _delayedRestorePending = false;
+        DelayedRestoreTimer _delayedRestore{};
     };
 }

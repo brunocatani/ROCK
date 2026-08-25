@@ -1,4 +1,5 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
+#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
@@ -3323,14 +3324,10 @@ int main()
             rock::WeaponInteractionAcquisitionSource::None);
     }
 
-    using namespace rock::hand_collision_suppression_math;
-    SuppressionSet<2> postDropSuppression{};
-    const auto postDropSuppressionResult = beginSuppression(postDropSuppression, 42, 0);
-    ok &= expectTrue("post-drop suppression stores release body", postDropSuppressionResult.stored);
-    DelayedRestoreState postDropRestore{};
-    ok &= expectTrue("post-drop suppression uses grab release delay seconds", beginDelayedRestore(postDropRestore, postDropSuppression, 0.8f));
-    ok &= expectFalse("post-drop suppression remains active before configured delay", advanceDelayedRestore(postDropRestore, postDropSuppression, 0.79f));
-    ok &= expectTrue("post-drop suppression expires at configured delay", advanceDelayedRestore(postDropRestore, postDropSuppression, 0.01f));
+    rock::collision_suppression_registry::DelayedRestoreTimer postDropRestore{};
+    ok &= expectTrue("post-drop suppression uses grab release delay seconds", postDropRestore.begin(42, 1, 0.8f));
+    ok &= expectFalse("post-drop suppression remains active before configured delay", postDropRestore.advance(true, 0.79f));
+    ok &= expectTrue("post-drop suppression expires at configured delay", postDropRestore.advance(true, 0.01f));
 
     {
         using namespace rock::weapon_collision_geometry_math;
