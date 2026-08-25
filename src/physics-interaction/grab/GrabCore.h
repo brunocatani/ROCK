@@ -594,6 +594,17 @@ namespace rock
         const char* penetrationBackstopReason = "inactive";
     };
 
+    struct GrabPivotAuthorityState
+    {
+        grab_authority_frame_math::GrabAuthorityPivotSource source{};
+        float pocketDistanceGameUnits = 0.0f;
+        float selectionDistanceGameUnits = 0.0f;
+        float longLeverGameUnits = 0.0f;
+        float positionConfidence = 0.0f;
+        bool positionOnly = false;
+        bool normalTrusted = false;
+    };
+
     struct ImmutableGrabCaptureTelemetry
     {
         /*
@@ -625,24 +636,18 @@ namespace rock
         std::uint32_t sourceBodyId = 0x7FFF'FFFF;
         std::uint32_t gripEvidenceTriangleIndex = 0xFFFF'FFFF;
         std::uint32_t gripEvidenceShapeKey = 0xFFFF'FFFF;
-        float pocketToGripDistanceGameUnits = 0.0f;
-        float selectionToGripEvidenceDistanceGameUnits = 0.0f;
-        float longObjectLeverGameUnits = 0.0f;
-        float pivotAuthorityPositionConfidence = 0.0f;
         const char* activeGrabPointMode = "none";
-        grab_authority_frame_math::GrabAuthorityPivotSource pivotAuthoritySource{};
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         RE::NiAVObject* gripSourceNode = nullptr;
         GrabSeatDiagnostics seatDiagnostics{};
+        GrabPivotAuthorityState pivotAuthority{};
         bool valid = false;
         bool hasGripPoint = false;
         bool hasGripSourceNodePoint = false;
         bool hasGripSourceNodeNormal = false;
         bool hasFrozenPivotB = false;
         bool hasMeshPoseData = false;
-        bool positionOnlyPivot = false;
-        bool normalTrusted = false;
 
         void clear()
         {
@@ -718,15 +723,11 @@ namespace rock
         std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t fingerPoseTargetCount = 0;
         float gripEvidenceHitFraction = 1.0f;
-        float pocketToGripDistanceGameUnits = 0.0f;
-        float selectionToGripEvidenceDistanceGameUnits = 0.0f;
         float contactPatchMeshSnapDeltaGameUnits = 0.0f;
         float multiFingerContactSpreadGameUnits = 0.0f;
-        float longObjectLeverGameUnits = 0.0f;
         float gripSupportConfidence = 0.0f;
         float gripSupportSpanGameUnits = 0.0f;
         float gripSupportPivotShiftGameUnits = 0.0f;
-        float pivotAuthorityPositionConfidence = 0.0f;
         float handScaleAtGrab = 1.0f;
         float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
         std::uint64_t traceId = 0;
@@ -735,7 +736,6 @@ namespace rock
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
         const char* activeGrabPointMode = "none";
-        grab_authority_frame_math::GrabAuthorityPivotSource pivotAuthoritySource{};
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         const char* fingerPoseAimReason = "none";
@@ -756,6 +756,7 @@ namespace rock
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
         GrabSeatDiagnostics seatDiagnostics{};
+        GrabPivotAuthorityState pivotAuthority{};
         RE::NiAVObject* gripSourceNode = nullptr;
         bool hasMeshPoseData = false;
         bool hasGripPoint = false;
@@ -775,8 +776,6 @@ namespace rock
         bool hasSupportFrameAxis = false;
         bool hasSupportFrameBinormal = false;
         bool gripSupportAuthoredPivot = false;
-        bool pivotAuthorityPositionOnly = false;
-        bool pivotAuthorityNormalTrusted = false;
         bool requiresSettledVisualHandRelation = false;
         bool hasSettledVisualHandRelation = false;
         bool syntheticLooseWeaponPrimaryAttach = false;
@@ -811,12 +810,8 @@ namespace rock
             captureTelemetry.seatDiagnostics = seatDiagnostics;
             captureTelemetry.gripEvidenceTriangleIndex = gripEvidenceTriangleIndex;
             captureTelemetry.gripEvidenceShapeKey = gripEvidenceShapeKey;
-            captureTelemetry.pocketToGripDistanceGameUnits = pocketToGripDistanceGameUnits;
-            captureTelemetry.selectionToGripEvidenceDistanceGameUnits = selectionToGripEvidenceDistanceGameUnits;
-            captureTelemetry.longObjectLeverGameUnits = longObjectLeverGameUnits;
-            captureTelemetry.pivotAuthorityPositionConfidence = pivotAuthorityPositionConfidence;
+            captureTelemetry.pivotAuthority = pivotAuthority;
             captureTelemetry.activeGrabPointMode = activeGrabPointMode;
-            captureTelemetry.pivotAuthoritySource = pivotAuthoritySource;
             captureTelemetry.palmSeatPointMode = palmSeatPointMode;
             captureTelemetry.fingerEvidencePointMode = fingerEvidencePointMode;
             captureTelemetry.hasGripPoint = hasGripPoint;
@@ -824,8 +819,6 @@ namespace rock
             captureTelemetry.hasGripSourceNodeNormal = hasGripSourceNodeNormal;
             captureTelemetry.hasFrozenPivotB = hasFrozenPivotB;
             captureTelemetry.hasMeshPoseData = hasMeshPoseData;
-            captureTelemetry.positionOnlyPivot = pivotAuthorityPositionOnly;
-            captureTelemetry.normalTrusted = pivotAuthorityNormalTrusted;
             captureTelemetry.valid = hasTelemetryCapture;
         }
 
@@ -878,15 +871,11 @@ namespace rock
             multiFingerContactGroupCount = 0;
             fingerPoseTargetCount = 0;
             gripEvidenceHitFraction = 1.0f;
-            pocketToGripDistanceGameUnits = 0.0f;
-            selectionToGripEvidenceDistanceGameUnits = 0.0f;
             contactPatchMeshSnapDeltaGameUnits = 0.0f;
             multiFingerContactSpreadGameUnits = 0.0f;
-            longObjectLeverGameUnits = 0.0f;
             gripSupportConfidence = 0.0f;
             gripSupportSpanGameUnits = 0.0f;
             gripSupportPivotShiftGameUnits = 0.0f;
-            pivotAuthorityPositionConfidence = 0.0f;
             handScaleAtGrab = 1.0f;
             lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
             traceId = 0;
@@ -895,7 +884,6 @@ namespace rock
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
             activeGrabPointMode = "none";
-            pivotAuthoritySource = {};
             palmSeatPointMode = "none";
             fingerEvidencePointMode = "none";
             fingerPoseAimReason = "none";
@@ -910,6 +898,7 @@ namespace rock
             fingerPoseLocalMeshTriangles.clear();
             heldNode = nullptr;
             seatDiagnostics = GrabSeatDiagnostics{};
+            pivotAuthority = GrabPivotAuthorityState{};
             gripSourceNode = nullptr;
             hasMeshPoseData = false;
             hasGripPoint = false;
@@ -929,8 +918,6 @@ namespace rock
             hasSupportFrameAxis = false;
             hasSupportFrameBinormal = false;
             gripSupportAuthoredPivot = false;
-            pivotAuthorityPositionOnly = false;
-            pivotAuthorityNormalTrusted = false;
             requiresSettledVisualHandRelation = false;
             hasSettledVisualHandRelation = false;
             syntheticLooseWeaponPrimaryAttach = false;

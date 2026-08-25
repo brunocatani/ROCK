@@ -246,13 +246,13 @@ namespace rock
         out.hasSupportAxis = lengthSquared(axisWorld) > 0.000001f;
         out.hasBinormal = lengthSquared(binormalWorld) > 0.000001f;
         out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
-            _grabFrame.pivotAuthoritySource);
+            _grabFrame.pivotAuthority.source);
         out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
         out.supportKind = grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind);
         out.supportReason = _grabFrame.gripSupportReason ? _grabFrame.gripSupportReason : "none";
         out.authoredSupportPivot = _grabFrame.gripSupportAuthoredPivot;
-        out.positionOnlyPivot = _grabFrame.pivotAuthorityPositionOnly;
-        out.normalTrusted = _grabFrame.pivotAuthorityNormalTrusted;
+        out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
+        out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 
         if (_grabFrame.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
             const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidenceTriangleIndex];
@@ -528,25 +528,25 @@ namespace rock
         out.leverLengthGameUnits = leverLength;
         out.torqueWitnessGameUnitsSquared = torqueWitnessLength;
         out.rotationErrorDegrees = rotationDeltaDegrees(liveBodyWorld.rotate, desiredBodyWorld.rotate);
-        out.pocketDistanceGameUnits = _grabFrame.pocketToGripDistanceGameUnits;
-        out.selectionDistanceGameUnits = _grabFrame.selectionToGripEvidenceDistanceGameUnits;
-        out.longLeverGameUnits = _grabFrame.longObjectLeverGameUnits;
-        out.positionConfidence = _grabFrame.pivotAuthorityPositionConfidence;
+        out.pocketDistanceGameUnits = _grabFrame.pivotAuthority.pocketDistanceGameUnits;
+        out.selectionDistanceGameUnits = _grabFrame.pivotAuthority.selectionDistanceGameUnits;
+        out.longLeverGameUnits = _grabFrame.pivotAuthority.longLeverGameUnits;
+        out.positionConfidence = _grabFrame.pivotAuthority.positionConfidence;
         out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
-            _grabFrame.pivotAuthoritySource);
+            _grabFrame.pivotAuthority.source);
         out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
         out.authorityFrameSource = proxySource ? proxySource : "none";
         out.acquisitionPhase = grab_three_phase::phaseName(_grabAcquisitionPhase);
         out.capturePivotAuthoritySource =
             grab_authority_frame_math::grabAuthorityPivotSourceName(
-                _grabFrame.captureTelemetry.pivotAuthoritySource);
+                _grabFrame.captureTelemetry.pivotAuthority.source);
         out.captureGrabPointMode =
             _grabFrame.captureTelemetry.activeGrabPointMode ? _grabFrame.captureTelemetry.activeGrabPointMode : "none";
         out.lastSeatedPivotReacquireReason =
             _grabFrame.lastSeatedPivotReacquireReason ? _grabFrame.lastSeatedPivotReacquireReason : "none";
         out.seatedPivotReacquireCount = _grabFrame.seatedPivotReacquireCount;
-        out.positionOnlyPivot = _grabFrame.pivotAuthorityPositionOnly;
-        out.normalTrusted = _grabFrame.pivotAuthorityNormalTrusted;
+        out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
+        out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 
         if (torqueWitnessLength > 0.001f) {
             const RE::NiPoint3 torqueAxis = torqueWitness * (1.0f / torqueWitnessLength);

@@ -422,7 +422,7 @@ namespace rock
                 case grab_support_model_math::GripSupportKind::PalmWrap:
                     return grab_motion_controller::ContactSupportShape::Wrap;
                 case grab_support_model_math::GripSupportKind::SameSurface:
-                    return frame.pivotAuthorityNormalTrusted ?
+                    return frame.pivotAuthority.normalTrusted ?
                         grab_motion_controller::ContactSupportShape::Surface :
                         grab_motion_controller::ContactSupportShape::ThinFace;
                 case grab_support_model_math::GripSupportKind::SinglePoint:
@@ -434,12 +434,12 @@ namespace rock
 
             const auto fallback = grab_motion_controller::classifyContactSupportShape(
                 grab_motion_controller::ContactSupportShape::Unknown,
-                frame.pivotAuthorityNormalTrusted,
+                frame.pivotAuthority.normalTrusted,
                 frame.hasContactPatchEvidence,
                 frame.contactPatchSampleCount,
                 frame.multiFingerContactGroupCount,
                 frame.multiFingerContactSpreadGameUnits,
-                frame.longObjectLeverGameUnits,
+                frame.pivotAuthority.longLeverGameUnits,
                 g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
                 g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits);
 
@@ -523,8 +523,8 @@ namespace rock
             const float depthSpan = maxDepth - minDepth;
             const float smallReference = (std::max)(1.0f, g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits);
             const float longReference = (std::max)(smallReference, g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits);
-            const bool smallObject = frame.longObjectLeverGameUnits > 0.0f && frame.longObjectLeverGameUnits <= smallReference;
-            const bool longObject = frame.longObjectLeverGameUnits >= longReference * 1.35f;
+            const bool smallObject = frame.pivotAuthority.longLeverGameUnits > 0.0f && frame.pivotAuthority.longLeverGameUnits <= smallReference;
+            const bool longObject = frame.pivotAuthority.longLeverGameUnits >= longReference * 1.35f;
             const bool thinLine = majorSpan > 0.75f && minorSpan <= (std::max)(0.75f, majorSpan * 0.20f);
             const bool flatSurface = majorSpan > 0.75f && minorSpan > 0.75f && depthSpan <= (std::max)(0.75f, majorSpan * 0.20f);
 
@@ -538,7 +538,7 @@ namespace rock
                 return grab_motion_controller::ContactSupportShape::ThinEdge;
             }
             if (flatSurface) {
-                return frame.pivotAuthorityNormalTrusted ?
+                return frame.pivotAuthority.normalTrusted ?
                     grab_motion_controller::ContactSupportShape::Surface :
                     grab_motion_controller::ContactSupportShape::ThinFace;
             }
@@ -549,13 +549,13 @@ namespace rock
         {
             return grab_motion_controller::AngularAuthorityInput{
                 .enabled = g_rockConfig.rockGrabPivotQualityAngularScalingEnabled,
-                .positionOnlyPivot = frame.pivotAuthorityPositionOnly,
-                .normalTrusted = frame.pivotAuthorityNormalTrusted,
+                .positionOnlyPivot = frame.pivotAuthority.positionOnly,
+                .normalTrusted = frame.pivotAuthority.normalTrusted,
                 .contactPatchEvidence = frame.hasContactPatchEvidence,
                 .contactPatchSampleCount = frame.contactPatchSampleCount,
                 .multiFingerContactGroupCount = frame.multiFingerContactGroupCount,
                 .multiFingerContactSpreadGameUnits = frame.multiFingerContactSpreadGameUnits,
-                .longObjectLeverGameUnits = frame.longObjectLeverGameUnits,
+                .longObjectLeverGameUnits = frame.pivotAuthority.longLeverGameUnits,
                 .smallObjectReferenceLeverGameUnits = g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
                 .positionOnlyAngularScale = g_rockConfig.rockGrabPositionOnlyAngularScale,
                 .smallObjectAngularScale = g_rockConfig.rockGrabSmallObjectAngularScale,
@@ -8322,10 +8322,10 @@ namespace rock
             _grabFrame.hasFingerEvidencePoint = fingerEvidencePointValid;
             _grabFrame.activeGrabPointUsesMultiFingerEvidence = activeGrabPointUsesMultiFingerEvidence;
             _grabFrame.activeGrabPointMode = grabPointMode;
-            _grabFrame.pivotAuthoritySource = pivotAuthoritySource;
-            _grabFrame.pivotAuthorityPositionOnly = pivotAuthorityPositionOnly;
-            _grabFrame.pivotAuthorityNormalTrusted = pivotAuthorityNormalTrusted;
-            _grabFrame.pivotAuthorityPositionConfidence = pivotAuthorityPositionConfidence;
+            _grabFrame.pivotAuthority.source = pivotAuthoritySource;
+            _grabFrame.pivotAuthority.positionOnly = pivotAuthorityPositionOnly;
+            _grabFrame.pivotAuthority.normalTrusted = pivotAuthorityNormalTrusted;
+            _grabFrame.pivotAuthority.positionConfidence = pivotAuthorityPositionConfidence;
             _grabFrame.palmSeatPointMode = palmSeatPointMode;
             _grabFrame.fingerEvidencePointMode = fingerEvidencePointMode;
             if (contactPatchEvidenceAvailable) {
@@ -8339,11 +8339,11 @@ namespace rock
                 _grabFrame.contactPatchSampleCount = copyCount;
             }
             _grabFrame.bodyResolutionReason = primaryBodyChoiceReasonName(primaryChoice.reason);
-            _grabFrame.pocketToGripDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
-            _grabFrame.selectionToGripEvidenceDistanceGameUnits =
+            _grabFrame.pivotAuthority.pocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
+            _grabFrame.pivotAuthority.selectionDistanceGameUnits =
                 grabSurfaceHit.valid && grabSurfaceHit.hasSelectionHit ? grabSurfaceHit.selectionToMeshDistanceGameUnits : (sel.hasHitPoint ? 0.0f : std::numeric_limits<float>::max());
             if (grabSurfaceHit.valid) {
-                grabSurfaceHit.pivotToSurfaceDistanceGameUnits = _grabFrame.pocketToGripDistanceGameUnits;
+                grabSurfaceHit.pivotToSurfaceDistanceGameUnits = _grabFrame.pivotAuthority.pocketDistanceGameUnits;
             }
             _grabFrame.hasMeshPoseData = false;
             if (!grabLocalMeshTriangles.empty()) {
@@ -9231,8 +9231,8 @@ namespace rock
                         _grabFrame.multiFingerHandCenterWorldAtGrab = {};
                         _grabFrame.multiFingerAverageNormalWorldAtGrab = {};
                     }
-                    _grabFrame.pocketToGripDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
-                    _grabFrame.selectionToGripEvidenceDistanceGameUnits =
+                    _grabFrame.pivotAuthority.pocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
+                    _grabFrame.pivotAuthority.selectionDistanceGameUnits =
                         sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, gripArea.contactSeedWorld) : std::numeric_limits<float>::max();
                     _grabFrame.grabPivotWorldAtGrab = grabPivotAWorld;
                     _grabFrame.gripPointWorldAtGrab = grabGripPoint;
@@ -9256,10 +9256,10 @@ namespace rock
                         _grabFrame.fingerEvidencePointMode = "looseWeaponPrimaryAttach";
                     }
                     _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
-                    _grabFrame.pivotAuthoritySource = pivotAuthoritySource;
-                    _grabFrame.pivotAuthorityPositionOnly = pivotAuthorityPositionOnly;
-                    _grabFrame.pivotAuthorityNormalTrusted = pivotAuthorityNormalTrusted;
-                    _grabFrame.pivotAuthorityPositionConfidence = pivotAuthorityPositionConfidence;
+                    _grabFrame.pivotAuthority.source = pivotAuthoritySource;
+                    _grabFrame.pivotAuthority.positionOnly = pivotAuthorityPositionOnly;
+                    _grabFrame.pivotAuthority.normalTrusted = pivotAuthorityNormalTrusted;
+                    _grabFrame.pivotAuthority.positionConfidence = pivotAuthorityPositionConfidence;
                     _grabFrame.syntheticLooseWeaponPrimaryAttach = looseWeaponPrimaryAttachApplied;
                     if (looseWeaponPrimaryAttachApplied) {
                         _grabFrame.hasSettledVisualHandRelation = false;
@@ -9283,8 +9283,8 @@ namespace rock
                                 false :
                                 (pullCatchSeatSafety.requireSettledVisualRelation ||
                                     pivotAuthorityRequiresSettledVisualRelation(
-                                        _grabFrame.pivotAuthoritySource,
-                                        _grabFrame.pivotAuthorityPositionOnly,
+                                        _grabFrame.pivotAuthority.source,
+                                        _grabFrame.pivotAuthority.positionOnly,
                                         _grabAcquisitionPhase)));
                     _grabFrame.fingerPoseAimValid = true;
                     _grabFrame.fingerPoseAimReason = effectivePinchPocket ? "pinchPocketThumbIndexTargets" : "rockPointToPalmEvidence";
@@ -9353,9 +9353,9 @@ namespace rock
                         usingPinchPocket ? pinchPocketCandidate.pocketToSurfaceDistanceGameUnits : finalGripToPocketDistance,
                         usingPinchPocket ? 0.0f : finalSignedPalmDistance,
                         fullHeldAuthorityAtCapture ? "yes" : "no",
-                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
-                        _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
-                        _grabFrame.pivotAuthorityNormalTrusted ? "yes" : "no",
+                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
+                        _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
+                        _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
                         grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind),
                         _grabFrame.gripSupportAuthoredPivot ? "yes" : "no",
                         _grabFrame.gripSupportConfidence,
@@ -9466,7 +9466,7 @@ namespace rock
             desiredBodyWorld = frozenAuthorityFrame.desiredBodyWorld;
             const float objectScaleForLever =
                 std::isfinite(objectWorldTransform.scale) && objectWorldTransform.scale > 0.0f ? objectWorldTransform.scale : 1.0f;
-            _grabFrame.longObjectLeverGameUnits =
+            _grabFrame.pivotAuthority.longLeverGameUnits =
                 computeLocalMeshMaxDistanceFromPoint(_grabFrame.localMeshTriangles, _grabFrame.gripPointLocal) * objectScaleForLever;
             _grabFrame.liveHandWorldAtGrab = handWorldTransform;
             _grabFrame.handBodyWorldAtGrab = proxyFrameWorldAtGrab;
@@ -9550,7 +9550,7 @@ namespace rock
                     objName,
                     objectBodyId.value,
                     _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none",
-                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
+                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),
                     resolvedAuthorityPivotReasonForFreeze ? resolvedAuthorityPivotReasonForFreeze : "none",
@@ -9580,12 +9580,12 @@ namespace rock
                     traceRelationPivotB.z,
                     traceSelectedPivotRelationDeltaGameUnits,
                     tracePivotBRelationDeltaGameUnits,
-                    _grabFrame.pocketToGripDistanceGameUnits,
-                    _grabFrame.selectionToGripEvidenceDistanceGameUnits,
-                    _grabFrame.longObjectLeverGameUnits,
-                    _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
-                    _grabFrame.pivotAuthorityNormalTrusted ? "yes" : "no",
-                    _grabFrame.pivotAuthorityPositionConfidence);
+                    _grabFrame.pivotAuthority.pocketDistanceGameUnits,
+                    _grabFrame.pivotAuthority.selectionDistanceGameUnits,
+                    _grabFrame.pivotAuthority.longLeverGameUnits,
+                    _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
+                    _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
+                    _grabFrame.pivotAuthority.positionConfidence);
 
                 ROCK_LOG_INFO(Hand,
                     "{} GRAB_TRACE stage=capture_frames trace={} rawPos=({:.2f},{:.2f},{:.2f}) proxyPos=({:.2f},{:.2f},{:.2f}) objectPos=({:.2f},{:.2f},{:.2f}) bodyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) rawProxyRot={:.2f}deg rawProxyAxisMax={:.2f}deg objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
@@ -9621,7 +9621,7 @@ namespace rock
                     _grabFrame.traceId,
                     objectBodyId.value,
                     _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none",
-                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
+                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     traceFreezeShift.x,
                     traceFreezeShift.y,
                     traceFreezeShift.z,
@@ -9721,7 +9721,7 @@ namespace rock
                     objName,
                     objectBodyId.value,
                     _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none",
-                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
+                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),
                     resolvedAuthorityPivotReasonForFreeze ? resolvedAuthorityPivotReasonForFreeze : "none",
@@ -9750,8 +9750,8 @@ namespace rock
                     predictedTransformBLocal.y,
                     predictedTransformBLocal.z,
                     pivotBLeverGameUnits,
-                    _grabFrame.pocketToGripDistanceGameUnits,
-                    _grabFrame.selectionToGripEvidenceDistanceGameUnits,
+                    _grabFrame.pivotAuthority.pocketDistanceGameUnits,
+                    _grabFrame.pivotAuthority.selectionDistanceGameUnits,
                     rawToProxyRotDegrees,
                     rawToProxyMaxAxisDegrees,
                     objectToDesiredMaxAxisDegrees,
@@ -9837,17 +9837,17 @@ namespace rock
                     proxyFrameSourceAtGrab,
                     hasPalmProxyFrameAtGrab ? "yes" : "no", _grabFrame.pivotAHandBodyLocalGame.x,
                     _grabFrame.pivotAHandBodyLocalGame.y, _grabFrame.pivotAHandBodyLocalGame.z, grabPointMode, grabMeshTriangles.size(),
-                    _grabFrame.pocketToGripDistanceGameUnits, _grabFrame.selectionToGripEvidenceDistanceGameUnits,
+                    _grabFrame.pivotAuthority.pocketDistanceGameUnits, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
                     _grabFrame.gripEvidenceShapeKey, _grabFrame.gripEvidenceShapeCollisionFilterInfo, _grabFrame.gripEvidenceHitFraction,
                     _grabFrame.hasContactPatchEvidence ? "yes" : "no", "no",
                     _grabFrame.contactPatchSampleCount, _grabFrame.contactPatchMeshSnapDeltaGameUnits,
                     _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
                     _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.multiFingerContactReason,
                     _grabFrame.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
-                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
-                    _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
-                    _grabFrame.pivotAuthorityNormalTrusted ? "yes" : "no",
-                    _grabFrame.pivotAuthorityPositionConfidence,
+                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
+                    _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
+                    _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
+                    _grabFrame.pivotAuthority.positionConfidence,
                     _grabFrame.palmSeatPointMode, _grabFrame.fingerEvidencePointMode,
                     _grabFrame.fingerPoseTargetCount, _grabFrame.fadeInGrabConstraint ? "yes" : "no",
                     _grabFrame.motorFadeReason, _grabFrame.bodyResolutionReason,
@@ -10054,7 +10054,7 @@ namespace rock
                     _grabFrame.contactPatchSampleCount, _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
                     _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
                     _grabFrame.palmSeatPointMode, _grabFrame.fingerEvidencePointMode, pivotAToGrab,
-                    pivotAToGrab * havokToGameScale(), legacyPalmPivotAToHandOrigin, pivotAToHandOrigin, _grabFrame.selectionToGripEvidenceDistanceGameUnits,
+                    pivotAToGrab * havokToGameScale(), legacyPalmPivotAToHandOrigin, pivotAToHandOrigin, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
                     _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
             }
 
@@ -10143,7 +10143,7 @@ namespace rock
             massSummaryAtGrab.primaryMass,
             massSummaryAtGrab.sampledBodies,
             massSummaryAtGrab.uniqueMotions,
-            _grabFrame.longObjectLeverGameUnits,
+            _grabFrame.pivotAuthority.longLeverGameUnits,
             _activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : tau,
             _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : g_rockConfig.rockGrabAngularTau,
             _activeConstraint.linearMotor ? _activeConstraint.linearMotor->damping : damping,
@@ -10536,13 +10536,13 @@ namespace rock
         const bool finalSeatMode =
             _grabFrame.seatMode == GrabSeatMode::PinchPocket ||
             _grabFrame.seatMode == GrabSeatMode::SupportGroup;
-        const bool finalPivotSource = pivotAuthoritySourceIsFinalPinchOrSupport(_grabFrame.pivotAuthoritySource);
+        const bool finalPivotSource = pivotAuthoritySourceIsFinalPinchOrSupport(_grabFrame.pivotAuthority.source);
         if (!finalSeatMode || !finalPivotSource) {
             ROCK_LOG_WARN(Hand,
                 "{} hand release: held grab has non-final authority seat={} source={} phase={}",
                 handName(),
                 grabSeatModeName(_grabFrame.seatMode),
-                grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
+                grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                 grab_three_phase::phaseName(_grabAcquisitionPhase));
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
@@ -10745,8 +10745,8 @@ namespace rock
                 .acquisitionVisualEligible = acquisitionVisualEligible,
                 .hasPivotTrackingError = hasPivotTrackingError,
                 .motorContactSoftening = heldMotorContactSoftening,
-                .pivotAuthorityPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
-                .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
+                .pivotAuthorityPositionOnly = _grabFrame.pivotAuthority.positionOnly,
+                .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthority.normalTrusted,
                 .hasSeatedPivotReacquire = _grabFrame.hasSeatedPivotReacquire || _grabFrame.hasSettledVisualHandRelation,
                 .requiresSettledVisualRelation = _grabFrame.requiresSettledVisualHandRelation,
                 .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
@@ -10916,8 +10916,8 @@ namespace rock
                     visualPublishDecision.reason,
                     grab_motion_controller::contactSupportShapeName(heldAngularAuthority.contactSupportShape),
                     heldAngularAuthority.authorityScale,
-                    _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
-                    _grabFrame.pivotAuthorityNormalTrusted ? "yes" : "no",
+                    _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
+                    _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
                     _grabFrame.hasSeatedPivotReacquire ? "yes" : "no",
                     heldMotorContactSoftening ? "yes" : "no");
             }
@@ -10998,7 +10998,7 @@ namespace rock
                 _grabFrame.seatMode != GrabSeatMode::PinchPocket &&
                 !_grabFrame.syntheticLooseWeaponPrimaryAttach &&
                 (_grabFrame.requiresSettledVisualHandRelation ||
-                    pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthoritySource, _grabFrame.pivotAuthorityPositionOnly));
+                    pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthority.source, _grabFrame.pivotAuthority.positionOnly));
             bool timeoutReacquiredSeatedPivot = false;
             bool seatedRetargetRejectedKeepFrozen = false;
             const char* timeoutReacquireReason = pivotNeedsSeatedReacquire ? (hasGrabBody ? "notAttempted" : "missingGrabBody") : "notNeeded";
@@ -11076,7 +11076,7 @@ namespace rock
                             grab_motion_controller::SeatedPalmPocketPromotionInput{
                                 .enabled = true,
                                 .weakMeshStart = _grabFrame.requiresSettledVisualHandRelation ||
-                                                 pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthoritySource, _grabFrame.pivotAuthorityPositionOnly),
+                                                 pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthority.source, _grabFrame.pivotAuthority.positionOnly),
                                 .hasSeatedCandidate = seatedPivot.valid,
                                 .reachedTouchRange = reachedTouchRange,
                                 .timedOutInsidePocket = convergenceTimedOutInsidePocket,
@@ -11166,17 +11166,17 @@ namespace rock
                                 _grabFrame.gripNormalSourceNodeLocal = {};
                                 _grabFrame.hasGripSourceNodePoint = false;
                                 _grabFrame.hasGripSourceNodeNormal = false;
-                                _grabFrame.pocketToGripDistanceGameUnits = promotedPocketDistanceGameUnits;
-                                _grabFrame.selectionToGripEvidenceDistanceGameUnits = promotedPocketDistanceGameUnits;
+                                _grabFrame.pivotAuthority.pocketDistanceGameUnits = promotedPocketDistanceGameUnits;
+                                _grabFrame.pivotAuthority.selectionDistanceGameUnits = promotedPocketDistanceGameUnits;
                                 _grabFrame.palmSeatPointWorldAtGrab = promotedPointWorld;
                                 _grabFrame.hasPalmSeatPoint = true;
                                 _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
                                 _grabFrame.activeGrabPointMode = "seatedSupportGroupPromotion";
                                 _grabFrame.palmSeatPointMode = _grabFrame.activeGrabPointMode;
-                                _grabFrame.pivotAuthoritySource = GrabPivotAuthoritySource::GripSupportModel;
-                                _grabFrame.pivotAuthorityPositionOnly = false;
-                                _grabFrame.pivotAuthorityNormalTrusted = promotedNormalTrusted;
-                                _grabFrame.pivotAuthorityPositionConfidence = 0.92f;
+                                _grabFrame.pivotAuthority.source = GrabPivotAuthoritySource::GripSupportModel;
+                                _grabFrame.pivotAuthority.positionOnly = false;
+                                _grabFrame.pivotAuthority.normalTrusted = promotedNormalTrusted;
+                                _grabFrame.pivotAuthority.positionConfidence = 0.92f;
                                 _grabFrame.requiresSettledVisualHandRelation = false;
                                 _grabFrame.seatMode = GrabSeatMode::SupportGroup;
                                 _grabFrame.hasGripSupportModel = true;
@@ -11191,7 +11191,7 @@ namespace rock
                                     promotionDecision.reason :
                                     "seatedPalmPocketPositionOnly";
                                 _grabFrame.objectNodeWorldAtGrab = currentNodeWorld;
-                                _grabFrame.longObjectLeverGameUnits = seatedPivot.longLeverGameUnits;
+                                _grabFrame.pivotAuthority.longLeverGameUnits = seatedPivot.longLeverGameUnits;
                                 _grabFrame.hasSeatedPivotReacquire = true;
                                 _grabFrame.lastSeatedPivotReacquireLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
                                 _grabFrame.lastSeatedPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
@@ -11214,7 +11214,7 @@ namespace rock
                                 _grabObjectGripAtGrab.gripCenterBodyLocal = frozenSeatAuthorityFrame.pivotBBodyLocalGame;
                                 _grabObjectGripAtGrab.source = _grabFrame.activeGrabPointMode;
                                 _grabObjectGripAtGrab.fallbackReason = promotionDecision.reason;
-                                _grabObjectGripAtGrab.confidence = _grabFrame.pivotAuthorityPositionConfidence;
+                                _grabObjectGripAtGrab.confidence = _grabFrame.pivotAuthority.positionConfidence;
                                 _grabObjectGripAtGrab.valid = true;
 
                                 {
@@ -11243,7 +11243,7 @@ namespace rock
                                     "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu localDelta={:.2f}gu normalTrusted={} samples={} patchReason={} fingerGroups={} longLever={:.1f}gu count={}",
                                     handName(),
                                     grab_three_phase::phaseName(previousAcquisitionPhase),
-                                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
+                                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                                     promotionDecision.reason,
                                     promotionDecision.completeSeatedRelation ? "yes" : "no",
                                     pivotBlend,
@@ -11290,8 +11290,8 @@ namespace rock
                     handName(),
                     grab_three_phase::phaseName(previousAcquisitionPhase),
                     timeoutReacquireReason,
-                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
-                    _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
+                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
+                    _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
                     _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
                     gripErrorGameUnits,
                     _grabStartTime,
@@ -11328,7 +11328,7 @@ namespace rock
                         "{} THREE-PHASE GRAB VISUAL SETTLE FALLBACK: TouchHeld promotion with unsatisfied settle requirement -> settling visual relation to frozen commanded seat (reacquire={} pivotAuthoritySource={} phase={})",
                         handName(),
                         timeoutReacquireReason,
-                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthoritySource),
+                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                         grab_three_phase::phaseName(previousAcquisitionPhase));
                 }
                 _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::TouchHeld;
@@ -11347,7 +11347,7 @@ namespace rock
                 if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose) {
                     if (!_grabFingerPosePublished) {
                         const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
-                        if (!_grabFrame.fingerPoseAimValid && _grabFrame.pivotAuthorityNormalTrusted) {
+                        if (!_grabFrame.fingerPoseAimValid && _grabFrame.pivotAuthority.normalTrusted) {
                             _grabFrame.fingerPoseAimValid = true;
                             _grabFrame.fingerPoseAimReason = "touchHeldNormalTrusted";
                         }
@@ -11627,7 +11627,7 @@ namespace rock
                 authorityForceScale,
                 lastGrabPhysicsHz,
                 lastGrabPhysicsRateForceScale,
-                _grabFrame.longObjectLeverGameUnits,
+                _grabFrame.pivotAuthority.longLeverGameUnits,
                 pivotErrGame,
                 averageGrabDeviationGameUnits,
                 grabRotationErrorDegrees,
@@ -12355,7 +12355,7 @@ namespace rock
                 proxyVelocityTelemetryOk ? "palmMotion" : "computed",
                 proxyLinearVelocityHavokMagnitude,
                 proxyAngularVelocityRadiansPerSecond,
-                _grabFrame.longObjectLeverGameUnits,
+                _grabFrame.pivotAuthority.longLeverGameUnits,
                 proxyReadbackBetweenOk ? "ok" : "fail",
                 body_frame::bodyFrameSourceCode(proxyReadbackSourceBetween),
                 proxyReadbackMotionIndexBetween,
@@ -13162,7 +13162,7 @@ namespace rock
             const auto& angularAuthority = releaseAuthority.angular;
             const float releaseLongObjectAngularScale = grab_motion_controller::computeLongObjectAngularSpeedScale(
                 g_rockConfig.rockGrabLongObjectAngularScalingEnabled,
-                _grabFrame.longObjectLeverGameUnits,
+                _grabFrame.pivotAuthority.longLeverGameUnits,
                 g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
                 g_rockConfig.rockGrabLongObjectMinAngularScale);
             const float releaseAngularVelocityCap = grab_motion_controller::computeAuthorityScaledAngularVelocityCap(
@@ -13181,7 +13181,7 @@ namespace rock
                 }
                 if (hasReleaseCenterOfMass) {
                     RE::NiPoint3 releaseContactNormalWorld{};
-                    if (_grabFrame.pivotAuthorityNormalTrusted && hasReleaseBodyWorld) {
+                    if (_grabFrame.pivotAuthority.normalTrusted && hasReleaseBodyWorld) {
                         const RE::NiTransform releaseNodeWorld =
                             _grabFrame.heldNode ? _grabFrame.heldNode->world : deriveNodeWorldFromBodyWorld(releaseBodyWorld, _grabFrame.bodyLocal);
                         releaseContactNormalWorld = gripEvidenceNormalWorld(_grabFrame, releaseNodeWorld);
