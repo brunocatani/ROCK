@@ -195,7 +195,7 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.h' `
     'An active grab must retain its world reference instead of relying on the visual model or a raw pointer.'
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'const\s+auto\s+selectedRef\s*=\s*sel\.retainedRef[\s\S]*_savedObjectState\.setReference\(selectedRef\)[\s\S]*outcome\.retainedRef\s*=\s*_savedObjectState\.retainedRef[\s\S]{0,120}outcome\.refr\s*=\s*outcome\.retainedRef\.get\(\)[\s\S]*_savedObjectState\.clear\(\)' `
+    'outSelection\.retainedRef\s*=\s*selection\.retainedRef[\s\S]*const\s+auto\s+selectedRef\s*=\s*validatedSelection\.retainedRef[\s\S]*_savedObjectState\.setReference\(selectedRef\)[\s\S]*outcome\.retainedRef\s*=\s*_savedObjectState\.retainedRef[\s\S]{0,120}outcome\.refr\s*=\s*outcome\.retainedRef\.get\(\)[\s\S]*_savedObjectState\.clear\(\)' `
     'Grab commit and release must carry one strong reference across cleanup until the caller explicitly takes transfer ownership.'
 
 Require-Text 'src/physics-interaction/hand/Hand.h' `

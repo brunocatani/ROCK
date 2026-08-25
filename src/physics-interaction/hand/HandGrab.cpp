@@ -6497,6 +6497,105 @@ namespace rock
         return false;
     }
 
+    struct Hand::ValidatedGrabSelection
+    {
+        RE::NiPointer<RE::TESObjectREFR> retainedRef;
+        RE::hknpBodyId bodyId{};
+        RE::NiAVObject* rootNode = nullptr;
+        RE::bhkWorld* bhkWorld = nullptr;
+        RE::TESBoundObject* baseObject = nullptr;
+        std::string objectName{ "(unnamed)" };
+        bool joiningPeerHeldObject = false;
+        bool grabbedFromPullCatch = false;
+        bool looseWeaponGrab = false;
+        bool handPocketOnlyGrab = false;
+    };
+
+    bool Hand::validateSelectedGrab(
+        RE::hknpWorld* world,
+        const GrabSharedObjectContext& sharedContext,
+        ValidatedGrabSelection& outSelection)
+    {
+        outSelection = {};
+        if (!hasSelection() || !world) {
+            return false;
+        }
+        if (!hasCollisionBody()) {
+            return false;
+        }
+
+        const auto& selection = _currentSelection;
+        outSelection.retainedRef = selection.retainedRef;
+        if (!outSelection.retainedRef || outSelection.retainedRef.get() != selection.refr || selection.bodyId.value == INVALID_BODY_ID) {
+            return false;
+        }
+        if (selection.refr->IsDeleted() || selection.refr->IsDisabled()) {
+            return false;
+        }
+
+        if (!grab_target::canUseRockActiveGrab(selection.targetKind)) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand GRAB blocked: targetKind={} formID={:08X}; actor targets are not normal ROCK physical grabs",
+                handName(),
+                grab_target::name(selection.targetKind),
+                selection.refr ? selection.refr->GetFormID() : 0);
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return false;
+        }
+
+        outSelection.bodyId = selection.bodyId;
+        outSelection.rootNode = selection.refr->Get3D();
+        if (!outSelection.rootNode) {
+            ROCK_LOG_WARN(Hand, "{} hand GRAB failed: selected ref has no 3D root", handName());
+            return false;
+        }
+
+        auto* ownerCell = selection.refr->GetParentCell();
+        outSelection.bhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
+        if (!outSelection.bhkWorld) {
+            ROCK_LOG_WARN(Hand, "{} hand GRAB failed: selected ref has no bhkWorld for object-tree scan", handName());
+            return false;
+        }
+
+        if (!havok_runtime::getBody(world, outSelection.bodyId)) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB failed: selected body no longer readable bodyId={}",
+                handName(),
+                outSelection.bodyId.value);
+            return false;
+        }
+
+        auto* baseObj = selection.refr->GetObjectReference();
+        outSelection.baseObject = baseObj;
+        const bool selectedObjectIsCar = fo4vr::isExplodableCar(baseObj);
+        const auto carGrabDecision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = selectedObjectIsCar,
+            .playerInPowerArmor = selectedObjectIsCar && fo4vr::isInPowerArmor(),
+        });
+        if (!carGrabDecision.allowed) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand GRAB blocked: formID={:08X} reason={}",
+                handName(),
+                selection.refr->GetFormID(),
+                carGrabDecision.reason);
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return false;
+        }
+
+        if (outSelection.baseObject) {
+            const auto nameView = RE::TESFullName::GetFullName(*outSelection.baseObject, false);
+            if (!nameView.empty()) {
+                outSelection.objectName = std::string(nameView);
+            }
+        }
+
+        outSelection.joiningPeerHeldObject = sharedContextMatchesSelection(sharedContext, selection);
+        outSelection.grabbedFromPullCatch = pullCatchIntentMatchesSelection();
+        outSelection.looseWeaponGrab = isLooseWeaponGrabTarget(selection);
+        outSelection.handPocketOnlyGrab = grab_target::requiresHandPocketGrab(selection.targetKind);
+        return true;
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -6507,82 +6606,31 @@ namespace rock
         const BodyBoneColliderSet* bodyBoneColliders,
         const GrabSharedObjectContext& sharedContext)
     {
-        if (!hasSelection() || !world)
-            return false;
-        if (!hasCollisionBody())
-            return false;
-
-        const auto& sel = _currentSelection;
-        const auto selectedRef = sel.retainedRef;
-        if (!selectedRef || selectedRef.get() != sel.refr || sel.bodyId.value == 0x7FFF'FFFF)
-            return false;
-        if (sel.refr->IsDeleted() || sel.refr->IsDisabled())
-            return false;
-
-        if (!grab_target::canUseRockActiveGrab(sel.targetKind)) {
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand GRAB blocked: targetKind={} formID={:08X}; actor targets are not normal ROCK physical grabs",
-                handName(),
-                grab_target::name(sel.targetKind),
-                sel.refr ? sel.refr->GetFormID() : 0);
-            clearGrabExternalHandWorldTransform(_isLeft);
+        ValidatedGrabSelection validatedSelection{};
+        if (!validateSelectedGrab(world, sharedContext, validatedSelection)) {
             return false;
         }
 
-        const bool joiningPeerHeldObject = sharedContextMatchesSelection(sharedContext, sel);
-        const bool grabbedFromPullCatch = pullCatchIntentMatchesSelection();
-        const bool looseWeaponGrab = isLooseWeaponGrabTarget(sel);
-        const bool handPocketOnlyGrab = grab_target::requiresHandPocketGrab(sel.targetKind);
+        const auto& sel = _currentSelection;
+        const auto selectedRef = validatedSelection.retainedRef;
+        const bool joiningPeerHeldObject = validatedSelection.joiningPeerHeldObject;
+        const bool grabbedFromPullCatch = validatedSelection.grabbedFromPullCatch;
+        const bool looseWeaponGrab = validatedSelection.looseWeaponGrab;
+        const bool handPocketOnlyGrab = validatedSelection.handPocketOnlyGrab;
         saved_grab_offset::HandOffset savedGrabOffset{};
         bool hasSavedGrabOffset = false;
 
-        auto objectBodyId = sel.bodyId;
-        auto* rootNode = sel.refr->Get3D();
-        if (!rootNode) {
-            ROCK_LOG_WARN(Hand, "{} hand GRAB failed: selected ref has no 3D root", handName());
-            return false;
-        }
-
-        auto* ownerCell = sel.refr->GetParentCell();
-        auto* bhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
-        if (!bhkWorld) {
-            ROCK_LOG_WARN(Hand, "{} hand GRAB failed: selected ref has no bhkWorld for object-tree scan", handName());
-            return false;
-        }
-
-        auto* body = havok_runtime::getBody(world, objectBodyId);
-        if (!body) {
-            ROCK_LOG_WARN(Hand, "{} hand GRAB failed: selected body no longer readable bodyId={}", handName(), objectBodyId.value);
-            return false;
-        }
-
-        auto* baseObj = sel.refr->GetObjectReference();
-        const bool selectedObjectIsCar = fo4vr::isExplodableCar(baseObj);
-        const auto carGrabDecision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
-            .targetIsCar = selectedObjectIsCar,
-            .playerInPowerArmor = selectedObjectIsCar && fo4vr::isInPowerArmor(),
-        });
-        if (!carGrabDecision.allowed) {
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand GRAB blocked: formID={:08X} reason={}",
-                handName(),
-                sel.refr->GetFormID(),
-                carGrabDecision.reason);
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
-        }
-        std::string objName = "(unnamed)";
-        if (baseObj) {
-            auto nameView = RE::TESFullName::GetFullName(*baseObj, false);
-            if (!nameView.empty())
-                objName = std::string(nameView);
-        }
+        auto objectBodyId = validatedSelection.bodyId;
+        auto* rootNode = validatedSelection.rootNode;
+        auto* bhkWorld = validatedSelection.bhkWorld;
+        std::string objName = std::move(validatedSelection.objectName);
 
         const char* motionTypeStr = "UNKNOWN";
         std::uint16_t selectedOriginalMotionPropsId = 1;
         {
+            auto* body = havok_runtime::getBody(world, objectBodyId);
             auto* objMotion = havok_runtime::getBodyMotion(world, objectBodyId);
-            if (objMotion) {
+            if (body && objMotion) {
                 std::uint32_t bodyFlags = body->flags;
                 std::uint8_t bodyMotionPropsId = static_cast<std::uint8_t>(body->motionPropertiesId);
                 std::uint16_t motionPropsId = selectedOriginalMotionPropsId;

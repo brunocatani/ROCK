@@ -722,6 +722,12 @@ namespace rock
         bool cancelConsumeCandidate();
 
     private:
+        struct ValidatedGrabSelection;
+        bool validateSelectedGrab(
+            RE::hknpWorld* world,
+            const GrabSharedObjectContext& sharedContext,
+            ValidatedGrabSelection& outSelection);
+
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
         bool createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
