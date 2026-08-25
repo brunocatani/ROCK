@@ -115,7 +115,7 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 # calibrated arcs, and surface contacts are stored object-local.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'targetObjectWorld =',
-    '_grabFrame\.desiredObjectWorldAtGrab',
+    '_grabFrame\.authority\.desiredObjectWorldAtGrab',
     'solveFrozenMeshFingerPose\(',
     'localFingerPoseTriangles',
     'targetObjectWorld',

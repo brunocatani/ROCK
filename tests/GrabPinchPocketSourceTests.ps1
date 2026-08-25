@@ -73,7 +73,7 @@ Require-Text 'src/RockConfig.cpp' 'fGrabPinchCompactMaxExtentGameUnits[\s\S]*gra
     'Runtime config loading must cap compact pinch extent at the current policy limit.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seat\.mode = usingPinchPocket \? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup' `
     'Accepted capture must store the selected seat mode on the grab frame.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveActiveGrabAuthorityPivotAWorld\(\s*const RE::NiTransform& proxyWorldTransform[\s\S]*generatedProxyLocalPointToWorld\(proxyWorldTransform,\s*_grabFrame\.pivotAHandBodyLocalGame\)' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveActiveGrabAuthorityPivotAWorld\(\s*const RE::NiTransform& proxyWorldTransform[\s\S]*generatedProxyLocalPointToWorld\(proxyWorldTransform,\s*_grabFrame\.authority\.pivotAHandBodyLocalGame\)' `
     'Pinch grabs must replay the frozen generated/proxy local pivot instead of running held palm-pocket support refresh.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'promotionRequested &&\s*_grabFrame\.seat\.mode != GrabSeatMode::PinchPocket' `
     'Pinch grabs must not enter seated palm-pocket reacquire.'

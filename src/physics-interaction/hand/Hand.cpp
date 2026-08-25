@@ -1654,7 +1654,7 @@ namespace rock
         const auto& diagnostics = telemetry.seat.diagnostics;
         auto& seat = outCapture.seat;
         seat.valid = _grabFrame.hasTelemetryCapture;
-        seat.objectProxyLocal = inProxyLocal(telemetry.desiredObjectWorld);
+        seat.objectProxyLocal = inProxyLocal(telemetry.authority.desiredObjectWorldAtGrab);
         seat.shapeClass = diagnostics.shapeClass;
         seat.elongationRatio = diagnostics.elongationRatio;
         seat.secondElongationRatio = diagnostics.secondElongationRatio;
@@ -1670,7 +1670,7 @@ namespace rock
         seat.gripPointObjectLocal[0] = telemetry.gripEvidence.gripPointLocal.x;
         seat.gripPointObjectLocal[1] = telemetry.gripEvidence.gripPointLocal.y;
         seat.gripPointObjectLocal[2] = telemetry.gripEvidence.gripPointLocal.z;
-        pointInProxyLocal(telemetry.grabPivotWorld, seat.pivotProxyLocal);
+        pointInProxyLocal(telemetry.authority.grabPivotWorldAtGrab, seat.pivotProxyLocal);
         seat.seatMode = grabSeatModeName(_grabFrame.seat.mode);
         seat.pivotAuthoritySource =
             grab_authority_frame_math::grabAuthorityPivotSourceName(
@@ -1680,7 +1680,7 @@ namespace rock
         // instant at capture. Raw data only - see PhysicsCapture for why this
         // must not be read as a centre of mass until the layout is verified.
         outCapture.physics.bodyInObjectNode =
-            storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(telemetry.objectNodeWorld, telemetry.bodyWorld));
+            storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(telemetry.authority.objectNodeWorldAtGrab, telemetry.authority.bodyWorldAtGrab));
 
         auto& tuning = outCapture.tuning;
         tuning.seatDepthMaxGameUnits = g_rockConfig.rockGrabSeatDepthMaxGameUnits;

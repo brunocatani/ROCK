@@ -681,6 +681,23 @@ namespace rock
         bool authoredPivot = false;
     };
 
+    struct GrabFrozenAuthorityState
+    {
+        RE::NiTransform liveHandWorldAtGrab{};
+        RE::NiTransform handBodyWorldAtGrab{};
+        RE::NiTransform objectNodeWorldAtGrab{};
+        RE::NiTransform bodyWorldAtGrab{};
+        RE::NiTransform desiredObjectWorldAtGrab{};
+        RE::NiTransform desiredBodyWorldAtGrab{};
+        RE::NiTransform bodyLocal{};
+        RE::NiPoint3 pivotAHandBodyLocalGame{};
+        RE::NiPoint3 grabPivotWorldAtGrab{};
+        RE::NiPoint3 gripPointBodyLocalGame{};
+        RE::NiPoint3 pivotBBodyLocalGame{};
+        RE::NiPoint3 pivotBConstraintLocalGame{};
+        bool hasFrozenPivotB = false;
+    };
+
     struct ImmutableGrabCaptureTelemetry
     {
         /*
@@ -690,26 +707,14 @@ namespace rock
          * evidence trail used by debug overlays to answer "what did this grab
          * select?" without being contaminated by later solver authority changes.
          */
-        RE::NiTransform liveHandWorld{};
-        RE::NiTransform handBodyWorld{};
-        RE::NiTransform objectNodeWorld{};
-        RE::NiTransform bodyWorld{};
-        RE::NiTransform desiredObjectWorld{};
-        RE::NiTransform desiredBodyWorld{};
-        RE::NiTransform bodyLocal{};
-        RE::NiPoint3 pivotAHandBodyLocalGame{};
-        RE::NiPoint3 grabPivotWorld{};
-        RE::NiPoint3 gripPointBodyLocalGame{};
-        RE::NiPoint3 pivotBBodyLocalGame{};
-        RE::NiPoint3 pivotBConstraintLocalGame{};
         std::uint32_t sourceBodyId = 0x7FFF'FFFF;
         const char* fingerEvidencePointMode = "none";
         GrabGripEvidenceState gripEvidence{};
         GrabPivotAuthorityState pivotAuthority{};
         GrabSeatState seat{};
         GrabSupportFrameState support{};
+        GrabFrozenAuthorityState authority{};
         bool valid = false;
-        bool hasFrozenPivotB = false;
         bool hasMeshPoseData = false;
 
         void clear()
@@ -724,17 +729,8 @@ namespace rock
         RE::NiTransform proxyAuthorityHandSpace{};
         RE::NiTransform proxyAuthorityBodyHandSpace{};
         RE::NiTransform handBodyToRawHandAtGrab{};
-        RE::NiTransform bodyLocal{};
         RE::NiTransform rootBodyLocal{};
         RE::NiTransform ownerBodyLocal{};
-        RE::NiTransform liveHandWorldAtGrab{};
-        RE::NiTransform handBodyWorldAtGrab{};
-        RE::NiTransform objectNodeWorldAtGrab{};
-        RE::NiTransform bodyWorldAtGrab{};
-        RE::NiTransform desiredObjectWorldAtGrab{};
-        RE::NiTransform desiredBodyWorldAtGrab{};
-        RE::NiPoint3 pivotAHandBodyLocalGame{};
-        RE::NiPoint3 grabPivotWorldAtGrab{};
         RE::NiPoint3 fingerEvidencePointWorldAtGrab{};
         RE::NiPoint3 multiFingerGripCenterWorldAtGrab{};
         RE::NiPoint3 multiFingerHandCenterWorldAtGrab{};
@@ -743,9 +739,6 @@ namespace rock
         std::array<RE::NiPoint3, 5> fingerPoseTargetNormalLocal{};
         std::array<std::uint8_t, 5> fingerPoseTargetValid{};
         std::array<std::uint8_t, 5> fingerPoseTargetNormalValid{};
-        RE::NiPoint3 gripPointBodyLocalGame{};
-        RE::NiPoint3 pivotBBodyLocalGame{};
-        RE::NiPoint3 pivotBConstraintLocalGame{};
         std::array<grab_contact_patch_math::GrabContactPatchSample<RE::NiPoint3>, kMaxGrabContactPatchSamples> contactPatchSamples{};
         std::uint32_t contactPatchSampleCount = 0;
         std::uint32_t multiFingerContactGroupCount = 0;
@@ -774,8 +767,8 @@ namespace rock
         GrabPivotAuthorityState pivotAuthority{};
         GrabSeatState seat{};
         GrabSupportFrameState support{};
+        GrabFrozenAuthorityState authority{};
         bool hasMeshPoseData = false;
-        bool hasFrozenPivotB = false;
         bool hasContactPatch = false;
         bool hasContactPatchEvidence = false;
         bool hasMultiFingerContactPatch = false;
@@ -788,25 +781,13 @@ namespace rock
 
         void freezeCaptureTelemetry(std::uint32_t sourceBodyId)
         {
-            captureTelemetry.liveHandWorld = liveHandWorldAtGrab;
-            captureTelemetry.handBodyWorld = handBodyWorldAtGrab;
-            captureTelemetry.objectNodeWorld = objectNodeWorldAtGrab;
-            captureTelemetry.bodyWorld = bodyWorldAtGrab;
-            captureTelemetry.desiredObjectWorld = desiredObjectWorldAtGrab;
-            captureTelemetry.desiredBodyWorld = desiredBodyWorldAtGrab;
-            captureTelemetry.bodyLocal = bodyLocal;
-            captureTelemetry.pivotAHandBodyLocalGame = pivotAHandBodyLocalGame;
-            captureTelemetry.grabPivotWorld = grabPivotWorldAtGrab;
+            captureTelemetry.authority = authority;
             captureTelemetry.gripEvidence = gripEvidence;
-            captureTelemetry.gripPointBodyLocalGame = gripPointBodyLocalGame;
-            captureTelemetry.pivotBBodyLocalGame = pivotBBodyLocalGame;
-            captureTelemetry.pivotBConstraintLocalGame = pivotBConstraintLocalGame;
             captureTelemetry.sourceBodyId = sourceBodyId;
             captureTelemetry.seat = seat;
             captureTelemetry.pivotAuthority = pivotAuthority;
             captureTelemetry.support = support;
             captureTelemetry.fingerEvidencePointMode = fingerEvidencePointMode;
-            captureTelemetry.hasFrozenPivotB = hasFrozenPivotB;
             captureTelemetry.hasMeshPoseData = hasMeshPoseData;
             captureTelemetry.valid = hasTelemetryCapture;
         }
@@ -817,17 +798,8 @@ namespace rock
             proxyAuthorityHandSpace = RE::NiTransform();
             proxyAuthorityBodyHandSpace = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
-            bodyLocal = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
             ownerBodyLocal = RE::NiTransform();
-            liveHandWorldAtGrab = RE::NiTransform();
-            handBodyWorldAtGrab = RE::NiTransform();
-            objectNodeWorldAtGrab = RE::NiTransform();
-            bodyWorldAtGrab = RE::NiTransform();
-            desiredObjectWorldAtGrab = RE::NiTransform();
-            desiredBodyWorldAtGrab = RE::NiTransform();
-            pivotAHandBodyLocalGame = {};
-            grabPivotWorldAtGrab = {};
             fingerEvidencePointWorldAtGrab = {};
             multiFingerGripCenterWorldAtGrab = {};
             multiFingerHandCenterWorldAtGrab = {};
@@ -836,9 +808,6 @@ namespace rock
             fingerPoseTargetNormalLocal = {};
             fingerPoseTargetValid = {};
             fingerPoseTargetNormalValid = {};
-            gripPointBodyLocalGame = {};
-            pivotBBodyLocalGame = {};
-            pivotBConstraintLocalGame = {};
             contactPatchSamples = {};
             contactPatchSampleCount = 0;
             multiFingerContactGroupCount = 0;
@@ -861,8 +830,8 @@ namespace rock
             pivotAuthority = GrabPivotAuthorityState{};
             seat = GrabSeatState{};
             support = GrabSupportFrameState{};
+            authority = GrabFrozenAuthorityState{};
             hasMeshPoseData = false;
-            hasFrozenPivotB = false;
             hasContactPatch = false;
             hasContactPatchEvidence = false;
             hasMultiFingerContactPatch = false;
