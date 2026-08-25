@@ -2651,6 +2651,32 @@ namespace rock
             return result;
         }
 
+        void logGrabCaptureRefresh(
+            const char* handName,
+            bool isLeft,
+            std::uint64_t traceId,
+            const GrabCaptureTransformRefreshResult& refresh)
+        {
+            if (!grabTimelineTraceEnabled()) {
+                return;
+            }
+            for (std::uint32_t i = 0; i < refresh.count; ++i) {
+                const auto& sample = refresh.samples[i];
+                ROCK_LOG_INFO(Hand,
+                    "{} GRAB_TRACE stage=capture_refresh trace={} hand={} role={} node='{}'({:p}) validBefore={} validAfter={} posDelta={:.4f}gu rotDelta={:.3f}deg",
+                    handName,
+                    traceId,
+                    isLeft ? "left" : "right",
+                    sample.role,
+                    nodeDebugName(sample.node),
+                    static_cast<const void*>(sample.node),
+                    sample.validBefore ? "yes" : "no",
+                    sample.validAfter ? "yes" : "no",
+                    sample.positionDeltaGameUnits,
+                    sample.rotationDeltaDegrees);
+            }
+        }
+
         float axisDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
         {
             const float dot = a.x * b.x + a.y * b.y + a.z * b.z;
@@ -6736,6 +6762,58 @@ namespace rock
         return true;
     }
 
+    struct Hand::GrabMeshCaptureSetup
+    {
+        RE::NiAVObject* collidableNode = nullptr;
+        RE::NiAVObject* meshSourceNode = nullptr;
+        RE::NiTransform objectWorldTransform{};
+    };
+
+    bool Hand::prepareGrabMeshCapture(
+        const RE::NiTransform& handWorldTransform,
+        const ValidatedGrabSelection& selection,
+        std::uint64_t traceId,
+        const std::string& objectName,
+        GrabMeshCaptureSetup& outSetup)
+    {
+        outSetup = {};
+        const auto& selectedObject = _currentSelection;
+        outSetup.collidableNode = selectedObject.hitNode ? selectedObject.hitNode : selection.rootNode;
+        outSetup.meshSourceNode = selectedObject.visualNode ? selectedObject.visualNode : selection.rootNode;
+        if (!outSetup.meshSourceNode) {
+            outSetup.meshSourceNode = outSetup.collidableNode;
+        }
+
+        const auto captureRefresh = refreshGrabCaptureTransforms(
+            selection.rootNode,
+            outSetup.meshSourceNode,
+            outSetup.collidableNode);
+        logGrabCaptureRefresh(handName(), _isLeft, traceId, captureRefresh);
+        if (!captureRefresh.ok) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB failed: capture transform refresh produced a non-finite node transform for '{}' formID={:08X}; root='{}' mesh='{}' collidable='{}'",
+                handName(),
+                objectName,
+                selectedObject.refr ? selectedObject.refr->GetFormID() : 0,
+                nodeDebugName(selection.rootNode),
+                nodeDebugName(outSetup.meshSourceNode),
+                nodeDebugName(outSetup.collidableNode));
+            return false;
+        }
+
+        outSetup.objectWorldTransform = outSetup.collidableNode ? outSetup.collidableNode->world : handWorldTransform;
+        if (!grab_three_phase::isFinite(outSetup.objectWorldTransform)) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB failed: refreshed object transform is non-finite for '{}' formID={:08X}; collidable='{}'",
+                handName(),
+                objectName,
+                selectedObject.refr ? selectedObject.refr->GetFormID() : 0,
+                nodeDebugName(outSetup.collidableNode));
+            return false;
+        }
+        return true;
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -7026,12 +7104,15 @@ namespace rock
             grabPalmBasisDelta.rawDeterminant,
             grabPalmBasisDelta.proxyDeterminant);
 
-        auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
-        auto* meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;
-        if (!meshSourceNode) {
-            meshSourceNode = collidableNode;
+        GrabMeshCaptureSetup meshCaptureSetup{};
+        if (!prepareGrabMeshCapture(handWorldTransform, validatedSelection, grabTraceId, objName, meshCaptureSetup)) {
+            grabPreparationTransaction.rollback();
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return false;
         }
-        RE::NiTransform objectWorldTransform;
+        auto* collidableNode = meshCaptureSetup.collidableNode;
+        auto* meshSourceNode = meshCaptureSetup.meshSourceNode;
+        RE::NiTransform objectWorldTransform = meshCaptureSetup.objectWorldTransform;
 
         RE::NiPoint3 grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice;
         float selectionToMeshDistanceGameUnits = 0.0f;
@@ -7090,60 +7171,6 @@ namespace rock
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         };
-
-        const auto logGrabCaptureRefresh = [&](const GrabCaptureTransformRefreshResult& refresh) {
-            if (!grabTimelineTraceEnabled()) {
-                return;
-            }
-            for (std::uint32_t i = 0; i < refresh.count; ++i) {
-                const auto& sample = refresh.samples[i];
-                ROCK_LOG_INFO(Hand,
-                    "{} GRAB_TRACE stage=capture_refresh trace={} hand={} role={} node='{}'({:p}) validBefore={} validAfter={} posDelta={:.4f}gu rotDelta={:.3f}deg",
-                    handName(),
-                    grabTraceId,
-                    _isLeft ? "left" : "right",
-                    sample.role,
-                    nodeDebugName(sample.node),
-                    static_cast<const void*>(sample.node),
-                    sample.validBefore ? "yes" : "no",
-                    sample.validAfter ? "yes" : "no",
-                    sample.positionDeltaGameUnits,
-                    sample.rotationDeltaDegrees);
-            }
-        };
-
-        const auto captureRefresh = refreshGrabCaptureTransforms(rootNode, meshSourceNode, collidableNode);
-        logGrabCaptureRefresh(captureRefresh);
-        if (!captureRefresh.ok) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: capture transform refresh produced a non-finite node transform for '{}' formID={:08X}; root='{}' mesh='{}' collidable='{}'",
-                handName(),
-                objName,
-                sel.refr ? sel.refr->GetFormID() : 0,
-                nodeDebugName(rootNode),
-                nodeDebugName(meshSourceNode),
-                nodeDebugName(collidableNode));
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
-        }
-
-        if (collidableNode) {
-            objectWorldTransform = collidableNode->world;
-        } else {
-            objectWorldTransform = handWorldTransform;
-        }
-        if (!grab_three_phase::isFinite(objectWorldTransform)) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: refreshed object transform is non-finite for '{}' formID={:08X}; collidable='{}'",
-                handName(),
-                objName,
-                sel.refr ? sel.refr->GetFormID() : 0,
-                nodeDebugName(collidableNode));
-            grabPreparationTransaction.rollback();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
-        }
 
         /*
          * hknp selection identifies the object/body. In mesh-authoritative mode
@@ -7684,7 +7711,7 @@ namespace rock
             if (auto* resolvedOwnerNode = bodyCollisionObjectAtResolution ? bodyCollisionObjectAtResolution->sceneObject : nullptr) {
                 GrabCaptureTransformRefreshResult resolvedOwnerRefresh{};
                 refreshGrabCaptureNodeTransform(resolvedOwnerRefresh, "resolvedOwner", resolvedOwnerNode);
-                logGrabCaptureRefresh(resolvedOwnerRefresh);
+                logGrabCaptureRefresh(handName(), _isLeft, grabTraceId, resolvedOwnerRefresh);
                 if (!resolvedOwnerRefresh.ok) {
                     ROCK_LOG_WARN(Hand,
                         "{} hand GRAB failed: resolved owner transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
@@ -8414,7 +8441,7 @@ namespace rock
             if (ownerNodeAtGrab && ownerNodeAtGrab != collidableNode) {
                 GrabCaptureTransformRefreshResult ownerAtGrabRefresh{};
                 refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab);
-                logGrabCaptureRefresh(ownerAtGrabRefresh);
+                logGrabCaptureRefresh(handName(), _isLeft, grabTraceId, ownerAtGrabRefresh);
                 if (!ownerAtGrabRefresh.ok) {
                     ROCK_LOG_WARN(Hand,
                         "{} hand GRAB failed: owner-at-grab transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
