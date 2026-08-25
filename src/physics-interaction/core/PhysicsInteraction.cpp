@@ -3500,6 +3500,180 @@ namespace rock
         };
     }
 
+    void PhysicsInteraction::finalizeInteractionFrame(
+        const PhysicsFrameContext& frame,
+        RE::bhkWorld* bhk,
+        RE::hknpWorld* hknp,
+        const EquippedWeaponFrameResult& equippedWeaponFrame)
+    {
+        const bool rightHandWeaponAuthorityActive = equippedWeaponFrame.rightHandWeaponAuthorityActive;
+        const bool leftSupportGripActive = equippedWeaponFrame.leftSupportGripActive;
+        const bool rightPartGripActive = equippedWeaponFrame.rightPartGripActive;
+
+        refreshGeneratedBodyContactRegistry();
+        updateSelection(frame);
+
+        /*
+         * ROCK applies player/room-space compensation before held-object grab
+         * constraints are updated. That keeps the constraint target from solving
+         * against a stale body velocity and removes the apparent held-object
+         * teleport/stutter caused by compensating after the grab loop has already
+         * written the frame target.
+         */
+
+        updateGrabInput(frame);
+        auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
+            DynamicWorldCarTarget target{};
+            if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {
+                return target;
+            }
+            const auto& selection = hand.getSelection();
+            if (selection.isFarSelection || !selection.refr || !fo4vr::isExplodableCar(selection.refr->GetObjectReference())) {
+                return target;
+            }
+            target.ref = selection.refr;
+            target.seedBodyId = selection.bodyId.value;
+            return target;
+        };
+        _dynamicWorldCarCollision.update(
+            frame.bhkWorld,
+            frame.hknpWorld,
+            std::array<DynamicWorldCarTarget, 2>{
+                selectedCloseCarTarget(_rightHand, frame.right),
+                selectedCloseCarTarget(_leftHand, frame.left),
+            });
+        updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
+        synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
+
+        /*
+         * Dynamic hand collision runs after normal grab input so the final
+         * grab, pull, support-grip, or weapon owner for this frame can gate its
+         * lower-priority visual authority without delaying proxy tracking.
+         */
+        _dynamicHandCollision.updateFrame(
+            frame,
+            physicsWritesAllowedForWorld(frame.hknpWorld),
+            _rightHand,
+            _leftHand,
+            _bodyBoneColliders,
+            rightHandWeaponAuthorityActive || rightPartGripActive,
+            leftSupportGripActive ||
+                (_twoHandedGrip.isFiringHandLeft() &&
+                    _twoHandedGrip.isFiringGripOccupied()),
+            _dynamicWeaponCollision.proxyBodyIdForDebug().value,
+            _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
+            _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
+        const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
+        for (const auto& pulse : dynamicHandHapticEvents.hands) {
+            if (!pulse.fire) {
+                continue;
+            }
+            TouchGrabRuntime::HandReport touchGrabReport{};
+            const bool surfaceGrabOwnsFeedback =
+                g_rockConfig.rockSurfaceGrabHapticsEnabled &&
+                _touchGrabRuntime.getHandReport(
+                    pulse.isLeft,
+                    touchGrabReport) &&
+                touchGrabReport.kind ==
+                    provider::RockProviderTouchGrabKindV1::FixedAnchor;
+            if (surfaceGrabOwnsFeedback) {
+                continue;
+            }
+            (void)_feedbackHaptics.queue(
+                pulse.isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                dynamic_hand_collision_policy::kHapticDurationSeconds,
+                pulse.intensity);
+        }
+        updateFeedbackHaptics(frame.deltaSeconds);
+
+        publishDebugBodyOverlay(frame);
+
+        resolveContacts(frame);
+
+        bool wasTouchingR = _rightHand.isTouching();
+        bool wasTouchingL = _leftHand.isTouching();
+        const float measuredFrameDeltaSeconds =
+            frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
+        _rightHand.tickTouchState(measuredFrameDeltaSeconds);
+        _leftHand.tickTouchState(measuredFrameDeltaSeconds);
+        _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
+        _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
+        _handContactActivity.advanceFrame(measuredFrameDeltaSeconds);
+        if (wasTouchingR && !_rightHand.isTouching()) {
+            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, false, _rightHand.getLastTouchedRef(), _rightHand.getLastTouchedFormID(), _rightHand.getLastTouchedLayer());
+        }
+        if (wasTouchingL && !_leftHand.isTouching()) {
+            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, true, _leftHand.getLastTouchedRef(), _leftHand.getLastTouchedFormID(), _leftHand.getLastTouchedLayer());
+        }
+
+        /*
+         * Bounded timing telemetry: one rate-limited line that explains the
+         * active game and physics schedule (sequence identities, measured
+         * deltas and effective rates, validity, fallback use, and the grab
+         * source-clock state). Debug-gated; never per-frame in production.
+         */
+        if (g_rockConfig.rockDebugVerboseLogging) {
+            const auto gameTelemetry = game_timing::telemetry();
+            const auto physicsTelemetry = _generatedBodyStepDrive.physicsTimingTelemetry();
+            const auto rightGrabClock = _rightHand.getGrabClockTelemetry();
+            const auto leftGrabClock = _leftHand.getGrabClockTelemetry();
+            const float gameHz = gameTelemetry.deltaSeconds > 0.0f ? 1.0f / gameTelemetry.deltaSeconds : 0.0f;
+            const float physicsHz = physicsTelemetry.substepDeltaSeconds > 0.0f ? 1.0f / physicsTelemetry.substepDeltaSeconds : 0.0f;
+            ROCK_LOG_SAMPLE_DEBUG(Update,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "TIMING game: seq={} dt={:.6f} hz={:.1f} valid={} paused={} elapsed={:.2f}s disc={} invalid={} | physics: step={} solve={} rawDt={:.6f} subDt={:.6f} substeps={} hz={:.1f} fallback={} fallbackCount={} simulated={:.2f}s | phaseIdentity={} | grabR: hz={:.1f} scale={:.3f} srcInt={:.4f} | grabL: hz={:.1f} scale={:.3f} srcInt={:.4f}",
+                gameTelemetry.sequence,
+                gameTelemetry.deltaSeconds,
+                gameHz,
+                gameTelemetry.valid ? "y" : "n",
+                gameTelemetry.menuPaused ? "y" : "n",
+                gameTelemetry.elapsedGameSeconds,
+                gameTelemetry.discontinuityCount,
+                gameTelemetry.invalidSampleCount,
+                physicsTelemetry.stepSequence,
+                physicsTelemetry.solveSequence,
+                physicsTelemetry.rawDeltaSeconds,
+                physicsTelemetry.substepDeltaSeconds,
+                physicsTelemetry.substepCount,
+                physicsHz,
+                physicsTelemetry.lastSampleUsedFallback ? "y" : "n",
+                physicsTelemetry.fallbackSampleCount,
+                physicsTelemetry.elapsedSimulatedSeconds,
+                frame.timing.sequence,
+                rightGrabClock.physicsHz,
+                rightGrabClock.physicsRateForceScale,
+                rightGrabClock.sourceIntervalSeconds,
+                leftGrabClock.physicsHz,
+                leftGrabClock.physicsRateForceScale,
+                leftGrabClock.sourceIntervalSeconds);
+        }
+
+        _deltaLogCounter++;
+        if (g_rockConfig.rockDebugVerboseLogging && _deltaLogCounter >= 90) {
+            _deltaLogCounter = 0;
+
+            const auto& playerSpace = runtime_state::currentFrame().playerSpace;
+            if (playerSpace.valid) {
+                const auto smoothPos = playerSpace.world.translate;
+                const bool moving = playerSpace.moving;
+
+                if (_hasPrevPositions && moving) {
+                    const auto smoothDelta = smoothPos - _prevSmoothedPos;
+
+                    ROCK_LOG_DEBUG(Update, "PlayerSpace: smoothDelta=({:.2f},{:.2f},{:.2f}) moving={}", smoothDelta.x, smoothDelta.y, smoothDelta.z, moving);
+                }
+
+                _prevSmoothedPos = smoothPos;
+                _hasPrevPositions = true;
+            }
+        }
+
+        ::rock::provider::dispatchFrameCallbacks(*this);
+        // Publish callback ownership only after every main-thread collider
+        // mutation and target update for this frame has committed.
+        _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
+    }
+
     void PhysicsInteraction::update()
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
@@ -3917,171 +4091,7 @@ namespace rock
         }
 
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
-        const bool rightHandWeaponAuthorityActive = equippedWeaponFrame.rightHandWeaponAuthorityActive;
-        const bool leftSupportGripActive = equippedWeaponFrame.leftSupportGripActive;
-        const bool rightPartGripActive = equippedWeaponFrame.rightPartGripActive;
-        refreshGeneratedBodyContactRegistry();
-        updateSelection(frame);
-
-        /*
-         * ROCK applies player/room-space compensation before held-object grab
-         * constraints are updated. That keeps the constraint target from solving
-         * against a stale body velocity and removes the apparent held-object
-         * teleport/stutter caused by compensating after the grab loop has already
-         * written the frame target.
-         */
-
-        updateGrabInput(frame);
-        auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
-            DynamicWorldCarTarget target{};
-            if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {
-                return target;
-            }
-            const auto& selection = hand.getSelection();
-            if (selection.isFarSelection || !selection.refr || !fo4vr::isExplodableCar(selection.refr->GetObjectReference())) {
-                return target;
-            }
-            target.ref = selection.refr;
-            target.seedBodyId = selection.bodyId.value;
-            return target;
-        };
-        _dynamicWorldCarCollision.update(
-            frame.bhkWorld,
-            frame.hknpWorld,
-            std::array<DynamicWorldCarTarget, 2>{
-                selectedCloseCarTarget(_rightHand, frame.right),
-                selectedCloseCarTarget(_leftHand, frame.left),
-            });
-        updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
-        synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
-
-        /*
-         * Dynamic hand collision runs after normal grab input so the final
-         * grab, pull, support-grip, or weapon owner for this frame can gate its
-         * lower-priority visual authority without delaying proxy tracking.
-         */
-        _dynamicHandCollision.updateFrame(
-            frame,
-            physicsWritesAllowedForWorld(frame.hknpWorld),
-            _rightHand,
-            _leftHand,
-            _bodyBoneColliders,
-            rightHandWeaponAuthorityActive || rightPartGripActive,
-            leftSupportGripActive ||
-                (_twoHandedGrip.isFiringHandLeft() &&
-                    _twoHandedGrip.isFiringGripOccupied()),
-            _dynamicWeaponCollision.proxyBodyIdForDebug().value,
-            _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
-            _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
-        const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
-        for (const auto& pulse : dynamicHandHapticEvents.hands) {
-            if (!pulse.fire) {
-                continue;
-            }
-            TouchGrabRuntime::HandReport touchGrabReport{};
-            const bool surfaceGrabOwnsFeedback =
-                g_rockConfig.rockSurfaceGrabHapticsEnabled &&
-                _touchGrabRuntime.getHandReport(
-                    pulse.isLeft,
-                    touchGrabReport) &&
-                touchGrabReport.kind ==
-                    provider::RockProviderTouchGrabKindV1::FixedAnchor;
-            if (surfaceGrabOwnsFeedback) {
-                continue;
-            }
-            (void)_feedbackHaptics.queue(
-                pulse.isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
-                dynamic_hand_collision_policy::kHapticDurationSeconds,
-                pulse.intensity);
-        }
-        updateFeedbackHaptics(frame.deltaSeconds);
-
-        publishDebugBodyOverlay(frame);
-
-        resolveContacts(frame);
-
-        bool wasTouchingR = _rightHand.isTouching();
-        bool wasTouchingL = _leftHand.isTouching();
-        const float measuredFrameDeltaSeconds =
-            frame.timing.valid ? frame.timing.deltaSeconds : 0.0f;
-        _rightHand.tickTouchState(measuredFrameDeltaSeconds);
-        _leftHand.tickTouchState(measuredFrameDeltaSeconds);
-        _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
-        _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
-        _handContactActivity.advanceFrame(measuredFrameDeltaSeconds);
-        if (wasTouchingR && !_rightHand.isTouching()) {
-            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, false, _rightHand.getLastTouchedRef(), _rightHand.getLastTouchedFormID(), _rightHand.getLastTouchedLayer());
-        }
-        if (wasTouchingL && !_leftHand.isTouching()) {
-            dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, true, _leftHand.getLastTouchedRef(), _leftHand.getLastTouchedFormID(), _leftHand.getLastTouchedLayer());
-        }
-
-        /*
-         * Bounded timing telemetry: one rate-limited line that explains the
-         * active game and physics schedule (sequence identities, measured
-         * deltas and effective rates, validity, fallback use, and the grab
-         * source-clock state). Debug-gated; never per-frame in production.
-         */
-        if (g_rockConfig.rockDebugVerboseLogging) {
-            const auto gameTelemetry = game_timing::telemetry();
-            const auto physicsTelemetry = _generatedBodyStepDrive.physicsTimingTelemetry();
-            const auto rightGrabClock = _rightHand.getGrabClockTelemetry();
-            const auto leftGrabClock = _leftHand.getGrabClockTelemetry();
-            const float gameHz = gameTelemetry.deltaSeconds > 0.0f ? 1.0f / gameTelemetry.deltaSeconds : 0.0f;
-            const float physicsHz = physicsTelemetry.substepDeltaSeconds > 0.0f ? 1.0f / physicsTelemetry.substepDeltaSeconds : 0.0f;
-            ROCK_LOG_SAMPLE_DEBUG(Update,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "TIMING game: seq={} dt={:.6f} hz={:.1f} valid={} paused={} elapsed={:.2f}s disc={} invalid={} | physics: step={} solve={} rawDt={:.6f} subDt={:.6f} substeps={} hz={:.1f} fallback={} fallbackCount={} simulated={:.2f}s | phaseIdentity={} | grabR: hz={:.1f} scale={:.3f} srcInt={:.4f} | grabL: hz={:.1f} scale={:.3f} srcInt={:.4f}",
-                gameTelemetry.sequence,
-                gameTelemetry.deltaSeconds,
-                gameHz,
-                gameTelemetry.valid ? "y" : "n",
-                gameTelemetry.menuPaused ? "y" : "n",
-                gameTelemetry.elapsedGameSeconds,
-                gameTelemetry.discontinuityCount,
-                gameTelemetry.invalidSampleCount,
-                physicsTelemetry.stepSequence,
-                physicsTelemetry.solveSequence,
-                physicsTelemetry.rawDeltaSeconds,
-                physicsTelemetry.substepDeltaSeconds,
-                physicsTelemetry.substepCount,
-                physicsHz,
-                physicsTelemetry.lastSampleUsedFallback ? "y" : "n",
-                physicsTelemetry.fallbackSampleCount,
-                physicsTelemetry.elapsedSimulatedSeconds,
-                frame.timing.sequence,
-                rightGrabClock.physicsHz,
-                rightGrabClock.physicsRateForceScale,
-                rightGrabClock.sourceIntervalSeconds,
-                leftGrabClock.physicsHz,
-                leftGrabClock.physicsRateForceScale,
-                leftGrabClock.sourceIntervalSeconds);
-        }
-
-        _deltaLogCounter++;
-        if (g_rockConfig.rockDebugVerboseLogging && _deltaLogCounter >= 90) {
-            _deltaLogCounter = 0;
-
-            const auto& playerSpace = runtime_state::currentFrame().playerSpace;
-            if (playerSpace.valid) {
-                const auto smoothPos = playerSpace.world.translate;
-                const bool moving = playerSpace.moving;
-
-                if (_hasPrevPositions && moving) {
-                    const auto smoothDelta = smoothPos - _prevSmoothedPos;
-
-                    ROCK_LOG_DEBUG(Update, "PlayerSpace: smoothDelta=({:.2f},{:.2f},{:.2f}) moving={}", smoothDelta.x, smoothDelta.y, smoothDelta.z, moving);
-                }
-
-                _prevSmoothedPos = smoothPos;
-                _hasPrevPositions = true;
-            }
-        }
-
-        ::rock::provider::dispatchFrameCallbacks(*this);
-        // Publish callback ownership only after every main-thread collider
-        // mutation and target update for this frame has committed.
-        _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
+        finalizeInteractionFrame(frame, bhk, hknp, equippedWeaponFrame);
     }
 
     void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()

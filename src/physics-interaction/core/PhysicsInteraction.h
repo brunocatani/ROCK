@@ -281,6 +281,10 @@ namespace rock
         void updateSelection(const PhysicsFrameContext& frame);
         struct EquippedWeaponFrameResult;
         EquippedWeaponFrameResult updateEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::bhkWorld* bhk, RE::hknpWorld* hknp);
+        void finalizeInteractionFrame(const PhysicsFrameContext& frame,
+            RE::bhkWorld* bhk,
+            RE::hknpWorld* hknp,
+            const EquippedWeaponFrameResult& equippedWeaponFrame);
         void prepareDynamicWorldCarCollisionForGrab(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref);
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
