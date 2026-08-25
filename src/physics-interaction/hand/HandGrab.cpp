@@ -413,8 +413,8 @@ namespace rock
 
         grab_motion_controller::ContactSupportShape classifyContactSupportShapeFromGrabFrame(const CanonicalGrabFrame& frame)
         {
-            if (frame.hasGripSupportModel) {
-                switch (frame.gripSupportKind) {
+            if (frame.support.hasModel) {
+                switch (frame.support.kind) {
                 case grab_support_model_math::GripSupportKind::OpposedPinch:
                     return grab_motion_controller::ContactSupportShape::SphereLike;
                 case grab_support_model_math::GripSupportKind::LongHandleAxis:
@@ -9264,19 +9264,19 @@ namespace rock
                     if (looseWeaponPrimaryAttachApplied) {
                         _grabFrame.seat.hasSettledVisualHandRelation = false;
                     }
-                    _grabFrame.hasGripSupportModel = looseWeaponPrimaryAttachApplied ? false : gripSupportRuntime.valid;
-                    _grabFrame.supportFrameNormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameNormalWorld);
-                    _grabFrame.supportFrameAxisBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameAxisWorld);
-                    _grabFrame.supportFrameBinormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameBinormalWorld);
-                    _grabFrame.hasSupportFrameNormal = lengthSquared(supportFrameNormalWorld) > 0.000001f;
-                    _grabFrame.hasSupportFrameAxis = lengthSquared(supportFrameAxisWorld) > 0.000001f;
-                    _grabFrame.hasSupportFrameBinormal = lengthSquared(supportFrameBinormalWorld) > 0.000001f;
-                    _grabFrame.gripSupportAuthoredPivot = looseWeaponPrimaryAttachApplied ? false : gripSupportRuntime.model.canAuthorPivot;
-                    _grabFrame.gripSupportKind = looseWeaponPrimaryAttachApplied ? grab_support_model_math::GripSupportKind::None : gripSupportRuntime.model.kind;
-                    _grabFrame.gripSupportReason = looseWeaponPrimaryAttachApplied ? looseWeaponPrimaryAttachReason : gripSupportRuntime.model.reason;
-                    _grabFrame.gripSupportConfidence = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.confidence;
-                    _grabFrame.gripSupportSpanGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.supportSpanGameUnits;
-                    _grabFrame.gripSupportPivotShiftGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.pivotShiftGameUnits;
+                    _grabFrame.support.hasModel = looseWeaponPrimaryAttachApplied ? false : gripSupportRuntime.valid;
+                    _grabFrame.support.normalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameNormalWorld);
+                    _grabFrame.support.axisBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameAxisWorld);
+                    _grabFrame.support.binormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameBinormalWorld);
+                    _grabFrame.support.hasNormal = lengthSquared(supportFrameNormalWorld) > 0.000001f;
+                    _grabFrame.support.hasAxis = lengthSquared(supportFrameAxisWorld) > 0.000001f;
+                    _grabFrame.support.hasBinormal = lengthSquared(supportFrameBinormalWorld) > 0.000001f;
+                    _grabFrame.support.authoredPivot = looseWeaponPrimaryAttachApplied ? false : gripSupportRuntime.model.canAuthorPivot;
+                    _grabFrame.support.kind = looseWeaponPrimaryAttachApplied ? grab_support_model_math::GripSupportKind::None : gripSupportRuntime.model.kind;
+                    _grabFrame.support.reason = looseWeaponPrimaryAttachApplied ? looseWeaponPrimaryAttachReason : gripSupportRuntime.model.reason;
+                    _grabFrame.support.confidence = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.confidence;
+                    _grabFrame.support.spanGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.supportSpanGameUnits;
+                    _grabFrame.support.pivotShiftGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.pivotShiftGameUnits;
                     _grabFrame.seat.requiresSettledVisualHandRelation = looseWeaponPrimaryAttachApplied ?
                         true :
                         (effectivePinchPocket ?
@@ -9356,12 +9356,12 @@ namespace rock
                         grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                         _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
                         _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                        grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind),
-                        _grabFrame.gripSupportAuthoredPivot ? "yes" : "no",
-                        _grabFrame.gripSupportConfidence,
-                        _grabFrame.gripSupportSpanGameUnits,
-                        _grabFrame.gripSupportPivotShiftGameUnits,
-                        _grabFrame.gripSupportReason,
+                        grab_support_model_math::gripSupportKindName(_grabFrame.support.kind),
+                        _grabFrame.support.authoredPivot ? "yes" : "no",
+                        _grabFrame.support.confidence,
+                        _grabFrame.support.spanGameUnits,
+                        _grabFrame.support.pivotShiftGameUnits,
+                        _grabFrame.support.reason,
                         gripSupportRuntime.sampleCount,
                         gripSupportRuntime.meshProbeHitCount,
                         gripSupportRuntime.rejectedOwnerCount,
@@ -9557,8 +9557,8 @@ namespace rock
                     grabSeatModeName(_grabFrame.seat.mode),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     _grabFrame.seat.hasPinchPocket ? "yes" : "no",
-                    grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind),
-                    _grabFrame.gripSupportAuthoredPivot ? "yes" : "no",
+                    grab_support_model_math::gripSupportKindName(_grabFrame.support.kind),
+                    _grabFrame.support.authoredPivot ? "yes" : "no",
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld ? "yes" : "no",
                     _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
                     _grabFrame.gripEvidence.gripEvidenceShapeKey,
@@ -9728,9 +9728,9 @@ namespace rock
                     grabSeatModeName(_grabFrame.seat.mode),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     _grabFrame.seat.hasPinchPocket ? "yes" : "no",
-                    grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind),
-                    _grabFrame.gripSupportAuthoredPivot ? "yes" : "no",
-                    _grabFrame.gripSupportReason ? _grabFrame.gripSupportReason : "none",
+                    grab_support_model_math::gripSupportKindName(_grabFrame.support.kind),
+                    _grabFrame.support.authoredPivot ? "yes" : "no",
+                    _grabFrame.support.reason ? _grabFrame.support.reason : "none",
                     palmPocketMeshAvailable ? "yes" : "no",
                     fullHeldAuthorityAtFreeze ? "yes" : "no",
                     _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
@@ -11179,13 +11179,13 @@ namespace rock
                                 _grabFrame.pivotAuthority.positionConfidence = 0.92f;
                                 _grabFrame.seat.requiresSettledVisualHandRelation = false;
                                 _grabFrame.seat.mode = GrabSeatMode::SupportGroup;
-                                _grabFrame.hasGripSupportModel = true;
-                                _grabFrame.gripSupportAuthoredPivot = true;
-                                _grabFrame.gripSupportKind = grab_support_model_math::GripSupportKind::PalmWrap;
-                                _grabFrame.gripSupportReason = promotionDecision.reason;
-                                _grabFrame.gripSupportConfidence = 0.92f;
-                                _grabFrame.gripSupportSpanGameUnits = seatedSupportPatch.clusterMaxLateralGameUnits;
-                                _grabFrame.gripSupportPivotShiftGameUnits = reacquireLocalDeltaGameUnits;
+                                _grabFrame.support.hasModel = true;
+                                _grabFrame.support.authoredPivot = true;
+                                _grabFrame.support.kind = grab_support_model_math::GripSupportKind::PalmWrap;
+                                _grabFrame.support.reason = promotionDecision.reason;
+                                _grabFrame.support.confidence = 0.92f;
+                                _grabFrame.support.spanGameUnits = seatedSupportPatch.clusterMaxLateralGameUnits;
+                                _grabFrame.support.pivotShiftGameUnits = reacquireLocalDeltaGameUnits;
                                 _grabFrame.fingerPoseAimValid = promotedNormalTrusted;
                                 _grabFrame.fingerPoseAimReason = promotedNormalTrusted ?
                                     promotionDecision.reason :
