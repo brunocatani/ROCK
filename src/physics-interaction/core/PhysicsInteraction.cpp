@@ -9531,30 +9531,52 @@ namespace rock
         dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
     }
 
-    void PhysicsInteraction::processGrabInputHand(
+    struct PhysicsInteraction::GrabInputHandPrelude
+    {
+        GrabButtonState grabInput{};
+        GrabButtonState rawGrabInput{};
+        bool heldWeaponAtFrameStart = false;
+        bool heldWeaponEquipTriggerPressedEdge = false;
+    };
+
+    void PhysicsInteraction::cancelPeerHeldJoinRetry(
+        Hand& hand,
+        peer_held_join_retry_policy::RuntimeState& retryState,
+        const char* reason,
+        bool logCancellation)
+    {
+        if (!retryState.active) {
+            return;
+        }
+        const auto peerFormId = retryState.peerFormId;
+        const auto attempts = retryState.attempts;
+        const char* lastRefusal = retryState.lastRefusalReason ? retryState.lastRefusalReason : "none";
+        peer_held_join_retry_policy::reset(retryState);
+        if (logCancellation) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand peer-held join retry cancelled: reason={} peerFormID={:08X} attempts={} lastRefusal={}",
+                hand.handName(),
+                reason ? reason : "unknown",
+                peerFormId,
+                attempts,
+                lastRefusal);
+        }
+    }
+
+    bool PhysicsInteraction::prepareGrabInputHand(
         const PhysicsFrameContext& frame,
         Hand& hand,
         bool isLeft,
-        const GrabInputHandContext& context)
+        const GrabInputHandContext& context,
+        GrabInputHandPrelude& outPrelude)
     {
-        auto* hknp = context.hknp;
         const int grabButton = context.grabButton;
         const bool rightHandWeaponEquipped = context.rightHandWeaponEquipped;
-        const bool ambidextrousHandoffAvailable = context.ambidextrousHandoffAvailable;
-        const auto& firingGripModes = context.firingGripModes;
-        const bool gripZoneSettleEquipEnabled = context.gripZoneSettleEquipEnabled;
-        const auto& farHmdConeGate = context.farHmdConeGate;
-        const auto worldGeneration = context.worldGeneration;
-        const auto skeletonGeneration = context.skeletonGeneration;
-        const auto providerGeneration = context.providerGeneration;
         const auto collisionGeneration = context.collisionGeneration;
 
         const auto& handInput = isLeft ? frame.left : frame.right;
         auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
         auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
-        auto& triggerEquipIntent = _heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
-        auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
-        auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
         auto& inputSuppressionState = _providerHandInputSuppressionStates[isLeft ? 1u : 0u];
         const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
         const auto providerHand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
@@ -9614,7 +9636,7 @@ namespace rock
             if (hand.hasSelection()) {
                 hand.clearSelectionState(false);
             }
-            return;
+            return false;
         }
         if (_forceGrabCommittedThisFrame[handIndex]) {
             /*
@@ -9632,7 +9654,7 @@ namespace rock
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("force-grab-committed-this-frame", true);
             clearGameplayCandidatesForHand(hand, isLeft);
-            return;
+            return false;
         }
         if (_pendingForceGrabCommits[handIndex].active) {
             grab_input_intent_policy::reset(inputIntentState);
@@ -9641,7 +9663,7 @@ namespace rock
             if (hand.hasSelection()) {
                 hand.clearSelectionState(false);
             }
-            return;
+            return false;
         }
 
         const auto& peerCommit = _pendingForceGrabCommits[isLeft ? 0u : 1u];
@@ -9661,7 +9683,7 @@ namespace rock
                 collisionGeneration);
             cancelPeerHeldJoinRetry("hand-input-disabled", false);
             clearGameplayCandidatesForHand(hand, isLeft);
-            return;
+            return false;
         }
         if (providerSuppressesGameplayCandidates) {
             clearGameplayCandidatesForHand(hand, isLeft);
@@ -9685,7 +9707,7 @@ namespace rock
                 !readGrabButtonHeld(isLeft, grabButton)) {
                 inputSuppressionState.deferredGrabRelease = true;
             }
-            return;
+            return false;
         }
 
         const bool heldWeaponEquipTriggerPressedEdge =
@@ -9730,7 +9752,7 @@ namespace rock
                 releaseObject(selectedRef, claimOwnerForHand(isLeft));
                 ROCK_LOG_DEBUG(Hand, "{} hand: cleared pull/locked selection because normal grab input is suppressed", hand.handName());
             }
-            return;
+            return false;
         }
 
         /*
@@ -9793,9 +9815,48 @@ namespace rock
             clearGameplayCandidatesForHand(hand, isLeft);
             hand.cancelGrabVisualReturn(
                 "touch-grab-active");
+            return false;
+        }
+
+
+        outPrelude.grabInput = grabInput;
+        outPrelude.rawGrabInput = rawGrabInput;
+        outPrelude.heldWeaponAtFrameStart = heldWeaponAtFrameStart;
+        outPrelude.heldWeaponEquipTriggerPressedEdge = heldWeaponEquipTriggerPressedEdge;
+        return true;
+    }
+
+    void PhysicsInteraction::processGrabInputHand(
+        const PhysicsFrameContext& frame,
+        Hand& hand,
+        bool isLeft,
+        const GrabInputHandContext& context)
+    {
+        GrabInputHandPrelude prelude{};
+        if (!prepareGrabInputHand(frame, hand, isLeft, context, prelude)) {
             return;
         }
 
+        auto* hknp = context.hknp;
+        const bool ambidextrousHandoffAvailable = context.ambidextrousHandoffAvailable;
+        const auto& firingGripModes = context.firingGripModes;
+        const bool gripZoneSettleEquipEnabled = context.gripZoneSettleEquipEnabled;
+        const auto& farHmdConeGate = context.farHmdConeGate;
+        const auto worldGeneration = context.worldGeneration;
+        const auto skeletonGeneration = context.skeletonGeneration;
+        const auto providerGeneration = context.providerGeneration;
+        const auto collisionGeneration = context.collisionGeneration;
+        const auto& handInput = isLeft ? frame.left : frame.right;
+        auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
+        auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
+        auto& triggerEquipIntent = _heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
+        auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
+        auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
+        const auto handIndex = isLeft ? 1u : 0u;
+        const bool heldWeaponAtFrameStart = prelude.heldWeaponAtFrameStart;
+        const bool heldWeaponEquipTriggerPressedEdge = prelude.heldWeaponEquipTriggerPressedEdge;
+        auto grabInput = prelude.grabInput;
+        const auto rawGrabInput = prelude.rawGrabInput;
         const auto handState = hand.getState();
         const bool touchGrabStateAvailable =
             handState == HandState::Idle ||
@@ -9917,6 +9978,8 @@ namespace rock
                 grab_input_intent_policy::reset(
                     inputIntentState);
                 cancelPeerHeldJoinRetry(
+                    hand,
+                    peerHeldJoinRetryState,
                     "touch-grab-acquired",
                     true);
                 clearGameplayCandidatesForHand(
