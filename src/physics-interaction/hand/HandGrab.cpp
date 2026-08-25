@@ -7793,6 +7793,258 @@ namespace rock
 
     }
 
+    struct Hand::GrabFingerEvidenceInput
+    {
+        const GrabProxyPreparation* proxy = nullptr;
+        const GrabMeshExtraction* mesh = nullptr;
+        const ResolvedGrabBodyCapture* bodyCapture = nullptr;
+        const object_physics_body_set::ObjectPhysicsBodySet* preparedBodySet = nullptr;
+        const RuntimePinchPocketCandidate* pinchPocketCandidate = nullptr;
+        const std::string* objectName = nullptr;
+        grab_contact_evidence_policy::GrabContactQualityMode contactQualityMode =
+            grab_contact_evidence_policy::GrabContactQualityMode::LegacyPermissive;
+        bool multiFingerEvidenceEnabled = false;
+        bool hybridFingerProbeEvidenceEnabled = false;
+        bool visualMeshPivotAvailable = false;
+    };
+
+    struct Hand::GrabFingerEvidence
+    {
+        RuntimeMultiFingerGripContact multiFingerGrip{};
+        RE::NiPoint3 palmSeatPointWorld{};
+        RE::NiPoint3 fingerEvidencePointWorld{};
+        GrabSurfaceHit palmSeatSurfaceHit{};
+        const char* palmSeatPointMode = "none";
+        const char* palmSeatFallbackReason = "none";
+        const char* fingerEvidencePointMode = "none";
+        bool multiFingerGripUsed = false;
+        bool palmSeatPointValid = false;
+        bool fingerEvidencePointValid = false;
+    };
+
+    bool Hand::resolveGrabFingerEvidence(
+        RE::hknpWorld* world,
+        const GrabFingerEvidenceInput& input,
+        GrabSurfaceEvidence& surface,
+        const GrabPivotEvidence& pivotEvidence,
+        GrabFingerEvidence& outEvidence)
+    {
+        outEvidence = {};
+        const auto& proxy = *input.proxy;
+        const auto& mesh = *input.mesh;
+        const auto& bodyCapture = *input.bodyCapture;
+        const auto& preparedBodySet = *input.preparedBodySet;
+        const auto& pinchPocketCandidate = *input.pinchPocketCandidate;
+        const auto& objName = *input.objectName;
+        const auto& sel = _currentSelection;
+        const auto objectBodyId = bodyCapture.bodyId;
+        const auto& objectWorldTransform = bodyCapture.objectWorldTransform;
+        const auto& semanticContacts = pivotEvidence.semanticContacts;
+        const auto& contactPatchRuntime = pivotEvidence.contactPatch;
+        const bool contactPatchEvidenceAvailable = pivotEvidence.contactPatchEvidenceAvailable;
+        const auto& grabSurfaceTriangles = mesh.surfaceTriangles;
+        const auto& palmPocketPivotAWorld = proxy.palmPocketPivotAWorld;
+        const auto grabContactQualityMode = input.contactQualityMode;
+        const bool multiFingerEvidenceEnabled = input.multiFingerEvidenceEnabled;
+        const bool hybridFingerProbeEvidenceEnabled = input.hybridFingerProbeEvidenceEnabled;
+        const bool visualMeshPivotAvailable = input.visualMeshPivotAvailable;
+        auto& grabGripPoint = surface.gripPoint;
+        const auto& grabSurfaceHit = surface.surfaceHit;
+        const auto* grabPointMode = surface.pointMode;
+        const auto* grabFallbackReason = surface.fallbackReason;
+        auto& multiFingerGripRuntime = outEvidence.multiFingerGrip;
+        auto& palmSeatPointWorld = outEvidence.palmSeatPointWorld;
+        auto& fingerEvidencePointWorld = outEvidence.fingerEvidencePointWorld;
+        auto& palmSeatSurfaceHit = outEvidence.palmSeatSurfaceHit;
+        GrabSurfaceHit fingerEvidenceSurfaceHit{};
+        auto& palmSeatPointMode = outEvidence.palmSeatPointMode;
+        auto& palmSeatFallbackReason = outEvidence.palmSeatFallbackReason;
+        auto& fingerEvidencePointMode = outEvidence.fingerEvidencePointMode;
+        const char* fingerEvidenceFallbackReason = "none";
+        auto& multiFingerGripUsed = outEvidence.multiFingerGripUsed;
+        auto& palmSeatPointValid = outEvidence.palmSeatPointValid;
+        auto& fingerEvidencePointValid = outEvidence.fingerEvidencePointValid;
+        const bool canonicalPivotAvailable = input.visualMeshPivotAvailable ||
+            (!g_rockConfig.rockGrabMeshContactOnly && surface.meshGrabFound && surface.surfaceHit.valid &&
+                surface.surfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery);
+            palmSeatPointWorld = grabGripPoint;
+            palmSeatSurfaceHit = grabSurfaceHit;
+            palmSeatPointMode = grabPointMode;
+            palmSeatFallbackReason = grabFallbackReason;
+            palmSeatPointValid = canonicalPivotAvailable;
+
+            if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
+                std::vector<GrabSurfaceTriangleData> multiFingerSurfaceTriangles;
+                const std::vector<GrabSurfaceTriangleData>* multiFingerTriangleSource = &grabSurfaceTriangles;
+                if (grabSurfaceTriangles.size() > kMaxGrabRuntimeSurfaceContactTriangles) {
+                    multiFingerSurfaceTriangles = selectNearestGrabSurfaceTriangles(
+                        grabSurfaceTriangles,
+                        grabGripPoint,
+                        kMaxGrabRuntimeSurfaceContactTriangles);
+                    multiFingerTriangleSource = &multiFingerSurfaceTriangles;
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand MESH CONTACT TRIANGLES: use=multiFinger sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
+                        handName(),
+                        grabSurfaceTriangles.size(),
+                        multiFingerSurfaceTriangles.size(),
+                        grabGripPoint.x,
+                        grabGripPoint.y,
+                        grabGripPoint.z);
+                }
+                multiFingerGripRuntime = buildRuntimeMultiFingerGripContact(world,
+                    preparedBodySet,
+                    objectBodyId.value,
+                    objectWorldTransform,
+                    semanticContacts,
+                    *multiFingerTriangleSource,
+                    this,
+                    hybridFingerProbeEvidenceEnabled);
+                if (multiFingerGripRuntime.gripSet.valid) {
+                    multiFingerGripUsed = true;
+                    const auto& gripSet = multiFingerGripRuntime.gripSet;
+                    GrabSurfaceHit representativeHit{};
+                    for (const auto& group : gripSet.groups) {
+                        if (!group.valid) {
+                            continue;
+                        }
+                        const int index = grab_multi_finger_contact_math::fingerIndex(group.finger);
+                        if (index >= 0 && static_cast<std::size_t>(index) < multiFingerGripRuntime.groupHits.size() &&
+                            multiFingerGripRuntime.groupHits[static_cast<std::size_t>(index)].valid) {
+                            representativeHit = multiFingerGripRuntime.groupHits[static_cast<std::size_t>(index)];
+                            break;
+                        }
+                    }
+
+                    fingerEvidencePointWorld = gripSet.contactCenterWorld;
+                    fingerEvidenceSurfaceHit = representativeHit;
+                    fingerEvidenceSurfaceHit.position = gripSet.contactCenterWorld;
+                    fingerEvidenceSurfaceHit.normal = gripSet.averageNormalWorld;
+                    fingerEvidenceSurfaceHit.distance = 0.0f;
+                    fingerEvidenceSurfaceHit.hasTriangle = representativeHit.valid && representativeHit.hasTriangle;
+                    fingerEvidenceSurfaceHit.hasSelectionHit = sel.hasHitPoint;
+                    fingerEvidenceSurfaceHit.selectionToMeshDistanceGameUnits =
+                        sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, fingerEvidencePointWorld) : std::numeric_limits<float>::max();
+                    fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(palmPocketPivotAWorld, fingerEvidencePointWorld);
+                    fingerEvidenceSurfaceHit.resolvedOwnerMatchesBody = true;
+                    fingerEvidenceSurfaceHit.valid = true;
+                    fingerEvidencePointMode = "multiFingerContactPatch";
+                    fingerEvidenceFallbackReason = gripSet.reason;
+                    fingerEvidencePointValid = true;
+
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand MULTI-FINGER GRIP: body={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} "
+                        "semanticHits={} probeHits={} rejectOwner={} rejectDistance={} "
+                        "handCenter=({:.1f},{:.1f},{:.1f}) contactCenter=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) "
+                        "spread={:.2f} reason={}",
+                        handName(),
+                        objectBodyId.value,
+                        gripSet.groupCount,
+                        multiFingerGripRuntime.semanticGroupCount,
+                        multiFingerGripRuntime.liveProbeGroupCount,
+                        multiFingerGripRuntime.candidateContactCount,
+                        multiFingerGripRuntime.meshHitCount,
+                        multiFingerGripRuntime.semanticMeshHitCount,
+                        multiFingerGripRuntime.liveProbeMeshHitCount,
+                        multiFingerGripRuntime.rejectedOwnerCount,
+                        multiFingerGripRuntime.rejectedDistanceCount,
+                        gripSet.handCenterWorld.x,
+                        gripSet.handCenterWorld.y,
+                        gripSet.handCenterWorld.z,
+                        gripSet.contactCenterWorld.x,
+                        gripSet.contactCenterWorld.y,
+                        gripSet.contactCenterWorld.z,
+                        gripSet.averageNormalWorld.x,
+                        gripSet.averageNormalWorld.y,
+                        gripSet.averageNormalWorld.z,
+                        gripSet.spreadGameUnits,
+                        gripSet.reason);
+                } else if (g_rockConfig.rockDebugGrabFrameLogging) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand MULTI-FINGER GRIP rejected: body={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} "
+                        "semanticHits={} probeHits={} rejectOwner={} rejectDistance={} reason={}",
+                        handName(),
+                        objectBodyId.value,
+                        multiFingerGripRuntime.gripSet.groupCount,
+                        multiFingerGripRuntime.semanticGroupCount,
+                        multiFingerGripRuntime.liveProbeGroupCount,
+                        multiFingerGripRuntime.candidateContactCount,
+                        multiFingerGripRuntime.meshHitCount,
+                        multiFingerGripRuntime.semanticMeshHitCount,
+                        multiFingerGripRuntime.liveProbeMeshHitCount,
+                        multiFingerGripRuntime.rejectedOwnerCount,
+                        multiFingerGripRuntime.rejectedDistanceCount,
+                        multiFingerGripRuntime.reason ? multiFingerGripRuntime.reason : "unknown");
+                }
+            }
+
+            grab_contact_evidence_policy::GrabContactEvidenceDecision contactEvidenceDecision{};
+            if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
+                grab_contact_evidence_policy::GrabContactEvidenceInput evidenceInput{};
+                evidenceInput.qualityMode = static_cast<int>(grabContactQualityMode);
+                evidenceInput.multiFingerValidationEnabled = g_rockConfig.rockGrabMultiFingerContactValidationEnabled;
+                evidenceInput.contactPatchAccepted = contactPatchEvidenceAvailable;
+                evidenceInput.contactPatchMeshSnapped = contactPatchRuntime.meshSnapped;
+                evidenceInput.contactPatchReliable = contactPatchRuntime.normalTrusted;
+                evidenceInput.contactPatchNormalTrusted = contactPatchRuntime.normalTrusted;
+                evidenceInput.contactPatchPositionOnly = contactPatchRuntime.positionOnly;
+                evidenceInput.contactPatchConfidence =
+                    contactPatchRuntime.positionOnly ? 0.0f : contactPatchRuntime.patch.confidence;
+                evidenceInput.meshSurfacePivotAccepted = visualMeshPivotAvailable;
+                evidenceInput.multiFingerGripValid = multiFingerGripRuntime.gripSet.valid;
+                evidenceInput.semanticFingerGroups = multiFingerGripRuntime.semanticGroupCount;
+                evidenceInput.probeFingerGroups = multiFingerGripRuntime.liveProbeGroupCount;
+                evidenceInput.combinedFingerGroups = multiFingerGripRuntime.gripSet.groupCount;
+                evidenceInput.minimumFingerGroups =
+                    static_cast<std::uint32_t>((std::max)(1, g_rockConfig.rockGrabMinFingerContactGroups));
+                contactEvidenceDecision = grab_contact_evidence_policy::evaluateGrabContactEvidence(evidenceInput);
+
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand CONTACT EVIDENCE: mode={} accept={} level={} reason={} patch={} meshSnap={} reliable={} normalTrusted={} positionOnly={} confidence={:.2f}/{:.2f} "
+                    "multiFingerValid={} semanticGroups={} probeGroups={} combinedGroups={} minGroups={} useMultiFingerPivot={}",
+                    handName(),
+                    grab_contact_evidence_policy::contactQualityModeName(grabContactQualityMode),
+                    contactEvidenceDecision.accept ? "yes" : "no",
+                    grab_contact_evidence_policy::contactEvidenceLevelName(contactEvidenceDecision.level),
+                    contactEvidenceDecision.reason,
+                    contactPatchEvidenceAvailable ? "yes" : "no",
+                    contactPatchRuntime.meshSnapped ? "yes" : "no",
+                    contactPatchRuntime.patch.orientationReliable ? "yes" : "no",
+                    contactPatchRuntime.normalTrusted ? "yes" : "no",
+                    contactPatchRuntime.positionOnly ? "yes" : "no",
+                    contactPatchRuntime.patch.confidence,
+                    evidenceInput.contactPatchConfidence,
+                    multiFingerGripRuntime.gripSet.valid ? "yes" : "no",
+                    multiFingerGripRuntime.semanticGroupCount,
+                    multiFingerGripRuntime.liveProbeGroupCount,
+                    multiFingerGripRuntime.gripSet.groupCount,
+                    g_rockConfig.rockGrabMinFingerContactGroups,
+                    contactEvidenceDecision.useMultiFingerPivot ? "yes" : "no");
+            }
+
+            if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled && !contactEvidenceDecision.accept) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand GRAB failed: contact evidence rejected '{}' formID={:08X}; "
+                    "mode={} level={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} rejectOwner={} rejectDistance={} reason={} selectionFar={}",
+                    handName(),
+                    objName,
+                    sel.refr->GetFormID(),
+                    grab_contact_evidence_policy::contactQualityModeName(grabContactQualityMode),
+                    grab_contact_evidence_policy::contactEvidenceLevelName(contactEvidenceDecision.level),
+                    multiFingerGripRuntime.gripSet.groupCount,
+                    multiFingerGripRuntime.semanticGroupCount,
+                    multiFingerGripRuntime.liveProbeGroupCount,
+                    multiFingerGripRuntime.candidateContactCount,
+                    multiFingerGripRuntime.meshHitCount,
+                    multiFingerGripRuntime.rejectedOwnerCount,
+                    multiFingerGripRuntime.rejectedDistanceCount,
+                    contactEvidenceDecision.reason,
+                    sel.isFarSelection ? "yes" : "no");
+                return false;
+            }
+
+        return true;
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -8099,14 +8351,6 @@ namespace rock
         auto& grabSurfaceTriangles = meshExtraction.surfaceTriangles;
         std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
         std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
-        RuntimeMultiFingerGripContact multiFingerGripRuntime{};
-        RE::NiPoint3 palmSeatPointWorld{};
-        RE::NiPoint3 fingerEvidencePointWorld{};
-        GrabSurfaceHit palmSeatSurfaceHit{};
-        GrabSurfaceHit fingerEvidenceSurfaceHit{};
-        bool multiFingerGripUsed = false;
-        bool palmSeatPointValid = false;
-        bool fingerEvidencePointValid = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
         extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, meshExtraction);
@@ -8127,10 +8371,6 @@ namespace rock
         const char*& grabPointMode = surfaceEvidence.pointMode;
         auto& grabPointAuthoritySource = surfaceEvidence.pointAuthoritySource;
         const char*& grabFallbackReason = surfaceEvidence.fallbackReason;
-        const char* palmSeatPointMode = grabPointMode;
-        const char* palmSeatFallbackReason = grabFallbackReason;
-        const char* fingerEvidencePointMode = "none";
-        const char* fingerEvidenceFallbackReason = "none";
         auto failHandPocketOnlyGrab = [&]() {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: hand-pocket-only target requires pinch or palm-pocket support authority for '{}' formID={:08X}; targetKind={} meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
@@ -8413,183 +8653,35 @@ namespace rock
             return failHandPocketOnlyGrab();
         }
 
-        palmSeatPointWorld = grabGripPoint;
-        palmSeatSurfaceHit = grabSurfaceHit;
-        palmSeatPointMode = grabPointMode;
-        palmSeatFallbackReason = grabFallbackReason;
-        palmSeatPointValid = canonicalPivotAvailable;
-
-        if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
-            std::vector<GrabSurfaceTriangleData> multiFingerSurfaceTriangles;
-            const std::vector<GrabSurfaceTriangleData>* multiFingerTriangleSource = &grabSurfaceTriangles;
-            if (grabSurfaceTriangles.size() > kMaxGrabRuntimeSurfaceContactTriangles) {
-                multiFingerSurfaceTriangles = selectNearestGrabSurfaceTriangles(
-                    grabSurfaceTriangles,
-                    grabGripPoint,
-                    kMaxGrabRuntimeSurfaceContactTriangles);
-                multiFingerTriangleSource = &multiFingerSurfaceTriangles;
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand MESH CONTACT TRIANGLES: use=multiFinger sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
-                    handName(),
-                    grabSurfaceTriangles.size(),
-                    multiFingerSurfaceTriangles.size(),
-                    grabGripPoint.x,
-                    grabGripPoint.y,
-                    grabGripPoint.z);
-            }
-            multiFingerGripRuntime = buildRuntimeMultiFingerGripContact(world,
-                preparedBodySet,
-                objectBodyId.value,
-                objectWorldTransform,
-                semanticContacts,
-                *multiFingerTriangleSource,
-                this,
-                hybridFingerProbeEvidenceEnabled);
-            if (multiFingerGripRuntime.gripSet.valid) {
-                multiFingerGripUsed = true;
-                const auto& gripSet = multiFingerGripRuntime.gripSet;
-                GrabSurfaceHit representativeHit{};
-                for (const auto& group : gripSet.groups) {
-                    if (!group.valid) {
-                        continue;
-                    }
-                    const int index = grab_multi_finger_contact_math::fingerIndex(group.finger);
-                    if (index >= 0 && static_cast<std::size_t>(index) < multiFingerGripRuntime.groupHits.size() &&
-                        multiFingerGripRuntime.groupHits[static_cast<std::size_t>(index)].valid) {
-                        representativeHit = multiFingerGripRuntime.groupHits[static_cast<std::size_t>(index)];
-                        break;
-                    }
-                }
-
-                fingerEvidencePointWorld = gripSet.contactCenterWorld;
-                fingerEvidenceSurfaceHit = representativeHit;
-                fingerEvidenceSurfaceHit.position = gripSet.contactCenterWorld;
-                fingerEvidenceSurfaceHit.normal = gripSet.averageNormalWorld;
-                fingerEvidenceSurfaceHit.distance = 0.0f;
-                fingerEvidenceSurfaceHit.hasTriangle = representativeHit.valid && representativeHit.hasTriangle;
-                fingerEvidenceSurfaceHit.hasSelectionHit = sel.hasHitPoint;
-                fingerEvidenceSurfaceHit.selectionToMeshDistanceGameUnits =
-                    sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, fingerEvidencePointWorld) : std::numeric_limits<float>::max();
-                fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(palmPocketPivotAWorld, fingerEvidencePointWorld);
-                fingerEvidenceSurfaceHit.resolvedOwnerMatchesBody = true;
-                fingerEvidenceSurfaceHit.valid = true;
-                fingerEvidencePointMode = "multiFingerContactPatch";
-                fingerEvidenceFallbackReason = gripSet.reason;
-                fingerEvidencePointValid = true;
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand MULTI-FINGER GRIP: body={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} "
-                    "semanticHits={} probeHits={} rejectOwner={} rejectDistance={} "
-                    "handCenter=({:.1f},{:.1f},{:.1f}) contactCenter=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) "
-                    "spread={:.2f} reason={}",
-                    handName(),
-                    objectBodyId.value,
-                    gripSet.groupCount,
-                    multiFingerGripRuntime.semanticGroupCount,
-                    multiFingerGripRuntime.liveProbeGroupCount,
-                    multiFingerGripRuntime.candidateContactCount,
-                    multiFingerGripRuntime.meshHitCount,
-                    multiFingerGripRuntime.semanticMeshHitCount,
-                    multiFingerGripRuntime.liveProbeMeshHitCount,
-                    multiFingerGripRuntime.rejectedOwnerCount,
-                    multiFingerGripRuntime.rejectedDistanceCount,
-                    gripSet.handCenterWorld.x,
-                    gripSet.handCenterWorld.y,
-                    gripSet.handCenterWorld.z,
-                    gripSet.contactCenterWorld.x,
-                    gripSet.contactCenterWorld.y,
-                    gripSet.contactCenterWorld.z,
-                    gripSet.averageNormalWorld.x,
-                    gripSet.averageNormalWorld.y,
-                    gripSet.averageNormalWorld.z,
-                    gripSet.spreadGameUnits,
-                    gripSet.reason);
-            } else if (g_rockConfig.rockDebugGrabFrameLogging) {
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand MULTI-FINGER GRIP rejected: body={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} "
-                    "semanticHits={} probeHits={} rejectOwner={} rejectDistance={} reason={}",
-                    handName(),
-                    objectBodyId.value,
-                    multiFingerGripRuntime.gripSet.groupCount,
-                    multiFingerGripRuntime.semanticGroupCount,
-                    multiFingerGripRuntime.liveProbeGroupCount,
-                    multiFingerGripRuntime.candidateContactCount,
-                    multiFingerGripRuntime.meshHitCount,
-                    multiFingerGripRuntime.semanticMeshHitCount,
-                    multiFingerGripRuntime.liveProbeMeshHitCount,
-                    multiFingerGripRuntime.rejectedOwnerCount,
-                    multiFingerGripRuntime.rejectedDistanceCount,
-                    multiFingerGripRuntime.reason ? multiFingerGripRuntime.reason : "unknown");
-            }
-        }
-
-        grab_contact_evidence_policy::GrabContactEvidenceDecision contactEvidenceDecision{};
-        if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
-            grab_contact_evidence_policy::GrabContactEvidenceInput evidenceInput{};
-            evidenceInput.qualityMode = static_cast<int>(grabContactQualityMode);
-            evidenceInput.multiFingerValidationEnabled = g_rockConfig.rockGrabMultiFingerContactValidationEnabled;
-            evidenceInput.contactPatchAccepted = contactPatchEvidenceAvailable;
-            evidenceInput.contactPatchMeshSnapped = contactPatchRuntime.meshSnapped;
-            evidenceInput.contactPatchReliable = contactPatchRuntime.normalTrusted;
-            evidenceInput.contactPatchNormalTrusted = contactPatchRuntime.normalTrusted;
-            evidenceInput.contactPatchPositionOnly = contactPatchRuntime.positionOnly;
-            evidenceInput.contactPatchConfidence =
-                contactPatchRuntime.positionOnly ? 0.0f : contactPatchRuntime.patch.confidence;
-            evidenceInput.meshSurfacePivotAccepted = visualMeshPivotAvailable;
-            evidenceInput.multiFingerGripValid = multiFingerGripRuntime.gripSet.valid;
-            evidenceInput.semanticFingerGroups = multiFingerGripRuntime.semanticGroupCount;
-            evidenceInput.probeFingerGroups = multiFingerGripRuntime.liveProbeGroupCount;
-            evidenceInput.combinedFingerGroups = multiFingerGripRuntime.gripSet.groupCount;
-            evidenceInput.minimumFingerGroups =
-                static_cast<std::uint32_t>((std::max)(1, g_rockConfig.rockGrabMinFingerContactGroups));
-            contactEvidenceDecision = grab_contact_evidence_policy::evaluateGrabContactEvidence(evidenceInput);
-
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand CONTACT EVIDENCE: mode={} accept={} level={} reason={} patch={} meshSnap={} reliable={} normalTrusted={} positionOnly={} confidence={:.2f}/{:.2f} "
-                "multiFingerValid={} semanticGroups={} probeGroups={} combinedGroups={} minGroups={} useMultiFingerPivot={}",
-                handName(),
-                grab_contact_evidence_policy::contactQualityModeName(grabContactQualityMode),
-                contactEvidenceDecision.accept ? "yes" : "no",
-                grab_contact_evidence_policy::contactEvidenceLevelName(contactEvidenceDecision.level),
-                contactEvidenceDecision.reason,
-                contactPatchEvidenceAvailable ? "yes" : "no",
-                contactPatchRuntime.meshSnapped ? "yes" : "no",
-                contactPatchRuntime.patch.orientationReliable ? "yes" : "no",
-                contactPatchRuntime.normalTrusted ? "yes" : "no",
-                contactPatchRuntime.positionOnly ? "yes" : "no",
-                contactPatchRuntime.patch.confidence,
-                evidenceInput.contactPatchConfidence,
-                multiFingerGripRuntime.gripSet.valid ? "yes" : "no",
-                multiFingerGripRuntime.semanticGroupCount,
-                multiFingerGripRuntime.liveProbeGroupCount,
-                multiFingerGripRuntime.gripSet.groupCount,
-                g_rockConfig.rockGrabMinFingerContactGroups,
-                contactEvidenceDecision.useMultiFingerPivot ? "yes" : "no");
-        }
-
-        if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled && !contactEvidenceDecision.accept) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: contact evidence rejected '{}' formID={:08X}; "
-                "mode={} level={} groups={} semanticGroups={} probeGroups={} candidates={} meshHits={} rejectOwner={} rejectDistance={} reason={} selectionFar={}",
-                handName(),
-                objName,
-                sel.refr->GetFormID(),
-                grab_contact_evidence_policy::contactQualityModeName(grabContactQualityMode),
-                grab_contact_evidence_policy::contactEvidenceLevelName(contactEvidenceDecision.level),
-                multiFingerGripRuntime.gripSet.groupCount,
-                multiFingerGripRuntime.semanticGroupCount,
-                multiFingerGripRuntime.liveProbeGroupCount,
-                multiFingerGripRuntime.candidateContactCount,
-                multiFingerGripRuntime.meshHitCount,
-                multiFingerGripRuntime.rejectedOwnerCount,
-                multiFingerGripRuntime.rejectedDistanceCount,
-                contactEvidenceDecision.reason,
-                sel.isFarSelection ? "yes" : "no");
+        GrabFingerEvidenceInput fingerEvidenceInput{
+            .proxy = &proxyPreparation,
+            .mesh = &meshExtraction,
+            .bodyCapture = &resolvedBodyCapture,
+            .preparedBodySet = &preparedBodySet,
+            .pinchPocketCandidate = &pinchPocketCandidate,
+            .objectName = &objName,
+            .contactQualityMode = grabContactQualityMode,
+            .multiFingerEvidenceEnabled = multiFingerEvidenceEnabled,
+            .hybridFingerProbeEvidenceEnabled = hybridFingerProbeEvidenceEnabled,
+            .visualMeshPivotAvailable = visualMeshPivotAvailable,
+        };
+        GrabFingerEvidence fingerEvidence{};
+        if (!resolveGrabFingerEvidence(world, fingerEvidenceInput, surfaceEvidence, pivotEvidence, fingerEvidence)) {
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             _savedObjectState.clear();
             return false;
         }
+        auto& multiFingerGripRuntime = fingerEvidence.multiFingerGrip;
+        auto& palmSeatPointWorld = fingerEvidence.palmSeatPointWorld;
+        auto& fingerEvidencePointWorld = fingerEvidence.fingerEvidencePointWorld;
+        auto& palmSeatSurfaceHit = fingerEvidence.palmSeatSurfaceHit;
+        const char*& palmSeatPointMode = fingerEvidence.palmSeatPointMode;
+        const char*& palmSeatFallbackReason = fingerEvidence.palmSeatFallbackReason;
+        const char*& fingerEvidencePointMode = fingerEvidence.fingerEvidencePointMode;
+        bool& multiFingerGripUsed = fingerEvidence.multiFingerGripUsed;
+        bool& palmSeatPointValid = fingerEvidence.palmSeatPointValid;
+        bool& fingerEvidencePointValid = fingerEvidence.fingerEvidencePointValid;
 
         grabSurfaceHit = palmSeatSurfaceHit;
         grabGripPoint = palmSeatPointWorld;
