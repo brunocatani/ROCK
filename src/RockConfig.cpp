@@ -760,7 +760,6 @@ namespace rock
         if (rockDebugWeaponOmodCoverageAuditIntervalFrames < 30) {
             rockDebugWeaponOmodCoverageAuditIntervalFrames = 30;
         }
-        rockWeaponOmodSelfHealEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodSelfHeal", rockWeaponOmodSelfHealEnabled);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
         rockDebugWorldObjectOriginDiagnostics =
             ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);

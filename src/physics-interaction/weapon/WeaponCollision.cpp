@@ -4834,8 +4834,8 @@ namespace rock
             const bool omodPrebuildReconciliationCurrent =
                 _omodPrebuildReconciliationEquippedKey == observedKey &&
                 _omodPrebuildReconciliationRoot == weaponNode;
-            if (generationDrivenRebuild && !omodPrebuildReconciliationCurrent &&
-                g_rockConfig.rockWeaponOmodSelfHealEnabled) {
+            if (generationDrivenRebuild &&
+                !omodPrebuildReconciliationCurrent) {
                 const auto reconciliation = maybeRunWeaponOmodReconciliation(weaponNode, observedKey, true);
                 if (reconciliation.sceneEnriched) {
                     /*
@@ -7536,7 +7536,7 @@ namespace rock
 
     /*
      * Reconcile installed OMOD records against the assembled scene graph before
-     * collider capture and once after publication. Self-heal owns these
+     * collider capture and once after publication. Self-heal always owns these
      * functional passes. bDebugWeaponOmodCoverageAudit independently enables
      * verbose evidence logging and repeated diagnostic passes.
      */
@@ -7545,11 +7545,6 @@ namespace rock
     {
         OmodReconciliationResult result{};
         const bool emitCoverageDiagnostics = g_rockConfig.rockDebugWeaponOmodCoverageAudit;
-        const bool selfHealEnabled = g_rockConfig.rockWeaponOmodSelfHealEnabled;
-        if ((!forceBeforeInitialBuild && !emitCoverageDiagnostics && !selfHealEnabled) ||
-            (forceBeforeInitialBuild && !selfHealEnabled)) {
-            return result;
-        }
         if (!weaponNode || auditedEquippedKey == 0 ||
             (!forceBeforeInitialBuild && (!hasWeaponBody() || _cachedWeaponBodySetKey == 0))) {
             return result;
@@ -7683,25 +7678,23 @@ namespace rock
             ROCK_LOG_INFO(Weapon, "OMOD-AUDIT run={} no object instance extra available", runIndex);
         }
 
-        if (selfHealEnabled) {
-            std::unordered_set<std::uint32_t> activeOmodFormIds;
-            activeOmodFormIds.reserve(records.size());
-            for (const auto& record : records) {
-                if (!record.disabled && record.formId != 0) {
-                    activeOmodFormIds.insert(record.formId);
-                }
+        std::unordered_set<std::uint32_t> activeOmodFormIds;
+        activeOmodFormIds.reserve(records.size());
+        for (const auto& record : records) {
+            if (!record.disabled && record.formId != 0) {
+                activeOmodFormIds.insert(record.formId);
             }
-            const std::size_t staleEnrichmentCount =
-                removeStaleRockOmodEnrichmentContainers(weaponNode, activeOmodFormIds);
-            if (staleEnrichmentCount != 0) {
-                ROCK_LOG_INFO(Weapon,
-                    "OMOD-HEAL run={} removed {} stale ROCK-owned enrichment container(s); requesting collider rebuild",
-                    runIndex,
-                    staleEnrichmentCount);
-                requestWorkbenchExitRebuild();
-                result.sceneEnriched = true;
-                return result;
-            }
+        }
+        const std::size_t staleEnrichmentCount =
+            removeStaleRockOmodEnrichmentContainers(weaponNode, activeOmodFormIds);
+        if (staleEnrichmentCount != 0) {
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-HEAL run={} removed {} stale ROCK-owned enrichment container(s); requesting collider rebuild",
+                runIndex,
+                staleEnrichmentCount);
+            requestWorkbenchExitRebuild();
+            result.sceneEnriched = true;
+            return result;
         }
 
         std::vector<OmodAuditTokenSlot> tokenSlots(records.size());
@@ -8155,7 +8148,7 @@ namespace rock
          */
         std::size_t selfHealAttemptCount = 0;
         std::size_t selfHealSuccessCount = 0;
-        if (selfHealEnabled && !selfHealCandidates.empty()) {
+        if (!selfHealCandidates.empty()) {
             // Functional repair targets the exact update root whose visible
             // geometry feeds collider capture. The token census remains a
             // fallback for unusual wrappers where that root is not a NiNode.
