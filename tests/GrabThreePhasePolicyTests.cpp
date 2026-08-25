@@ -1,5 +1,7 @@
 #include "physics-interaction/grab/GrabThreePhase.h"
+#include "physics-interaction/grab/GrabPoseCandidateSelector.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -100,6 +102,75 @@ int main()
     ok &= expectNear("proxy-basis pocket projects finger off palm normal", pointDot(identityPocket.fingerForwardWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
     ok &= expectNear("proxy-basis pocket projects cross-palm off palm normal", pointDot(identityPocket.crossPalmWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
     ok &= expectNear("proxy-basis pocket keeps tangent and bitangent orthogonal", pointDot(identityPocket.fingerForwardWorld, identityPocket.crossPalmWorld), 0.0f, 0.001f);
+
+    namespace poseSelector = rock::grab_pose_candidate_selector;
+    ok &= expectTrue("grab pose selector candidate budget is fixed", poseSelector::kRotationCandidates.size() == 13);
+    ok &= expectTrue("grab pose selector proxy budget is fixed", poseSelector::kMaxProxyTriangles == 64);
+    ok &= expectTrue("grab pose selector hand budget is fixed", poseSelector::kMaxHandCapsules == 19);
+
+    std::array<rock::GrabLocalTriangle, 70> selectorSourceTriangles{};
+    for (std::size_t i = 0; i < selectorSourceTriangles.size(); ++i) {
+        const float x = static_cast<float>(i);
+        selectorSourceTriangles[i] = rock::GrabLocalTriangle{
+            RE::NiPoint3{ x, -1.0f, 0.0f },
+            RE::NiPoint3{ x, 1.0f, 0.0f },
+            RE::NiPoint3{ x + 0.25f, 0.0f, 0.0f },
+        };
+    }
+    const auto boundedSelectorProxy = poseSelector::buildTriangleProxy(
+        selectorSourceTriangles,
+        RE::NiPoint3{});
+    ok &= expectTrue("grab pose selector fills its proxy budget", boundedSelectorProxy.count == poseSelector::kMaxProxyTriangles);
+    ok &= expectTrue("grab pose selector keeps the nearest triangle", boundedSelectorProxy.triangles[0].sourceIndex == 0);
+
+    poseSelector::TriangleProxy contactProxy{};
+    contactProxy.sourceCount = 1;
+    contactProxy.count = 1;
+    contactProxy.triangles[0] = poseSelector::detail::makeProxyTriangle(
+        rock::GrabLocalTriangle{
+            RE::NiPoint3{ -10.0f, -10.0f, 0.0f },
+            RE::NiPoint3{ 10.0f, -10.0f, 0.0f },
+            RE::NiPoint3{ 0.0f, 10.0f, 0.0f },
+        },
+        0);
+    poseSelector::HandModel selectorHand{};
+    selectorHand.capsules[0] = poseSelector::HandCapsule{
+        .aWorld = RE::NiPoint3{ -1.0f, 0.0f, 1.0f },
+        .bWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
+        .radiusGameUnits = 1.0f,
+    };
+    selectorHand.capsuleCount = 1;
+    selectorHand.palmCenterWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+    selectorHand.palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f };
+    selectorHand.palmRadiusGameUnits = 1.0f;
+    selectorHand.tipCentersWorld[0] = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+    selectorHand.tipRadiiGameUnits[0] = 1.0f;
+    selectorHand.tipCount = 1;
+    selectorHand.valid = true;
+    const auto contactEvaluation = poseSelector::evaluateCandidate(
+        contactProxy,
+        selectorHand,
+        identityHand,
+        RE::NiPoint3{ 1.0f, 0.0f, 0.0f },
+        true,
+        0.0f);
+    RE::NiTransform floatingObject = identityHand;
+    floatingObject.translate = RE::NiPoint3{ 0.0f, 0.0f, -5.0f };
+    const auto floatingEvaluation = poseSelector::evaluateCandidate(
+        contactProxy,
+        selectorHand,
+        floatingObject,
+        RE::NiPoint3{ 1.0f, 0.0f, 0.0f },
+        true,
+        0.0f);
+    ok &= expectTrue("grab pose selector scores a contact seat", contactEvaluation.valid);
+    ok &= expectTrue("grab pose selector rejects a floating seat", floatingEvaluation.valid && floatingEvaluation.totalScore > contactEvaluation.totalScore);
+    const std::array<poseSelector::CandidateEvaluation, 2> selectorEvaluations{
+        floatingEvaluation,
+        contactEvaluation,
+    };
+    const auto selectorDecision = poseSelector::selectBestCandidate(selectorEvaluations);
+    ok &= expectTrue("grab pose selector chooses the bounded improvement", selectorDecision.applied && selectorDecision.candidateIndex == 1);
 
     constexpr float kTiltDegrees = 15.0f;
     constexpr float kExpectedFingerComponent = 0.2588190451f;

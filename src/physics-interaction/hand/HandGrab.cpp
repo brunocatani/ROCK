@@ -20,6 +20,7 @@
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/GrabPoseCandidateSelector.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/MeshGrab.h"
@@ -54,6 +55,7 @@
 #include "physics-interaction/VectorMath.h"
 #include "rock_support/Fo4VrRuntime.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -9120,6 +9122,168 @@ namespace rock
                                      */
                                     seatRollReason = seatPlateShape ? "plateEdgeHoldNoFaceAlign" : "belowSecondElongationGate";
                                 }
+                            }
+                        }
+
+                        /*
+                         * Fixed-budget fitted-objective refinement. This is not
+                         * the reverted six-DOF solver: the current analytic seat
+                         * remains the seed, exactly 12 nearby rotations are scored
+                         * once, and the existing full-mesh depth safety below runs
+                         * on the winner. The proxy and hand model are fixed-capacity,
+                         * so candidate scoring performs no allocation and no work
+                         * can leak into held-object reacquire.
+                         */
+                        if (seatShapeEvaluable && !_grabFrame.fingerPoseLocalMeshTriangles.empty()) {
+                            const auto selectorStart = std::chrono::steady_clock::now();
+                            grab_pose_candidate_selector::HandModel selectorHand{};
+                            bool selectorPalmSeen = false;
+                            for (const auto& segment : _boneColliders.segmentColliderFrames()) {
+                                if (!segment.valid || !grab_three_phase::isFinite(segment.target) ||
+                                    !std::isfinite(segment.length) || segment.length <= 0.0f ||
+                                    !std::isfinite(segment.radius) || segment.radius <= 0.0f) {
+                                    continue;
+                                }
+                                if (selectorHand.capsuleCount < selectorHand.capsules.size()) {
+                                    const RE::NiPoint3 axisWorld = normalizeOrZero(RE::NiPoint3{
+                                        segment.target.rotate.entry[0][0],
+                                        segment.target.rotate.entry[0][1],
+                                        segment.target.rotate.entry[0][2],
+                                    });
+                                    if (lengthSquared(axisWorld) > 0.000001f) {
+                                        const float halfLength = segment.length * 0.5f;
+                                        selectorHand.capsules[selectorHand.capsuleCount++] =
+                                            grab_pose_candidate_selector::HandCapsule{
+                                                .aWorld = segment.target.translate - axisWorld * halfLength,
+                                                .bWorld = segment.target.translate + axisWorld * halfLength,
+                                                .radiusGameUnits = segment.radius,
+                                            };
+                                    }
+                                }
+                                using hand_collider_semantics::HandColliderRole;
+                                switch (segment.role) {
+                                case HandColliderRole::PalmFace:
+                                    selectorHand.palmCenterWorld = segment.target.translate;
+                                    selectorHand.palmRadiusGameUnits = segment.radius;
+                                    selectorPalmSeen = true;
+                                    break;
+                                case HandColliderRole::ThumbTip:
+                                case HandColliderRole::IndexTip:
+                                case HandColliderRole::MiddleTip:
+                                case HandColliderRole::RingTip:
+                                case HandColliderRole::PinkyTip:
+                                    if (selectorHand.tipCount < selectorHand.tipCentersWorld.size()) {
+                                        selectorHand.tipCentersWorld[selectorHand.tipCount] = segment.target.translate;
+                                        selectorHand.tipRadiiGameUnits[selectorHand.tipCount] = segment.radius;
+                                        ++selectorHand.tipCount;
+                                    }
+                                    break;
+                                default:
+                                    break;
+                                }
+                            }
+                            selectorHand.palmNormalWorld = normalizeOrZero(pocket.palmNormalWorld);
+                            selectorHand.valid = selectorPalmSeen &&
+                                                 selectorHand.capsuleCount >= 2 &&
+                                                 selectorHand.tipCount > 0 &&
+                                                 lengthSquared(selectorHand.palmNormalWorld) > 0.000001f;
+
+                            const RE::NiPoint3 selectorGripLocal =
+                                transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
+                            const auto selectorProxy = grab_pose_candidate_selector::buildTriangleProxy(
+                                _grabFrame.fingerPoseLocalMeshTriangles,
+                                selectorGripLocal);
+                            const RE::NiPoint3 longAxisObjectLocal = seatLongAxis.valid ?
+                                transform_math::worldVectorToLocal(objectWorldTransform, seatLongAxis.axisWorld) :
+                                RE::NiPoint3{};
+                            const std::array<RE::NiPoint3, 3> selectorAxes{
+                                normalizeOrZero(pocket.fingerForwardWorld),
+                                normalizeOrZero(pocket.palmNormalWorld),
+                                normalizeOrZero(pocket.crossPalmWorld),
+                            };
+                            std::array<grab_pose_candidate_selector::CandidateEvaluation,
+                                grab_pose_candidate_selector::kRotationCandidates.size()> selectorEvaluations{};
+                            std::uint32_t selectorExactDistanceTests = 0;
+                            for (std::size_t candidateIndex = 0;
+                                 candidateIndex < grab_pose_candidate_selector::kRotationCandidates.size();
+                                 ++candidateIndex) {
+                                const auto& candidate =
+                                    grab_pose_candidate_selector::kRotationCandidates[candidateIndex];
+                                RE::NiTransform candidateSeatBodyWorld = seatBodyWorld;
+                                if (candidateIndex != 0 &&
+                                    lengthSquared(selectorAxes[candidate.axisIndex]) > 0.000001f) {
+                                    candidateSeatBodyWorld = rotateTransformWorldAboutPoint(
+                                        seatBodyWorld,
+                                        selectorAxes[candidate.axisIndex],
+                                        candidate.angleRadians,
+                                        grabGripPoint);
+                                }
+                                const RE::NiTransform candidateDesiredBodyWorld =
+                                    grab_frame_math::shiftObjectToAlignGripWithPocket(
+                                        candidateSeatBodyWorld,
+                                        grabPivotAWorld,
+                                        grabGripPoint);
+                                const RE::NiTransform candidateDesiredObjectWorld =
+                                    deriveNodeWorldFromBodyWorld(
+                                        candidateDesiredBodyWorld,
+                                        objectToBodyAtGrab);
+                                selectorEvaluations[candidateIndex] =
+                                    grab_pose_candidate_selector::evaluateCandidate(
+                                        selectorProxy,
+                                        selectorHand,
+                                        candidateDesiredObjectWorld,
+                                        longAxisObjectLocal,
+                                        seatRodShape,
+                                        std::abs(candidate.angleRadians));
+                                selectorExactDistanceTests +=
+                                    selectorEvaluations[candidateIndex].exactDistanceTests;
+                            }
+                            const auto selectorDecision =
+                                grab_pose_candidate_selector::selectBestCandidate(selectorEvaluations);
+                            if (selectorDecision.applied) {
+                                const auto& selectedCandidate =
+                                    grab_pose_candidate_selector::kRotationCandidates[
+                                        selectorDecision.candidateIndex];
+                                seatBodyWorld = rotateTransformWorldAboutPoint(
+                                    seatBodyWorld,
+                                    selectorAxes[selectedCandidate.axisIndex],
+                                    selectedCandidate.angleRadians,
+                                    grabGripPoint);
+                                seatObjectWorld = rotateTransformWorldAboutPoint(
+                                    seatObjectWorld,
+                                    selectorAxes[selectedCandidate.axisIndex],
+                                    selectedCandidate.angleRadians,
+                                    grabGripPoint);
+                                seatPoseChanged = true;
+                            }
+                            const float selectorMicroseconds = static_cast<float>(
+                                std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - selectorStart).count());
+                            const auto& selectedCandidate =
+                                grab_pose_candidate_selector::kRotationCandidates[
+                                    selectorDecision.candidateIndex];
+                            ROCK_LOG_DEBUG(Hand,
+                                "{} GRAB POSE SELECTOR: result={} candidate={} seed={:.3f} selected={:.3f} proxyTris={}/{} evaluations={} exactTests={} us={:.0f}",
+                                handName(),
+                                selectorDecision.reason,
+                                selectedCandidate.name,
+                                selectorDecision.seed.totalScore,
+                                selectorDecision.selected.totalScore,
+                                selectorProxy.count,
+                                selectorProxy.sourceCount,
+                                selectorDecision.evaluatedCandidateCount,
+                                selectorExactDistanceTests,
+                                selectorMicroseconds);
+                            if (selectorMicroseconds > 1000.0f) {
+                                ROCK_LOG_WARN(Hand,
+                                    "{} GRAB POSE SELECTOR exceeded 1ms budget: {:.2f}ms candidate={} proxyTris={}/{} evaluations={} exactTests={}",
+                                    handName(),
+                                    selectorMicroseconds / 1000.0f,
+                                    selectedCandidate.name,
+                                    selectorProxy.count,
+                                    selectorProxy.sourceCount,
+                                    selectorDecision.evaluatedCandidateCount,
+                                    selectorExactDistanceTests);
                             }
                         }
 
