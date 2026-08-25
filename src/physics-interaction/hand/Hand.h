@@ -539,6 +539,7 @@ namespace rock
             float tauMin,
             const BodyBoneColliderSet* bodyBoneColliders,
             const GrabReleaseContext& releaseContext = {});
+        bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const;
 

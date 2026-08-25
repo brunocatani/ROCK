@@ -11601,26 +11601,17 @@ namespace rock
             snapshot.overrideAngularVelocity);
     }
 
-    void Hand::updateHeldObject(RE::hknpWorld* world,
-        const RE::NiTransform& handWorldTransform,
-        float deltaTime,
-        float forceFadeInTime,
-        float tauMin,
-        const BodyBoneColliderSet* bodyBoneColliders,
-        const GrabReleaseContext& releaseContext)
+    bool Hand::validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext)
     {
-        if (!isHolding() || !world)
-            return;
-        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabHeldObjectUpdate);
         if (_grabAuthorityProxyReleasePending.load(std::memory_order_acquire) || !_activeConstraint.isValid() || !_grabAuthorityProxy.isValid()) {
             ROCK_LOG_WARN(Hand, "{} hand release: proxy constraint authority marked grab invalid", handName());
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
-            return;
+            return false;
         }
 
         if (!_savedObjectState.refr || _savedObjectState.refr->IsDeleted() || _savedObjectState.refr->IsDisabled()) {
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
-            return;
+            return false;
         }
 
         const bool finalSeatMode =
@@ -11635,6 +11626,24 @@ namespace rock
                 grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                 grab_three_phase::phaseName(_grabAcquisitionPhase));
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            return false;
+        }
+
+        return true;
+    }
+
+    void Hand::updateHeldObject(RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        float deltaTime,
+        float forceFadeInTime,
+        float tauMin,
+        const BodyBoneColliderSet* bodyBoneColliders,
+        const GrabReleaseContext& releaseContext)
+    {
+        if (!isHolding() || !world)
+            return;
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabHeldObjectUpdate);
+        if (!validateHeldObjectUpdate(world, releaseContext)) {
             return;
         }
 
