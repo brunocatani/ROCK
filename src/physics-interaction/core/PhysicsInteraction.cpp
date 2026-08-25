@@ -10001,17 +10001,13 @@ namespace rock
         return true;
     }
 
-    void PhysicsInteraction::processGrabInputHand(
+    void PhysicsInteraction::processGrabIntentAndCommit(
         const PhysicsFrameContext& frame,
         Hand& hand,
         bool isLeft,
-        const GrabInputHandContext& context)
+        const GrabInputHandContext& context,
+        const GrabInputHandPrelude& prelude)
     {
-        GrabInputHandPrelude prelude{};
-        if (!prepareGrabInputHand(frame, hand, isLeft, context, prelude)) {
-            return;
-        }
-
         auto* hknp = context.hknp;
         const bool ambidextrousHandoffAvailable = context.ambidextrousHandoffAvailable;
         const auto& firingGripModes = context.firingGripModes;
@@ -10027,9 +10023,7 @@ namespace rock
         const bool heldWeaponEquipTriggerPressedEdge = prelude.heldWeaponEquipTriggerPressedEdge;
         auto grabInput = prelude.grabInput;
         const auto rawGrabInput = prelude.rawGrabInput;
-        if (!processTouchGrabInput(frame, hand, isLeft, context, prelude)) {
-            return;
-        }
+
         if (triggerEquipIntent.pending) {
             triggerEquipIntent.remainingSeconds -= (std::max)(0.0f, frame.deltaSeconds);
             if (triggerEquipIntent.remainingSeconds <= 0.0f) {
@@ -11284,6 +11278,24 @@ namespace rock
             }
         }
 
+
+    }
+
+    void PhysicsInteraction::processGrabInputHand(
+        const PhysicsFrameContext& frame,
+        Hand& hand,
+        bool isLeft,
+        const GrabInputHandContext& context)
+    {
+        GrabInputHandPrelude prelude{};
+        if (!prepareGrabInputHand(frame, hand, isLeft, context, prelude)) {
+            return;
+        }
+
+        if (!processTouchGrabInput(frame, hand, isLeft, context, prelude)) {
+            return;
+        }
+        processGrabIntentAndCommit(frame, hand, isLeft, context, prelude);
     }
 
     void PhysicsInteraction::updateGrabInput(const PhysicsFrameContext& frame)
