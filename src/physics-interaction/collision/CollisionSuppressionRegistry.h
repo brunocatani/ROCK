@@ -11,7 +11,11 @@
      */
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
+#include <functional>
+#include <utility>
 #include <vector>
 
 namespace RE
@@ -229,4 +233,147 @@ namespace rock::collision_suppression_registry
     };
 
     CollisionSuppressionRegistry& globalCollisionSuppressionRegistry();
+
+    template <std::size_t Capacity>
+    class SuppressionLeaseSet
+    {
+    public:
+        explicit constexpr SuppressionLeaseSet(CollisionSuppressionOwner owner) noexcept :
+            _owner(owner)
+        {}
+
+        [[nodiscard]] bool empty() const noexcept { return _count == 0; }
+        [[nodiscard]] bool full() const noexcept { return _count >= Capacity; }
+        [[nodiscard]] std::size_t size() const noexcept { return _count; }
+        [[nodiscard]] std::uint32_t firstBodyId() const noexcept
+        {
+            return _count > 0 ? _bodyIds[0] : kInvalidBodyId;
+        }
+        [[nodiscard]] bool delayedRestorePending() const noexcept
+        {
+            return _delayedRestorePending;
+        }
+        [[nodiscard]] float delayedRestoreRemainingSeconds() const noexcept
+        {
+            return _delayedRestoreRemainingSeconds;
+        }
+
+        [[nodiscard]] bool contains(std::uint32_t bodyId) const noexcept
+        {
+            for (std::size_t index = 0; index < _count; ++index) {
+                if (_bodyIds[index] == bodyId) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        RuntimeSuppressionResult acquire(
+            RE::hknpWorld* world,
+            std::uint32_t bodyId,
+            const char* context)
+        {
+            RuntimeSuppressionResult result{};
+            result.bodyId = bodyId;
+            const bool alreadyTracked = contains(bodyId);
+            if (bodyId == kInvalidBodyId || (!alreadyTracked && full())) {
+                return result;
+            }
+
+            result = globalCollisionSuppressionRegistry().acquire(
+                world,
+                bodyId,
+                _owner,
+                context);
+            if (result.valid && !alreadyTracked) {
+                _bodyIds[_count++] = bodyId;
+            }
+            return result;
+        }
+
+        template <class OnRelease>
+        bool releaseAll(
+            RE::hknpWorld* world,
+            const char* context,
+            OnRelease&& onRelease)
+        {
+            std::array<std::uint32_t, Capacity> pending{};
+            std::size_t pendingCount = 0;
+            for (std::size_t index = 0; index < _count; ++index) {
+                const auto bodyId = _bodyIds[index];
+                const auto result =
+                    globalCollisionSuppressionRegistry().release(
+                        world,
+                        bodyId,
+                        _owner,
+                        context);
+                std::invoke(
+                    std::forward<OnRelease>(onRelease),
+                    bodyId,
+                    result);
+                if (result.readFailed &&
+                    globalCollisionSuppressionRegistry().hasLease(
+                        bodyId,
+                        _owner)) {
+                    pending[pendingCount++] = bodyId;
+                }
+            }
+            _bodyIds = pending;
+            _count = pendingCount;
+            if (_count == 0) {
+                cancelDelayedRestore();
+            }
+            return _count == 0;
+        }
+
+        bool beginDelayedRestore(float delaySeconds) noexcept
+        {
+            const float delay =
+                std::isfinite(delaySeconds) && delaySeconds > 0.0f ?
+                    delaySeconds : 0.0f;
+            if (empty() || delay <= 0.0f) {
+                cancelDelayedRestore();
+                return false;
+            }
+            _delayedRestorePending = true;
+            _delayedRestoreRemainingSeconds = delay;
+            return true;
+        }
+
+        bool advanceDelayedRestore(float deltaSeconds) noexcept
+        {
+            if (!_delayedRestorePending || empty()) {
+                if (empty()) {
+                    cancelDelayedRestore();
+                }
+                return false;
+            }
+            const float delta =
+                std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ?
+                    deltaSeconds : 0.0f;
+            _delayedRestoreRemainingSeconds =
+                (std::max)(0.0f, _delayedRestoreRemainingSeconds - delta);
+            return _delayedRestoreRemainingSeconds <= 0.0f;
+        }
+
+        void cancelDelayedRestore() noexcept
+        {
+            _delayedRestorePending = false;
+            _delayedRestoreRemainingSeconds = 0.0f;
+        }
+
+        void clearTracking() noexcept
+        {
+            _bodyIds = {};
+            _count = 0;
+            cancelDelayedRestore();
+        }
+
+    private:
+        CollisionSuppressionOwner _owner;
+        std::array<std::uint32_t, Capacity> _bodyIds{};
+        std::size_t _count = 0;
+        float _delayedRestoreRemainingSeconds = 0.0f;
+        bool _delayedRestorePending = false;
+    };
 }

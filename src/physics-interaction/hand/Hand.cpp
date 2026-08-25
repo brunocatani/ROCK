@@ -199,7 +199,7 @@ namespace rock
 
     void Hand::reset()
     {
-        const bool suppressionActive = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
+        const bool suppressionActive = !_grabHandCollisionSuppression.empty();
         const bool cleanupRequired = hand_lifecycle_policy::requiresHavokCleanupBeforeReset(
             _activeConstraint.isValid() || _grabAuthorityProxy.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasCollisionBody());
         if (cleanupRequired) {
@@ -355,8 +355,8 @@ namespace rock
          */
         const bool hadConstraint = _activeConstraint.isValid();
         const bool hadProxy = _grabAuthorityProxy.isValid();
-        const bool hadSuppression = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
-        const bool hadLooseWeaponBodySuppression = hand_collision_suppression_math::hasActive(_heldLooseWeaponBodyCollisionSuppression);
+        const bool hadSuppression = !_grabHandCollisionSuppression.empty();
+        const bool hadLooseWeaponBodySuppression = !_heldLooseWeaponBodyCollisionSuppression.empty();
         const auto heldBodyCount = _heldBodyIds.size();
         const bool hadSavedState = _savedObjectState.isValid();
         const bool hadHandBody = hasCollisionBody();

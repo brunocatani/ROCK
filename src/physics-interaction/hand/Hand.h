@@ -12,6 +12,7 @@
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/SavedGrabCaptureFormat.h"
+#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
@@ -923,9 +924,12 @@ namespace rock
         std::atomic<float> _heldContactNormalHavokY{ 0.0f };
         std::atomic<float> _heldContactNormalHavokZ{ 0.0f };
 
-        hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _grabHandCollisionSuppression{};
-        hand_collision_suppression_math::SuppressionSet<kHeldLooseWeaponBodyCollisionSuppressionCapacity> _heldLooseWeaponBodyCollisionSuppression{};
-        hand_collision_suppression_math::DelayedRestoreState _grabHandCollisionDelayedRestore{};
+        collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
+            _grabHandCollisionSuppression{
+                collision_suppression_registry::CollisionSuppressionOwner::Grab };
+        collision_suppression_registry::SuppressionLeaseSet<kHeldLooseWeaponBodyCollisionSuppressionCapacity>
+            _heldLooseWeaponBodyCollisionSuppression{
+                collision_suppression_registry::CollisionSuppressionOwner::HeldLooseWeaponBody };
         std::atomic<std::uint32_t> _semanticContactFrameCounter{ 0 };
         std::atomic<std::uint32_t> _semanticContactValid{ 0 };
         std::atomic<std::uint32_t> _semanticContactSequence{ 0 };
