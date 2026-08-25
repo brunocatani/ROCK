@@ -213,25 +213,25 @@ namespace rock
         RE::NiPoint3 normalWorld = _grabFrame.support.hasNormal ?
             normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.normalBodyLocal)) :
             RE::NiPoint3{};
-        if (lengthSquared(normalWorld) <= 0.000001f && _grabFrame.gripEvidence.hasGripPoint) {
+        if (vector_math::lengthSquared(normalWorld) <= 0.000001f && _grabFrame.gripEvidence.hasGripPoint) {
             normalWorld = gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
         }
-        if (lengthSquared(normalWorld) <= 0.000001f) {
+        if (vector_math::lengthSquared(normalWorld) <= 0.000001f) {
             return false;
         }
 
         RE::NiPoint3 axisWorld = _grabFrame.support.hasAxis ?
             normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.axisBodyLocal)) :
             RE::NiPoint3{};
-        if (lengthSquared(axisWorld) <= 0.000001f) {
+        if (vector_math::lengthSquared(axisWorld) <= 0.000001f) {
             axisWorld = stablePerpendicularAxis(normalWorld);
         }
 
         RE::NiPoint3 binormalWorld = _grabFrame.support.hasBinormal ?
             normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.binormalBodyLocal)) :
             RE::NiPoint3{};
-        if (lengthSquared(binormalWorld) <= 0.000001f) {
-            binormalWorld = normalizeOrZero(crossProduct(normalWorld, axisWorld));
+        if (vector_math::lengthSquared(binormalWorld) <= 0.000001f) {
+            binormalWorld = normalizeOrZero(vector_math::cross(normalWorld, axisWorld));
         }
 
         const float supportHalfSpan = std::isfinite(_grabFrame.support.spanGameUnits) && _grabFrame.support.spanGameUnits > 0.0f ?
@@ -243,8 +243,8 @@ namespace rock
         out.supportAxisEndWorld = out.pivotWorld + axisWorld * axisLength;
         out.binormalEndWorld = out.pivotWorld + binormalWorld * axisLength;
         out.hasNormal = true;
-        out.hasSupportAxis = lengthSquared(axisWorld) > 0.000001f;
-        out.hasBinormal = lengthSquared(binormalWorld) > 0.000001f;
+        out.hasSupportAxis = vector_math::lengthSquared(axisWorld) > 0.000001f;
+        out.hasBinormal = vector_math::lengthSquared(binormalWorld) > 0.000001f;
         out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
             _grabFrame.pivotAuthority.source);
         out.activeGrabPointMode = _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none";
@@ -330,7 +330,7 @@ namespace rock
                 pointDistanceGameUnits(pivotAfterFreeze, _grabFrame.authority.grabPivotWorldAtGrab);
             out.captureFreezeShiftDot =
                 freezeShiftLen > 0.0001f && pivotGapLen > 0.0001f ?
-                    std::clamp(dotProduct(freezeShift, pivotGap) / (freezeShiftLen * pivotGapLen), -1.0f, 1.0f) :
+                    std::clamp(vector_math::dot(freezeShift, pivotGap) / (freezeShiftLen * pivotGapLen), -1.0f, 1.0f) :
                     0.0f;
             out.captureFreezePivotLeverGameUnits =
                 pointDistanceGameUnits(_grabFrame.gripEvidence.gripPointWorldAtGrab, _grabFrame.authority.bodyWorldAtGrab.translate);
@@ -489,7 +489,7 @@ namespace rock
                     out.motorTargetBodyDeltaGameUnits > 0.01f || out.motorTargetBodyDeltaDegrees > 0.01f;
 
                 const RE::NiPoint3 angularAxis = rotationCorrectionAxisWorld(liveBodyWorld.rotate, out.motorAtomTargetBodyWorld.rotate);
-                if (lengthSquared(angularAxis) > 0.000001f) {
+                if (vector_math::lengthSquared(angularAxis) > 0.000001f) {
                     const float axisLength = std::clamp(out.motorTargetBodyDeltaDegrees * 0.18f, 6.0f, 34.0f);
                     out.motorAngularAxisEndWorld = liveBodyWorld.translate + angularAxis * axisLength;
                     out.hasMotorAngularCommand = true;
@@ -504,7 +504,7 @@ namespace rock
         const RE::NiPoint3 targetPivotWorld = transform_math::localPointToWorld(desiredBodyWorld, pivotBLocalGame);
         const RE::NiPoint3 correction = targetPivotWorld - livePivotWorld;
         const RE::NiPoint3 lever = livePivotWorld - liveBodyWorld.translate;
-        const RE::NiPoint3 torqueWitness = crossProduct(lever, correction);
+        const RE::NiPoint3 torqueWitness = vector_math::cross(lever, correction);
         const float correctionLength = vectorMagnitude(correction);
         const float leverLength = vectorMagnitude(lever);
         const float torqueWitnessLength = vectorMagnitude(torqueWitness);

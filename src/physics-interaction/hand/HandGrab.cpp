@@ -4569,9 +4569,6 @@ namespace rock
     namespace hand_grab_internal
     {
         RE::NiPoint3 normalizeOrZero(const RE::NiPoint3& value) { return ::rock::normalizeOrZero(value); }
-        float lengthSquared(const RE::NiPoint3& value) { return ::rock::lengthSquared(value); }
-        RE::NiPoint3 crossProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) { return ::rock::crossProduct(lhs, rhs); }
-        float dotProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) { return ::rock::dotProduct(lhs, rhs); }
         RE::NiPoint3 stablePerpendicularAxis(const RE::NiPoint3& normal) { return ::rock::stablePerpendicularAxis(normal); }
         float vectorMagnitude(const RE::NiPoint3& value) { return ::rock::vectorMagnitude(value); }
         float pointDistanceGameUnits(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) { return ::rock::pointDistanceGameUnits(lhs, rhs); }

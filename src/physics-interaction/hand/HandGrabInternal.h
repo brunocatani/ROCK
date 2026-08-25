@@ -23,9 +23,6 @@ namespace rock::hand_grab_internal
     };
 
     [[nodiscard]] RE::NiPoint3 normalizeOrZero(const RE::NiPoint3& value);
-    [[nodiscard]] float lengthSquared(const RE::NiPoint3& value);
-    [[nodiscard]] RE::NiPoint3 crossProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs);
-    [[nodiscard]] float dotProduct(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs);
     [[nodiscard]] RE::NiPoint3 stablePerpendicularAxis(const RE::NiPoint3& normal);
     [[nodiscard]] float vectorMagnitude(const RE::NiPoint3& value);
     [[nodiscard]] float pointDistanceGameUnits(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs);
