@@ -8316,17 +8316,17 @@ namespace rock
             _grabFrame.multiFingerGripCenterWorldAtGrab = multiFingerGripRuntime.gripSet.contactCenterWorld;
             _grabFrame.multiFingerHandCenterWorldAtGrab = multiFingerGripRuntime.gripSet.handCenterWorld;
             _grabFrame.multiFingerAverageNormalWorldAtGrab = multiFingerGripRuntime.gripSet.averageNormalWorld;
-            _grabFrame.palmSeatPointWorldAtGrab = palmSeatPointWorld;
+            _grabFrame.seat.palmSeatPointWorldAtGrab = palmSeatPointWorld;
             _grabFrame.fingerEvidencePointWorldAtGrab = fingerEvidencePointWorld;
-            _grabFrame.hasPalmSeatPoint = palmSeatPointValid;
+            _grabFrame.seat.hasPalmSeatPoint = palmSeatPointValid;
             _grabFrame.hasFingerEvidencePoint = fingerEvidencePointValid;
             _grabFrame.activeGrabPointUsesMultiFingerEvidence = activeGrabPointUsesMultiFingerEvidence;
-            _grabFrame.activeGrabPointMode = grabPointMode;
+            _grabFrame.seat.activeGrabPointMode = grabPointMode;
             _grabFrame.pivotAuthority.source = pivotAuthoritySource;
             _grabFrame.pivotAuthority.positionOnly = pivotAuthorityPositionOnly;
             _grabFrame.pivotAuthority.normalTrusted = pivotAuthorityNormalTrusted;
             _grabFrame.pivotAuthority.positionConfidence = pivotAuthorityPositionConfidence;
-            _grabFrame.palmSeatPointMode = palmSeatPointMode;
+            _grabFrame.seat.palmSeatPointMode = palmSeatPointMode;
             _grabFrame.fingerEvidencePointMode = fingerEvidencePointMode;
             if (contactPatchEvidenceAvailable) {
                 const std::uint32_t copyCount = (std::min)(contactPatchRuntime.sampleCount, static_cast<std::uint32_t>(_grabFrame.contactPatchSamples.size()));
@@ -9184,7 +9184,7 @@ namespace rock
                      * ground-truth capture can record the seat ROCK produced
                      * for this grab next to the pose the user corrected it to.
                      */
-                    _grabFrame.seatDiagnostics = GrabSeatDiagnostics{
+                    _grabFrame.seat.diagnostics = GrabSeatDiagnostics{
                         .acquisitionMode = sel.forcedArrival ? "forceGrab" : (grabbedFromPullCatch ? "pullCatch" : "closeGrab"),
                         .shapeClass = seatPlateShape ? "plate" : (seatRodShape ? "rod" : (seatLongAxis.valid ? "compact" : "none")),
                         .elongationRatio = seatLongAxis.elongationRatio,
@@ -9236,19 +9236,19 @@ namespace rock
                         sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, gripArea.contactSeedWorld) : std::numeric_limits<float>::max();
                     _grabFrame.grabPivotWorldAtGrab = grabPivotAWorld;
                     _grabFrame.gripEvidence.gripPointWorldAtGrab = grabGripPoint;
-                    _grabFrame.activeGrabPointMode = grabPointMode;
-                    _grabFrame.seatMode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup;
+                    _grabFrame.seat.activeGrabPointMode = grabPointMode;
+                    _grabFrame.seat.mode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup;
                     if (looseWeaponPrimaryAttachApplied) {
-                        _grabFrame.seatMode = GrabSeatMode::SupportGroup;
+                        _grabFrame.seat.mode = GrabSeatMode::SupportGroup;
                     }
-                    _grabFrame.hasPinchPocket = effectivePinchPocket;
-                    _grabFrame.pinchPocketWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : RE::NiPoint3{};
-                    _grabFrame.pinchAxisWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
-                    _grabFrame.palmSeatPointWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : pocket.palmCenterWorld;
+                    _grabFrame.seat.hasPinchPocket = effectivePinchPocket;
+                    _grabFrame.seat.pinchPocketWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : RE::NiPoint3{};
+                    _grabFrame.seat.pinchAxisWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+                    _grabFrame.seat.palmSeatPointWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : pocket.palmCenterWorld;
                     _grabFrame.fingerEvidencePointWorldAtGrab = effectivePinchPocket ? grabGripPoint : _grabFrame.fingerEvidencePointWorldAtGrab;
-                    _grabFrame.hasPalmSeatPoint = true;
+                    _grabFrame.seat.hasPalmSeatPoint = true;
                     _grabFrame.hasFingerEvidencePoint = effectivePinchPocket ? true : _grabFrame.hasFingerEvidencePoint;
-                    _grabFrame.palmSeatPointMode = effectivePinchPocket ? "pinchPocket" : "threePhasePocket";
+                    _grabFrame.seat.palmSeatPointMode = effectivePinchPocket ? "pinchPocket" : "threePhasePocket";
                     _grabFrame.fingerEvidencePointMode = effectivePinchPocket ? "pinchThumbIndex" : "evidenceOnly";
                     if (looseWeaponPrimaryAttachApplied) {
                         _grabFrame.fingerEvidencePointWorldAtGrab = grabGripPoint;
@@ -9262,7 +9262,7 @@ namespace rock
                     _grabFrame.pivotAuthority.positionConfidence = pivotAuthorityPositionConfidence;
                     _grabFrame.syntheticLooseWeaponPrimaryAttach = looseWeaponPrimaryAttachApplied;
                     if (looseWeaponPrimaryAttachApplied) {
-                        _grabFrame.hasSettledVisualHandRelation = false;
+                        _grabFrame.seat.hasSettledVisualHandRelation = false;
                     }
                     _grabFrame.hasGripSupportModel = looseWeaponPrimaryAttachApplied ? false : gripSupportRuntime.valid;
                     _grabFrame.supportFrameNormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameNormalWorld);
@@ -9277,7 +9277,7 @@ namespace rock
                     _grabFrame.gripSupportConfidence = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.confidence;
                     _grabFrame.gripSupportSpanGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.supportSpanGameUnits;
                     _grabFrame.gripSupportPivotShiftGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.pivotShiftGameUnits;
-                    _grabFrame.requiresSettledVisualHandRelation = looseWeaponPrimaryAttachApplied ?
+                    _grabFrame.seat.requiresSettledVisualHandRelation = looseWeaponPrimaryAttachApplied ?
                         true :
                         (effectivePinchPocket ?
                                 false :
@@ -9323,7 +9323,7 @@ namespace rock
                         "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} seatAlignDeg={:.1f} seatAlignReason={} seatRollDeg={:.1f} seatRollReason={} seatShape={} seatRatio12={:.2f} seatRatio23={:.2f} seatBackstop={:.2f} seatBackstopReason={} pinchCenter={:.2f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                         handName(),
                         relationMode,
-                        grabSeatModeName(_grabFrame.seatMode),
+                        grabSeatModeName(_grabFrame.seat.mode),
                         looseWeaponPrimaryAttachApplied ? "primaryWeaponAttach" : "preserve",
                         grab_three_phase::phaseName(_grabAcquisitionPhase),
                         captureReason,
@@ -9366,7 +9366,7 @@ namespace rock
                         gripSupportRuntime.meshProbeHitCount,
                         gripSupportRuntime.rejectedOwnerCount,
                         gripSupportRuntime.rejectedDistanceCount,
-                        _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
+                        _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
                         pullCatchSeatSafety.reason,
                         pullCatchSeatSafety.normalDotPalm,
                         finalSignedPalmDistance,
@@ -9549,18 +9549,18 @@ namespace rock
                     sel.refr ? sel.refr->GetFormID() : 0,
                     objName,
                     objectBodyId.value,
-                    _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none",
+                    _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none",
                     grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),
                     resolvedAuthorityPivotReasonForFreeze ? resolvedAuthorityPivotReasonForFreeze : "none",
-                    grabSeatModeName(_grabFrame.seatMode),
+                    grabSeatModeName(_grabFrame.seat.mode),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
-                    _grabFrame.hasPinchPocket ? "yes" : "no",
+                    _grabFrame.seat.hasPinchPocket ? "yes" : "no",
                     grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind),
                     _grabFrame.gripSupportAuthoredPivot ? "yes" : "no",
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld ? "yes" : "no",
-                    _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
+                    _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
                     _grabFrame.gripEvidence.gripEvidenceShapeKey,
                     _grabFrame.gripEvidence.gripEvidenceTriangleIndex,
                     frozenAuthorityFrame.pivotAWorld.x,
@@ -9620,7 +9620,7 @@ namespace rock
                     handName(),
                     _grabFrame.traceId,
                     objectBodyId.value,
-                    _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none",
+                    _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none",
                     grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     traceFreezeShift.x,
                     traceFreezeShift.y,
@@ -9720,20 +9720,20 @@ namespace rock
                     sel.refr ? sel.refr->GetFormID() : 0,
                     objName,
                     objectBodyId.value,
-                    _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none",
+                    _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none",
                     grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),
                     resolvedAuthorityPivotReasonForFreeze ? resolvedAuthorityPivotReasonForFreeze : "none",
-                    grabSeatModeName(_grabFrame.seatMode),
+                    grabSeatModeName(_grabFrame.seat.mode),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
-                    _grabFrame.hasPinchPocket ? "yes" : "no",
+                    _grabFrame.seat.hasPinchPocket ? "yes" : "no",
                     grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind),
                     _grabFrame.gripSupportAuthoredPivot ? "yes" : "no",
                     _grabFrame.gripSupportReason ? _grabFrame.gripSupportReason : "none",
                     palmPocketMeshAvailable ? "yes" : "no",
                     fullHeldAuthorityAtFreeze ? "yes" : "no",
-                    _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
+                    _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
                     frozenAuthorityFrame.pivotAWorld.x,
                     frozenAuthorityFrame.pivotAWorld.y,
                     frozenAuthorityFrame.pivotAWorld.z,
@@ -9843,12 +9843,12 @@ namespace rock
                     _grabFrame.contactPatchSampleCount, _grabFrame.contactPatchMeshSnapDeltaGameUnits,
                     _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
                     _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.multiFingerContactReason,
-                    _grabFrame.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
+                    _grabFrame.seat.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
                     grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
                     _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
                     _grabFrame.pivotAuthority.positionConfidence,
-                    _grabFrame.palmSeatPointMode, _grabFrame.fingerEvidencePointMode,
+                    _grabFrame.seat.palmSeatPointMode, _grabFrame.fingerEvidencePointMode,
                     _grabFrame.fingerPoseTargetCount, _grabFrame.fadeInGrabConstraint ? "yes" : "no",
                     _grabFrame.motorFadeReason, _grabFrame.bodyResolutionReason,
                     _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
@@ -10052,8 +10052,8 @@ namespace rock
                     _grabFrame.pivotBBodyLocalGame.x, _grabFrame.pivotBBodyLocalGame.y, _grabFrame.pivotBBodyLocalGame.z,
                     _grabFrame.hasContactPatchEvidence ? "yes" : "no", "no",
                     _grabFrame.contactPatchSampleCount, _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
-                    _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
-                    _grabFrame.palmSeatPointMode, _grabFrame.fingerEvidencePointMode, pivotAToGrab,
+                    _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.seat.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
+                    _grabFrame.seat.palmSeatPointMode, _grabFrame.fingerEvidencePointMode, pivotAToGrab,
                     pivotAToGrab * havokToGameScale(), legacyPalmPivotAToHandOrigin, pivotAToHandOrigin, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
                     _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
             }
@@ -10300,7 +10300,7 @@ namespace rock
                 }
             }
         } else if (_hasGrabFingerPose) {
-            const bool pinchFingerPose = _grabFrame.seatMode == GrabSeatMode::PinchPocket;
+            const bool pinchFingerPose = _grabFrame.seat.mode == GrabSeatMode::PinchPocket;
             const bool touchHeldAtCommit = _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
             if (pinchFingerPose && !touchHeldAtCommit) {
                 ROCK_LOG_DEBUG(Hand, "{} THREE-PHASE GRAB POSE: pinch solve deferred until TouchHeld phase={} cachedTriangles={} poseTargets={}", handName(),
@@ -10534,14 +10534,14 @@ namespace rock
         }
 
         const bool finalSeatMode =
-            _grabFrame.seatMode == GrabSeatMode::PinchPocket ||
-            _grabFrame.seatMode == GrabSeatMode::SupportGroup;
+            _grabFrame.seat.mode == GrabSeatMode::PinchPocket ||
+            _grabFrame.seat.mode == GrabSeatMode::SupportGroup;
         const bool finalPivotSource = pivotAuthoritySourceIsFinalPinchOrSupport(_grabFrame.pivotAuthority.source);
         if (!finalSeatMode || !finalPivotSource) {
             ROCK_LOG_WARN(Hand,
                 "{} hand release: held grab has non-final authority seat={} source={} phase={}",
                 handName(),
-                grabSeatModeName(_grabFrame.seatMode),
+                grabSeatModeName(_grabFrame.seat.mode),
                 grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                 grab_three_phase::phaseName(_grabAcquisitionPhase));
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
@@ -10747,8 +10747,8 @@ namespace rock
                 .motorContactSoftening = heldMotorContactSoftening,
                 .pivotAuthorityPositionOnly = _grabFrame.pivotAuthority.positionOnly,
                 .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthority.normalTrusted,
-                .hasSeatedPivotReacquire = _grabFrame.hasSeatedPivotReacquire || _grabFrame.hasSettledVisualHandRelation,
-                .requiresSettledVisualRelation = _grabFrame.requiresSettledVisualHandRelation,
+                .hasSeatedPivotReacquire = _grabFrame.seat.hasPivotReacquire || _grabFrame.seat.hasSettledVisualHandRelation,
+                .requiresSettledVisualRelation = _grabFrame.seat.requiresSettledVisualHandRelation,
                 .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
@@ -10918,7 +10918,7 @@ namespace rock
                     heldAngularAuthority.authorityScale,
                     _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
                     _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                    _grabFrame.hasSeatedPivotReacquire ? "yes" : "no",
+                    _grabFrame.seat.hasPivotReacquire ? "yes" : "no",
                     heldMotorContactSoftening ? "yes" : "no");
             }
             _grabVisualDeviationExceededSeconds = 0.0f;
@@ -10995,16 +10995,16 @@ namespace rock
             const bool promotionRequested = reachedTouchRange || convergenceTimedOutInsidePocket;
             const bool pivotNeedsSeatedReacquire =
                 promotionRequested &&
-                _grabFrame.seatMode != GrabSeatMode::PinchPocket &&
+                _grabFrame.seat.mode != GrabSeatMode::PinchPocket &&
                 !_grabFrame.syntheticLooseWeaponPrimaryAttach &&
-                (_grabFrame.requiresSettledVisualHandRelation ||
+                (_grabFrame.seat.requiresSettledVisualHandRelation ||
                     pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthority.source, _grabFrame.pivotAuthority.positionOnly));
             bool timeoutReacquiredSeatedPivot = false;
             bool seatedRetargetRejectedKeepFrozen = false;
             const char* timeoutReacquireReason = pivotNeedsSeatedReacquire ? (hasGrabBody ? "notAttempted" : "missingGrabBody") : "notNeeded";
             if (pivotNeedsSeatedReacquire) {
                 _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::SeatedPivotReacquire;
-                _grabFrame.lastSeatedPivotReacquirePhase = grab_three_phase::phaseName(previousAcquisitionPhase);
+                _grabFrame.seat.lastPivotReacquirePhase = grab_three_phase::phaseName(previousAcquisitionPhase);
             }
             if (pivotNeedsSeatedReacquire && hasGrabBody) {
                 RE::NiPoint3 livePivotAWorld{};
@@ -11075,7 +11075,7 @@ namespace rock
                         const auto promotionDecision = grab_motion_controller::evaluateSeatedPalmPocketPromotion(
                             grab_motion_controller::SeatedPalmPocketPromotionInput{
                                 .enabled = true,
-                                .weakMeshStart = _grabFrame.requiresSettledVisualHandRelation ||
+                                .weakMeshStart = _grabFrame.seat.requiresSettledVisualHandRelation ||
                                                  pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthority.source, _grabFrame.pivotAuthority.positionOnly),
                                 .hasSeatedCandidate = seatedPivot.valid,
                                 .reachedTouchRange = reachedTouchRange,
@@ -11168,17 +11168,17 @@ namespace rock
                                 _grabFrame.gripEvidence.hasGripSourceNodeNormal = false;
                                 _grabFrame.pivotAuthority.pocketDistanceGameUnits = promotedPocketDistanceGameUnits;
                                 _grabFrame.pivotAuthority.selectionDistanceGameUnits = promotedPocketDistanceGameUnits;
-                                _grabFrame.palmSeatPointWorldAtGrab = promotedPointWorld;
-                                _grabFrame.hasPalmSeatPoint = true;
+                                _grabFrame.seat.palmSeatPointWorldAtGrab = promotedPointWorld;
+                                _grabFrame.seat.hasPalmSeatPoint = true;
                                 _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
-                                _grabFrame.activeGrabPointMode = "seatedSupportGroupPromotion";
-                                _grabFrame.palmSeatPointMode = _grabFrame.activeGrabPointMode;
+                                _grabFrame.seat.activeGrabPointMode = "seatedSupportGroupPromotion";
+                                _grabFrame.seat.palmSeatPointMode = _grabFrame.seat.activeGrabPointMode;
                                 _grabFrame.pivotAuthority.source = GrabPivotAuthoritySource::GripSupportModel;
                                 _grabFrame.pivotAuthority.positionOnly = false;
                                 _grabFrame.pivotAuthority.normalTrusted = promotedNormalTrusted;
                                 _grabFrame.pivotAuthority.positionConfidence = 0.92f;
-                                _grabFrame.requiresSettledVisualHandRelation = false;
-                                _grabFrame.seatMode = GrabSeatMode::SupportGroup;
+                                _grabFrame.seat.requiresSettledVisualHandRelation = false;
+                                _grabFrame.seat.mode = GrabSeatMode::SupportGroup;
                                 _grabFrame.hasGripSupportModel = true;
                                 _grabFrame.gripSupportAuthoredPivot = true;
                                 _grabFrame.gripSupportKind = grab_support_model_math::GripSupportKind::PalmWrap;
@@ -11192,10 +11192,10 @@ namespace rock
                                     "seatedPalmPocketPositionOnly";
                                 _grabFrame.objectNodeWorldAtGrab = currentNodeWorld;
                                 _grabFrame.pivotAuthority.longLeverGameUnits = seatedPivot.longLeverGameUnits;
-                                _grabFrame.hasSeatedPivotReacquire = true;
-                                _grabFrame.lastSeatedPivotReacquireLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
-                                _grabFrame.lastSeatedPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
-                                ++_grabFrame.seatedPivotReacquireCount;
+                                _grabFrame.seat.hasPivotReacquire = true;
+                                _grabFrame.seat.lastPivotReacquireLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
+                                _grabFrame.seat.lastPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
+                                ++_grabFrame.seat.pivotReacquireCount;
                                 const auto seatedPoseTargets = buildRuntimeFingerPoseTargets(promotedPointWorld, promotedNormalWorld);
                                 storeFingerPoseTargetsInGrabFrame(_grabFrame, seatedPoseTargets, currentNodeWorld);
 
@@ -11212,7 +11212,7 @@ namespace rock
                                 _grabObjectGripAtGrab.contactSeedBodyLocal = frozenSeatAuthorityFrame.pivotBBodyLocalGame;
                                 _grabObjectGripAtGrab.gripCenterWorld = promotedPointWorld;
                                 _grabObjectGripAtGrab.gripCenterBodyLocal = frozenSeatAuthorityFrame.pivotBBodyLocalGame;
-                                _grabObjectGripAtGrab.source = _grabFrame.activeGrabPointMode;
+                                _grabObjectGripAtGrab.source = _grabFrame.seat.activeGrabPointMode;
                                 _grabObjectGripAtGrab.fallbackReason = promotionDecision.reason;
                                 _grabObjectGripAtGrab.confidence = _grabFrame.pivotAuthority.positionConfidence;
                                 _grabObjectGripAtGrab.valid = true;
@@ -11261,22 +11261,22 @@ namespace rock
                                     seatedSupportPatch.reason,
                                     _grabFrame.multiFingerContactGroupCount,
                                     seatedPivot.longLeverGameUnits,
-                                    _grabFrame.seatedPivotReacquireCount);
+                                    _grabFrame.seat.pivotReacquireCount);
                             }
                         } else {
                             seatedRetargetRejectedKeepFrozen = true;
-                            _grabFrame.lastSeatedPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
+                            _grabFrame.seat.lastPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
                         }
                     } else {
                         seatedRetargetRejectedKeepFrozen = true;
                     }
                 }
                 if (!timeoutReacquiredSeatedPivot) {
-                    _grabFrame.lastSeatedPivotReacquireReason = timeoutReacquireReason ? timeoutReacquireReason : "none";
+                    _grabFrame.seat.lastPivotReacquireReason = timeoutReacquireReason ? timeoutReacquireReason : "none";
                 }
             }
             if (pivotNeedsSeatedReacquire && !hasGrabBody) {
-                _grabFrame.lastSeatedPivotReacquireReason = timeoutReacquireReason;
+                _grabFrame.seat.lastPivotReacquireReason = timeoutReacquireReason;
             }
 
             const bool seatedReacquireSatisfied = !pivotNeedsSeatedReacquire || timeoutReacquiredSeatedPivot || seatedRetargetRejectedKeepFrozen;
@@ -11292,7 +11292,7 @@ namespace rock
                     timeoutReacquireReason,
                     grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
                     _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
-                    _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
+                    _grabFrame.seat.requiresSettledVisualHandRelation ? "yes" : "no",
                     gripErrorGameUnits,
                     _grabStartTime,
                     heldBodyColliding ? "yes" : "no");
@@ -11304,7 +11304,7 @@ namespace rock
                     (_grabFrame.syntheticLooseWeaponPrimaryAttach ? "looseWeaponPrimaryAttachSettled" :
                                                                   (reachedTouchMayPromote ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket"));
                 if (_grabFrame.syntheticLooseWeaponPrimaryAttach) {
-                    _grabFrame.hasSettledVisualHandRelation = true;
+                    _grabFrame.seat.hasSettledVisualHandRelation = true;
                 }
                 /*
                  * Fallback visual settle: a rejected seated reacquire
@@ -11320,10 +11320,10 @@ namespace rock
                  * strictly better than never locking. WARN-logged because it
                  * also records that the seated reacquire failed and why.
                  */
-                if (_grabFrame.requiresSettledVisualHandRelation &&
-                    !_grabFrame.hasSeatedPivotReacquire &&
-                    !_grabFrame.hasSettledVisualHandRelation) {
-                    _grabFrame.hasSettledVisualHandRelation = true;
+                if (_grabFrame.seat.requiresSettledVisualHandRelation &&
+                    !_grabFrame.seat.hasPivotReacquire &&
+                    !_grabFrame.seat.hasSettledVisualHandRelation) {
+                    _grabFrame.seat.hasSettledVisualHandRelation = true;
                     ROCK_LOG_WARN(Hand,
                         "{} THREE-PHASE GRAB VISUAL SETTLE FALLBACK: TouchHeld promotion with unsatisfied settle requirement -> settling visual relation to frozen commanded seat (reacquire={} pivotAuthoritySource={} phase={})",
                         handName(),
@@ -11361,7 +11361,7 @@ namespace rock
                         const auto* liveFingerSnapshotPtr =
                             root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot) ? &liveFingerSnapshot : nullptr;
                         const auto touchHeldFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, currentNodeWorld);
-                        const bool pinchFingerPose = _grabFrame.seatMode == GrabSeatMode::PinchPocket;
+                        const bool pinchFingerPose = _grabFrame.seat.mode == GrabSeatMode::PinchPocket;
                         _grabFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(touchHeldWorldTriangles, handWorldTransform, _isLeft, fingerPosePivotWorld,
                             touchHeldFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotPtr,
                             g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits, _grabFrame.fingerPoseAimValid,

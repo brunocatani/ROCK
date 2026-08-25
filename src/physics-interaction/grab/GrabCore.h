@@ -625,6 +625,45 @@ namespace rock
         bool normalTrusted = false;
     };
 
+    enum class GrabSeatMode : std::uint8_t
+    {
+        None,
+        PinchPocket,
+        SupportGroup,
+    };
+
+    inline const char* grabSeatModeName(GrabSeatMode mode)
+    {
+        switch (mode) {
+        case GrabSeatMode::PinchPocket:
+            return "pinchPocket";
+        case GrabSeatMode::SupportGroup:
+            return "supportGroup";
+        default:
+            return "none";
+        }
+    }
+
+    struct GrabSeatState
+    {
+        RE::NiPoint3 palmSeatPointWorldAtGrab{};
+        RE::NiPoint3 pinchPocketWorldAtGrab{};
+        RE::NiPoint3 pinchAxisWorldAtGrab{ 1.0f, 0.0f, 0.0f };
+        GrabSeatDiagnostics diagnostics{};
+        GrabSeatMode mode = GrabSeatMode::None;
+        float lastPivotReacquireLocalDeltaGameUnits = 0.0f;
+        std::uint32_t pivotReacquireCount = 0;
+        const char* activeGrabPointMode = "none";
+        const char* palmSeatPointMode = "none";
+        const char* lastPivotReacquireReason = "none";
+        const char* lastPivotReacquirePhase = "none";
+        bool hasPalmSeatPoint = false;
+        bool hasPinchPocket = false;
+        bool requiresSettledVisualHandRelation = false;
+        bool hasSettledVisualHandRelation = false;
+        bool hasPivotReacquire = false;
+    };
+
     struct ImmutableGrabCaptureTelemetry
     {
         /*
@@ -647,12 +686,10 @@ namespace rock
         RE::NiPoint3 pivotBBodyLocalGame{};
         RE::NiPoint3 pivotBConstraintLocalGame{};
         std::uint32_t sourceBodyId = 0x7FFF'FFFF;
-        const char* activeGrabPointMode = "none";
-        const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         GrabGripEvidenceState gripEvidence{};
-        GrabSeatDiagnostics seatDiagnostics{};
         GrabPivotAuthorityState pivotAuthority{};
+        GrabSeatState seat{};
         bool valid = false;
         bool hasFrozenPivotB = false;
         bool hasMeshPoseData = false;
@@ -662,25 +699,6 @@ namespace rock
             *this = ImmutableGrabCaptureTelemetry{};
         }
     };
-
-    enum class GrabSeatMode : std::uint8_t
-    {
-        None,
-        PinchPocket,
-        SupportGroup,
-    };
-
-    inline const char* grabSeatModeName(GrabSeatMode mode)
-    {
-        switch (mode) {
-        case GrabSeatMode::PinchPocket:
-            return "pinchPocket";
-        case GrabSeatMode::SupportGroup:
-            return "supportGroup";
-        default:
-            return "none";
-        }
-    }
 
     struct CanonicalGrabFrame
     {
@@ -699,9 +717,6 @@ namespace rock
         RE::NiTransform desiredBodyWorldAtGrab{};
         RE::NiPoint3 pivotAHandBodyLocalGame{};
         RE::NiPoint3 grabPivotWorldAtGrab{};
-        RE::NiPoint3 palmSeatPointWorldAtGrab{};
-        RE::NiPoint3 pinchPocketWorldAtGrab{};
-        RE::NiPoint3 pinchAxisWorldAtGrab{ 1.0f, 0.0f, 0.0f };
         RE::NiPoint3 fingerEvidencePointWorldAtGrab{};
         RE::NiPoint3 multiFingerGripCenterWorldAtGrab{};
         RE::NiPoint3 multiFingerHandCenterWorldAtGrab{};
@@ -726,20 +741,13 @@ namespace rock
         float gripSupportSpanGameUnits = 0.0f;
         float gripSupportPivotShiftGameUnits = 0.0f;
         float handScaleAtGrab = 1.0f;
-        float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
         std::uint64_t traceId = 0;
         std::uint64_t traceTargetWriteSequence = 0;
-        std::uint32_t seatedPivotReacquireCount = 0;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
-        const char* activeGrabPointMode = "none";
-        const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         const char* fingerPoseAimReason = "none";
         const char* gripSupportReason = "none";
-        const char* lastSeatedPivotReacquireReason = "none";
-        const char* lastSeatedPivotReacquirePhase = "none";
-        GrabSeatMode seatMode = GrabSeatMode::None;
         grab_support_model_math::GripSupportKind gripSupportKind = grab_support_model_math::GripSupportKind::None;
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
@@ -753,15 +761,13 @@ namespace rock
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
         GrabGripEvidenceState gripEvidence{};
-        GrabSeatDiagnostics seatDiagnostics{};
         GrabPivotAuthorityState pivotAuthority{};
+        GrabSeatState seat{};
         bool hasMeshPoseData = false;
         bool hasFrozenPivotB = false;
         bool hasContactPatch = false;
         bool hasContactPatchEvidence = false;
         bool hasMultiFingerContactPatch = false;
-        bool hasPalmSeatPoint = false;
-        bool hasPinchPocket = false;
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool hasGripSupportModel = false;
@@ -769,11 +775,8 @@ namespace rock
         bool hasSupportFrameAxis = false;
         bool hasSupportFrameBinormal = false;
         bool gripSupportAuthoredPivot = false;
-        bool requiresSettledVisualHandRelation = false;
-        bool hasSettledVisualHandRelation = false;
         bool syntheticLooseWeaponPrimaryAttach = false;
         bool hasTelemetryCapture = false;
-        bool hasSeatedPivotReacquire = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
 
@@ -793,10 +796,8 @@ namespace rock
             captureTelemetry.pivotBBodyLocalGame = pivotBBodyLocalGame;
             captureTelemetry.pivotBConstraintLocalGame = pivotBConstraintLocalGame;
             captureTelemetry.sourceBodyId = sourceBodyId;
-            captureTelemetry.seatDiagnostics = seatDiagnostics;
+            captureTelemetry.seat = seat;
             captureTelemetry.pivotAuthority = pivotAuthority;
-            captureTelemetry.activeGrabPointMode = activeGrabPointMode;
-            captureTelemetry.palmSeatPointMode = palmSeatPointMode;
             captureTelemetry.fingerEvidencePointMode = fingerEvidencePointMode;
             captureTelemetry.hasFrozenPivotB = hasFrozenPivotB;
             captureTelemetry.hasMeshPoseData = hasMeshPoseData;
@@ -820,9 +821,6 @@ namespace rock
             desiredBodyWorldAtGrab = RE::NiTransform();
             pivotAHandBodyLocalGame = {};
             grabPivotWorldAtGrab = {};
-            palmSeatPointWorldAtGrab = {};
-            pinchPocketWorldAtGrab = {};
-            pinchAxisWorldAtGrab = { 1.0f, 0.0f, 0.0f };
             fingerEvidencePointWorldAtGrab = {};
             multiFingerGripCenterWorldAtGrab = {};
             multiFingerHandCenterWorldAtGrab = {};
@@ -847,20 +845,13 @@ namespace rock
             gripSupportSpanGameUnits = 0.0f;
             gripSupportPivotShiftGameUnits = 0.0f;
             handScaleAtGrab = 1.0f;
-            lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
             traceId = 0;
             traceTargetWriteSequence = 0;
-            seatedPivotReacquireCount = 0;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
-            activeGrabPointMode = "none";
-            palmSeatPointMode = "none";
             fingerEvidencePointMode = "none";
             fingerPoseAimReason = "none";
             gripSupportReason = "none";
-            lastSeatedPivotReacquireReason = "none";
-            lastSeatedPivotReacquirePhase = "none";
-            seatMode = GrabSeatMode::None;
             gripSupportKind = grab_support_model_math::GripSupportKind::None;
             motorFadeReason = "none";
             captureTelemetry.clear();
@@ -868,15 +859,13 @@ namespace rock
             fingerPoseLocalMeshTriangles.clear();
             heldNode = nullptr;
             gripEvidence = GrabGripEvidenceState{};
-            seatDiagnostics = GrabSeatDiagnostics{};
             pivotAuthority = GrabPivotAuthorityState{};
+            seat = GrabSeatState{};
             hasMeshPoseData = false;
             hasFrozenPivotB = false;
             hasContactPatch = false;
             hasContactPatchEvidence = false;
             hasMultiFingerContactPatch = false;
-            hasPalmSeatPoint = false;
-            hasPinchPocket = false;
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
             hasGripSupportModel = false;
@@ -884,11 +873,8 @@ namespace rock
             hasSupportFrameAxis = false;
             hasSupportFrameBinormal = false;
             gripSupportAuthoredPivot = false;
-            requiresSettledVisualHandRelation = false;
-            hasSettledVisualHandRelation = false;
             syntheticLooseWeaponPrimaryAttach = false;
             hasTelemetryCapture = false;
-            hasSeatedPivotReacquire = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
         }

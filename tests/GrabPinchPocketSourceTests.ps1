@@ -71,13 +71,13 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool usingPinchP
     'Grab commit must arbitrate pinch and palm as mutually exclusive seat choices.'
 Require-Text 'src/RockConfig.cpp' 'fGrabPinchCompactMaxExtentGameUnits[\s\S]*grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits,[\s\S]*1\.0f,[\s\S]*grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits' `
     'Runtime config loading must cap compact pinch extent at the current policy limit.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatMode = usingPinchPocket \? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seat\.mode = usingPinchPocket \? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup' `
     'Accepted capture must store the selected seat mode on the grab frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveActiveGrabAuthorityPivotAWorld\(\s*const RE::NiTransform& proxyWorldTransform[\s\S]*generatedProxyLocalPointToWorld\(proxyWorldTransform,\s*_grabFrame\.pivotAHandBodyLocalGame\)' `
     'Pinch grabs must replay the frozen generated/proxy local pivot instead of running held palm-pocket support refresh.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'promotionRequested &&\s*_grabFrame\.seatMode != GrabSeatMode::PinchPocket' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'promotionRequested &&\s*_grabFrame\.seat\.mode != GrabSeatMode::PinchPocket' `
     'Pinch grabs must not enter seated palm-pocket reacquire.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool pinchFingerPose = _grabFrame\.seatMode == GrabSeatMode::PinchPocket' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool pinchFingerPose = _grabFrame\.seat\.mode == GrabSeatMode::PinchPocket' `
     'TouchHeld finger solve must identify pinch pose mode from stored seat state.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabMaxTriangleDistance,\s*!pinchFingerPose,\s*liveFingerSnapshotAtGrabPtr' `
     'Pinch finger solve must bypass the generic thumb curve solver.'

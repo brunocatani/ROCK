@@ -247,7 +247,7 @@ namespace rock
         out.hasBinormal = lengthSquared(binormalWorld) > 0.000001f;
         out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
             _grabFrame.pivotAuthority.source);
-        out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
+        out.activeGrabPointMode = _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none";
         out.supportKind = grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind);
         out.supportReason = _grabFrame.gripSupportReason ? _grabFrame.gripSupportReason : "none";
         out.authoredSupportPivot = _grabFrame.gripSupportAuthoredPivot;
@@ -534,17 +534,17 @@ namespace rock
         out.positionConfidence = _grabFrame.pivotAuthority.positionConfidence;
         out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
             _grabFrame.pivotAuthority.source);
-        out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
+        out.activeGrabPointMode = _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none";
         out.authorityFrameSource = proxySource ? proxySource : "none";
         out.acquisitionPhase = grab_three_phase::phaseName(_grabAcquisitionPhase);
         out.capturePivotAuthoritySource =
             grab_authority_frame_math::grabAuthorityPivotSourceName(
                 _grabFrame.captureTelemetry.pivotAuthority.source);
         out.captureGrabPointMode =
-            _grabFrame.captureTelemetry.activeGrabPointMode ? _grabFrame.captureTelemetry.activeGrabPointMode : "none";
+            _grabFrame.captureTelemetry.seat.activeGrabPointMode ? _grabFrame.captureTelemetry.seat.activeGrabPointMode : "none";
         out.lastSeatedPivotReacquireReason =
-            _grabFrame.lastSeatedPivotReacquireReason ? _grabFrame.lastSeatedPivotReacquireReason : "none";
-        out.seatedPivotReacquireCount = _grabFrame.seatedPivotReacquireCount;
+            _grabFrame.seat.lastPivotReacquireReason ? _grabFrame.seat.lastPivotReacquireReason : "none";
+        out.seatedPivotReacquireCount = _grabFrame.seat.pivotReacquireCount;
         out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
         out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 

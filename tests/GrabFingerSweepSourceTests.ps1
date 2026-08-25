@@ -229,7 +229,7 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'pinch solve deferred until TouchHeld',
     'if \(!_grabFingerPosePublished\) \{',
-    'const bool pinchFingerPose = _grabFrame\.seatMode == GrabSeatMode::PinchPocket;',
+    'const bool pinchFingerPose = _grabFrame\.seat\.mode == GrabSeatMode::PinchPocket;',
     'solveGrabFingerPoseFromTriangles\(',
     'applyPinchFingerPosePolicy\(_grabFingerPose'
 ) 'Pinch must remain the only deferred at-touch finger solve.'

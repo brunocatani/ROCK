@@ -1430,7 +1430,7 @@ namespace rock
         };
 
         outCapture.present = true;
-        outCapture.acquisition = _grabFrame.seatDiagnostics.acquisitionMode;
+        outCapture.acquisition = _grabFrame.seat.diagnostics.acquisitionMode;
         outCapture.objectProxyLocal = inProxyLocal(rootNode->world);
         outCapture.objectScale = std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0f ? rootNode->world.scale : 1.0f;
 
@@ -1651,7 +1651,7 @@ namespace rock
         }
 
         const auto& telemetry = _grabFrame.captureTelemetry;
-        const auto& diagnostics = telemetry.seatDiagnostics;
+        const auto& diagnostics = telemetry.seat.diagnostics;
         auto& seat = outCapture.seat;
         seat.valid = _grabFrame.hasTelemetryCapture;
         seat.objectProxyLocal = inProxyLocal(telemetry.desiredObjectWorld);
@@ -1671,7 +1671,7 @@ namespace rock
         seat.gripPointObjectLocal[1] = telemetry.gripEvidence.gripPointLocal.y;
         seat.gripPointObjectLocal[2] = telemetry.gripEvidence.gripPointLocal.z;
         pointInProxyLocal(telemetry.grabPivotWorld, seat.pivotProxyLocal);
-        seat.seatMode = grabSeatModeName(_grabFrame.seatMode);
+        seat.seatMode = grabSeatModeName(_grabFrame.seat.mode);
         seat.pivotAuthoritySource =
             grab_authority_frame_math::grabAuthorityPivotSourceName(
                 telemetry.pivotAuthority.source);
