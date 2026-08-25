@@ -136,7 +136,7 @@ namespace rock
 
         const auto* referenceRoot =
             _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr;
-        const auto* visibleGeometry = _grabFrame.gripSourceNode;
+        const auto* visibleGeometry = _grabFrame.gripEvidence.gripSourceNode;
 
         out.collisionOwner = sampleNode(_grabFrame.heldNode);
         out.referenceRoot = sampleNode(referenceRoot);
@@ -152,7 +152,7 @@ namespace rock
     {
         out = {};
 
-        if (!world || !isHolding() || !_grabFrame.hasGripPoint || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
+        if (!world || !isHolding() || !_grabFrame.gripEvidence.hasGripPoint || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
             return false;
         }
 
@@ -213,7 +213,7 @@ namespace rock
         RE::NiPoint3 normalWorld = _grabFrame.hasSupportFrameNormal ?
             normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.supportFrameNormalBodyLocal)) :
             RE::NiPoint3{};
-        if (lengthSquared(normalWorld) <= 0.000001f && _grabFrame.hasGripPoint) {
+        if (lengthSquared(normalWorld) <= 0.000001f && _grabFrame.gripEvidence.hasGripPoint) {
             normalWorld = gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
         }
         if (lengthSquared(normalWorld) <= 0.000001f) {
@@ -254,8 +254,8 @@ namespace rock
         out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
         out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 
-        if (_grabFrame.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
-            const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidenceTriangleIndex];
+        if (_grabFrame.gripEvidence.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
+            const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidence.gripEvidenceTriangleIndex];
             out.pivotTriangleWorld[0] = transform_math::localPointToWorld(currentNodeWorld, triangle.v0);
             out.pivotTriangleWorld[1] = transform_math::localPointToWorld(currentNodeWorld, triangle.v1);
             out.pivotTriangleWorld[2] = transform_math::localPointToWorld(currentNodeWorld, triangle.v2);
@@ -308,7 +308,7 @@ namespace rock
             grab_authority_frame_math::isFiniteTransform(_grabFrame.bodyWorldAtGrab) &&
             grab_authority_frame_math::isFiniteTransform(_grabFrame.desiredBodyWorldAtGrab) &&
             grab_authority_frame_math::isFiniteVector(_grabFrame.grabPivotWorldAtGrab) &&
-            grab_authority_frame_math::isFiniteVector(_grabFrame.gripPointWorldAtGrab) &&
+            grab_authority_frame_math::isFiniteVector(_grabFrame.gripEvidence.gripPointWorldAtGrab) &&
             grab_authority_frame_math::isFiniteVector(_grabFrame.pivotBConstraintLocalGame)) {
             const RE::NiPoint3 pivotBeforeFreeze =
                 transform_math::localPointToWorld(_grabFrame.bodyWorldAtGrab, _grabFrame.pivotBConstraintLocalGame);
@@ -317,7 +317,7 @@ namespace rock
             const RE::NiPoint3 freezeShift =
                 _grabFrame.desiredBodyWorldAtGrab.translate - _grabFrame.bodyWorldAtGrab.translate;
             const RE::NiPoint3 pivotGap =
-                _grabFrame.grabPivotWorldAtGrab - _grabFrame.gripPointWorldAtGrab;
+                _grabFrame.grabPivotWorldAtGrab - _grabFrame.gripEvidence.gripPointWorldAtGrab;
             const float freezeShiftLen = vectorMagnitude(freezeShift);
             const float pivotGapLen = vectorMagnitude(pivotGap);
             out.captureFreezeBodyShiftGameUnits =
@@ -333,7 +333,7 @@ namespace rock
                     std::clamp(dotProduct(freezeShift, pivotGap) / (freezeShiftLen * pivotGapLen), -1.0f, 1.0f) :
                     0.0f;
             out.captureFreezePivotLeverGameUnits =
-                pointDistanceGameUnits(_grabFrame.gripPointWorldAtGrab, _grabFrame.bodyWorldAtGrab.translate);
+                pointDistanceGameUnits(_grabFrame.gripEvidence.gripPointWorldAtGrab, _grabFrame.bodyWorldAtGrab.translate);
         }
         RE::NiPoint3 pivotBLocalGame = activeProxyConstraintPivotBLocalGame();
         RE::NiPoint3 atomTransformBLocalGame = pivotBLocalGame;
@@ -571,47 +571,47 @@ namespace rock
             out.hasActivePivotBVisualNode = true;
         }
 
-        if (_grabFrame.hasGripPoint) {
+        if (_grabFrame.gripEvidence.hasGripPoint) {
             out.meshGripPointWorld = gripEvidencePointWorld(_grabFrame, currentNodeWorld);
             out.hasMeshGripPoint = true;
-            if (_grabFrame.gripSourceNode || _grabFrame.hasGripSourceNodePoint) {
+            if (_grabFrame.gripEvidence.gripSourceNode || _grabFrame.gripEvidence.hasGripSourceNodePoint) {
                 out.visualMeshGripPointWorld = out.meshGripPointWorld;
                 out.hasVisualMeshGripPoint = true;
                 out.bodyVisualMeshLockErrorGameUnits = pointDistanceGameUnits(livePivotWorld, out.meshGripPointWorld);
             } else if (_grabFrame.heldNode) {
-                out.visualMeshGripPointWorld = transform_math::localPointToWorld(_grabFrame.heldNode->world, _grabFrame.gripPointLocal);
+                out.visualMeshGripPointWorld = transform_math::localPointToWorld(_grabFrame.heldNode->world, _grabFrame.gripEvidence.gripPointLocal);
                 out.hasVisualMeshGripPoint = true;
                 out.bodyVisualMeshLockErrorGameUnits = pointDistanceGameUnits(out.meshGripPointWorld, out.visualMeshGripPointWorld);
             }
         }
 
-        if (_grabFrame.captureTelemetry.valid && _grabFrame.captureTelemetry.hasGripPoint) {
+        if (_grabFrame.captureTelemetry.valid && _grabFrame.captureTelemetry.gripEvidence.hasGripPoint) {
             const auto& capture = _grabFrame.captureTelemetry;
             const RE::NiTransform captureNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, capture.bodyLocal);
-            if (capture.hasGripSourceNodePoint) {
+            if (capture.gripEvidence.hasGripSourceNodePoint) {
                 out.captureMeshGripPointBodyWorld =
-                    transform_math::localPointToWorld(gripEvidenceWorldFrame(capture, captureNodeWorld), capture.gripPointSourceNodeLocal);
+                    transform_math::localPointToWorld(gripEvidenceWorldFrame(capture, captureNodeWorld), capture.gripEvidence.gripPointSourceNodeLocal);
             } else {
-                out.captureMeshGripPointBodyWorld = transform_math::localPointToWorld(captureNodeWorld, capture.gripPointLocal);
+                out.captureMeshGripPointBodyWorld = transform_math::localPointToWorld(captureNodeWorld, capture.gripEvidence.gripPointLocal);
             }
             out.hasCaptureMeshGripPoint = true;
-            if (capture.hasGripSourceNodePoint) {
+            if (capture.gripEvidence.hasGripSourceNodePoint) {
                 out.captureMeshGripPointVisualWorld = out.captureMeshGripPointBodyWorld;
             } else if (_grabFrame.heldNode) {
-                out.captureMeshGripPointVisualWorld = transform_math::localPointToWorld(_grabFrame.heldNode->world, capture.gripPointLocal);
+                out.captureMeshGripPointVisualWorld = transform_math::localPointToWorld(_grabFrame.heldNode->world, capture.gripEvidence.gripPointLocal);
             } else {
                 out.captureMeshGripPointVisualWorld = out.captureMeshGripPointBodyWorld;
             }
 
-            const RE::NiPoint3 localDelta = _grabFrame.gripPointLocal - capture.gripPointLocal;
+            const RE::NiPoint3 localDelta = _grabFrame.gripEvidence.gripPointLocal - capture.gripEvidence.gripPointLocal;
             const float scale =
                 std::isfinite(currentNodeWorld.scale) && currentNodeWorld.scale > 0.0f ? currentNodeWorld.scale : 1.0f;
             out.captureGripLocalDeltaGameUnits = vectorMagnitude(localDelta) * scale;
             out.gripPointMutatedAfterCapture = out.captureGripLocalDeltaGameUnits > 0.001f;
         }
 
-        if (_grabFrame.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
-            const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidenceTriangleIndex];
+        if (_grabFrame.gripEvidence.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
+            const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidence.gripEvidenceTriangleIndex];
             out.pivotTriangleWorld[0] = transform_math::localPointToWorld(currentNodeWorld, triangle.v0);
             out.pivotTriangleWorld[1] = transform_math::localPointToWorld(currentNodeWorld, triangle.v1);
             out.pivotTriangleWorld[2] = transform_math::localPointToWorld(currentNodeWorld, triangle.v2);

@@ -106,7 +106,7 @@ if ($applyFrozenStart -lt 0 -or $applyFrozenEnd -lt 0) {
     $failures.Add('Frozen authority frame apply helper boundary could not be located.')
 } else {
     $outsideApplyFrozen = $authorityFrameText.Remove($applyFrozenStart, $applyFrozenEnd - $applyFrozenStart)
-    if ($outsideApplyFrozen -match '_grabFrame\.(rawHandSpace|handBodyToRawHandAtGrab|proxyAuthorityHandSpace|proxyAuthorityBodyHandSpace|bodyLocal|rootBodyLocal|ownerBodyLocal|gripPointLocal|gripPointBodyLocalGame|pivotBBodyLocalGame|pivotBConstraintLocalGame|pivotAHandBodyLocalGame|desiredObjectWorldAtGrab|desiredBodyWorldAtGrab|hasFrozenPivotB|hasGripPoint)\s*=') {
+    if ($outsideApplyFrozen -match '_grabFrame\.(rawHandSpace|handBodyToRawHandAtGrab|proxyAuthorityHandSpace|proxyAuthorityBodyHandSpace|bodyLocal|rootBodyLocal|ownerBodyLocal|gripPointBodyLocalGame|pivotBBodyLocalGame|pivotBConstraintLocalGame|pivotAHandBodyLocalGame|desiredObjectWorldAtGrab|desiredBodyWorldAtGrab|hasFrozenPivotB)\s*=|_grabFrame\.gripEvidence\.(gripPointLocal|hasGripPoint)\s*=') {
         $failures.Add('Solver authority frame fields must only be written through applyFrozenGrabAuthorityFrameToGrabFrame.')
     }
 }
@@ -243,7 +243,7 @@ if ($acquireFlagLeaseStart -lt 0 -or $releaseFlagLeaseStart -lt 0 -or $nextHelpe
 Reject-Text 'src/physics-interaction/grab/GrabMotionController.h' 'HeldSupportRefresh|evaluateHeldSupportRefresh' 'Held support refresh policy must stay removed; release safety may read contact evidence but cannot rewrite TouchHeld authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'heldAuthority\s*=\s*evaluateRuntimeHeldAuthority' 'Held updates must still evaluate runtime authority for contact softening and release safety without refreshing solver pivots.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activateHeldObjectBodySet\(world,\s*objectBodyId\.value,\s*_heldBodyIds\)' 'Close grab commit must explicitly wake the accepted held-object body set after zeroing velocities.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeLocalMeshMaxDistanceFromPoint\(_grabFrame\.localMeshTriangles,\s*_grabFrame\.gripPointLocal\)' 'Dynamic grab must capture long-object lever length from the selected grip point and cached local mesh.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeLocalMeshMaxDistanceFromPoint\(_grabFrame\.localMeshTriangles,\s*_grabFrame\.gripEvidence\.gripPointLocal\)' 'Dynamic grab must capture long-object lever length from the selected grip point and cached local mesh.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'kMaxGrabRuntimeSurfaceContactTriangles[\s\S]*selectNearestGrabSurfaceTriangles[\s\S]*buildRuntimeMultiFingerGripContact\([\s\S]*\*multiFingerTriangleSource' 'Runtime multi-finger grab validation must use a bounded local surface triangle set instead of rescanning high-poly weapon meshes per finger candidate.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'kMaxGrabRuntimeFingerPoseTriangles[\s\S]*selectNearestGrabFingerPoseTriangles[\s\S]*fingerPoseLocalMeshTriangles[\s\S]*solveFrozenMeshFingerPose\([\s\S]*localFingerPoseTriangles' 'Finger posing must feed the shared solver from the bounded local mesh cache while keeping the full mesh for authority and lever diagnostics.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'kMaxFingerPoseCandidateTriangles[\s\S]*useWholeMeshForMissingTargets[\s\S]*std::nth_element' 'Whole-mesh finger fallback must rank and cap high-poly mesh candidates instead of accepting every triangle.'

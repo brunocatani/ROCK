@@ -1667,9 +1667,9 @@ namespace rock
         seat.depthReason = diagnostics.depthReason;
         seat.penetrationBackstopGameUnits = diagnostics.penetrationBackstopGameUnits;
         seat.penetrationBackstopReason = diagnostics.penetrationBackstopReason;
-        seat.gripPointObjectLocal[0] = telemetry.gripPointLocal.x;
-        seat.gripPointObjectLocal[1] = telemetry.gripPointLocal.y;
-        seat.gripPointObjectLocal[2] = telemetry.gripPointLocal.z;
+        seat.gripPointObjectLocal[0] = telemetry.gripEvidence.gripPointLocal.x;
+        seat.gripPointObjectLocal[1] = telemetry.gripEvidence.gripPointLocal.y;
+        seat.gripPointObjectLocal[2] = telemetry.gripEvidence.gripPointLocal.z;
         pointInProxyLocal(telemetry.grabPivotWorld, seat.pivotProxyLocal);
         seat.seatMode = grabSeatModeName(_grabFrame.seatMode);
         seat.pivotAuthoritySource =

@@ -469,7 +469,7 @@ namespace rock
             }
             centroid = scalePoint(centroid, 1.0f / static_cast<float>(acceptedCount));
 
-            RE::NiPoint3 normal = normalizeOrZero(frame.gripNormalLocal);
+            RE::NiPoint3 normal = normalizeOrZero(frame.gripEvidence.gripNormalLocal);
             if (lengthSquared(normal) <= 0.000001f) {
                 normal = normalizeOrZero(normalSum);
             }
@@ -1954,62 +1954,62 @@ namespace rock
              * separate BODY-local pivot B captured from the same world point.
              */
             const RE::NiTransform& evidenceWorld = sourceNode ? sourceNode->world : fallbackObjectWorld;
-            frame.gripSourceNode = sourceNode;
-            frame.gripSourceNodeWorldAtGrab = evidenceWorld;
-            frame.gripPointSourceNodeLocal = transform_math::worldPointToLocal(evidenceWorld, gripPointWorld);
-            frame.hasGripSourceNodePoint = true;
+            frame.gripEvidence.gripSourceNode = sourceNode;
+            frame.gripEvidence.gripSourceNodeWorldAtGrab = evidenceWorld;
+            frame.gripEvidence.gripPointSourceNodeLocal = transform_math::worldPointToLocal(evidenceWorld, gripPointWorld);
+            frame.gripEvidence.hasGripSourceNodePoint = true;
             if (normalValid) {
-                frame.gripNormalSourceNodeLocal = transform_math::worldVectorToLocal(evidenceWorld, gripNormalWorld);
-                frame.hasGripSourceNodeNormal = true;
+                frame.gripEvidence.gripNormalSourceNodeLocal = transform_math::worldVectorToLocal(evidenceWorld, gripNormalWorld);
+                frame.gripEvidence.hasGripSourceNodeNormal = true;
             } else {
-                frame.gripNormalSourceNodeLocal = {};
-                frame.hasGripSourceNodeNormal = false;
+                frame.gripEvidence.gripNormalSourceNodeLocal = {};
+                frame.gripEvidence.hasGripSourceNodeNormal = false;
             }
         }
 
         RE::NiTransform gripEvidenceWorldFrame(const CanonicalGrabFrame& frame, const RE::NiTransform& fallbackWorld)
         {
-            if (frame.gripSourceNode) {
-                return frame.gripSourceNode->world;
+            if (frame.gripEvidence.gripSourceNode) {
+                return frame.gripEvidence.gripSourceNode->world;
             }
-            if (frame.hasGripSourceNodePoint) {
-                return frame.gripSourceNodeWorldAtGrab;
+            if (frame.gripEvidence.hasGripSourceNodePoint) {
+                return frame.gripEvidence.gripSourceNodeWorldAtGrab;
             }
             return fallbackWorld;
         }
 
         RE::NiTransform gripEvidenceWorldFrame(const ImmutableGrabCaptureTelemetry& capture, const RE::NiTransform& fallbackWorld)
         {
-            if (capture.gripSourceNode) {
-                return capture.gripSourceNode->world;
+            if (capture.gripEvidence.gripSourceNode) {
+                return capture.gripEvidence.gripSourceNode->world;
             }
-            if (capture.hasGripSourceNodePoint) {
-                return capture.gripSourceNodeWorld;
+            if (capture.gripEvidence.hasGripSourceNodePoint) {
+                return capture.gripEvidence.gripSourceNodeWorldAtGrab;
             }
             return fallbackWorld;
         }
 
         RE::NiPoint3 gripEvidencePointWorld(const CanonicalGrabFrame& frame, const RE::NiTransform& fallbackWorld)
         {
-            if (frame.hasGripSourceNodePoint) {
-                return transform_math::localPointToWorld(gripEvidenceWorldFrame(frame, fallbackWorld), frame.gripPointSourceNodeLocal);
+            if (frame.gripEvidence.hasGripSourceNodePoint) {
+                return transform_math::localPointToWorld(gripEvidenceWorldFrame(frame, fallbackWorld), frame.gripEvidence.gripPointSourceNodeLocal);
             }
-            return transform_math::localPointToWorld(fallbackWorld, frame.gripPointLocal);
+            return transform_math::localPointToWorld(fallbackWorld, frame.gripEvidence.gripPointLocal);
         }
 
         RE::NiPoint3 gripEvidenceNormalWorld(const CanonicalGrabFrame& frame, const RE::NiTransform& fallbackWorld)
         {
-            if (frame.hasGripSourceNodeNormal) {
-                return normalizeOrZero(transform_math::localVectorToWorld(gripEvidenceWorldFrame(frame, fallbackWorld), frame.gripNormalSourceNodeLocal));
+            if (frame.gripEvidence.hasGripSourceNodeNormal) {
+                return normalizeOrZero(transform_math::localVectorToWorld(gripEvidenceWorldFrame(frame, fallbackWorld), frame.gripEvidence.gripNormalSourceNodeLocal));
             }
-            return normalizeOrZero(transform_math::localVectorToWorld(fallbackWorld, frame.gripNormalLocal));
+            return normalizeOrZero(transform_math::localVectorToWorld(fallbackWorld, frame.gripEvidence.gripNormalLocal));
         }
 
         grab_finger_pose_runtime::GrabFingerPoseTargetSet rebuildFingerPoseTargetsFromGrabFrame(
             const CanonicalGrabFrame& frame,
             const RE::NiTransform& currentNodeWorld)
         {
-            const RE::NiPoint3 seatNormalWorld = frame.hasGripPoint ? gripEvidenceNormalWorld(frame, currentNodeWorld) : RE::NiPoint3{};
+            const RE::NiPoint3 seatNormalWorld = frame.gripEvidence.hasGripPoint ? gripEvidenceNormalWorld(frame, currentNodeWorld) : RE::NiPoint3{};
             auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(gripEvidencePointWorld(frame, currentNodeWorld), seatNormalWorld);
             targets.useSeatPointForMissingTargets = false;
             targets.useWholeMeshForMissingTargets = true;
@@ -3091,17 +3091,17 @@ namespace rock
             frame.bodyWorldAtGrab = frozen.bodyWorldAtGrab;
             frame.rootBodyLocal = frozen.rootBodyLocal;
             frame.ownerBodyLocal = frozen.ownerBodyLocal;
-            frame.gripPointLocal = frozen.gripPointLocal;
+            frame.gripEvidence.gripPointLocal = frozen.gripPointLocal;
             frame.gripPointBodyLocalGame = frozen.pivotBBodyLocalGame;
             frame.pivotBBodyLocalGame = frozen.pivotBBodyLocalGame;
             frame.pivotBConstraintLocalGame = frozen.pivotBConstraintLocalGame;
             frame.pivotAHandBodyLocalGame = frozen.pivotAHandBodyLocalGame;
             frame.grabPivotWorldAtGrab = frozen.grabPivotWorldAtGrab;
-            frame.gripPointWorldAtGrab = frozen.gripPointWorldAtGrab;
+            frame.gripEvidence.gripPointWorldAtGrab = frozen.gripPointWorldAtGrab;
             frame.desiredObjectWorldAtGrab = frozen.desiredObjectWorld;
             frame.desiredBodyWorldAtGrab = frozen.desiredBodyWorld;
             frame.hasFrozenPivotB = true;
-            frame.hasGripPoint = true;
+            frame.gripEvidence.hasGripPoint = true;
         }
 
         bool pivotAuthoritySourceShouldReacquireAtSeat(
@@ -8291,19 +8291,19 @@ namespace rock
             }
             _grabFrame.localMeshTriangles.clear();
             _grabFrame.fingerPoseLocalMeshTriangles.clear();
-            _grabFrame.gripEvidenceLocal = selectedGripPointLocal;
-            _grabFrame.gripNormalLocal = grabSurfaceHit.valid ? transform_math::worldVectorToLocal(objectWorldTransform, grabSurfaceHit.normal) : RE::NiPoint3{};
+            _grabFrame.gripEvidence.gripEvidenceLocal = selectedGripPointLocal;
+            _grabFrame.gripEvidence.gripNormalLocal = grabSurfaceHit.valid ? transform_math::worldVectorToLocal(objectWorldTransform, grabSurfaceHit.normal) : RE::NiPoint3{};
             storeGripSourceEvidence(_grabFrame,
                 grabSurfaceHit.sourceNode ? grabSurfaceHit.sourceNode : collidableNode,
                 objectWorldTransform,
                 grabGripPoint,
                 grabSurfaceHit.normal,
                 grabSurfaceHit.valid && lengthSquared(grabSurfaceHit.normal) > 0.000001f);
-            _grabFrame.gripEvidenceTriangleIndex = grabSurfaceHit.valid && grabSurfaceHit.hasTriangle ? static_cast<std::uint32_t>(grabSurfaceHit.triangleIndex) : 0xFFFF'FFFF;
-            _grabFrame.gripEvidenceShapeKey = grabSurfaceHit.valid ? grabSurfaceHit.shapeKey : 0xFFFF'FFFF;
-            _grabFrame.gripEvidenceShapeCollisionFilterInfo = grabSurfaceHit.valid ? grabSurfaceHit.shapeCollisionFilterInfo : 0;
-            _grabFrame.gripEvidenceHitFraction = grabSurfaceHit.valid ? grabSurfaceHit.hitFraction : 1.0f;
-            _grabFrame.hasGripEvidenceShapeKey = grabSurfaceHit.valid && grabSurfaceHit.hasShapeKey;
+            _grabFrame.gripEvidence.gripEvidenceTriangleIndex = grabSurfaceHit.valid && grabSurfaceHit.hasTriangle ? static_cast<std::uint32_t>(grabSurfaceHit.triangleIndex) : 0xFFFF'FFFF;
+            _grabFrame.gripEvidence.gripEvidenceShapeKey = grabSurfaceHit.valid ? grabSurfaceHit.shapeKey : 0xFFFF'FFFF;
+            _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo = grabSurfaceHit.valid ? grabSurfaceHit.shapeCollisionFilterInfo : 0;
+            _grabFrame.gripEvidence.gripEvidenceHitFraction = grabSurfaceHit.valid ? grabSurfaceHit.hitFraction : 1.0f;
+            _grabFrame.gripEvidence.hasGripEvidenceShapeKey = grabSurfaceHit.valid && grabSurfaceHit.hasShapeKey;
             _grabFrame.contactPatchSamples = {};
             _grabFrame.contactPatchSampleCount = 0;
             _grabFrame.hasContactPatch = contactPatchEvidenceAvailable;
@@ -9199,8 +9199,8 @@ namespace rock
                         .penetrationBackstopGameUnits = seatPenetrationBackstopGameUnits,
                         .penetrationBackstopReason = seatPenetrationBackstopReason,
                     };
-                    _grabFrame.gripEvidenceLocal = transform_math::worldPointToLocal(objectWorldTransform, gripEvidencePointWorld);
-                    _grabFrame.gripNormalLocal = transform_math::worldVectorToLocal(objectWorldTransform, gripNormalWorld);
+                    _grabFrame.gripEvidence.gripEvidenceLocal = transform_math::worldPointToLocal(objectWorldTransform, gripEvidencePointWorld);
+                    _grabFrame.gripEvidence.gripNormalLocal = transform_math::worldVectorToLocal(objectWorldTransform, gripNormalWorld);
                     storeGripSourceEvidence(_grabFrame,
                         grabSurfaceHit.sourceNode ? grabSurfaceHit.sourceNode : collidableNode,
                         objectWorldTransform,
@@ -9208,16 +9208,16 @@ namespace rock
                         gripEvidenceNormalWorld,
                         lengthSquared(gripEvidenceNormalWorld) > 0.000001f);
                     if (looseWeaponPrimaryAttachApplied) {
-                        _grabFrame.gripSourceNode = nullptr;
-                        _grabFrame.gripPointSourceNodeLocal = {};
-                        _grabFrame.gripNormalSourceNodeLocal = {};
-                        _grabFrame.hasGripSourceNodePoint = false;
-                        _grabFrame.hasGripSourceNodeNormal = false;
-                        _grabFrame.gripEvidenceTriangleIndex = 0xFFFF'FFFF;
-                        _grabFrame.gripEvidenceShapeKey = 0xFFFF'FFFF;
-                        _grabFrame.gripEvidenceShapeCollisionFilterInfo = 0;
-                        _grabFrame.gripEvidenceHitFraction = 1.0f;
-                        _grabFrame.hasGripEvidenceShapeKey = false;
+                        _grabFrame.gripEvidence.gripSourceNode = nullptr;
+                        _grabFrame.gripEvidence.gripPointSourceNodeLocal = {};
+                        _grabFrame.gripEvidence.gripNormalSourceNodeLocal = {};
+                        _grabFrame.gripEvidence.hasGripSourceNodePoint = false;
+                        _grabFrame.gripEvidence.hasGripSourceNodeNormal = false;
+                        _grabFrame.gripEvidence.gripEvidenceTriangleIndex = 0xFFFF'FFFF;
+                        _grabFrame.gripEvidence.gripEvidenceShapeKey = 0xFFFF'FFFF;
+                        _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo = 0;
+                        _grabFrame.gripEvidence.gripEvidenceHitFraction = 1.0f;
+                        _grabFrame.gripEvidence.hasGripEvidenceShapeKey = false;
                         _grabFrame.contactPatchSamples = {};
                         _grabFrame.contactPatchSampleCount = 0;
                         _grabFrame.hasContactPatch = false;
@@ -9235,7 +9235,7 @@ namespace rock
                     _grabFrame.pivotAuthority.selectionDistanceGameUnits =
                         sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, gripArea.contactSeedWorld) : std::numeric_limits<float>::max();
                     _grabFrame.grabPivotWorldAtGrab = grabPivotAWorld;
-                    _grabFrame.gripPointWorldAtGrab = grabGripPoint;
+                    _grabFrame.gripEvidence.gripPointWorldAtGrab = grabGripPoint;
                     _grabFrame.activeGrabPointMode = grabPointMode;
                     _grabFrame.seatMode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup;
                     if (looseWeaponPrimaryAttachApplied) {
@@ -9467,7 +9467,7 @@ namespace rock
             const float objectScaleForLever =
                 std::isfinite(objectWorldTransform.scale) && objectWorldTransform.scale > 0.0f ? objectWorldTransform.scale : 1.0f;
             _grabFrame.pivotAuthority.longLeverGameUnits =
-                computeLocalMeshMaxDistanceFromPoint(_grabFrame.localMeshTriangles, _grabFrame.gripPointLocal) * objectScaleForLever;
+                computeLocalMeshMaxDistanceFromPoint(_grabFrame.localMeshTriangles, _grabFrame.gripEvidence.gripPointLocal) * objectScaleForLever;
             _grabFrame.liveHandWorldAtGrab = handWorldTransform;
             _grabFrame.handBodyWorldAtGrab = proxyFrameWorldAtGrab;
             _grabFrame.objectNodeWorldAtGrab = objectWorldTransform;
@@ -9561,8 +9561,8 @@ namespace rock
                     _grabFrame.gripSupportAuthoredPivot ? "yes" : "no",
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld ? "yes" : "no",
                     _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
-                    _grabFrame.gripEvidenceShapeKey,
-                    _grabFrame.gripEvidenceTriangleIndex,
+                    _grabFrame.gripEvidence.gripEvidenceShapeKey,
+                    _grabFrame.gripEvidence.gripEvidenceTriangleIndex,
                     frozenAuthorityFrame.pivotAWorld.x,
                     frozenAuthorityFrame.pivotAWorld.y,
                     frozenAuthorityFrame.pivotAWorld.z,
@@ -9838,7 +9838,7 @@ namespace rock
                     hasPalmProxyFrameAtGrab ? "yes" : "no", _grabFrame.pivotAHandBodyLocalGame.x,
                     _grabFrame.pivotAHandBodyLocalGame.y, _grabFrame.pivotAHandBodyLocalGame.z, grabPointMode, grabMeshTriangles.size(),
                     _grabFrame.pivotAuthority.pocketDistanceGameUnits, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
-                    _grabFrame.gripEvidenceShapeKey, _grabFrame.gripEvidenceShapeCollisionFilterInfo, _grabFrame.gripEvidenceHitFraction,
+                    _grabFrame.gripEvidence.gripEvidenceShapeKey, _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo, _grabFrame.gripEvidence.gripEvidenceHitFraction,
                     _grabFrame.hasContactPatchEvidence ? "yes" : "no", "no",
                     _grabFrame.contactPatchSampleCount, _grabFrame.contactPatchMeshSnapDeltaGameUnits,
                     _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
@@ -11040,7 +11040,7 @@ namespace rock
                         g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
                     timeoutReacquireReason = seatedPivot.reason;
                     if (seatedPivot.valid) {
-                        const RE::NiPoint3 previousGripPointLocal = _grabFrame.gripPointLocal;
+                        const RE::NiPoint3 previousGripPointLocal = _grabFrame.gripEvidence.gripPointLocal;
                         const RE::NiPoint3 previousGripLocalDelta = seatedPivot.pointNodeLocal - previousGripPointLocal;
                         const float nodeScale =
                             std::isfinite(currentNodeWorld.scale) && currentNodeWorld.scale > 0.0f ? currentNodeWorld.scale : 1.0f;
@@ -11158,14 +11158,14 @@ namespace rock
                                 timeoutReacquireReason = "seatedPalmPocketFreezeFailedKeepFrozen";
                             } else {
                                 applyFrozenGrabAuthorityFrameToGrabFrame(_grabFrame, frozenSeatAuthorityFrame);
-                                _grabFrame.gripEvidenceLocal = promotedPointNodeLocal;
-                                _grabFrame.gripNormalLocal = promotedNormalNodeLocal;
-                                _grabFrame.gripSourceNode = nullptr;
-                                _grabFrame.gripSourceNodeWorldAtGrab = currentNodeWorld;
-                                _grabFrame.gripPointSourceNodeLocal = {};
-                                _grabFrame.gripNormalSourceNodeLocal = {};
-                                _grabFrame.hasGripSourceNodePoint = false;
-                                _grabFrame.hasGripSourceNodeNormal = false;
+                                _grabFrame.gripEvidence.gripEvidenceLocal = promotedPointNodeLocal;
+                                _grabFrame.gripEvidence.gripNormalLocal = promotedNormalNodeLocal;
+                                _grabFrame.gripEvidence.gripSourceNode = nullptr;
+                                _grabFrame.gripEvidence.gripSourceNodeWorldAtGrab = currentNodeWorld;
+                                _grabFrame.gripEvidence.gripPointSourceNodeLocal = {};
+                                _grabFrame.gripEvidence.gripNormalSourceNodeLocal = {};
+                                _grabFrame.gripEvidence.hasGripSourceNodePoint = false;
+                                _grabFrame.gripEvidence.hasGripSourceNodeNormal = false;
                                 _grabFrame.pivotAuthority.pocketDistanceGameUnits = promotedPocketDistanceGameUnits;
                                 _grabFrame.pivotAuthority.selectionDistanceGameUnits = promotedPocketDistanceGameUnits;
                                 _grabFrame.palmSeatPointWorldAtGrab = promotedPointWorld;
