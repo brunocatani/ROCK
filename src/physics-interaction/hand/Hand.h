@@ -519,7 +519,6 @@ namespace rock
             const std::vector<std::uint32_t>& peerHeldBodyIds,
             const RE::NiPoint3& selectionOrigin,
             const RE::NiPoint3& palmNormal,
-            float nearRange,
             const char** outRefusalReason = nullptr);
 
         bool promoteHeldObjectToConstraintDrive(RE::bhkWorld* bhkWorld,

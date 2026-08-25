@@ -96,6 +96,11 @@ namespace rock::weapon_classification_policy
                     .resolved = true,
                 };
             }
+
+            // Conflicting authored families require a recognized effective
+            // equip slot. Falling through to the pistol-only branch would turn
+            // inconclusive evidence into a false resolved classification.
+            return {};
         }
 
         if (pistolKeyword) {

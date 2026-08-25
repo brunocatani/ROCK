@@ -40,8 +40,8 @@ Require-Text 'src/RockConfig.h' `
     'Full-body colliders must remain enabled by default while leg and foot colliders default off.'
 
 Require-Text 'src/RockConfig.cpp' `
-    'rockBodyBoneCollidersEnabled\s*=\s*true;[\s\S]*rockBodyBoneLegAndFootCollidersEnabled\s*=\s*false;' `
-    'Config reset defaults must keep leg and foot colliders disabled.'
+    'resetToDefaults\(\)[\s\S]{0,180}static_cast<RockConfigValues&>\(\*this\)\s*=\s*RockConfigValues\{\}' `
+    'Config reset must restore the complete canonical value set.'
 Require-Text 'src/RockConfig.cpp' `
     'GetBoolValue\(SECTION,\s*"bBodyBoneCollidersEnabled"[\s\S]*GetBoolValue\(SECTION,\s*"bBodyBoneLegAndFootCollidersEnabled"' `
     'Both body collider switches must load from [PhysicsInteraction].'

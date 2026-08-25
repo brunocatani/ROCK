@@ -16,11 +16,43 @@ namespace rock::dynamic_weapon_collision_policy
     inline constexpr float kMaximumLinearVelocityHavok = 15.0f;
     inline constexpr float kMaximumAngularVelocityRadiansPerSecond = 35.0f;
     inline constexpr float kDivergenceTeleportDistanceGameUnits = 80.0f;
+    inline constexpr float kDivergenceTeleportDwellSeconds = 0.3f;
     inline constexpr float kMinimumVisualCorrectionTranslationGameUnits = 0.05f;
     inline constexpr float kMinimumVisualCorrectionRotationDegrees = 0.25f;
     inline constexpr float kMinimumBoundingBoxHalfExtentGameUnits = 0.25f;
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;
+
+    struct DivergenceDwellResult
+    {
+        float elapsedSeconds{ 0.0f };
+        bool recoverNow{ false };
+    };
+
+    [[nodiscard]] inline DivergenceDwellResult advanceDivergenceDwell(
+        float previousElapsedSeconds,
+        float requestedGapGameUnits,
+        float measuredDeltaSeconds)
+    {
+        if (!std::isfinite(requestedGapGameUnits) ||
+            requestedGapGameUnits <= kDivergenceTeleportDistanceGameUnits) {
+            return {};
+        }
+
+        const float previous =
+            std::isfinite(previousElapsedSeconds) && previousElapsedSeconds > 0.0f ?
+            previousElapsedSeconds :
+            0.0f;
+        const float measuredDelta =
+            std::isfinite(measuredDeltaSeconds) && measuredDeltaSeconds > 0.0f ?
+            std::clamp(measuredDeltaSeconds, 0.0f, 0.1f) :
+            0.0f;
+        const float elapsed = previous + measuredDelta;
+        return {
+            .elapsedSeconds = elapsed,
+            .recoverNow = elapsed >= kDivergenceTeleportDwellSeconds,
+        };
+    }
 
     inline float sanitizeWeaponMass(float weaponWeightGame)
     {

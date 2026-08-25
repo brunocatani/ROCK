@@ -5,7 +5,6 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <thread>
 #include <unordered_map>
 
 #include "RE/NetImmerse/NiPoint.h"
@@ -32,28 +31,8 @@
 
 namespace rock
 {
-    class RockConfig
+    struct RockConfigValues
     {
-    public:
-        ~RockConfig() { stopFileWatch(); }
-
-        void load();
-
-        void reload();
-
-        void processPendingConfigReload();
-
-        void stopFileWatch();
-
-        void subscribeForConfigChanged(const std::string& key, std::function<void(const std::string&)> callback);
-        void unsubscribeFromConfigChanged(const std::string& key);
-        [[nodiscard]] std::filesystem::path getConfigDirectory() const;
-
-        void suppressNextFileWatchReload() { _ignoreNextIniFileChange.store(true); }
-
-        [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
-        [[nodiscard]] bool persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
-
         bool rockHavokTimingFixEnabled = true;
         float rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
         int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
@@ -315,8 +294,8 @@ namespace rock
         float rockGrabPhysicsRateMinForceScale = 0.75f;
         float rockGrabPhysicsRateMaxForceScale = 1.35f;
         float rockGrabForceFadeInTime = 0.1f;
-        RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
-        RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
+        RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         float rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
@@ -531,6 +510,27 @@ namespace rock
         float rockMouthConsumeCandidateHapticIntervalSeconds = 0.075f;
         float rockMouthConsumeCommitHapticDurationSeconds = 0.12f;
         float rockMouthConsumeCommitHapticIntensity = 0.85f;
+    };
+
+    class RockConfig : public RockConfigValues
+    {
+    public:
+        ~RockConfig() { stopFileWatch(); }
+
+        void load();
+
+        void reload();
+
+        void processPendingConfigReload();
+
+        void stopFileWatch();
+
+        void subscribeForConfigChanged(const std::string& key, std::function<void(const std::string&)> callback);
+        void unsubscribeFromConfigChanged(const std::string& key);
+        [[nodiscard]] std::filesystem::path getConfigDirectory() const;
+
+        [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
+        [[nodiscard]] bool persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
 
     private:
         void resetToDefaults();
@@ -551,15 +551,11 @@ namespace rock
 
         std::unordered_map<std::string, std::function<void(const std::string&)>> _onConfigChangedSubscribers;
 
-        std::atomic<bool> _ignoreNextIniFileChange = false;
-
         std::atomic<bool> _selfIniWriteInProgress = false;
 
         std::atomic<std::filesystem::file_time_type> _lastSelfIniWriteTime{};
 
         std::atomic<bool> _reloadPending = false;
-
-        std::thread _fileWatchInitThread;
     };
 
     inline RockConfig g_rockConfig;

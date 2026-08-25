@@ -241,432 +241,7 @@ namespace rock
 
     void RockConfig::resetToDefaults()
     {
-        rockHavokTimingFixEnabled = true;
-        rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
-        rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
-
-        rockSuppressRightFavoritesGameInput = true;
-        rockSuppressPipboyGameInputWhileHolding = true;
-        rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
-        rockSuppressTakeEquipGameInputWhileHolding = true;
-        rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
-        rockGrabInputIntentStateEnabled = true;
-        rockGrabInputLeewaySeconds = 0.12f;
-        rockGrabInputForceSeconds = 0.08f;
-
-        rockDeveloperModeEnabled = false;
-        rockLogLevel = logging_policy::DefaultLogLevel;
-        rockLogPattern = logging_policy::DefaultLogPattern;
-        rockLogSampleMilliseconds = logging_policy::DefaultLogSampleMilliseconds;
-        rockPerformanceProfilerEnabled = false;
-        rockPerformanceProfilerLogIntervalFrames = 300;
-        rockPerformanceProfilerWarmupFrames = 120;
-        rockPerformanceProfilerOverlayText = false;
-
-        rockLeftHandedMode = false;
-        rockGunstockModeEnabled = false;
-        rockGunstockAlignmentPitchDegrees = 0.0f;
-        rockGunstockAlignmentYawDegrees = 0.0f;
-        rockGunstockAlignmentRollDegrees = 0.0f;
-        rockAmbidextrousFiringGripEnabled = true;
-        rockFiringGripPromotionRadius = 5.0f;
-        rockLeftFiringAimYawDegrees = 0.0f;
-        rockLeftFiringAimPitchDegrees = 0.0f;
-        rockLeftFiringAimOffsetXGameUnits = 0.0f;
-        rockLeftFiringAimOffsetYGameUnits = 0.0f;
-        rockLeftFiringAimOffsetZGameUnits = 0.0f;
-        rockWeaponCollisionBlocksProjectiles = false;
-        rockWeaponCollisionBlocksSpells = false;
-        rockWeaponCollisionVisualStabilizationSeconds = kDefaultWeaponCollisionVisualStabilizationSeconds;
-        rockWeaponCollisionMaxLinearVelocity = 50.0f;
-        rockWeaponCollisionMaxAngularVelocity = 100.0f;
-        rockWeaponInteractionTouchRadius = 2.0f;
-        rockWeaponInteractionProbeRadius = 12.0f;
-        rockFiringGripProximitySupportRadius = 6.0f;
-        rockRealisticGrenadeFuseSeconds = 5.0f;
-        rockWeaponSupportGripHandLerpEnabled = true;
-        rockWeaponSupportGripHandLerpTimeMin = 0.12f;
-        rockWeaponSupportGripHandLerpTimeMax = 0.20f;
-        rockWeaponSupportGripHandLerpMinDistance = 1.0f;
-        rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
-        rockWeaponSupportSurfaceSeatEnabled = true;
-        rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
-        rockManualScopeHoldSeconds = 0.30f;
-        rockNativeScopeForceFiringGripFallback = false;
-        rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
-        rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
-        rockNativeScopeFiringGripFallbackOffsetZGameUnits = 0.0f;
-        rockNativeScopeFiringGripFallbackPitchDegrees = 0.0f;
-        rockNativeScopeFiringGripFallbackYawDegrees = 0.0f;
-        rockNativeScopeFiringGripFallbackRollDegrees = 0.0f;
-        rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
-        rockNativeScopeOverlayOffsetYGameUnits = 0.0f;
-        rockNativeScopeOverlayOffsetZGameUnits = 0.0f;
-        rockNativeScopeOverlayPitchDegrees = 0.0f;
-        rockNativeScopeOverlayYawDegrees = 0.0f;
-        rockNativeScopeOverlayRollDegrees = 0.0f;
-
-        rockNativeMeleeSuppressionEnabled = true;
-        rockNativeMeleeFullSuppression = true;
-        rockNativeMeleeSuppressWeaponSwing = true;
-        rockNativeMeleeSuppressHitFrame = true;
-        rockNativeMeleeDebugLogging = false;
-        rockNativeCharacterControllerObjectContactFilterEnabled = true;
-
-        rockHighlightEnabled = true;
-        rockHighlightIntensityMode = kDefaultHighlightIntensityMode;
-        rockHighlightColor = kDefaultHighlightColor;
-        rockSelectionBeamEnabled = true;
-        rockSelectionBeamSegmentSizeGameUnits = selection_beam_policy::kDefaultSegmentSizeGameUnits;
-        rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
-        rockSelectionBeamAlpha = selection_beam_policy::kDefaultAlpha;
-
-        rockDebugShowColliders = false;
-        rockDebugShowTargetColliders = false;
-        rockDebugShowHandAxes = false;
-        rockDebugShowGrabPivots = false;
-        rockDebugShowGrabPocketNormal = false;
-        rockDebugDrawGrabContactPatch = false;
-        rockDebugDrawGrabForceTorque = false;
-        rockDebugDrawGrabForceTorqueText = false;
-        rockDebugDrawGrabPivotSourceCollider = false;
-        rockDebugDrawGrabPivotSourceEvidence = false;
-        rockDebugDrawGrabSupportFrame = false;
-        rockDebugDrawGrabPockets = false;
-        rockDebugShowGrabFingerProbes = false;
-        rockDebugShowGrabFingerSweptArc = false;
-        rockDebugShowGrabFingerSweptArcText = true;
-        rockDebugShowGrabFingerSweptArcLiveSkeleton = true;
-        rockDebugShowPalmVectors = false;
-        rockDebugDrawHandColliders = false;
-        rockDebugDrawHandBoneColliders = false;
-        rockDebugDrawDynamicHandColliders = false;
-        rockDebugDrawHandBoneContacts = false;
-        rockDebugDrawGrabAuthorityProxy = false;
-        rockDebugMaxHandBoneBodiesDrawn = 48;
-        rockDebugMaxBodyBoneBodiesDrawn = 32;
-        rockDebugDrawWeaponColliders = false;
-        rockDebugDrawNativeScopeActivation = false;
-        rockDebugDrawAuthoredGripActivationZones = false;
-        rockDebugDrawGunstockAlignment = false;
-        rockDebugDrawDynamicWeaponColliders = false;
-        rockDebugDumpWeaponAnimNodes = false;
-        rockDebugMaxWeaponBodiesDrawn = 100;
-        rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
-        rockDebugMaxShapeCapturesPerFrame = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCapturesPerFrame);
-        rockDebugMaxConvexSupportVertices = 8;
-        rockDebugMaxCompoundChildren = static_cast<int>(debug_overlay_policy::kDefaultMaxCompoundChildren);
-        rockDebugMaxCompoundDepth = static_cast<int>(debug_overlay_policy::kDefaultMaxCompoundDepth);
-        rockDebugMaxShapeQueuedJobs = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeQueuedJobs);
-        rockDebugMaxShapeCompletedJobs = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCompletedJobs);
-        rockDebugMaxShapeUploadsPerFrame = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeUploadsPerFrame);
-        rockDebugMaxShapeCacheEntries = static_cast<int>(debug_overlay_policy::kDefaultShapeCacheBudget);
-        rockDebugMaxShapeCacheBytes = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCacheBytes);
-        rockDebugMaxBodyInstances = static_cast<int>(debug_overlay_runtime::kDefaultMaxBodyInstances);
-        rockDebugMaxLineVertices = static_cast<int>(debug_overlay_policy::kDefaultLineVertexBudget);
-        rockDebugMaxTextVertices = static_cast<int>(debug_overlay_runtime::kDefaultMaxTextVertices);
-        rockDebugUseBoundsForHeavyConvex = true;
-        rockDebugVerboseLogging = false;
-        rockDebugGrabFrameLogging = false;
-        rockDebugVideoSyncMarker = false;
-        rockDebugVideoSyncMarkerSize = 4.0f;
-        rockDebugGrabFingerPoseLogging = false;
-        rockDebugGrabTimelineTrace = false;
-        rockDebugGrabAfterSolveAnomalySampling = false;
-        rockDebugGrabTransformTelemetry = false;
-        rockDebugGrabTransformTelemetryText = false;
-        rockDebugGrabTransformTelemetryAxes = false;
-        rockDebugGrabTimelineTraceIntervalFrames = 1;
-        rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
-        rockDebugGrabTransformTelemetryTextMode = 0;
-        rockDebugShowGrabNotifications = false;
-        rockDebugShowWeaponNotifications = false;
-        rockDebugWeaponOmodDumpEnabled = false;
-        rockDebugWeaponOmodCoverageAudit = false;
-        rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
-        rockWeaponOmodSelfHealEnabled = true;
-        rockDebugWorkbenchWeaponReattach = false;
-        rockDebugHandTransformParity = false;
-        rockDebugWorldObjectOriginDiagnostics = false;
-        rockDebugWorldObjectOriginLogIntervalFrames = 120;
-        rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
-        rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
-        rockDebugShowSkeletonBoneVisualizer = false;
-        rockDebugDrawSkeletonBoneAxes = false;
-        rockDebugLogSkeletonBones = false;
-        rockDebugSkeletonBoneMode = 1;
-        rockDebugSkeletonBoneSource = 1;
-        rockDebugMaxSkeletonBonesDrawn = 256;
-        rockDebugMaxSkeletonBoneAxesDrawn = 80;
-        rockDebugSkeletonBoneLogIntervalFrames = 120;
-        rockDebugLogSkeletonBoneTruncation = false;
-        rockDebugRootFlattenedFingerSkeletonMarkerSize = 1.4f;
-        rockDebugSkeletonBonePointSize = 1.4f;
-        rockDebugSkeletonBoneAxisLength = 4.0f;
-        rockDebugSkeletonBoneLogFilter = "RArm_Hand,LArm_Hand,RArm_Finger23,LArm_Finger23,Chest,Pelvis";
-        rockDebugSkeletonAxisBoneFilter = "";
-
-        rockBodyBoneCollidersEnabled = true;
-        rockBodyBoneLegAndFootCollidersEnabled = false;
-        rockBodyBoneColliderStandardRadiusScale = 1.0f;
-        rockBodyBoneColliderStandardLengthScale = 1.0f;
-        rockBodyBoneColliderStandardConvexRadiusScale = 1.0f;
-        rockBodyBoneColliderPowerArmorRadiusScale = 1.0f;
-        rockBodyBoneColliderPowerArmorLengthScale = 1.0f;
-        rockBodyBoneColliderPowerArmorConvexRadiusScale = 1.0f;
-        rockBodyBoneColliderTorsoRadiusScale = 1.0f;
-        rockBodyBoneColliderArmRadiusScale = 1.0f;
-        rockBodyBoneColliderLegRadiusScale = 1.0f;
-        rockBodyBoneColliderFootRadiusScale = 1.0f;
-        rockBodyBoneColliderTorsoLengthScale = 1.0f;
-        rockBodyBoneColliderArmLengthScale = 1.0f;
-        rockBodyBoneColliderLegLengthScale = 1.0f;
-        rockBodyBoneColliderFootLengthScale = 1.0f;
-        rockBodyBoneColliderZoneScaleOverrides = "";
-        rockBodyBoneColliderRadiusScaleOverrides = "";
-        rockHandCollisionStaticWorldEnabled = true;
-        rockGlobalSurfaceGrabEnabled = true;
-        rockSurfaceMeshGrabEnabled = false;
-        rockSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
-        rockSurfaceMeshGrabMaxTriangles = 20000;
-        rockSurfaceMeshGrabMaxPatchTriangles = 2048;
-        rockHandBoneColliderRadiusScaleOverrides = "";
-        rockHandPalmColliderDimensionScaleOverrides = "";
-        rockHandBoneCollidersRequirePalmAnchor = true;
-        rockHandBoneColliderMaxLinearVelocity = 200.0f;
-        rockHandBoneColliderMaxAngularVelocity = 500.0f;
-
-        rockObjectPhysicsTreeMaxDepth = 12;
-        rockDynamicPushAssistEnabled = true;
-        rockDynamicPushMinSpeed = 0.35f;
-        rockDynamicPushMaxImpulse = 2.0f;
-        rockDynamicPushCooldownSeconds = 0.08f;
-
-        rockGrabLinearTau = 0.03f;
-        rockGrabLinearDamping = 0.8f;
-        rockGrabLinearProportionalRecovery = 2.0f;
-        rockGrabLinearConstantRecovery = 1.0f;
-
-        rockGrabAngularTau = 0.03f;
-        rockGrabAngularDamping = 0.8f;
-        rockGrabAngularProportionalRecovery = 2.0f;
-        rockGrabAngularConstantRecovery = 1.0f;
-
-        rockGrabConstraintMaxForce = 2000.0f;
-        rockGrabMaxForceToMassRatio = 500.0f;
-        rockForceGrabAttachSettleSeconds = 0.10f;
-        rockGrabEffectiveMotorMassFloorEnabled = true;
-        rockGrabEffectiveMotorMassFloor = kDefaultGrabEffectiveMotorMassFloor;
-        rockGrabPhysicsRateForceScalingEnabled = true;
-        rockGrabPhysicsRateReferenceHz = kDefaultGrabPhysicsRateReferenceHz;
-        rockGrabPhysicsRateForceScaleExponent = kDefaultGrabPhysicsRateForceScaleExponent;
-        rockGrabPhysicsRateMinForceScale = kDefaultGrabPhysicsRateMinForceScale;
-        rockGrabPhysicsRateMaxForceScale = kDefaultGrabPhysicsRateMaxForceScale;
-        rockGrabForceFadeInTime = 0.1f;
-        rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
-        rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
-        rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier;
-        rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier;
-        rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier;
-        rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier;
-        rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier;
-        rockGrabLooseWeaponSharedConstraintMaxForceMultiplier = kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier;
-        rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier;
-        rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier;
-        rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier;
-        rockGrabTauMin = 0.01f;
-        rockGrabTauLerpSpeed = 0.5f;
-        rockGrabLongObjectAngularScalingEnabled = true;
-        rockGrabLongObjectReferenceLeverGameUnits = kDefaultGrabLongObjectReferenceLeverGameUnits;
-        rockGrabLongObjectMinAngularScale = kDefaultGrabLongObjectMinAngularScale;
-        rockGrabPivotQualityAngularScalingEnabled = true;
-        rockGrabPositionOnlyAngularScale = kDefaultGrabPositionOnlyAngularScale;
-        rockGrabSmallObjectReferenceLeverGameUnits = kDefaultGrabSmallObjectReferenceLeverGameUnits;
-        rockGrabSmallObjectAngularScale = kDefaultGrabSmallObjectAngularScale;
-        rockGrabLowContactSupportAngularScale = kDefaultGrabLowContactSupportAngularScale;
-        rockGrabMinAngularAuthorityScale = kDefaultGrabMinAngularAuthorityScale;
-        rockGrabWeakPivotTwistScale = kDefaultGrabWeakPivotTwistScale;
-
-        rockGrabMaxInertiaRatio = 10.0f;
-        rockGrabMinInertia = kDefaultGrabMinInertia;
-
-        rockGrabMaxDeviation = 50.0f;
-        rockGrabMaxDeviationTime = 2.0f;
-        rockThrowVelocityMultiplier = 1.5f;
-        rockGrabControllerDerivedThrowVelocityEnabled = true;
-        rockGrabThrowObjectVelocityBlend = kDefaultGrabThrowObjectVelocityBlend;
-        rockGrabThrowTangentialVelocityScale = kDefaultGrabThrowTangentialVelocityScale;
-        rockGrabThrowMaxVelocityHavok = kDefaultGrabThrowMaxVelocityHavok;
-        rockGrabThrowAngularVelocityScale = kDefaultGrabThrowAngularVelocityScale;
-        rockGrabThrowMaxAngularVelocityRadiansPerSecond = kDefaultGrabThrowMaxAngularVelocityRadiansPerSecond;
-        rockGrabReleaseHandCollisionDelaySeconds = 0.10f;
-        rockShoulderStashEnabled = true;
-        rockEquippedWeaponShoulderStashEnabled = true;
-        rockShoulderStashUseBodyZoneColliders = true;
-        rockShoulderStashUseHmdBackVolume = true;
-        rockShoulderStashEnterPaddingGameUnits = 5.0f;
-        rockShoulderStashExitPaddingGameUnits = 8.0f;
-        rockShoulderStashMinDwellSeconds = 0.08f;
-        rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
-        rockShoulderStashRecentContactSeconds = 4.0f / 90.0f;
-        rockShoulderStashSustainedContactMissSeconds = 18.0f / 90.0f;
-        rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(14.0f, -18.0f, -6.85f);
-        rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-14.0f, -18.0f, -6.85f);
-        rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
-        rockShoulderStashHmdBackEnterPaddingGameUnits = 0.0f;
-        rockShoulderStashHmdBackExitPaddingGameUnits = 2.0f;
-        rockShoulderStashHmdBackMinBehindGameUnits = 4.0f;
-        rockShoulderStashShowCollectedNotifications = true;
-        rockMouthConsumeEnabled = true;
-        rockMouthConsumeAllowPoison = false;
-        rockMouthConsumeHmdOffsetGameUnits = RE::NiPoint3(0.0f, 7.0f, -7.0f);
-        rockMouthConsumeRadiusGameUnits = 5.5f;
-        rockMouthConsumeEnterPaddingGameUnits = 0.0f;
-        rockMouthConsumeExitPaddingGameUnits = 1.0f;
-        rockMouthConsumeMinDwellSeconds = 0.08f;
-        rockMouthConsumeMaxSpeedGameUnitsPerSecond = 120.0f;
-        rockGrabNearbyDampingEnabled = true;
-        rockGrabNearbyDampingRadius = 90.0f;
-        rockGrabNearbyDampingSeconds = 0.35f;
-        rockGrabNearbyLinearDamping = 3.0f;
-        rockGrabNearbyAngularDamping = 5.5f;
-        rockGrabHeldMassMovementSlowdownEnabled = true;
-        rockGrabHeldMassMovementMassProportion = 0.675f;
-        rockGrabHeldMassMovementMassExponent = 1.0f;
-        rockGrabHeldMassMovementMaxReduction = 75.0f;
-        rockGrabHeldMassMovementFadeOutSeconds = 5.0f;
-        rockGrabTouchAcquireDistanceGameUnits = 4.0f;
-        rockGrabNearConvergeDistanceGameUnits = 28.0f;
-        rockGrabPocketDepthGameUnits = 7.0f;
-        rockGrabPocketRadiusGameUnits = 9.0f;
-        rockGrabSeatDepthMaxGameUnits = 30.0f;
-        rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
-        rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
-        rockGrabSeatDepthSkinGameUnits = 0.5f;
-        rockGrabGripInsetGameUnits = 2.0f;
-        rockGrabGripMaxInsetGameUnits = 6.0f;
-        rockGrabConvergeMaxTimeSeconds = 0.35f;
-        rockGrabConvergeStableSeconds = 3.0f / 90.0f;
-        rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
-        rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
-        rockGrabMultiFingerContactValidationEnabled = true;
-        rockGrabContactQualityMode = 1;
-        rockGrabMinFingerContactGroups = 3;
-        rockGrabMinFingerContactSpreadGameUnits = 1.0f;
-        rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
-        rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
-        rockGrabOppositionContactMaxAgeSeconds = 5.0f / 90.0f;
-        rockGrabPinchPocketEnabled = true;
-        rockGrabPinchCloseSelectionEnabled = true;
-        rockGrabPinchCompactMaxExtentGameUnits = grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits;
-        rockGrabPinchThinRodMaxLengthGameUnits = grab_pinch_pocket_policy::kDefaultThinRodMaxLengthGameUnits;
-        rockGrabPinchThinRodMaxCrossSectionGameUnits = grab_pinch_pocket_policy::kDefaultThinRodMaxCrossSectionGameUnits;
-        rockGrabPinchMaxPocketDistanceGameUnits = grab_pinch_pocket_policy::kDefaultMaxPocketDistanceGameUnits;
-        rockGrabPinchMinFingerGapGameUnits = grab_pinch_pocket_policy::kDefaultMinFingerGapGameUnits;
-        rockGrabPinchMaxFingerGapGameUnits = grab_pinch_pocket_policy::kDefaultMaxFingerGapGameUnits;
-        rockGrabPinchThumbIndexMaxOpenValue = grab_pinch_pocket_policy::kDefaultThumbIndexMaxOpenValue;
-        rockGrabPinchOtherFingerCurlValue = grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue;
-        rockGrabPinchSurfaceInsetGameUnits = grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits;
-        rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3(grab_pinch_pocket_policy::kDefaultDetectionDirectionHandspaceX,
-            grab_pinch_pocket_policy::kDefaultDetectionDirectionHandspaceY,
-            grab_pinch_pocket_policy::kDefaultDetectionDirectionHandspaceZ);
-        rockGrabPinchDetectionAxisBlend = grab_pinch_pocket_policy::kDefaultDetectionAxisBlend;
-        rockGrabHandLerpEnabled = true;
-        rockGrabHandLerpTimeMin = 0.10f;
-        rockGrabHandLerpTimeMax = 0.20f;
-        rockGrabHandLerpMinDistance = 7.0f;
-        rockGrabHandLerpMaxDistance = 14.0f;
-        rockGrabHandReturnEnabled = true;
-        rockGrabHandReturnTimeMin = 0.10f;
-        rockGrabHandReturnTimeMax = 0.20f;
-        rockGrabHandReturnMinDistance = 7.0f;
-        rockGrabHandReturnMaxDistance = 14.0f;
-        rockGrabHandReturnMinAngleDegrees = 5.0f;
-        rockGrabHandReturnMaxAngleDegrees = 90.0f;
-        rockGrabMeshFingerPoseEnabled = true;
-        rockGrabMeshJointPoseEnabled = true;
-        rockGrabFingerPoseUpdateInterval = 3;
-        rockGrabFingerMinValue = 0.2f;
-        rockGrabFingerPoseSmoothingSpeed = 14.0f;
-        rockGrabMeshLocalTransformPoseEnabled = true;
-        rockGrabFingerLocalTransformSmoothingSpeed = 14.0f;
-        rockGrabFingerLocalTransformMaxCorrectionDegrees = 35.0f;
-        rockGrabFingerSurfaceAimStrength = 0.75f;
-        rockGrabFingerRejectBacksideHits = true;
-        rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
-        rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
-        rockGrabFingerSweepMaxOpenValue = 2.0f;
-        rockGrabThumbSweepMaxOpenValue = 2.0f;
-        rockGrabFingerPoseResolveWindowSeconds = 2.0f;
-        rockGrabThumbOppositionStrength = 1.0f;
-        rockGrabThumbAlternateCurveStrength = 0.65f;
-        rockGrabThumbSurfaceSafetyEnabled = true;
-        rockGrabThumbSurfaceSafetyMarginGameUnits = kDefaultGrabThumbSurfaceSafetyMarginGameUnits;
-        rockGrabLateralWeight = 0.6f;
-        rockGrabDirectionalWeight = 0.4f;
-        rockGrabMaxTriangleDistance = 100.0f;
-        rockGrabMeshContactOnly = true;
-        rockGrabRequireMeshContact = true;
-        rockGrabContactPatchEnabled = true;
-        rockGrabContactPatchProbeCount = 9;
-        rockGrabContactPatchProbeSpacingGameUnits = 3.0f;
-        rockGrabContactPatchProbeRadiusGameUnits = 2.0f;
-        rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
-        rockGrabContactPatchMaxNormalAngleDegrees = 35.0f;
-        rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
-        rockSelectedCloseFingerCurlEnabled = true;
-        rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
-        rockSelectedCloseFingerAnimValue = 0.9f;
-        rockPullToObjectCenterEnabled = true;
-        rockPullLongAxisPresentationEnabled = true;
-        rockForceGrabSeatAlignmentEnabled = true;
-        rockPullPresentationMinElongationRatio = 2.0f;
-        rockPullPresentationAngularGainPerSecond = 6.0f;
-        rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
-        rockPullPresentationGripAxisTiltDegrees = 10.0f;
-
-        rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
-        rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
-
-        rockGrabHapticsEnabled = true;
-        rockGrabHapticDurationSeconds = 0.055f;
-        rockGrabHapticBaseIntensity = 0.12f;
-        rockGrabHapticMaxIntensity = 0.80f;
-        rockGrabHapticMassScale = 0.06f;
-        rockGrabHapticMassExponent = 0.60f;
-        rockPullStartHapticIntensity = 0.18f;
-        rockPullCatchHapticIntensity = 0.22f;
-        rockSelectionLockHapticIntensity = 0.15f;
-        rockSelectionLockReleaseHapticIntensity = 0.10f;
-        rockSelectionLockReleaseHapticDurationSeconds = 0.02f;
-        rockSurfaceGrabHapticsEnabled = true;
-        rockSurfaceGrabHapticDurationSeconds = 0.075f;
-        rockSurfaceGrabHapticIntensity = 0.85f;
-        rockHeldImpactHapticsEnabled = true;
-        rockHeldImpactHapticDurationSeconds = 0.035f;
-        rockHeldImpactHapticBaseIntensity = 0.12f;
-        rockHeldImpactHapticMaxIntensity = 0.85f;
-        rockHeldImpactHapticSpeedScale = 0.006f;
-        rockHeldImpactHapticMassScale = 0.035f;
-        rockHeldImpactHapticMassExponent = 0.55f;
-        rockHeldImpactHapticMinSpeedGameUnits = 8.0f;
-        rockHeldImpactHapticCooldownSeconds = 0.12f;
-        rockHeldImpactHapticDampedMultiplier = 0.55f;
-        rockShoulderStashHapticsEnabled = true;
-        rockShoulderStashCandidateHapticDurationSeconds = 0.075f;
-        rockShoulderStashCandidateHapticBaseIntensity = 0.20f;
-        rockShoulderStashCandidateHapticIntensity = 0.42f;
-        rockShoulderStashCandidateHapticIntervalSeconds = 0.075f;
-        rockShoulderStashCommitHapticDurationSeconds = 0.12f;
-        rockShoulderStashCommitHapticIntensity = 0.85f;
-        rockMouthConsumeHapticsEnabled = true;
-        rockMouthConsumeCandidateHapticDurationSeconds = 0.050f;
-        rockMouthConsumeCandidateHapticBaseIntensity = 0.22f;
-        rockMouthConsumeCandidateHapticIntensity = 0.45f;
-        rockMouthConsumeCandidateHapticIntervalSeconds = 0.075f;
-        rockMouthConsumeCommitHapticDurationSeconds = 0.12f;
-        rockMouthConsumeCommitHapticIntensity = 0.85f;
-
+        static_cast<RockConfigValues&>(*this) = RockConfigValues{};
     }
 
     void RockConfig::readValuesFromIni(
@@ -2330,7 +1905,6 @@ namespace rock
             return false;
         }
         _selfIniWriteInProgress.store(true, std::memory_order_release);
-        suppressNextFileWatchReload();
 
         const SI_Error saveRc = ini.SaveFile(path.c_str(), false);
         std::error_code ec;
@@ -2341,7 +1915,6 @@ namespace rock
         }
 
         _selfIniWriteInProgress.store(false, std::memory_order_release);
-        _ignoreNextIniFileChange.store(false, std::memory_order_release);
 
         if (saveRc < 0) {
             ROCK_LOG_WARN(Config, "Failed to persist ROCK.ini runtime change '{}' (code {})", reason ? reason : "unknown", static_cast<int>(saveRc));
@@ -2439,69 +2012,51 @@ namespace rock
             return;
         }
 
-        if (_fileWatchInitThread.joinable()) {
-            _fileWatchInitThread.join();
-        }
+        ROCK_LOG_DEBUG(Config, "Starting file watch on '{}'", _iniFilePath);
+        _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_iniFilePath, [this](const std::string&, const filewatch::Event changeType) {
+            if (changeType != filewatch::Event::modified &&
+                changeType != filewatch::Event::added &&
+                changeType != filewatch::Event::renamed_new) {
+                return;
+            }
 
-        _fileWatchInitThread = std::thread([this]() {
-            ROCK_LOG_DEBUG(Config, "Starting file watch on '{}'", _iniFilePath);
+            constexpr auto delay = std::chrono::milliseconds(200);
 
-            _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_iniFilePath, [this](const std::string&, const filewatch::Event changeType) {
-                if (changeType != filewatch::Event::modified &&
-                    changeType != filewatch::Event::added &&
-                    changeType != filewatch::Event::renamed_new) {
-                    return;
+            auto prevWriteTime = _lastIniFileWriteTime.load();
+            std::error_code ec;
+            const auto writeTime = std::filesystem::last_write_time(_iniFilePath, ec);
+            if (ec || writeTime - prevWriteTime < delay) {
+                return;
+            }
+
+            const auto selfWriteTime = _lastSelfIniWriteTime.load(std::memory_order_acquire);
+            if (_selfIniWriteInProgress.load(std::memory_order_acquire) ||
+                (selfWriteTime != std::filesystem::file_time_type{} && writeTime <= selfWriteTime)) {
+                _lastIniFileWriteTime.store(writeTime, std::memory_order_release);
+                if (!_selfIniWriteInProgress.load(std::memory_order_acquire)) {
+                    _lastSelfIniWriteTime.store(std::filesystem::file_time_type{}, std::memory_order_release);
                 }
+                return;
+            }
 
-                constexpr auto delay = std::chrono::milliseconds(200);
+            if (!_lastIniFileWriteTime.compare_exchange_strong(prevWriteTime, writeTime)) {
+                return;
+            }
 
-                auto prevWriteTime = _lastIniFileWriteTime.load();
-                std::error_code ec;
-                const auto writeTime = std::filesystem::last_write_time(_iniFilePath, ec);
-                if (ec || writeTime - prevWriteTime < delay) {
-                    return;
-                }
+            auto now = std::filesystem::file_time_type::clock::now();
+            auto lastEventTime = _lastIniFileWriteTime.load();
+            while (now - lastEventTime < delay) {
+                std::this_thread::sleep_for(std::max(std::chrono::milliseconds(0), std::chrono::duration_cast<std::chrono::milliseconds>(delay - (now - lastEventTime))));
+                now = std::filesystem::file_time_type::clock::now();
+                lastEventTime = _lastIniFileWriteTime.load();
+            }
 
-                const auto selfWriteTime = _lastSelfIniWriteTime.load(std::memory_order_acquire);
-                if (_selfIniWriteInProgress.load(std::memory_order_acquire) ||
-                    (selfWriteTime != std::filesystem::file_time_type{} && writeTime <= selfWriteTime)) {
-                    _lastIniFileWriteTime.store(writeTime, std::memory_order_release);
-                    if (!_selfIniWriteInProgress.load(std::memory_order_acquire)) {
-                        _lastSelfIniWriteTime.store(std::filesystem::file_time_type{}, std::memory_order_release);
-                    }
-                    _ignoreNextIniFileChange.store(false, std::memory_order_release);
-                    return;
-                }
-
-                if (!_lastIniFileWriteTime.compare_exchange_strong(prevWriteTime, writeTime)) {
-                    return;
-                }
-
-                bool expected = true;
-                if (_ignoreNextIniFileChange.compare_exchange_strong(expected, false)) {
-                    return;
-                }
-
-                auto now = std::filesystem::file_time_type::clock::now();
-                auto lastEventTime = _lastIniFileWriteTime.load();
-                while (now - lastEventTime < delay) {
-                    std::this_thread::sleep_for(std::max(std::chrono::milliseconds(0), std::chrono::duration_cast<std::chrono::milliseconds>(delay - (now - lastEventTime))));
-                    now = std::filesystem::file_time_type::clock::now();
-                    lastEventTime = _lastIniFileWriteTime.load();
-                }
-
-                _reloadPending.store(true, std::memory_order_release);
-            });
+            _reloadPending.store(true, std::memory_order_release);
         });
-
-        _fileWatchInitThread.join();
     }
 
     void RockConfig::stopFileWatch()
     {
-        if (_fileWatchInitThread.joinable()) {
-            _fileWatchInitThread.join();
-        }
         if (_fileWatch) {
             ROCK_LOG_DEBUG(Config, "Stopping file watch on ROCK.ini");
             _fileWatch.reset();

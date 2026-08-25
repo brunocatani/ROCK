@@ -1421,6 +1421,9 @@ namespace rock::pull_motion_math
     inline constexpr float kMaximumVelocityHavok = 10.0f;
     inline constexpr float kAutoGrabDistanceGameUnits = 18.0f;
     inline constexpr float kCatchRetryMaximumTimeSeconds = 0.65f;
+    // Actor-equipment materialization is a separate lifecycle even though its
+    // current timeout matches pull-catch retry tuning.
+    inline constexpr float kActorEquipmentHandoffMaximumTimeSeconds = 0.65f;
     inline constexpr bool kCatchWideReacquireEnabled = true;
     inline constexpr float kCatchWideReacquireRadiusGameUnits = 32.0f;
     inline constexpr float kCatchWideReacquireMaximumBodyDistanceGameUnits = 42.0f;
@@ -1434,11 +1437,6 @@ namespace rock::pull_motion_math
         Vec3 previousTargetHavok{};
         float elapsedSeconds = 0.0f;
         float durationSeconds = 0.0f;
-        float applyVelocitySeconds = kApplyVelocitySeconds;
-        float ownerGraceSeconds = kOwnerGraceSeconds;
-        float trackHandSeconds = kTrackHandSeconds;
-        float destinationOffsetHavok = kDestinationZOffsetHavok;
-        float maxVelocityHavok = kMaximumVelocityHavok;
         bool hasPreviousTarget = false;
     };
 
@@ -1453,22 +1451,19 @@ namespace rock::pull_motion_math
         bool expired = false;
     };
 
-    inline float computePullDurationSeconds(float distanceHavok, float a, float b, float c)
+    inline float computePullDurationSeconds(float distanceHavok)
     {
         const float clampedDistance = (std::max)(0.0f, distanceHavok);
-        return (std::max)(0.001f, a + b * std::exp(-c * clampedDistance));
+        return (std::max)(0.001f, kDurationA + kDurationB * std::exp(-kDurationC * clampedDistance));
     }
 
-    inline float angularVelocityKeepForDamping(float damping, float deltaTime)
+    inline float angularVelocityKeepForDamping(float deltaTime)
     {
-        if (!std::isfinite(damping) || damping <= 0.0f) {
-            return 1.0f;
-        }
         if (!std::isfinite(deltaTime) || deltaTime <= 0.0f) {
             // Unmeasured frame: no elapsed time, no damping decay.
             return 1.0f;
         }
-        return 1.0f / (1.0f + damping * deltaTime);
+        return 1.0f / (1.0f + kAngularDamping * deltaTime);
     }
 
     template <class Vec3>
@@ -1507,25 +1502,22 @@ namespace rock::pull_motion_math
          */
         const float elapsedSeconds = std::isfinite(input.elapsedSeconds) ? (std::max)(0.0f, input.elapsedSeconds) : 0.0f;
         const float durationSeconds = std::isfinite(input.durationSeconds) ? (std::max)(0.0f, input.durationSeconds) : 0.0f;
-        const float applyVelocitySeconds = std::isfinite(input.applyVelocitySeconds) ? (std::max)(0.0f, input.applyVelocitySeconds) : 0.0f;
-        const float ownerGraceSeconds = std::isfinite(input.ownerGraceSeconds) ? (std::max)(0.0f, input.ownerGraceSeconds) : 0.0f;
-        const float trackHandSeconds = std::isfinite(input.trackHandSeconds) ? (std::max)(0.0f, input.trackHandSeconds) : 0.0f;
 
         PullMotionResult<Vec3> result{};
-        result.refreshTarget = !input.hasPreviousTarget || elapsedSeconds <= trackHandSeconds;
+        result.refreshTarget = !input.hasPreviousTarget || elapsedSeconds <= kTrackHandSeconds;
         result.targetHavok = result.refreshTarget ? input.handHavok : input.previousTargetHavok;
         if (result.refreshTarget) {
-            result.targetHavok.z += input.destinationOffsetHavok;
+            result.targetHavok.z += kDestinationZOffsetHavok;
         }
 
-        if (elapsedSeconds > durationSeconds + ownerGraceSeconds) {
+        if (elapsedSeconds > durationSeconds + kOwnerGraceSeconds) {
             result.expired = true;
             return result;
         }
 
         const float rawDurationRemainingSeconds = durationSeconds - elapsedSeconds;
         result.durationRemainingSeconds = (std::max)(0.0f, rawDurationRemainingSeconds);
-        if (elapsedSeconds > applyVelocitySeconds || rawDurationRemainingSeconds <= 0.001f) {
+        if (elapsedSeconds > kApplyVelocitySeconds || rawDurationRemainingSeconds <= 0.001f) {
             return result;
         }
 
@@ -1539,7 +1531,7 @@ namespace rock::pull_motion_math
         result.velocityHavok.x = horizontalDelta.x / result.durationRemainingSeconds;
         result.velocityHavok.y = horizontalDelta.y / result.durationRemainingSeconds;
         result.velocityHavok.z = 0.5f * 9.81f * result.durationRemainingSeconds + verticalDelta / result.durationRemainingSeconds;
-        result.velocityHavok = clampLength(result.velocityHavok, input.maxVelocityHavok);
+        result.velocityHavok = clampLength(result.velocityHavok, kMaximumVelocityHavok);
         result.applyVelocity = true;
         return result;
     }

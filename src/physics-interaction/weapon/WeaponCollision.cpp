@@ -18,6 +18,7 @@
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
+#include "physics-interaction/weapon/WeaponOmodSceneScan.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
@@ -5352,7 +5353,6 @@ namespace rock
         std::uint32_t totalVisitedShapes = 0;
         std::uint32_t totalExtractedTriangles = 0;
         std::uint32_t totalCulledForEffectGeometry = 0;
-        constexpr auto groupingMode = weapon_collision_grouping_policy::kProductionWeaponCollisionGroupingMode;
         for (const auto& candidate : candidates) {
             std::vector<GeneratedHullSource> candidateSources;
             std::unordered_set<std::uintptr_t> candidateExtractedSourceGroups;
@@ -5379,7 +5379,7 @@ namespace rock
                 safeNodeName(candidate.root),
                 reinterpret_cast<std::uintptr_t>(candidate.root),
                 safeNodeName(packageDriveRoot),
-                weapon_collision_grouping_policy::weaponCollisionGroupingModeName(groupingMode),
+                weapon_collision_grouping_policy::kProductionWeaponCollisionGroupingName,
                 candidateExtractedSourceGroups.size(),
                 visitedShapes,
                 extractedTriangles,
@@ -6649,30 +6649,10 @@ namespace rock
 
     namespace
     {
-        constexpr std::size_t OMOD_AUDIT_MAX_MATCHES_PER_TOKEN = 8;
-        constexpr std::size_t OMOD_AUDIT_MAX_CONNECT_POINT_MATCHES = 64;
         constexpr std::size_t OMOD_AUDIT_MAX_LOGGED_MATCHES_PER_OMOD = 3;
 
-        struct OmodAuditNodeMatch
-        {
-            RE::NiAVObject* node{ nullptr };
-            const char* rootLabel{ "" };
-        };
-
-        struct OmodAuditTokenSlot
-        {
-            std::string lowerToken;
-            /*
-             * Word-set fallback: mesh authors reorder basename words
-             * ('AK74_HG_Lower.nif' vs node 'AK74_Lower_HG'), which made exact
-             * substring matching report false NODE_NOT_FOUND. A node matches
-             * when every basename word appears somewhere in its name. False
-             * NODE_NOT_FOUND must stay rare because the self-heal uses that
-             * verdict as its trigger.
-             */
-            std::vector<std::string> lowerWords;
-            std::vector<OmodAuditNodeMatch> matches;
-        };
+        using OmodAuditNodeMatch = weapon_omod_scene_scan::NodeMatch;
+        using OmodAuditTokenSlot = weapon_omod_scene_scan::TokenSlot;
 
         struct OmodAuditRecord
         {
@@ -6686,171 +6666,6 @@ namespace rock
             std::string name;
             std::string modelPath;
         };
-
-        char omodAuditToLowerAscii(char c)
-        {
-            return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
-        }
-
-        /*
-         * Search token = OMOD model NIF basename without extension, lowered.
-         * Node names authored from the model file usually contain this token;
-         * mesh-internal names may not, which is why the connect-point census
-         * below exists as the structural fallback.
-         */
-        std::string makeOmodAuditModelToken(const char* modelPath)
-        {
-            if (!modelPath || modelPath[0] == '\0') {
-                return {};
-            }
-            const char* base = modelPath;
-            for (const char* cursor = modelPath; *cursor; ++cursor) {
-                if (*cursor == '\\' || *cursor == '/') {
-                    base = cursor + 1;
-                }
-            }
-            std::string token(base);
-            const auto dot = token.find_last_of('.');
-            if (dot != std::string::npos) {
-                token.resize(dot);
-            }
-            for (auto& c : token) {
-                c = omodAuditToLowerAscii(c);
-            }
-            return token;
-        }
-
-        // Allocation-free case-insensitive substring test against a pre-lowered token.
-        bool omodAuditNameContainsToken(const char* name, const std::string& lowerToken)
-        {
-            if (!name || lowerToken.empty()) {
-                return false;
-            }
-            const std::size_t tokenLength = lowerToken.size();
-            for (const char* cursor = name; *cursor; ++cursor) {
-                std::size_t i = 0;
-                while (i < tokenLength) {
-                    const char c = cursor[i];
-                    if (c == '\0' || omodAuditToLowerAscii(c) != lowerToken[i]) {
-                        break;
-                    }
-                    ++i;
-                }
-                if (i == tokenLength) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        bool omodAuditNameIsConnectPoint(const char* name)
-        {
-            return name && (name[0] == 'P' || name[0] == 'p') && name[1] == '-';
-        }
-
-        std::vector<std::string> makeOmodAuditTokenWords(const std::string& lowerToken)
-        {
-            std::vector<std::string> words;
-            std::string current;
-            for (const char c : lowerToken) {
-                if (c == '_' || c == '-' || c == ' ') {
-                    if (current.size() >= 2) {
-                        words.push_back(current);
-                    }
-                    current.clear();
-                } else {
-                    current += c;
-                }
-            }
-            if (current.size() >= 2) {
-                words.push_back(current);
-            }
-            // A single word degenerates to the substring test; two or more
-            // words are required for the reordered-words fallback to add
-            // signal instead of noise.
-            if (words.size() < 2) {
-                words.clear();
-            }
-            return words;
-        }
-
-        bool omodAuditNameMatchesTokenSlot(const char* name, const OmodAuditTokenSlot& slot)
-        {
-            if (omodAuditNameContainsToken(name, slot.lowerToken)) {
-                return true;
-            }
-            if (slot.lowerWords.empty()) {
-                return false;
-            }
-            for (const auto& word : slot.lowerWords) {
-                if (!omodAuditNameContainsToken(name, word)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        bool omodAuditMatchesContainNode(const std::vector<OmodAuditNodeMatch>& matches, const RE::NiAVObject* node)
-        {
-            for (const auto& match : matches) {
-                if (match.node == node) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /*
-         * One walk per root evaluates every OMOD token plus the P-* connect
-         * point predicate, instead of one walk per (root, token) pair. Matches
-         * deduplicate across roots by node address because the weapon subtree
-         * is reachable from several of the audited roots.
-         */
-        void scanOmodAuditTreeRecursive(
-            RE::NiAVObject* node,
-            std::uint32_t depth,
-            std::size_t& visited,
-            std::size_t maxVisited,
-            const char* rootLabel,
-            std::vector<OmodAuditTokenSlot>& tokenSlots,
-            std::vector<OmodAuditNodeMatch>& connectPointMatches)
-        {
-            if (!node || visited >= maxVisited || depth > WEAPON_ANIM_NODE_DUMP_MAX_DEPTH) {
-                return;
-            }
-            ++visited;
-
-            const char* name = node->name.c_str();
-            if (name && name[0] != '\0') {
-                if (omodAuditNameIsConnectPoint(name) &&
-                    connectPointMatches.size() < OMOD_AUDIT_MAX_CONNECT_POINT_MATCHES &&
-                    !omodAuditMatchesContainNode(connectPointMatches, node)) {
-                    connectPointMatches.push_back(OmodAuditNodeMatch{ node, rootLabel });
-                }
-                for (auto& slot : tokenSlots) {
-                    if (slot.lowerToken.empty() || slot.matches.size() >= OMOD_AUDIT_MAX_MATCHES_PER_TOKEN) {
-                        continue;
-                    }
-                    if (!omodAuditNameMatchesTokenSlot(name, slot)) {
-                        continue;
-                    }
-                    if (!omodAuditMatchesContainNode(slot.matches, node)) {
-                        slot.matches.push_back(OmodAuditNodeMatch{ node, rootLabel });
-                    }
-                }
-            }
-
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return;
-            }
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                if (auto* child = children[i].get()) {
-                    scanOmodAuditTreeRecursive(child, depth + 1, visited, maxVisited, rootLabel, tokenSlots, connectPointMatches);
-                }
-            }
-        }
 
         // Path is rebuilt from the parent chain only for matched nodes, so the
         // scan itself stays allocation-free per visited node.
@@ -8006,8 +7821,12 @@ namespace rock
 
         std::vector<OmodAuditTokenSlot> tokenSlots(records.size());
         for (std::size_t i = 0; i < records.size(); ++i) {
-            tokenSlots[i].lowerToken = makeOmodAuditModelToken(records[i].modelPath.c_str());
-            tokenSlots[i].lowerWords = makeOmodAuditTokenWords(tokenSlots[i].lowerToken);
+            tokenSlots[i].lowerToken =
+                weapon_omod_scene_scan::makeModelToken(
+                    records[i].modelPath.c_str());
+            tokenSlots[i].lowerWords =
+                weapon_omod_scene_scan::makeTokenWords(
+                    tokenSlots[i].lowerToken);
         }
         /*
          * Extra census slot: assembled weapon roots are named
@@ -8031,7 +7850,7 @@ namespace rock
         };
         auto* playerNodes = f4vr::getPlayerNodes();
         std::vector<OmodAuditRoot> roots;
-        roots.reserve(6);
+        roots.reserve(16);
         const auto addRoot = [&roots](const char* label, RE::NiAVObject* root, std::size_t maxVisited) {
             if (!root) {
                 return;
@@ -8043,27 +7862,20 @@ namespace rock
             }
             roots.push_back(OmodAuditRoot{ label, root, maxVisited });
         };
-        // Weapon-local roots stay on the shared dump budget; the skeleton and
-        // full scene roots get a deep budget because the rendered weapon
-        // instance may sit beyond 4096 nodes (cap saturation is logged below).
+        // Functional reconciliation uses exactly the visual roots consumed by
+        // generated collider capture. The expensive scene-wide census remains
+        // available only through the explicit coverage diagnostic.
         constexpr std::size_t kOmodAuditDeepRootMaxVisited = 32768;
-        // 2026-07-04 session 2 proved the renderer draws a weapon copy that is
-        // in NEITHER instance reachable from the roots below (parts render
-        // while absent, and the whole weapon can vanish while both instances
-        // stay visible-flagged). The absolute scene root — reached by climbing
-        // parents from the update weapon node to the top 'WorldRoot Node' —
-        // covers everything parented into the loaded scene and gets a very
-        // deep budget to find that copy.
         constexpr std::size_t kOmodAuditSceneRootMaxVisited = 262144;
-        addRoot("updateWeaponNode", weaponNode, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
-        addRoot("firstPersonSkeleton:Weapon", f4vr::getWeaponNode(), WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
-        addRoot("PlayerNodes.primaryWeapontoWeaponNode", playerNodes ? playerNodes->primaryWeapontoWeaponNode : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
-        addRoot("PlayerNodes.primaryWeaponOffsetNode", playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
-        addRoot("PlayerNodes.playerworldnode", playerNodes ? playerNodes->playerworldnode : nullptr, kOmodAuditDeepRootMaxVisited);
-        addRoot("PlayerNodes.roomnode", playerNodes ? playerNodes->roomnode : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
-        addRoot("firstPersonSkeleton", f4vr::getFirstPersonSkeleton(), kOmodAuditDeepRootMaxVisited);
-        addRoot("playerFadeRootNode", f4vr::getWorldRootNode(), kOmodAuditDeepRootMaxVisited);
-        addRoot("gameRootNode", f4vr::getRootNode(), kOmodAuditDeepRootMaxVisited);
+        visitGeneratedWeaponMeshRootCandidates(
+            weaponNode,
+            [&](const WeaponMeshRootCandidate& candidate) {
+                addRoot(
+                    candidate.label,
+                    candidate.root,
+                    WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+            });
+
         const auto climbToAbsoluteRoot = [](RE::NiAVObject* node) -> RE::NiAVObject* {
             if (!node) {
                 return nullptr;
@@ -8073,20 +7885,18 @@ namespace rock
             }
             return node;
         };
-        RE::NiAVObject* absoluteSceneRoot = climbToAbsoluteRoot(weaponNode);
-        addRoot("absoluteSceneRoot", absoluteSceneRoot, kOmodAuditSceneRootMaxVisited);
-        /*
-         * Scene-root topology probe (2026-07-04 session 3): the rendered
-         * weapon copy is in NEITHER census instance and the WorldRoot-wide
-         * scan never hits its cap, so the rendered copy must hang under a
-         * sibling scene root. Climb from every player/camera anchor that can
-         * live outside WorldRoot; addRoot dedup makes converging climbs free,
-         * and the topology lines below prove which anchors share a graph.
-         */
-        addRoot("fpSkeletonAbsoluteRoot", climbToAbsoluteRoot(f4vr::getFirstPersonSkeleton()), kOmodAuditSceneRootMaxVisited);
-        addRoot("playerWorldAbsoluteRoot", climbToAbsoluteRoot(playerNodes ? playerNodes->playerworldnode : nullptr), kOmodAuditSceneRootMaxVisited);
         auto* playerCamera = f4vr::getPlayerCamera();
-        addRoot("cameraAbsoluteRoot", climbToAbsoluteRoot(playerCamera ? playerCamera->cameraRoot.get() : nullptr), kOmodAuditSceneRootMaxVisited);
+        if (emitCoverageDiagnostics) {
+            addRoot("PlayerNodes.playerworldnode", playerNodes ? playerNodes->playerworldnode : nullptr, kOmodAuditDeepRootMaxVisited);
+            addRoot("PlayerNodes.roomnode", playerNodes ? playerNodes->roomnode : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+            addRoot("firstPersonSkeleton", f4vr::getFirstPersonSkeleton(), kOmodAuditDeepRootMaxVisited);
+            addRoot("playerFadeRootNode", f4vr::getWorldRootNode(), kOmodAuditDeepRootMaxVisited);
+            addRoot("gameRootNode", f4vr::getRootNode(), kOmodAuditDeepRootMaxVisited);
+            addRoot("absoluteSceneRoot", climbToAbsoluteRoot(weaponNode), kOmodAuditSceneRootMaxVisited);
+            addRoot("fpSkeletonAbsoluteRoot", climbToAbsoluteRoot(f4vr::getFirstPersonSkeleton()), kOmodAuditSceneRootMaxVisited);
+            addRoot("playerWorldAbsoluteRoot", climbToAbsoluteRoot(playerNodes ? playerNodes->playerworldnode : nullptr), kOmodAuditSceneRootMaxVisited);
+            addRoot("cameraAbsoluteRoot", climbToAbsoluteRoot(playerCamera ? playerCamera->cameraRoot.get() : nullptr), kOmodAuditSceneRootMaxVisited);
+        }
 
         /*
          * Engine biped-slot ground truth (raw disasm 2026-07-04, two sources:
@@ -8105,7 +7915,7 @@ namespace rock
             const auto value = reinterpret_cast<std::uintptr_t>(pointer);
             return value >= 0x10000 && (value & 7) == 0;
         };
-        if (player && plausiblePointer(player)) {
+        if (emitCoverageDiagnostics && player && plausiblePointer(player)) {
             const auto* vtbl = *reinterpret_cast<std::uintptr_t* const*>(player);
             if (plausiblePointer(vtbl)) {
                 using GetBipedFn = void** (*)(void*, bool);
@@ -8203,9 +8013,19 @@ namespace rock
             }
         }
 
+        std::unordered_set<std::uintptr_t> visitedNodeAddresses;
+        visitedNodeAddresses.reserve(8192);
         for (const auto& root : roots) {
             std::size_t visited = 0;
-            scanOmodAuditTreeRecursive(root.root, 0, visited, root.maxVisited, root.label, tokenSlots, connectPointMatches);
+            weapon_omod_scene_scan::scanTree(
+                root.root,
+                root.maxVisited,
+                WEAPON_ANIM_NODE_DUMP_MAX_DEPTH,
+                root.label,
+                visitedNodeAddresses,
+                tokenSlots,
+                connectPointMatches,
+                visited);
             if (emitCoverageDiagnostics) {
                 ROCK_LOG_INFO(Weapon,
                     "OMOD-AUDIT scan root='{}' addr={:x} visitedNodes={} capHit={}",
@@ -8385,14 +8205,20 @@ namespace rock
                     const char* boneName = transform.name.c_str();
                     auto* refNode = transform.refNode;
                     const char* refNodeName = safeNodeName(refNode);
-                    bool matched = omodAuditNameIsConnectPoint(boneName) || omodAuditNameIsConnectPoint(refNodeName);
+                    bool matched =
+                        weapon_omod_scene_scan::nameIsConnectPoint(boneName) ||
+                        weapon_omod_scene_scan::nameIsConnectPoint(refNodeName);
                     if (!matched) {
                         for (const auto& slot : tokenSlots) {
                             if (slot.lowerToken.empty()) {
                                 continue;
                             }
-                            if (omodAuditNameContainsToken(boneName, slot.lowerToken) ||
-                                omodAuditNameContainsToken(refNodeName, slot.lowerToken)) {
+                            if (weapon_omod_scene_scan::nameContainsToken(
+                                    boneName,
+                                    slot.lowerToken) ||
+                                weapon_omod_scene_scan::nameContainsToken(
+                                    refNodeName,
+                                    slot.lowerToken)) {
                                 matched = true;
                                 break;
                             }
@@ -8445,9 +8271,12 @@ namespace rock
         std::size_t selfHealAttemptCount = 0;
         std::size_t selfHealSuccessCount = 0;
         if (selfHealEnabled && !selfHealCandidates.empty()) {
-            RE::NiNode* healTargetNode = nullptr;
-            const char* healTargetRootLabel = "";
-            if (weaponForm && tokenSlots.size() > records.size()) {
+            // Functional repair targets the exact update root whose visible
+            // geometry feeds collider capture. The token census remains a
+            // fallback for unusual wrappers where that root is not a NiNode.
+            RE::NiNode* healTargetNode = weaponNode ? weaponNode->IsNode() : nullptr;
+            const char* healTargetRootLabel = healTargetNode ? "updateWeaponNode" : "";
+            if (!healTargetNode && weaponForm && tokenSlots.size() > records.size()) {
                 for (const auto& match : tokenSlots.back().matches) {
                     auto* candidateNode = match.node ? match.node->IsNode() : nullptr;
                     if (!candidateNode) {

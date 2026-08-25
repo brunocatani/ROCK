@@ -1056,15 +1056,55 @@ namespace rock
             driveResult.driven &&
             driveResult.hasRequestedTargetGameTransform;
         _physicsRequestedTargetValid = driveResult.hasRequestedTargetGameTransform;
+        bool contactBodyRecovered = false;
         if (_physicsRequestedTargetValid) {
             _physicsRequestedAuthorityTarget = driveResult.requestedTargetGameTransform;
             _physicsRequestedTarget = dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(
                 driveResult.requestedTargetGameTransform,
                 _createdCenterWeaponLocal,
                 _createdWeaponScale);
+
+            RE::NiTransform liveContactBodyWorld{};
+            const bool hasLiveContactBody =
+                havok_runtime::tryResolveLiveBodyWorldTransform(
+                    world,
+                    _body.getBodyId(),
+                    liveContactBodyWorld) &&
+                dynamic_weapon_collision_policy::isFiniteTransform(liveContactBodyWorld);
+            const float requestedGapGameUnits = hasLiveContactBody ?
+                dynamic_weapon_collision_policy::translationDeltaGameUnits(
+                    liveContactBodyWorld,
+                    _physicsRequestedTarget) :
+                0.0f;
+            const auto dwell = dynamic_weapon_collision_policy::advanceDivergenceDwell(
+                _divergenceDwellSeconds,
+                requestedGapGameUnits,
+                driveResult.driveDeltaSeconds);
+            _divergenceDwellSeconds = dwell.elapsedSeconds;
+            if (dwell.recoverNow) {
+                // Bound recovery attempts even if the engine rejects a body
+                // placement. Persistent divergence must accrue a new dwell
+                // interval before another attempt.
+                _divergenceDwellSeconds = 0.0f;
+                contactBodyRecovered = placeGeneratedKeyframedBodyImmediately(
+                    _body,
+                    _physicsRequestedTarget);
+                if (contactBodyRecovered) {
+                    ROCK_LOG_SAMPLE_WARN(
+                        Weapon,
+                        1000,
+                        "Dynamic weapon contact body recovered after persistent divergence: body={} gap={:.2f} threshold={:.2f} dwell={:.3f}s",
+                        _body.getBodyId().value,
+                        requestedGapGameUnits,
+                        dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits,
+                        dynamic_weapon_collision_policy::kDivergenceTeleportDwellSeconds);
+                }
+            }
+        } else {
+            _divergenceDwellSeconds = 0.0f;
         }
-        _physicsDriveTeleported = driveResult.teleported;
-        if (driveResult.teleported) {
+        _physicsDriveTeleported = driveResult.teleported || contactBodyRecovered;
+        if (_physicsDriveTeleported) {
             _contactGraceSolves = 0;
         }
     }
@@ -1400,6 +1440,7 @@ namespace rock
         _physicsRequestedTarget = {};
         _physicsPreviousRequestedTarget = {};
         _physicsPreviousRequestedTargetValid = false;
+        _divergenceDwellSeconds = 0.0f;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;
         _contactEpisode = 0;

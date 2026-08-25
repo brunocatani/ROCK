@@ -10214,7 +10214,6 @@ namespace rock
                     peer.getHeldBodyIds(),
                     handInput.grabAnchorWorld,
                     handInput.closeSelectionDirectionWorld,
-                    selection_query_policy::kNearDetectionRangeGameUnits,
                     outRefusalReason);
                 if (!refreshedPeerHeldSelection && hadPeerHeldCloseSelection) {
                     hand.clearSelectionState(false);
@@ -11040,10 +11039,6 @@ namespace rock
                 }
             }
 
-            auto actorEquipmentHandoffMaxSeconds = []() -> float {
-                return pull_motion_math::kCatchRetryMaximumTimeSeconds;
-            };
-
             if (!hand.isHolding() && selection_state_policy::canProcessSelectedState(hand.getState()) && hand.hasSelection()) {
                 const bool pullCatchCommitPending = hand.hasPendingPullCatchCommit();
                 auto* pullCatchRef = pullCatchCommitPending ? hand.getPullCatchIntentRef() : nullptr;
@@ -11079,7 +11074,7 @@ namespace rock
                         frame.bhkWorld,
                         hknp,
                         frame.deltaSeconds,
-                        actorEquipmentHandoffMaxSeconds());
+                        pull_motion_math::kActorEquipmentHandoffMaximumTimeSeconds);
                     switch (handoffStatus) {
                     case Hand::ActorEquipmentDropHandoffStatus::Ready:
                         actorEquipmentDropHandoffReady = true;
@@ -11163,7 +11158,7 @@ namespace rock
                             frame.bhkWorld,
                             hknp,
                             0.0f,
-                            actorEquipmentHandoffMaxSeconds());
+                            pull_motion_math::kActorEquipmentHandoffMaximumTimeSeconds);
                         if (handoffStatus == Hand::ActorEquipmentDropHandoffStatus::Ready) {
                             actorEquipmentDropHandoffReady = true;
                         } else if (handoffStatus == Hand::ActorEquipmentDropHandoffStatus::Pending) {

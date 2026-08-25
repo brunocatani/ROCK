@@ -514,11 +514,6 @@ namespace rock
             return startToHit.x * directionUnit.x + startToHit.y * directionUnit.y + startToHit.z * directionUnit.z;
         }
 
-        float configuredNearReachDistance()
-        {
-            return selection_query_policy::kNearCastDistanceGameUnits;
-        }
-
         bool promotesFarHitToCloseSelection(const GrabTargetClassification& classification, const RE::NiPoint3& start, const RE::NiPoint3& hitPoint, float nearReachDistance)
         {
             return classification.kind != grab_target::Kind::ActorEquipment &&
@@ -707,7 +702,7 @@ namespace rock
                 const std::uint32_t shapeKey = hit.hitBodyInfo.m_shapeKey.storage;
                 const float normalDotDirection = hasHitNormal ? hitNormal.x * directionUnit.x + hitNormal.y * directionUnit.y + hitNormal.z * directionUnit.z : 0.0f;
                 const float lateralScoreScale = isFarSelection ? selection_query_policy::kFarCastRadiusGameUnits : selection_query_policy::kNearCastRadiusGameUnits;
-                const float alongScoreScale = isFarSelection ? selection_query_policy::kFarDetectionRangeGameUnits : configuredNearReachDistance();
+                const float alongScoreScale = isFarSelection ? selection_query_policy::kFarDetectionRangeGameUnits : selection_query_policy::kNearCastDistanceGameUnits;
                 const auto candidateScore = selection_query_policy::scoreShapeCastCandidate(selection_query_policy::ShapeCastCandidateScoringInput{
                     .isFarSelection = isFarSelection,
                     .lateralDistance = lateralDistance,
@@ -872,7 +867,7 @@ namespace rock
         int rejectedBehindPalm = 0;
         int rejectedHmdCone = 0;
         int duplicateBodies = 0;
-        const float configuredNearReach = configuredNearReachDistance();
+        constexpr float configuredNearReach = selection_query_policy::kNearCastDistanceGameUnits;
         bool logFarMetric = false;
         if (g_rockConfig.rockDebugVerboseLogging) {
             static int farDiagCounter = 0;

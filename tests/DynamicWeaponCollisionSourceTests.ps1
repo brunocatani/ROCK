@@ -62,8 +62,11 @@ $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 # policy. Layer-44 weapon hulls continue to own ordinary gameplay contact
 # evidence, and the user INI cannot disable or retune the dynamic compound.
 Require-Pattern $runtimePolicy `
-    'kDynamicCompoundEnabled\s*=\s*true[\s\S]*kInertiaEnvelopePaddingGameUnits\s*=\s*0\.5f[\s\S]*kInverseInertiaMultiplier\s*=\s*1\.2f[\s\S]*kMaximumLinearVelocityHavok\s*=\s*15\.0f[\s\S]*kMaximumAngularVelocityRadiansPerSecond\s*=\s*35\.0f[\s\S]*kDivergenceTeleportDistanceGameUnits\s*=\s*80\.0f[\s\S]*kMinimumVisualCorrectionTranslationGameUnits\s*=\s*0\.05f[\s\S]*kMinimumVisualCorrectionRotationDegrees\s*=\s*0\.25f' `
+    'kDynamicCompoundEnabled\s*=\s*true[\s\S]*kInertiaEnvelopePaddingGameUnits\s*=\s*0\.5f[\s\S]*kInverseInertiaMultiplier\s*=\s*1\.2f[\s\S]*kMaximumLinearVelocityHavok\s*=\s*15\.0f[\s\S]*kMaximumAngularVelocityRadiansPerSecond\s*=\s*35\.0f[\s\S]*kDivergenceTeleportDistanceGameUnits\s*=\s*80\.0f[\s\S]*kDivergenceTeleportDwellSeconds\s*=\s*0\.3f[\s\S]*kMinimumVisualCorrectionTranslationGameUnits\s*=\s*0\.05f[\s\S]*kMinimumVisualCorrectionRotationDegrees\s*=\s*0\.25f' `
     'Dynamic weapon compound production constants must retain the qualified values.'
+Require-Pattern $runtime `
+    'advanceDivergenceDwell\([\s\S]*_divergenceDwellSeconds[\s\S]*placeGeneratedKeyframedBodyImmediately\([\s\S]*_body[\s\S]*_physicsRequestedTarget' `
+    'The real colliding weapon body must recover only after persistent requested-target divergence.'
 Require-Pattern $interaction `
     'dynamic_weapon_collision_policy::kDynamicCompoundEnabled[\s\S]*runtime\.weaponDrawn' `
     'Dynamic weapon compound activation must use fixed compiled policy.'

@@ -45,6 +45,23 @@ int main()
     static_assert(convertedPistol.sizeClass == WeaponSizeClass::Rifle);
     static_assert(convertedPistol.source == WeaponClassificationSource::EquipSlot);
 
+    constexpr auto unresolvedConflictingKeywords = classify({
+        .keywordFlags = flags(
+            WeaponKeywordFlag::Pistol,
+            WeaponKeywordFlag::Rifle),
+        .effectiveEquipSlotFormID = 0xDEADBEEFu,
+    });
+    static_assert(!unresolvedConflictingKeywords.resolved);
+    static_assert(unresolvedConflictingKeywords.source == WeaponClassificationSource::None);
+
+    constexpr auto unresolvedConflictingKeywordsWithoutSlot = classify({
+        .keywordFlags = flags(
+            WeaponKeywordFlag::Pistol,
+            WeaponKeywordFlag::Rifle),
+    });
+    static_assert(!unresolvedConflictingKeywordsWithoutSlot.resolved);
+    static_assert(unresolvedConflictingKeywordsWithoutSlot.source == WeaponClassificationSource::None);
+
     static_assert(!classify({
         .effectiveEquipSlotFormID = kRightHandEquipSlotFormID,
     }).resolved);

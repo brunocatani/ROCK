@@ -167,11 +167,8 @@ Require-Text 'src/RockConfig.h' `
     'rockShoulderStashHmdBackLeftOffsetGameUnits\s*=\s*RE::NiPoint3\(-14\.0f,\s*-18\.0f,\s*-6\.85f\)' `
     'RockConfig header default should match the behind-shoulder HMD left volume.'
 Require-Text 'src/RockConfig.cpp' `
-    'rockShoulderStashHmdBackRightOffsetGameUnits\s*=\s*RE::NiPoint3\(14\.0f,\s*-18\.0f,\s*-6\.85f\)' `
-    'RockConfig reset default should match the behind-shoulder HMD right volume.'
-Require-Text 'src/RockConfig.cpp' `
-    'rockShoulderStashHmdBackLeftOffsetGameUnits\s*=\s*RE::NiPoint3\(-14\.0f,\s*-18\.0f,\s*-6\.85f\)' `
-    'RockConfig reset default should match the behind-shoulder HMD left volume.'
+    'resetToDefaults\(\)[\s\S]{0,180}static_cast<RockConfigValues&>\(\*this\)\s*=\s*RockConfigValues\{\}' `
+    'RockConfig reset must restore the canonical header defaults, including both HMD back volumes.'
 Require-Text 'src/RockConfig.h' 'rockShoulderStashHmdBackEnterPaddingGameUnits\s*=\s*0\.0f' `
     'RockConfig header default should expose precise HMD enter padding.'
 Require-Text 'src/RockConfig.h' 'rockShoulderStashHmdBackExitPaddingGameUnits\s*=\s*2\.0f' `
@@ -193,11 +190,6 @@ Reject-Text 'src/RockConfig.h' '17\.5f,\s*-5\.0f,\s*-6\.85f' `
     'RockConfig header default must not keep the old front-biased HMD back volume.'
 Reject-Text 'src/RockConfig.h' '14\.0f,\s*-12\.0f,\s*-6\.85f' `
     'RockConfig header default must not keep the previous still-too-forward HMD back volume.'
-Reject-Text 'src/RockConfig.cpp' '17\.5f,\s*-5\.0f,\s*-6\.85f' `
-    'RockConfig reset default must not keep the old front-biased HMD back volume.'
-Reject-Text 'src/RockConfig.cpp' '14\.0f,\s*-12\.0f,\s*-6\.85f' `
-    'RockConfig reset default must not keep the previous still-too-forward HMD back volume.'
-
 if ($failures.Count -gt 0) {
     Write-Host 'ShoulderStashHmdBackVolumeSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

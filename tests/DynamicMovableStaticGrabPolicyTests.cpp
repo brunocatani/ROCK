@@ -434,7 +434,7 @@ int main()
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::ROCK_LAYER_WEAPON, true);
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::ROCK_LAYER_BODY, true);
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::ROCK_LAYER_BODY, true);
-    collision_layer_policy::applyRockDynamicHandProxyLayerPolicy(dynamicCarMatrix.data());
+    collision_layer_policy::applyRockDynamicHandProxyLayerPolicies(dynamicCarMatrix.data());
     collision_layer_policy::applyRockDynamicWeaponProxyLayerPolicy(dynamicCarMatrix.data());
     collision_layer_policy::applyRockDynamicWorldCarLayerPolicies(dynamicCarMatrix.data());
 

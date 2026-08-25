@@ -48,6 +48,66 @@ if (-not (Test-Path -LiteralPath (Join-Path $Root 'data/config/ROCK_example.ini'
     $failures.Add('The sole Git-tracked ROCK_example.ini is missing.')
 }
 
+$exampleText = Read-Source 'data/config/ROCK_example.ini'
+$configHeader = Read-Source 'src/RockConfig.h'
+$configSource = Read-Source 'src/RockConfig.cpp'
+
+Require-Pattern 'src/RockConfig.h' `
+    'struct RockConfigValues[\s\S]*class RockConfig\s*:\s*public RockConfigValues' `
+    'Loadable values must have one copyable compiled-default authority separate from runtime watcher state.'
+
+Require-Pattern 'src/RockConfig.cpp' `
+    'void RockConfig::resetToDefaults\(\)[\s\S]{0,180}static_cast<RockConfigValues&>\(\*this\)\s*=\s*RockConfigValues\{\};' `
+    'Every reload must reset the complete loadable value set from its canonical member defaults.'
+
+$exampleKeyMatches = [regex]::Matches($exampleText, '(?m)^\s*([A-Za-z][A-Za-z0-9]*)\s*=')
+$exampleKeys = @($exampleKeyMatches | ForEach-Object { $_.Groups[1].Value })
+$duplicateExampleKeys = @($exampleKeys | Group-Object | Where-Object Count -gt 1)
+if ($duplicateExampleKeys.Count -ne 0) {
+    $failures.Add("ROCK_example.ini contains duplicate keys: $($duplicateExampleKeys.Name -join ', ')")
+}
+
+$loaderKeys = @(
+    [regex]::Matches($configSource, '"([bifs][A-Z][A-Za-z0-9]*)"') |
+        ForEach-Object { $_.Groups[1].Value } |
+        Sort-Object -Unique
+)
+$exampleUniqueKeys = @($exampleKeys | Sort-Object -Unique)
+$catalogDifference = @(Compare-Object $loaderKeys $exampleUniqueKeys)
+if ($catalogDifference.Count -ne 0) {
+    $failures.Add("ROCK_example.ini and the loadable code catalog differ: $($catalogDifference.InputObject -join ', ')")
+}
+
+$expectedExampleDefaults = [ordered]@{
+    iLogLevel = '2'
+    fRightGrabAuthorityProxyOffsetYGameUnits = '-2.0'
+    fLeftGrabAuthorityProxyOffsetYGameUnits = '-2.0'
+    sHandPalmColliderDimensionScaleOverrides = ''
+    fGrabReleaseHandCollisionDelaySeconds = '0.10'
+    fGrabPinchCompactMaxExtentGameUnits = '8.0'
+    bDebugDrawGrabPockets = 'false'
+    iDebugWorldObjectOriginLogIntervalFrames = '120'
+}
+$exampleValues = @{}
+foreach ($line in ($exampleText -split "`r?`n")) {
+    if ($line -match '^\s*([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*?)\s*$') {
+        $exampleValues[$Matches[1]] = $Matches[2]
+    }
+}
+foreach ($entry in $expectedExampleDefaults.GetEnumerator()) {
+    if (-not $exampleValues.ContainsKey($entry.Key) -or $exampleValues[$entry.Key] -ne $entry.Value) {
+        $actual = if ($exampleValues.ContainsKey($entry.Key)) { $exampleValues[$entry.Key] } else { '<missing>' }
+        $failures.Add("ROCK_example.ini default mismatch for $($entry.Key): expected '$($entry.Value)', found '$actual'.")
+    }
+}
+
+if ($exampleText -notmatch 'documents first-run and missing-key defaults[\s\S]*never loads, packages, deploys, or copies this file') {
+    $failures.Add('ROCK_example.ini must state that it documents compiled defaults and has no runtime authority.')
+}
+if ($exampleText -match 'HIGGS|custom dynamic grab|dynamic weapon box') {
+    $failures.Add('ROCK_example.ini retains retired authority or naming.')
+}
+
 Reject-Pattern 'CMakeLists.txt' `
     'ROCK_example\.ini|data/config/ROCK\.ini|resources\.rc' `
     'ROCK_example.ini must not be a build input, resource, or packaged file.'
@@ -67,6 +127,10 @@ Require-Pattern 'src/RockConfig.cpp' `
 Require-Pattern 'src/RockConfig.cpp' `
     'createDefaultIniIfMissing\([\s\S]*resetToDefaults\(\)[\s\S]*readValuesFromIni\(defaults, true\)[\s\S]*SaveFile[\s\S]*filesystem::rename' `
     'Missing production configuration must be generated from compiled defaults and published without overwriting an existing file.'
+
+Reject-Pattern 'src/RockConfig.h' `
+    '_fileWatchInitThread|_ignoreNextIniFileChange|suppressNextFileWatchReload' `
+    'Configuration watching must not retain the redundant wrapper thread or duplicate self-write suppression flag.'
 
 Require-Pattern 'src/RockConfig.cpp' `
     'targetExists[\s\S]{0,100}return true;[\s\S]*Loading the only active ROCK config' `

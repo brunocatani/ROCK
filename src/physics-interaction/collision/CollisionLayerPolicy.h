@@ -705,11 +705,6 @@ namespace rock::collision_layer_policy
             buildRockDynamicHandProxyExpectedMask(true));
     }
 
-    inline void applyRockDynamicHandProxyLayerPolicy(std::uint64_t* matrix)
-    {
-        applyRockDynamicHandProxyLayerPolicies(matrix);
-    }
-
     inline void applyRockDynamicWeaponProxyLayerPolicy(
         std::uint64_t* matrix)
     {

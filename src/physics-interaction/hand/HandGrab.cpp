@@ -7146,11 +7146,7 @@ namespace rock
         const float pullDistance = (grabPivotPointHavok - objectPointHavok).Length();
 
         _pullElapsedSeconds = 0.0f;
-        _pullDurationSeconds = pull_motion_math::computePullDurationSeconds(
-            pullDistance,
-            pull_motion_math::kDurationA,
-            pull_motion_math::kDurationB,
-            pull_motion_math::kDurationC);
+        _pullDurationSeconds = pull_motion_math::computePullDurationSeconds(pullDistance);
         _pullTargetHavok = {};
         _pullHasTarget = false;
         const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::BeginPull });
@@ -7262,11 +7258,6 @@ namespace rock
                 .previousTargetHavok = _pullTargetHavok,
                 .elapsedSeconds = _pullElapsedSeconds,
                 .durationSeconds = _pullDurationSeconds,
-                .applyVelocitySeconds = pull_motion_math::kApplyVelocitySeconds,
-                .ownerGraceSeconds = pull_motion_math::kOwnerGraceSeconds,
-                .trackHandSeconds = pull_motion_math::kTrackHandSeconds,
-                .destinationOffsetHavok = pull_motion_math::kDestinationZOffsetHavok,
-                .maxVelocityHavok = pull_motion_math::kMaximumVelocityHavok,
                 .hasPreviousTarget = _pullHasTarget,
             });
 
@@ -7368,7 +7359,7 @@ namespace rock
                 _pullDriveDecision.includeConnectedAngularVelocity);
         } else {
             setHeldLinearVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok,
-                pull_motion_math::angularVelocityKeepForDamping(pull_motion_math::kAngularDamping, deltaTime),
+                pull_motion_math::angularVelocityKeepForDamping(deltaTime),
                 _pullDriveDecision.includeConnectedLinearVelocity);
         }
         for (const auto bodyId : _pulledBodyIds) {

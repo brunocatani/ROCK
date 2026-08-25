@@ -49,6 +49,27 @@ int main()
     using namespace rock::dynamic_weapon_collision_policy;
     bool ok = true;
 
+    const auto belowDivergence = advanceDivergenceDwell(
+        0.2f,
+        kDivergenceTeleportDistanceGameUnits,
+        0.1f);
+    ok &= expectNear("weapon divergence resets at threshold", belowDivergence.elapsedSeconds, 0.0f);
+    ok &= !belowDivergence.recoverNow;
+
+    const auto accumulatingDivergence = advanceDivergenceDwell(
+        0.1f,
+        kDivergenceTeleportDistanceGameUnits + 1.0f,
+        0.1f);
+    ok &= expectNear("weapon divergence accumulates measured dwell", accumulatingDivergence.elapsedSeconds, 0.2f);
+    ok &= !accumulatingDivergence.recoverNow;
+
+    const auto persistentDivergence = advanceDivergenceDwell(
+        accumulatingDivergence.elapsedSeconds,
+        kDivergenceTeleportDistanceGameUnits + 1.0f,
+        0.1f);
+    ok &= expectNear("weapon divergence reaches recovery dwell", persistentDivergence.elapsedSeconds, 0.3f);
+    ok &= persistentDivergence.recoverNow;
+
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);

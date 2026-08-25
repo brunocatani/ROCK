@@ -275,17 +275,7 @@ namespace rock::weapon_collision_grouping_policy
      * reload, and debug evidence; they do not decide whether visible geometry
      * gets collision.
      */
-    enum class WeaponCollisionGroupingMode : std::uint8_t
-    {
-        OptimizedTriShape = 3
-    };
-
-    inline constexpr WeaponCollisionGroupingMode kProductionWeaponCollisionGroupingMode = WeaponCollisionGroupingMode::OptimizedTriShape;
-
-    inline constexpr const char* weaponCollisionGroupingModeName(WeaponCollisionGroupingMode mode)
-    {
-        (void)mode;
-        return "OptimizedTriShape";
-    }
+    inline constexpr const char* kProductionWeaponCollisionGroupingName =
+        "OptimizedTriShape";
 
 }

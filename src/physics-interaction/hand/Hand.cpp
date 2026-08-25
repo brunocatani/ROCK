@@ -2554,7 +2554,6 @@ namespace rock
         const std::vector<std::uint32_t>& peerHeldBodyIds,
         const RE::NiPoint3& selectionOrigin,
         const RE::NiPoint3& palmNormal,
-        float nearRange,
         const char** outRefusalReason)
     {
         /*
@@ -2596,7 +2595,7 @@ namespace rock
         }
 
         const float closeReach = (std::max)(
-            (std::max)(nearRange, selection_query_policy::kNearCastDistanceGameUnits),
+            selection_query_policy::kNearCastDistanceGameUnits,
             selection_query_policy::kNearDetectionRangeGameUnits) +
                                  (std::max)(selection_query_policy::kNearCastRadiusGameUnits, g_rockConfig.rockGrabTouchAcquireDistanceGameUnits);
 

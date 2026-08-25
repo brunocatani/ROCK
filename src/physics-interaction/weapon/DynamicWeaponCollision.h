@@ -254,6 +254,11 @@ namespace rock
         RE::NiTransform _physicsRequestedTarget{};
         RE::NiTransform _physicsPreviousRequestedTarget{};
         bool _physicsPreviousRequestedTargetValid{ false };
+        // Physics-thread-only persistence timer for the real colliding body.
+        // The hidden authority target may jump immediately after a tracking
+        // discontinuity, but blocked physical divergence must persist before
+        // the contact body is recovered.
+        float _divergenceDwellSeconds{ 0.0f };
         std::uint64_t _consumedContactSequence{ 0 };
         std::uint32_t _contactGraceSolves{ 0 };
         std::uint64_t _contactEpisode{ 0 };
