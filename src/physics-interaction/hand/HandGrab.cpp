@@ -6596,6 +6596,102 @@ namespace rock
         return true;
     }
 
+    struct Hand::GrabBodyPreparation
+    {
+        object_physics_body_set::BodySetScanOptions scanOptions{};
+        active_grab_body_lifecycle::BodyLifecycleSnapshot activeLifecycle{};
+        object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet{};
+        object_physics_body_set::ObjectPhysicsBodySet preparedBodySet{};
+        bool consumedPullPrepLifecycle = false;
+        bool beforePrepScanCacheHit = false;
+        bool motionConverted = true;
+        bool collisionEnabled = true;
+        bool preparedScanCacheHit = false;
+        bool preparedBodySetPostPrepComplete = false;
+    };
+
+    void Hand::prepareSelectedGrabBodies(
+        RE::hknpWorld* world,
+        const GrabSharedObjectContext& sharedContext,
+        const ValidatedGrabSelection& selection,
+        GrabBodyPreparation& outPreparation)
+    {
+        outPreparation = {};
+        const auto& selectedObject = _currentSelection;
+        outPreparation.scanOptions = makeActiveGrabBodyScanOptions(selectedObject);
+        const auto& scanOptions = outPreparation.scanOptions;
+
+        outPreparation.consumedPullPrepLifecycle =
+            !selection.joiningPeerHeldObject &&
+            selection.grabbedFromPullCatch &&
+            consumePullPrepLifecycleForActiveGrab(selectedObject.refr, outPreparation.activeLifecycle);
+        outPreparation.beforePrepScanCacheHit = tryUseGrabAcquisitionBeforePrepCache(
+            selection.bhkWorld,
+            world,
+            selectedObject,
+            scanOptions,
+            outPreparation.beforePrepBodySet);
+        if (!outPreparation.beforePrepScanCacheHit) {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
+            outPreparation.beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(
+                selection.bhkWorld,
+                world,
+                selectedObject.refr,
+                scanOptions);
+        }
+        if (!selection.joiningPeerHeldObject && !outPreparation.consumedPullPrepLifecycle) {
+            outPreparation.activeLifecycle.captureBeforeActivePrep(outPreparation.beforePrepBodySet);
+        }
+
+        if (!selection.joiningPeerHeldObject) {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionActivePrep);
+            outPreparation.motionConverted = physics_recursive_wrappers::setMotionRecursive(
+                selection.rootNode,
+                physics_recursive_wrappers::MotionPreset::Dynamic,
+                true,
+                true,
+                true);
+            outPreparation.collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(
+                selection.rootNode,
+                true,
+                true,
+                true);
+        }
+
+        outPreparation.preparedScanCacheHit = selection.joiningPeerHeldObject;
+        outPreparation.preparedBodySetPostPrepComplete = selection.joiningPeerHeldObject;
+        if (selection.joiningPeerHeldObject) {
+            outPreparation.preparedBodySet = outPreparation.beforePrepBodySet;
+        } else {
+            outPreparation.preparedScanCacheHit = tryBuildGrabAcquisitionPreparedBodySetFromCache(
+                selection.bhkWorld,
+                world,
+                selectedObject,
+                scanOptions,
+                outPreparation.preparedBodySet,
+                outPreparation.preparedBodySetPostPrepComplete);
+            if (!outPreparation.preparedScanCacheHit || outPreparation.preparedBodySet.acceptedCount() == 0) {
+                outPreparation.preparedScanCacheHit = false;
+                outPreparation.preparedBodySetPostPrepComplete = true;
+                performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
+                outPreparation.preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(
+                    selection.bhkWorld,
+                    world,
+                    selectedObject.refr,
+                    scanOptions);
+            }
+        }
+
+        if (!selection.joiningPeerHeldObject) {
+            outPreparation.activeLifecycle.markPreparedBodies(outPreparation.preparedBodySet);
+            if (outPreparation.preparedScanCacheHit && !outPreparation.preparedBodySetPostPrepComplete) {
+                outPreparation.activeLifecycle.markIncompleteNativeScan();
+            }
+        } else if (sharedContext.peerActiveGrabLifecycle) {
+            outPreparation.activeLifecycle = *sharedContext.peerActiveGrabLifecycle;
+        }
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -6711,63 +6807,18 @@ namespace rock
                 nodeDebugName(rootNode));
         }
 
-        const auto scanOptions = makeActiveGrabBodyScanOptions(sel);
-
-        active_grab_body_lifecycle::BodyLifecycleSnapshot activeLifecycle;
-        const bool consumedPullPrepLifecycle =
-            !joiningPeerHeldObject && grabbedFromPullCatch && consumePullPrepLifecycleForActiveGrab(sel.refr, activeLifecycle);
-        object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
-        bool beforePrepScanCacheHit = tryUseGrabAcquisitionBeforePrepCache(bhkWorld, world, sel, scanOptions, beforePrepBodySet);
-        if (!beforePrepScanCacheHit) {
-            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
-            beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
-        }
-        if (!joiningPeerHeldObject && !consumedPullPrepLifecycle) {
-            activeLifecycle.captureBeforeActivePrep(beforePrepBodySet);
-        }
-
-        bool motionConverted = true;
-        bool collisionEnabled = true;
-        if (!joiningPeerHeldObject) {
-            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionActivePrep);
-            motionConverted =
-                physics_recursive_wrappers::setMotionRecursive(
-                    rootNode,
-                    physics_recursive_wrappers::MotionPreset::Dynamic,
-                    true,
-                    true,
-                    true);
-            collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
-        }
-
-        object_physics_body_set::ObjectPhysicsBodySet preparedBodySet;
-        bool preparedScanCacheHit = joiningPeerHeldObject;
-        bool preparedBodySetPostPrepComplete = joiningPeerHeldObject;
-        if (joiningPeerHeldObject) {
-            preparedBodySet = beforePrepBodySet;
-        } else {
-            preparedScanCacheHit = tryBuildGrabAcquisitionPreparedBodySetFromCache(
-                bhkWorld,
-                world,
-                sel,
-                scanOptions,
-                preparedBodySet,
-                preparedBodySetPostPrepComplete);
-            if (!preparedScanCacheHit || preparedBodySet.acceptedCount() == 0) {
-                preparedScanCacheHit = false;
-                preparedBodySetPostPrepComplete = true;
-                performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
-                preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
-            }
-        }
-        if (!joiningPeerHeldObject) {
-            activeLifecycle.markPreparedBodies(preparedBodySet);
-            if (preparedScanCacheHit && !preparedBodySetPostPrepComplete) {
-                activeLifecycle.markIncompleteNativeScan();
-            }
-        } else if (sharedContext.peerActiveGrabLifecycle) {
-            activeLifecycle = *sharedContext.peerActiveGrabLifecycle;
-        }
+        GrabBodyPreparation bodyPreparation{};
+        prepareSelectedGrabBodies(world, sharedContext, validatedSelection, bodyPreparation);
+        auto& activeLifecycle = bodyPreparation.activeLifecycle;
+        const bool consumedPullPrepLifecycle = bodyPreparation.consumedPullPrepLifecycle;
+        const auto& beforePrepBodySet = bodyPreparation.beforePrepBodySet;
+        const bool beforePrepScanCacheHit = bodyPreparation.beforePrepScanCacheHit;
+        const bool motionConverted = bodyPreparation.motionConverted;
+        const bool collisionEnabled = bodyPreparation.collisionEnabled;
+        auto& preparedBodySet = bodyPreparation.preparedBodySet;
+        const bool preparedScanCacheHit = bodyPreparation.preparedScanCacheHit;
+        const bool preparedBodySetPostPrepComplete = bodyPreparation.preparedBodySetPostPrepComplete;
+        const auto& scanOptions = bodyPreparation.scanOptions;
 
         auto restoreFailedGrabPrep = [&]() {
             if (!joiningPeerHeldObject) {
