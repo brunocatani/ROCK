@@ -729,6 +729,7 @@ namespace rock
         struct GrabMeshExtraction;
         struct GrabSurfaceEvidence;
         struct GrabBodyResolution;
+        struct ResolvedGrabBodyCapture;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -771,6 +772,17 @@ namespace rock
             const GrabProxyPreparation& proxy,
             GrabSurfaceEvidence& surface,
             GrabBodyResolution& outResolution);
+        bool captureResolvedGrabBody(
+            RE::hknpWorld* world,
+            const GrabMeshCaptureSetup& meshCapture,
+            const GrabBodyResolution& resolution,
+            const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
+            const std::vector<TriangleData>& meshTriangles,
+            const RE::NiPointer<RE::TESObjectREFR>& selectedRef,
+            std::uint16_t selectedOriginalMotionPropsId,
+            std::uint64_t traceId,
+            const std::string& objectName,
+            ResolvedGrabBodyCapture& outCapture);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 

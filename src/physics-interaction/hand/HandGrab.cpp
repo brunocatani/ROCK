@@ -7327,6 +7327,85 @@ namespace rock
         }
     }
 
+    struct Hand::ResolvedGrabBodyCapture
+    {
+        RE::hknpBodyId bodyId{};
+        RE::NiAVObject* collidableNode = nullptr;
+        RE::NiTransform objectWorldTransform{};
+        std::vector<GrabLocalTriangle> localMeshTriangles{};
+    };
+
+    bool Hand::captureResolvedGrabBody(
+        RE::hknpWorld* world,
+        const GrabMeshCaptureSetup& meshCapture,
+        const GrabBodyResolution& resolution,
+        const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
+        const std::vector<TriangleData>& meshTriangles,
+        const RE::NiPointer<RE::TESObjectREFR>& selectedRef,
+        std::uint16_t selectedOriginalMotionPropsId,
+        std::uint64_t traceId,
+        const std::string& objectName,
+        ResolvedGrabBodyCapture& outCapture)
+    {
+        outCapture = {};
+        outCapture.bodyId = RE::hknpBodyId{ resolution.primaryChoice.bodyId };
+        outCapture.collidableNode = meshCapture.collidableNode;
+        outCapture.objectWorldTransform = meshCapture.objectWorldTransform;
+
+        auto* preparedBody = havok_runtime::getBody(world, outCapture.bodyId);
+        if (!preparedBody) {
+            ROCK_LOG_ERROR(Hand,
+                "{} grabSelectedObject: prepared primary body {} is not readable after object prep",
+                handName(),
+                outCapture.bodyId.value);
+            return false;
+        }
+
+        const auto& selectedObject = _currentSelection;
+        _savedObjectState.bodyId = outCapture.bodyId;
+        _savedObjectState.setReference(selectedRef);
+        _savedObjectState.targetKind = selectedObject.targetKind;
+        _savedObjectState.originalFilterInfo = preparedBody->collisionFilterInfo;
+        _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
+        if (const auto* originalPrimaryRecord = beforePrepBodySet.findRecord(outCapture.bodyId.value)) {
+            _savedObjectState.originalMotionPropsId = originalPrimaryRecord->motionPropertiesId;
+        }
+
+        auto* ownerCell = selectedObject.refr ? selectedObject.refr->GetParentCell() : nullptr;
+        auto* ownerWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
+        auto* bodyCollisionObject = ownerWorld ? RE::bhkNPCollisionObject::Getbhk(ownerWorld, outCapture.bodyId) : nullptr;
+        if (auto* resolvedOwnerNode = bodyCollisionObject ? bodyCollisionObject->sceneObject : nullptr) {
+            GrabCaptureTransformRefreshResult ownerRefresh{};
+            refreshGrabCaptureNodeTransform(ownerRefresh, "resolvedOwner", resolvedOwnerNode);
+            logGrabCaptureRefresh(handName(), _isLeft, traceId, ownerRefresh);
+            if (!ownerRefresh.ok) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand GRAB failed: resolved owner transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
+                    handName(),
+                    objectName,
+                    selectedObject.refr ? selectedObject.refr->GetFormID() : 0,
+                    nodeDebugName(resolvedOwnerNode));
+                return false;
+            }
+            outCapture.collidableNode = resolvedOwnerNode;
+            outCapture.objectWorldTransform = resolvedOwnerNode->world;
+            if (!grab_three_phase::isFinite(outCapture.objectWorldTransform)) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand GRAB failed: resolved owner transform is non-finite for '{}' formID={:08X}; owner='{}'",
+                    handName(),
+                    objectName,
+                    selectedObject.refr ? selectedObject.refr->GetFormID() : 0,
+                    nodeDebugName(resolvedOwnerNode));
+                return false;
+            }
+        }
+
+        if (!meshTriangles.empty()) {
+            outCapture.localMeshTriangles = cacheTrianglesInLocalSpace(meshTriangles, outCapture.objectWorldTransform);
+        }
+        return true;
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -7827,61 +7906,26 @@ namespace rock
         const char* canonicalPivotMode = grabPointMode;
         const GrabPivotAuthoritySource canonicalPivotAuthoritySource = grabPointAuthoritySource;
 
-        objectBodyId = RE::hknpBodyId{ primaryChoice.bodyId };
-        auto* preparedBody = havok_runtime::getBody(world, objectBodyId);
-        if (!preparedBody) {
-            ROCK_LOG_ERROR(Hand, "{} grabSelectedObject: prepared primary body {} is not readable after object prep", handName(), objectBodyId.value);
+        ResolvedGrabBodyCapture resolvedBodyCapture{};
+        if (!captureResolvedGrabBody(
+                world,
+                meshCaptureSetup,
+                bodyResolution,
+                beforePrepBodySet,
+                grabMeshTriangles,
+                selectedRef,
+                selectedOriginalMotionPropsId,
+                grabTraceId,
+                objName,
+                resolvedBodyCapture)) {
             grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
-        _savedObjectState.bodyId = objectBodyId;
-        _savedObjectState.setReference(selectedRef);
-        _savedObjectState.targetKind = sel.targetKind;
-        _savedObjectState.originalFilterInfo = preparedBody->collisionFilterInfo;
-        _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
-        if (const auto* originalPrimaryRecord = beforePrepBodySet.findRecord(objectBodyId.value)) {
-            _savedObjectState.originalMotionPropsId = originalPrimaryRecord->motionPropertiesId;
-        }
-
-        {
-            auto* ownerCellAtResolution = sel.refr ? sel.refr->GetParentCell() : nullptr;
-            auto* bhkWorldAtResolution = ownerCellAtResolution ? ownerCellAtResolution->GetbhkWorld() : nullptr;
-            auto* bodyCollisionObjectAtResolution = bhkWorldAtResolution ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtResolution, objectBodyId) : nullptr;
-            if (auto* resolvedOwnerNode = bodyCollisionObjectAtResolution ? bodyCollisionObjectAtResolution->sceneObject : nullptr) {
-                GrabCaptureTransformRefreshResult resolvedOwnerRefresh{};
-                refreshGrabCaptureNodeTransform(resolvedOwnerRefresh, "resolvedOwner", resolvedOwnerNode);
-                logGrabCaptureRefresh(handName(), _isLeft, grabTraceId, resolvedOwnerRefresh);
-                if (!resolvedOwnerRefresh.ok) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand GRAB failed: resolved owner transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
-                        handName(),
-                        objName,
-                        sel.refr ? sel.refr->GetFormID() : 0,
-                        nodeDebugName(resolvedOwnerNode));
-                    grabPreparationTransaction.rollback();
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    return false;
-                }
-                collidableNode = resolvedOwnerNode;
-                objectWorldTransform = collidableNode->world;
-                if (!grab_three_phase::isFinite(objectWorldTransform)) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand GRAB failed: resolved owner transform is non-finite for '{}' formID={:08X}; owner='{}'",
-                        handName(),
-                        objName,
-                        sel.refr ? sel.refr->GetFormID() : 0,
-                        nodeDebugName(collidableNode));
-                    grabPreparationTransaction.rollback();
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    return false;
-                }
-            }
-        }
-
-        if (!grabMeshTriangles.empty()) {
-            grabLocalMeshTriangles = cacheTrianglesInLocalSpace(grabMeshTriangles, objectWorldTransform);
-        }
+        objectBodyId = resolvedBodyCapture.bodyId;
+        collidableNode = resolvedBodyCapture.collidableNode;
+        objectWorldTransform = resolvedBodyCapture.objectWorldTransform;
+        grabLocalMeshTriangles = std::move(resolvedBodyCapture.localMeshTriangles);
 
         const auto semanticContacts = collectFreshSemanticContactsForBodyWithinSeconds(
             objectBodyId.value,
