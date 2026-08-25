@@ -762,6 +762,11 @@ namespace rock
             bool heldMotorContactSoftening,
             const GrabReleaseContext& releaseContext,
             bool& outConvergingAcquisitionPhase);
+        void updateHeldAcquisition(RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            float deltaTime,
+            const HeldDriveUpdate& driveUpdate,
+            bool convergingAcquisitionPhase);
         void prepareSelectedGrabBodies(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
