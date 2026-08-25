@@ -37,7 +37,7 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
-#include "physics-interaction/debug/DebugOverlayPolicy.h"
+#include "physics-interaction/debug/DebugVisualizationPolicy.h"
 #include "physics-interaction/feedback/HapticPolicy.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabConstraint.h"
@@ -3773,8 +3773,11 @@ namespace rock
                     weaponNode,
                     currentWeaponGenerationKey,
                     _weaponCollision);
+            const bool dynamicWeaponDebugEnabled =
+                g_rockConfig.rockDebugShowColliders &&
+                g_rockConfig.rockDebugDrawDynamicWeaponColliders;
             if (dynamicWeaponFrame.contactEpisodeStarted &&
-                g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                dynamicWeaponDebugEnabled) {
                 auto* otherRef = resolveBodyToRef(
                     frame.bhkWorld,
                     frame.hknpWorld,
@@ -3872,7 +3875,7 @@ namespace rock
                             weaponNode->world,
                             dynamicWeaponFrame.resolvedWeaponWorld) :
                         -1.0f;
-                if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                if (dynamicWeaponDebugEnabled) {
                     ROCK_LOG_SAMPLE_INFO(
                         Weapon,
                         500,

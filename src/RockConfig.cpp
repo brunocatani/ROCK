@@ -626,6 +626,10 @@ namespace rock
 
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
+        rockDebugDrawColliderPhaseDiagnostics = ini.GetBoolValue(
+            SECTION,
+            "bDebugDrawColliderPhaseDiagnostics",
+            rockDebugDrawColliderPhaseDiagnostics);
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
         rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
         rockDebugShowGrabPocketNormal = ini.GetBoolValue(SECTION, "bDebugShowGrabPocketNormal", rockDebugShowGrabPocketNormal);
@@ -645,6 +649,10 @@ namespace rock
         rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);
         rockDebugDrawHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandColliders", rockDebugDrawHandColliders);
         rockDebugDrawHandBoneColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneColliders", rockDebugDrawHandBoneColliders);
+        rockDebugDrawBodyBoneColliders = ini.GetBoolValue(
+            SECTION,
+            "bDebugDrawBodyBoneColliders",
+            rockDebugDrawBodyBoneColliders);
         rockDebugDrawDynamicHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicHandColliders", rockDebugDrawDynamicHandColliders);
         rockDebugDrawHandBoneContacts = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
         rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(SECTION, "bDebugDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);
@@ -665,6 +673,10 @@ namespace rock
             ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
         rockDebugDrawAuthoredGripActivationZones =
             ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
+        rockDebugDrawWeaponAuthority =
+            ini.GetBoolValue(SECTION, "bDebugDrawWeaponAuthority", rockDebugDrawWeaponAuthority);
+        rockDebugDrawLooseWeaponGripZones =
+            ini.GetBoolValue(SECTION, "bDebugDrawLooseWeaponGripZones", rockDebugDrawLooseWeaponGripZones);
         rockDebugDrawGunstockAlignment =
             ini.GetBoolValue(SECTION, "bDebugDrawGunstockAlignment", rockDebugDrawGunstockAlignment);
         rockDebugDrawDynamicWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
@@ -718,7 +730,6 @@ namespace rock
         rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
         rockDebugVideoSyncMarker = ini.GetBoolValue(SECTION, "bDebugVideoSyncMarker", rockDebugVideoSyncMarker);
         rockDebugVideoSyncMarkerSize = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerSize", rockDebugVideoSyncMarkerSize));
-        rockDebugGrabFingerPoseLogging = ini.GetBoolValue(SECTION, "bDebugGrabFingerPoseLogging", rockDebugGrabFingerPoseLogging);
         rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);
         rockDebugGrabAfterSolveAnomalySampling =
             ini.GetBoolValue(SECTION, "bDebugGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
@@ -750,7 +761,6 @@ namespace rock
             rockDebugWeaponOmodCoverageAuditIntervalFrames = 30;
         }
         rockWeaponOmodSelfHealEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodSelfHeal", rockWeaponOmodSelfHealEnabled);
-        rockDebugWorkbenchWeaponReattach = ini.GetBoolValue(SECTION, "bDebugWorkbenchWeaponReattach", rockDebugWorkbenchWeaponReattach);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
         rockDebugWorldObjectOriginDiagnostics =
             ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);

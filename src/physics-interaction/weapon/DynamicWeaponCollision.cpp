@@ -30,6 +30,12 @@ namespace rock
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr std::uint32_t kContactGraceSolves = 3;
 
+        [[nodiscard]] bool dynamicWeaponDebugEnabled()
+        {
+            return g_rockConfig.rockDebugShowColliders &&
+                   g_rockConfig.rockDebugDrawDynamicWeaponColliders;
+        }
+
         const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
         {
             using Failure = WeaponCollision::CompoundGeometrySnapshotFailure;
@@ -484,32 +490,49 @@ namespace rock
         const bool snapshotCurrent =
             snapshotIdentityCurrent &&
             !snapshot.teleported;
+        const bool debugEnabled = dynamicWeaponDebugEnabled();
 
         _debugSnapshot = {};
-        _debugSnapshot.valid = true;
-        _debugSnapshot.physicsSnapshotReadable = snapshotReadable;
-        _debugSnapshot.physicsSnapshotValid = snapshotReadable && snapshot.valid;
-        _debugSnapshot.physicsSnapshotIdentityCurrent = snapshotIdentityCurrent;
-        _debugSnapshot.physicsSnapshotContactActive = snapshotReadable && snapshot.contactActive;
-        _debugSnapshot.physicsSnapshotTeleported = snapshotReadable && snapshot.teleported;
-        _debugSnapshot.bodyId = _body.getBodyId().value;
-        _debugSnapshot.authorityBodyId = _authorityProxy.getBodyId().value;
-        _debugSnapshot.constraintId = _authorityConstraint.constraintId;
-        _debugSnapshot.generationKey = _createdGenerationKey;
-        _debugSnapshot.proxyPairCallbackSequence = _proxyPairCallbackSequenceAtomic.load(std::memory_order_acquire);
-        _debugSnapshot.obstacleCallbackSequence = _obstacleCallbackSequenceAtomic.load(std::memory_order_acquire);
-        _debugSnapshot.rawPointCallbackSequence = _rawPointCallbackSequenceAtomic.load(std::memory_order_acquire);
-        _debugSnapshot.processedManifoldCallbackSequence = _processedManifoldCallbackSequenceAtomic.load(std::memory_order_acquire);
-        _debugSnapshot.admittedContactSequence = _contactSequenceAtomic.load(std::memory_order_acquire);
-        _debugSnapshot.compoundChildCount = _createdCompoundChildCount;
-        _debugSnapshot.compoundPointCount = _createdCompoundPointCount;
-        _debugSnapshot.centerWeaponLocal = _createdCenterWeaponLocal;
-        _debugSnapshot.halfExtentsWeaponLocal = _createdHalfExtentsWeaponLocal;
-        _debugSnapshot.requestedWeaponWorld = _frameRequestedWeaponWorld;
+        if (debugEnabled) {
+            _debugSnapshot.valid = true;
+            _debugSnapshot.physicsSnapshotReadable = snapshotReadable;
+            _debugSnapshot.physicsSnapshotValid =
+                snapshotReadable && snapshot.valid;
+            _debugSnapshot.physicsSnapshotIdentityCurrent =
+                snapshotIdentityCurrent;
+            _debugSnapshot.physicsSnapshotContactActive =
+                snapshotReadable && snapshot.contactActive;
+            _debugSnapshot.physicsSnapshotTeleported =
+                snapshotReadable && snapshot.teleported;
+            _debugSnapshot.bodyId = _body.getBodyId().value;
+            _debugSnapshot.authorityBodyId = _authorityProxy.getBodyId().value;
+            _debugSnapshot.constraintId = _authorityConstraint.constraintId;
+            _debugSnapshot.generationKey = _createdGenerationKey;
+            _debugSnapshot.proxyPairCallbackSequence =
+                _proxyPairCallbackSequenceAtomic.load(
+                    std::memory_order_acquire);
+            _debugSnapshot.obstacleCallbackSequence =
+                _obstacleCallbackSequenceAtomic.load(
+                    std::memory_order_acquire);
+            _debugSnapshot.rawPointCallbackSequence =
+                _rawPointCallbackSequenceAtomic.load(
+                    std::memory_order_acquire);
+            _debugSnapshot.processedManifoldCallbackSequence =
+                _processedManifoldCallbackSequenceAtomic.load(
+                    std::memory_order_acquire);
+            _debugSnapshot.admittedContactSequence =
+                _contactSequenceAtomic.load(std::memory_order_acquire);
+            _debugSnapshot.compoundChildCount = _createdCompoundChildCount;
+            _debugSnapshot.compoundPointCount = _createdCompoundPointCount;
+            _debugSnapshot.centerWeaponLocal = _createdCenterWeaponLocal;
+            _debugSnapshot.halfExtentsWeaponLocal =
+                _createdHalfExtentsWeaponLocal;
+            _debugSnapshot.requestedWeaponWorld = _frameRequestedWeaponWorld;
+        }
 
         ContactDiagnosticSnapshot contactDiagnostic{};
         const bool contactDiagnosticCurrent =
-            g_rockConfig.rockDebugDrawDynamicWeaponColliders &&
+            debugEnabled &&
             readContactDiagnosticSnapshot(contactDiagnostic) &&
             contactDiagnostic.valid &&
             contactDiagnostic.world == reinterpret_cast<std::uintptr_t>(frame.hknpWorld) &&
@@ -540,7 +563,7 @@ namespace rock
         }
 
         const auto logPipelineStage = [&](const char* stage) {
-            if (!g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            if (!debugEnabled) {
                 return;
             }
             ROCK_LOG_SAMPLE_INFO(
@@ -598,15 +621,19 @@ namespace rock
         result.rotationCorrectionDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(
             resolvedWeaponWorld,
             _frameRequestedWeaponWorld);
-        _debugSnapshot.contactActive = true;
-        _debugSnapshot.otherBodyId = snapshot.otherBodyId;
-        _debugSnapshot.otherLayer = snapshot.otherLayer;
-        _debugSnapshot.contactGraceSolves = snapshot.contactGraceSolves;
-        _debugSnapshot.solveSequence = snapshot.solveSequence;
-        _debugSnapshot.liveWeaponWorld = sampledLiveWeaponWorld;
-        _debugSnapshot.resolvedWeaponWorld = resolvedWeaponWorld;
-        _debugSnapshot.translationCorrectionGameUnits = result.translationCorrectionGameUnits;
-        _debugSnapshot.rotationCorrectionDegrees = result.rotationCorrectionDegrees;
+        if (debugEnabled) {
+            _debugSnapshot.contactActive = true;
+            _debugSnapshot.otherBodyId = snapshot.otherBodyId;
+            _debugSnapshot.otherLayer = snapshot.otherLayer;
+            _debugSnapshot.contactGraceSolves = snapshot.contactGraceSolves;
+            _debugSnapshot.solveSequence = snapshot.solveSequence;
+            _debugSnapshot.liveWeaponWorld = sampledLiveWeaponWorld;
+            _debugSnapshot.resolvedWeaponWorld = resolvedWeaponWorld;
+            _debugSnapshot.translationCorrectionGameUnits =
+                result.translationCorrectionGameUnits;
+            _debugSnapshot.rotationCorrectionDegrees =
+                result.rotationCorrectionDegrees;
+        }
 
         const bool correctionFinite =
             std::isfinite(result.translationCorrectionGameUnits) &&
@@ -629,7 +656,9 @@ namespace rock
         if (correctionVisible) {
             result.applyVisualCorrection = true;
             result.resolvedWeaponWorld = resolvedWeaponWorld;
-            _debugSnapshot.visualCorrectionActive = true;
+            if (debugEnabled) {
+                _debugSnapshot.visualCorrectionActive = true;
+            }
         }
         logPipelineStage(correctionVisible ? "publish-requested" : "visibility-gate");
         return result;
@@ -1014,7 +1043,8 @@ namespace rock
                     return;
                 }
                 _consumedCompoundPoseSequence = _queuedCompoundPoseSequence;
-                if (updateResult.changedChildCount > 0 && g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                if (updateResult.changedChildCount > 0 &&
+                    dynamicWeaponDebugEnabled()) {
                     ROCK_LOG_SAMPLE_INFO(
                         Weapon,
                         500,
@@ -1173,7 +1203,7 @@ namespace rock
         publishPhysicsSnapshot(snapshot);
 
         if (contactEpisodeStarted &&
-            g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            dynamicWeaponDebugEnabled()) {
             ContactDiagnosticSnapshot diagnostic{};
             diagnostic.valid = true;
             diagnostic.world = reinterpret_cast<std::uintptr_t>(world);
@@ -1235,7 +1265,7 @@ namespace rock
             publishContactDiagnosticSnapshot(diagnostic);
         }
 
-        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+        if (dynamicWeaponDebugEnabled()) {
             const float requestedStepTranslation = _physicsPreviousRequestedTargetValid ?
                 dynamic_weapon_collision_policy::translationDeltaGameUnits(
                     _physicsPreviousRequestedTarget,
@@ -1331,7 +1361,7 @@ namespace rock
             return;
         }
         _rawPointCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+        if (dynamicWeaponDebugEnabled()) {
             _rawContactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
             _rawContactPointCountAtomic.store(rawContactPoint->pointCount, std::memory_order_relaxed);
             _rawContactPointIndexAtomic.store(rawContactPoint->selectedPointIndex, std::memory_order_relaxed);

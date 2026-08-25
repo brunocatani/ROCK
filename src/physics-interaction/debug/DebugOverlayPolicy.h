@@ -28,19 +28,6 @@ namespace rock::debug_overlay_policy
      * and first-time shape capture so diagnostics stay useful without making
      * every generated weapon part a per-frame cost spike.
      */
-    inline bool shouldDrawHandBody(bool drawRockBodies, bool drawHandColliders)
-    {
-        return drawRockBodies && drawHandColliders;
-    }
-
-    inline bool shouldDrawWeaponBody(bool drawRockBodies, bool drawWeaponColliders, std::uint32_t weaponIndex, int maxWeaponBodiesDrawn)
-    {
-        if (!drawRockBodies || !drawWeaponColliders || maxWeaponBodiesDrawn <= 0) {
-            return false;
-        }
-        return weaponIndex < static_cast<std::uint32_t>(maxWeaponBodiesDrawn);
-    }
-
     inline constexpr std::uint32_t clampMaxConvexSupportVertices(int requested)
     {
         if (requested < 4) {

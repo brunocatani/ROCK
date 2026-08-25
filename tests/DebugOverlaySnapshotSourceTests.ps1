@@ -40,6 +40,10 @@ Require-Pattern 'niStoredBodyAxesToWorldMatrix[\s\S]*currentTargetToWorldMatrix[
     'Held BODY targets must render from stored BODY axes instead of the generated-collider transpose convention.'
 Require-Pattern 'stagePhysicsPhaseCapture\(const PublishedOverlayFrame& frame\)[\s\S]*preStepWorldMatrix[\s\S]*currentTargetWorldMatrix' `
     'Physics phase capture must freeze the matching published pre-step and target matrices before the solve.'
+Require-Pattern 'phaseDiagnosticsEnabled\s*=\s*[\s]*source\.drawColliderPhaseDiagnostics[\s\S]*if \(enabled\s*&&\s*next->phaseDiagnosticsEnabled\)[\s\S]*stagePhysicsPhaseCapture' `
+    'Collider phase capture must require the explicit phase-diagnostics child switch.'
+Require-Pattern 's_physicsPhaseCaptureEnabled\.load\([\s\S]{0,100}std::memory_order_acquire\)' `
+    'The physics callback must fail closed before diagnostic counters or body reads when phase capture is disabled.'
 Require-Pattern 'CompletedBodyPhaseFrame[\s\S]*postSolveWorldMatrix[\s\S]*kMaxCompletedPhaseAgeFrames' `
     'The compositor must retain one bounded completed target/pre/post packet across the next publication boundary.'
 Require-Pattern 'findCompletedBodyPhaseEntry[\s\S]*BodyRenderPhase::CurrentTarget[\s\S]*BodyRenderPhase::PreStep[\s\S]*BodyRenderPhase::PostSolve' `

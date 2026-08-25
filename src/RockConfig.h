@@ -154,6 +154,7 @@ namespace rock
 
         bool rockDebugShowColliders = false;
         bool rockDebugShowTargetColliders = false;
+        bool rockDebugDrawColliderPhaseDiagnostics = false;
         bool rockDebugShowHandAxes = false;
         bool rockDebugShowGrabPivots = false;
         bool rockDebugShowGrabPocketNormal = false;
@@ -171,6 +172,7 @@ namespace rock
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;
         bool rockDebugDrawHandBoneColliders = false;
+        bool rockDebugDrawBodyBoneColliders = false;
         bool rockDebugDrawDynamicHandColliders = false;
         bool rockDebugDrawHandBoneContacts = false;
         bool rockDebugDrawGrabAuthorityProxy = false;
@@ -179,6 +181,8 @@ namespace rock
         bool rockDebugDrawWeaponColliders = false;
         bool rockDebugDrawNativeScopeActivation = false;
         bool rockDebugDrawAuthoredGripActivationZones = false;
+        bool rockDebugDrawWeaponAuthority = false;
+        bool rockDebugDrawLooseWeaponGripZones = false;
         bool rockDebugDrawGunstockAlignment = false;
         bool rockDebugDrawDynamicWeaponColliders = false;
         bool rockDebugDumpWeaponAnimNodes = false;
@@ -201,7 +205,6 @@ namespace rock
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugVideoSyncMarker = false;
         float rockDebugVideoSyncMarkerSize = 4.0f;
-        bool rockDebugGrabFingerPoseLogging = false;
         bool rockDebugGrabTimelineTrace = false;
         bool rockDebugGrabAfterSolveAnomalySampling = false;
         bool rockDebugGrabTransformTelemetry = false;
@@ -216,7 +219,6 @@ namespace rock
         bool rockDebugWeaponOmodCoverageAudit = false;
         int rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
         bool rockWeaponOmodSelfHealEnabled = true;
-        bool rockDebugWorkbenchWeaponReattach = false;
         bool rockDebugHandTransformParity = false;
         bool rockDebugWorldObjectOriginDiagnostics = false;
         int rockDebugWorldObjectOriginLogIntervalFrames = 120;

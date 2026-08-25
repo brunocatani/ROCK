@@ -370,8 +370,8 @@ Require-Pattern $runtimeSource `
     'contactEpisodeStarted[\s\S]*_contactEpisode[\s\S]*snapshotBody\([\s\S]*otherBodyId[\s\S]*rawContactPointGame[\s\S]*publishContactDiagnosticSnapshot\(diagnostic\)' `
     'Each distinct world-contact episode must retain bounded body identity and raw point evidence in the post-solve snapshot.'
 Require-Pattern $runtimeSource `
-    'contactEpisodeStarted\s*&&[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*publishContactDiagnosticSnapshot\(diagnostic\)' `
-    'Extended contact evidence must publish only for a distinct episode while dynamic-collider diagnostics are enabled.'
+    'contactEpisodeStarted\s*&&[\s\S]*dynamicWeaponDebugEnabled\(\)[\s\S]*publishContactDiagnosticSnapshot\(diagnostic\)' `
+    'Extended contact evidence must publish only for a distinct episode while master-gated dynamic-collider diagnostics are enabled.'
 Require-Pattern $interaction `
     'contactEpisodeStarted[\s\S]*resolveBodyToRef\([\s\S]*tryFindCurrentWeaponSurfaceNearPoint\([\s\S]*tryGetWeaponContactDebugInfo\([\s\S]*DWC contact witness:[\s\S]*DWC contact transforms:' `
     'The main-thread diagnostic must resolve the contacted reference and nearest live weapon part once per contact episode.'

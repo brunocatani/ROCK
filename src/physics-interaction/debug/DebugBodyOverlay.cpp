@@ -431,6 +431,7 @@ namespace rock::debug
         static std::uint64_t s_previousShapeDecodeSettingsKey = 0;
         static std::uint32_t s_overlayStatsLogCounter = 0;
         static std::atomic_flag s_physicsPhaseCaptureGate = ATOMIC_FLAG_INIT;
+        static std::atomic<bool> s_physicsPhaseCaptureEnabled{ false };
         static PhysicsPhaseCaptureRequest s_physicsPhaseCaptureRequest{};
         static CompletedBodyPhaseFrame s_completedBodyPhaseFrame{};
 
@@ -900,14 +901,21 @@ namespace rock::debug
 
         void stagePhysicsPhaseCapture(const PublishedOverlayFrame& frame) noexcept
         {
+            s_physicsPhaseCaptureEnabled.store(
+                false,
+                std::memory_order_release);
             AtomicFlagLease lease(s_physicsPhaseCaptureGate);
             if (!lease) {
                 return;
             }
 
             s_physicsPhaseCaptureRequest = {};
-            if (!frame.worldIdentity || frame.gameFrameIndex == 0 ||
+            if (!frame.phaseDiagnosticsEnabled ||
+                !frame.worldIdentity || frame.gameFrameIndex == 0 ||
                 (!frame.drawRockBodies && !frame.drawTargetBodies)) {
+                s_physicsPhaseCaptureEnabled.store(
+                    false,
+                    std::memory_order_release);
                 s_completedBodyPhaseFrame = {};
                 return;
             }
@@ -961,10 +969,16 @@ namespace rock::debug
                     destination.hasCurrentTarget = true;
                 }
             }
+            s_physicsPhaseCaptureEnabled.store(
+                s_physicsPhaseCaptureRequest.count != 0,
+                std::memory_order_release);
         }
 
         void clearPhysicsPhaseCapture() noexcept
         {
+            s_physicsPhaseCaptureEnabled.store(
+                false,
+                std::memory_order_release);
             AtomicFlagLease lease(s_physicsPhaseCaptureGate);
             if (!lease) {
                 return;
@@ -1556,6 +1570,7 @@ namespace rock::debug
             destination.drawColoredLines = source.drawColoredLines;
             destination.drawText = source.drawText;
             destination.phaseDiagnosticsEnabled =
+                source.drawColliderPhaseDiagnostics &&
                 source.gameFrameIndex != 0 &&
                 (source.drawRockBodies || source.drawTargetBodies);
 
@@ -4758,7 +4773,7 @@ namespace rock::debug
         }
 
         const bool enabled = buildPublishedFrame(frame, *next);
-        if (enabled) {
+        if (enabled && next->phaseDiagnosticsEnabled) {
             stagePhysicsPhaseCapture(*next);
 
             // Publish-thread-only counter; ~7 s cadence at 90 Hz. Leaves
@@ -4801,6 +4816,10 @@ namespace rock::debug
         const std::uint64_t gameFrameIndex,
         const std::uint64_t solveSequence) noexcept
     {
+        if (!s_physicsPhaseCaptureEnabled.load(
+                std::memory_order_acquire)) {
+            return;
+        }
         if (!world || gameFrameIndex == 0 || solveSequence == 0 ||
             !timing.valid) {
             s_phaseCaptureDiagnostics.invalidInputs.fetch_add(

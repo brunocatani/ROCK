@@ -3082,9 +3082,7 @@ namespace rock
         _authoredSupportGripDebugSnapshot = {};
         const bool collectPoseEvidence =
             requirePoseEvidence ||
-            g_rockConfig.rockDebugDrawAuthoredGripActivationZones ||
-            g_rockConfig.rockDebugShowHandAxes ||
-            g_rockConfig.rockDebugShowGrabPivots;
+            g_rockConfig.rockDebugDrawAuthoredGripActivationZones;
 
         const auto& candidate = _authoredSupportGripCandidate;
         if (!weaponNode ||

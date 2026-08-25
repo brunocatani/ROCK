@@ -391,6 +391,7 @@ namespace rock::debug
         bool drawSkeleton{ false };
         bool drawColoredLines{ false };
         bool drawText{ false };
+        bool drawColliderPhaseDiagnostics{ false };
     };
 
     void Install();

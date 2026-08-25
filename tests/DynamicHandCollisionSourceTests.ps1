@@ -447,11 +447,10 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'driveGeneratedKeyframedBody\('
 ) 'Dynamic hand flush must arm the press cap from the last post-solve deviation.'
 
-# The twins get their own visualization flag, independent of the keyframed
-# collider debug draws.
+# The twins retain their own child switch under the shared collider master.
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'if \(drawDynamicHandColliders\)' `
-    'Dynamic hand twins must draw behind their own bDebugDrawDynamicHandColliders flag.'
+    'dynamicHandColliders\s*=\s*[\s]*g_rockConfig\.rockDebugDrawDynamicHandColliders[\s\S]*drawDynamicHandColliders\s*=\s*visualization\.dynamicHandColliders[\s\S]*if \(drawDynamicHandColliders\)' `
+    'Dynamic hand twins must draw behind the collider master and their dedicated child switch.'
 
 # The drive keeps chasing the wand while another system owns the hand pose:
 # target queueing must happen BEFORE the ownership gate.
