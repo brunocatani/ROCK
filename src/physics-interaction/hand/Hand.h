@@ -726,6 +726,7 @@ namespace rock
         struct GrabBodyPreparation;
         struct GrabProxyPreparation;
         struct GrabMeshCaptureSetup;
+        struct GrabMeshExtraction;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -745,6 +746,14 @@ namespace rock
             std::uint64_t traceId,
             const std::string& objectName,
             GrabMeshCaptureSetup& outSetup);
+        void extractGrabMeshEvidence(
+            RE::hknpWorld* world,
+            RE::hknpBodyId objectBodyId,
+            RE::NiAVObject* rootNode,
+            RE::NiAVObject* collidableNode,
+            RE::NiAVObject* meshSourceNode,
+            bool handPocketOnlyGrab,
+            GrabMeshExtraction& outExtraction);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 

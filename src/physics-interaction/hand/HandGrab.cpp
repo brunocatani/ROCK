@@ -6814,6 +6814,165 @@ namespace rock
         return true;
     }
 
+    struct Hand::GrabMeshExtraction
+    {
+        RE::NiAVObject* meshSourceNode = nullptr;
+        MeshExtractionStats stats{};
+        std::vector<TriangleData> meshTriangles{};
+        std::vector<GrabSurfaceTriangleData> surfaceTriangles{};
+    };
+
+    void Hand::extractGrabMeshEvidence(
+        RE::hknpWorld* world,
+        RE::hknpBodyId objectBodyId,
+        RE::NiAVObject* rootNode,
+        RE::NiAVObject* collidableNode,
+        RE::NiAVObject* meshSourceNode,
+        bool handPocketOnlyGrab,
+        GrabMeshExtraction& outExtraction)
+    {
+        outExtraction = {};
+        outExtraction.meshSourceNode = meshSourceNode;
+        if (!meshSourceNode) {
+            return;
+        }
+
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabMeshExtraction);
+        const int meshExtractionDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
+        std::array<RE::NiAVObject*, 3> attemptedRoots{};
+        std::uint32_t attemptCount = 0;
+        const char* extractionSource = "visual";
+        attemptedRoots[attemptCount++] = meshSourceNode;
+        extractAllSurfaceTriangles(
+            meshSourceNode,
+            outExtraction.meshTriangles,
+            outExtraction.surfaceTriangles,
+            meshExtractionDepth,
+            &outExtraction.stats,
+            handPocketOnlyGrab);
+
+        auto tryAlternateRoot = [&](RE::NiAVObject* candidateRoot, const char* sourceName) {
+            if (!candidateRoot) {
+                return false;
+            }
+            for (std::uint32_t i = 0; i < attemptCount; ++i) {
+                if (attemptedRoots[i] == candidateRoot) {
+                    return false;
+                }
+            }
+            if (attemptCount < attemptedRoots.size()) {
+                attemptedRoots[attemptCount] = candidateRoot;
+            }
+            ++attemptCount;
+            const auto beforeTriangles = outExtraction.meshTriangles.size();
+            extractAllSurfaceTriangles(
+                candidateRoot,
+                outExtraction.meshTriangles,
+                outExtraction.surfaceTriangles,
+                meshExtractionDepth,
+                &outExtraction.stats,
+                handPocketOnlyGrab);
+            if (outExtraction.meshTriangles.size() == beforeTriangles) {
+                return false;
+            }
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand mesh extraction recovered from {} node: meshNode='{}' previousMeshNode='{}' ownerNode='{}' rootNode='{}' addedTris={} totalTris={}",
+                handName(),
+                sourceName,
+                nodeDebugName(candidateRoot),
+                nodeDebugName(outExtraction.meshSourceNode),
+                nodeDebugName(collidableNode),
+                nodeDebugName(rootNode),
+                outExtraction.meshTriangles.size() - beforeTriangles,
+                outExtraction.meshTriangles.size());
+            outExtraction.meshSourceNode = candidateRoot;
+            extractionSource = sourceName;
+            return true;
+        };
+
+        if (outExtraction.meshTriangles.empty()) {
+            if (!tryAlternateRoot(collidableNode, "owner")) {
+                (void)tryAlternateRoot(rootNode, "root");
+            }
+        }
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} source={} attempts={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} totalTris={}",
+            handName(),
+            nodeDebugName(outExtraction.meshSourceNode),
+            nodeDebugName(collidableNode),
+            nodeDebugName(rootNode),
+            outExtraction.stats.visitedShapes,
+            extractionSource,
+            attemptCount,
+            outExtraction.stats.staticShapes,
+            outExtraction.stats.staticTriangles,
+            outExtraction.stats.dynamicShapes,
+            outExtraction.stats.dynamicTriangles,
+            outExtraction.stats.skinnedShapes,
+            outExtraction.stats.skinnedTriangles,
+            outExtraction.stats.dynamicSkinnedSkipped,
+            outExtraction.stats.emptyShapes,
+            outExtraction.stats.totalTriangles());
+        performance_profiler::observeValue(
+            performance_profiler::ValueMetric::GrabMeshTriangles,
+            outExtraction.stats.totalTriangles());
+
+        RE::BSTriShape* firstTriShape = outExtraction.meshSourceNode->IsTriShape();
+        if (!firstTriShape) {
+            if (auto* meshNode = outExtraction.meshSourceNode->IsNode()) {
+                auto& children = meshNode->GetRuntimeData().children;
+                const auto childCount = children.size();
+                for (auto index = decltype(childCount){ 0 }; index < childCount; ++index) {
+                    auto* child = children[index].get();
+                    if (child && child->IsTriShape()) {
+                        firstTriShape = child->IsTriShape();
+                        break;
+                    }
+                }
+            }
+        }
+        if (firstTriShape) {
+            auto* triShapeBytes = reinterpret_cast<char*>(firstTriShape);
+            const std::uint64_t vertexDescriptor = *reinterpret_cast<std::uint64_t*>(triShapeBytes + VROffset::vertexDesc);
+            const std::uint32_t stride = static_cast<std::uint32_t>(vertexDescriptor & 0xF) * 4;
+            const std::uint32_t positionOffset = static_cast<std::uint32_t>((vertexDescriptor >> 2) & 0x3C);
+            const bool fullPrecision = ((vertexDescriptor >> 54) & 1) != 0;
+            const std::uint8_t geometryType = *reinterpret_cast<std::uint8_t*>(triShapeBytes + 0x198);
+            void* skinInstance = *reinterpret_cast<void**>(triShapeBytes + VROffset::skinInstance);
+            ROCK_LOG_TRACE(MeshGrab,
+                "VertexDiag '{}': vtxDesc=0x{:016X} stride={} posOffset={} fullPrec={} geomType={} skinned={}",
+                firstTriShape->name.c_str() ? firstTriShape->name.c_str() : "(null)",
+                vertexDescriptor,
+                stride,
+                positionOffset,
+                fullPrecision ? 1 : 0,
+                geometryType,
+                skinInstance ? 1 : 0);
+        }
+
+        if (!outExtraction.meshTriangles.empty()) {
+            const auto& triangle = outExtraction.meshTriangles.front();
+            const float cx = (triangle.v0.x + triangle.v1.x + triangle.v2.x) / 3.0f;
+            const float cy = (triangle.v0.y + triangle.v1.y + triangle.v2.y) / 3.0f;
+            const float cz = (triangle.v0.z + triangle.v1.z + triangle.v2.z) / 3.0f;
+            if (auto* liveBody = havok_runtime::getBody(world, objectBodyId)) {
+                auto* bodyValues = reinterpret_cast<float*>(liveBody);
+                const float scale = havokToGameScale();
+                const float distance = std::sqrt(
+                    (cx - bodyValues[12] * scale) * (cx - bodyValues[12] * scale) +
+                    (cy - bodyValues[13] * scale) * (cy - bodyValues[13] * scale) +
+                    (cz - bodyValues[14] * scale) * (cz - bodyValues[14] * scale));
+                ROCK_LOG_TRACE(MeshGrab,
+                    "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToBody={:.1f}gu",
+                    cx,
+                    cy,
+                    cz,
+                    distance);
+            }
+        }
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -7117,10 +7276,11 @@ namespace rock
         RE::NiPoint3 grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice;
         float selectionToMeshDistanceGameUnits = 0.0f;
         bool meshGrabFound = false;
-        MeshExtractionStats meshStats;
-        std::vector<TriangleData> grabMeshTriangles;
+        GrabMeshExtraction meshExtraction{};
+        auto& meshStats = meshExtraction.stats;
+        auto& grabMeshTriangles = meshExtraction.meshTriangles;
         std::vector<TriangleData> grabFingerPoseMeshTriangles;
-        std::vector<GrabSurfaceTriangleData> grabSurfaceTriangles;
+        auto& grabSurfaceTriangles = meshExtraction.surfaceTriangles;
         std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
         std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
         GrabSurfaceHit grabSurfaceHit{};
@@ -7208,127 +7368,9 @@ namespace rock
             }
         }
 
+        extractGrabMeshEvidence(world, objectBodyId, rootNode, collidableNode, meshSourceNode, handPocketOnlyGrab, meshExtraction);
+        meshSourceNode = meshExtraction.meshSourceNode;
         if (meshSourceNode) {
-            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabMeshExtraction);
-            const int meshExtractionDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
-            std::array<RE::NiAVObject*, 3> meshExtractionAttemptedRoots{};
-            std::uint32_t meshExtractionAttemptCount = 0;
-            const char* meshExtractionSource = "visual";
-            meshExtractionAttemptedRoots[meshExtractionAttemptCount++] = meshSourceNode;
-            const auto primaryBeforeTriangles = grabMeshTriangles.size();
-            extractAllSurfaceTriangles(meshSourceNode,
-                grabMeshTriangles,
-                grabSurfaceTriangles,
-                meshExtractionDepth,
-                &meshStats,
-                handPocketOnlyGrab);
-
-            const bool primaryMeshExtractionFound = grabMeshTriangles.size() != primaryBeforeTriangles;
-            auto tryExtractSurfaceTrianglesFromAlternateRoot = [&](RE::NiAVObject* candidateRoot, const char* sourceName) {
-                if (!candidateRoot) {
-                    return false;
-                }
-                for (std::uint32_t i = 0; i < meshExtractionAttemptCount; ++i) {
-                    if (meshExtractionAttemptedRoots[i] == candidateRoot) {
-                        return false;
-                    }
-                }
-                if (meshExtractionAttemptCount < meshExtractionAttemptedRoots.size()) {
-                    meshExtractionAttemptedRoots[meshExtractionAttemptCount] = candidateRoot;
-                }
-                ++meshExtractionAttemptCount;
-
-                const auto beforeTriangles = grabMeshTriangles.size();
-                extractAllSurfaceTriangles(candidateRoot,
-                    grabMeshTriangles,
-                    grabSurfaceTriangles,
-                    meshExtractionDepth,
-                    &meshStats,
-                    handPocketOnlyGrab);
-
-                if (grabMeshTriangles.size() == beforeTriangles) {
-                    return false;
-                }
-
-                if (candidateRoot != meshSourceNode) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand mesh extraction recovered from {} node: meshNode='{}' previousMeshNode='{}' ownerNode='{}' rootNode='{}' addedTris={} totalTris={}",
-                        handName(),
-                        sourceName,
-                        nodeDebugName(candidateRoot),
-                        nodeDebugName(meshSourceNode),
-                        nodeDebugName(collidableNode),
-                        nodeDebugName(rootNode),
-                        grabMeshTriangles.size() - beforeTriangles,
-                        grabMeshTriangles.size());
-                }
-                meshSourceNode = candidateRoot;
-                meshExtractionSource = sourceName;
-                return true;
-            };
-
-            if (!primaryMeshExtractionFound) {
-                if (!tryExtractSurfaceTrianglesFromAlternateRoot(collidableNode, "owner")) {
-                    (void)tryExtractSurfaceTrianglesFromAlternateRoot(rootNode, "root");
-                }
-            }
-
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} "
-                "source={} attempts={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} totalTris={}",
-                handName(), nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes, meshExtractionSource,
-                meshExtractionAttemptCount, meshStats.staticShapes,
-                meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes, meshStats.skinnedTriangles,
-                meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, meshStats.totalTriangles());
-            performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshTriangles, meshStats.totalTriangles());
-
-            {
-                RE::BSTriShape* firstTriShape = meshSourceNode->IsTriShape();
-                if (!firstTriShape) {
-                    auto* meshNode = meshSourceNode->IsNode();
-                    if (meshNode) {
-                        auto& kids = meshNode->GetRuntimeData().children;
-                        const auto childCount = kids.size();
-                        for (auto ci = decltype(childCount){ 0 }; ci < childCount; ci++) {
-                            auto* kid = kids[ci].get();
-                            if (kid && kid->IsTriShape()) {
-                                firstTriShape = kid->IsTriShape();
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (firstTriShape) {
-                    auto* tsBase = reinterpret_cast<char*>(firstTriShape);
-                    std::uint64_t vtxDesc = *reinterpret_cast<std::uint64_t*>(tsBase + VROffset::vertexDesc);
-                    std::uint32_t stride = static_cast<std::uint32_t>(vtxDesc & 0xF) * 4;
-                    std::uint32_t posOff = static_cast<std::uint32_t>((vtxDesc >> 2) & 0x3C);
-                    bool fullPrec = ((vtxDesc >> 54) & 1) != 0;
-                    std::uint8_t geomType = *reinterpret_cast<std::uint8_t*>(tsBase + 0x198);
-                    void* skinInst = *reinterpret_cast<void**>(tsBase + VROffset::skinInstance);
-
-                    ROCK_LOG_TRACE(MeshGrab, "VertexDiag '{}': vtxDesc=0x{:016X} stride={} posOffset={} fullPrec={} geomType={} skinned={}",
-                        firstTriShape->name.c_str() ? firstTriShape->name.c_str() : "(null)", vtxDesc, stride, posOff, fullPrec ? 1 : 0, geomType, skinInst ? 1 : 0);
-                }
-            }
-
-            if (!grabMeshTriangles.empty()) {
-                auto& t0 = grabMeshTriangles[0];
-                float cx = (t0.v0.x + t0.v1.x + t0.v2.x) / 3.0f;
-                float cy = (t0.v0.y + t0.v1.y + t0.v2.y) / 3.0f;
-                float cz = (t0.v0.z + t0.v1.z + t0.v2.z) / 3.0f;
-
-                if (auto* liveBody = havok_runtime::getBody(world, objectBodyId)) {
-                    auto* objFloats = reinterpret_cast<float*>(liveBody);
-                    const float hkToGameScale = havokToGameScale();
-                    float distToBody = std::sqrt((cx - objFloats[12] * hkToGameScale) * (cx - objFloats[12] * hkToGameScale) +
-                        (cy - objFloats[13] * hkToGameScale) * (cy - objFloats[13] * hkToGameScale) +
-                        (cz - objFloats[14] * hkToGameScale) * (cz - objFloats[14] * hkToGameScale));
-
-                    ROCK_LOG_TRACE(MeshGrab, "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToBody={:.1f}gu", cx, cy, cz, distToBody);
-                }
-            }
-
             const bool closeGrabNeedsPalmPocketMeshAuthority =
                 !grabSurfaceTriangles.empty() &&
                 (handPocketOnlyGrab ||

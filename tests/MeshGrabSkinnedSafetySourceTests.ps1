@@ -75,7 +75,7 @@ Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadField\(skinInst,\s
 Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadField\(skinInst,\s*0x38,\s*boneCount\)' 'Skinned mesh extraction must not use the old incorrect +0x38 bone-count read.'
 Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'Skipping skinned BSDynamicTriShape' 'Skinned BSDynamicTriShape must no longer be hard-skipped from grab mesh authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const int meshExtractionDepth = \(std::max\)\(1,\s*g_rockConfig\.rockObjectPhysicsTreeMaxDepth\)' 'Mesh extraction must honor the configured object tree depth instead of a hardcoded recursion cap.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'extractAllSurfaceTriangles\(meshSourceNode,[\s\S]*meshExtractionDepth' 'Hand grab must pass the configured mesh extraction depth into surface traversal.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'extractAllSurfaceTriangles\(\s*meshSourceNode,[\s\S]*meshExtractionDepth' 'Hand grab must pass the configured mesh extraction depth into surface traversal.'
 
 if ($failures.Count -gt 0) {
     Write-Error ($failures -join [Environment]::NewLine)
