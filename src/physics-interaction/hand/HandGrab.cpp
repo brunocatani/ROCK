@@ -11808,67 +11808,17 @@ namespace rock
         return true;
     }
 
-    void Hand::updateHeldObject(RE::hknpWorld* world,
+    bool Hand::updateHeldVisualPresentation(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float deltaTime,
-        float forceFadeInTime,
-        float tauMin,
-        const BodyBoneColliderSet* bodyBoneColliders,
-        const GrabReleaseContext& releaseContext)
+        float pivotTrackingErrorGameUnits,
+        bool hasPivotTrackingError,
+        bool heldMotorContactSoftening,
+        const GrabReleaseContext& releaseContext,
+        bool& outConvergingAcquisitionPhase)
     {
-        if (!isHolding() || !world)
-            return;
-        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabHeldObjectUpdate);
-        if (!validateHeldObjectUpdate(world, releaseContext)) {
-            return;
-        }
-
-        nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
-
-        suppressHandCollisionForGrab(world, bodyBoneColliders);
-        if (_heldObjectIsLooseWeapon) {
-            suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
-        }
-
-        _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
-
-        const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, deltaTime);
-        (void)handMotion;
-
-        /*
-         * ROCK freezes the visible object/node relation in generated/proxy
-         * authority space, then composes it with the rigid-body local transform
-         * for the driven body target. BODY remains object-space authority and
-         * MOTION remains COM/weight/diagnostic data only.
-         */
-        HeldDriveUpdate driveUpdate{};
-        if (!updateHeldDrive(
-                world,
-                handWorldTransform,
-                deltaTime,
-                forceFadeInTime,
-                tauMin,
-                releaseContext,
-                driveUpdate)) {
-            return;
-        }
-        const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
-        const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
-        const auto& desiredBodyWorld = driveUpdate.desiredBodyWorld;
-        const auto& activePivotBBodyLocalGame = driveUpdate.activePivotBBodyLocalGame;
-        const auto& desiredTargetPointWorld = driveUpdate.desiredTargetPointWorld;
-        const char* proxyAuthoritySource = driveUpdate.proxyAuthoritySource;
-        const char* heldMotorContactReason = driveUpdate.heldMotorContactReason;
-        const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
-        const float grabRotationErrorDegrees = driveUpdate.grabRotationErrorDegrees;
-        const float authorityForceScale = driveUpdate.authorityForceScale;
-        const float averageGrabDeviationGameUnits = driveUpdate.averageGrabDeviationGameUnits;
-        const bool hasProxyAuthorityFrame = driveUpdate.hasProxyAuthorityFrame;
-        const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
-        const bool heldBodyColliding = driveUpdate.heldBodyColliding;
-        const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
         tickHeldBodyContact();
-        const bool convergingAcquisitionPhase =
+        outConvergingAcquisitionPhase =
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::GravityPulling ||
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::SeatedPivotReacquire;
@@ -11882,7 +11832,7 @@ namespace rock
                 acquisitionVisualEnvelope,
                 (std::max)(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, g_rockConfig.rockGrabPocketRadiusGameUnits));
         const bool acquisitionVisualEligible =
-            convergingAcquisitionPhase &&
+            outConvergingAcquisitionPhase &&
             hasPivotTrackingError &&
             _grabObjectGripAtGrab.valid &&
             pivotTrackingErrorGameUnits <= acquisitionVisualAttachEnvelope;
@@ -11989,7 +11939,7 @@ namespace rock
                         held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
                     clearGrabExternalHandWorldTransform(_isLeft);
                     releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
-                    return;
+                    return false;
                 }
                 const float averageVisualHandDeviationGameUnits = recordDeviationAverage(
                     _grabVisualDeviationHistory,
@@ -12010,7 +11960,7 @@ namespace rock
                         _grabVisualDeviationExceededSeconds);
                     clearGrabExternalHandWorldTransform(_isLeft);
                     releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
-                    return;
+                    return false;
                 }
 
                 _grabVisualHandTransform = nextVisualHandWorld;
@@ -12088,6 +12038,81 @@ namespace rock
             _grabVisualHandLerpDurationSeconds = 0.0f;
         }
 
+
+        return true;
+    }
+
+    void Hand::updateHeldObject(RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        float deltaTime,
+        float forceFadeInTime,
+        float tauMin,
+        const BodyBoneColliderSet* bodyBoneColliders,
+        const GrabReleaseContext& releaseContext)
+    {
+        if (!isHolding() || !world)
+            return;
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabHeldObjectUpdate);
+        if (!validateHeldObjectUpdate(world, releaseContext)) {
+            return;
+        }
+
+        nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
+
+        suppressHandCollisionForGrab(world, bodyBoneColliders);
+        if (_heldObjectIsLooseWeapon) {
+            suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
+        }
+
+        _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
+
+        const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, deltaTime);
+        (void)handMotion;
+
+        /*
+         * ROCK freezes the visible object/node relation in generated/proxy
+         * authority space, then composes it with the rigid-body local transform
+         * for the driven body target. BODY remains object-space authority and
+         * MOTION remains COM/weight/diagnostic data only.
+         */
+        HeldDriveUpdate driveUpdate{};
+        if (!updateHeldDrive(
+                world,
+                handWorldTransform,
+                deltaTime,
+                forceFadeInTime,
+                tauMin,
+                releaseContext,
+                driveUpdate)) {
+            return;
+        }
+        const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
+        const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
+        const auto& desiredBodyWorld = driveUpdate.desiredBodyWorld;
+        const auto& activePivotBBodyLocalGame = driveUpdate.activePivotBBodyLocalGame;
+        const auto& desiredTargetPointWorld = driveUpdate.desiredTargetPointWorld;
+        const char* proxyAuthoritySource = driveUpdate.proxyAuthoritySource;
+        const char* heldMotorContactReason = driveUpdate.heldMotorContactReason;
+        const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
+        const float grabRotationErrorDegrees = driveUpdate.grabRotationErrorDegrees;
+        const float authorityForceScale = driveUpdate.authorityForceScale;
+        const float averageGrabDeviationGameUnits = driveUpdate.averageGrabDeviationGameUnits;
+        const bool hasProxyAuthorityFrame = driveUpdate.hasProxyAuthorityFrame;
+        const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
+        const bool heldBodyColliding = driveUpdate.heldBodyColliding;
+        const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
+        bool convergingAcquisitionPhase = false;
+        if (!updateHeldVisualPresentation(
+                world,
+                handWorldTransform,
+                deltaTime,
+                pivotTrackingErrorGameUnits,
+                hasPivotTrackingError,
+                heldMotorContactSoftening,
+                releaseContext,
+                convergingAcquisitionPhase)) {
+            return;
+        }
         if (convergingAcquisitionPhase && _grabObjectGripAtGrab.valid) {
             const auto previousAcquisitionPhase = _grabAcquisitionPhase;
             RE::NiTransform grabBodyWorld{};

@@ -754,6 +754,14 @@ namespace rock
             float tauMin,
             const GrabReleaseContext& releaseContext,
             HeldDriveUpdate& outUpdate);
+        bool updateHeldVisualPresentation(RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            float deltaTime,
+            float pivotTrackingErrorGameUnits,
+            bool hasPivotTrackingError,
+            bool heldMotorContactSoftening,
+            const GrabReleaseContext& releaseContext,
+            bool& outConvergingAcquisitionPhase);
         void prepareSelectedGrabBodies(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
