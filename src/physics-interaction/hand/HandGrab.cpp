@@ -8045,6 +8045,80 @@ namespace rock
         return true;
     }
 
+    struct Hand::GrabCommitPreparationInput
+    {
+        const RE::NiTransform* handWorldTransform = nullptr;
+        RE::NiAVObject* collidableNode = nullptr;
+        RE::hknpBodyId objectBodyId{};
+        const std::string* objectName = nullptr;
+        const char* motionType = "UNKNOWN";
+        const mechanical_connected_body_set::MechanicalScope* mechanicalScope = nullptr;
+        const GrabSharedObjectContext* sharedContext = nullptr;
+        const object_physics_body_set::ObjectPhysicsBodySet* preparedBodySet = nullptr;
+        bool joiningPeerHeldObject = false;
+    };
+
+    void Hand::beginResolvedGrabCommit(const GrabCommitPreparationInput& input)
+    {
+        const auto& handWorldTransform = *input.handWorldTransform;
+        auto* collidableNode = input.collidableNode;
+        const auto objectBodyId = input.objectBodyId;
+        const auto& objectName = *input.objectName;
+        const auto* motionType = input.motionType;
+        const auto& mechanicalScope = *input.mechanicalScope;
+        const auto& sharedContext = *input.sharedContext;
+        const auto& preparedBodySet = *input.preparedBodySet;
+        const bool joiningPeerHeldObject = input.joiningPeerHeldObject;
+        logRuntimeScaleIfChanged(_isLeft, handName(), handWorldTransform, collidableNode);
+        ROCK_LOG_INFO(Hand,
+            "{} hand GRAB: '{}' formID={:08X} bodyId={}",
+            handName(),
+            objectName,
+            _currentSelection.refr->GetFormID(),
+            objectBodyId.value);
+
+        if (g_rockConfig.rockDebugShowGrabNotifications) {
+            const auto message = std::format(
+                "[ROCK] {} GRAB: {} ({})",
+                _isLeft ? "L" : "R",
+                objectName,
+                motionType);
+            f4vr::showNotification(message);
+        }
+
+        bool adoptedPeerHeldBodySet = false;
+        _heldBodyIds = buildCommittedHeldBodyIds(
+            objectBodyId.value,
+            mechanicalScope.committedBodyIds,
+            sharedContext,
+            adoptedPeerHeldBodySet);
+        if (_heldBodyIds.empty()) {
+            _heldBodyIds.push_back(objectBodyId.value);
+        }
+        _heldDriveDecision = mechanicalScope.driveDecision;
+        if (adoptedPeerHeldBodySet) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand SHARED held body set adopted: primaryBody={} peerBodies={} committedBodies={} scanAccepted={} mechanicalKind={} driveMode={} driveReason={}",
+                handName(),
+                objectBodyId.value,
+                sharedContext.peerHeldBodyIds ? sharedContext.peerHeldBodyIds->size() : 0,
+                _heldBodyIds.size(),
+                preparedBodySet.acceptedCount(),
+                mechanical_connected_body_set::scopeKindName(mechanicalScope.kind),
+                held_object_drive_policy::modeName(_heldDriveDecision.mode),
+                _heldDriveDecision.reason);
+        }
+
+        if (auto* player = RE::PlayerCharacter::GetSingleton(); player && !joiningPeerHeldObject) {
+            nativeVRGrabDrop(player, 0);
+            nativeVRGrabDrop(player, 1);
+        }
+
+        _grabStartTime = 0.0f;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
+        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -8720,45 +8794,18 @@ namespace rock
             fingerEvidencePointWorld.y,
             fingerEvidencePointWorld.z);
 
-        logRuntimeScaleIfChanged(_isLeft, handName(), handWorldTransform, collidableNode);
-
-        ROCK_LOG_INFO(Hand, "{} hand GRAB: '{}' formID={:08X} bodyId={}", handName(), objName, sel.refr->GetFormID(), objectBodyId.value);
-
-        if (g_rockConfig.rockDebugShowGrabNotifications) {
-            auto msg = std::format("[ROCK] {} GRAB: {} ({})", _isLeft ? "L" : "R", objName, motionTypeStr);
-            f4vr::showNotification(msg);
-        }
-
-        bool adoptedPeerHeldBodySet = false;
-        _heldBodyIds = buildCommittedHeldBodyIds(objectBodyId.value, mechanicalScope.committedBodyIds, sharedContext, adoptedPeerHeldBodySet);
-        if (_heldBodyIds.empty()) {
-            _heldBodyIds.push_back(objectBodyId.value);
-        }
-        _heldDriveDecision = mechanicalScope.driveDecision;
-        if (adoptedPeerHeldBodySet) {
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand SHARED held body set adopted: primaryBody={} peerBodies={} committedBodies={} scanAccepted={} mechanicalKind={} driveMode={} driveReason={}",
-                handName(),
-                objectBodyId.value,
-                sharedContext.peerHeldBodyIds ? sharedContext.peerHeldBodyIds->size() : 0,
-                _heldBodyIds.size(),
-                preparedBodySet.acceptedCount(),
-                mechanical_connected_body_set::scopeKindName(mechanicalScope.kind),
-                held_object_drive_policy::modeName(_heldDriveDecision.mode),
-                _heldDriveDecision.reason);
-        }
-
-        {
-            auto* player = RE::PlayerCharacter::GetSingleton();
-            if (player && !joiningPeerHeldObject) {
-                nativeVRGrabDrop(player, 0);
-                nativeVRGrabDrop(player, 1);
-            }
-        }
-
-        _grabStartTime = 0.0f;
-        _grabConvergeStableInsidePocketSeconds = 0.0f;
-        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        const GrabCommitPreparationInput commitPreparationInput{
+            .handWorldTransform = &handWorldTransform,
+            .collidableNode = collidableNode,
+            .objectBodyId = objectBodyId,
+            .objectName = &objName,
+            .motionType = motionTypeStr,
+            .mechanicalScope = &mechanicalScope,
+            .sharedContext = &sharedContext,
+            .preparedBodySet = &preparedBodySet,
+            .joiningPeerHeldObject = joiningPeerHeldObject,
+        };
+        beginResolvedGrabCommit(commitPreparationInput);
 
         {
             const RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorldTransform, _isLeft);

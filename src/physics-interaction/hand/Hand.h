@@ -733,6 +733,7 @@ namespace rock
         struct GrabPivotEvidence;
         struct GrabFingerEvidenceInput;
         struct GrabFingerEvidence;
+        struct GrabCommitPreparationInput;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
@@ -808,6 +809,8 @@ namespace rock
             GrabSurfaceEvidence& surface,
             const GrabPivotEvidence& pivotEvidence,
             GrabFingerEvidence& outEvidence);
+        void beginResolvedGrabCommit(
+            const GrabCommitPreparationInput& input);
 
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
