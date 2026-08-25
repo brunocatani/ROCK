@@ -132,7 +132,10 @@ namespace rock
             std::uintptr_t previousNativeInstanceNode = 0);
         void resetDrawRecoveryClock(bool armed) noexcept;
         [[nodiscard]] float sampleDrawRecoveryWallDelta() noexcept;
-        void finish(const char* reason, bool releaseSceneGraph);
+        void finish(
+            TerminalResult result,
+            const char* reason,
+            bool releaseSceneGraph);
 
         EquipVisualBridge _bridge;
         equipped_weapon_transition_policy::State _policyState{};

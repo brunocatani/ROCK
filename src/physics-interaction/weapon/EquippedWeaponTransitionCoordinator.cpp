@@ -9,7 +9,6 @@
 #include "RE/Bethesda/Actor.h"
 
 #include <algorithm>
-#include <string_view>
 
 namespace rock
 {
@@ -33,39 +32,6 @@ namespace rock
             default:
                 return "unknown";
             }
-        }
-
-        [[nodiscard]] EquippedWeaponTransitionCoordinator::TerminalResult
-        terminalResultForReason(
-            const char* reason,
-            const bool recoveryExhausted) noexcept
-        {
-            const std::string_view value = reason ? reason : "";
-            if (recoveryExhausted || value == "watchdog-complete") {
-                return recoveryExhausted ?
-                    EquippedWeaponTransitionCoordinator::TerminalResult::RecoveryExhausted :
-                    EquippedWeaponTransitionCoordinator::TerminalResult::Completed;
-            }
-            if (value == "weapon-unequipped") {
-                return EquippedWeaponTransitionCoordinator::TerminalResult::WeaponUnequipped;
-            }
-            if (value == "bound-identity-lost") {
-                return EquippedWeaponTransitionCoordinator::TerminalResult::IdentityLost;
-            }
-            if (value == "expected-identity-timeout") {
-                return EquippedWeaponTransitionCoordinator::TerminalResult::ExpectedIdentityTimeout;
-            }
-            if (value == "native-weapon-animation-after-handoff" ||
-                value == "native-weapon-animation-timeout") {
-                return EquippedWeaponTransitionCoordinator::TerminalResult::NativeAnimationHandoff;
-            }
-            if (value == "weapon-no-longer-drawn") {
-                return EquippedWeaponTransitionCoordinator::TerminalResult::WeaponNoLongerDrawn;
-            }
-            if (value == "intentional-shoulder-sheathe") {
-                return EquippedWeaponTransitionCoordinator::TerminalResult::IntentionalShoulderSheathe;
-            }
-            return EquippedWeaponTransitionCoordinator::TerminalResult::Completed;
         }
 
     }
@@ -207,7 +173,7 @@ namespace rock
                     previous,
                     previousNativeInstanceNode);
             } else if (!_waitingForExpectedIdentity && !current.valid() && previous == _boundIdentity) {
-                finish("weapon-unequipped", true);
+                finish(TerminalResult::WeaponUnequipped, "weapon-unequipped", true);
             }
         }
 
@@ -225,7 +191,10 @@ namespace rock
                     current.formID,
                     current.instanceData,
                     current.equipIndex);
-                finish("intentional-shoulder-sheathe", true);
+                finish(
+                    TerminalResult::IntentionalShoulderSheathe,
+                    "intentional-shoulder-sheathe",
+                    true);
             }
             return;
         }
@@ -282,13 +251,16 @@ namespace rock
                 .nativeVisual = nullptr,
             });
             if (_activeSeconds >= kTransitionWatchdogSeconds) {
-                finish("expected-identity-timeout", true);
+                finish(
+                    TerminalResult::ExpectedIdentityTimeout,
+                    "expected-identity-timeout",
+                    true);
             }
             return;
         }
 
         if (!current.valid() || current != _boundIdentity) {
-            finish("bound-identity-lost", true);
+            finish(TerminalResult::IdentityLost, "bound-identity-lost", true);
             return;
         }
 
@@ -302,7 +274,10 @@ namespace rock
             // explicit ownership transfer.
             _bridge.completeHandPoseHandoff("native-weapon-animation");
             if (_policyState.nativeHandoffObserved) {
-                finish("native-weapon-animation-after-handoff", true);
+                finish(
+                    TerminalResult::NativeAnimationHandoff,
+                    "native-weapon-animation-after-handoff",
+                    true);
                 return;
             }
             _bridge.update(EquipVisualBridge::UpdateInput{
@@ -312,7 +287,10 @@ namespace rock
                 .nativeVisual = &visual,
             });
             if (_activeSeconds >= kTransitionWatchdogSeconds) {
-                finish("native-weapon-animation-timeout", true);
+                finish(
+                    TerminalResult::NativeAnimationHandoff,
+                    "native-weapon-animation-timeout",
+                    true);
             }
             return;
         }
@@ -321,7 +299,10 @@ namespace rock
             input.nativeWeaponState == static_cast<std::uint32_t>(
                 held_weapon_equip_state_policy::NativeWeaponState::Drawn);
         if (_policyState.nativeHandoffObserved && !weaponExactlyDrawn) {
-            finish("weapon-no-longer-drawn", true);
+            finish(
+                TerminalResult::WeaponNoLongerDrawn,
+                "weapon-no-longer-drawn",
+                true);
             return;
         }
 
@@ -492,7 +473,10 @@ namespace rock
             .nativeVisual = &visual,
         });
         if (_activeSeconds >= kTransitionWatchdogSeconds) {
-            finish("watchdog-complete", true);
+            finish(
+                TerminalResult::Completed,
+                "watchdog-complete",
+                true);
         }
     }
 
@@ -703,6 +687,7 @@ namespace rock
     }
 
     void EquippedWeaponTransitionCoordinator::finish(
+        const TerminalResult result,
         const char* reason,
         const bool releaseSceneGraph)
     {
@@ -710,9 +695,10 @@ namespace rock
             _boundIdentity.formID :
             _expectedIdentity.formID;
         const auto terminalSource = _source;
-        const auto terminalResult = terminalResultForReason(
-            reason,
-            _drawExhaustionLogged || _repairExhaustionLogged);
+        const auto terminalResult =
+            (_drawExhaustionLogged || _repairExhaustionLogged) ?
+                TerminalResult::RecoveryExhausted :
+                result;
         if (releaseSceneGraph) {
             _bridge.release(reason);
         } else {
