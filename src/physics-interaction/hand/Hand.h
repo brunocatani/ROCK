@@ -767,6 +767,10 @@ namespace rock
             float deltaTime,
             const HeldDriveUpdate& driveUpdate,
             bool convergingAcquisitionPhase);
+        void finalizeHeldObjectUpdate(RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            float forceFadeInTime,
+            const HeldDriveUpdate& driveUpdate);
         void prepareSelectedGrabBodies(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
