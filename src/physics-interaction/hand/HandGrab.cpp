@@ -11632,6 +11632,182 @@ namespace rock
         return true;
     }
 
+    struct Hand::HeldDriveUpdate
+    {
+        RE::NiTransform proxyAuthorityWorld{};
+        RE::NiTransform desiredObjectWorld{};
+        RE::NiTransform desiredBodyWorld{};
+        RE::NiTransform solvedBodyWorld{};
+        RE::NiPoint3 activePivotBBodyLocalGame{};
+        RE::NiPoint3 desiredTargetPointWorld{};
+        RE::NiPoint3 liveGripWorldForAuthority{};
+        const char* proxyAuthoritySource = "notProxy";
+        const char* heldMotorContactReason = "no-recent-contact";
+        float pivotTrackingErrorGameUnits = 0.0f;
+        float grabRotationErrorDegrees = 0.0f;
+        float authorityForceScale = 1.0f;
+        float averageGrabDeviationGameUnits = 0.0f;
+        bool hasProxyAuthorityFrame = false;
+        bool hasPivotTrackingError = false;
+        bool heldBodyColliding = false;
+        bool heldMotorContactSoftening = false;
+    };
+
+    bool Hand::updateHeldDrive(RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        float deltaTime,
+        float forceFadeInTime,
+        float tauMin,
+        const GrabReleaseContext& releaseContext,
+        HeldDriveUpdate& update)
+    {
+        update.proxyAuthorityWorld = handWorldTransform;
+        update.hasProxyAuthorityFrame = resolveGrabAuthorityProxyFrame(
+            world,
+            handWorldTransform,
+            nullptr,
+            update.proxyAuthorityWorld,
+            update.proxyAuthoritySource,
+            GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget);
+        if (!update.hasProxyAuthorityFrame) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: palm anchor proxy frame unavailable while held source={}",
+                handName(),
+                update.proxyAuthoritySource);
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            return false;
+        }
+
+        update.desiredObjectWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(update.proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
+        if (_hasGrabFingerSweepDebug) {
+            _grabFingerSweepDebugObjectWorld = update.desiredObjectWorld;
+        }
+        update.desiredBodyWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(update.proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace);
+        update.activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
+        update.desiredTargetPointWorld = transform_math::localPointToWorld(update.desiredBodyWorld, update.activePivotBBodyLocalGame);
+
+        if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, update.solvedBodyWorld)) {
+            update.liveGripWorldForAuthority =
+                transform_math::localPointToWorld(update.solvedBodyWorld, update.activePivotBBodyLocalGame);
+            update.pivotTrackingErrorGameUnits =
+                pointDistanceGameUnits(update.liveGripWorldForAuthority, update.desiredTargetPointWorld);
+            update.hasPivotTrackingError = true;
+            update.grabRotationErrorDegrees = _grabFrame.heldNode ?
+                rotationDeltaDegrees(_grabFrame.heldNode->world.rotate, update.desiredObjectWorld.rotate) :
+                rotationDeltaDegrees(update.solvedBodyWorld.rotate, update.desiredBodyWorld.rotate);
+        }
+        if (!update.hasPivotTrackingError) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: held object drive body readback failed before queuing grab authority bodyId={} phase={}",
+                handName(),
+                _savedObjectState.bodyId.value,
+                grab_three_phase::phaseName(_grabAcquisitionPhase));
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            return false;
+        }
+        if (held_object_physics_math::instantDeviationExceeded(
+                update.pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: held object instant pivot deviation exceeded ({:.1f}gu > {:.1f}gu)",
+                handName(),
+                update.pivotTrackingErrorGameUnits,
+                held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
+            return false;
+        }
+
+        held_scene_presentation::publishTargetTransport(
+            _isLeft,
+            world,
+            _savedObjectState.bodyId.value,
+            _grabFrame.traceId,
+            update.desiredBodyWorld,
+            update.solvedBodyWorld);
+
+        update.heldBodyColliding = isHeldBodyColliding();
+        const auto heldContactSnapshot = readHeldBodyContactSnapshot();
+        update.heldMotorContactSoftening = update.heldBodyColliding;
+        update.heldMotorContactReason = update.heldBodyColliding ? "legacy-recent-contact" : "no-recent-contact";
+        if (heldContactSnapshot.recent) {
+            const RE::NiPoint3 correctionGame = update.desiredTargetPointWorld - update.liveGripWorldForAuthority;
+            const RE::NiPoint3 correctionHavok = gamePointToHavokPoint(correctionGame);
+            RE::NiTransform heldContactBodyWorld{};
+            RE::NiTransform otherContactBodyWorld{};
+            const bool hasHeldContactBody =
+                heldContactSnapshot.heldBodyId != INVALID_BODY_ID &&
+                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.heldBodyId }, heldContactBodyWorld);
+            const bool hasOtherContactBody =
+                heldContactSnapshot.otherBodyId != INVALID_BODY_ID &&
+                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.otherBodyId }, otherContactBodyWorld);
+            const RE::NiPoint3 heldToOtherHavok =
+                (hasHeldContactBody && hasOtherContactBody) ?
+                    gamePointToHavokPoint(otherContactBodyWorld.translate - heldContactBodyWorld.translate) :
+                    RE::NiPoint3{};
+            const auto contactSoftening = held_object_contact_policy::evaluateHeldContactMotorSoftening(
+                held_object_contact_policy::HeldContactMotorSofteningInput<RE::NiPoint3>{
+                    .recentContact = true,
+                    .hasCorrectionVector = update.hasPivotTrackingError,
+                    .hasHeldToOtherVector = hasHeldContactBody && hasOtherContactBody,
+                    .hasContactNormal = heldContactSnapshot.hasNormal,
+                    .otherMotion = classifyHeldContactOtherMotion(world, heldContactSnapshot.otherBodyId),
+                    .correctionTowardTarget = correctionHavok,
+                    .heldToOther = heldToOtherHavok,
+                    .contactNormal = heldContactSnapshot.contactNormalHavok,
+                });
+            update.heldMotorContactSoftening = contactSoftening.soften;
+            update.heldMotorContactReason = contactSoftening.reason;
+        }
+
+        update.authorityForceScale = held_object_drive_policy::sanitizeMotorAuthorityScale(
+            sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding));
+        if (held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime)) {
+            queueProxyGrabAuthorityTarget(
+                update.proxyAuthorityWorld,
+                handWorldTransform,
+                update.proxyAuthoritySource,
+                deltaTime,
+                forceFadeInTime,
+                tauMin,
+                update.pivotTrackingErrorGameUnits,
+                update.grabRotationErrorDegrees,
+                update.authorityForceScale,
+                update.heldMotorContactSoftening);
+        } else {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                500,
+                "{} hand skipped grab authority target after stutter delta dt={:.6f}s threshold={:.3f}s; holding last proxy target",
+                handName(),
+                std::isfinite(deltaTime) ? deltaTime : -1.0f,
+                held_object_physics_math::kMaxGrabAuthorityTargetDeltaSeconds);
+        }
+
+        update.averageGrabDeviationGameUnits = recordDeviationAverage(
+            _grabDeviationHistory,
+            _grabDeviationHistoryCount,
+            _grabDeviationHistoryNext,
+            update.pivotTrackingErrorGameUnits);
+        _grabDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
+            _grabDeviationExceededSeconds,
+            update.averageGrabDeviationGameUnits,
+            g_rockConfig.rockGrabMaxDeviation,
+            deltaTime);
+        if (held_object_physics_math::deviationExceeded(
+                _grabDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: held object exceeded max deviation average ({:.1f}gu > {:.1f}gu for {:.2f}s)",
+                handName(),
+                update.averageGrabDeviationGameUnits,
+                g_rockConfig.rockGrabMaxDeviation,
+                _grabDeviationExceededSeconds);
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
+            return false;
+        }
+
+        return true;
+    }
+
     void Hand::updateHeldObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float deltaTime,
@@ -11665,155 +11841,32 @@ namespace rock
          * for the driven body target. BODY remains object-space authority and
          * MOTION remains COM/weight/diagnostic data only.
          */
-        RE::NiTransform proxyAuthorityWorld = handWorldTransform;
-        const char* proxyAuthoritySource = "notProxy";
-        const bool hasProxyAuthorityFrame = resolveGrabAuthorityProxyFrame(
-            world,
-            handWorldTransform,
-            nullptr,
-            proxyAuthorityWorld,
-            proxyAuthoritySource,
-            GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget);
-        if (!hasProxyAuthorityFrame) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand release: palm anchor proxy frame unavailable while held source={}",
-                handName(),
-                proxyAuthoritySource);
-            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
-            return;
-        }
-        RE::NiTransform desiredObjectWorld =
-            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
-        if (_hasGrabFingerSweepDebug) {
-            _grabFingerSweepDebugObjectWorld = desiredObjectWorld;
-        }
-        RE::NiTransform desiredBodyWorld =
-            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace);
-        const RE::NiPoint3 activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
-        const RE::NiPoint3 desiredTargetPointWorld = transform_math::localPointToWorld(desiredBodyWorld, activePivotBBodyLocalGame);
-        float pivotTrackingErrorGameUnits = 0.0f;
-        float grabRotationErrorDegrees = 0.0f;
-        bool hasPivotTrackingError = false;
-        RE::NiPoint3 liveGripWorldForAuthority{};
-        RE::NiTransform solvedBodyWorld{};
-        {
-            if (tryGetGrabDriveObjectWorldTransform(
-                    world,
-                    _savedObjectState.bodyId,
-                    solvedBodyWorld)) {
-                const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(solvedBodyWorld, activePivotBBodyLocalGame);
-                liveGripWorldForAuthority = liveGripWorld;
-                pivotTrackingErrorGameUnits = pointDistanceGameUnits(liveGripWorld, desiredTargetPointWorld);
-                hasPivotTrackingError = true;
-                if (_grabFrame.heldNode) {
-                    grabRotationErrorDegrees = rotationDeltaDegrees(_grabFrame.heldNode->world.rotate, desiredObjectWorld.rotate);
-                } else {
-                    grabRotationErrorDegrees = rotationDeltaDegrees(solvedBodyWorld.rotate, desiredBodyWorld.rotate);
-                }
-            }
-        }
-        if (!hasPivotTrackingError) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand release: held object drive body readback failed before queuing grab authority bodyId={} phase={}",
-                handName(),
-                _savedObjectState.bodyId.value,
-                grab_three_phase::phaseName(_grabAcquisitionPhase));
-            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
-            return;
-        }
-        if (held_object_physics_math::instantDeviationExceeded(pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand release: held object instant pivot deviation exceeded ({:.1f}gu > {:.1f}gu)",
-                handName(),
-                pivotTrackingErrorGameUnits,
-                held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
-            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
-            return;
-        }
-
-        held_scene_presentation::publishTargetTransport(
-            _isLeft,
-            world,
-            _savedObjectState.bodyId.value,
-            _grabFrame.traceId,
-            desiredBodyWorld,
-            solvedBodyWorld);
-
-        const bool heldBodyColliding = isHeldBodyColliding();
-        const auto heldContactSnapshot = readHeldBodyContactSnapshot();
-        bool heldMotorContactSoftening = heldBodyColliding;
-        const char* heldMotorContactReason = heldBodyColliding ? "legacy-recent-contact" : "no-recent-contact";
-        if (heldContactSnapshot.recent) {
-            const RE::NiPoint3 correctionGame = desiredTargetPointWorld - liveGripWorldForAuthority;
-            const RE::NiPoint3 correctionHavok = gamePointToHavokPoint(correctionGame);
-            RE::NiTransform heldContactBodyWorld{};
-            RE::NiTransform otherContactBodyWorld{};
-            const bool hasHeldContactBody =
-                heldContactSnapshot.heldBodyId != INVALID_BODY_ID &&
-                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.heldBodyId }, heldContactBodyWorld);
-            const bool hasOtherContactBody =
-                heldContactSnapshot.otherBodyId != INVALID_BODY_ID &&
-                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.otherBodyId }, otherContactBodyWorld);
-            const RE::NiPoint3 heldToOtherHavok =
-                (hasHeldContactBody && hasOtherContactBody) ?
-                    gamePointToHavokPoint(otherContactBodyWorld.translate - heldContactBodyWorld.translate) :
-                    RE::NiPoint3{};
-            const auto contactSoftening =
-                held_object_contact_policy::evaluateHeldContactMotorSoftening(
-                    held_object_contact_policy::HeldContactMotorSofteningInput<RE::NiPoint3>{
-                        .recentContact = true,
-                        .hasCorrectionVector = hasPivotTrackingError,
-                        .hasHeldToOtherVector = hasHeldContactBody && hasOtherContactBody,
-                        .hasContactNormal = heldContactSnapshot.hasNormal,
-                        .otherMotion = classifyHeldContactOtherMotion(world, heldContactSnapshot.otherBodyId),
-                        .correctionTowardTarget = correctionHavok,
-                        .heldToOther = heldToOtherHavok,
-                        .contactNormal = heldContactSnapshot.contactNormalHavok,
-                    });
-            heldMotorContactSoftening = contactSoftening.soften;
-            heldMotorContactReason = contactSoftening.reason;
-        }
-        const float authorityForceScale =
-            held_object_drive_policy::sanitizeMotorAuthorityScale(sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding));
-        if (held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime)) {
-            queueProxyGrabAuthorityTarget(
-                proxyAuthorityWorld,
+        HeldDriveUpdate driveUpdate{};
+        if (!updateHeldDrive(
+                world,
                 handWorldTransform,
-                proxyAuthoritySource,
                 deltaTime,
                 forceFadeInTime,
                 tauMin,
-                pivotTrackingErrorGameUnits,
-                grabRotationErrorDegrees,
-                authorityForceScale,
-                heldMotorContactSoftening);
-        } else {
-            ROCK_LOG_SAMPLE_WARN(Hand,
-                500,
-                "{} hand skipped grab authority target after stutter delta dt={:.6f}s threshold={:.3f}s; holding last proxy target",
-                handName(),
-                std::isfinite(deltaTime) ? deltaTime : -1.0f,
-                held_object_physics_math::kMaxGrabAuthorityTargetDeltaSeconds);
-        }
-
-        const float averageGrabDeviationGameUnits = recordDeviationAverage(
-            _grabDeviationHistory,
-            _grabDeviationHistoryCount,
-            _grabDeviationHistoryNext,
-            pivotTrackingErrorGameUnits);
-        _grabDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
-            _grabDeviationExceededSeconds, averageGrabDeviationGameUnits, g_rockConfig.rockGrabMaxDeviation, deltaTime);
-        if (held_object_physics_math::deviationExceeded(_grabDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand release: held object exceeded max deviation average ({:.1f}gu > {:.1f}gu for {:.2f}s)",
-                handName(),
-                averageGrabDeviationGameUnits,
-                g_rockConfig.rockGrabMaxDeviation,
-                _grabDeviationExceededSeconds);
-            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
+                releaseContext,
+                driveUpdate)) {
             return;
         }
-
+        const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
+        const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
+        const auto& desiredBodyWorld = driveUpdate.desiredBodyWorld;
+        const auto& activePivotBBodyLocalGame = driveUpdate.activePivotBBodyLocalGame;
+        const auto& desiredTargetPointWorld = driveUpdate.desiredTargetPointWorld;
+        const char* proxyAuthoritySource = driveUpdate.proxyAuthoritySource;
+        const char* heldMotorContactReason = driveUpdate.heldMotorContactReason;
+        const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
+        const float grabRotationErrorDegrees = driveUpdate.grabRotationErrorDegrees;
+        const float authorityForceScale = driveUpdate.authorityForceScale;
+        const float averageGrabDeviationGameUnits = driveUpdate.averageGrabDeviationGameUnits;
+        const bool hasProxyAuthorityFrame = driveUpdate.hasProxyAuthorityFrame;
+        const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
+        const bool heldBodyColliding = driveUpdate.heldBodyColliding;
+        const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
         tickHeldBodyContact();
         const bool convergingAcquisitionPhase =
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||

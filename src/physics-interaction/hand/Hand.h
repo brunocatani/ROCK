@@ -742,10 +742,18 @@ namespace rock
         struct GrabFrozenCommitInput;
         struct GrabPostFreezeInput;
         struct GrabConstraintCommitInput;
+        struct HeldDriveUpdate;
         bool validateSelectedGrab(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
             ValidatedGrabSelection& outSelection);
+        bool updateHeldDrive(RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            float deltaTime,
+            float forceFadeInTime,
+            float tauMin,
+            const GrabReleaseContext& releaseContext,
+            HeldDriveUpdate& outUpdate);
         void prepareSelectedGrabBodies(
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
