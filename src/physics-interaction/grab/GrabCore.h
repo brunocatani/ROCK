@@ -534,6 +534,29 @@ namespace RE
     class NiAVObject;
 }
 
+namespace rock::grab_authority_frame_math
+{
+    enum class GrabAuthorityPivotSource : std::uint8_t
+    {
+        None,
+        ContactPatchMeshSnap,
+        ContactPatchPositionOnly,
+        SelectionHitMeshSnap,
+        PalmPocketMeshPoint,
+        PinchPocketMeshPoint,
+        GripSupportModel,
+        LooseWeaponPrimaryAttach,
+        PalmRayMeshPoint,
+        CollisionFallback,
+
+        // Generic policy sources remain distinct values because their
+        // established diagnostic labels omit capture-time detail.
+        PinchPocket,
+        PalmPocketMesh,
+        SelectionMeshSnap,
+    };
+}
+
 namespace rock
 {
     inline constexpr std::size_t kMaxGrabContactPatchSamples = grab_contact_patch_math::kContactPatchProbePatternSampleCount;
@@ -607,7 +630,7 @@ namespace rock
         float longObjectLeverGameUnits = 0.0f;
         float pivotAuthorityPositionConfidence = 0.0f;
         const char* activeGrabPointMode = "none";
-        const char* pivotAuthoritySource = "none";
+        grab_authority_frame_math::GrabAuthorityPivotSource pivotAuthoritySource{};
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         RE::NiAVObject* gripSourceNode = nullptr;
@@ -712,7 +735,7 @@ namespace rock
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
         const char* activeGrabPointMode = "none";
-        const char* pivotAuthoritySource = "none";
+        grab_authority_frame_math::GrabAuthorityPivotSource pivotAuthoritySource{};
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         const char* fingerPoseAimReason = "none";
@@ -872,7 +895,7 @@ namespace rock
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
             activeGrabPointMode = "none";
-            pivotAuthoritySource = "none";
+            pivotAuthoritySource = {};
             palmSeatPointMode = "none";
             fingerEvidencePointMode = "none";
             fingerPoseAimReason = "none";
@@ -1095,26 +1118,27 @@ namespace rock::grab_authority_frame_math
 {
     inline constexpr std::uint32_t kInvalidGrabAuthorityBodyId = 0x7FFF'FFFFu;
 
-    enum class GrabAuthorityPivotSource : std::uint8_t
-    {
-        None,
-        PinchPocket,
-        GripSupportModel,
-        LooseWeaponPrimaryAttach,
-        PalmPocketMesh,
-        SelectionMeshSnap,
-        CollisionFallback
-    };
-
     inline const char* grabAuthorityPivotSourceName(GrabAuthorityPivotSource source)
     {
         switch (source) {
+        case GrabAuthorityPivotSource::ContactPatchMeshSnap:
+            return "contactPatchMeshSnap";
+        case GrabAuthorityPivotSource::ContactPatchPositionOnly:
+            return "contactPatchPositionOnly";
+        case GrabAuthorityPivotSource::SelectionHitMeshSnap:
+            return "selectionHitMeshSnap";
+        case GrabAuthorityPivotSource::PalmPocketMeshPoint:
+            return "palmPocketMeshPoint";
+        case GrabAuthorityPivotSource::PinchPocketMeshPoint:
+            return "pinchPocketMeshPoint";
         case GrabAuthorityPivotSource::PinchPocket:
             return "pinchPocket";
         case GrabAuthorityPivotSource::GripSupportModel:
             return "gripSupportModel";
         case GrabAuthorityPivotSource::LooseWeaponPrimaryAttach:
             return "looseWeaponPrimaryAttach";
+        case GrabAuthorityPivotSource::PalmRayMeshPoint:
+            return "palmRayMeshPoint";
         case GrabAuthorityPivotSource::PalmPocketMesh:
             return "palmPocketMesh";
         case GrabAuthorityPivotSource::SelectionMeshSnap:
@@ -1130,15 +1154,20 @@ namespace rock::grab_authority_frame_math
     inline int grabAuthorityPivotSourcePriority(GrabAuthorityPivotSource source)
     {
         switch (source) {
+        case GrabAuthorityPivotSource::PinchPocketMeshPoint:
         case GrabAuthorityPivotSource::PinchPocket:
             return 0;
         case GrabAuthorityPivotSource::GripSupportModel:
-            return 1;
         case GrabAuthorityPivotSource::LooseWeaponPrimaryAttach:
             return 1;
+        case GrabAuthorityPivotSource::PalmPocketMeshPoint:
         case GrabAuthorityPivotSource::PalmPocketMesh:
             return 2;
+        case GrabAuthorityPivotSource::SelectionHitMeshSnap:
         case GrabAuthorityPivotSource::SelectionMeshSnap:
+        case GrabAuthorityPivotSource::ContactPatchMeshSnap:
+        case GrabAuthorityPivotSource::ContactPatchPositionOnly:
+        case GrabAuthorityPivotSource::PalmRayMeshPoint:
             return 3;
         case GrabAuthorityPivotSource::CollisionFallback:
             return 4;
@@ -1150,7 +1179,8 @@ namespace rock::grab_authority_frame_math
 
     inline bool isFinalGrabAuthorityPivotSource(GrabAuthorityPivotSource source)
     {
-        return source == GrabAuthorityPivotSource::PinchPocket ||
+        return source == GrabAuthorityPivotSource::PinchPocketMeshPoint ||
+               source == GrabAuthorityPivotSource::PinchPocket ||
                source == GrabAuthorityPivotSource::GripSupportModel ||
                source == GrabAuthorityPivotSource::LooseWeaponPrimaryAttach;
     }

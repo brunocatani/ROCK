@@ -1672,7 +1672,9 @@ namespace rock
         seat.gripPointObjectLocal[2] = telemetry.gripPointLocal.z;
         pointInProxyLocal(telemetry.grabPivotWorld, seat.pivotProxyLocal);
         seat.seatMode = grabSeatModeName(_grabFrame.seatMode);
-        seat.pivotAuthoritySource = telemetry.pivotAuthoritySource ? telemetry.pivotAuthoritySource : "none";
+        seat.pivotAuthoritySource =
+            grab_authority_frame_math::grabAuthorityPivotSourceName(
+                telemetry.pivotAuthoritySource);
 
         // Havok body relative to the object node, both frozen at the same
         // instant at capture. Raw data only - see PhysicsCapture for why this

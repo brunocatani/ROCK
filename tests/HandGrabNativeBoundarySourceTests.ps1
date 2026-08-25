@@ -101,7 +101,7 @@ Require-Text 'src/physics-interaction/grab/GrabCore.h' 'pivotBConstraintLocalGam
 
 $authorityFrameText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
 $applyFrozenStart = $authorityFrameText.IndexOf('void applyFrozenGrabAuthorityFrameToGrabFrame')
-$applyFrozenEnd = if ($applyFrozenStart -ge 0) { $authorityFrameText.IndexOf('GrabPivotAuthoritySource inferGrabPivotAuthoritySource', $applyFrozenStart) } else { -1 }
+$applyFrozenEnd = if ($applyFrozenStart -ge 0) { $authorityFrameText.IndexOf('bool pivotAuthoritySourceShouldReacquireAtSeat', $applyFrozenStart) } else { -1 }
 if ($applyFrozenStart -lt 0 -or $applyFrozenEnd -lt 0) {
     $failures.Add('Frozen authority frame apply helper boundary could not be located.')
 } else {
@@ -319,7 +319,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildContactPatchProbe
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'contactPatchObjectLeverEstimateGameUnits[\s\S]*computeLocalMeshMaxDistanceFromPoint\(grabLocalMeshTriangles,\s*canonicalPivotLocal\)[\s\S]*buildRuntimeGrabContactPatch\([\s\S]*contactPatchObjectLeverEstimateGameUnits' 'Runtime contact-patch probes must receive object lever evidence before casting.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildRuntimeGripSupportModel[\s\S]*appendOffsetProbe\(acrossAxis[\s\S]*appendOffsetProbe\(fingerAxis[\s\S]*GripSupportRole::ThumbPad[\s\S]*GripSupportRole::IndexPad' 'Runtime grip support must add across-palm, finger, and thumb/index support probes instead of only palm-normal patch samples.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'supportHitMatchesResolvedBody[\s\S]*acceptsSelectedMultibodyOwnerlessVisualMesh' 'Runtime grip support probes must reject support hits outside the held body or selected multipart visual mesh family.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'gripEvidencePointWorld\s*=\s*grabGripPoint[\s\S]*gripSupportRuntime\.model\.canAuthorPivot[\s\S]*pivotAuthoritySource\s*=\s*grabPivotAuthoritySourceName\(GrabPivotAuthoritySource::GripSupportModel\)[\s\S]*storeGripSourceEvidence\(_grabFrame,[\s\S]*gripEvidencePointWorld' 'Grip support pivot promotion must preserve the original surface point as visual/finger evidence while moving only the active solver pivot.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'gripEvidencePointWorld\s*=\s*grabGripPoint[\s\S]*gripSupportRuntime\.model\.canAuthorPivot[\s\S]*pivotAuthoritySource\s*=\s*GrabPivotAuthoritySource::GripSupportModel[\s\S]*storeGripSourceEvidence\(_grabFrame,[\s\S]*gripEvidencePointWorld' 'Grip support pivot promotion must preserve the original surface point as visual/finger evidence while moving only the active solver pivot.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'forceRuntimeGripSupportAuthority[\s\S]*forcedSupportGroupFromWeakEvidence[\s\S]*forcedSupportGroupFromGrabPoint' 'Grab commit must force weak support evidence into SupportGroup authority instead of rejecting valid non-pinch grabs.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'gripSupportForcedSinglePoint[\s\S]*gripSupportForcedSameSurface[\s\S]*GrabPivotAuthoritySource::GripSupportModel' 'Forced support upgrades must still classify as final support authority.'
 Require-Text 'tests/GrabContactPatchClusterPolicyTests.cpp' 'long same-face line cannot author pivot' 'Policy tests must prove a thin same-face patch line cannot move pivot B.'

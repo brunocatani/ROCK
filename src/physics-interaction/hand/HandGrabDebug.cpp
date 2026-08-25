@@ -245,7 +245,8 @@ namespace rock
         out.hasNormal = true;
         out.hasSupportAxis = lengthSquared(axisWorld) > 0.000001f;
         out.hasBinormal = lengthSquared(binormalWorld) > 0.000001f;
-        out.pivotAuthoritySource = _grabFrame.pivotAuthoritySource ? _grabFrame.pivotAuthoritySource : "none";
+        out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
+            _grabFrame.pivotAuthoritySource);
         out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
         out.supportKind = grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind);
         out.supportReason = _grabFrame.gripSupportReason ? _grabFrame.gripSupportReason : "none";
@@ -531,12 +532,14 @@ namespace rock
         out.selectionDistanceGameUnits = _grabFrame.selectionToGripEvidenceDistanceGameUnits;
         out.longLeverGameUnits = _grabFrame.longObjectLeverGameUnits;
         out.positionConfidence = _grabFrame.pivotAuthorityPositionConfidence;
-        out.pivotAuthoritySource = _grabFrame.pivotAuthoritySource ? _grabFrame.pivotAuthoritySource : "none";
+        out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
+            _grabFrame.pivotAuthoritySource);
         out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
         out.authorityFrameSource = proxySource ? proxySource : "none";
         out.acquisitionPhase = grab_three_phase::phaseName(_grabAcquisitionPhase);
         out.capturePivotAuthoritySource =
-            _grabFrame.captureTelemetry.pivotAuthoritySource ? _grabFrame.captureTelemetry.pivotAuthoritySource : "none";
+            grab_authority_frame_math::grabAuthorityPivotSourceName(
+                _grabFrame.captureTelemetry.pivotAuthoritySource);
         out.captureGrabPointMode =
             _grabFrame.captureTelemetry.activeGrabPointMode ? _grabFrame.captureTelemetry.activeGrabPointMode : "none";
         out.lastSeatedPivotReacquireReason =
@@ -911,4 +914,3 @@ namespace rock
         return true;
     }
 }
-
