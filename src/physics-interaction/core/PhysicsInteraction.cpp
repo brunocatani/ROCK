@@ -2173,421 +2173,19 @@ namespace rock
             });
     }
 
-    void PhysicsInteraction::update()
+    struct PhysicsInteraction::EquippedWeaponFrameResult
     {
-        ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
+        bool rightHandWeaponAuthorityActive = false;
+        bool leftSupportGripActive = false;
+        bool rightPartGripActive = false;
+    };
 
-        _equippedWeaponSheathCommittedThisFrame = {};
-        _equippedWeaponUnsheathCommittedThisFrame = {};
+    PhysicsInteraction::EquippedWeaponFrameResult PhysicsInteraction::updateEquippedWeaponFrame(
+        const PhysicsFrameContext& frame,
+        RE::bhkWorld* bhk,
+        RE::hknpWorld* hknp)
+    {
         const auto& runtime = runtime_state::currentFrame();
-        const auto retireDynamicWeaponForInterruptedFrame = [this]() {
-            if (!_initialized.load(std::memory_order_acquire)) {
-                return;
-            }
-            auto* currentBhk = getPlayerBhkWorld();
-            auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
-            if (currentBhk && currentBhk == _cachedBhkWorld &&
-                currentHknp && currentHknp == _cachedHknpWorld) {
-                _dynamicWeaponCollision.retireAll(currentBhk);
-            } else {
-                _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
-            }
-        };
-        refreshEquippedWeaponHandlingSettings();
-        if (!runtime.visualAuthorityAvailable) {
-            retireDynamicWeaponForInterruptedFrame();
-            restoreHeldMassMovementSlowdown("frik-unavailable");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            return;
-        }
-
-        _twoHandedGrip.beginWeaponCollisionPresentationFrame();
-
-        // ROCK always binds raw controller identity physically: right is the
-        // primary wand and left is the secondary wand. Weapon handedness is a
-        // separate ROCK role and never remaps buttons/controllers.
-        vrcf::VRControllers.update(false);
-
-        // Before any early return below: a skipped consume would let a stale
-        // accept-button press replay as a reload frames later (see the API doc).
-        input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
-
-        /*
-         * runtime.deltaSeconds is the central sanitized game delta; no local
-         * resanitization. Consumers migrate to runtime.timing individually
-         * with explicit invalid-sample handling.
-         */
-        _deltaTime = runtime.deltaSeconds;
-        enforceNativeGrabHapticRuntimeSuppression();
-        _dynamicPushElapsedSeconds += _deltaTime;
-        if (_dynamicPushCooldownUntil.size() > 512) {
-            for (auto it = _dynamicPushCooldownUntil.begin(); it != _dynamicPushCooldownUntil.end();) {
-                if (it->second <= _dynamicPushElapsedSeconds) {
-                    it = _dynamicPushCooldownUntil.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-        }
-
-        if (!runtime.localSkeletonReady) {
-            if (_initialized) {
-                ROCK_LOG_WARN(Update, "Local skeleton no longer ready — shutting down");
-                shutdown();
-            }
-            return;
-        }
-
-        const bool menuBlocking = runtime.localMenuBlocking;
-        if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
-                menuBlocking,
-                false,
-                false)) {
-            retireDynamicWeaponForInterruptedFrame();
-            _equippedWeaponMenuReconcilePending = true;
-            if (_initialized) {
-                _twoHandedGrip.reset();
-                _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-                clearEquippedWeaponFiringGripInputState();
-                auto* bhkMenu = getPlayerBhkWorld();
-                if (bhkMenu) {
-                    auto* hknpMenu = getHknpWorld(bhkMenu);
-                    if (hknpMenu) {
-                        restoreRightHandCollisionAfterDominantWeapon(hknpMenu);
-                        restoreHandCollisionAfterWeaponSupport(hknpMenu, true);
-                        restoreHandCollisionAfterWeaponSupport(hknpMenu, false);
-                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
-                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
-                        if (_rightHand.isHolding()) {
-                            auto* r = _rightHand.getHeldRef();
-                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_rightHand, false));
-                            if (r)
-                                releaseObject(r, PhysicsObjectClaimOwner::RightHand);
-                        }
-                        if (_leftHand.isHolding()) {
-                            auto* r = _leftHand.getHeldRef();
-                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_leftHand, true));
-                            if (r)
-                                releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
-                        }
-                    }
-                } else {
-                    _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-                    _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-                    _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-                    _rightDominantWeaponCollisionSuppression.clearTracking();
-                    _leftWeaponSupportCollisionSuppression.clearTracking();
-                    _rightWeaponSupportCollisionSuppression.clearTracking();
-                    clearEquippedWeaponPostDropCollisionSuppressionState();
-                }
-            }
-            debug::ClearFrame();
-            clearEquippedWeaponFiringGripInputState();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            auto* snapshotBhk = getPlayerBhkWorld();
-            auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
-            if (snapshotBhk && snapshotHknp) {
-                _dynamicWorldCarCollision.restoreAll(snapshotBhk, snapshotHknp, "menu-blocked");
-            } else {
-                _dynamicWorldCarCollision.abandon();
-            }
-            observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
-            restoreHeldMassMovementSlowdown("menu-blocked");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
-            return;
-        }
-
-        auto* bhk = getPlayerBhkWorld();
-        if (!bhk) {
-            _dynamicWorldCarCollision.abandon();
-            if (_initialized) {
-                ROCK_LOG_WARN(Update, "bhkWorld became null — shutting down");
-                shutdown();
-            }
-            return;
-        }
-
-        if (_initialized && bhk != _cachedBhkWorld) {
-            ROCK_LOG_INFO(Update, "bhkWorld changed (cell transition) — reinitializing");
-
-            shutdown();
-        }
-
-        if (!_initialized) {
-            init();
-            if (!_initialized) {
-                return;
-            }
-        }
-
-        _cachedBhkWorld = bhk;
-
-        auto* hknp = getHknpWorld(bhk);
-        if (!hknp) {
-            _dynamicWorldCarCollision.abandon();
-            _cachedHknpWorld = nullptr;
-            observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
-            _twoHandedGrip.reset();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponFiringGripInputState();
-            debug::ClearFrame();
-            restoreHeldMassMovementSlowdown("world-unavailable");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
-            return;
-        }
-        _cachedHknpWorld = hknp;
-
-        if (physics_scale::refreshAndLogIfChanged()) {
-            ROCK_LOG_WARN(Config, "Authoritative Havok scale changed; invalidating ROCK-generated collision bodies");
-            /*
-             * A live scale change is a physics-frame convention change, not a
-             * cosmetic setting reload. Existing constraints and ROCK-owned shapes
-             * were authored with the previous conversion, so active interactions
-             * must yield before generated bodies are destroyed and rebuilt.
-             */
-            auto releaseHeldForScaleChange = [&](Hand& hand, bool isLeft) {
-                if (!hand.isHolding()) {
-                    return;
-                }
-
-                auto* heldRef = hand.getHeldRef();
-                hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(hand, isLeft));
-                if (heldRef) {
-                    releaseObject(heldRef, claimOwnerForHand(isLeft));
-                }
-            };
-            releaseHeldForScaleChange(_rightHand, false);
-            releaseHeldForScaleChange(_leftHand, true);
-
-            restoreRightHandCollisionAfterDominantWeapon(hknp);
-            restoreHandCollisionAfterWeaponSupport(hknp, true);
-            restoreHandCollisionAfterWeaponSupport(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
-            _twoHandedGrip.reset();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponFiringGripInputState();
-            _bodyContactRuntime.reset();
-            clearLeftWeaponContact();
-            clearRightWeaponContact();
-
-            destroyHandCollisions(bhk);
-            destroyBodyBoneCollisions(bhk);
-            _weaponCollision.invalidateForScaleChange(hknp);
-            markGeneratedBodiesInvalidated();
-            _rightDominantWeaponCollisionSuppression.clearTracking();
-            _leftWeaponSupportCollisionSuppression.clearTracking();
-            _rightWeaponSupportCollisionSuppression.clearTracking();
-            _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-            _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            clearEquippedWeaponPostDropCollisionSuppressionState();
-            restoreNativePlayerCollisionSuppression(hknp, "scale-change");
-            _nativePlayerCollisionSuppressionRefreshFrames = 0;
-            collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
-        }
-
-        refreshHandBoneCache();
-        sampleHandTransformParity();
-        const auto frame = buildFrameContext(bhk, hknp);
-        _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
-        _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
-        observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
-        if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
-            const bool rebuilt =
-                !frame.reloadBoundaryActive &&
-                rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch");
-            if (rebuilt) {
-                observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
-            } else {
-                observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesInvalidated);
-                ROCK_LOG_SAMPLE_DEBUG(Update,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "ROCK lifecycle generated-body rebuild pending: animationBoundary={} flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
-                    frame.reloadBoundaryActive ? "yes" : "no",
-                    _lifecycleFlagsAtomic.load(std::memory_order_acquire),
-                    _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
-                    _worldGenerationAtomic.load(std::memory_order_acquire),
-                    _skeletonGenerationAtomic.load(std::memory_order_acquire),
-                    _providerGenerationAtomic.load(std::memory_order_acquire),
-                    _stableFrameCountAtomic.load(std::memory_order_acquire));
-                debug::ClearFrame();
-                _twoHandedGrip.reset();
-                _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-                clearEquippedWeaponFiringGripInputState();
-                _shoulderStashStates = {};
-                _mouthConsumeStates = {};
-                _feedbackHaptics.reset();
-                ::rock::provider::dispatchFrameCallbacks(*this);
-                return;
-            }
-        }
-
-        if (!physicsWritesAllowedForWorld(hknp)) {
-            ROCK_LOG_SAMPLE_DEBUG(Update,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "ROCK lifecycle gate closed frame: flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
-                _lifecycleFlagsAtomic.load(std::memory_order_acquire),
-                _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
-                _worldGenerationAtomic.load(std::memory_order_acquire),
-                _skeletonGenerationAtomic.load(std::memory_order_acquire),
-                _providerGenerationAtomic.load(std::memory_order_acquire),
-                _stableFrameCountAtomic.load(std::memory_order_acquire));
-            debug::ClearFrame();
-            _twoHandedGrip.reset();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponFiringGripInputState();
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
-            return;
-        }
-
-        const bool forceBareFistRecheck = _equippedWeaponMenuReconcilePending;
-        if (_equippedWeaponMenuReconcilePending) {
-            const bool firingHandIsLeft = _twoHandedGrip.isFiringGripOccupied() ?
-                _twoHandedGrip.isFiringHandLeft() :
-                _fixedFiringHandIsLeft;
-            const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(
-                firingHandIsLeft,
-                input_remap_policy::kGrabButtonId);
-            _pendingEquippedWeaponPrimaryOnlyGripStart = PendingEquippedWeaponPrimaryOnlyGripStart{
-                .pending = _equippedWeaponHandlingSettings.primaryDetachEnabled &&
-                    primaryGrabHeld,
-                .isLeft = firingHandIsLeft,
-            };
-            _equippedWeaponMenuReconcilePending = false;
-            ROCK_LOG_DEBUG(Weapon,
-                "Equipped weapon ownership reconciled after menu: primaryGrabHeld={} pendingPrimaryOnlyStart={}",
-                primaryGrabHeld ? "yes" : "no",
-                _pendingEquippedWeaponPrimaryOnlyGripStart.pending ? "yes" : "no");
-        }
-        enforceNoBareFistState(forceBareFistRecheck);
-
-        if (_collisionLayerRegistered &&
-            (_expectedHandLayerMask != 0 || _expectedWeaponLayerMask != 0 || _expectedReloadLayerMask != 0 || _expectedBodyLayerMask != 0 ||
-                _expectedDynamicHandProxyLayerMask != 0 || _expectedDynamicWeaponProxyLayerMask != 0 ||
-                _expectedDynamicWorldCarClutterLayerMask != 0 || _expectedDynamicWorldCarLargeClutterLayerMask != 0 ||
-                _nativeCharacterControllerLayerPolicyCaptured)) {
-            const auto desiredHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
-            const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
-                g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-                g_rockConfig.rockWeaponCollisionBlocksSpells,
-                true);
-            const auto desiredReloadMask = collision_layer_policy::buildRockReloadExpectedMask(
-                g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-                g_rockConfig.rockWeaponCollisionBlocksSpells,
-                g_rockConfig.rockHandCollisionStaticWorldEnabled);
-            const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
-            const auto desiredDynamicRightHandProxyMask =
-                collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    false);
-            const auto desiredDynamicLeftHandProxyMask =
-                collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
-                    true);
-            const auto desiredDynamicWeaponProxyMask =
-                collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
-            const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
-            const bool nativeControllerPolicyModeChanged =
-                _nativeCharacterControllerLayerPolicyCaptured &&
-                _nativeCharacterControllerLayerPolicyEnabled != desiredNativeControllerPolicyEnabled;
-            if (!collision_layer_policy::matrixLayerMaskMatches(_expectedHandLayerMask, desiredHandMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_expectedWeaponLayerMask, desiredWeaponMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_expectedReloadLayerMask, desiredReloadMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_expectedBodyLayerMask, desiredBodyMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(
-                    _expectedDynamicHandProxyLayerMask,
-                    desiredDynamicRightHandProxyMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(
-                    _expectedDynamicLeftHandProxyLayerMask,
-                    desiredDynamicLeftHandProxyMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(
-                    _expectedDynamicWeaponProxyLayerMask,
-                    desiredDynamicWeaponProxyMask) ||
-                nativeControllerPolicyModeChanged) {
-                ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
-                _collisionLayerRegistered = false;
-                registerCollisionLayer(hknp);
-            }
-
-            if (auto* matrix = havok_runtime::getCollisionFilterMatrix(hknp)) {
-                const auto currentHandMask = matrix[collision_layer_policy::ROCK_LAYER_HAND];
-                const auto currentWeaponMask = matrix[collision_layer_policy::ROCK_LAYER_WEAPON];
-                const auto currentReloadMask = matrix[collision_layer_policy::ROCK_LAYER_RELOAD];
-                const auto currentBodyMask = matrix[collision_layer_policy::ROCK_LAYER_BODY];
-                const auto currentDynamicHandProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY];
-                const auto currentDynamicLeftHandProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY];
-                const auto currentDynamicWeaponProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY];
-                const auto currentDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
-                const auto currentDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
-                const bool handMaskDrifted = _expectedHandLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentHandMask, _expectedHandLayerMask);
-                const bool weaponMaskDrifted = _expectedWeaponLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentWeaponMask, _expectedWeaponLayerMask);
-                const bool reloadMaskDrifted = _expectedReloadLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentReloadMask, _expectedReloadLayerMask);
-                const bool bodyMaskDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::bodyManagedLayerMaskMatches(currentBodyMask, _expectedBodyLayerMask);
-                const bool dynamicHandProxyMaskDrifted = _expectedDynamicHandProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicHandProxyMask, _expectedDynamicHandProxyLayerMask);
-                const bool dynamicLeftHandProxyMaskDrifted =
-                    _expectedDynamicLeftHandProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(
-                        currentDynamicLeftHandProxyMask,
-                        _expectedDynamicLeftHandProxyLayerMask);
-                const bool dynamicWeaponProxyMaskDrifted = _expectedDynamicWeaponProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _expectedDynamicWeaponProxyLayerMask);
-                const bool dynamicWorldCarClutterMaskDrifted = _expectedDynamicWorldCarClutterLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _expectedDynamicWorldCarClutterLayerMask);
-                const bool dynamicWorldCarLargeClutterMaskDrifted = _expectedDynamicWorldCarLargeClutterLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _expectedDynamicWorldCarLargeClutterLayerMask);
-                const bool actorToolPairsDrifted =
-                    _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
-                    !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
-                const bool bodyPairsDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _expectedBodyLayerMask);
-                const bool nativeControllerObjectPairsDrifted =
-                    _nativeCharacterControllerLayerPolicyCaptured &&
-                    !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
-                if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
-                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
-                    nativeControllerObjectPairsDrifted) {
-                    const auto currentNativeCharacterControllerMask =
-                        _nativeCharacterControllerLayerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
-                    ROCK_LOG_WARN(Config,
-                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicRightHandProxy expected=0x{:016X} current=0x{:016X}, dynamicLeftHandProxy expected=0x{:016X} current=0x{:016X}, dynamicWeaponProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, nativeController expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}, nativeControllerObjects={}; re-registering",
-                        collision_layer_policy::matrixAddressableMask(_expectedHandLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentHandMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedWeaponLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentWeaponMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedReloadLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentReloadMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedBodyLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentBodyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicHandProxyLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicLeftHandProxyLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicLeftHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWeaponProxyLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicWeaponProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarClutterLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarClutterMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarLargeClutterLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarLargeClutterMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedNativeCharacterControllerLayerMask),
-                        collision_layer_policy::matrixAddressableMask(currentNativeCharacterControllerMask),
-                        actorToolPairsDrifted ? "drifted" : "ok",
-                        bodyPairsDrifted ? "drifted" : "ok",
-                        nativeControllerObjectPairsDrifted ? "drifted" : "ok");
-                    _collisionLayerRegistered = false;
-                    registerCollisionLayer(hknp);
-                }
-            }
-        }
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
         /*
@@ -3894,6 +3492,434 @@ namespace rock
                 gunstockProjectileNode,
                 currentWeaponGenerationKey);
         }
+
+        return EquippedWeaponFrameResult{
+            .rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActive,
+            .leftSupportGripActive = leftSupportGripActive,
+            .rightPartGripActive = rightPartGripActive,
+        };
+    }
+
+    void PhysicsInteraction::update()
+    {
+        ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
+
+        _equippedWeaponSheathCommittedThisFrame = {};
+        _equippedWeaponUnsheathCommittedThisFrame = {};
+        const auto& runtime = runtime_state::currentFrame();
+        const auto retireDynamicWeaponForInterruptedFrame = [this]() {
+            if (!_initialized.load(std::memory_order_acquire)) {
+                return;
+            }
+            auto* currentBhk = getPlayerBhkWorld();
+            auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
+            if (currentBhk && currentBhk == _cachedBhkWorld &&
+                currentHknp && currentHknp == _cachedHknpWorld) {
+                _dynamicWeaponCollision.retireAll(currentBhk);
+            } else {
+                _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
+            }
+        };
+        refreshEquippedWeaponHandlingSettings();
+        if (!runtime.visualAuthorityAvailable) {
+            retireDynamicWeaponForInterruptedFrame();
+            restoreHeldMassMovementSlowdown("frik-unavailable");
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
+            return;
+        }
+
+        _twoHandedGrip.beginWeaponCollisionPresentationFrame();
+
+        // ROCK always binds raw controller identity physically: right is the
+        // primary wand and left is the secondary wand. Weapon handedness is a
+        // separate ROCK role and never remaps buttons/controllers.
+        vrcf::VRControllers.update(false);
+
+        // Before any early return below: a skipped consume would let a stale
+        // accept-button press replay as a reload frames later (see the API doc).
+        input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
+
+        /*
+         * runtime.deltaSeconds is the central sanitized game delta; no local
+         * resanitization. Consumers migrate to runtime.timing individually
+         * with explicit invalid-sample handling.
+         */
+        _deltaTime = runtime.deltaSeconds;
+        enforceNativeGrabHapticRuntimeSuppression();
+        _dynamicPushElapsedSeconds += _deltaTime;
+        if (_dynamicPushCooldownUntil.size() > 512) {
+            for (auto it = _dynamicPushCooldownUntil.begin(); it != _dynamicPushCooldownUntil.end();) {
+                if (it->second <= _dynamicPushElapsedSeconds) {
+                    it = _dynamicPushCooldownUntil.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        if (!runtime.localSkeletonReady) {
+            if (_initialized) {
+                ROCK_LOG_WARN(Update, "Local skeleton no longer ready — shutting down");
+                shutdown();
+            }
+            return;
+        }
+
+        const bool menuBlocking = runtime.localMenuBlocking;
+        if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
+                menuBlocking,
+                false,
+                false)) {
+            retireDynamicWeaponForInterruptedFrame();
+            _equippedWeaponMenuReconcilePending = true;
+            if (_initialized) {
+                _twoHandedGrip.reset();
+                _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+                clearEquippedWeaponFiringGripInputState();
+                auto* bhkMenu = getPlayerBhkWorld();
+                if (bhkMenu) {
+                    auto* hknpMenu = getHknpWorld(bhkMenu);
+                    if (hknpMenu) {
+                        restoreRightHandCollisionAfterDominantWeapon(hknpMenu);
+                        restoreHandCollisionAfterWeaponSupport(hknpMenu, true);
+                        restoreHandCollisionAfterWeaponSupport(hknpMenu, false);
+                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
+                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
+                        if (_rightHand.isHolding()) {
+                            auto* r = _rightHand.getHeldRef();
+                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_rightHand, false));
+                            if (r)
+                                releaseObject(r, PhysicsObjectClaimOwner::RightHand);
+                        }
+                        if (_leftHand.isHolding()) {
+                            auto* r = _leftHand.getHeldRef();
+                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_leftHand, true));
+                            if (r)
+                                releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
+                        }
+                    }
+                } else {
+                    _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
+                    _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+                    _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+                    _rightDominantWeaponCollisionSuppression.clearTracking();
+                    _leftWeaponSupportCollisionSuppression.clearTracking();
+                    _rightWeaponSupportCollisionSuppression.clearTracking();
+                    clearEquippedWeaponPostDropCollisionSuppressionState();
+                }
+            }
+            debug::ClearFrame();
+            clearEquippedWeaponFiringGripInputState();
+            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            auto* snapshotBhk = getPlayerBhkWorld();
+            auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
+            if (snapshotBhk && snapshotHknp) {
+                _dynamicWorldCarCollision.restoreAll(snapshotBhk, snapshotHknp, "menu-blocked");
+            } else {
+                _dynamicWorldCarCollision.abandon();
+            }
+            observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
+            restoreHeldMassMovementSlowdown("menu-blocked");
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
+            ::rock::provider::dispatchFrameCallbacks(*this);
+            return;
+        }
+
+        auto* bhk = getPlayerBhkWorld();
+        if (!bhk) {
+            _dynamicWorldCarCollision.abandon();
+            if (_initialized) {
+                ROCK_LOG_WARN(Update, "bhkWorld became null — shutting down");
+                shutdown();
+            }
+            return;
+        }
+
+        if (_initialized && bhk != _cachedBhkWorld) {
+            ROCK_LOG_INFO(Update, "bhkWorld changed (cell transition) — reinitializing");
+
+            shutdown();
+        }
+
+        if (!_initialized) {
+            init();
+            if (!_initialized) {
+                return;
+            }
+        }
+
+        _cachedBhkWorld = bhk;
+
+        auto* hknp = getHknpWorld(bhk);
+        if (!hknp) {
+            _dynamicWorldCarCollision.abandon();
+            _cachedHknpWorld = nullptr;
+            observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
+            _twoHandedGrip.reset();
+            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            clearEquippedWeaponFiringGripInputState();
+            debug::ClearFrame();
+            restoreHeldMassMovementSlowdown("world-unavailable");
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
+            ::rock::provider::dispatchFrameCallbacks(*this);
+            return;
+        }
+        _cachedHknpWorld = hknp;
+
+        if (physics_scale::refreshAndLogIfChanged()) {
+            ROCK_LOG_WARN(Config, "Authoritative Havok scale changed; invalidating ROCK-generated collision bodies");
+            /*
+             * A live scale change is a physics-frame convention change, not a
+             * cosmetic setting reload. Existing constraints and ROCK-owned shapes
+             * were authored with the previous conversion, so active interactions
+             * must yield before generated bodies are destroyed and rebuilt.
+             */
+            auto releaseHeldForScaleChange = [&](Hand& hand, bool isLeft) {
+                if (!hand.isHolding()) {
+                    return;
+                }
+
+                auto* heldRef = hand.getHeldRef();
+                hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(hand, isLeft));
+                if (heldRef) {
+                    releaseObject(heldRef, claimOwnerForHand(isLeft));
+                }
+            };
+            releaseHeldForScaleChange(_rightHand, false);
+            releaseHeldForScaleChange(_leftHand, true);
+
+            restoreRightHandCollisionAfterDominantWeapon(hknp);
+            restoreHandCollisionAfterWeaponSupport(hknp, true);
+            restoreHandCollisionAfterWeaponSupport(hknp, false);
+            restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
+            restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
+            _twoHandedGrip.reset();
+            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            clearEquippedWeaponFiringGripInputState();
+            _bodyContactRuntime.reset();
+            clearLeftWeaponContact();
+            clearRightWeaponContact();
+
+            destroyHandCollisions(bhk);
+            destroyBodyBoneCollisions(bhk);
+            _weaponCollision.invalidateForScaleChange(hknp);
+            markGeneratedBodiesInvalidated();
+            _rightDominantWeaponCollisionSuppression.clearTracking();
+            _leftWeaponSupportCollisionSuppression.clearTracking();
+            _rightWeaponSupportCollisionSuppression.clearTracking();
+            _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
+            _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+            clearEquippedWeaponPostDropCollisionSuppressionState();
+            restoreNativePlayerCollisionSuppression(hknp, "scale-change");
+            _nativePlayerCollisionSuppressionRefreshFrames = 0;
+            collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
+        }
+
+        refreshHandBoneCache();
+        sampleHandTransformParity();
+        const auto frame = buildFrameContext(bhk, hknp);
+        _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
+        _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
+        observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
+        if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
+            const bool rebuilt =
+                !frame.reloadBoundaryActive &&
+                rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch");
+            if (rebuilt) {
+                observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
+            } else {
+                observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesInvalidated);
+                ROCK_LOG_SAMPLE_DEBUG(Update,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "ROCK lifecycle generated-body rebuild pending: animationBoundary={} flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
+                    frame.reloadBoundaryActive ? "yes" : "no",
+                    _lifecycleFlagsAtomic.load(std::memory_order_acquire),
+                    _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
+                    _worldGenerationAtomic.load(std::memory_order_acquire),
+                    _skeletonGenerationAtomic.load(std::memory_order_acquire),
+                    _providerGenerationAtomic.load(std::memory_order_acquire),
+                    _stableFrameCountAtomic.load(std::memory_order_acquire));
+                debug::ClearFrame();
+                _twoHandedGrip.reset();
+                _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+                clearEquippedWeaponFiringGripInputState();
+                _shoulderStashStates = {};
+                _mouthConsumeStates = {};
+                _feedbackHaptics.reset();
+                ::rock::provider::dispatchFrameCallbacks(*this);
+                return;
+            }
+        }
+
+        if (!physicsWritesAllowedForWorld(hknp)) {
+            ROCK_LOG_SAMPLE_DEBUG(Update,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "ROCK lifecycle gate closed frame: flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
+                _lifecycleFlagsAtomic.load(std::memory_order_acquire),
+                _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
+                _worldGenerationAtomic.load(std::memory_order_acquire),
+                _skeletonGenerationAtomic.load(std::memory_order_acquire),
+                _providerGenerationAtomic.load(std::memory_order_acquire),
+                _stableFrameCountAtomic.load(std::memory_order_acquire));
+            debug::ClearFrame();
+            _twoHandedGrip.reset();
+            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            clearEquippedWeaponFiringGripInputState();
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
+            ::rock::provider::dispatchFrameCallbacks(*this);
+            return;
+        }
+
+        const bool forceBareFistRecheck = _equippedWeaponMenuReconcilePending;
+        if (_equippedWeaponMenuReconcilePending) {
+            const bool firingHandIsLeft = _twoHandedGrip.isFiringGripOccupied() ?
+                _twoHandedGrip.isFiringHandLeft() :
+                _fixedFiringHandIsLeft;
+            const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(
+                firingHandIsLeft,
+                input_remap_policy::kGrabButtonId);
+            _pendingEquippedWeaponPrimaryOnlyGripStart = PendingEquippedWeaponPrimaryOnlyGripStart{
+                .pending = _equippedWeaponHandlingSettings.primaryDetachEnabled &&
+                    primaryGrabHeld,
+                .isLeft = firingHandIsLeft,
+            };
+            _equippedWeaponMenuReconcilePending = false;
+            ROCK_LOG_DEBUG(Weapon,
+                "Equipped weapon ownership reconciled after menu: primaryGrabHeld={} pendingPrimaryOnlyStart={}",
+                primaryGrabHeld ? "yes" : "no",
+                _pendingEquippedWeaponPrimaryOnlyGripStart.pending ? "yes" : "no");
+        }
+        enforceNoBareFistState(forceBareFistRecheck);
+
+        if (_collisionLayerRegistered &&
+            (_expectedHandLayerMask != 0 || _expectedWeaponLayerMask != 0 || _expectedReloadLayerMask != 0 || _expectedBodyLayerMask != 0 ||
+                _expectedDynamicHandProxyLayerMask != 0 || _expectedDynamicWeaponProxyLayerMask != 0 ||
+                _expectedDynamicWorldCarClutterLayerMask != 0 || _expectedDynamicWorldCarLargeClutterLayerMask != 0 ||
+                _nativeCharacterControllerLayerPolicyCaptured)) {
+            const auto desiredHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
+            const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
+                g_rockConfig.rockWeaponCollisionBlocksProjectiles,
+                g_rockConfig.rockWeaponCollisionBlocksSpells,
+                true);
+            const auto desiredReloadMask = collision_layer_policy::buildRockReloadExpectedMask(
+                g_rockConfig.rockWeaponCollisionBlocksProjectiles,
+                g_rockConfig.rockWeaponCollisionBlocksSpells,
+                g_rockConfig.rockHandCollisionStaticWorldEnabled);
+            const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
+            const auto desiredDynamicRightHandProxyMask =
+                collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+                    false);
+            const auto desiredDynamicLeftHandProxyMask =
+                collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+                    true);
+            const auto desiredDynamicWeaponProxyMask =
+                collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
+            const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
+            const bool nativeControllerPolicyModeChanged =
+                _nativeCharacterControllerLayerPolicyCaptured &&
+                _nativeCharacterControllerLayerPolicyEnabled != desiredNativeControllerPolicyEnabled;
+            if (!collision_layer_policy::matrixLayerMaskMatches(_expectedHandLayerMask, desiredHandMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(_expectedWeaponLayerMask, desiredWeaponMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(_expectedReloadLayerMask, desiredReloadMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(_expectedBodyLayerMask, desiredBodyMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(
+                    _expectedDynamicHandProxyLayerMask,
+                    desiredDynamicRightHandProxyMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(
+                    _expectedDynamicLeftHandProxyLayerMask,
+                    desiredDynamicLeftHandProxyMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(
+                    _expectedDynamicWeaponProxyLayerMask,
+                    desiredDynamicWeaponProxyMask) ||
+                nativeControllerPolicyModeChanged) {
+                ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
+                _collisionLayerRegistered = false;
+                registerCollisionLayer(hknp);
+            }
+
+            if (auto* matrix = havok_runtime::getCollisionFilterMatrix(hknp)) {
+                const auto currentHandMask = matrix[collision_layer_policy::ROCK_LAYER_HAND];
+                const auto currentWeaponMask = matrix[collision_layer_policy::ROCK_LAYER_WEAPON];
+                const auto currentReloadMask = matrix[collision_layer_policy::ROCK_LAYER_RELOAD];
+                const auto currentBodyMask = matrix[collision_layer_policy::ROCK_LAYER_BODY];
+                const auto currentDynamicHandProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY];
+                const auto currentDynamicLeftHandProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY];
+                const auto currentDynamicWeaponProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY];
+                const auto currentDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
+                const auto currentDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
+                const bool handMaskDrifted = _expectedHandLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentHandMask, _expectedHandLayerMask);
+                const bool weaponMaskDrifted = _expectedWeaponLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentWeaponMask, _expectedWeaponLayerMask);
+                const bool reloadMaskDrifted = _expectedReloadLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentReloadMask, _expectedReloadLayerMask);
+                const bool bodyMaskDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::bodyManagedLayerMaskMatches(currentBodyMask, _expectedBodyLayerMask);
+                const bool dynamicHandProxyMaskDrifted = _expectedDynamicHandProxyLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicHandProxyMask, _expectedDynamicHandProxyLayerMask);
+                const bool dynamicLeftHandProxyMaskDrifted =
+                    _expectedDynamicLeftHandProxyLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(
+                        currentDynamicLeftHandProxyMask,
+                        _expectedDynamicLeftHandProxyLayerMask);
+                const bool dynamicWeaponProxyMaskDrifted = _expectedDynamicWeaponProxyLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _expectedDynamicWeaponProxyLayerMask);
+                const bool dynamicWorldCarClutterMaskDrifted = _expectedDynamicWorldCarClutterLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _expectedDynamicWorldCarClutterLayerMask);
+                const bool dynamicWorldCarLargeClutterMaskDrifted = _expectedDynamicWorldCarLargeClutterLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _expectedDynamicWorldCarLargeClutterLayerMask);
+                const bool actorToolPairsDrifted =
+                    _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
+                    !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
+                const bool bodyPairsDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _expectedBodyLayerMask);
+                const bool nativeControllerObjectPairsDrifted =
+                    _nativeCharacterControllerLayerPolicyCaptured &&
+                    !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
+                if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
+                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
+                    nativeControllerObjectPairsDrifted) {
+                    const auto currentNativeCharacterControllerMask =
+                        _nativeCharacterControllerLayerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
+                    ROCK_LOG_WARN(Config,
+                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicRightHandProxy expected=0x{:016X} current=0x{:016X}, dynamicLeftHandProxy expected=0x{:016X} current=0x{:016X}, dynamicWeaponProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, nativeController expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}, nativeControllerObjects={}; re-registering",
+                        collision_layer_policy::matrixAddressableMask(_expectedHandLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentHandMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedWeaponLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentWeaponMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedReloadLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentReloadMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedBodyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentBodyMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicHandProxyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicHandProxyMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicLeftHandProxyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicLeftHandProxyMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWeaponProxyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicWeaponProxyMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarClutterLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarClutterMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarLargeClutterLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarLargeClutterMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedNativeCharacterControllerLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentNativeCharacterControllerMask),
+                        actorToolPairsDrifted ? "drifted" : "ok",
+                        bodyPairsDrifted ? "drifted" : "ok",
+                        nativeControllerObjectPairsDrifted ? "drifted" : "ok");
+                    _collisionLayerRegistered = false;
+                    registerCollisionLayer(hknp);
+                }
+            }
+        }
+
+        const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
+        const bool rightHandWeaponAuthorityActive = equippedWeaponFrame.rightHandWeaponAuthorityActive;
+        const bool leftSupportGripActive = equippedWeaponFrame.leftSupportGripActive;
+        const bool rightPartGripActive = equippedWeaponFrame.rightPartGripActive;
         refreshGeneratedBodyContactRegistry();
         updateSelection(frame);
 

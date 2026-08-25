@@ -279,6 +279,8 @@ namespace rock
         static void onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         void updateSelection(const PhysicsFrameContext& frame);
+        struct EquippedWeaponFrameResult;
+        EquippedWeaponFrameResult updateEquippedWeaponFrame(const PhysicsFrameContext& frame, RE::bhkWorld* bhk, RE::hknpWorld* hknp);
         void prepareDynamicWorldCarCollisionForGrab(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref);
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
