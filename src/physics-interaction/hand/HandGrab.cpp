@@ -9933,6 +9933,315 @@ namespace rock
         return true;
     }
 
+    struct Hand::GrabPostFreezeInput
+    {
+        const RE::NiTransform* handWorldTransform = nullptr;
+        const GrabProxyPreparation* proxy = nullptr;
+        const GrabMeshCaptureSetup* meshCapture = nullptr;
+        const GrabMeshExtraction* mesh = nullptr;
+        const GrabBodyFrameCapture* bodyFrame = nullptr;
+        const GrabSeatCaptureResult* seatCapture = nullptr;
+        const GrabSurfaceEvidence* surface = nullptr;
+        RE::NiAVObject* rootNode = nullptr;
+        RE::NiAVObject* collidableNode = nullptr;
+        RE::NiAVObject* meshSourceNode = nullptr;
+        RE::hknpBodyId objectBodyId{};
+        const BodyBoneColliderSet* bodyBoneColliders = nullptr;
+        const GrabSharedObjectContext* sharedContext = nullptr;
+        bool joiningPeerHeldObject = false;
+        bool looseWeaponGrab = false;
+    };
+
+    void Hand::initializePostFreezeGrab(
+        RE::hknpWorld* world,
+        const GrabPostFreezeInput& input)
+    {
+        const auto& handWorldTransform = *input.handWorldTransform;
+        const auto& proxy = *input.proxy;
+        const auto& meshCapture = *input.meshCapture;
+        const auto& mesh = *input.mesh;
+        const auto& bodyFrame = *input.bodyFrame;
+        const auto& seatCapture = *input.seatCapture;
+        const auto& surface = *input.surface;
+        const auto& sel = _currentSelection;
+        const auto& proxyFrameWorldAtGrab = proxy.proxyFrameWorldAtGrab;
+        const auto& handBodyWorldAtGrab = proxy.handBodyWorldAtGrab;
+        const auto* proxyFrameSourceAtGrab = proxy.proxyFrameSourceAtGrab;
+        const bool hasPalmProxyFrameAtGrab = proxy.hasPalmProxyFrameAtGrab;
+        const auto& objectWorldTransform = meshCapture.objectWorldTransform;
+        const auto& grabMeshTriangles = mesh.meshTriangles;
+        const auto& grabBodyWorldAtGrab = bodyFrame.grabBodyWorld;
+        const auto& motionBodyWorldAtGrab = bodyFrame.motionBodyWorld;
+        const auto motionBodySourceAtGrab = bodyFrame.motionBodySource;
+        const bool hasMotionBodyWorldAtGrab = bodyFrame.hasMotionBodyWorld;
+        const bool constraintUsesMotionBodyAtGrab = bodyFrame.constraintUsesMotionBody;
+        const auto* bodyCollisionObjectAtGrab = bodyFrame.bodyCollisionObject;
+        const auto* ownerNodeAtGrab = bodyFrame.ownerNode;
+        const auto& palmPos = bodyFrame.palmPosition;
+        const auto& grabPivotAWorld = bodyFrame.grabPivotAWorld;
+        const auto& grabGripPoint = surface.gripPoint;
+        const auto* grabPointMode = surface.pointMode;
+        const auto& desiredObjectWorld = seatCapture.desiredObjectWorld;
+        const auto& desiredBodyWorld = seatCapture.desiredBodyWorld;
+        auto* rootNode = input.rootNode;
+        auto* collidableNode = input.collidableNode;
+        auto* meshSourceNode = input.meshSourceNode;
+        const auto objectBodyId = input.objectBodyId;
+        const auto* bodyBoneColliders = input.bodyBoneColliders;
+        const auto& sharedContext = *input.sharedContext;
+        const bool joiningPeerHeldObject = input.joiningPeerHeldObject;
+        const bool looseWeaponGrab = input.looseWeaponGrab;
+                clearGrabExternalHandWorldTransform(_isLeft);
+                _grabVisualHandTransform = handWorldTransform;
+                _hasGrabVisualHandTransform = false;
+                _lastPublishedGrabVisualHandTransform = {};
+                _hasLastPublishedGrabVisualHandTransform = false;
+                _grabVisualHandLerpStartTransform = handWorldTransform;
+                _grabVisualHandLerpElapsedSeconds = 0.0f;
+                _grabVisualHandLerpDurationSeconds = 0.0f;
+                _grabVisualDeviationExceededSeconds = 0.0f;
+                _grabDeviationExceededSeconds = 0.0f;
+                const RE::NiPoint3 initialGrabDelta = grabPivotAWorld - grabGripPoint;
+                const float initialGrabDistance =
+                    std::sqrt(initialGrabDelta.x * initialGrabDelta.x + initialGrabDelta.y * initialGrabDelta.y + initialGrabDelta.z * initialGrabDelta.z);
+                const bool needsLargeInitialSync = initialGrabDistance >= g_rockConfig.rockGrabHandLerpMinDistance;
+                _grabFrame.fadeInGrabConstraint = needsLargeInitialSync;
+                if (needsLargeInitialSync) {
+                    _grabFrame.motorFadeReason = "largeInitialSync";
+                } else {
+                    _grabFrame.motorFadeReason = "none";
+                }
+                _heldLocalLinearVelocityHistory = {};
+                _heldLocalLinearVelocityHistoryCount = 0;
+                _heldLocalLinearVelocityHistoryNext = 0;
+                _heldLocalHandVelocityHistory = {};
+                _heldHandAngularVelocityHistory = {};
+                _heldHandVelocityHistoryCount = 0;
+                _heldHandVelocityHistoryNext = 0;
+                _lastHeldObjectLocalLinearVelocityHavok = {};
+                _hasLastHeldObjectLocalLinearVelocityHavok = false;
+                _previousHeldRawHandWorld = {};
+                _previousHeldHandPositionHavok = {};
+                _lastHeldHandPositionHavok = {};
+                _hasPreviousHeldRawHandWorld = false;
+                _hasLastHeldHandPositionHavok = false;
+                _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
+
+                if (g_rockConfig.rockDebugGrabFrameLogging) {
+                    const RE::NiPoint3 legacyPalmPivotAHandspace = computeGrabLegacyPalmPivotAHandspacePosition(_isLeft);
+                    auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
+                    const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
+
+                    const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
+                    const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
+                    const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 1);
+                    const RE::NiPoint3 proxyFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
+                    const RE::NiPoint3 proxyBack = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
+                    const RE::NiPoint3 proxyLateral = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
+                    const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabFrame.rawHandSpace.rotate, 0);
+                    const RE::NiPoint3 grabSpaceProxyFinger = getMatrixColumn(_grabFrame.proxyAuthorityHandSpace.rotate, 0);
+                    const RE::NiPoint3 grabPosDelta = _grabFrame.proxyAuthorityHandSpace.translate - _grabFrame.rawHandSpace.translate;
+                    const float rawVsProxyRot = rotationDeltaDegrees(_grabFrame.rawHandSpace.rotate, _grabFrame.proxyAuthorityHandSpace.rotate);
+                    const float rawVsProxyPos = std::sqrt(grabPosDelta.x * grabPosDelta.x + grabPosDelta.y * grabPosDelta.y + grabPosDelta.z * grabPosDelta.z);
+                    const float motionVsGrabRot = hasMotionBodyWorldAtGrab ? rotationDeltaDegrees(motionBodyWorldAtGrab.rotate, grabBodyWorldAtGrab.rotate) : -1.0f;
+                    const float motionVsGrabPos = hasMotionBodyWorldAtGrab ? translationDeltaGameUnits(motionBodyWorldAtGrab, grabBodyWorldAtGrab) : -1.0f;
+
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} GRAB FRAME SUMMARY: vrScale={:.3f} handScale={:.3f} bodyScale={:.3f} objectScale={:.3f} "
+                        "legacyPivotHS=({:.2f},{:.2f},{:.2f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
+                        "pivotBBodyLocal=({:.2f},{:.2f},{:.2f}) pivotBConstraintLocal=({:.2f},{:.2f},{:.2f}) "
+                        "rawProxyDelta={:.2f}deg/{:.2f}gu motionDiagVsGrab={:.2f}deg/{:.2f}gu proxyBodyFrame={} rotRef={} proxyFrame={} rootPalm={} pivotALocal=({:.2f},{:.2f},{:.2f}) meshMode={} meshTris={} "
+                        "pocketGrip={:.1f}gu selectionGripEvidence={:.1f}gu "
+                        "shapeKey=0x{:08X} shapeFilter=0x{:08X} hitFraction={:.4f} contactPatchEvidence={} contactPatchPivot={} patchHits={} snapDelta={:.1f}gu "
+                        "multiFinger={} mfGroups={} mfSpread={:.2f}gu mfReason={} "
+                        "activePoint={} activeUsesFingerEvidence={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} positionConfidence={:.2f} palmSeatPoint={} fingerEvidencePoint={} "
+                        "poseTargets={} motorFade={} motorFadeReason={} bodyReason={} "
+                        "fingerPoseAim={} fingerPoseAimReason={}",
+                        handName(), vrScale, handWorldTransform.scale, handBodyWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
+                        legacyPalmPivotAHandspace.x, legacyPalmPivotAHandspace.y, legacyPalmPivotAHandspace.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x,
+                        grabGripPoint.y, grabGripPoint.z, _grabFrame.authority.pivotBBodyLocalGame.x, _grabFrame.authority.pivotBBodyLocalGame.y, _grabFrame.authority.pivotBBodyLocalGame.z,
+                        _grabFrame.authority.pivotBConstraintLocalGame.x, _grabFrame.authority.pivotBConstraintLocalGame.y, _grabFrame.authority.pivotBConstraintLocalGame.z,
+                        rawVsProxyRot, rawVsProxyPos, motionVsGrabRot, motionVsGrabPos,
+                        constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
+                        kGrabObjectRotationReferenceName,
+                        proxyFrameSourceAtGrab,
+                        hasPalmProxyFrameAtGrab ? "yes" : "no", _grabFrame.authority.pivotAHandBodyLocalGame.x,
+                        _grabFrame.authority.pivotAHandBodyLocalGame.y, _grabFrame.authority.pivotAHandBodyLocalGame.z, grabPointMode, grabMeshTriangles.size(),
+                        _grabFrame.pivotAuthority.pocketDistanceGameUnits, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
+                        _grabFrame.gripEvidence.gripEvidenceShapeKey, _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo, _grabFrame.gripEvidence.gripEvidenceHitFraction,
+                        _grabFrame.hasContactPatchEvidence ? "yes" : "no", "no",
+                        _grabFrame.contactPatchSampleCount, _grabFrame.contactPatchMeshSnapDeltaGameUnits,
+                        _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
+                        _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.multiFingerContactReason,
+                        _grabFrame.seat.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
+                        grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
+                        _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
+                        _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
+                        _grabFrame.pivotAuthority.positionConfidence,
+                        _grabFrame.seat.palmSeatPointMode, _grabFrame.fingerEvidencePointMode,
+                        _grabFrame.fingerPoseTargetCount, _grabFrame.fadeInGrabConstraint ? "yes" : "no",
+                        _grabFrame.motorFadeReason, _grabFrame.bodyResolutionReason,
+                        _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
+
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} GRAB FRAME SNAPSHOT: rawVsProxy rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
+                        "rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
+                        "proxyFinger=({:.3f},{:.3f},{:.3f}) proxyBack=({:.3f},{:.3f},{:.3f}) proxyLat=({:.3f},{:.3f},{:.3f})",
+                        handName(), rawVsProxyRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawFinger.x,
+                        rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, proxyFinger.x, proxyFinger.y, proxyFinger.z,
+                        proxyBack.x, proxyBack.y, proxyBack.z, proxyLateral.x, proxyLateral.y, proxyLateral.z);
+
+                    const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
+                    const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
+                    const auto objectAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(objectWorldTransform);
+                    const auto desiredObjectBasis = grab_transform_telemetry::makeOrientationBasis(desiredObjectWorld);
+                    const auto desiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorld);
+                    const auto grabBodyBasis = grab_transform_telemetry::makeOrientationBasis(grabBodyWorldAtGrab);
+                    const auto motionBodyBasis = grab_transform_telemetry::makeOrientationBasis(motionBodyWorldAtGrab);
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} GRAB BASIS CAPTURE side={} phase=capture convention=niLocalVectorToWorld proxySource={} motionBody={} motionSrc={} proxyBodyFrame={} rotRef={} {} {} {} {} {} {} {}",
+                        handName(),
+                        _isLeft ? "left" : "right",
+                        proxyFrameSourceAtGrab,
+                        hasMotionBodyWorldAtGrab ? "yes" : "no",
+                        body_frame::bodyFrameSourceCode(motionBodySourceAtGrab),
+                        constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
+                        kGrabObjectRotationReferenceName,
+                        grab_transform_telemetry::formatBasis("rawHand", rawHandBasis),
+                        grab_transform_telemetry::formatBasis("proxyPalm", proxyPalmBasis),
+                        grab_transform_telemetry::formatBasis("objectAtGrab", objectAtGrabBasis),
+                        grab_transform_telemetry::formatBasis("desiredObject", desiredObjectBasis),
+                        grab_transform_telemetry::formatBasis("desiredBody", desiredBodyBasis),
+                        grab_transform_telemetry::formatBasis("grabBody", grabBodyBasis),
+                        grab_transform_telemetry::formatBasis("motionBody", motionBodyBasis));
+
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} GRAB BASIS CAPTURE DELTA side={} phase=capture {} {} {} {} {}",
+                        handName(),
+                        _isLeft ? "left" : "right",
+                        grab_transform_telemetry::formatBasisDelta("rawHandToProxyPalm", rawHandBasis, proxyPalmBasis),
+                        grab_transform_telemetry::formatBasisDelta("objectAtGrabToDesiredObject", objectAtGrabBasis, desiredObjectBasis),
+                        grab_transform_telemetry::formatBasisDelta("desiredObjectToDesiredBody", desiredObjectBasis, desiredBodyBasis),
+                        grab_transform_telemetry::formatBasisDelta("grabBodyToDesiredBody", grabBodyBasis, desiredBodyBasis),
+                        grab_transform_telemetry::formatBasisDelta("motionBodyToGrabBody", motionBodyBasis, grabBodyBasis));
+
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} GRAB BASIS CAPTURE AXISMAP side={} phase=capture {} {} {} {} {}",
+                        handName(),
+                        _isLeft ? "left" : "right",
+                        grab_transform_telemetry::formatBasisCrossMap("bodyToProxy", grabBodyBasis, proxyPalmBasis),
+                        grab_transform_telemetry::formatBasisCrossMap("desiredBodyToProxy", desiredBodyBasis, proxyPalmBasis),
+                        grab_transform_telemetry::formatBasisCrossMap("proxyToBody", proxyPalmBasis, grabBodyBasis),
+                        grab_transform_telemetry::formatBasisCrossMap("rawHandToProxy", rawHandBasis, proxyPalmBasis),
+                        grab_transform_telemetry::formatBasisCrossMap("bodyToDesiredBody", grabBodyBasis, desiredBodyBasis));
+
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSProxy.pos=({:.2f},{:.2f},{:.2f}) "
+                        "grabHSRawFinger=({:.3f},{:.3f},{:.3f}) grabHSProxyFinger=({:.3f},{:.3f},{:.3f}) "
+                        "bodyLocal.pos=({:.2f},{:.2f},{:.2f}) bodyLocalFinger=({:.3f},{:.3f},{:.3f})",
+                        handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, _grabFrame.proxyAuthorityHandSpace.translate.x,
+                        _grabFrame.proxyAuthorityHandSpace.translate.y, _grabFrame.proxyAuthorityHandSpace.translate.z, grabSpaceRawFinger.x, grabSpaceRawFinger.y, grabSpaceRawFinger.z,
+                        grabSpaceProxyFinger.x, grabSpaceProxyFinger.y, grabSpaceProxyFinger.z, _grabFrame.authority.bodyLocal.translate.x, _grabFrame.authority.bodyLocal.translate.y,
+                        _grabFrame.authority.bodyLocal.translate.z, _grabFrame.authority.bodyLocal.rotate.entry[0][0], _grabFrame.authority.bodyLocal.rotate.entry[1][0],
+                        _grabFrame.authority.bodyLocal.rotate.entry[2][0]);
+
+                    const RE::NiPoint3 rootBodyLocalFinger = getMatrixColumn(_grabFrame.rootBodyLocal.rotate, 0);
+                    const RE::NiPoint3 ownerBodyLocalFinger = getMatrixColumn(_grabFrame.ownerBodyLocal.rotate, 0);
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} GRAB NODE FRAMES: owner='{}'({:p}) hasCol={} ownsBodyCol={} "
+                        "root='{}'({:p}) held='{}'({:p}) mesh='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
+                        "ownerBodyLocal.pos=({:.2f},{:.2f},{:.2f}) ownerBodyLocalFinger=({:.3f},{:.3f},{:.3f}) "
+                        "rootBodyLocal.pos=({:.2f},{:.2f},{:.2f}) rootBodyLocalFinger=({:.3f},{:.3f},{:.3f})",
+                        handName(), nodeDebugName(ownerNodeAtGrab), static_cast<const void*>(ownerNodeAtGrab),
+                        (ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get()) ? "yes" : "no",
+                        (ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get() == bodyCollisionObjectAtGrab) ? "yes" : "no", nodeDebugName(rootNode),
+                        static_cast<const void*>(rootNode), nodeDebugName(collidableNode), static_cast<const void*>(collidableNode), nodeDebugName(meshSourceNode),
+                        static_cast<const void*>(meshSourceNode), ownerNodeAtGrab == collidableNode ? "yes" : "no", rootNode == collidableNode ? "yes" : "no",
+                        _grabFrame.ownerBodyLocal.translate.x, _grabFrame.ownerBodyLocal.translate.y, _grabFrame.ownerBodyLocal.translate.z, ownerBodyLocalFinger.x,
+                        ownerBodyLocalFinger.y, ownerBodyLocalFinger.z, _grabFrame.rootBodyLocal.translate.x, _grabFrame.rootBodyLocal.translate.y,
+                        _grabFrame.rootBodyLocal.translate.z, rootBodyLocalFinger.x, rootBodyLocalFinger.y, rootBodyLocalFinger.z);
+                }
+
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
+                    "palmPos=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
+                    handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, palmPos.x, palmPos.y, palmPos.z, grabPivotAWorld.x,
+                    grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
+                ROCK_LOG_DEBUG(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}", handName(), _grabFrame.authority.bodyLocal.translate.x, _grabFrame.authority.bodyLocal.translate.y,
+                    _grabFrame.authority.bodyLocal.translate.z, _grabFrame.authority.bodyLocal.scale);
+
+            {
+                RE::NiTransform handBodyDiag{};
+                RE::NiTransform objectBodyDiag{};
+                const bool hasLiveDiag = tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), handBodyDiag) &&
+                                         tryResolveLiveBodyWorldTransform(world, objectBodyId, objectBodyDiag);
+                if (hasLiveDiag) {
+                    ROCK_LOG_TRACE(Hand,
+                        "{} DIAG: handBodyLive pos=({:.1f},{:.1f},{:.1f}) objBodyLive pos=({:.1f},{:.1f},{:.1f})",
+                        handName(),
+                        handBodyDiag.translate.x,
+                        handBodyDiag.translate.y,
+                        handBodyDiag.translate.z,
+                        objectBodyDiag.translate.x,
+                        objectBodyDiag.translate.y,
+                        objectBodyDiag.translate.z);
+                }
+                ROCK_LOG_TRACE(Hand, "{} DIAG: handNi pos=({:.1f},{:.1f},{:.1f}) objNi pos=({:.1f},{:.1f},{:.1f})", handName(), handWorldTransform.translate.x,
+                    handWorldTransform.translate.y, handWorldTransform.translate.z, objectWorldTransform.translate.x, objectWorldTransform.translate.y,
+                    objectWorldTransform.translate.z);
+
+                float comX, comY, comZ;
+                if (getBodyCOMWorld(world, objectBodyId, comX, comY, comZ) && hasLiveDiag) {
+                    ROCK_LOG_TRACE(Hand,
+                        "{} B8 COM LIVE: comHk=({:.3f},{:.3f},{:.3f}) objBodyLive=({:.1f},{:.1f},{:.1f})",
+                        handName(),
+                        comX,
+                        comY,
+                        comZ,
+                        objectBodyDiag.translate.x,
+                        objectBodyDiag.translate.y,
+                        objectBodyDiag.translate.z);
+                }
+            }
+
+            {
+                const RE::hkVector4f zeroVel{ 0.0f, 0.0f, 0.0f, 0.0f };
+                havok_runtime::setBodyVelocityDeferred(world, objectBodyId.value, zeroVel, zeroVel);
+
+                for (auto bid : _heldBodyIds) {
+                    if (bid != objectBodyId.value) {
+                        havok_runtime::setBodyVelocityDeferred(world, bid, zeroVel, zeroVel);
+                    }
+                }
+            }
+
+            const auto grabActivation = activateHeldObjectBodySet(world, objectBodyId.value, _heldBodyIds);
+            if (grabActivation.failedActivationCount > 0) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand GRAB activation incomplete: primaryBody={} bodies={} activated={} failed={}",
+                    handName(),
+                    objectBodyId.value,
+                    grabActivation.bodyCount,
+                    grabActivation.activatedCount,
+                    grabActivation.failedActivationCount);
+            }
+
+            suppressHandCollisionForGrab(world, bodyBoneColliders);
+
+            if (joiningPeerHeldObject && sharedContext.peerSavedObjectState) {
+                copyPeerInertiaSnapshot(_savedObjectState, *sharedContext.peerSavedObjectState);
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand joined peer-held object inertia snapshot: formID={:08X} peerMotions={} inertiaModified={}",
+                    handName(),
+                    sel.refr ? sel.refr->GetFormID() : 0,
+                    sharedContext.peerSavedObjectState->motionInertiaStates.size(),
+                    sharedContext.peerSavedObjectState->inertiaModified ? "yes" : "no");
+            } else {
+                normalizeGrabbedInertiaForBodies(world, objectBodyId, _heldBodyIds, _savedObjectState, looseWeaponGrab);
+            }
+
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
@@ -10138,14 +10447,12 @@ namespace rock
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
-        const auto& handBodyWorldAtGrab = proxyPreparation.handBodyWorldAtGrab;
         const auto& proxyFrameWorldAtGrab = proxyPreparation.proxyFrameWorldAtGrab;
         const auto& grabAuthorityPivotAWorld = proxyPreparation.grabAuthorityPivotAWorld;
         const auto& palmPocketPivotAWorld = proxyPreparation.palmPocketPivotAWorld;
         const auto& grabPalmBasisDelta = proxyPreparation.palmBasisDelta;
         const char* proxyFrameSourceAtGrab = proxyPreparation.proxyFrameSourceAtGrab;
         const float palmPocketToProxyDeltaGameUnits = proxyPreparation.palmPocketToProxyDeltaGameUnits;
-        const bool hasPalmProxyFrameAtGrab = proxyPreparation.hasPalmProxyFrameAtGrab;
         /*
          * Live proxy motion and close-grab pocket acquisition both resolve the
          * configured seat offset in generated/proxy local space. The generated
@@ -10627,7 +10934,6 @@ namespace rock
                 .rootNode = rootNode,
                 .objectBodyId = objectBodyId,
                 .traceId = grabTraceId,
-                .objectName = &objName,
             };
             GrabBodyFrameCapture bodyFrameCapture{};
             if (!captureGrabBodyFrame(world, bodyFrameInput, bodyFrameCapture)) {
@@ -10637,15 +10943,6 @@ namespace rock
                 }
                 return false;
             }
-            const auto& palmPos = bodyFrameCapture.palmPosition;
-            const auto& grabBodyWorldAtGrab = bodyFrameCapture.grabBodyWorld;
-            const auto& motionBodyWorldAtGrab = bodyFrameCapture.motionBodyWorld;
-            const auto motionBodySourceAtGrab = bodyFrameCapture.motionBodySource;
-            const bool hasMotionBodyWorldAtGrab = bodyFrameCapture.hasMotionBodyWorld;
-            const bool constraintUsesMotionBodyAtGrab = bodyFrameCapture.constraintUsesMotionBody;
-            auto& grabPivotAWorld = bodyFrameCapture.grabPivotAWorld;
-            auto* bodyCollisionObjectAtGrab = bodyFrameCapture.bodyCollisionObject;
-            auto* ownerNodeAtGrab = bodyFrameCapture.ownerNode;
             grabFingerPoseMeshTriangles = std::move(bodyFrameCapture.fingerPoseMeshTriangles);
             grabFingerPoseLocalMeshTriangles = std::move(bodyFrameCapture.fingerPoseLocalMeshTriangles);
 
@@ -10680,8 +10977,6 @@ namespace rock
             if (!resolveGrabSeatCapture(world, seatCaptureInput, seatCapture)) {
                 return false;
             }
-            auto& desiredObjectWorld = seatCapture.desiredObjectWorld;
-            auto& desiredBodyWorld = seatCapture.desiredBodyWorld;
 
             GrabFrozenCommitInput frozenCommitInput{
                 .handWorldTransform = &handWorldTransform,
@@ -10700,254 +10995,24 @@ namespace rock
                 return false;
             }
 
-            clearGrabExternalHandWorldTransform(_isLeft);
-            _grabVisualHandTransform = handWorldTransform;
-            _hasGrabVisualHandTransform = false;
-            _lastPublishedGrabVisualHandTransform = {};
-            _hasLastPublishedGrabVisualHandTransform = false;
-            _grabVisualHandLerpStartTransform = handWorldTransform;
-            _grabVisualHandLerpElapsedSeconds = 0.0f;
-            _grabVisualHandLerpDurationSeconds = 0.0f;
-            _grabVisualDeviationExceededSeconds = 0.0f;
-            _grabDeviationExceededSeconds = 0.0f;
-            const RE::NiPoint3 initialGrabDelta = grabPivotAWorld - grabGripPoint;
-            const float initialGrabDistance =
-                std::sqrt(initialGrabDelta.x * initialGrabDelta.x + initialGrabDelta.y * initialGrabDelta.y + initialGrabDelta.z * initialGrabDelta.z);
-            const bool needsLargeInitialSync = initialGrabDistance >= g_rockConfig.rockGrabHandLerpMinDistance;
-            _grabFrame.fadeInGrabConstraint = needsLargeInitialSync;
-            if (needsLargeInitialSync) {
-                _grabFrame.motorFadeReason = "largeInitialSync";
-            } else {
-                _grabFrame.motorFadeReason = "none";
-            }
-            _heldLocalLinearVelocityHistory = {};
-            _heldLocalLinearVelocityHistoryCount = 0;
-            _heldLocalLinearVelocityHistoryNext = 0;
-            _heldLocalHandVelocityHistory = {};
-            _heldHandAngularVelocityHistory = {};
-            _heldHandVelocityHistoryCount = 0;
-            _heldHandVelocityHistoryNext = 0;
-            _lastHeldObjectLocalLinearVelocityHavok = {};
-            _hasLastHeldObjectLocalLinearVelocityHavok = false;
-            _previousHeldRawHandWorld = {};
-            _previousHeldHandPositionHavok = {};
-            _lastHeldHandPositionHavok = {};
-            _hasPreviousHeldRawHandWorld = false;
-            _hasLastHeldHandPositionHavok = false;
-            _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
-
-            if (g_rockConfig.rockDebugGrabFrameLogging) {
-                const RE::NiPoint3 legacyPalmPivotAHandspace = computeGrabLegacyPalmPivotAHandspacePosition(_isLeft);
-                auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
-                const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
-
-                const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 1);
-                const RE::NiPoint3 proxyFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
-                const RE::NiPoint3 proxyBack = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
-                const RE::NiPoint3 proxyLateral = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
-                const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabFrame.rawHandSpace.rotate, 0);
-                const RE::NiPoint3 grabSpaceProxyFinger = getMatrixColumn(_grabFrame.proxyAuthorityHandSpace.rotate, 0);
-                const RE::NiPoint3 grabPosDelta = _grabFrame.proxyAuthorityHandSpace.translate - _grabFrame.rawHandSpace.translate;
-                const float rawVsProxyRot = rotationDeltaDegrees(_grabFrame.rawHandSpace.rotate, _grabFrame.proxyAuthorityHandSpace.rotate);
-                const float rawVsProxyPos = std::sqrt(grabPosDelta.x * grabPosDelta.x + grabPosDelta.y * grabPosDelta.y + grabPosDelta.z * grabPosDelta.z);
-                const float motionVsGrabRot = hasMotionBodyWorldAtGrab ? rotationDeltaDegrees(motionBodyWorldAtGrab.rotate, grabBodyWorldAtGrab.rotate) : -1.0f;
-                const float motionVsGrabPos = hasMotionBodyWorldAtGrab ? translationDeltaGameUnits(motionBodyWorldAtGrab, grabBodyWorldAtGrab) : -1.0f;
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB FRAME SUMMARY: vrScale={:.3f} handScale={:.3f} bodyScale={:.3f} objectScale={:.3f} "
-                    "legacyPivotHS=({:.2f},{:.2f},{:.2f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
-                    "pivotBBodyLocal=({:.2f},{:.2f},{:.2f}) pivotBConstraintLocal=({:.2f},{:.2f},{:.2f}) "
-                    "rawProxyDelta={:.2f}deg/{:.2f}gu motionDiagVsGrab={:.2f}deg/{:.2f}gu proxyBodyFrame={} rotRef={} proxyFrame={} rootPalm={} pivotALocal=({:.2f},{:.2f},{:.2f}) meshMode={} meshTris={} "
-                    "pocketGrip={:.1f}gu selectionGripEvidence={:.1f}gu "
-                    "shapeKey=0x{:08X} shapeFilter=0x{:08X} hitFraction={:.4f} contactPatchEvidence={} contactPatchPivot={} patchHits={} snapDelta={:.1f}gu "
-                    "multiFinger={} mfGroups={} mfSpread={:.2f}gu mfReason={} "
-                    "activePoint={} activeUsesFingerEvidence={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} positionConfidence={:.2f} palmSeatPoint={} fingerEvidencePoint={} "
-                    "poseTargets={} motorFade={} motorFadeReason={} bodyReason={} "
-                    "fingerPoseAim={} fingerPoseAimReason={}",
-                    handName(), vrScale, handWorldTransform.scale, handBodyWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
-                    legacyPalmPivotAHandspace.x, legacyPalmPivotAHandspace.y, legacyPalmPivotAHandspace.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x,
-                    grabGripPoint.y, grabGripPoint.z, _grabFrame.authority.pivotBBodyLocalGame.x, _grabFrame.authority.pivotBBodyLocalGame.y, _grabFrame.authority.pivotBBodyLocalGame.z,
-                    _grabFrame.authority.pivotBConstraintLocalGame.x, _grabFrame.authority.pivotBConstraintLocalGame.y, _grabFrame.authority.pivotBConstraintLocalGame.z,
-                    rawVsProxyRot, rawVsProxyPos, motionVsGrabRot, motionVsGrabPos,
-                    constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
-                    kGrabObjectRotationReferenceName,
-                    proxyFrameSourceAtGrab,
-                    hasPalmProxyFrameAtGrab ? "yes" : "no", _grabFrame.authority.pivotAHandBodyLocalGame.x,
-                    _grabFrame.authority.pivotAHandBodyLocalGame.y, _grabFrame.authority.pivotAHandBodyLocalGame.z, grabPointMode, grabMeshTriangles.size(),
-                    _grabFrame.pivotAuthority.pocketDistanceGameUnits, _grabFrame.pivotAuthority.selectionDistanceGameUnits,
-                    _grabFrame.gripEvidence.gripEvidenceShapeKey, _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo, _grabFrame.gripEvidence.gripEvidenceHitFraction,
-                    _grabFrame.hasContactPatchEvidence ? "yes" : "no", "no",
-                    _grabFrame.contactPatchSampleCount, _grabFrame.contactPatchMeshSnapDeltaGameUnits,
-                    _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
-                    _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.multiFingerContactReason,
-                    _grabFrame.seat.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
-                    grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
-                    _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
-                    _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                    _grabFrame.pivotAuthority.positionConfidence,
-                    _grabFrame.seat.palmSeatPointMode, _grabFrame.fingerEvidencePointMode,
-                    _grabFrame.fingerPoseTargetCount, _grabFrame.fadeInGrabConstraint ? "yes" : "no",
-                    _grabFrame.motorFadeReason, _grabFrame.bodyResolutionReason,
-                    _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB FRAME SNAPSHOT: rawVsProxy rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
-                    "rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
-                    "proxyFinger=({:.3f},{:.3f},{:.3f}) proxyBack=({:.3f},{:.3f},{:.3f}) proxyLat=({:.3f},{:.3f},{:.3f})",
-                    handName(), rawVsProxyRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawFinger.x,
-                    rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, proxyFinger.x, proxyFinger.y, proxyFinger.z,
-                    proxyBack.x, proxyBack.y, proxyBack.z, proxyLateral.x, proxyLateral.y, proxyLateral.z);
-
-                const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
-                const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
-                const auto objectAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(objectWorldTransform);
-                const auto desiredObjectBasis = grab_transform_telemetry::makeOrientationBasis(desiredObjectWorld);
-                const auto desiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorld);
-                const auto grabBodyBasis = grab_transform_telemetry::makeOrientationBasis(grabBodyWorldAtGrab);
-                const auto motionBodyBasis = grab_transform_telemetry::makeOrientationBasis(motionBodyWorldAtGrab);
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB BASIS CAPTURE side={} phase=capture convention=niLocalVectorToWorld proxySource={} motionBody={} motionSrc={} proxyBodyFrame={} rotRef={} {} {} {} {} {} {} {}",
-                    handName(),
-                    _isLeft ? "left" : "right",
-                    proxyFrameSourceAtGrab,
-                    hasMotionBodyWorldAtGrab ? "yes" : "no",
-                    body_frame::bodyFrameSourceCode(motionBodySourceAtGrab),
-                    constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
-                    kGrabObjectRotationReferenceName,
-                    grab_transform_telemetry::formatBasis("rawHand", rawHandBasis),
-                    grab_transform_telemetry::formatBasis("proxyPalm", proxyPalmBasis),
-                    grab_transform_telemetry::formatBasis("objectAtGrab", objectAtGrabBasis),
-                    grab_transform_telemetry::formatBasis("desiredObject", desiredObjectBasis),
-                    grab_transform_telemetry::formatBasis("desiredBody", desiredBodyBasis),
-                    grab_transform_telemetry::formatBasis("grabBody", grabBodyBasis),
-                    grab_transform_telemetry::formatBasis("motionBody", motionBodyBasis));
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB BASIS CAPTURE DELTA side={} phase=capture {} {} {} {} {}",
-                    handName(),
-                    _isLeft ? "left" : "right",
-                    grab_transform_telemetry::formatBasisDelta("rawHandToProxyPalm", rawHandBasis, proxyPalmBasis),
-                    grab_transform_telemetry::formatBasisDelta("objectAtGrabToDesiredObject", objectAtGrabBasis, desiredObjectBasis),
-                    grab_transform_telemetry::formatBasisDelta("desiredObjectToDesiredBody", desiredObjectBasis, desiredBodyBasis),
-                    grab_transform_telemetry::formatBasisDelta("grabBodyToDesiredBody", grabBodyBasis, desiredBodyBasis),
-                    grab_transform_telemetry::formatBasisDelta("motionBodyToGrabBody", motionBodyBasis, grabBodyBasis));
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB BASIS CAPTURE AXISMAP side={} phase=capture {} {} {} {} {}",
-                    handName(),
-                    _isLeft ? "left" : "right",
-                    grab_transform_telemetry::formatBasisCrossMap("bodyToProxy", grabBodyBasis, proxyPalmBasis),
-                    grab_transform_telemetry::formatBasisCrossMap("desiredBodyToProxy", desiredBodyBasis, proxyPalmBasis),
-                    grab_transform_telemetry::formatBasisCrossMap("proxyToBody", proxyPalmBasis, grabBodyBasis),
-                    grab_transform_telemetry::formatBasisCrossMap("rawHandToProxy", rawHandBasis, proxyPalmBasis),
-                    grab_transform_telemetry::formatBasisCrossMap("bodyToDesiredBody", grabBodyBasis, desiredBodyBasis));
-
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSProxy.pos=({:.2f},{:.2f},{:.2f}) "
-                    "grabHSRawFinger=({:.3f},{:.3f},{:.3f}) grabHSProxyFinger=({:.3f},{:.3f},{:.3f}) "
-                    "bodyLocal.pos=({:.2f},{:.2f},{:.2f}) bodyLocalFinger=({:.3f},{:.3f},{:.3f})",
-                    handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, _grabFrame.proxyAuthorityHandSpace.translate.x,
-                    _grabFrame.proxyAuthorityHandSpace.translate.y, _grabFrame.proxyAuthorityHandSpace.translate.z, grabSpaceRawFinger.x, grabSpaceRawFinger.y, grabSpaceRawFinger.z,
-                    grabSpaceProxyFinger.x, grabSpaceProxyFinger.y, grabSpaceProxyFinger.z, _grabFrame.authority.bodyLocal.translate.x, _grabFrame.authority.bodyLocal.translate.y,
-                    _grabFrame.authority.bodyLocal.translate.z, _grabFrame.authority.bodyLocal.rotate.entry[0][0], _grabFrame.authority.bodyLocal.rotate.entry[1][0],
-                    _grabFrame.authority.bodyLocal.rotate.entry[2][0]);
-
-                const RE::NiPoint3 rootBodyLocalFinger = getMatrixColumn(_grabFrame.rootBodyLocal.rotate, 0);
-                const RE::NiPoint3 ownerBodyLocalFinger = getMatrixColumn(_grabFrame.ownerBodyLocal.rotate, 0);
-                ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB NODE FRAMES: owner='{}'({:p}) hasCol={} ownsBodyCol={} "
-                    "root='{}'({:p}) held='{}'({:p}) mesh='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
-                    "ownerBodyLocal.pos=({:.2f},{:.2f},{:.2f}) ownerBodyLocalFinger=({:.3f},{:.3f},{:.3f}) "
-                    "rootBodyLocal.pos=({:.2f},{:.2f},{:.2f}) rootBodyLocalFinger=({:.3f},{:.3f},{:.3f})",
-                    handName(), nodeDebugName(ownerNodeAtGrab), static_cast<const void*>(ownerNodeAtGrab),
-                    (ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get()) ? "yes" : "no",
-                    (ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get() == bodyCollisionObjectAtGrab) ? "yes" : "no", nodeDebugName(rootNode),
-                    static_cast<const void*>(rootNode), nodeDebugName(collidableNode), static_cast<const void*>(collidableNode), nodeDebugName(meshSourceNode),
-                    static_cast<const void*>(meshSourceNode), ownerNodeAtGrab == collidableNode ? "yes" : "no", rootNode == collidableNode ? "yes" : "no",
-                    _grabFrame.ownerBodyLocal.translate.x, _grabFrame.ownerBodyLocal.translate.y, _grabFrame.ownerBodyLocal.translate.z, ownerBodyLocalFinger.x,
-                    ownerBodyLocalFinger.y, ownerBodyLocalFinger.z, _grabFrame.rootBodyLocal.translate.x, _grabFrame.rootBodyLocal.translate.y,
-                    _grabFrame.rootBodyLocal.translate.z, rootBodyLocalFinger.x, rootBodyLocalFinger.y, rootBodyLocalFinger.z);
-            }
-
-            ROCK_LOG_DEBUG(Hand,
-                "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
-                "palmPos=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
-                handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, palmPos.x, palmPos.y, palmPos.z, grabPivotAWorld.x,
-                grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
-            ROCK_LOG_DEBUG(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}", handName(), _grabFrame.authority.bodyLocal.translate.x, _grabFrame.authority.bodyLocal.translate.y,
-                _grabFrame.authority.bodyLocal.translate.z, _grabFrame.authority.bodyLocal.scale);
-        }
-
-        {
-            RE::NiTransform handBodyDiag{};
-            RE::NiTransform objectBodyDiag{};
-            const bool hasLiveDiag = tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), handBodyDiag) &&
-                                     tryResolveLiveBodyWorldTransform(world, objectBodyId, objectBodyDiag);
-            if (hasLiveDiag) {
-                ROCK_LOG_TRACE(Hand,
-                    "{} DIAG: handBodyLive pos=({:.1f},{:.1f},{:.1f}) objBodyLive pos=({:.1f},{:.1f},{:.1f})",
-                    handName(),
-                    handBodyDiag.translate.x,
-                    handBodyDiag.translate.y,
-                    handBodyDiag.translate.z,
-                    objectBodyDiag.translate.x,
-                    objectBodyDiag.translate.y,
-                    objectBodyDiag.translate.z);
-            }
-            ROCK_LOG_TRACE(Hand, "{} DIAG: handNi pos=({:.1f},{:.1f},{:.1f}) objNi pos=({:.1f},{:.1f},{:.1f})", handName(), handWorldTransform.translate.x,
-                handWorldTransform.translate.y, handWorldTransform.translate.z, objectWorldTransform.translate.x, objectWorldTransform.translate.y,
-                objectWorldTransform.translate.z);
-
-            float comX, comY, comZ;
-            if (getBodyCOMWorld(world, objectBodyId, comX, comY, comZ) && hasLiveDiag) {
-                ROCK_LOG_TRACE(Hand,
-                    "{} B8 COM LIVE: comHk=({:.3f},{:.3f},{:.3f}) objBodyLive=({:.1f},{:.1f},{:.1f})",
-                    handName(),
-                    comX,
-                    comY,
-                    comZ,
-                    objectBodyDiag.translate.x,
-                    objectBodyDiag.translate.y,
-                    objectBodyDiag.translate.z);
-            }
-        }
-
-        {
-            const RE::hkVector4f zeroVel{ 0.0f, 0.0f, 0.0f, 0.0f };
-            havok_runtime::setBodyVelocityDeferred(world, objectBodyId.value, zeroVel, zeroVel);
-
-            for (auto bid : _heldBodyIds) {
-                if (bid != objectBodyId.value) {
-                    havok_runtime::setBodyVelocityDeferred(world, bid, zeroVel, zeroVel);
-                }
-            }
-        }
-
-        const auto grabActivation = activateHeldObjectBodySet(world, objectBodyId.value, _heldBodyIds);
-        if (grabActivation.failedActivationCount > 0) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB activation incomplete: primaryBody={} bodies={} activated={} failed={}",
-                handName(),
-                objectBodyId.value,
-                grabActivation.bodyCount,
-                grabActivation.activatedCount,
-                grabActivation.failedActivationCount);
-        }
-
-        suppressHandCollisionForGrab(world, bodyBoneColliders);
-
-        if (joiningPeerHeldObject && sharedContext.peerSavedObjectState) {
-            copyPeerInertiaSnapshot(_savedObjectState, *sharedContext.peerSavedObjectState);
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand joined peer-held object inertia snapshot: formID={:08X} peerMotions={} inertiaModified={}",
-                handName(),
-                sel.refr ? sel.refr->GetFormID() : 0,
-                sharedContext.peerSavedObjectState->motionInertiaStates.size(),
-                sharedContext.peerSavedObjectState->inertiaModified ? "yes" : "no");
-        } else {
-            normalizeGrabbedInertiaForBodies(world, objectBodyId, _heldBodyIds, _savedObjectState, looseWeaponGrab);
+            const GrabPostFreezeInput postFreezeInput{
+                .handWorldTransform = &handWorldTransform,
+                .proxy = &proxyPreparation,
+                .meshCapture = &meshCaptureSetup,
+                .mesh = &meshExtraction,
+                .bodyFrame = &bodyFrameCapture,
+                .seatCapture = &seatCapture,
+                .surface = &surfaceEvidence,
+                .rootNode = rootNode,
+                .collidableNode = collidableNode,
+                .meshSourceNode = meshSourceNode,
+                .objectBodyId = objectBodyId,
+                .bodyBoneColliders = bodyBoneColliders,
+                .sharedContext = &sharedContext,
+                .joiningPeerHeldObject = joiningPeerHeldObject,
+                .looseWeaponGrab = looseWeaponGrab,
+            };
+            initializePostFreezeGrab(world, postFreezeInput);
         }
 
         {
