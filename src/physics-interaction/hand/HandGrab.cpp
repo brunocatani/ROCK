@@ -65,12 +65,47 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <xmmintrin.h>
 
 namespace rock
 {
     namespace
     {
+        template <class Rollback>
+        class GrabPreparationTransaction
+        {
+        public:
+            explicit GrabPreparationTransaction(Rollback rollback) : _rollback(std::move(rollback)) {}
+
+            GrabPreparationTransaction(const GrabPreparationTransaction&) = delete;
+            GrabPreparationTransaction& operator=(const GrabPreparationTransaction&) = delete;
+            GrabPreparationTransaction(GrabPreparationTransaction&&) = delete;
+            GrabPreparationTransaction& operator=(GrabPreparationTransaction&&) = delete;
+
+            ~GrabPreparationTransaction() noexcept
+            {
+                rollback();
+            }
+
+            void rollback() noexcept
+            {
+                if (_active) {
+                    _active = false;
+                    _rollback();
+                }
+            }
+
+            void commit() noexcept
+            {
+                _active = false;
+            }
+
+        private:
+            Rollback _rollback;
+            bool _active = true;
+        };
+
         static_assert(kGrabCollisionSuppressionArmBodyCountPerHand == kBodyBoneGrabSuppressionArmBodyCountPerSide,
             "Normal grab arm-collider suppression capacity must match the body collider arm-chain query.");
 
@@ -6745,6 +6780,7 @@ namespace rock
              */
             _savedObjectState.clear();
         };
+        GrabPreparationTransaction grabPreparationTransaction{ restoreFailedGrabPrep };
 
         const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
         RE::NiTransform proxyFrameWorldAtGrab = handBodyWorldAtGrab;
@@ -6768,7 +6804,7 @@ namespace rock
             _grabFrame.clear();
             _heldBodyIds.clear();
             _heldBodyIdsCount.store(0, std::memory_order_release);
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -6915,7 +6951,7 @@ namespace rock
                 meshStats.visitedShapes,
                 meshStats.totalTriangles(),
                 grabFallbackReason);
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         };
@@ -6952,7 +6988,7 @@ namespace rock
                 nodeDebugName(rootNode),
                 nodeDebugName(meshSourceNode),
                 nodeDebugName(collidableNode));
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -6969,7 +7005,7 @@ namespace rock
                 objName,
                 sel.refr ? sel.refr->GetFormID() : 0,
                 nodeDebugName(collidableNode));
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -7329,7 +7365,7 @@ namespace rock
                 meshStats.visitedShapes,
                 meshStats.totalTriangles(),
                 contactSourcePolicy.reason);
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -7420,7 +7456,7 @@ namespace rock
                 rejectedBody ? rejectedBody->motionPropertiesId : 0,
                 activeLifecycle.latePreparedBodyCount(),
                 activeLifecycle.hasIncompleteNativeScan() ? "yes" : "no");
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -7468,7 +7504,7 @@ namespace rock
                 primaryChoiceTarget.x,
                 primaryChoiceTarget.y,
                 primaryChoiceTarget.z);
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -7493,7 +7529,7 @@ namespace rock
         auto* preparedBody = havok_runtime::getBody(world, objectBodyId);
         if (!preparedBody) {
             ROCK_LOG_ERROR(Hand, "{} grabSelectedObject: prepared primary body {} is not readable after object prep", handName(), objectBodyId.value);
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -7521,7 +7557,7 @@ namespace rock
                         objName,
                         sel.refr ? sel.refr->GetFormID() : 0,
                         nodeDebugName(resolvedOwnerNode));
-                    restoreFailedGrabPrep();
+                    grabPreparationTransaction.rollback();
                     clearGrabExternalHandWorldTransform(_isLeft);
                     return false;
                 }
@@ -7534,7 +7570,7 @@ namespace rock
                         objName,
                         sel.refr ? sel.refr->GetFormID() : 0,
                         nodeDebugName(collidableNode));
-                    restoreFailedGrabPrep();
+                    grabPreparationTransaction.rollback();
                     clearGrabExternalHandWorldTransform(_isLeft);
                     return false;
                 }
@@ -7875,7 +7911,7 @@ namespace rock
                 nodeDebugName(meshSourceNode),
                 nodeDebugName(collidableNode),
                 nodeDebugName(rootNode));
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -7932,7 +7968,7 @@ namespace rock
                 handName(),
                 pinchPocketCandidate.decision.reason,
                 sel.refr ? sel.refr->GetFormID() : 0);
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
         }
@@ -8115,7 +8151,7 @@ namespace rock
                 multiFingerGripRuntime.rejectedDistanceCount,
                 contactEvidenceDecision.reason,
                 sel.isFarSelection ? "yes" : "no");
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             clearGrabExternalHandWorldTransform(_isLeft);
             _savedObjectState.clear();
             return false;
@@ -8211,7 +8247,7 @@ namespace rock
                 _heldBodyIds.clear();
                 _heldDriveDecision = {};
                 _heldBodyIdsCount.store(0, std::memory_order_release);
-                restoreFailedGrabPrep();
+                grabPreparationTransaction.rollback();
                 return false;
             }
             RE::NiTransform motionBodyWorldAtGrab{};
@@ -8251,7 +8287,7 @@ namespace rock
                         objName,
                         sel.refr ? sel.refr->GetFormID() : 0,
                         nodeDebugName(ownerNodeAtGrab));
-                    restoreFailedGrabPrep();
+                    grabPreparationTransaction.rollback();
                     clearGrabExternalHandWorldTransform(_isLeft);
                     return false;
                 }
@@ -8617,7 +8653,7 @@ namespace rock
                             _grabFingerPosePublished = false;
                             (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
                             clearGrabExternalHandWorldTransform(_isLeft);
-                            restoreFailedGrabPrep();
+                            grabPreparationTransaction.rollback();
                             return false;
                         }
                         if (g_rockConfig.rockDebugGrabFrameLogging) {
@@ -9401,7 +9437,7 @@ namespace rock
                     _grabFingerPosePublished = false;
                     (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
                     clearGrabExternalHandWorldTransform(_isLeft);
-                    restoreFailedGrabPrep();
+                    grabPreparationTransaction.rollback();
                     ROCK_LOG_WARN(Hand,
                         "{} THREE-PHASE GRAB ABORT: pocketValid={} gripValid={} accepted={} reason={} dist={:.2f}gu stableTouch={}",
                         handName(),
@@ -9458,7 +9494,7 @@ namespace rock
                 _grabFingerPosePublished = false;
                 (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
                 clearGrabExternalHandWorldTransform(_isLeft);
-                restoreFailedGrabPrep();
+                grabPreparationTransaction.rollback();
                 return false;
             }
             applyFrozenGrabAuthorityFrameToGrabFrame(_grabFrame, frozenAuthorityFrame);
@@ -10096,7 +10132,7 @@ namespace rock
             if (!joiningPeerHeldObject) {
                 restoreGrabbedInertia(world, _savedObjectState);
             }
-            restoreFailedGrabPrep();
+            grabPreparationTransaction.rollback();
             restoreHandCollisionAfterGrab(world);
             restoreBodyCollisionAfterHeldLooseWeapon(world);
             _savedObjectState.clear();
@@ -10408,6 +10444,7 @@ namespace rock
             }
         }
 
+        grabPreparationTransaction.commit();
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::GrabCommitSucceeded });
         clearPullRuntimeState();
         clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
