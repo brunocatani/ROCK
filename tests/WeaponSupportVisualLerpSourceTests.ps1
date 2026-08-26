@@ -78,8 +78,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportBaseline
     'Dynamic and gunstock attach must preserve the weapon while retaining the established live-input visual hand transition.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripPose\(\s*primaryHandIsLeft,\s*_returningWeaponVisual\.localTransition\.active\s*&&\s*_returningWeaponVisual\.followsAuthoredPrimaryGrip\)[\s\S]*restoreFrikPrimaryWeaponPose' `
     'Primary-only ownership must clear the locked hand root while retaining an in-flight authored firing pose through the return handoff.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*tryResolveGunstockPhysicalFiringFrame[\s\S]*getHandWorldTransform[\s\S]*resolveAuthoredPrimaryWeaponWorld[\s\S]*worldTargetToParentLocal' `
-    'A right-firing weapon return must prefer the collision-isolated physical hand and resolve its moving endpoint from the generation-bound authored grip relation.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*getHandWorldTransform[\s\S]*resolveAuthoredPrimaryWeaponWorld[\s\S]*worldTargetToParentLocal' `
+    'A right-firing weapon return must resolve its endpoint from the same presented-hand source as the steady authored primary alignment.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]{0,1800}tryResolveGunstockPhysicalFiringFrame' `
+    'The authored return must not substitute the damped weapon driver for the steady authored primary hand source.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'state\.followsAuthoredPrimaryGrip[\s\S]*state\.lastTargetLocal[\s\S]*driveVisualReturn\(\s*state\.localTransition,\s*targetLocal' `
     'The weapon return must retain the last valid authored endpoint and never fall back to the native offset mid-handoff.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'updateVisualOnlySupportGrip\(RE::NiNode\* weaponNode,\s*float dt\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*false,\s*true,\s*dt' `

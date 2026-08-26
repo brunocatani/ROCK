@@ -3722,15 +3722,16 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform trackedRightHandWorld{};
-        RE::NiTransform trackedRightDriverWorld{};
-        if (!tryResolveGunstockPhysicalFiringFrame(
-                trackedRightHandWorld,
-                trackedRightDriverWorld)) {
-            trackedRightHandWorld =
-                frik_visual_authority::getHandWorldTransform(
-                    frik_visual_authority::Hand::Right);
-        }
+        /*
+         * Use the exact hand source consumed by
+         * AuthoredPrimaryFiringGripRuntime. The damped weapon driver is a
+         * different frame: using it here produced one return interval at the
+         * driver-aligned pose, followed by the normal presented-hand solve on
+         * the next frame.
+         */
+        const RE::NiTransform trackedRightHandWorld =
+            frik_visual_authority::getHandWorldTransform(
+                frik_visual_authority::Hand::Right);
         if (!isFiniteTransform(trackedRightHandWorld)) {
             return false;
         }
