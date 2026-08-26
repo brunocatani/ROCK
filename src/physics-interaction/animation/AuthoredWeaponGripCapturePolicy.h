@@ -23,6 +23,7 @@ namespace rock::authored_weapon_grip_capture_policy
         bool compatibilityBlocking{ false };
         bool weaponDrawn{ false };
         bool weaponVisible{ false };
+        bool equippedWeaponTransitionActive{ false };
         bool weaponKeyValid{ false };
         bool captureValid{ false };
         bool captureNewerThanWeaponBoundary{ false };
@@ -94,7 +95,8 @@ namespace rock::authored_weapon_grip_capture_policy
                !input.menuBlocking &&
                !input.compatibilityBlocking &&
                input.weaponDrawn &&
-               input.weaponVisible &&
+               (input.weaponVisible ||
+                   input.equippedWeaponTransitionActive) &&
                input.weaponKeyValid &&
                input.captureValid &&
                input.captureNewerThanWeaponBoundary &&

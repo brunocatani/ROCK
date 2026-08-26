@@ -77,6 +77,17 @@ int main()
     static_assert(shouldApplyAuthoredPrimaryFiringGrip(eligible));
     static_assert([=] {
         auto input = eligible;
+        input.weaponVisible = false;
+        input.equippedWeaponTransitionActive = true;
+        return shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = eligible;
+        input.weaponVisible = false;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = eligible;
         input.nativeReloadAuthorityActive = true;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());

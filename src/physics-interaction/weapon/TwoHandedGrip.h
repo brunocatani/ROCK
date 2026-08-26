@@ -1392,9 +1392,13 @@ namespace rock
             bool isLeft,
             bool preserveAuthoredFingerPose = false);
 
-        static void killFrikOffhandGrip();
+        void suppressFrikOffhandGrip();
 
-        static void restoreFrikOffhandGrip();
+        void beginFrikOffhandGripReleaseLease(const char* reason);
+
+        void updateFrikOffhandGripReleaseLease(float dt);
+
+        void restoreFrikOffhandGrip();
 
         static bool blockFrikPrimaryWeaponPose();
 
@@ -1711,6 +1715,8 @@ namespace rock
         ReturningWeaponVisualState _returningWeaponVisual{};
         RE::NiTransform _lastRenderedWeaponWorld{};
         bool _hasLastRenderedWeaponWorld{ false };
+        float _frikOffhandGripReleaseLeaseRemainingSeconds{ 0.0f };
+        bool _frikOffhandGripSuppressionEngaged{ false };
 
         /*
          * hFRIK calls the recoil controller before ROCK's update on the same

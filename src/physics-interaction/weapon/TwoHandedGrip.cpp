@@ -2355,6 +2355,13 @@ namespace rock
         _observedWeaponRecoilSampleSequence =
             _weaponRecoilSampleSequence;
         _handlingSettings = handlingSettings;
+        if (_state == TwoHandedState::Touching ||
+            _state == TwoHandedState::Gripping ||
+            _state == TwoHandedState::PartCarry) {
+            suppressFrikOffhandGrip();
+        } else {
+            updateFrikOffhandGripReleaseLease(dt);
+        }
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
         _gunstockFramePresentation = {};
@@ -2508,6 +2515,8 @@ namespace rock
 
         case TwoHandedState::Touching:
             if (supportHandHoldingObject) {
+                beginFrikOffhandGripReleaseLease(
+                    "support-hand-acquired-object");
                 _state = TwoHandedState::Inactive;
                 break;
             }
@@ -2519,6 +2528,8 @@ namespace rock
                 _touchAbsentSeconds +=
                     std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
                 if (_touchAbsentSeconds > TOUCH_TIMEOUT_SECONDS) {
+                    beginFrikOffhandGripReleaseLease(
+                        "support-touch-timeout");
                     _state = TwoHandedState::Inactive;
                     break;
                 }
@@ -2780,10 +2791,12 @@ namespace rock
         _rightHandHoldingObjectForPose = false;
         if (_state != TwoHandedState::Inactive) {
             transitionToInactive(false);
+            restoreFrikOffhandGrip();
             _scopeMenuOpenThisFrame = false;
             _scopeMenuClosedThisFrame = false;
             return;
         }
+        restoreFrikOffhandGrip();
         _scopeMenuOpenThisFrame = false;
         _scopeMenuClosedThisFrame = false;
         _state = TwoHandedState::Inactive;
@@ -3802,6 +3815,7 @@ namespace rock
 
         _state = TwoHandedState::Touching;
         _touchAbsentSeconds = 0.0f;
+        suppressFrikOffhandGrip();
         ROCK_LOG_DEBUG(Weapon,
             "TwoHandedGrip: touching weapon='{}' bodyId={} partKind={} pose={} interactionRoot={:x} sourceRoot={:x} generation={:016X}",
             weaponNode->name.c_str(),
@@ -4804,12 +4818,13 @@ namespace rock
         clearPrimaryGripPose(primaryHandIsLeft);
         clearSupportGripPose(supportHandIsLeft);
 
-        killFrikOffhandGrip();
+        suppressFrikOffhandGrip();
 
         RE::NiTransform primaryTransform{};
         if (!tryGetSolverHandTransform(primaryHandIsLeft, primaryTransform)) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: support grip start skipped because authoritative hand transforms are unavailable");
-            restoreFrikOffhandGrip();
+            beginFrikOffhandGripReleaseLease(
+                "support-primary-frame-unavailable");
             return;
         }
 
@@ -4824,7 +4839,8 @@ namespace rock
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
                 "TwoHandedGrip: scoped support grip start deferred because the matching pre-scope firing grip is unavailable generation={:016X} canonicalGeneration={:016X}",
                 decision.weaponGenerationKey, _rightFiringHandCanonicalGenerationKey);
-            restoreFrikOffhandGrip();
+            beginFrikOffhandGripReleaseLease(
+                "scoped-support-canonical-unavailable");
             return;
         }
         if (reuseRightFiringCanonicalGrip) {
@@ -4886,7 +4902,8 @@ namespace rock
                 firingGripProximityAuthorityEnabled,
                 &supportCaptureHandWorld)) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: support grip start skipped because part grip capture failed");
-            restoreFrikOffhandGrip();
+            beginFrikOffhandGripReleaseLease(
+                "support-part-capture-failed");
             return;
         }
 
@@ -5027,6 +5044,14 @@ namespace rock
         clearDynamicSupportAcquisition(
             "transition-to-inactive",
             true);
+        const bool releaseFrikOffhandGripWithLease =
+            (_state == TwoHandedState::Gripping ||
+                _state == TwoHandedState::PartCarry) &&
+            (partGrip(true).active || partGrip(false).active);
+        if (releaseFrikOffhandGripWithLease) {
+            beginFrikOffhandGripReleaseLease(
+                "transition-to-inactive");
+        }
         const bool weaponReturnActive = _returningWeaponVisual.localTransition.active;
         // Weapon-node topology always returns to native immediately. A visual
         // return owns only ROCK's later transform publication, never hFRIK's
@@ -5039,7 +5064,9 @@ namespace rock
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
         clearSupportGripPose(true);
         clearSupportGripPose(false);
-        restoreFrikOffhandGrip();
+        if (_frikOffhandGripReleaseLeaseRemainingSeconds <= 0.0f) {
+            restoreFrikOffhandGrip();
+        }
         if (!weaponReturnActive) {
             restoreFrikPrimaryWeaponPose();
         }
@@ -6256,6 +6283,13 @@ namespace rock
         clearDynamicSupportAcquisition(
             reason ? reason : "transition-to-primary-only",
             true);
+        const bool releaseFrikOffhandGripWithLease =
+            (_state == TwoHandedState::Gripping ||
+                _state == TwoHandedState::PartCarry) &&
+            (partGrip(true).active || partGrip(false).active);
+        if (releaseFrikOffhandGripWithLease) {
+            beginFrikOffhandGripReleaseLease(reason);
+        }
         const bool primaryHandIsLeft = _firingHandIsLeft;
         const bool supportHandIsLeft = !_firingHandIsLeft;
 
@@ -6290,7 +6324,9 @@ namespace rock
         clearSupportGripPose(supportHandIsLeft);
         clearSupportGripPose(primaryHandIsLeft);
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
-        restoreFrikOffhandGrip();
+        if (_frikOffhandGripReleaseLeaseRemainingSeconds <= 0.0f) {
+            restoreFrikOffhandGrip();
+        }
         if (!_firingHandIsLeft) {
             // FRIK's primary weapon pose targets the game-primary RIGHT hand.
             // While the LEFT hand fires it stays blocked; hFRIK poses the
@@ -9909,16 +9945,83 @@ namespace rock
         }
     }
 
-    void TwoHandedGrip::killFrikOffhandGrip()
+    void TwoHandedGrip::suppressFrikOffhandGrip()
     {
-        if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_TwoHanded", true)) {
+        _frikOffhandGripReleaseLeaseRemainingSeconds = 0.0f;
+        if (_frikOffhandGripSuppressionEngaged) {
+            return;
+        }
+        if (frik_visual_authority::blockOffHandWeaponGripping(
+                "ROCK_TwoHanded",
+                true)) {
+            _frikOffhandGripSuppressionEngaged = true;
             ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip suppressed");
+        }
+    }
+
+    void TwoHandedGrip::beginFrikOffhandGripReleaseLease(
+        const char* reason)
+    {
+        const float delaySeconds =
+            std::isfinite(
+                g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds) ?
+            (std::max)(
+                0.0f,
+                g_rockConfig.
+                    rockGrabReleaseHandCollisionDelaySeconds) :
+            0.0f;
+        if (delaySeconds <= 0.0f) {
+            restoreFrikOffhandGrip();
+            return;
+        }
+
+        if (!_frikOffhandGripSuppressionEngaged &&
+            frik_visual_authority::blockOffHandWeaponGripping(
+                "ROCK_TwoHanded",
+                true)) {
+            _frikOffhandGripSuppressionEngaged = true;
+        }
+        if (!_frikOffhandGripSuppressionEngaged) {
+            _frikOffhandGripReleaseLeaseRemainingSeconds = 0.0f;
+            return;
+        }
+
+        _frikOffhandGripReleaseLeaseRemainingSeconds = delaySeconds;
+        ROCK_LOG_DEBUG(
+            Weapon,
+            "FRIK offhand grip restore delayed reason={} seconds={:.3f}",
+            reason ? reason : "unknown",
+            delaySeconds);
+    }
+
+    void TwoHandedGrip::updateFrikOffhandGripReleaseLease(const float dt)
+    {
+        if (_frikOffhandGripReleaseLeaseRemainingSeconds <= 0.0f) {
+            return;
+        }
+        if (!std::isfinite(dt) || dt <= 0.0f) {
+            return;
+        }
+
+        _frikOffhandGripReleaseLeaseRemainingSeconds =
+            (std::max)(
+                0.0f,
+                _frikOffhandGripReleaseLeaseRemainingSeconds - dt);
+        if (_frikOffhandGripReleaseLeaseRemainingSeconds <= 0.0f) {
+            restoreFrikOffhandGrip();
         }
     }
 
     void TwoHandedGrip::restoreFrikOffhandGrip()
     {
-        if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_TwoHanded", false)) {
+        _frikOffhandGripReleaseLeaseRemainingSeconds = 0.0f;
+        if (!_frikOffhandGripSuppressionEngaged) {
+            return;
+        }
+        if (frik_visual_authority::blockOffHandWeaponGripping(
+                "ROCK_TwoHanded",
+                false)) {
+            _frikOffhandGripSuppressionEngaged = false;
             ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip restored");
         }
     }

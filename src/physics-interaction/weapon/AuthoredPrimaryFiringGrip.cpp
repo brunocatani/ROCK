@@ -430,6 +430,8 @@ namespace rock
             .compatibilityBlocking = input.compatibilityBlocking,
             .weaponDrawn = input.weaponDrawn,
             .weaponVisible = input.weaponVisible,
+            .equippedWeaponTransitionActive =
+                input.equippedWeaponTransitionActive,
             .weaponKeyValid = currentWeaponKey != 0,
             .captureValid = harvestedRelationAvailable || captureStatus.valid,
             .captureNewerThanWeaponBoundary = harvestedRelationAvailable || captureStatus.captureSequence > _captureSequenceFloor,
