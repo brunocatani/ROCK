@@ -582,7 +582,18 @@ namespace rock
         bool applyAuthoredPrimaryGripWeaponAlignment(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
+            const RE::NiTransform* solvedFiringHandWorld,
             std::uint64_t currentWeaponGenerationKey);
+
+        // Called before the authored runtime evaluates the current frame. A
+        // position-only hand target survives only if that runtime refreshes it.
+        void beginAuthoredPrimaryFiringGripFrame();
+        void finishAuthoredPrimaryFiringGripFrame();
+
+        // Returns controller intent reconstructed from the damped hand driver.
+        // It never reads ROCK's presented firing hand back as solver input.
+        bool tryGetAuthoredPrimaryTrackedFiringHandWorld(
+            RE::NiTransform& outHandWorld);
 
         /*
          * Final primary gunstock presentation. The already-solved weapon and
@@ -658,7 +669,9 @@ namespace rock
             const RE::NiTransform& rightHandWeaponLocal,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey,
-            std::uint64_t captureSequence, const authored_weapon_grip_library::FiringFingerPose* rightFingerPose = nullptr,
+            std::uint64_t captureSequence,
+            bool positionOnlyAlignment,
+            const authored_weapon_grip_library::FiringFingerPose* rightFingerPose = nullptr,
             const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
         bool publishAuthoredPrimaryFiringGripFingerPose(bool isLeft);
@@ -997,6 +1010,7 @@ namespace rock
         struct ReturningHandVisualState
         {
             hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> transition{};
+            bool followsAuthoredFiringGrip{ false };
         };
 
         struct ReturningWeaponVisualState
@@ -1389,6 +1403,10 @@ namespace rock
         bool tryResolveGunstockPhysicalFiringFrame(
             RE::NiTransform& outHandWorld,
             RE::NiTransform& outDriverWorld) const;
+        bool tryResolvePhysicalHandFrame(
+            bool isLeft,
+            RE::NiTransform& outHandWorld,
+            RE::NiTransform& outDriverWorld) const;
         bool tryResolveGunstockPrimaryGroupCorrection(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
@@ -1457,8 +1475,15 @@ namespace rock
             bool primaryHand,
             LockedHandVisualLerpState& visualState);
         void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
-        void beginHandVisualReturn(bool isLeft, const char* reason);
-        void updateHandVisualReturns(float dt);
+        void beginHandVisualReturn(
+            bool isLeft,
+            const char* reason,
+            bool followsAuthoredFiringGrip = false);
+        void updateHandVisualReturns(
+            RE::NiNode* currentWeaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            float dt);
         void clearHandVisualReturn(bool isLeft, const char* reason, bool logCancellation);
         void beginWeaponVisualReturn(const char* reason);
         void updateWeaponVisualReturn(
@@ -1475,9 +1500,13 @@ namespace rock
         bool tryResolveAuthoredPrimaryWeaponReturnTargetLocal(
             RE::NiNode* weaponNode,
             RE::NiNode* nativeParent,
+            const RE::NiTransform& nativeBaselineLocal,
             std::uint64_t weaponGenerationKey,
             std::uint64_t equippedWeaponOwnershipKey,
-            RE::NiTransform& outTargetLocal) const;
+            RE::NiTransform& outTargetLocal);
+        bool reconcileAuthoredPrimaryFiringHandWorldAuthority(
+            RE::NiNode* currentWeaponNode,
+            std::uint64_t currentWeaponGenerationKey);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
         void clearNativeScopeRigidFrame();
         bool rebuildNativeScopeRigidFrameTarget();
@@ -1551,6 +1580,7 @@ namespace rock
             RightFiringCanonicalSource::None
         };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
+        bool _rightFiringCanonicalPositionOnlyAlignment{ false };
         std::array<RE::NiTransform, 15> _rightFiringFingerLocalTransforms{};
         std::array<RE::NiTransform, 15> _leftFiringFingerLocalTransforms{};
         std::uint16_t _rightFiringFingerLocalTransformMask{ 0 };
@@ -1559,6 +1589,12 @@ namespace rock
         bool _authoredPrimaryFingerPosePublished{ false };
         bool _authoredPrimaryFingerPoseBlockEngaged{ false };
         bool _authoredPrimaryFingerPoseSuppressed{ false };
+        RE::NiTransform _authoredPrimaryFiringHandWorld{};
+        RE::NiTransform _authoredPrimaryWeaponWorld{};
+        RE::NiNode* _authoredPrimaryWeaponNodeIdentity{ nullptr };
+        std::uint64_t _authoredPrimaryWeaponGenerationKey{ 0 };
+        bool _authoredPrimaryFiringHandWorldActive{ false };
+        bool _authoredPrimaryFiringHandWorldRefreshed{ false };
         bool _leftHandHoldingObjectForPose{ false };
         bool _rightHandHoldingObjectForPose{ false };
 

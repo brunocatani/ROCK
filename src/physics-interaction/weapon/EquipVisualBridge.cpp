@@ -4,6 +4,8 @@
 #include <cmath>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -11,6 +13,7 @@
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -179,6 +182,26 @@ namespace rock
         }
 
         _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
+        _positionOnlyAlignmentActive =
+            g_rockConfig.
+                rockExperimentalAuthoredGripPositionOnlyAlignment;
+        RE::NiPoint3 physicalPalmWorld{};
+        RE::NiTransform physicalHandWorld{};
+        _hasPhysicalHandInWandLocal =
+            TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(
+                input.isLeftHand,
+                physicalPalmWorld,
+                physicalHandWorld);
+        if (_hasPhysicalHandInWandLocal) {
+            _physicalHandInWandLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(handNode->world),
+                physicalHandWorld);
+            _hasPhysicalHandInWandLocal =
+                isFiniteTransform(_physicalHandInWandLocal);
+        }
+        if (!_hasPhysicalHandInWandLocal) {
+            _physicalHandInWandLocal = {};
+        }
 
         // Re-resolving from the still-live detached model against the
         // filewatch-published cache guarantees that a newly created custom
@@ -465,12 +488,40 @@ namespace rock
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
             if (_hasFiringHandWeaponLocal) {
-                RE::NiPoint3 palmWorld{};
-                RE::NiTransform rootFlattenedHandWorld{};
-                if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(_isLeftHand, palmWorld, rootFlattenedHandWorld) &&
-                    isFiniteTransform(rootFlattenedHandWorld)) {
-                    blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
+                if (_positionOnlyAlignmentActive &&
+                    _hasPhysicalHandInWandLocal) {
+                    const RE::NiTransform physicalHandWorld =
+                        transform_math::composeTransforms(
+                            handNode->world,
+                            _physicalHandInWandLocal);
+                    const RE::NiPoint3 authoredGripWeaponLocal =
+                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                            _firingHandWeaponLocal,
+                            _isLeftHand);
+                    const RE::NiPoint3 physicalPalmWorld =
+                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                            physicalHandWorld,
+                            _isLeftHand);
+                    blendTarget = authored_weapon_grip_capture_policy::
+                        resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                            desiredWorld,
+                            authoredGripWeaponLocal,
+                            physicalPalmWorld,
+                            [](const RE::NiTransform& transform,
+                                const RE::NiPoint3& point) {
+                                return transform_math::localPointToWorld(
+                                    transform,
+                                    point);
+                            });
                     haveBlendTarget = isFiniteTransform(blendTarget);
+                } else if (!_positionOnlyAlignmentActive) {
+                    RE::NiPoint3 palmWorld{};
+                    RE::NiTransform rootFlattenedHandWorld{};
+                    if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(_isLeftHand, palmWorld, rootFlattenedHandWorld) &&
+                        isFiniteTransform(rootFlattenedHandWorld)) {
+                        blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
+                        haveBlendTarget = isFiniteTransform(blendTarget);
+                    }
                 }
             } else if (input.nativeVisual && input.nativeVisual->weaponRoot &&
                        isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
@@ -596,6 +647,7 @@ namespace rock
         _model.reset();
         _parent = nullptr;
         _modelInHandLocal = {};
+        _physicalHandInWandLocal = {};
         _modelPresented = false;
     }
 
@@ -651,6 +703,8 @@ namespace rock
 
         _firingHandWeaponLocal = {};
         _hasFiringHandWeaponLocal = false;
+        _hasPhysicalHandInWandLocal = false;
+        _positionOnlyAlignmentActive = false;
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;
         _presentationLeaseStartedAt = {};

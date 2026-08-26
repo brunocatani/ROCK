@@ -154,11 +154,14 @@ namespace rock
         // Non-owning; validated each frame against _model->parent before use.
         RE::NiNode* _parent = nullptr;
         RE::NiTransform _modelInHandLocal{};
+        RE::NiTransform _physicalHandInWandLocal{};
         // Canonical loose-to-equipped hold (see BeginInput). Re-resolved at
         // begin() against the live filewatch-published hFRIK cache so the
         // bridge obeys the same priority as pull seating and grip-zone equip.
         RE::NiTransform _firingHandWeaponLocal{};
         bool _hasFiringHandWeaponLocal = false;
+        bool _hasPhysicalHandInWandLocal = false;
+        bool _positionOnlyAlignmentActive = false;
         std::array<RE::NiTransform, 15> _handoffFingerLocalTransforms{};
         std::uint16_t _handoffFingerLocalTransformMask = 0;
         float _elapsedSeconds = 0.0f;

@@ -2,6 +2,7 @@
 
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
@@ -12,6 +13,7 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 
@@ -27,6 +29,33 @@ namespace rock
             const float y = lhs.translate.y - rhs.translate.y;
             const float z = lhs.translate.z - rhs.translate.z;
             return std::sqrt(x * x + y * y + z * z);
+        }
+
+        [[nodiscard]] float pointDistance(
+            const RE::NiPoint3& lhs,
+            const RE::NiPoint3& rhs)
+        {
+            const float x = lhs.x - rhs.x;
+            const float y = lhs.y - rhs.y;
+            const float z = lhs.z - rhs.z;
+            return std::sqrt(x * x + y * y + z * z);
+        }
+
+        [[nodiscard]] float rotationMatrixMaxDelta(
+            const RE::NiTransform& lhs,
+            const RE::NiTransform& rhs)
+        {
+            float maximum = 0.0f;
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    maximum = (std::max)(
+                        maximum,
+                        std::abs(
+                            lhs.rotate.entry[row][column] -
+                            rhs.rotate.entry[row][column]));
+                }
+            }
+            return maximum;
         }
 
         [[nodiscard]] bool finiteTransform(const RE::NiTransform& transform)
@@ -116,6 +145,7 @@ namespace rock
         _canonicalPublishFailureLogged = false;
         _libraryPublishFailureLogged = false;
         _customFrikOffsetOverrideActive = false;
+        _positionOnlyAlignmentActive = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
         _supportCaptureFailureLogged = false;
@@ -180,6 +210,8 @@ namespace rock
             _fingerMirrorFailureLogged = false;
 
             _customFrikOffsetOverrideActive = false;
+            _positionOnlyAlignmentActive =
+                input.positionOnlyAlignmentRequested;
             _frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
             if (input.weapon && input.weaponNode) {
                 const auto customFrikOffset =
@@ -388,6 +420,7 @@ namespace rock
                         input.weaponGenerationKey,
                         currentWeaponKey,
                         authoredLookup.captureSequence,
+                        _positionOnlyAlignmentActive,
                         rightFingerPose,
                         leftFingerPose)) {
                     _canonicalPublishFailureLogged = false;
@@ -473,16 +506,25 @@ namespace rock
 
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
         RE::NiTransform trackedHandWorld{};
-        if (!frik_visual_authority::tryGetHandWorldTransform(
+        const bool trackedHandAvailable =
+            _positionOnlyAlignmentActive ?
+            weaponAuthority.tryGetAuthoredPrimaryTrackedFiringHandWorld(
+                trackedHandWorld) :
+            frik_visual_authority::tryGetHandWorldTransform(
                 frik_visual_authority::handFromBool(
                     input.rockFiringHandIsLeft),
-                trackedHandWorld)) {
+                trackedHandWorld);
+        if (!trackedHandAvailable) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
-            endSession("presented-hand-unavailable");
+            endSession(
+                _positionOnlyAlignmentActive ?
+                    "physical-hand-driver-unavailable" :
+                    "presented-hand-unavailable");
             return;
         }
         RE::NiTransform gunstockTrackedHandWorld{};
-        if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
+        if (!_positionOnlyAlignmentActive &&
+            weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
                 input.weaponNode,
                 input.weaponGenerationKey,
                 gunstockTrackedHandWorld)) {
@@ -535,9 +577,51 @@ namespace rock
             return;
         }
 
+        if (_positionOnlyAlignmentActive) {
+            const RE::NiPoint3 authoredGripWeaponLocal =
+                computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                    authoredPrimaryHandInWeapon,
+                    false);
+            const RE::NiPoint3 trackedPalmWorld =
+                computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                    trackedHandWorld,
+                    false);
+            solvedWeaponWorld =
+                authored_weapon_grip_capture_policy::
+                    resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                        liveWeaponWorld,
+                        authoredGripWeaponLocal,
+                        trackedPalmWorld,
+                        [](const RE::NiTransform& transform,
+                            const RE::NiPoint3& point) {
+                            return transform_math::localPointToWorld(
+                                transform,
+                                point);
+                        });
+            if (!finiteTransform(solvedWeaponWorld)) {
+                weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+                endSession("position-only-alignment-invalid");
+                return;
+            }
+        }
+
+        const RE::NiTransform solvedFiringHandWorld =
+            transform_math::composeTransforms(
+                solvedWeaponWorld,
+                authoredPrimaryHandInWeapon);
+        if (_positionOnlyAlignmentActive &&
+            !finiteTransform(solvedFiringHandWorld)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            endSession("position-only-hand-target-invalid");
+            return;
+        }
+
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
                 solvedWeaponWorld,
+                _positionOnlyAlignmentActive ?
+                    &solvedFiringHandWorld :
+                    nullptr,
                 input.weaponGenerationKey)) {
             if (!_applyFailureLogged) {
                 ROCK_LOG_WARN(Animation,
@@ -556,7 +640,10 @@ namespace rock
                 authoredPrimaryHandInWeapon,
                 input.weaponGenerationKey,
                 currentWeaponKey,
-                resolvedCaptureSequence, rightFingerPose, leftFingerPose)) {
+                resolvedCaptureSequence,
+                _positionOnlyAlignmentActive,
+                rightFingerPose,
+                leftFingerPose)) {
             if (!_canonicalPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
                     "Authored primary firing grip could not publish mirrored-left canonical weaponKey=0x{:X} generation=0x{:X} capture={}",
@@ -597,6 +684,34 @@ namespace rock
         _active = true;
         _applyFailureLogged = false;
 
+        if (_positionOnlyAlignmentActive) {
+            const RE::NiPoint3 authoredGripWeaponLocal =
+                computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                    authoredPrimaryHandInWeapon,
+                    false);
+            const RE::NiPoint3 publishedGripWorld =
+                transform_math::localPointToWorld(
+                    input.weaponNode->world,
+                    authoredGripWeaponLocal);
+            const RE::NiPoint3 trackedPalmWorld =
+                computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                    trackedHandWorld,
+                    false);
+            ROCK_LOG_SAMPLE_DEBUG(
+                Animation,
+                1000,
+                "Authored position-only trace weaponKey=0x{:X} generation=0x{:X} palmError={:.4f}gu rotationReadbackMaxDelta={:.7f} scaleDelta={:.7f}",
+                currentWeaponKey,
+                input.weaponGenerationKey,
+                pointDistance(publishedGripWorld, trackedPalmWorld),
+                rotationMatrixMaxDelta(
+                    liveWeaponWorld,
+                    input.weaponNode->world),
+                std::abs(
+                    liveWeaponWorld.scale -
+                    input.weaponNode->world.scale));
+        }
+
         // A shot can temporarily suppress Bethesda's paired support-arm pass.
         // Keep the candidate frame-fresh by republishing the last verified
         // same-weapon snapshot instead of treating that animation gap as the
@@ -609,8 +724,8 @@ namespace rock
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
-                "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) authority=weapon-only "
-                "primaryHand=controller-driven physicalLeftSource=mirrored-authored-canonical",
+                "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) mode={} "
+                "primaryHand={} physicalLeftSource=mirrored-authored-canonical",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence, harvestedRelationAvailable ? "native-idle-preharvest" : "live-equipped-fallback",
@@ -625,7 +740,11 @@ namespace rock
                 input.weaponNode->world.translate.z,
                 input.weaponNode->local.translate.x,
                 input.weaponNode->local.translate.y,
-                input.weaponNode->local.translate.z);
+                input.weaponNode->local.translate.z,
+                _positionOnlyAlignmentActive ? "position-only" : "full-rigid",
+                _positionOnlyAlignmentActive ?
+                    "weapon-relative-authored" :
+                    "controller-driven");
             _sessionLogged = true;
         }
     }

@@ -37,6 +37,7 @@ namespace rock
         bool primaryHandHoldingObject{ false };
         bool rockFiringHandIsLeft{ false };
         bool inPowerArmor{ false };
+        bool positionOnlyAlignmentRequested{ false };
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
@@ -92,6 +93,7 @@ namespace rock
         bool _canonicalPublishFailureLogged{ false };
         bool _libraryPublishFailureLogged{ false };
         bool _customFrikOffsetOverrideActive{ false };
+        bool _positionOnlyAlignmentActive{ false };
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };
         bool _supportCaptureFailureLogged{ false };

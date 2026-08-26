@@ -4176,6 +4176,7 @@ namespace rock
             equippedGenerationMatchesForm ? currentEquippedWeaponInstanceData(equippedWeapon) : nullptr,
             equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0);
 
+        _twoHandedGrip.beginAuthoredPrimaryFiringGripFrame();
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
             .weapon = equippedWeapon,
@@ -4204,7 +4205,11 @@ namespace rock
             .primaryHandHoldingObject = rightHandHoldingObject,
             .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
             .inPowerArmor = f4vr::isInPowerArmor(),
+            .positionOnlyAlignmentRequested =
+                g_rockConfig.
+                    rockExperimentalAuthoredGripPositionOnlyAlignment,
         }, _twoHandedGrip);
+        _twoHandedGrip.finishAuthoredPrimaryFiringGripFrame();
 
         if (_equippedWeaponTransition.isHandPoseHandoffActive()) {
             const bool handoffHandIsLeft = _equippedWeaponTransition.handPoseHandoffIsLeft();

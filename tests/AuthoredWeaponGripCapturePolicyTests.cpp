@@ -47,6 +47,43 @@ int main()
     static_assert(alignedHandWorld.scale == trackedHandWorld.scale);
     static_assert(alignedHandWorld.translate == trackedHandWorld.translate);
 
+    struct Point3
+    {
+        float x;
+        float y;
+        float z;
+    };
+    struct RigidTransform
+    {
+        float rotation;
+        Point3 translate;
+        float scale;
+    };
+    constexpr RigidTransform nativeWeaponWorld{
+        17.0f,
+        { 100.0f, 200.0f, 300.0f },
+        2.0f,
+    };
+    constexpr Point3 authoredGripWeaponLocal{ 5.0f, 10.0f, 15.0f };
+    constexpr Point3 trackedPalmWorld{ 130.0f, 250.0f, 370.0f };
+    constexpr auto positionOnlyWeaponWorld =
+        resolveAuthoredPrimaryWeaponWorldPositionOnly(
+            nativeWeaponWorld,
+            authoredGripWeaponLocal,
+            trackedPalmWorld,
+            [](const RigidTransform& transform, const Point3& point) {
+                return Point3{
+                    transform.translate.x + point.x * transform.scale,
+                    transform.translate.y + point.y * transform.scale,
+                    transform.translate.z + point.z * transform.scale,
+                };
+            });
+    static_assert(positionOnlyWeaponWorld.rotation == nativeWeaponWorld.rotation);
+    static_assert(positionOnlyWeaponWorld.scale == nativeWeaponWorld.scale);
+    static_assert(positionOnlyWeaponWorld.translate.x == 120.0f);
+    static_assert(positionOnlyWeaponWorld.translate.y == 230.0f);
+    static_assert(positionOnlyWeaponWorld.translate.z == 340.0f);
+
     constexpr AffineTransform primaryHandModel{ 2.0f, 20.0f };
     constexpr AffineTransform supportHandModel{ 6.0f, 80.0f };
     constexpr auto supportInPrimary =

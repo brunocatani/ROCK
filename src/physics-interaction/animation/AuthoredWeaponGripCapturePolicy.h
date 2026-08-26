@@ -317,6 +317,27 @@ namespace rock::authored_weapon_grip_capture_policy
         return compose(trackedPrimaryHandWorld, invert(authoredHandInWeapon));
     }
 
+    template <class Transform, class Point, class LocalPointToWorld>
+    [[nodiscard]] constexpr Transform
+        resolveAuthoredPrimaryWeaponWorldPositionOnly(
+            const Transform& nativeWeaponWorld,
+            const Point& authoredGripWeaponLocal,
+            const Point& trackedPalmWorld,
+            LocalPointToWorld&& localPointToWorld)
+    {
+        const Point currentAuthoredGripWorld = localPointToWorld(
+            nativeWeaponWorld,
+            authoredGripWeaponLocal);
+        Transform solvedWeaponWorld = nativeWeaponWorld;
+        solvedWeaponWorld.translate.x +=
+            trackedPalmWorld.x - currentAuthoredGripWorld.x;
+        solvedWeaponWorld.translate.y +=
+            trackedPalmWorld.y - currentAuthoredGripWorld.y;
+        solvedWeaponWorld.translate.z +=
+            trackedPalmWorld.z - currentAuthoredGripWorld.z;
+        return solvedWeaponWorld;
+    }
+
     template <class Transform, class Compose, class Invert>
     [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInPrimaryHand(
         const Transform& authoredPrimaryHandModel,
