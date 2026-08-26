@@ -458,6 +458,25 @@ int main()
         seatedLargeDeltaSupportOnly.reason,
         "seatedPalmPocketPromotionCandidateTooFarKeepFrozen");
 
+    const auto seatedProgrammaticArrival = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateNormalTrusted = true,
+        .supportPatchValid = true,
+        .supportPatchNormalTrusted = true,
+        .programmaticArrival = true,
+        .supportPatchSampleCount = 5,
+        .candidateLocalDeltaGameUnits = 20.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectTrue("programmatic arrival replaces stale far-ray seat", seatedProgrammaticArrival.promotePivot);
+    ok &= expectTrue("programmatic arrival completes verified seated relation", seatedProgrammaticArrival.completeSeatedRelation);
+    ok &= expectReason("programmatic arrival seated promotion reason",
+        seatedProgrammaticArrival.reason,
+        "seatedProgrammaticArrivalPromotion");
+
     const auto seatedNotWeak = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = false,
         .hasSeatedCandidate = true,

@@ -4298,10 +4298,11 @@ namespace rock::grab_finger_pose_runtime
         rebuildBoundedWorldTriangles(boundedLocalTriangles, frozenMeshWorldTransform, worldTriangleScratch);
         result.spatialIndexBuilt = spatialIndex.buildFromLocalTriangles(boundedLocalTriangles);
 
-        if (capturedFingerSnapshot &&
-            capturedFingerSnapshot->valid) {
-            result.liveFingerSnapshot = *capturedFingerSnapshot;
-            result.liveFingerSnapshotValid = true;
+        if (capturedFingerSnapshot) {
+            if (capturedFingerSnapshot->valid) {
+                result.liveFingerSnapshot = *capturedFingerSnapshot;
+                result.liveFingerSnapshotValid = true;
+            }
         } else {
             result.liveFingerSnapshotValid =
                 root_flattened_finger_skeleton_runtime::

@@ -442,6 +442,7 @@ namespace rock::grab_motion_controller
         bool candidateNormalTrusted = false;
         bool supportPatchValid = false;
         bool supportPatchNormalTrusted = false;
+        bool programmaticArrival = false;
         std::uint32_t currentContactPatchSampleCount = 0;
         std::uint32_t supportPatchSampleCount = 0;
         std::uint32_t currentMultiFingerContactGroupCount = 0;
@@ -500,6 +501,25 @@ namespace rock::grab_motion_controller
             decision.enrichSupport = false;
             decision.pivotBlend = 1.0f;
             decision.reason = "seatedPalmPocketPromotionImmediate";
+            return decision;
+        }
+
+        /*
+         * A pull or force-grab starts from a ray-selected object point. Once
+         * the object reaches the hand, that old point is not a local seat
+         * authority. A current, normal-trusted support patch inside the palm
+         * pocket is the stronger evidence even when it is far across a large
+         * object from the original ray hit. Organic close grabs keep the
+         * bounded local-delta rule above.
+         */
+        if (input.programmaticArrival &&
+            input.reachedTouchRange &&
+            input.candidateNormalTrusted) {
+            decision.promotePivot = true;
+            decision.completeSeatedRelation = true;
+            decision.enrichSupport = false;
+            decision.pivotBlend = 1.0f;
+            decision.reason = "seatedProgrammaticArrivalPromotion";
             return decision;
         }
 

@@ -659,6 +659,7 @@ namespace rock
         const char* lastPivotReacquirePhase = "none";
         bool hasPalmSeatPoint = false;
         bool hasPinchPocket = false;
+        bool programmaticArrival = false;
         bool requiresSettledVisualHandRelation = false;
         bool hasSettledVisualHandRelation = false;
         bool hasPivotReacquire = false;
