@@ -66,6 +66,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'const bool useD
     'Gunstock baseline capture must publish separately from, and never enter, normal synchronized dynamic acquisition.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'solverInput\.supportTargetWorld\s*=\s*dynamicAcquisition\s*\?[\s\S]{0,300}lockedSupportControllerTarget[\s\S]*applyRotationAroundPrimaryPivot' `
     'Dynamic acquisition must solve the complete locked target before applying one partial composite rotation.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportGrip\.authoredSupportGrip[\s\S]{0,500}!supportGrip\.providerPartAuthority\.active[\s\S]{0,300}!supportGrip\.attachOnly[\s\S]{0,700}updateFullWeaponAuthorityGrip\(weaponNode,\s*0\.0f\)' `
+    'Authored full-authority support must publish an exact zero-delta attach frame before its first timed correction.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportNormalTwistFactor\s*=\s*SUPPORT_NORMAL_TWIST_FACTOR\s*\*[\s\S]{0,300}supportGrip\.authoredSupportGrip\s*&&\s*!dynamicAcquisition\s*\?[\s\S]{0,120}_rotationBlend' `
+    'Authored support palm-normal twist must use the same acquisition ramp as its positional aim correction.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'resolveDynamicSupportAcquisitionHandTarget[\s\S]{0,1200}_dynamicSupportAcquisition\.easedAlpha[\s\S]*synchronizedDynamicAcquisition[\s\S]*resolveDynamicSupportAcquisitionHandTarget' `
     'Dynamic primary and support hand roots must consume the same eased acquisition alpha as weapon steering.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportGripAppliesPrimaryHandAuthority\(_authorityMode\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `

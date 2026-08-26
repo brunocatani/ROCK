@@ -413,7 +413,18 @@ namespace rock
 
         void suppressHandCollisionForWeaponSupport(RE::hknpWorld* world, bool isLeft);
 
-        void restoreHandCollisionAfterWeaponSupport(RE::hknpWorld* world, bool isLeft);
+        void beginDelayedHandCollisionRestoreAfterWeaponSupport(
+            RE::hknpWorld* world,
+            bool isLeft);
+
+        void restoreHandCollisionAfterWeaponSupport(
+            RE::hknpWorld* world,
+            bool isLeft,
+            bool forceImmediate = false);
+
+        void updateWeaponSupportCollisionSuppression(
+            RE::hknpWorld* world,
+            float deltaSeconds);
 
         void suppressHandCollisionAfterEquippedWeaponDrop(
             RE::hknpWorld* world,

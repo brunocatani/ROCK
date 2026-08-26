@@ -44,6 +44,18 @@ Require-Text 'src/physics-interaction/collision/CollisionSuppressionRegistry.cpp
     'Release must discard stale leases when the body id now resolves to a different native body.'
 Require-Text 'src/physics-interaction/collision/CollisionSuppressionRegistry.cpp' 'stale lease discarded before refresh' `
     'Refresh must discard stale leases before writing to a reused body id.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'suppressHandCollisionForWeaponSupport[\s\S]*suppressionSet\.cancelDelayedRestore\(\)[\s\S]*beginDelayedHandCollisionRestoreAfterWeaponSupport[\s\S]*beginDelayedRestore\([\s\r\n]*g_rockConfig\.rockGrabReleaseHandCollisionDelaySeconds\)' `
+    'An active support grip must cancel stale restore timing, and release must arm the shared configured collision buffer.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'updateWeaponSupportCollisionSuppression[\s\S]*delayedRestorePending\(\)[\s\S]*advanceDelayedRestore\(deltaSeconds\)[\s\S]*restoreHandCollisionAfterWeaponSupport\(world,\s*isLeft,\s*true\)' `
+    'Support-grip collision leases must remain active until their delayed restore expires, then restore through the forced cleanup path.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'leftWeaponGripActiveBeforeUpdate[\s\S]*rightPartGripActiveAfterGrip[\s\S]*beginDelayedHandCollisionRestoreAfterWeaponSupport\([\s\r\n]*hknp,[\s\r\n]*false\)[\s\S]*beginDelayedHandCollisionRestoreAfterWeaponSupport\([\s\r\n]*hknp,[\s\r\n]*true\)' `
+    'Both physical hands must begin the support collision buffer only on an owned-grip release transition.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    '_dynamicHandCollision\.updateFrame\([\s\S]{0,900}_rightWeaponSupportCollisionSuppressed\.load\([\s\r\n]*std::memory_order_acquire\)[\s\S]{0,500}_leftWeaponSupportCollisionSuppressed\.load\([\s\r\n]*std::memory_order_acquire\)' `
+    'The support collision buffer must suppress dynamic hand twins as well as the keyframed palm and finger bodies.'
 
 $registrySource = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/collision/CollisionSuppressionRegistry.cpp')
 $refreshMatch = [regex]::Match(

@@ -4864,13 +4864,24 @@ namespace rock
         _supportGripAgeSeconds = 0.0f;
         _freshSupportGripDeferLogged = false;
 
+        const char* supportBaselineName = "inactive";
+        if (gunstockBaselineActive) {
+            supportBaselineName = "gunstock";
+        } else if (dynamicBaselineActive) {
+            supportBaselineName = "dynamic";
+        } else if (supportGrip.authoredSupportGrip &&
+                   _authorityMode == weapon_support_authority_policy::
+                                         WeaponSupportAuthorityMode::
+                                             FullTwoHandedSolver) {
+            supportBaselineName = "authored-ramped";
+        }
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: grip active weapon='{}', "
             "primaryLocal=({:.3f},{:.3f},{:.3f}), supportLocal=({:.3f},{:.3f},{:.3f}), "
             "gripSeparation={:.3f}, primaryGripSource={}, primaryGripConfidence={:.2f}, partKind={}, pose={}, authorityMode={}, supportBaseline={}, generation={:016X}",
             weaponNode->name.c_str(), _primaryGripLocal.x, _primaryGripLocal.y, _primaryGripLocal.z, supportGrip.gripLocal.x, supportGrip.gripLocal.y, supportGrip.gripLocal.z,
             _lockedGripSeparationWorld, reuseRightFiringCanonicalGrip ? "pre-scope-canonical" : (_scopeMenuOpenThisFrame ? "frik-driver-reconstructed" : "root-flattened"),
-            _primaryGripConfidence, static_cast<int>(supportGrip.partKind), static_cast<int>(supportGrip.gripPose), static_cast<int>(_authorityMode), gunstockBaselineActive ? "gunstock" : (dynamicBaselineActive ? "dynamic" : "inactive"), _activeWeaponGenerationKey);
+            _primaryGripConfidence, static_cast<int>(supportGrip.partKind), static_cast<int>(supportGrip.gripPose), static_cast<int>(_authorityMode), supportBaselineName, _activeWeaponGenerationKey);
 
         if (gunstockBaselineActive) {
             /*
@@ -4891,6 +4902,20 @@ namespace rock
              * alpha exactly zero while publishing the frozen finger pose, the
              * pivot-preserving one-hand weapon frame, and both live hand roots
              * before this update returns to PhysicsInteraction.
+             */
+            updateFullWeaponAuthorityGrip(weaponNode, 0.0f);
+        } else if (_authorityMode == weapon_support_authority_policy::
+                                         WeaponSupportAuthorityMode::
+                                             FullTwoHandedSolver &&
+                   supportGrip.authoredSupportGrip &&
+                   !supportGrip.providerPartAuthority.active &&
+                   !supportGrip.attachOnly) {
+            /*
+             * Authored support keeps its established independent hand-seat
+             * interpolation. Publish one exact alpha-zero weapon frame now so
+             * its position-axis and palm-normal corrections both begin from
+             * the firing-hand carry instead of appearing one frame later as
+             * an authority refresh.
              */
             updateFullWeaponAuthorityGrip(weaponNode, 0.0f);
         }
@@ -5364,7 +5389,18 @@ namespace rock
             calibratedSupportTransform,
             supportHandIsLeft);
         solverInput.useSupportNormalTwist = true;
-        solverInput.supportNormalTwistFactor = SUPPORT_NORMAL_TWIST_FACTOR;
+        /*
+         * Authored support acquisition already eases the support-point axis
+         * through _rotationBlend. Applying its palm-normal twist at full
+         * strength on the first solver frame bypassed that easing and snapped
+         * weapons whose native firing hold has a non-neutral orientation.
+         * Dynamic acquisition still solves the complete composite correction
+         * here and applies its own shortest-arc partial rotation below.
+         */
+        solverInput.supportNormalTwistFactor = SUPPORT_NORMAL_TWIST_FACTOR *
+            (supportGrip.authoredSupportGrip && !dynamicAcquisition ?
+                    _rotationBlend :
+                    1.0f);
 
         GunstockSupportBaselineDebugSnapshot* gunstockDebug = nullptr;
         if (g_rockConfig.rockDebugDrawGunstockAlignment) {
