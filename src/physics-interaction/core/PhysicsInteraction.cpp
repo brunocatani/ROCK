@@ -4143,6 +4143,8 @@ namespace rock
             weaponGenerationKey != 0 &&
             weaponOwnershipKey != 0 &&
             _weaponCollision.getCurrentObservedEquippedWeaponFormID() == equippedWeapon->formID;
+        const bool equippedWeaponTransitionActive =
+            _equippedWeaponTransition.getPublicSnapshot().active;
 
         native_idle_grip_preharvest::observeEquippedWeapon(
             equippedGenerationMatchesForm ? equippedWeapon : nullptr,
@@ -4173,6 +4175,8 @@ namespace rock
             .conflictingWeaponTransformAuthorityActive =
                 _twoHandedGrip.blocksAuthoredPrimaryGripWeaponAlignment(),
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
+            .equippedWeaponTransitionActive =
+                equippedWeaponTransitionActive,
             .primaryHandHoldingObject = rightHandHoldingObject,
             .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
             .inPowerArmor = f4vr::isInPowerArmor(),

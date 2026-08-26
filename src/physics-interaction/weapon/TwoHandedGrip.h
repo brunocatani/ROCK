@@ -621,6 +621,9 @@ namespace rock
          * and equipped ownership. When a complete firing-finger pose is
          * available, the right animation locals and hFRIK's anatomy-correct
          * left mirror are retained only for the matching weapon identity.
+         * Generation zero is a provisional equip-only publication: it can
+         * preserve the exact firing pose before collision is ready, but the
+         * manual grip paths reject it until a nonzero generation is bound.
          * The node pointer is comparison-only and is never dereferenced after
          * publication.
          */
@@ -633,6 +636,10 @@ namespace rock
             const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
         bool publishAuthoredPrimaryFiringGripFingerPose(bool isLeft);
+        bool retainAuthoredPrimaryFiringGripFingerPoseForHandoff(
+            RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey);
         [[nodiscard]] bool hasPublishedAuthoredPrimaryFiringGripFingerPose(const bool isLeft) const noexcept
         {
             return _authoredPrimaryFingerPosePublished && _publishedFiringFingerPoseIsLeft == isLeft;
@@ -971,7 +978,9 @@ namespace rock
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t equippedWeaponOwnershipKey{ 0 };
             RE::NiTransform nativeBaselineLocal{};
+            RE::NiTransform lastTargetLocal{};
             bool retainPrimaryPoseBlocker{ false };
+            bool followsAuthoredPrimaryGrip{ false };
         };
 
         struct ScopeSafeHandFrameState
@@ -1379,7 +1388,9 @@ namespace rock
 
         void publishGripHandPoses(bool isLeft);
 
-        void clearPrimaryGripPose(bool isLeft);
+        void clearPrimaryGripPose(
+            bool isLeft,
+            bool preserveAuthoredFingerPose = false);
 
         static void killFrikOffhandGrip();
 
@@ -1429,8 +1440,18 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             float dt);
-        void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
+        void clearWeaponVisualReturn(
+            const char* reason,
+            bool logCancellation,
+            bool restoreBlockers,
+            bool preserveAuthoredPrimaryPose = false);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
+        bool tryResolveAuthoredPrimaryWeaponReturnTargetLocal(
+            RE::NiNode* weaponNode,
+            RE::NiNode* nativeParent,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t equippedWeaponOwnershipKey,
+            RE::NiTransform& outTargetLocal) const;
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
         void clearNativeScopeRigidFrame();
         bool rebuildNativeScopeRigidFrameTarget();

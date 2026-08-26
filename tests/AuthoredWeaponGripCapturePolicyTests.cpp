@@ -108,6 +108,36 @@ int main()
     static_assert(shouldPublishAuthoredFiringFingerPose(false));
     static_assert(!shouldPublishAuthoredFiringFingerPose(true));
 
+    constexpr AuthoredFiringPoseContinuityInput returnHandoff{
+        .runtimeInitialized = true,
+        .visualAuthorityAvailable = true,
+        .localSkeletonReady = true,
+        .weaponKeyValid = true,
+        .weaponVisualReturnActive = true,
+    };
+    static_assert(shouldRetainAuthoredFiringPoseForHandoff(returnHandoff));
+    static_assert([=] {
+        auto input = returnHandoff;
+        input.weaponVisualReturnActive = false;
+        input.equippedWeaponTransitionActive = true;
+        return shouldRetainAuthoredFiringPoseForHandoff(input);
+    }());
+    static_assert([=] {
+        auto input = returnHandoff;
+        input.nativeReloadAuthorityActive = true;
+        return !shouldRetainAuthoredFiringPoseForHandoff(input);
+    }());
+    static_assert([=] {
+        auto input = returnHandoff;
+        input.primaryHandHoldingObject = true;
+        return !shouldRetainAuthoredFiringPoseForHandoff(input);
+    }());
+    static_assert([=] {
+        auto input = returnHandoff;
+        input.weaponVisualReturnActive = false;
+        return !shouldRetainAuthoredFiringPoseForHandoff(input);
+    }());
+
     constexpr AuthoredSupportGripCandidateInput supportEligible{
         .interactionAcquisitionValid = true,
         .activationZoneValid = true,

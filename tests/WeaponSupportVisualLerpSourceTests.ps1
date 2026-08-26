@@ -76,8 +76,12 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportGripAppl
     'Full two-handed weapon authority must gate primary visual authority while preserving live hand-frame inputs.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportBaselineAttachPublication[\s\S]{0,700}weaponWorldAtCapture[\s\S]{0,700}applyWeaponVisualAuthority\(weaponNode, appliedWeaponWorld\)[\s\S]{0,1200}applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
     'Dynamic and gunstock attach must preserve the weapon while retaining the established live-input visual hand transition.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripPose\(primaryHandIsLeft\)[\s\S]*restoreFrikPrimaryWeaponPose' `
-    'Primary-only equipped ownership must clear ROCK primary hand authority so FRIK can resume its configured weapon pose before support re-grab.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripPose\(\s*primaryHandIsLeft,\s*_returningWeaponVisual\.localTransition\.active\s*&&\s*_returningWeaponVisual\.followsAuthoredPrimaryGrip\)[\s\S]*restoreFrikPrimaryWeaponPose' `
+    'Primary-only ownership must clear the locked hand root while retaining an in-flight authored firing pose through the return handoff.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*tryResolveGunstockPhysicalFiringFrame[\s\S]*getHandWorldTransform[\s\S]*resolveAuthoredPrimaryWeaponWorld[\s\S]*worldTargetToParentLocal' `
+    'A right-firing weapon return must prefer the collision-isolated physical hand and resolve its moving endpoint from the generation-bound authored grip relation.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'state\.followsAuthoredPrimaryGrip[\s\S]*state\.lastTargetLocal[\s\S]*driveVisualReturn\(\s*state\.localTransition,\s*targetLocal' `
+    'The weapon return must retain the last valid authored endpoint and never fall back to the native offset mid-handoff.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'updateVisualOnlySupportGrip\(RE::NiNode\* weaponNode,\s*float dt\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*false,\s*true,\s*dt' `
     'Visual-only sidearm support grip must use the same support hand visual lerp path.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'event=start[\s\S]{0,1200}captureToFirstPublicationFrames=0[\s\S]*event=complete' `

@@ -33,6 +33,7 @@ namespace rock
         bool nativeReloadAuthorityActive{ false };
         bool conflictingWeaponTransformAuthorityActive{ false };
         bool weaponVisualReturnActive{ false };
+        bool equippedWeaponTransitionActive{ false };
         bool primaryHandHoldingObject{ false };
         bool rockFiringHandIsLeft{ false };
         bool inPowerArmor{ false };

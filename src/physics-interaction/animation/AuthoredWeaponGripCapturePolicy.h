@@ -47,6 +47,21 @@ namespace rock::authored_weapon_grip_capture_policy
         bool completeFingerPose{ false };
     };
 
+    struct AuthoredFiringPoseContinuityInput
+    {
+        bool runtimeInitialized{ false };
+        bool visualAuthorityAvailable{ false };
+        bool localSkeletonReady{ false };
+        bool menuBlocking{ false };
+        bool compatibilityBlocking{ false };
+        bool weaponKeyValid{ false };
+        bool nativeReloadAuthorityActive{ false };
+        bool weaponVisualReturnActive{ false };
+        bool equippedWeaponTransitionActive{ false };
+        bool primaryHandHoldingObject{ false };
+        bool rockFiringHandIsLeft{ false };
+    };
+
     struct AuthoredFiringGripProbeInput
     {
         bool proximityProbeAcquisition{ false };
@@ -100,6 +115,30 @@ namespace rock::authored_weapon_grip_capture_policy
         const bool targetHandHoldingObject) noexcept
     {
         return !targetHandHoldingObject;
+    }
+
+    /*
+     * A support-release return and an in-flight native equip repair are
+     * presentation handoffs, not new hand-pose owners. Retain the exact
+     * identity-bound firing pose while either handoff is active so hFRIK's
+     * generic per-weapon hand rotation cannot appear between ROCK owners.
+     * Reload, menu, compatibility, and ordinary object-grab ownership still
+     * take precedence and clear the pose immediately.
+     */
+    [[nodiscard]] constexpr bool shouldRetainAuthoredFiringPoseForHandoff(
+        const AuthoredFiringPoseContinuityInput& input) noexcept
+    {
+        return input.runtimeInitialized &&
+               input.visualAuthorityAvailable &&
+               input.localSkeletonReady &&
+               !input.menuBlocking &&
+               !input.compatibilityBlocking &&
+               input.weaponKeyValid &&
+               !input.nativeReloadAuthorityActive &&
+               (input.weaponVisualReturnActive ||
+                   input.equippedWeaponTransitionActive) &&
+               !input.primaryHandHoldingObject &&
+               !input.rockFiringHandIsLeft;
     }
 
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(

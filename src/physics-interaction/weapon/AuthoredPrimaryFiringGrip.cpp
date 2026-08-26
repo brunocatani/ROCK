@@ -192,7 +192,14 @@ namespace rock
                         customFrikOffset.reason);
                 }
             }
-            return;
+            /*
+             * Continue when the exact weapon library already has a native-
+             * idle relation. Returning here exposed one native/hFRIK frame on
+             * every equip before ROCK could publish the known authored pose.
+             * A stale live capture remains rejected by the sequence floor
+             * below, while the library lookup is independently keyed by the
+             * new weapon node, ownership, and variant.
+             */
         }
 
         const auto frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
@@ -434,7 +441,38 @@ namespace rock
             .rockFiringHandIsLeft = input.rockFiringHandIsLeft,
         };
         if (!authored_weapon_grip_capture_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {
-            if (!input.rockFiringHandIsLeft) {
+            const bool retainedForHandoff =
+                authored_weapon_grip_capture_policy::
+                    shouldRetainAuthoredFiringPoseForHandoff(
+                        authored_weapon_grip_capture_policy::
+                            AuthoredFiringPoseContinuityInput{
+                                .runtimeInitialized =
+                                    input.runtimeInitialized,
+                                .visualAuthorityAvailable =
+                                    input.visualAuthorityAvailable,
+                                .localSkeletonReady =
+                                    input.localSkeletonReady,
+                                .menuBlocking = input.menuBlocking,
+                                .compatibilityBlocking =
+                                    input.compatibilityBlocking,
+                                .weaponKeyValid = currentWeaponKey != 0,
+                                .nativeReloadAuthorityActive =
+                                    input.nativeReloadAuthorityActive,
+                                .weaponVisualReturnActive =
+                                    input.weaponVisualReturnActive,
+                                .equippedWeaponTransitionActive =
+                                    input.equippedWeaponTransitionActive,
+                                .primaryHandHoldingObject =
+                                    input.primaryHandHoldingObject,
+                                .rockFiringHandIsLeft =
+                                    input.rockFiringHandIsLeft,
+                            }) &&
+                weaponAuthority.
+                    retainAuthoredPrimaryFiringGripFingerPoseForHandoff(
+                        input.weaponNode,
+                        input.weaponGenerationKey,
+                        currentWeaponKey);
+            if (!input.rockFiringHandIsLeft && !retainedForHandoff) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             }
             endSession("frame-ineligible");
