@@ -68,8 +68,8 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'canBlockPrimaryHandWeaponPose\(\)[\s\S]*frikApi->blockPrimaryHandWeaponPose\s*!=\s*nullptr' `
     'ROCK must feature-detect primary weapon-pose blocking through the V5 table.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
-    'PresentedHandNodeCache[\s\S]*getHandWorldTransform\(Hand hand\)[\s\S]*isSkeletonReadyHint\(\)[\s\S]*getFirstPersonSkeleton\(\)[\s\S]*findNode\(skeleton,\s*"RArm_Hand"\)[\s\S]*findNode\(skeleton,\s*"LArm_Hand"\)[\s\S]*handNode->world' `
-    'ROCK must read final presented hands directly from the game first-person scene nodes.'
+    'PresentedHandNodeCache[\s\S]*tryGetHandWorldTransform\([\s\S]*isSkeletonReadyHint\(\)[\s\S]*getFirstPersonSkeleton\(\)[\s\S]*findNode\(skeleton,\s*"RArm_Hand"\)[\s\S]*findNode\(skeleton,\s*"LArm_Hand"\)[\s\S]*isFiniteNiTransform\(handNode->world\)[\s\S]*outWorld\s*=\s*handNode->world' `
+    'ROCK must return an explicit valid final presented-hand frame from the game first-person scene nodes.'
 Require-Text 'src/ROCKMain.cpp' `
     'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
     'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'

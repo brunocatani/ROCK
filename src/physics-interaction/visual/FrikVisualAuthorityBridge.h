@@ -136,6 +136,24 @@ namespace rock::frik_visual_authority
             return lhs.translate.x == rhs.translate.x && lhs.translate.y == rhs.translate.y && lhs.translate.z == rhs.translate.z && lhs.scale == rhs.scale;
         }
 
+        [[nodiscard]] inline bool isFiniteNiTransform(
+            const RE::NiTransform& transform)
+        {
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(
+                            transform.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return std::isfinite(transform.translate.x) &&
+                   std::isfinite(transform.translate.y) &&
+                   std::isfinite(transform.translate.z) &&
+                   std::isfinite(transform.scale) &&
+                   std::abs(transform.scale) > 0.000001f;
+        }
+
         [[nodiscard]] inline bool sameFingerLocalTransforms(const FingerLocalTransformOverride& lhs, const FingerLocalTransformOverride& rhs)
         {
             if (lhs.enabledMask != rhs.enabledMask) {
@@ -554,13 +572,14 @@ namespace rock::frik_visual_authority
         detail::g_presentedHandNodeCache = {};
     }
 
-    [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)
+    [[nodiscard]] inline bool tryGetHandWorldTransform(
+        Hand hand,
+        RE::NiTransform& outWorld)
     {
-        RE::NiTransform identity{};
-        identity.MakeIdentity();
+        outWorld = {};
         if (!isSkeletonReadyHint()) {
             resetPresentedHandNodeCache();
-            return identity;
+            return false;
         }
 
         bool isLeft = false;
@@ -574,21 +593,21 @@ namespace rock::frik_visual_authority
         case Hand::Offhand: {
             const auto* leftHandedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
             if (!leftHandedMode) {
-                return identity;
+                return false;
             }
             const bool primaryIsLeft = leftHandedMode->GetBinary();
             isLeft = hand == Hand::Primary ? primaryIsLeft : !primaryIsLeft;
             break;
         }
         default:
-            return identity;
+            return false;
         }
 
         auto* const skeleton = f4vr::getFirstPersonSkeleton();
         auto& cache = detail::g_presentedHandNodeCache;
         if (!skeleton) {
             resetPresentedHandNodeCache();
-            return identity;
+            return false;
         }
         if (cache.skeleton != skeleton) {
             cache = {};
@@ -602,6 +621,10 @@ namespace rock::frik_visual_authority
         }
 
         const auto* const handNode = isLeft ? cache.leftHand : cache.rightHand;
-        return handNode ? handNode->world : identity;
+        if (!handNode || !detail::isFiniteNiTransform(handNode->world)) {
+            return false;
+        }
+        outWorld = handNode->world;
+        return true;
     }
 }

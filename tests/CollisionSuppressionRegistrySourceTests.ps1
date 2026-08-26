@@ -51,18 +51,11 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'updateWeaponSupportCollisionSuppression[\s\S]*delayedRestorePending\(\)[\s\S]*advanceDelayedRestore\(deltaSeconds\)[\s\S]*restoreHandCollisionAfterWeaponSupport\(world,\s*isLeft,\s*true\)' `
     'Support-grip collision leases must remain active until their delayed restore expires, then restore through the forced cleanup path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'leftWeaponGripActiveBeforeUpdate[\s\S]*rightPartGripActiveAfterGrip[\s\S]*beginDelayedHandCollisionRestoreAfterWeaponSupport\([\s\r\n]*hknp,[\s\r\n]*false\)[\s\S]*beginDelayedHandCollisionRestoreAfterWeaponSupport\([\s\r\n]*hknp,[\s\r\n]*true\)' `
+    'TwoHandedGripUpdateResult gripUpdateResult[\s\S]*rightPartGripActiveAfterGrip[\s\S]*gripUpdateResult\.before\.right\.partGripActive[\s\S]*beginDelayedHandCollisionRestoreAfterWeaponSupport\([\s\r\n]*hknp,[\s\r\n]*false\)[\s\S]*gripUpdateResult\.before\.left\.weaponEngaged\(\)[\s\S]*beginDelayedHandCollisionRestoreAfterWeaponSupport\([\s\r\n]*hknp,[\s\r\n]*true\)' `
     'Both physical hands must begin the support collision buffer only on an owned-grip release transition.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     '_dynamicHandCollision\.updateFrame\([\s\S]{0,900}_rightWeaponSupportCollisionSuppressed\.load\([\s\r\n]*std::memory_order_acquire\)[\s\S]{0,500}_leftWeaponSupportCollisionSuppressed\.load\([\s\r\n]*std::memory_order_acquire\)' `
     'The support collision buffer must suppress dynamic hand twins as well as the keyframed palm and finger bodies.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'beginFrikOffhandGripReleaseLease[\s\S]{0,1800}rockGrabReleaseHandCollisionDelaySeconds[\s\S]*updateFrikOffhandGripReleaseLease[\s\S]*restoreFrikOffhandGrip' `
-    'The hFRIK off-hand solver must remain blocked for the same configured release lease as dynamic and keyframed support colliders.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'transitionToPrimaryOnly[\s\S]{0,900}beginFrikOffhandGripReleaseLease\(reason\)[\s\S]{0,1800}_frikOffhandGripReleaseLeaseRemainingSeconds\s*<=\s*0\.0f[\s\S]{0,120}restoreFrikOffhandGrip' `
-    'A support-to-primary handoff must not re-enable hFRIK off-hand gripping before its release lease expires.'
-
 $registrySource = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/collision/CollisionSuppressionRegistry.cpp')
 $refreshMatch = [regex]::Match(
     $registrySource,

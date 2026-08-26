@@ -1999,8 +1999,20 @@
                         float rightHandScale = 0.0f;
                         float leftHandScale = 0.0f;
                         if (frik_visual_authority::isAvailable()) {
-                            rightHandScale = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Right).scale;
-                            leftHandScale = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Left).scale;
+                            RE::NiTransform rightHandWorld{};
+                            RE::NiTransform leftHandWorld{};
+                            if (frik_visual_authority::
+                                    tryGetHandWorldTransform(
+                                        frik_visual_authority::Hand::Right,
+                                        rightHandWorld)) {
+                                rightHandScale = rightHandWorld.scale;
+                            }
+                            if (frik_visual_authority::
+                                    tryGetHandWorldTransform(
+                                        frik_visual_authority::Hand::Left,
+                                        leftHandWorld)) {
+                                leftHandScale = leftHandWorld.scale;
+                            }
                         }
 
                         ROCK_LOG_DEBUG(Hand,
@@ -2998,15 +3010,30 @@
                 addMarkerPoint(debug::MarkerOverlayRole::LeftWeaponSupportGrip, snapshot.leftGripWorld, 3.0f);
 
                 if (frik_visual_authority::isAvailable()) {
-                    const RE::NiTransform appliedRight = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Right);
-                    const RE::NiTransform appliedLeft = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Left);
-                    addAxisTransform(appliedRight, debug::AxisOverlayRole::RightFrikAppliedHand, snapshot.rightRequestedHandWorld.translate, true);
-                    addAxisTransform(appliedLeft, debug::AxisOverlayRole::LeftFrikAppliedHand, snapshot.leftRequestedHandWorld.translate, true);
-                    addMarkerLine(debug::MarkerOverlayRole::RightWeaponAuthorityMismatch, snapshot.rightRequestedHandWorld.translate, appliedRight.translate);
-                    addMarkerLine(debug::MarkerOverlayRole::LeftWeaponAuthorityMismatch, snapshot.leftRequestedHandWorld.translate, appliedLeft.translate);
+                    RE::NiTransform appliedRight{};
+                    RE::NiTransform appliedLeft{};
+                    const bool rightAppliedValid =
+                        frik_visual_authority::
+                            tryGetHandWorldTransform(
+                                frik_visual_authority::Hand::Right,
+                                appliedRight);
+                    const bool leftAppliedValid =
+                        frik_visual_authority::
+                            tryGetHandWorldTransform(
+                                frik_visual_authority::Hand::Left,
+                                appliedLeft);
+                    if (rightAppliedValid) {
+                        addAxisTransform(appliedRight, debug::AxisOverlayRole::RightFrikAppliedHand, snapshot.rightRequestedHandWorld.translate, true);
+                        addMarkerLine(debug::MarkerOverlayRole::RightWeaponAuthorityMismatch, snapshot.rightRequestedHandWorld.translate, appliedRight.translate);
+                    }
+                    if (leftAppliedValid) {
+                        addAxisTransform(appliedLeft, debug::AxisOverlayRole::LeftFrikAppliedHand, snapshot.leftRequestedHandWorld.translate, true);
+                        addMarkerLine(debug::MarkerOverlayRole::LeftWeaponAuthorityMismatch, snapshot.leftRequestedHandWorld.translate, appliedLeft.translate);
+                    }
 
                     static std::uint32_t authorityMismatchLogCounter = 0;
-                    if (++authorityMismatchLogCounter >= 120) {
+                    if (rightAppliedValid && leftAppliedValid &&
+                        ++authorityMismatchLogCounter >= 120) {
                         authorityMismatchLogCounter = 0;
                         ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip authority mismatch: right={:.2f}gu left={:.2f}gu",
                             pointDistance(snapshot.rightRequestedHandWorld.translate, appliedRight.translate),

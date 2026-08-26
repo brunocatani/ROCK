@@ -442,33 +442,18 @@ namespace rock
             .primaryHandHoldingObject = input.primaryHandHoldingObject,
             .rockFiringHandIsLeft = input.rockFiringHandIsLeft,
         };
-        if (!authored_weapon_grip_capture_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {
-            const bool retainedForHandoff =
+        const auto authoredDecision =
+            authored_weapon_grip_capture_policy::
+                evaluateAuthoredPrimaryFiringGrip(eligibility);
+        if (authoredDecision.action !=
+            authored_weapon_grip_capture_policy::
+                AuthoredPrimaryAction::Apply) {
+            const bool retainRequested =
+                authoredDecision.action ==
                 authored_weapon_grip_capture_policy::
-                    shouldRetainAuthoredFiringPoseForHandoff(
-                        authored_weapon_grip_capture_policy::
-                            AuthoredFiringPoseContinuityInput{
-                                .runtimeInitialized =
-                                    input.runtimeInitialized,
-                                .visualAuthorityAvailable =
-                                    input.visualAuthorityAvailable,
-                                .localSkeletonReady =
-                                    input.localSkeletonReady,
-                                .menuBlocking = input.menuBlocking,
-                                .compatibilityBlocking =
-                                    input.compatibilityBlocking,
-                                .weaponKeyValid = currentWeaponKey != 0,
-                                .nativeReloadAuthorityActive =
-                                    input.nativeReloadAuthorityActive,
-                                .weaponVisualReturnActive =
-                                    input.weaponVisualReturnActive,
-                                .equippedWeaponTransitionActive =
-                                    input.equippedWeaponTransitionActive,
-                                .primaryHandHoldingObject =
-                                    input.primaryHandHoldingObject,
-                                .rockFiringHandIsLeft =
-                                    input.rockFiringHandIsLeft,
-                            }) &&
+                    AuthoredPrimaryAction::RetainPoseOnly;
+            const bool retainedForHandoff =
+                retainRequested &&
                 weaponAuthority.
                     retainAuthoredPrimaryFiringGripFingerPoseForHandoff(
                         input.weaponNode,
@@ -477,15 +462,25 @@ namespace rock
             if (!input.rockFiringHandIsLeft && !retainedForHandoff) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             }
-            endSession("frame-ineligible");
+            endSession(
+                retainRequested && !retainedForHandoff ?
+                    "handoff-pose-unavailable" :
+                    authored_weapon_grip_capture_policy::
+                        authoredPrimaryDecisionReasonName(
+                            authoredDecision.reason));
             return;
         }
 
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
-        RE::NiTransform trackedHandWorld =
-            frik_visual_authority::getHandWorldTransform(
+        RE::NiTransform trackedHandWorld{};
+        if (!frik_visual_authority::tryGetHandWorldTransform(
                 frik_visual_authority::handFromBool(
-                    input.rockFiringHandIsLeft));
+                    input.rockFiringHandIsLeft),
+                trackedHandWorld)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            endSession("presented-hand-unavailable");
+            return;
+        }
         RE::NiTransform gunstockTrackedHandWorld{};
         if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
                 input.weaponNode,
@@ -508,7 +503,20 @@ namespace rock
             authoredPrimaryHandInWeapon = authoredLookup.rightHandWeaponLocal;
             resolvedCaptureSequence = authoredLookup.captureSequence;
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
-            solvedWeaponWorld = transform_math::composeTransforms(trackedHandWorld, transform_math::invertTransform(authoredPrimaryHandInWeapon));
+            solvedWeaponWorld =
+                authored_weapon_grip_capture_policy::
+                    resolveAuthoredPrimaryWeaponWorld(
+                        trackedHandWorld,
+                        authoredPrimaryHandInWeapon,
+                        [](const RE::NiTransform& parent,
+                            const RE::NiTransform& child) {
+                            return transform_math::composeTransforms(
+                                parent,
+                                child);
+                        },
+                        [](const RE::NiTransform& transform) {
+                            return transform_math::invertTransform(transform);
+                        });
             alignmentResolved = finiteTransform(authoredPrimaryHandInWeapon) && finiteTransform(currentAuthoredHandWorld) && finiteTransform(solvedWeaponWorld);
         } else {
             alignmentResolved = authored_weapon_grip_capture::tryResolvePrimaryFiringGripAlignment(

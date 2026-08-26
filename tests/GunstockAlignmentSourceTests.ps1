@@ -216,7 +216,7 @@ if (-not $gunstockApply.Success) {
     $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Production correction must not mix raw controller transforms into the damped wrist frame.')
 }
 if ($gunstockApply.Success -and
-    $gunstockApply.Value -match 'frik_visual_authority::getHandWorldTransform') {
+    $gunstockApply.Value -match 'frik_visual_authority::(?:get|tryGet)HandWorldTransform') {
     $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Gunstock production and validation must read the presented root/full-body hand bone, not the hidden first-person tracking hand.')
 }
 

@@ -922,9 +922,12 @@ namespace
             return false;
         }
 
-        const auto presentedWorld =
-            frik_visual_authority::getHandWorldTransform(
-                toVisualHand(hand));
+        RE::NiTransform presentedWorld{};
+        if (!frik_visual_authority::tryGetHandWorldTransform(
+                toVisualHand(hand),
+                presentedWorld)) {
+            return false;
+        }
         const auto providerTransform =
             toProviderTransform(presentedWorld);
         if (!finiteProviderTransform(providerTransform)) {

@@ -76,9 +76,9 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportGripAppl
     'Full two-handed weapon authority must gate primary visual authority while preserving live hand-frame inputs.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportBaselineAttachPublication[\s\S]{0,700}weaponWorldAtCapture[\s\S]{0,700}applyWeaponVisualAuthority\(weaponNode, appliedWeaponWorld\)[\s\S]{0,1200}applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
     'Dynamic and gunstock attach must preserve the weapon while retaining the established live-input visual hand transition.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripPose\(\s*primaryHandIsLeft,\s*_returningWeaponVisual\.localTransition\.active\s*&&\s*_returningWeaponVisual\.followsAuthoredPrimaryGrip\)[\s\S]*restoreFrikPrimaryWeaponPose' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripFingerPose\(\s*primaryHandIsLeft,\s*_returningWeaponVisual\.localTransition\.active\s*&&\s*_returningWeaponVisual\.followsAuthoredPrimaryGrip\)[\s\S]*clearPrimaryGripWorldAuthority\(primaryHandIsLeft\)[\s\S]*restoreFrikPrimaryWeaponPose' `
     'Primary-only ownership must clear the locked hand root while retaining an in-flight authored firing pose through the return handoff.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*getHandWorldTransform[\s\S]*resolveAuthoredPrimaryWeaponWorld[\s\S]*worldTargetToParentLocal' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*tryGetHandWorldTransform[\s\S]*resolveAuthoredPrimaryWeaponWorld[\s\S]*worldTargetToParentLocal' `
     'A right-firing weapon return must resolve its endpoint from the same presented-hand source as the steady authored primary alignment.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]{0,1800}tryResolveGunstockPhysicalFiringFrame' `
     'The authored return must not substitute the damped weapon driver for the steady authored primary hand source.'

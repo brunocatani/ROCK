@@ -34,6 +34,42 @@ namespace rock::authored_weapon_grip_capture_policy
         bool rockFiringHandIsLeft{ false };
     };
 
+    enum class AuthoredPrimaryAction : std::uint8_t
+    {
+        Clear,
+        Apply,
+        RetainPoseOnly,
+    };
+
+    enum class AuthoredPrimaryDecisionReason : std::uint8_t
+    {
+        Apply,
+        WeaponVisualReturn,
+        EquipTransitionContinuity,
+        RuntimeUnavailable,
+        VisualAuthorityUnavailable,
+        SkeletonUnavailable,
+        MenuBlocking,
+        CompatibilityBlocking,
+        WeaponKeyInvalid,
+        NativeReloadAuthority,
+        PrimaryHandHoldingObject,
+        PhysicalLeftFiring,
+        WeaponNotDrawn,
+        WeaponNotVisible,
+        CaptureUnavailable,
+        CaptureNotFresh,
+        ConflictingWeaponAuthority,
+    };
+
+    struct AuthoredPrimaryDecision
+    {
+        AuthoredPrimaryAction action{ AuthoredPrimaryAction::Clear };
+        AuthoredPrimaryDecisionReason reason{
+            AuthoredPrimaryDecisionReason::RuntimeUnavailable
+        };
+    };
+
     struct AuthoredSupportGripCandidateInput
     {
         bool interactionAcquisitionValid{ false };
@@ -46,21 +82,6 @@ namespace rock::authored_weapon_grip_capture_policy
         bool generationMatches{ false };
         bool authoredSeatWeaponSurfaceValid{ false };
         bool completeFingerPose{ false };
-    };
-
-    struct AuthoredFiringPoseContinuityInput
-    {
-        bool runtimeInitialized{ false };
-        bool visualAuthorityAvailable{ false };
-        bool localSkeletonReady{ false };
-        bool menuBlocking{ false };
-        bool compatibilityBlocking{ false };
-        bool weaponKeyValid{ false };
-        bool nativeReloadAuthorityActive{ false };
-        bool weaponVisualReturnActive{ false };
-        bool equippedWeaponTransitionActive{ false };
-        bool primaryHandHoldingObject{ false };
-        bool rockFiringHandIsLeft{ false };
     };
 
     struct AuthoredFiringGripProbeInput
@@ -86,25 +107,133 @@ namespace rock::authored_weapon_grip_capture_policy
         std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
 
-    [[nodiscard]] constexpr bool shouldApplyAuthoredPrimaryFiringGrip(
-        const AuthoredPrimaryFiringGripEligibility& input)
+    [[nodiscard]] constexpr AuthoredPrimaryDecision
+        evaluateAuthoredPrimaryFiringGrip(
+            const AuthoredPrimaryFiringGripEligibility& input)
     {
-        return input.runtimeInitialized &&
-               input.visualAuthorityAvailable &&
-               input.localSkeletonReady &&
-               !input.menuBlocking &&
-               !input.compatibilityBlocking &&
-               input.weaponDrawn &&
-               (input.weaponVisible ||
-                   input.equippedWeaponTransitionActive) &&
-               input.weaponKeyValid &&
-               input.captureValid &&
-               input.captureNewerThanWeaponBoundary &&
-               !input.nativeReloadAuthorityActive &&
-               !input.conflictingWeaponTransformAuthorityActive &&
-               !input.weaponVisualReturnActive &&
-               !input.primaryHandHoldingObject &&
-               !input.rockFiringHandIsLeft;
+        const bool commonReady =
+            input.runtimeInitialized &&
+            input.visualAuthorityAvailable &&
+            input.localSkeletonReady &&
+            !input.menuBlocking &&
+            !input.compatibilityBlocking &&
+            input.weaponKeyValid &&
+            !input.nativeReloadAuthorityActive &&
+            !input.primaryHandHoldingObject &&
+            !input.rockFiringHandIsLeft;
+        const bool apply =
+            commonReady &&
+            input.weaponDrawn &&
+            (input.weaponVisible ||
+                input.equippedWeaponTransitionActive) &&
+            input.captureValid &&
+            input.captureNewerThanWeaponBoundary &&
+            !input.conflictingWeaponTransformAuthorityActive &&
+            !input.weaponVisualReturnActive;
+        if (apply) {
+            return {
+                .action = AuthoredPrimaryAction::Apply,
+                .reason = AuthoredPrimaryDecisionReason::Apply,
+            };
+        }
+
+        if (commonReady &&
+            (input.weaponVisualReturnActive ||
+                input.equippedWeaponTransitionActive)) {
+            return {
+                .action = AuthoredPrimaryAction::RetainPoseOnly,
+                .reason = input.weaponVisualReturnActive ?
+                    AuthoredPrimaryDecisionReason::WeaponVisualReturn :
+                    AuthoredPrimaryDecisionReason::EquipTransitionContinuity,
+            };
+        }
+
+        if (!input.runtimeInitialized) {
+            return { .reason = AuthoredPrimaryDecisionReason::RuntimeUnavailable };
+        }
+        if (!input.visualAuthorityAvailable) {
+            return { .reason = AuthoredPrimaryDecisionReason::VisualAuthorityUnavailable };
+        }
+        if (!input.localSkeletonReady) {
+            return { .reason = AuthoredPrimaryDecisionReason::SkeletonUnavailable };
+        }
+        if (input.menuBlocking) {
+            return { .reason = AuthoredPrimaryDecisionReason::MenuBlocking };
+        }
+        if (input.compatibilityBlocking) {
+            return { .reason = AuthoredPrimaryDecisionReason::CompatibilityBlocking };
+        }
+        if (!input.weaponKeyValid) {
+            return { .reason = AuthoredPrimaryDecisionReason::WeaponKeyInvalid };
+        }
+        if (input.nativeReloadAuthorityActive) {
+            return { .reason = AuthoredPrimaryDecisionReason::NativeReloadAuthority };
+        }
+        if (input.primaryHandHoldingObject) {
+            return { .reason = AuthoredPrimaryDecisionReason::PrimaryHandHoldingObject };
+        }
+        if (input.rockFiringHandIsLeft) {
+            return { .reason = AuthoredPrimaryDecisionReason::PhysicalLeftFiring };
+        }
+        if (!input.weaponDrawn) {
+            return { .reason = AuthoredPrimaryDecisionReason::WeaponNotDrawn };
+        }
+        if (!input.weaponVisible) {
+            return { .reason = AuthoredPrimaryDecisionReason::WeaponNotVisible };
+        }
+        if (!input.captureValid) {
+            return { .reason = AuthoredPrimaryDecisionReason::CaptureUnavailable };
+        }
+        if (!input.captureNewerThanWeaponBoundary) {
+            return { .reason = AuthoredPrimaryDecisionReason::CaptureNotFresh };
+        }
+        return {
+            .reason =
+                AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority,
+        };
+    }
+
+    [[nodiscard]] constexpr const char*
+        authoredPrimaryDecisionReasonName(
+            const AuthoredPrimaryDecisionReason reason) noexcept
+    {
+        switch (reason) {
+        case AuthoredPrimaryDecisionReason::Apply:
+            return "apply";
+        case AuthoredPrimaryDecisionReason::WeaponVisualReturn:
+            return "weapon-visual-return";
+        case AuthoredPrimaryDecisionReason::EquipTransitionContinuity:
+            return "equip-transition-continuity";
+        case AuthoredPrimaryDecisionReason::RuntimeUnavailable:
+            return "runtime-unavailable";
+        case AuthoredPrimaryDecisionReason::VisualAuthorityUnavailable:
+            return "visual-authority-unavailable";
+        case AuthoredPrimaryDecisionReason::SkeletonUnavailable:
+            return "skeleton-unavailable";
+        case AuthoredPrimaryDecisionReason::MenuBlocking:
+            return "menu-blocking";
+        case AuthoredPrimaryDecisionReason::CompatibilityBlocking:
+            return "compatibility-blocking";
+        case AuthoredPrimaryDecisionReason::WeaponKeyInvalid:
+            return "weapon-key-invalid";
+        case AuthoredPrimaryDecisionReason::NativeReloadAuthority:
+            return "native-reload-authority";
+        case AuthoredPrimaryDecisionReason::PrimaryHandHoldingObject:
+            return "primary-hand-holding-object";
+        case AuthoredPrimaryDecisionReason::PhysicalLeftFiring:
+            return "physical-left-firing";
+        case AuthoredPrimaryDecisionReason::WeaponNotDrawn:
+            return "weapon-not-drawn";
+        case AuthoredPrimaryDecisionReason::WeaponNotVisible:
+            return "weapon-not-visible";
+        case AuthoredPrimaryDecisionReason::CaptureUnavailable:
+            return "capture-unavailable";
+        case AuthoredPrimaryDecisionReason::CaptureNotFresh:
+            return "capture-not-fresh";
+        case AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority:
+            return "conflicting-weapon-authority";
+        }
+        return "unknown";
     }
 
     /*
@@ -117,30 +246,6 @@ namespace rock::authored_weapon_grip_capture_policy
         const bool targetHandHoldingObject) noexcept
     {
         return !targetHandHoldingObject;
-    }
-
-    /*
-     * A support-release return and an in-flight native equip repair are
-     * presentation handoffs, not new hand-pose owners. Retain the exact
-     * identity-bound firing pose while either handoff is active so hFRIK's
-     * generic per-weapon hand rotation cannot appear between ROCK owners.
-     * Reload, menu, compatibility, and ordinary object-grab ownership still
-     * take precedence and clear the pose immediately.
-     */
-    [[nodiscard]] constexpr bool shouldRetainAuthoredFiringPoseForHandoff(
-        const AuthoredFiringPoseContinuityInput& input) noexcept
-    {
-        return input.runtimeInitialized &&
-               input.visualAuthorityAvailable &&
-               input.localSkeletonReady &&
-               !input.menuBlocking &&
-               !input.compatibilityBlocking &&
-               input.weaponKeyValid &&
-               !input.nativeReloadAuthorityActive &&
-               (input.weaponVisualReturnActive ||
-                   input.equippedWeaponTransitionActive) &&
-               !input.primaryHandHoldingObject &&
-               !input.rockFiringHandIsLeft;
     }
 
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(

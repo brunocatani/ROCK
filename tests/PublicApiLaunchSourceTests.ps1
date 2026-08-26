@@ -303,7 +303,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' '
     'The existing ROCK stereo renderer must consume copied provider lines and text.'
 Require-Text 'src/api/ROCKProviderApi.h' 'PresentedVisual[\s\S]*PresentedHandFrames[\s\S]*ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES[\s\S]*supportsPresentedHandFramesV1' `
     'API V1 must distinguish the final hFRIK-presented hand from ROCK''s root-flattened authority frame.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetPresentedHandFrameV1[\s\S]*onAnimationOwnerThread\(\)[\s\S]*frik_visual_authority::getHandWorldTransform[\s\S]*RockProviderHandFrameFlagV1::PresentedVisual' `
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetPresentedHandFrameV1[\s\S]*onAnimationOwnerThread\(\)[\s\S]*frik_visual_authority::tryGetHandWorldTransform[\s\S]*RockProviderHandFrameFlagV1::PresentedVisual' `
     'Presented hand queries must read the final hFRIK transform on the animation owner thread.'
 Require-Text 'src/api/ROCKProviderApi.h' 'NativeAnimationAuthority[\s\S]*RockProviderNativeAnimationAuthorityRequestV1' `
     'API V1 must expose selective native animation authority as a registered consumer capability.'

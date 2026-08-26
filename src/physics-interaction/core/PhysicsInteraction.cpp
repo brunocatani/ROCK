@@ -1849,7 +1849,13 @@ namespace rock
             auto& state = _rawHandParityStates[isLeft ? 1 : 0];
             const auto handEnum = handFromBool(isLeft);
             const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
-            const auto apiTransform = frik_visual_authority::getHandWorldTransform(handEnum);
+            RE::NiTransform apiTransform{};
+            if (!frik_visual_authority::tryGetHandWorldTransform(
+                    handEnum,
+                    apiTransform)) {
+                state = {};
+                return;
+            }
             const auto delta = measureTransformDelta(localTransform, apiTransform);
             const auto localPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(localTransform, isLeft);
             const auto apiPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(apiTransform, isLeft);
@@ -1948,6 +1954,15 @@ namespace rock
             return;
         }
 
+        if (!frik_visual_authority::blockOffHandWeaponGripping(
+                "ROCK_Physics",
+                true)) {
+            ROCK_LOG_CRITICAL(
+                Init,
+                "ROCK DISABLED: mandatory hFRIK off-hand weapon-grip suppression could not be acquired");
+            return;
+        }
+
         physics_scale::refreshAndLogIfChanged();
         _cachedBhkWorld = bhk;
         _cachedHknpWorld = hknp;
@@ -1958,6 +1973,9 @@ namespace rock
         registerCollisionLayer(hknp);
         if (!_collisionLayerRegistered) {
             ROCK_LOG_CRITICAL(Init, "ROCK DISABLED: collision layer registration failed");
+            (void)frik_visual_authority::blockOffHandWeaponGripping(
+                "ROCK_Physics",
+                false);
             _cachedBhkWorld = nullptr;
             _cachedHknpWorld = nullptr;
             return;
@@ -1965,6 +1983,9 @@ namespace rock
 
         if (!createHandCollisions(hknp, bhk)) {
             ROCK_LOG_CRITICAL(Init, "ROCK DISABLED: hand collision body creation failed");
+            (void)frik_visual_authority::blockOffHandWeaponGripping(
+                "ROCK_Physics",
+                false);
             _cachedBhkWorld = nullptr;
             _cachedHknpWorld = nullptr;
             return;
@@ -1981,9 +2002,7 @@ namespace rock
         _weaponCollision.init(hknp, bhk);
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
-        if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", true)) {
-            ROCK_LOG_INFO(Init, "FRIK offhand grip permanently suppressed");
-        }
+        ROCK_LOG_INFO(Init, "hFRIK off-hand weapon gripping disabled; ROCK is the sole off-hand weapon authority");
 
         {
             _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
@@ -2225,13 +2244,12 @@ namespace rock
             rightHandWeaponAuthorityActive = false;
         }
         const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
-        const bool leftWeaponGripActiveBeforeUpdate =
-            _twoHandedGrip.isHandPartGripping(true) ||
-            (_twoHandedGrip.isFiringHandLeft() &&
-                _twoHandedGrip.isFiringGripOccupied());
+        const EquippedWeaponGripOccupancy weaponGripOccupancyBeforeUpdate =
+            _twoHandedGrip.getGripOccupancy();
         bool leftSupportGripActive =
-            _twoHandedGrip.isHandPartGripping(true);
-        bool rightPartGripActive = _twoHandedGrip.isHandPartGripping(false);
+            weaponGripOccupancyBeforeUpdate.left.partGripActive;
+        bool rightPartGripActive =
+            weaponGripOccupancyBeforeUpdate.right.partGripActive;
         if (rightHandWeaponAuthorityActive) {
             suppressRightHandCollisionForDominantWeapon(hknp);
         } else {
@@ -2996,22 +3014,23 @@ namespace rock
                 ambidextrousHandoffAvailable;
             effectiveHandlingSettings.primaryDetachEnabled =
                 primaryDetachFeatureAvailable;
-            _twoHandedGrip.update(
-                weaponNode,
-                gunstockProjectileNode,
-                gunstockGunTypeObserved,
-                leftWeaponContact,
-                rightWeaponContact,
-                gripFrameInput,
-                frame.deltaSeconds,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey,
-                _weaponCollision,
-                providerInteractionState,
-                rightHandInteractionState,
-                supportAuthorityMode,
-                firingGripProximityAuthorityEnabled,
-                effectiveHandlingSettings);
+            const TwoHandedGripUpdateResult gripUpdateResult =
+                _twoHandedGrip.update(
+                    weaponNode,
+                    gunstockProjectileNode,
+                    gunstockGunTypeObserved,
+                    leftWeaponContact,
+                    rightWeaponContact,
+                    gripFrameInput,
+                    frame.deltaSeconds,
+                    currentWeaponGenerationKey,
+                    currentEquippedWeaponOwnershipKey,
+                    _weaponCollision,
+                    providerInteractionState,
+                    rightHandInteractionState,
+                    supportAuthorityMode,
+                    firingGripProximityAuthorityEnabled,
+                    effectiveHandlingSettings);
             const bool gunstockNeutralSampleBlocked =
                 g_rockConfig.rockGunstockModeEnabled &&
                 (input_remap_runtime::isRawButtonPhysicallyHeld(
@@ -3271,7 +3290,8 @@ namespace rock
                 }
             }
             updateEquippedWeaponReleaseCapture(frame, weaponNode);
-            const bool weaponSupportGripActive = _twoHandedGrip.isHandPartGripping(true);
+            const bool weaponSupportGripActive =
+                gripUpdateResult.after.left.partGripActive;
             const input_remap_policy::EquippedWeaponFiringGripInputGate updatedFiringGripInputGate{
                 .featureAvailable = firingGripOwnershipFeatureAvailable,
                 .canUseFiringGripInput = _twoHandedGrip.canUseFiringGripInput(),
@@ -3285,7 +3305,8 @@ namespace rock
              * firing grip, the OpenVR-level trigger remap presents the left
              * trigger to the game as the primary (right) wand's trigger.
              */
-            const bool leftHandFiringActiveAfterGrip = _twoHandedGrip.isFiringHandLeft() && _twoHandedGrip.isFiringGripOccupied();
+            const bool leftHandFiringActiveAfterGrip =
+                gripUpdateResult.after.left.firingGripActive;
             input_remap_runtime::setEquippedWeaponLeftHandFiringActive(leftHandFiringActiveAfterGrip);
             ::rock::provider::setEquippedWeaponFiringHandIsLeft(_twoHandedGrip.isFiringHandLeft());
 
@@ -3306,8 +3327,10 @@ namespace rock
                 }
             }
             rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActiveAfterGrip;
-            const bool rightPartGripActiveAfterGrip = _twoHandedGrip.isHandPartGripping(false);
-            if (rightPartGripActiveAfterGrip != rightPartGripActive) {
+            const bool rightPartGripActiveAfterGrip =
+                gripUpdateResult.after.right.partGripActive;
+            if (rightPartGripActiveAfterGrip !=
+                gripUpdateResult.before.right.partGripActive) {
                 if (rightPartGripActiveAfterGrip) {
                     suppressHandCollisionForWeaponSupport(hknp, false);
                 } else {
@@ -3358,7 +3381,8 @@ namespace rock
                 weaponSupportGripActive || leftHandFiringActiveAfterGrip;
             if (leftWeaponGripActiveAfterUpdate) {
                 suppressHandCollisionForWeaponSupport(hknp, true);
-            } else if (leftWeaponGripActiveBeforeUpdate) {
+            } else if (
+                gripUpdateResult.before.left.weaponEngaged()) {
                 beginDelayedHandCollisionRestoreAfterWeaponSupport(
                     hknp,
                     true);

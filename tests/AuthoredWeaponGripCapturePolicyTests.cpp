@@ -74,79 +74,115 @@ int main()
         .captureValid = true,
         .captureNewerThanWeaponBoundary = true,
     };
-    static_assert(shouldApplyAuthoredPrimaryFiringGrip(eligible));
+    static_assert(
+        evaluateAuthoredPrimaryFiringGrip(eligible).action ==
+        AuthoredPrimaryAction::Apply);
     static_assert([=] {
         auto input = eligible;
         input.weaponVisible = false;
         input.equippedWeaponTransitionActive = true;
-        return shouldApplyAuthoredPrimaryFiringGrip(input);
+        return evaluateAuthoredPrimaryFiringGrip(input).action ==
+               AuthoredPrimaryAction::Apply;
     }());
     static_assert([=] {
         auto input = eligible;
         input.weaponVisible = false;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action == AuthoredPrimaryAction::Clear &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::WeaponNotVisible;
     }());
     static_assert([=] {
         auto input = eligible;
         input.nativeReloadAuthorityActive = true;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action == AuthoredPrimaryAction::Clear &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::NativeReloadAuthority;
     }());
     static_assert([=] {
         auto input = eligible;
         input.conflictingWeaponTransformAuthorityActive = true;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action == AuthoredPrimaryAction::Clear &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::
+                       ConflictingWeaponAuthority;
     }());
     static_assert([=] {
         auto input = eligible;
         input.weaponVisualReturnActive = true;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action ==
+                   AuthoredPrimaryAction::RetainPoseOnly &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::WeaponVisualReturn;
     }());
     static_assert([=] {
         auto input = eligible;
         input.primaryHandHoldingObject = true;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action == AuthoredPrimaryAction::Clear &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::
+                       PrimaryHandHoldingObject;
     }());
     static_assert([=] {
         auto input = eligible;
         input.rockFiringHandIsLeft = true;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action == AuthoredPrimaryAction::Clear &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::PhysicalLeftFiring;
     }());
     static_assert([=] {
         auto input = eligible;
         input.captureNewerThanWeaponBoundary = false;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action == AuthoredPrimaryAction::Clear &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::CaptureNotFresh;
     }());
     static_assert(shouldPublishAuthoredFiringFingerPose(false));
     static_assert(!shouldPublishAuthoredFiringFingerPose(true));
 
-    constexpr AuthoredFiringPoseContinuityInput returnHandoff{
-        .runtimeInitialized = true,
-        .visualAuthorityAvailable = true,
-        .localSkeletonReady = true,
-        .weaponKeyValid = true,
-        .weaponVisualReturnActive = true,
-    };
-    static_assert(shouldRetainAuthoredFiringPoseForHandoff(returnHandoff));
+    constexpr auto returnHandoff = [=] {
+        auto input = eligible;
+        input.weaponVisualReturnActive = true;
+        return input;
+    }();
+    static_assert(
+        evaluateAuthoredPrimaryFiringGrip(returnHandoff).action ==
+        AuthoredPrimaryAction::RetainPoseOnly);
     static_assert([=] {
         auto input = returnHandoff;
         input.weaponVisualReturnActive = false;
         input.equippedWeaponTransitionActive = true;
-        return shouldRetainAuthoredFiringPoseForHandoff(input);
+        input.captureValid = false;
+        const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
+        return decision.action ==
+                   AuthoredPrimaryAction::RetainPoseOnly &&
+               decision.reason ==
+                   AuthoredPrimaryDecisionReason::
+                       EquipTransitionContinuity;
     }());
     static_assert([=] {
         auto input = returnHandoff;
         input.nativeReloadAuthorityActive = true;
-        return !shouldRetainAuthoredFiringPoseForHandoff(input);
+        return evaluateAuthoredPrimaryFiringGrip(input).action ==
+               AuthoredPrimaryAction::Clear;
     }());
     static_assert([=] {
         auto input = returnHandoff;
         input.primaryHandHoldingObject = true;
-        return !shouldRetainAuthoredFiringPoseForHandoff(input);
+        return evaluateAuthoredPrimaryFiringGrip(input).action ==
+               AuthoredPrimaryAction::Clear;
     }());
     static_assert([=] {
         auto input = returnHandoff;
         input.weaponVisualReturnActive = false;
-        return !shouldRetainAuthoredFiringPoseForHandoff(input);
+        return evaluateAuthoredPrimaryFiringGrip(input).action ==
+               AuthoredPrimaryAction::Apply;
     }());
 
     constexpr AuthoredSupportGripCandidateInput supportEligible{

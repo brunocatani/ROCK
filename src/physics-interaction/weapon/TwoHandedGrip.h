@@ -96,6 +96,29 @@ namespace rock
         EquippedWeaponPrimaryGripInput primaryGripInput{};
     };
 
+    struct EquippedWeaponHandGripOccupancy
+    {
+        bool firingGripActive{ false };
+        bool partGripActive{ false };
+
+        [[nodiscard]] bool weaponEngaged() const noexcept
+        {
+            return firingGripActive || partGripActive;
+        }
+    };
+
+    struct EquippedWeaponGripOccupancy
+    {
+        EquippedWeaponHandGripOccupancy left{};
+        EquippedWeaponHandGripOccupancy right{};
+    };
+
+    struct TwoHandedGripUpdateResult
+    {
+        EquippedWeaponGripOccupancy before{};
+        EquippedWeaponGripOccupancy after{};
+    };
+
     struct TwoHandedGripDebugSnapshot
     {
         RE::NiTransform weaponWorld{};
@@ -520,7 +543,7 @@ namespace rock
         TwoHandedGrip(TwoHandedGrip&&) = delete;
         TwoHandedGrip& operator=(TwoHandedGrip&&) = delete;
 
-        void update(
+        TwoHandedGripUpdateResult update(
             RE::NiNode* weaponNode,
             RE::NiAVObject* observedGunstockFireNode,
             bool observedGunstockGunType,
@@ -536,6 +559,9 @@ namespace rock
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool firingGripProximityAuthorityEnabled,
             const EquippedWeaponHandlingSettings& handlingSettings);
+
+        [[nodiscard]] EquippedWeaponGripOccupancy
+            getGripOccupancy() const noexcept;
 
         /*
          * Called after hFRIK's weapon pass. FO4VR has already completed its
@@ -929,7 +955,10 @@ namespace rock
 
         struct LockedHandVisualLerpState
         {
-            bool active = false;
+            // The start relation remains initialized for the grip lifetime
+            // after interpolation reaches alpha 1. This prevents the tracked
+            // hand from restarting acquisition every frame.
+            bool initialized = false;
             RE::NiTransform startWorld{};
             float elapsedSeconds = 0.0f;
             float durationSeconds = 0.0f;
@@ -1388,17 +1417,10 @@ namespace rock
 
         void publishGripHandPoses(bool isLeft);
 
-        void clearPrimaryGripPose(
+        void clearPrimaryGripFingerPose(
             bool isLeft,
             bool preserveAuthoredFingerPose = false);
-
-        void suppressFrikOffhandGrip();
-
-        void beginFrikOffhandGripReleaseLease(const char* reason);
-
-        void updateFrikOffhandGripReleaseLease(float dt);
-
-        void restoreFrikOffhandGrip();
+        void clearPrimaryGripWorldAuthority(bool isLeft);
 
         static bool blockFrikPrimaryWeaponPose();
 
@@ -1715,8 +1737,6 @@ namespace rock
         ReturningWeaponVisualState _returningWeaponVisual{};
         RE::NiTransform _lastRenderedWeaponWorld{};
         bool _hasLastRenderedWeaponWorld{ false };
-        float _frikOffhandGripReleaseLeaseRemainingSeconds{ 0.0f };
-        bool _frikOffhandGripSuppressionEngaged{ false };
 
         /*
          * hFRIK calls the recoil controller before ROCK's update on the same

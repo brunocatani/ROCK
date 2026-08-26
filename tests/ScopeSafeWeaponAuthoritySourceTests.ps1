@@ -91,7 +91,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedG
     'Role-aware scope cleanup must preserve weapon and scope-camera baselines if clearing a stale tag restores an hFRIK arm.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeStateChanged\s*&&\s*!_scopeMenuOpenThisFrame[\s\S]*void TwoHandedGrip::clearSupportGripPose[\s\S]*if \(_scopeMenuOpenThisFrame\s*\|\|\s*_scopeMenuClosedThisFrame\)[\s\S]*deferScopeHandAuthorityClear\(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip,\s*isLeft\)' `
     'Support-hand release while scoped must defer hFRIK wrist cleanup instead of restoring against the collapsed root.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::clearPrimaryGripPose[\s\S]*if \(_scopeMenuOpenThisFrame\s*\|\|\s*_scopeMenuClosedThisFrame\)[\s\S]*deferScopeHandAuthorityClear\(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip,\s*isLeft\)' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::clearPrimaryGripWorldAuthority[\s\S]*if \(_scopeMenuOpenThisFrame\s*\|\|\s*_scopeMenuClosedThisFrame\)[\s\S]*deferScopeHandAuthorityClear\(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip,\s*isLeft\)' `
     'Primary-hand release while scoped must defer hFRIK wrist cleanup instead of restoring against the collapsed root.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::reset\(\)[\s\S]*clearSupportGripPose\(false\);[\s\S]*_scopeMenuOpenThisFrame\s*=\s*false;' `
     'Reset must preserve the active ScopeMenu flag until all hand-authority clears have been safely deferred.'

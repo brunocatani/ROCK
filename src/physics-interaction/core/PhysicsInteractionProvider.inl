@@ -1261,10 +1261,12 @@
             !frik_visual_authority::isSkeletonReadyHint()) {
             return false;
         }
-        const auto handWorld = frik_visual_authority::getHandWorldTransform(
-            isLeft ? frik_visual_authority::Hand::Left :
-                     frik_visual_authority::Hand::Right);
-        if (!finiteNiTransform(handWorld)) {
+        RE::NiTransform handWorld{};
+        if (!frik_visual_authority::tryGetHandWorldTransform(
+                isLeft ? frik_visual_authority::Hand::Left :
+                         frik_visual_authority::Hand::Right,
+                handWorld) ||
+            !finiteNiTransform(handWorld)) {
             return false;
         }
         outPose.hand = hand;
