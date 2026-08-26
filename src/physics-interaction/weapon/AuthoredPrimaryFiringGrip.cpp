@@ -506,25 +506,16 @@ namespace rock
 
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
         RE::NiTransform trackedHandWorld{};
-        const bool trackedHandAvailable =
-            _positionOnlyAlignmentActive ?
-            weaponAuthority.tryGetAuthoredPrimaryTrackedFiringHandWorld(
-                trackedHandWorld) :
-            frik_visual_authority::tryGetHandWorldTransform(
+        if (!frik_visual_authority::tryGetHandWorldTransform(
                 frik_visual_authority::handFromBool(
                     input.rockFiringHandIsLeft),
-                trackedHandWorld);
-        if (!trackedHandAvailable) {
+                trackedHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
-            endSession(
-                _positionOnlyAlignmentActive ?
-                    "physical-hand-driver-unavailable" :
-                    "presented-hand-unavailable");
+            endSession("presented-hand-unavailable");
             return;
         }
         RE::NiTransform gunstockTrackedHandWorld{};
-        if (!_positionOnlyAlignmentActive &&
-            weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
+        if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
                 input.weaponNode,
                 input.weaponGenerationKey,
                 gunstockTrackedHandWorld)) {
@@ -545,21 +536,46 @@ namespace rock
             authoredPrimaryHandInWeapon = authoredLookup.rightHandWeaponLocal;
             resolvedCaptureSequence = authoredLookup.captureSequence;
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
-            solvedWeaponWorld =
-                authored_weapon_grip_capture_policy::
-                    resolveAuthoredPrimaryWeaponWorld(
-                        trackedHandWorld,
+            if (_positionOnlyAlignmentActive) {
+                alignmentResolved =
+                    finiteTransform(authoredPrimaryHandInWeapon) &&
+                    finiteTransform(currentAuthoredHandWorld);
+            } else {
+                solvedWeaponWorld =
+                    authored_weapon_grip_capture_policy::
+                        resolveAuthoredPrimaryWeaponWorld(
+                            trackedHandWorld,
+                            authoredPrimaryHandInWeapon,
+                            [](const RE::NiTransform& parent,
+                                const RE::NiTransform& child) {
+                                return transform_math::composeTransforms(
+                                    parent,
+                                    child);
+                            },
+                            [](const RE::NiTransform& transform) {
+                                return transform_math::invertTransform(transform);
+                            });
+                alignmentResolved =
+                    finiteTransform(authoredPrimaryHandInWeapon) &&
+                    finiteTransform(currentAuthoredHandWorld) &&
+                    finiteTransform(solvedWeaponWorld);
+            }
+        } else if (_positionOnlyAlignmentActive) {
+            alignmentResolved =
+                authored_weapon_grip_capture::
+                    tryGetPrimaryFiringGripRelation(
+                        input.weaponNode,
                         authoredPrimaryHandInWeapon,
-                        [](const RE::NiTransform& parent,
-                            const RE::NiTransform& child) {
-                            return transform_math::composeTransforms(
-                                parent,
-                                child);
-                        },
-                        [](const RE::NiTransform& transform) {
-                            return transform_math::invertTransform(transform);
-                        });
-            alignmentResolved = finiteTransform(authoredPrimaryHandInWeapon) && finiteTransform(currentAuthoredHandWorld) && finiteTransform(solvedWeaponWorld);
+                        resolvedCaptureSequence) &&
+                resolvedCaptureSequence > _captureSequenceFloor;
+            if (alignmentResolved) {
+                currentAuthoredHandWorld =
+                    transform_math::composeTransforms(
+                        liveWeaponWorld,
+                        authoredPrimaryHandInWeapon);
+                alignmentResolved =
+                    finiteTransform(currentAuthoredHandWorld);
+            }
         } else {
             alignmentResolved = authored_weapon_grip_capture::tryResolvePrimaryFiringGripAlignment(
                 input.weaponNode,
@@ -605,23 +621,9 @@ namespace rock
             }
         }
 
-        const RE::NiTransform solvedFiringHandWorld =
-            transform_math::composeTransforms(
-                solvedWeaponWorld,
-                authoredPrimaryHandInWeapon);
-        if (_positionOnlyAlignmentActive &&
-            !finiteTransform(solvedFiringHandWorld)) {
-            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
-            endSession("position-only-hand-target-invalid");
-            return;
-        }
-
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
                 solvedWeaponWorld,
-                _positionOnlyAlignmentActive ?
-                    &solvedFiringHandWorld :
-                    nullptr,
                 input.weaponGenerationKey)) {
             if (!_applyFailureLogged) {
                 ROCK_LOG_WARN(Animation,
@@ -742,9 +744,7 @@ namespace rock
                 input.weaponNode->local.translate.y,
                 input.weaponNode->local.translate.z,
                 _positionOnlyAlignmentActive ? "position-only" : "full-rigid",
-                _positionOnlyAlignmentActive ?
-                    "weapon-relative-authored" :
-                    "controller-driven");
+                "controller-driven");
             _sessionLogged = true;
         }
     }

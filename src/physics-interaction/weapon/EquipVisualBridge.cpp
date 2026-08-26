@@ -267,7 +267,8 @@ namespace rock
             _handPoseHandoffActive = true;
             if (!publishHandPoseHandoff()) {
                 clearHandPoseHandoff("initial-publish-failed", false, false);
-            } else if (_hasFiringHandWeaponLocal) {
+            } else if (!_positionOnlyAlignmentActive &&
+                       _hasFiringHandWeaponLocal) {
                 const RE::NiTransform handWorld = transform_math::composeTransforms(
                     model->world,
                     _firingHandWeaponLocal);
@@ -423,7 +424,8 @@ namespace rock
             if (_handPoseHandoffActive) {
                 if (!publishHandPoseHandoff()) {
                     clearHandPoseHandoff("native-handoff-republish-failed", true, false);
-                } else if (_hasFiringHandWeaponLocal &&
+                } else if (!_positionOnlyAlignmentActive &&
+                           _hasFiringHandWeaponLocal &&
                            input.nativeVisual &&
                            input.nativeVisual->weaponRoot &&
                            isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
@@ -546,7 +548,9 @@ namespace rock
         if (_handPoseHandoffActive) {
             if (!publishHandPoseHandoff()) {
                 clearHandPoseHandoff("republish-failed", true, false);
-            } else if (_hasFiringHandWeaponLocal && hasHandoffWeaponWorld) {
+            } else if (!_positionOnlyAlignmentActive &&
+                       _hasFiringHandWeaponLocal &&
+                       hasHandoffWeaponWorld) {
                 const RE::NiTransform handWorld = transform_math::composeTransforms(
                     handoffWeaponWorld,
                     _firingHandWeaponLocal);

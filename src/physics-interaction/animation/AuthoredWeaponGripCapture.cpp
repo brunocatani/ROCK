@@ -887,12 +887,8 @@ namespace rock::authored_weapon_grip_capture
         return "unknown";
     }
 
-    bool tryResolvePrimaryFiringGripAlignment(
+    bool tryGetPrimaryFiringGripRelation(
         const RE::NiNode* expectedWeaponNode,
-        const RE::NiTransform& liveWeaponWorld,
-        const RE::NiTransform& trackedPrimaryHandWorld,
-        RE::NiTransform& outWeaponWorld,
-        RE::NiTransform& outCurrentAuthoredHandWorld,
         RE::NiTransform& outAuthoredPrimaryHandInWeapon,
         std::uint64_t& outCaptureSequence)
     {
@@ -907,8 +903,6 @@ namespace rock::authored_weapon_grip_capture
             !capturedHandNode ||
             expectedWeaponNode != s_primaryFiringGripWeaponNode.load(std::memory_order_acquire) ||
             expectedWeaponNode->parent != capturedHandNode ||
-            !finiteTransform(liveWeaponWorld) ||
-            !finiteTransform(trackedPrimaryHandWorld) ||
             !finiteTransform(s_authoredPrimaryHandInWeapon)) {
             return false;
         }
@@ -924,6 +918,27 @@ namespace rock::authored_weapon_grip_capture
         // takes the firing role; it must never reconstruct the canonical from
         // presentation-world transforms after hFRIK has moved the weapon.
         outAuthoredPrimaryHandInWeapon = s_authoredPrimaryHandInWeapon;
+        outCaptureSequence = sequence;
+        return true;
+    }
+
+    bool tryResolvePrimaryFiringGripAlignment(
+        const RE::NiNode* expectedWeaponNode,
+        const RE::NiTransform& liveWeaponWorld,
+        const RE::NiTransform& trackedPrimaryHandWorld,
+        RE::NiTransform& outWeaponWorld,
+        RE::NiTransform& outCurrentAuthoredHandWorld,
+        RE::NiTransform& outAuthoredPrimaryHandInWeapon,
+        std::uint64_t& outCaptureSequence)
+    {
+        if (!finiteTransform(liveWeaponWorld) ||
+            !finiteTransform(trackedPrimaryHandWorld) ||
+            !tryGetPrimaryFiringGripRelation(
+                expectedWeaponNode,
+                outAuthoredPrimaryHandInWeapon,
+                outCaptureSequence)) {
+            return false;
+        }
         outCurrentAuthoredHandWorld = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryHandWorld(
             liveWeaponWorld,
             outAuthoredPrimaryHandInWeapon,
@@ -944,7 +959,6 @@ namespace rock::authored_weapon_grip_capture
             return false;
         }
 
-        outCaptureSequence = sequence;
         return true;
     }
 
