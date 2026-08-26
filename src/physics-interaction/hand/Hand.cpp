@@ -318,6 +318,7 @@ namespace rock
         _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
+        _grabFingerLocalTransformFinalizePending = false;
         _hasGrabFingerPose = false;
         clearSelectedCloseFingerPose();
         _lastSelectedCloseOrigin = {};
@@ -420,6 +421,7 @@ namespace rock
         _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
+        _grabFingerLocalTransformFinalizePending = false;
         _hasGrabFingerPose = false;
         _heldLocalHandVelocityHistory = {};
         _heldHandAngularVelocityHistory = {};

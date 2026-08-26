@@ -1380,6 +1380,7 @@ namespace rock
         grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex _grabFingerTriangleIndex{};
         bool _hasGrabFingerJointPose = false;
         bool _hasGrabFingerLocalTransforms = false;
+        bool _grabFingerLocalTransformFinalizePending = false;
         bool _hasGrabFingerPose = false;
         bool _selectedCloseFingerPoseActive = false;
         RE::NiPoint3 _lastSelectedCloseOrigin{};

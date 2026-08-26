@@ -393,9 +393,9 @@ namespace rock::grab_three_phase
         return result;
     }
 
-    struct PullCatchSeatSafetyInput
+    struct ProgrammaticArrivalSeatSafetyInput
     {
-        bool grabbedFromPullCatch = false;
+        bool programmaticArrival = false;
         bool usingPinchPocket = false;
         AcquisitionPhase capturePhase = AcquisitionPhase::Idle;
         bool pocketValid = false;
@@ -411,19 +411,20 @@ namespace rock::grab_three_phase
         RE::NiPoint3 gripNormalWorld{};
     };
 
-    struct PullCatchSeatSafetyDecision
+    struct ProgrammaticArrivalSeatSafetyDecision
     {
         bool allowImmediateTouchHeld = true;
         bool requireSettledVisualRelation = false;
         float normalDotPalm = 0.0f;
-        const char* reason = "notPullCatch";
+        const char* reason = "notProgrammaticArrival";
     };
 
-    inline PullCatchSeatSafetyDecision evaluatePullCatchSeatSafety(const PullCatchSeatSafetyInput& input)
+    inline ProgrammaticArrivalSeatSafetyDecision evaluateProgrammaticArrivalSeatSafety(
+        const ProgrammaticArrivalSeatSafetyInput& input)
     {
-        PullCatchSeatSafetyDecision decision{};
-        if (!input.grabbedFromPullCatch) {
-            decision.reason = "notPullCatch";
+        ProgrammaticArrivalSeatSafetyDecision decision{};
+        if (!input.programmaticArrival) {
+            decision.reason = "notProgrammaticArrival";
             return decision;
         }
         if (input.usingPinchPocket) {
@@ -445,14 +446,14 @@ namespace rock::grab_three_phase
             !std::isfinite(input.signedPalmDistanceGameUnits) ||
             !hasPalmNormal ||
             !hasGripNormal) {
-            decision.reason = "pullCatchSeatMissingFrame";
+            decision.reason = "arrivalSeatMissingFrame";
             return decision;
         }
 
         const float behindTolerance =
             (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
         if (input.signedPalmDistanceGameUnits < -behindTolerance) {
-            decision.reason = "pullCatchSeatBehindPalm";
+            decision.reason = "arrivalSeatBehindPalm";
             return decision;
         }
 
@@ -461,40 +462,40 @@ namespace rock::grab_three_phase
         const float pocketRadius =
             (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
         if (input.gripToPocketDistanceGameUnits > pocketRadius) {
-            decision.reason = "pullCatchSeatOutsidePocket";
+            decision.reason = "arrivalSeatOutsidePocket";
             return decision;
         }
 
         const bool inTouchRange = input.gripToPocketDistanceGameUnits <= touchDistance;
         const bool contactInsidePocket = input.stablePocketTouchContact && input.gripToPocketDistanceGameUnits <= pocketRadius;
         if (!inTouchRange && !contactInsidePocket) {
-            decision.reason = "pullCatchSeatAwaitingTouch";
+            decision.reason = "arrivalSeatAwaitingTouch";
             return decision;
         }
 
         if (input.capturePhase != AcquisitionPhase::TouchHeld) {
-            decision.reason = "pullCatchSeatAlreadyConverging";
+            decision.reason = "arrivalSeatAlreadyConverging";
             return decision;
         }
 
         if (input.pivotAuthorityPositionOnly) {
-            decision.reason = "pullCatchSeatPositionOnly";
+            decision.reason = "arrivalSeatPositionOnly";
             return decision;
         }
         if (!input.pivotAuthorityNormalTrusted) {
-            decision.reason = "pullCatchSeatNormalUntrusted";
+            decision.reason = "arrivalSeatNormalUntrusted";
             return decision;
         }
 
         constexpr float kMaxPalmFacingNormalDot = -0.10f;
         if (decision.normalDotPalm > kMaxPalmFacingNormalDot) {
-            decision.reason = "pullCatchSeatNormalWrongSide";
+            decision.reason = "arrivalSeatNormalWrongSide";
             return decision;
         }
 
         decision.allowImmediateTouchHeld = true;
         decision.requireSettledVisualRelation = false;
-        decision.reason = "pullCatchSeatSafe";
+        decision.reason = "arrivalSeatSafe";
         return decision;
     }
 
