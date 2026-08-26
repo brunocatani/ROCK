@@ -5056,7 +5056,14 @@ namespace rock
         resetLockedHandVisualLerp();
         clearPrimaryGripFingerPose(primaryHandIsLeft);
         clearPrimaryGripWorldAuthority(primaryHandIsLeft);
-        clearSupportGripPose(supportHandIsLeft);
+        /*
+         * capturePartGrip has already committed the new support finger data
+         * into this hand's WeaponPartGrip. Do not run the support-pose release
+         * helper here: it erases the captured scalar and exact local
+         * transforms before the alpha-zero publication below. The existing
+         * role tag is replaced by publishGripHandPoses in the same update, and
+         * applyPartGripLockedVisual replaces its world authority.
+         */
         if (!keepLeftFiringHold) {
             _firingGripSequence = ++_gripCaptureSequence;
             // A right-hand capture here rides hFRIK's authored carry. Commit

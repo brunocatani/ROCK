@@ -96,6 +96,17 @@ Require-Text 'data/config/ROCK_example.ini' 'Normal dynamic full-authority grabs
     'Repository config must describe the synchronized dynamic-acquisition semantics and unchanged paths.'
 
 $weaponText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp')
+$transitionStart = $weaponText.IndexOf('void TwoHandedGrip::transitionToGripping')
+$transitionEnd = if ($transitionStart -ge 0) { $weaponText.IndexOf('void TwoHandedGrip::transitionToInactive', $transitionStart) } else { -1 }
+if ($transitionStart -lt 0 -or $transitionEnd -lt 0) {
+    $failures.Add('Support-grip acquisition function boundary could not be located.')
+} else {
+    $transitionText = $weaponText.Substring($transitionStart, $transitionEnd - $transitionStart)
+    if ($transitionText -match 'capturePartGrip[\s\S]*clearSupportGripPose') {
+        $failures.Add('A committed support acquisition must not erase its newly captured scalar or exact finger transforms before first publication.')
+    }
+}
+
 $applyWeaponStart = $weaponText.IndexOf('bool TwoHandedGrip::applyWeaponVisualAuthority')
 $applyWeaponEnd = if ($applyWeaponStart -ge 0) { $weaponText.IndexOf('bool TwoHandedGrip::applyFiringHandLockedVisual', $applyWeaponStart) } else { -1 }
 if ($applyWeaponStart -lt 0 -or $applyWeaponEnd -lt 0) {
