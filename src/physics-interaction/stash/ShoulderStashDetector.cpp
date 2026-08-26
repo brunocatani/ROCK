@@ -97,6 +97,32 @@ namespace rock::shoulder_stash
             return input.config.useHmdBackVolume && input.hasHmdProbe && finitePoint(input.hmdProbe.pointGame) ? input.hmdProbe : input.probe;
         }
 
+        struct SpeedProbePoint
+        {
+            RE::NiPoint3 pointGame{};
+            bool hmdRelative = false;
+        };
+
+        [[nodiscard]] SpeedProbePoint speedProbePoint(const DetectorInput& input) noexcept
+        {
+            const Probe& probe = hmdKinematicProbe(input);
+            if (input.hasHmdFrame && finitePoint(input.hmdPositionWorld)) {
+                /*
+                 * The speed ceiling protects against a fast hand gesture, not
+                 * player locomotion. Removing the HMD's common translation
+                 * keeps stick movement and crouching out of the measurement.
+                 */
+                return {
+                    .pointGame = probePointRelativeToHmdTranslation(
+                        probe.pointGame,
+                        input.hmdPositionWorld),
+                    .hmdRelative = true,
+                };
+            }
+
+            return { .pointGame = probe.pointGame };
+        }
+
         [[nodiscard]] bool tryBuildShoulderCapsule(
             const DetectorInput& input,
             std::uint32_t shoulderBodyId,
@@ -400,13 +426,16 @@ namespace rock::shoulder_stash
         [[nodiscard]] float resolvedProbeSpeed(const DetectorInput& input, const RuntimeState& runtime) noexcept
         {
             const Probe& probe = hmdKinematicProbe(input);
-            if (probe.hasVelocity) {
+            const SpeedProbePoint point = speedProbePoint(input);
+            if (!point.hmdRelative && probe.hasVelocity) {
                 return probeSpeed(probe);
             }
-            if (!runtime.hasLastProbePoint || input.deltaSeconds <= 0.000001f) {
+            if (!runtime.hasLastKinematicProbePoint ||
+                runtime.lastKinematicProbePointWasHmdRelative != point.hmdRelative ||
+                input.deltaSeconds <= 0.000001f) {
                 return 0.0f;
             }
-            return length(sub(probe.pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
+            return length(sub(point.pointGame, runtime.lastKinematicProbePointGame)) / input.deltaSeconds;
         }
     }
 
@@ -422,9 +451,10 @@ namespace rock::shoulder_stash
         decision.speedGameUnitsPerSecond = speed;
 
         auto updateProbeHistory = [&]() {
-            const Probe& probe = hmdKinematicProbe(input);
-            runtime.lastProbePointGame = probe.pointGame;
-            runtime.hasLastProbePoint = finitePoint(probe.pointGame);
+            const SpeedProbePoint point = speedProbePoint(input);
+            runtime.lastKinematicProbePointGame = point.pointGame;
+            runtime.hasLastKinematicProbePoint = finitePoint(point.pointGame);
+            runtime.lastKinematicProbePointWasHmdRelative = point.hmdRelative;
         };
 
         if (!input.config.enabled || !finitePoint(input.probe.pointGame)) {

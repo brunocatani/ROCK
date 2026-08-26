@@ -66,8 +66,9 @@ namespace rock::shoulder_stash
         bool hasSustainedPointGame = false;
         float dwellSeconds = 0.0f;
         float nextCandidatePulseTimeSeconds = 0.0f;
-        RE::NiPoint3 lastProbePointGame{};
-        bool hasLastProbePoint = false;
+        RE::NiPoint3 lastKinematicProbePointGame{};
+        bool hasLastKinematicProbePoint = false;
+        bool lastKinematicProbePointWasHmdRelative = false;
     };
 
     struct Decision
@@ -281,6 +282,13 @@ namespace rock::shoulder_stash
     [[nodiscard]] inline float probeSpeed(const Probe& probe) noexcept
     {
         return probe.hasVelocity ? length(probe.velocityGamePerSecond) : 0.0f;
+    }
+
+    [[nodiscard]] inline RE::NiPoint3 probePointRelativeToHmdTranslation(
+        const RE::NiPoint3& probePointGame,
+        const RE::NiPoint3& hmdPositionWorld) noexcept
+    {
+        return sub(probePointGame, hmdPositionWorld);
     }
 
     [[nodiscard]] inline bool isShoulderZone(body_zone::BodyZoneKind zone) noexcept

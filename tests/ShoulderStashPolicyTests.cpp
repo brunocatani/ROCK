@@ -81,6 +81,25 @@ int main()
         exceedsShoulderStashSpeedLimit(140.0f, 140.0f));
     ok &= expectFalse("zero stash speed ceiling disables speed rejection",
         exceedsShoulderStashSpeedLimit(1000.0f, 0.0f));
+    const auto relativeProbeBefore = probePointRelativeToHmdTranslation(
+        RE::NiPoint3{ 10.0f, 20.0f, 30.0f },
+        RE::NiPoint3{ 2.0f, 4.0f, 6.0f });
+    const auto relativeProbeAfterCommonTranslation =
+        probePointRelativeToHmdTranslation(
+            RE::NiPoint3{ 15.0f, 17.0f, 32.0f },
+            RE::NiPoint3{ 7.0f, 1.0f, 8.0f });
+    ok &= expectNear("common locomotion preserves HMD-relative probe X",
+        relativeProbeAfterCommonTranslation.x,
+        relativeProbeBefore.x,
+        0.001f);
+    ok &= expectNear("common locomotion preserves HMD-relative probe Y",
+        relativeProbeAfterCommonTranslation.y,
+        relativeProbeBefore.y,
+        0.001f);
+    ok &= expectNear("common locomotion preserves HMD-relative probe Z",
+        relativeProbeAfterCommonTranslation.z,
+        relativeProbeBefore.z,
+        0.001f);
     ok &= expectTrue("confirmed fast open release arms equipped stash lease",
         shouldArmEquippedWeaponFastReleaseCommitLease(true, true, false, true));
     ok &= expectFalse("fast held motion cannot arm equipped stash lease",
