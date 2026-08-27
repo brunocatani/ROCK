@@ -14,6 +14,7 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/HavokPairCollisionFilter.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -223,6 +224,10 @@ namespace rock
         void abandonHavokStateAfterWorldLoss();
 
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
+        void updateNativeMeleeCollisionIsolation(
+            RE::hknpWorld* world,
+            RE::NiAVObject* weaponNode,
+            bool realMeleeWeaponEquipped);
 
         void requestWorkbenchExitRebuild();
 
@@ -339,6 +344,8 @@ namespace rock
     private:
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;
+        static constexpr std::size_t MAX_NATIVE_MELEE_COLLISION_BODIES = 16;
+        static constexpr std::uint32_t NATIVE_MELEE_COLLISION_RESCAN_FRAMES = 90;
         static constexpr std::uint32_t RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS = 8;
         static constexpr std::size_t MAX_RETIRED_GENERATED_WEAPON_BODY_PAYLOADS = MAX_WEAPON_BODIES * 4;
 
@@ -521,6 +528,12 @@ namespace rock
         void publishWeaponBodySetGeneration(const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& sourceCompleteness);
         void publishAtomicBodyIds(WeaponBodyBank& bank);
         void unpublishAtomicBodyIds();
+        void publishNativeMeleeCollisionBodyIds(
+            const std::array<std::uint32_t, MAX_NATIVE_MELEE_COLLISION_BODIES>& bodyIds,
+            std::uint32_t count,
+            bool overflow);
+        void abandonNativeMeleeCollisionIsolationState();
+        void reconcileNativeMeleeCollisionIsolation(RE::hknpWorld* world);
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(
@@ -659,6 +672,23 @@ namespace rock
         std::atomic<std::uint32_t> _weaponBodyCountAtomic{ 0 };
         std::atomic<std::uint64_t> _weaponBodySetKeyAtomic{ 0 };
         std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };
+        std::array<std::atomic<std::uint32_t>, MAX_NATIVE_MELEE_COLLISION_BODIES> _nativeMeleeCollisionBodyIdsAtomic{};
+        std::atomic<std::uint32_t> _nativeMeleeCollisionBodyCountAtomic{ 0 };
+        std::atomic<std::uint64_t> _nativeMeleeCollisionPublicationVersion{ 0 };
+        std::atomic<bool> _nativeMeleeCollisionBodyOverflowAtomic{ false };
+        std::atomic<bool> _nativeMeleePairFilterReadyAtomic{ false };
+        std::atomic<std::uint32_t> _nativeMeleeSuppressedPairCountAtomic{ 0 };
+        NativeMeleePairCollisionLeaseSet _nativeMeleePairLeases{};
+        RE::hknpWorld* _nativeMeleePairWorld{ nullptr };
+        std::uint64_t _nativeMeleePairNativePublicationVersion{ 0 };
+        std::uint64_t _nativeMeleePairWeaponPublicationVersion{ 0 };
+        std::uint32_t _nativeMeleePairRecheckSteps{ 0 };
+        RE::NiAVObject* _nativeMeleeIsolationRoot{ nullptr };
+        std::uint64_t _nativeMeleeIsolationGenerationKey{ 0 };
+        std::uint32_t _nativeMeleeIsolationRescanFrames{ 0 };
+        std::array<std::uint32_t, MAX_NATIVE_MELEE_COLLISION_BODIES> _nativeMeleeCollisionBodyIds{};
+        std::uint32_t _nativeMeleeCollisionBodyCount{ 0 };
+        bool _nativeMeleeCollisionBodyOverflow{ false };
         mutable std::mutex _weaponEvidenceSnapshotMutex;
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
         WeaponEmitterSnapshot _weaponEmitterSnapshot{};

@@ -67,62 +67,86 @@ int main()
 
     const NativeMeleeRuntimeSettingPolicyInput activeRuntime{
         .hooksInstalled = true,
-        .rockEnabled = true,
         .suppressionEnabled = true,
-        .fullSuppression = true,
     };
-    ok &= expectTrue("fully enabled runtime suppression owns VRInput settings", shouldSuppressNativeMeleeRuntimeSettings(activeRuntime));
+    ok &= expectTrue("enabled suppression owns VRInput settings", shouldSuppressNativeMeleeRuntimeSettings(activeRuntime));
     ok &= expectFalse("active runtime suppression does not restore", shouldRestoreNativeMeleeRuntimeSettings(true, activeRuntime));
 
     auto disabledMasterRuntime = activeRuntime;
     disabledMasterRuntime.suppressionEnabled = false;
-    ok &= expectFalse("master fallback disables runtime setting suppression", shouldSuppressNativeMeleeRuntimeSettings(disabledMasterRuntime));
-    ok &= expectTrue("master fallback restores owned runtime settings", shouldRestoreNativeMeleeRuntimeSettings(true, disabledMasterRuntime));
-    ok &= expectFalse("master fallback has nothing to restore before ownership", shouldRestoreNativeMeleeRuntimeSettings(false, disabledMasterRuntime));
-
-    auto disabledRockRuntime = activeRuntime;
-    disabledRockRuntime.rockEnabled = false;
-    ok &= expectTrue("disabling ROCK restores owned runtime settings", shouldRestoreNativeMeleeRuntimeSettings(true, disabledRockRuntime));
-
-    auto partialRuntime = activeRuntime;
-    partialRuntime.fullSuppression = false;
-    ok &= expectTrue("partial mode restores full-suppression runtime settings", shouldRestoreNativeMeleeRuntimeSettings(true, partialRuntime));
+    ok &= expectFalse("disabled suppression leaves runtime settings native", shouldSuppressNativeMeleeRuntimeSettings(disabledMasterRuntime));
+    ok &= expectTrue("disabled suppression restores owned runtime settings", shouldRestoreNativeMeleeRuntimeSettings(true, disabledMasterRuntime));
+    ok &= expectFalse("disabled suppression has nothing to restore before ownership", shouldRestoreNativeMeleeRuntimeSettings(false, disabledMasterRuntime));
 
     auto missingHooksRuntime = activeRuntime;
     missingHooksRuntime.hooksInstalled = false;
     ok &= expectTrue("missing hooks restore owned runtime settings", shouldRestoreNativeMeleeRuntimeSettings(true, missingHooksRuntime));
 
-    const NativeMeleePolicyInput masterFallbackHookInput{
-        .rockEnabled = true,
-        .suppressionEnabled = false,
-        .fullSuppression = true,
-        .suppressWeaponSwing = true,
-        .suppressHitFrame = true,
+    const NativeMeleePolicyInput nativePlayer{
+        .suppressionActive = false,
         .actorIsPlayer = true,
-        .physicalSwingActive = true,
     };
-    ok &= expectEqual("master fallback passes WeaponSwing through",
-        evaluateNativeMeleeSuppression(NativeMeleeEvent::WeaponSwing, masterFallbackHookInput).action,
+    ok &= expectEqual("disabled suppression passes WeaponSwing through",
+        evaluateNativeMeleeSuppression(NativeMeleeEvent::WeaponSwing, nativePlayer).action,
         NativeMeleeSuppressionAction::CallNative);
-    ok &= expectEqual("master fallback passes HitFrame through",
-        evaluateNativeMeleeSuppression(NativeMeleeEvent::HitFrame, masterFallbackHookInput).action,
+    ok &= expectEqual("disabled suppression passes HitFrame through",
+        evaluateNativeMeleeSuppression(NativeMeleeEvent::HitFrame, nativePlayer).action,
         NativeMeleeSuppressionAction::CallNative);
 
-    ok &= expectEqual("master fallback passes RightStick gate through",
+    ok &= expectEqual("disabled suppression passes RightStick gate through",
         evaluateNativeMeleeInputGate(NativeMeleeInputGatePolicyInput{
-            .rockEnabled = true,
-            .suppressionEnabled = false,
-            .fullSuppression = true,
+            .suppressionActive = false,
             .inputEvent = NativeMeleeInputEvent::RightStick,
         }).action,
         NativeMeleeInputGateAction::CallNative);
 
-    ok &= expectEqual("master fallback passes VR melee impact through",
+    ok &= expectEqual("disabled suppression passes VR melee impact through",
         evaluateNativeMeleeImpactSuppression(NativeMeleeImpactPolicyInput{
-            .rockEnabled = true,
-            .suppressionEnabled = false,
-            .fullSuppression = true,
+            .suppressionActive = false,
             .actorIsPlayer = true,
+        }).action,
+        NativeMeleeImpactAction::CallNative);
+
+    const NativeMeleePolicyInput suppressedPlayer{
+        .suppressionActive = true,
+        .actorIsPlayer = true,
+    };
+    ok &= expectEqual("enabled suppression handles player WeaponSwing",
+        evaluateNativeMeleeSuppression(NativeMeleeEvent::WeaponSwing, suppressedPlayer).action,
+        NativeMeleeSuppressionAction::ReturnHandled);
+    ok &= expectEqual("enabled suppression handles player HitFrame",
+        evaluateNativeMeleeSuppression(NativeMeleeEvent::HitFrame, suppressedPlayer).action,
+        NativeMeleeSuppressionAction::ReturnHandled);
+    ok &= expectEqual("enabled suppression blocks RightStick melee gate",
+        evaluateNativeMeleeInputGate(NativeMeleeInputGatePolicyInput{
+            .suppressionActive = true,
+            .inputEvent = NativeMeleeInputEvent::RightStick,
+        }).action,
+        NativeMeleeInputGateAction::ReturnFalse);
+    ok &= expectEqual("enabled suppression leaves primary attack input native",
+        evaluateNativeMeleeInputGate(NativeMeleeInputGatePolicyInput{
+            .suppressionActive = true,
+            .inputEvent = NativeMeleeInputEvent::PrimaryAttack,
+        }).action,
+        NativeMeleeInputGateAction::CallNative);
+    ok &= expectEqual("enabled suppression blocks player VR melee impact",
+        evaluateNativeMeleeImpactSuppression(NativeMeleeImpactPolicyInput{
+            .suppressionActive = true,
+            .actorIsPlayer = true,
+        }).action,
+        NativeMeleeImpactAction::Suppress);
+
+    const NativeMeleePolicyInput suppressedNpc{
+        .suppressionActive = true,
+        .actorIsPlayer = false,
+    };
+    ok &= expectEqual("enabled suppression preserves NPC WeaponSwing",
+        evaluateNativeMeleeSuppression(NativeMeleeEvent::WeaponSwing, suppressedNpc).action,
+        NativeMeleeSuppressionAction::CallNative);
+    ok &= expectEqual("enabled suppression preserves NPC VR melee impact",
+        evaluateNativeMeleeImpactSuppression(NativeMeleeImpactPolicyInput{
+            .suppressionActive = true,
+            .actorIsPlayer = false,
         }).action,
         NativeMeleeImpactAction::CallNative);
 

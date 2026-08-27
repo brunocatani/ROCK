@@ -254,6 +254,7 @@ namespace
         pipboy_equip_runtime::setLeftHandEquipAvailable(false);
         input_remap_runtime::setGameplayInputAllowed(false);
         input_remap_runtime::setWeaponDrawn(false);
+        input_remap_runtime::setRealMeleeWeaponEquipped(false);
         input_remap_runtime::setHandHeldWeapon(false, false);
         input_remap_runtime::setHandHeldWeapon(true, false);
         input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
@@ -275,7 +276,7 @@ namespace
         }
 
         g_rockConfig.processPendingConfigReload();
-        advanceNativeMeleeFrameClock();
+        advanceNativeRuntimeSettingFrameClock();
         enforceNativeMeleeRuntimeSuppression();
 
         if (!s_frikAvailable) {

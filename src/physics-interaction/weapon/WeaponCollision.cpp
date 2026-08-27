@@ -2348,7 +2348,11 @@ namespace rock
         return collisionEnabled ? baseFilterInfo : (baseFilterInfo | collision_suppression_registry::kSuppressionNoCollideBit);
     }
 
-    WeaponCollision::WeaponCollision() { clearAtomicBodyIds(); }
+    WeaponCollision::WeaponCollision()
+    {
+        clearAtomicBodyIds();
+        abandonNativeMeleeCollisionIsolationState();
+    }
 
     WeaponCollision::WeaponBodyBank& WeaponCollision::activeWeaponBodies()
     {
@@ -4573,6 +4577,7 @@ namespace rock
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
         clearAtomicBodyIds();
+        abandonNativeMeleeCollisionIsolationState();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
     }
@@ -4613,6 +4618,7 @@ namespace rock
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
         clearWeaponEmitterSnapshot();
+        abandonNativeMeleeCollisionIsolationState();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
     }
@@ -4636,6 +4642,7 @@ namespace rock
         _usingReplacementWeaponBodies = false;
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
+        abandonNativeMeleeCollisionIsolationState();
         ROCK_LOG_INFO(Weapon, "Weapon collision wrappers abandoned after Havok world loss");
     }
 
@@ -4649,6 +4656,189 @@ namespace rock
          * this permission into a destroy/recreate cycle.
          */
         _workbenchExitRebuildRequested.store(true, std::memory_order_release);
+    }
+
+    void WeaponCollision::abandonNativeMeleeCollisionIsolationState()
+    {
+        _nativeMeleePairLeases.abandonWorld();
+        _nativeMeleePairFilterReadyAtomic.store(false, std::memory_order_release);
+        _nativeMeleeSuppressedPairCountAtomic.store(0, std::memory_order_release);
+        _nativeMeleePairWorld = nullptr;
+        _nativeMeleePairNativePublicationVersion = 0;
+        _nativeMeleePairWeaponPublicationVersion = 0;
+        _nativeMeleePairRecheckSteps = 0;
+        _nativeMeleeIsolationRoot = nullptr;
+        _nativeMeleeIsolationGenerationKey = 0;
+        _nativeMeleeIsolationRescanFrames = 0;
+        _nativeMeleeCollisionBodyIds = {};
+        _nativeMeleeCollisionBodyCount = 0;
+        _nativeMeleeCollisionBodyOverflow = false;
+        publishNativeMeleeCollisionBodyIds({}, 0, false);
+    }
+
+    void WeaponCollision::publishNativeMeleeCollisionBodyIds(
+        const std::array<std::uint32_t, MAX_NATIVE_MELEE_COLLISION_BODIES>& bodyIds,
+        const std::uint32_t count,
+        const bool overflow)
+    {
+        _nativeMeleeCollisionPublicationVersion.fetch_add(1, std::memory_order_acq_rel);
+        _nativeMeleeCollisionBodyCountAtomic.store(0, std::memory_order_release);
+        for (auto& bodyId : _nativeMeleeCollisionBodyIdsAtomic) {
+            bodyId.store(INVALID_BODY_ID, std::memory_order_release);
+        }
+        const auto boundedCount = static_cast<std::uint32_t>((std::min)(
+            static_cast<std::size_t>(count),
+            bodyIds.size()));
+        for (std::uint32_t index = 0; index < boundedCount; ++index) {
+            _nativeMeleeCollisionBodyIdsAtomic[index].store(
+                bodyIds[index],
+                std::memory_order_release);
+        }
+        _nativeMeleeCollisionBodyOverflowAtomic.store(overflow, std::memory_order_release);
+        _nativeMeleeCollisionBodyCountAtomic.store(boundedCount, std::memory_order_release);
+        _nativeMeleeCollisionPublicationVersion.fetch_add(1, std::memory_order_release);
+    }
+
+    void WeaponCollision::updateNativeMeleeCollisionIsolation(
+        RE::hknpWorld* world,
+        RE::NiAVObject* weaponNode,
+        const bool realMeleeWeaponEquipped)
+    {
+        const auto clearTarget = [&]() {
+            const bool hadTarget = _nativeMeleeIsolationRoot ||
+                _nativeMeleeCollisionBodyCount != 0 ||
+                _nativeMeleeCollisionBodyOverflow;
+            if (!hadTarget) {
+                return;
+            }
+            if (_nativeMeleeIsolationRoot || _nativeMeleeCollisionBodyCount != 0) {
+                ROCK_LOG_INFO(Weapon, "Native melee collision isolation target cleared");
+            }
+            _nativeMeleeIsolationRoot = nullptr;
+            _nativeMeleeIsolationGenerationKey = 0;
+            _nativeMeleeIsolationRescanFrames = 0;
+            _nativeMeleeCollisionBodyIds = {};
+            _nativeMeleeCollisionBodyCount = 0;
+            _nativeMeleeCollisionBodyOverflow = false;
+            publishNativeMeleeCollisionBodyIds({}, 0, false);
+        };
+
+        if (!world || !weaponNode || !realMeleeWeaponEquipped) {
+            clearTarget();
+            return;
+        }
+
+        const auto generationKey = getCurrentWeaponGenerationKey();
+        const bool identityChanged =
+            weaponNode != _nativeMeleeIsolationRoot ||
+            generationKey != _nativeMeleeIsolationGenerationKey;
+        if (!identityChanged && _nativeMeleeCollisionBodyCount != 0 &&
+            ++_nativeMeleeIsolationRescanFrames <
+                NATIVE_MELEE_COLLISION_RESCAN_FRAMES) {
+            if (_nativeMeleeIsolationRescanFrames > 2 &&
+                getWeaponBodyCount() != 0 &&
+                (!_nativeMeleePairFilterReadyAtomic.load(std::memory_order_acquire) ||
+                    _nativeMeleeSuppressedPairCountAtomic.load(std::memory_order_acquire) == 0)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon,
+                    5000,
+                    "Native melee collision isolation is not active: nativeBodies={} generatedBodies={} filterReady={} suppressedPairs={}",
+                    _nativeMeleeCollisionBodyCount,
+                    getWeaponBodyCount(),
+                    _nativeMeleePairFilterReadyAtomic.load(std::memory_order_acquire) ? "yes" : "no",
+                    _nativeMeleeSuppressedPairCountAtomic.load(std::memory_order_acquire));
+            }
+            return;
+        }
+        _nativeMeleeIsolationRescanFrames = 0;
+
+        struct ScanContext
+        {
+            WeaponCollision* self{ nullptr };
+            std::array<std::uint32_t, MAX_NATIVE_MELEE_COLLISION_BODIES> bodyIds{};
+            std::uint32_t count{ 0 };
+            bool overflow{ false };
+
+            bool append(const std::uint32_t bodyId)
+            {
+                if (!self || bodyId == WeaponCollision::INVALID_BODY_ID ||
+                    self->isWeaponBodyIdAtomic(bodyId)) {
+                    return true;
+                }
+                for (std::uint32_t index = 0; index < count; ++index) {
+                    if (bodyIds[index] == bodyId) {
+                        return true;
+                    }
+                }
+                if (count >= bodyIds.size()) {
+                    overflow = true;
+                    return false;
+                }
+                bodyIds[count++] = bodyId;
+                return true;
+            }
+        } context{ this };
+
+        auto visitBody = [](const std::uint32_t bodyId, void* userData) {
+            auto* context = static_cast<ScanContext*>(userData);
+            return context && context->append(bodyId);
+        };
+        std::uint32_t visitedNodes = 0;
+        auto scanNode = [&](auto&& self, RE::NiAVObject* node, const int depth) -> void {
+            if (!node || depth <= 0 || visitedNodes >= 1024 || context.overflow) {
+                return;
+            }
+            ++visitedNodes;
+            if (auto* collisionObject = node->collisionObject.get()) {
+                (void)havok_runtime::forEachPhysicsSystemBodyIdDetailed(
+                    collisionObject,
+                    world,
+                    256,
+                    visitBody,
+                    &context);
+            }
+            if (auto* niNode = node->IsNode()) {
+                auto& children = niNode->GetRuntimeData().children;
+                for (auto index = decltype(children.size()){ 0 };
+                     index < children.size();
+                     ++index) {
+                    self(self, children[index].get(), depth - 1);
+                }
+            }
+        };
+        scanNode(scanNode, weaponNode, 64);
+
+        const bool changed = identityChanged ||
+            context.count != _nativeMeleeCollisionBodyCount ||
+            context.overflow != _nativeMeleeCollisionBodyOverflow ||
+            !std::equal(
+                context.bodyIds.begin(),
+                context.bodyIds.begin() + context.count,
+                _nativeMeleeCollisionBodyIds.begin());
+        _nativeMeleeIsolationRoot = weaponNode;
+        _nativeMeleeIsolationGenerationKey = generationKey;
+        _nativeMeleeCollisionBodyIds = context.bodyIds;
+        _nativeMeleeCollisionBodyCount = context.count;
+        _nativeMeleeCollisionBodyOverflow = context.overflow;
+        if (changed) {
+            publishNativeMeleeCollisionBodyIds(
+                context.bodyIds,
+                context.count,
+                context.overflow);
+        }
+
+        if (changed) {
+            ROCK_LOG_INFO(Weapon,
+                "Native melee collision isolation target updated: nativeBodies={} generatedBodies={} generation={:016X}",
+                context.count,
+                getWeaponBodyCount(),
+                generationKey);
+        }
+        if (context.overflow) {
+            ROCK_LOG_SAMPLE_WARN(Weapon,
+                5000,
+                "Native melee collision isolation exceeded {} native bodies; exact pair suppression is incomplete",
+                MAX_NATIVE_MELEE_COLLISION_BODIES);
+        }
     }
 
 
@@ -8622,8 +8812,126 @@ namespace rock
         publishSampledVelocityAtomic(instance.publicationIndex, queueResult);
     }
 
+    void WeaponCollision::reconcileNativeMeleeCollisionIsolation(
+        RE::hknpWorld* world)
+    {
+        if (!world) {
+            _nativeMeleePairLeases.abandonWorld();
+            _nativeMeleePairFilterReadyAtomic.store(false, std::memory_order_release);
+            _nativeMeleeSuppressedPairCountAtomic.store(0, std::memory_order_release);
+            _nativeMeleePairWorld = nullptr;
+            _nativeMeleePairNativePublicationVersion = 0;
+            _nativeMeleePairWeaponPublicationVersion = 0;
+            _nativeMeleePairRecheckSteps = 0;
+            return;
+        }
+
+        std::array<std::uint32_t, MAX_NATIVE_MELEE_COLLISION_BODIES>
+            nativeBodyIds{};
+        std::uint32_t nativeBodyCount = 0;
+        std::uint64_t nativePublicationVersion = 0;
+        bool snapshotStable = false;
+        for (std::uint32_t attempt = 0; attempt < 4; ++attempt) {
+            const auto beginVersion =
+                _nativeMeleeCollisionPublicationVersion.load(
+                    std::memory_order_acquire);
+            if ((beginVersion & 1u) != 0) {
+                continue;
+            }
+            nativeBodyCount = (std::min)(
+                _nativeMeleeCollisionBodyCountAtomic.load(
+                    std::memory_order_acquire),
+                static_cast<std::uint32_t>(nativeBodyIds.size()));
+            for (std::uint32_t index = 0; index < nativeBodyCount; ++index) {
+                nativeBodyIds[index] =
+                    _nativeMeleeCollisionBodyIdsAtomic[index].load(
+                        std::memory_order_acquire);
+            }
+            const auto endVersion =
+                _nativeMeleeCollisionPublicationVersion.load(
+                    std::memory_order_acquire);
+            if (beginVersion == endVersion && (endVersion & 1u) == 0) {
+                nativePublicationVersion = endVersion;
+                snapshotStable = true;
+                break;
+            }
+        }
+        if (!snapshotStable) {
+            return;
+        }
+
+        const auto weaponPublicationBegin =
+            _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+        if ((weaponPublicationBegin & 1u) != 0) {
+            return;
+        }
+        const auto generatedBodies = getWeaponBodySnapshotAtomic();
+        const auto weaponPublicationEnd =
+            _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+        if (weaponPublicationBegin != weaponPublicationEnd ||
+            (weaponPublicationEnd & 1u) != 0) {
+            return;
+        }
+
+        const bool publicationUnchanged =
+            _nativeMeleePairWorld == world &&
+            _nativeMeleePairNativePublicationVersion == nativePublicationVersion &&
+            _nativeMeleePairWeaponPublicationVersion == weaponPublicationEnd;
+        if (publicationUnchanged &&
+            ++_nativeMeleePairRecheckSteps <
+                NATIVE_MELEE_COLLISION_RESCAN_FRAMES) {
+            return;
+        }
+        _nativeMeleePairRecheckSteps = 0;
+
+        std::array<NativeMeleePairCollisionLeaseSet::DesiredPair,
+            NativeMeleePairCollisionLeaseSet::kMaximumPairs>
+            desiredPairs{};
+        std::size_t desiredPairCount = 0;
+        for (std::uint32_t nativeIndex = 0;
+             nativeIndex < nativeBodyCount;
+             ++nativeIndex) {
+            const auto nativeBodyId = nativeBodyIds[nativeIndex];
+            if (nativeBodyId == INVALID_BODY_ID) {
+                continue;
+            }
+            for (std::uint32_t generatedIndex = 0;
+                 generatedIndex < generatedBodies.count &&
+                 generatedIndex < generatedBodies.bodyIds.size();
+                 ++generatedIndex) {
+                const auto generatedBodyId =
+                    generatedBodies.bodyIds[generatedIndex];
+                if (generatedBodyId == INVALID_BODY_ID ||
+                    generatedBodyId == nativeBodyId ||
+                    desiredPairCount >= desiredPairs.size()) {
+                    continue;
+                }
+                desiredPairs[desiredPairCount++] = {
+                    .bodyA = nativeBodyId,
+                    .bodyB = generatedBodyId,
+                    .ownerGroup = 0,
+                };
+            }
+        }
+
+        const auto result = _nativeMeleePairLeases.reconcile(
+            world,
+            desiredPairs.data(),
+            desiredPairCount);
+        _nativeMeleePairFilterReadyAtomic.store(
+            result.filterAvailable,
+            std::memory_order_release);
+        _nativeMeleeSuppressedPairCountAtomic.store(
+            result.activePairCount,
+            std::memory_order_release);
+        _nativeMeleePairWorld = world;
+        _nativeMeleePairNativePublicationVersion = nativePublicationVersion;
+        _nativeMeleePairWeaponPublicationVersion = weaponPublicationEnd;
+    }
+
     void WeaponCollision::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
+        reconcileNativeMeleeCollisionIsolation(world);
         const auto publishedGeneration = getCurrentWeaponGenerationKey();
         if (!world || publishedGeneration == 0) {
             return;

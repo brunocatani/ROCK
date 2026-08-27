@@ -39,7 +39,6 @@ namespace rock::native_melee_suppression
     enum class NativeMeleeSuppressionAction
     {
         CallNative,
-        ReturnUnhandled,
         ReturnHandled
     };
 
@@ -65,13 +64,8 @@ namespace rock::native_melee_suppression
 
     struct NativeMeleePolicyInput
     {
-        bool rockEnabled = false;
-        bool suppressionEnabled = false;
-        bool fullSuppression = true;
-        bool suppressWeaponSwing = true;
-        bool suppressHitFrame = true;
+        bool suppressionActive = false;
         bool actorIsPlayer = false;
-        bool physicalSwingActive = false;
     };
 
     struct NativeMeleePolicyDecision
@@ -82,9 +76,7 @@ namespace rock::native_melee_suppression
 
     struct NativeMeleeImpactPolicyInput
     {
-        bool rockEnabled = false;
-        bool suppressionEnabled = false;
-        bool fullSuppression = true;
+        bool suppressionActive = false;
         bool actorIsPlayer = false;
     };
 
@@ -96,9 +88,7 @@ namespace rock::native_melee_suppression
 
     struct NativeMeleeInputGatePolicyInput
     {
-        bool rockEnabled = false;
-        bool suppressionEnabled = false;
-        bool fullSuppression = true;
+        bool suppressionActive = false;
         NativeMeleeInputEvent inputEvent = NativeMeleeInputEvent::Unknown;
     };
 
@@ -111,14 +101,12 @@ namespace rock::native_melee_suppression
     struct NativeMeleeRuntimeSettingPolicyInput
     {
         bool hooksInstalled = false;
-        bool rockEnabled = false;
         bool suppressionEnabled = false;
-        bool fullSuppression = true;
     };
 
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeRuntimeSettings(const NativeMeleeRuntimeSettingPolicyInput& input) noexcept
     {
-        return input.hooksInstalled && input.rockEnabled && input.suppressionEnabled && input.fullSuppression;
+        return input.hooksInstalled && input.suppressionEnabled;
     }
 
     [[nodiscard]] constexpr bool shouldRestoreNativeMeleeRuntimeSettings(
@@ -127,18 +115,9 @@ namespace rock::native_melee_suppression
         return previouslyApplied && !shouldSuppressNativeMeleeRuntimeSettings(input);
     }
 
-    inline bool isPhysicalSwingLeaseActive(std::uint64_t currentFrame, std::uint64_t expiresAtFrame)
-    {
-        return expiresAtFrame != 0 && currentFrame <= expiresAtFrame;
-    }
-
     inline NativeMeleePolicyDecision evaluateNativeMeleeSuppression(NativeMeleeEvent event, const NativeMeleePolicyInput& input)
     {
-        if (!input.rockEnabled) {
-            return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "rock-disabled" };
-        }
-
-        if (!input.suppressionEnabled) {
+        if (!input.suppressionActive) {
             return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "suppression-disabled" };
         }
 
@@ -148,21 +127,10 @@ namespace rock::native_melee_suppression
 
         switch (event) {
         case NativeMeleeEvent::WeaponSwing:
-            if (!input.suppressWeaponSwing) {
-                return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "weapon-swing-pass-through" };
-            }
-            return { .action = NativeMeleeSuppressionAction::ReturnHandled,
-                .reason = input.fullSuppression ? "player-weapon-swing-full-suppressed" : "player-weapon-swing-suppressed" };
+            return { .action = NativeMeleeSuppressionAction::ReturnHandled, .reason = "player-weapon-swing-suppressed" };
 
         case NativeMeleeEvent::HitFrame:
-            if (!input.suppressHitFrame) {
-                return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "hitframe-pass-through" };
-            }
-            if (input.physicalSwingActive && !input.fullSuppression) {
-                return { .action = NativeMeleeSuppressionAction::ReturnHandled, .reason = "physical-swing-handled-hitframe" };
-            }
-            return { .action = NativeMeleeSuppressionAction::ReturnHandled,
-                .reason = input.fullSuppression ? "player-hitframe-full-suppressed" : "player-hitframe-suppressed" };
+            return { .action = NativeMeleeSuppressionAction::ReturnHandled, .reason = "player-hitframe-suppressed" };
         }
 
         return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "unknown-event" };
@@ -170,16 +138,8 @@ namespace rock::native_melee_suppression
 
     inline NativeMeleeInputGatePolicyDecision evaluateNativeMeleeInputGate(const NativeMeleeInputGatePolicyInput& input)
     {
-        if (!input.rockEnabled) {
-            return { .action = NativeMeleeInputGateAction::CallNative, .reason = "rock-disabled" };
-        }
-
-        if (!input.suppressionEnabled) {
+        if (!input.suppressionActive) {
             return { .action = NativeMeleeInputGateAction::CallNative, .reason = "suppression-disabled" };
-        }
-
-        if (!input.fullSuppression) {
-            return { .action = NativeMeleeInputGateAction::CallNative, .reason = "partial-suppression" };
         }
 
         if (input.inputEvent != NativeMeleeInputEvent::RightStick) {
@@ -191,11 +151,7 @@ namespace rock::native_melee_suppression
 
     inline NativeMeleeImpactPolicyDecision evaluateNativeMeleeImpactSuppression(const NativeMeleeImpactPolicyInput& input)
     {
-        if (!input.rockEnabled) {
-            return { .action = NativeMeleeImpactAction::CallNative, .reason = "rock-disabled" };
-        }
-
-        if (!input.suppressionEnabled) {
+        if (!input.suppressionActive) {
             return { .action = NativeMeleeImpactAction::CallNative, .reason = "suppression-disabled" };
         }
 
@@ -203,10 +159,6 @@ namespace rock::native_melee_suppression
             return { .action = NativeMeleeImpactAction::CallNative, .reason = "non-player" };
         }
 
-        if (!input.fullSuppression) {
-            return { .action = NativeMeleeImpactAction::CallNative, .reason = "partial-suppression" };
-        }
-
-        return { .action = NativeMeleeImpactAction::Suppress, .reason = "player-vr-melee-impact-full-suppressed" };
+        return { .action = NativeMeleeImpactAction::Suppress, .reason = "player-vr-melee-impact-suppressed" };
     }
 }

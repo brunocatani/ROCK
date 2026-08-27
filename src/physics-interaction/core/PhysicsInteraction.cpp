@@ -2289,6 +2289,18 @@ namespace rock
                 }
             }
             _weaponCollision.update(hknp, weaponNode, frame.deltaSeconds, runtime.weaponDrawn);
+            const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
+            const bool realMeleeWeaponEquipped =
+                weaponClassification.hasEquippedWeapon &&
+                weaponClassification.classificationResolved &&
+                weaponClassification.sizeClass == WeaponSizeClass::Melee;
+            input_remap_runtime::setRealMeleeWeaponEquipped(realMeleeWeaponEquipped);
+            _weaponCollision.updateNativeMeleeCollisionIsolation(
+                hknp,
+                weaponNode,
+                runtime.weaponDrawn &&
+                    realMeleeWeaponEquipped &&
+                    !isNativeMeleeSuppressionActive());
         }
 
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
@@ -5782,6 +5794,7 @@ namespace rock
     {
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
         debug::ShutdownShapePipeline();
+        input_remap_runtime::setRealMeleeWeaponEquipped(false);
         equipped_weapon_handling_runtime::reset();
         _equippedWeaponHandlingSettings = {};
         _fixedFiringHandIsLeft = false;
@@ -5893,7 +5906,6 @@ namespace rock
         _completedPhysicsSolveSequence.store(0, std::memory_order_release);
         _equippedWeaponDropMomentumHandoffs = {};
         markGeneratedBodiesInvalidated();
-        clearNativeMeleePhysicalSwingLeases();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();
         clearLeftWeaponContact();

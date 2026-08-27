@@ -174,21 +174,17 @@ namespace rock
             return candidate;
         }
 
-        [[nodiscard]] bool sameKey(
-            const HavokPairCollisionLeaseSet::DesiredPair& lhs,
-            const HavokPairCollisionLeaseSet::DesiredPair& rhs) noexcept
-        {
-            return lhs.bodyA == rhs.bodyA && lhs.bodyB == rhs.bodyB;
-        }
     }
 
-    bool HavokPairCollisionLeaseSet::filterIdentityMatches(
+    template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
+    bool BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::filterIdentityMatches(
         RE::hknpWorld* world) const noexcept
     {
         return _world == world && filterOwnerMatches(_filter, world);
     }
 
-    bool HavokPairCollisionLeaseSet::resolveFilter(
+    template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
+    bool BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::resolveFilter(
         RE::hknpWorld* world) noexcept
     {
         if (filterIdentityMatches(world)) {
@@ -199,8 +195,9 @@ namespace rock
         return _filter != nullptr;
     }
 
-    HavokPairCollisionLeaseSet::ReconcileResult
-    HavokPairCollisionLeaseSet::reconcile(
+    template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
+    typename BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::ReconcileResult
+    BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::reconcile(
         RE::hknpWorld* world,
         const DesiredPair* desiredPairs,
         const std::size_t desiredPairCount) noexcept
@@ -235,22 +232,6 @@ namespace rock
             if (normalized.bodyB < normalized.bodyA) {
                 std::swap(normalized.bodyA, normalized.bodyB);
             }
-            bool duplicate = false;
-            for (std::size_t prior = 0; prior < acceptedDesiredCount; ++prior) {
-                const DesiredPair priorKey{
-                    desired[prior].bodyA,
-                    desired[prior].bodyB,
-                    desired[prior].ownerGroup
-                };
-                if (sameKey(normalized, priorKey)) {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if (duplicate) {
-                continue;
-            }
-
             const auto snapshotA = havok_runtime::snapshotBody(
                 world,
                 RE::hknpBodyId{ normalized.bodyA });
@@ -273,6 +254,46 @@ namespace rock
             };
         }
 
+        const auto identityLess = [](const PairIdentity& left,
+                                      const PairIdentity& right) {
+            if (left.bodyA != right.bodyA) {
+                return left.bodyA < right.bodyA;
+            }
+            if (left.bodyB != right.bodyB) {
+                return left.bodyB < right.bodyB;
+            }
+            if (left.collisionObjectA != right.collisionObjectA) {
+                return left.collisionObjectA < right.collisionObjectA;
+            }
+            return left.collisionObjectB < right.collisionObjectB;
+        };
+        const auto sameIdentity = [](const PairIdentity& left,
+                                      const PairIdentity& right) {
+            return left.bodyA == right.bodyA &&
+                   left.bodyB == right.bodyB &&
+                   left.collisionObjectA == right.collisionObjectA &&
+                   left.collisionObjectB == right.collisionObjectB;
+        };
+        std::sort(
+            desired.begin(),
+            desired.begin() + acceptedDesiredCount,
+            identityLess);
+        std::size_t uniqueDesiredCount = 0;
+        for (std::size_t index = 0;
+             index < acceptedDesiredCount;
+             ++index) {
+            if (uniqueDesiredCount != 0 &&
+                desired[uniqueDesiredCount - 1].bodyA == desired[index].bodyA &&
+                desired[uniqueDesiredCount - 1].bodyB == desired[index].bodyB) {
+                desired[uniqueDesiredCount - 1].ownerGroup = (std::min)(
+                    desired[uniqueDesiredCount - 1].ownerGroup,
+                    desired[index].ownerGroup);
+                continue;
+            }
+            desired[uniqueDesiredCount++] = desired[index];
+        }
+        acceptedDesiredCount = uniqueDesiredCount;
+
         using PairMutation_t = std::uint32_t (*)(
             void*,
             RE::hknpWorld*,
@@ -285,56 +306,59 @@ namespace rock
             REL::Offset(offsets::kFunc_PairCollisionFilterEnablePair)
         };
 
-        for (auto& active : _activePairs) {
-            if (!active.valid) {
-                continue;
-            }
-            const bool retained = std::any_of(
+        std::sort(
+            _activePairs.begin(),
+            _activePairs.begin() + _activePairCount,
+            identityLess);
+        const auto previousActivePairCount = _activePairCount;
+        std::size_t retainedPairCount = 0;
+        for (std::size_t activeIndex = 0;
+             activeIndex < previousActivePairCount;
+             ++activeIndex) {
+            const auto& active = _activePairs[activeIndex];
+            const auto desiredIt = std::lower_bound(
                 desired.begin(),
                 desired.begin() + acceptedDesiredCount,
-                [&](const PairIdentity& candidate) {
-                    return candidate.valid &&
-                           candidate.bodyA == active.bodyA &&
-                           candidate.bodyB == active.bodyB &&
-                           candidate.collisionObjectA ==
-                               active.collisionObjectA &&
-                           candidate.collisionObjectB ==
-                               active.collisionObjectB;
-                });
+                active,
+                identityLess);
+            const bool retained = desiredIt !=
+                    desired.begin() + acceptedDesiredCount &&
+                sameIdentity(*desiredIt, active);
             if (!retained) {
                 (void)enablePair(
                     _filter,
                     world,
                     active.bodyA,
                     active.bodyB);
-                active = {};
+                continue;
             }
+            auto retainedPair = active;
+            retainedPair.ownerGroup = desiredIt->ownerGroup;
+            _activePairs[retainedPairCount++] = retainedPair;
         }
+        for (std::size_t index = retainedPairCount;
+             index < previousActivePairCount;
+             ++index) {
+            _activePairs[index] = {};
+        }
+        _activePairCount = retainedPairCount;
 
         for (std::size_t desiredIndex = 0;
              desiredIndex < acceptedDesiredCount;
              ++desiredIndex) {
             const auto& candidate = desired[desiredIndex];
-            const bool alreadyActive = std::any_of(
+            const auto activeIt = std::lower_bound(
                 _activePairs.begin(),
-                _activePairs.end(),
-                [&](const PairIdentity& active) {
-                    return active.valid &&
-                           active.bodyA == candidate.bodyA &&
-                           active.bodyB == candidate.bodyB &&
-                           active.collisionObjectA ==
-                               candidate.collisionObjectA &&
-                           active.collisionObjectB ==
-                               candidate.collisionObjectB;
-                });
+                _activePairs.begin() + retainedPairCount,
+                candidate,
+                identityLess);
+            const bool alreadyActive = activeIt !=
+                    _activePairs.begin() + retainedPairCount &&
+                sameIdentity(*activeIt, candidate);
             if (alreadyActive) {
                 continue;
             }
-            auto freeIt = std::find_if(
-                _activePairs.begin(),
-                _activePairs.end(),
-                [](const PairIdentity& entry) { return !entry.valid; });
-            if (freeIt == _activePairs.end()) {
+            if (_activePairCount >= _activePairs.size()) {
                 break;
             }
             const std::uint32_t referenceCount = disablePair(
@@ -345,13 +369,16 @@ namespace rock
             if (referenceCount == 0) {
                 continue;
             }
-            *freeIt = candidate;
+            _activePairs[_activePairCount++] = candidate;
         }
 
-        for (const auto& active : _activePairs) {
-            if (!active.valid) {
-                continue;
-            }
+        std::sort(
+            _activePairs.begin(),
+            _activePairs.begin() + _activePairCount,
+            identityLess);
+
+        for (std::size_t index = 0; index < _activePairCount; ++index) {
+            const auto& active = _activePairs[index];
             ++result.activePairCount;
             if (active.ownerGroup < result.activePairsByOwnerGroup.size()) {
                 ++result.activePairsByOwnerGroup[active.ownerGroup];
@@ -360,10 +387,15 @@ namespace rock
         return result;
     }
 
-    void HavokPairCollisionLeaseSet::abandonWorld() noexcept
+    template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
+    void BasicHavokPairCollisionLeaseSet<MaximumPairs, OwnerGroupCount>::abandonWorld() noexcept
     {
         _activePairs = {};
+        _activePairCount = 0;
         _filter = nullptr;
         _world = nullptr;
     }
+
+    template class BasicHavokPairCollisionLeaseSet<34, 2>;
+    template class BasicHavokPairCollisionLeaseSet<1600, 1>;
 }

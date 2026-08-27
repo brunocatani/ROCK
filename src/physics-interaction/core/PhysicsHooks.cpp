@@ -51,17 +51,9 @@ namespace rock
 
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
         constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
-        /*
-         * Native melee suppression can be queried from animation-event hooks, so
-         * its physical-swing bridge needs a tiny shared clock. This is advanced
-         * by ROCK update frames instead of wall milliseconds: debugger stalls,
-         * menus, loading, and frame hitches must not expire a gameplay lease
-         * behind the simulation.
-         */
-        static std::atomic<std::uint64_t> g_nativeMeleeFrameClock{ 1 };
-        static std::array<std::atomic<std::uint64_t>, 2> g_nativeMeleePhysicalSwingExpiresAtFrame{};
+        static std::atomic<std::uint64_t> g_nativeRuntimeSettingFrameClock{ 1 };
         static std::atomic<bool> g_nativeMeleeSuppressionHooksInstalled{ false };
-        constexpr std::uint64_t kNativeMeleePhysicalSwingLeaseFrames = 24;
+        static std::atomic<bool> g_nativeMeleeSuppressionActive{ false };
         constexpr std::uint64_t kNativeMeleeRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::uint64_t kNativeGrabHapticRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::array<std::uint8_t, 14> kVrMeleeImpactExpectedPrefix{
@@ -411,17 +403,15 @@ namespace rock
         native_melee_suppression::NativeMeleeInputGatePolicyInput makeNativeMeleeInputGatePolicyInput(
             native_melee_suppression::NativeMeleeInputEvent event)
         {
-            return native_melee_suppression::NativeMeleeInputGatePolicyInput{ .rockEnabled = true,
-                .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
-                .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
+            return native_melee_suppression::NativeMeleeInputGatePolicyInput{
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
                 .inputEvent = event };
         }
 
         native_melee_suppression::NativeMeleeImpactPolicyInput makeNativeMeleeImpactPolicyInput(const RE::Actor* actor)
         {
-            return native_melee_suppression::NativeMeleeImpactPolicyInput{ .rockEnabled = true,
-                .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
-                .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
+            return native_melee_suppression::NativeMeleeImpactPolicyInput{
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
                 .actorIsPlayer = isPlayerActor(actor) };
         }
 
@@ -468,7 +458,7 @@ namespace rock
                     return false;
                 }
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || g_rockConfig.rockNativeMeleeDebugLogging || reapplyCount % 30 == 0) {
+                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Combat,
                         "Set FO4VR native VR melee {} setting '{}' to {} (original={} reapplyCount={})",
                         label,
@@ -519,7 +509,7 @@ namespace rock
                     return false;
                 }
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || g_rockConfig.rockNativeMeleeDebugLogging || reapplyCount % 30 == 0) {
+                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Combat,
                         "Raised FO4VR native VR melee {} setting '{}' to {:.1f} (original={:.3f} reapplyCount={})",
                         label,
@@ -814,50 +804,11 @@ namespace rock
             return g_nativeGrabHapticRolloverState.applied || g_nativeGrabHapticHoverIntensityState.applied || g_nativeGrabHapticHoverDurationState.applied;
         }
 
-        bool isLeftSideString(const RE::BSFixedString* side)
+        native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(const RE::Actor* actor)
         {
-            if (!side) {
-                return false;
-            }
-
-            const char* text = side->c_str();
-            if (!text) {
-                return false;
-            }
-
-            return std::string_view(text) == "Left";
-        }
-
-        bool isAnyNativeMeleePhysicalSwingActive()
-        {
-            const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-            return native_melee_suppression::isPhysicalSwingLeaseActive(currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[0].load(std::memory_order_acquire)) ||
-                   native_melee_suppression::isPhysicalSwingLeaseActive(currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[1].load(std::memory_order_acquire));
-        }
-
-        bool isNativeMeleePhysicalSwingActiveForSide(const RE::BSFixedString* side)
-        {
-            if (!side) {
-                return isAnyNativeMeleePhysicalSwingActive();
-            }
-
-            const bool isLeft = isLeftSideString(side);
-            const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-            return native_melee_suppression::isPhysicalSwingLeaseActive(
-                currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[isLeft ? 1 : 0].load(std::memory_order_acquire));
-        }
-
-        native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(
-            const native_melee_suppression::NativeMeleeEvent event, const RE::Actor* actor, const RE::BSFixedString* side)
-        {
-            return native_melee_suppression::NativeMeleePolicyInput{ .rockEnabled = true,
-                .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
-                .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
-                .suppressWeaponSwing = g_rockConfig.rockNativeMeleeSuppressWeaponSwing,
-                .suppressHitFrame = g_rockConfig.rockNativeMeleeSuppressHitFrame,
-                .actorIsPlayer = isPlayerActor(actor),
-                .physicalSwingActive = event == native_melee_suppression::NativeMeleeEvent::HitFrame ? isNativeMeleePhysicalSwingActiveForSide(side)
-                                                                                                     : isAnyNativeMeleePhysicalSwingActive() };
+            return native_melee_suppression::NativeMeleePolicyInput{
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
+                .actorIsPlayer = isPlayerActor(actor) };
         }
 
         bool applyNativeMeleeDecision(const native_melee_suppression::NativeMeleeEvent event,
@@ -867,19 +818,17 @@ namespace rock
             using native_melee_suppression::NativeMeleeEvent;
             using native_melee_suppression::NativeMeleeSuppressionAction;
 
-            if (g_rockConfig.rockNativeMeleeDebugLogging || decision.action != NativeMeleeSuppressionAction::CallNative) {
+            if (decision.action != NativeMeleeSuppressionAction::CallNative) {
                 static std::atomic<std::uint32_t> weaponLogCounter{ 0 };
                 static std::atomic<std::uint32_t> hitFrameLogCounter{ 0 };
                 auto& counter = event == NativeMeleeEvent::WeaponSwing ? weaponLogCounter : hitFrameLogCounter;
                 const auto count = counter.fetch_add(1, std::memory_order_relaxed) + 1;
 
-                if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
-                    ROCK_LOG_DEBUG(Combat, "Native melee {} decision={} reason={} player={} physicalSwing={} count={}",
+                if (count == 1 || count % 180 == 0) {
+                    ROCK_LOG_DEBUG(Combat, "Native melee {} decision={} reason={} player={} count={}",
                         event == NativeMeleeEvent::WeaponSwing ? "WeaponSwing" : "HitFrame",
-                        decision.action == NativeMeleeSuppressionAction::CallNative      ? "native"
-                            : decision.action == NativeMeleeSuppressionAction::ReturnHandled ? "handled"
-                                                                                              : "unhandled",
-                        decision.reason, input.actorIsPlayer ? "yes" : "no", input.physicalSwingActive ? "yes" : "no", count);
+                        decision.action == NativeMeleeSuppressionAction::CallNative ? "native" : "handled",
+                        decision.reason, input.actorIsPlayer ? "yes" : "no", count);
                 }
             }
 
@@ -888,8 +837,6 @@ namespace rock
                 return true;
             case native_melee_suppression::NativeMeleeSuppressionAction::ReturnHandled:
                 return true;
-            case native_melee_suppression::NativeMeleeSuppressionAction::ReturnUnhandled:
-                return false;
             }
 
             return true;
@@ -900,16 +847,15 @@ namespace rock
         {
             using native_melee_suppression::NativeMeleeImpactAction;
 
-            if (g_rockConfig.rockNativeMeleeDebugLogging || decision.action != NativeMeleeImpactAction::CallNative) {
+            if (decision.action != NativeMeleeImpactAction::CallNative) {
                 static std::atomic<std::uint32_t> impactLogCounter{ 0 };
                 const auto count = impactLogCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
+                if (count == 1 || count % 180 == 0) {
                     ROCK_LOG_DEBUG(Combat,
-                        "Native melee VRMeleeImpact decision={} reason={} player={} full={} count={}",
+                        "Native melee VRMeleeImpact decision={} reason={} player={} count={}",
                         decision.action == NativeMeleeImpactAction::CallNative ? "native" : "suppressed",
                         decision.reason,
                         input.actorIsPlayer ? "yes" : "no",
-                        input.fullSuppression ? "yes" : "no",
                         count);
                 }
             }
@@ -919,7 +865,7 @@ namespace rock
 
         bool hookedWeaponSwingHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
         {
-            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::WeaponSwing, actor, side);
+            const auto input = makeNativeMeleePolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
 
             const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
@@ -929,7 +875,7 @@ namespace rock
 
         bool hookedHitFrameHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
         {
-            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::HitFrame, actor, side);
+            const auto input = makeNativeMeleePolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::HitFrame, input);
 
             const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
@@ -946,7 +892,7 @@ namespace rock
              * weapon-swing side effects, so full native suppression must stop it
              * at this player-only boundary without changing NPC swing behavior.
              */
-            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::WeaponSwing, actor, nullptr);
+            const auto input = makeNativeMeleePolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
             const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
 
@@ -966,10 +912,9 @@ namespace rock
              * FO4VR registers this callback while attaching native VR melee
              * collision to the first-person weapon nodes. It owns the native
              * contact-to-hit path, including target filtering, action dispatch,
-             * impulse direction, and melee cooldown writes. Full ROCK native
-             * suppression skips the player callback here so SCISSORS can own the
-             * replacement point-collision damage path without a duplicate native
-             * impact firing from the same swing.
+             * impulse direction, and melee cooldown writes. When complete ROCK
+             * suppression is active, skip the player callback here so no native
+             * impact or damage side effect survives the master switch.
              */
             const auto input = makeNativeMeleeImpactPolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeImpactSuppression(input);
@@ -1010,10 +955,10 @@ namespace rock
             const auto policyInput = makeNativeMeleeInputGatePolicyInput(inputEvent);
             const auto decision = native_melee_suppression::evaluateNativeMeleeInputGate(policyInput);
 
-            if (g_rockConfig.rockNativeMeleeDebugLogging || decision.action != native_melee_suppression::NativeMeleeInputGateAction::CallNative) {
+            if (decision.action != native_melee_suppression::NativeMeleeInputGateAction::CallNative) {
                 static std::atomic<std::uint32_t> inputGateLogCounter{ 0 };
                 const auto count = inputGateLogCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
+                if (count == 1 || count % 180 == 0) {
                     ROCK_LOG_DEBUG(Combat,
                         "Native melee AttackBlock input gate event={} decision={} reason={} count={}",
                         nativeMeleeInputEventName(inputEvent),
@@ -1126,29 +1071,14 @@ namespace rock
         return swingValid && hitFrameValid && attackBlockValid && playerSwingCallbackValid && vrMeleeImpactValid;
     }
 
-    void setNativeMeleePhysicalSwingActive(bool isLeft, bool active)
+    void advanceNativeRuntimeSettingFrameClock()
     {
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-        const auto expiresAtFrame = active ? (currentFrame + kNativeMeleePhysicalSwingLeaseFrames) : 0;
-        g_nativeMeleePhysicalSwingExpiresAtFrame[isLeft ? 1 : 0].store(expiresAtFrame, std::memory_order_release);
+        g_nativeRuntimeSettingFrameClock.fetch_add(1, std::memory_order_acq_rel);
     }
 
-    bool isNativeMeleePhysicalSwingActive(bool isLeft)
+    bool isNativeMeleeSuppressionActive()
     {
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-        return native_melee_suppression::isPhysicalSwingLeaseActive(
-            currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[isLeft ? 1 : 0].load(std::memory_order_acquire));
-    }
-
-    void advanceNativeMeleeFrameClock()
-    {
-        g_nativeMeleeFrameClock.fetch_add(1, std::memory_order_acq_rel);
-    }
-
-    void clearNativeMeleePhysicalSwingLeases()
-    {
-        g_nativeMeleePhysicalSwingExpiresAtFrame[0].store(0, std::memory_order_release);
-        g_nativeMeleePhysicalSwingExpiresAtFrame[1].store(0, std::memory_order_release);
+        return g_nativeMeleeSuppressionActive.load(std::memory_order_acquire);
     }
 
     void enforceNativeMeleeRuntimeSuppression(bool forceCheck)
@@ -1163,19 +1093,18 @@ namespace rock
          */
         const native_melee_suppression::NativeMeleeRuntimeSettingPolicyInput input{
             .hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire),
-            .rockEnabled = true,
             .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
-            .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
         };
         const bool shouldSuppress = native_melee_suppression::shouldSuppressNativeMeleeRuntimeSettings(input);
         const bool shouldRestore = native_melee_suppression::shouldRestoreNativeMeleeRuntimeSettings(nativeMeleeRuntimeSuppressionApplied(), input);
         const bool requestChanged = g_nativeMeleeRuntimeSuppressionRequested != shouldSuppress;
         g_nativeMeleeRuntimeSuppressionRequested = shouldSuppress;
+        g_nativeMeleeSuppressionActive.store(shouldSuppress, std::memory_order_release);
         if (!shouldSuppress && !shouldRestore) {
             return;
         }
 
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
+        const auto currentFrame = g_nativeRuntimeSettingFrameClock.load(std::memory_order_acquire);
         const auto nextCheckFrame = g_nativeMeleeRuntimeSettingNextCheckFrame.load(std::memory_order_acquire);
         if (!forceCheck && !requestChanged && currentFrame < nextCheckFrame) {
             return;
@@ -1226,7 +1155,7 @@ namespace rock
             return;
         }
 
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
+        const auto currentFrame = g_nativeRuntimeSettingFrameClock.load(std::memory_order_acquire);
         const auto nextCheckFrame = g_nativeGrabHapticRuntimeSettingNextCheckFrame.load(std::memory_order_acquire);
         if (!forceCheck && currentFrame < nextCheckFrame) {
             return;
@@ -1653,6 +1582,7 @@ namespace rock
             }
 
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
+            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return rollbackOk;
         };
 
@@ -1672,6 +1602,7 @@ namespace rock
         if (!validateNativeMeleeSuppressionHookTargets()) {
             ROCK_LOG_ERROR(Init, "Native melee suppression hook validation failed; install deferred");
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
+            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
@@ -1716,15 +1647,15 @@ namespace rock
                 vrMeleeImpactInstalled ? "yes" : "no");
             rollbackNativeMeleeSuppressionHooks();
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
+            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
         g_nativeMeleeSuppressionHooksInstalled.store(true, std::memory_order_release);
-        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} playerSwingCallback={} vrMeleeImpact={} enabled={} full={} suppressSwing={} suppressHitFrame={}",
+        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} playerSwingCallback={} vrMeleeImpact={} requested={}",
             weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no", attackBlockInstalled ? "yes" : "no",
-            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressionEnabled ? "yes" : "no",
-            g_rockConfig.rockNativeMeleeFullSuppression ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressWeaponSwing ? "yes" : "no",
-            g_rockConfig.rockNativeMeleeSuppressHitFrame ? "yes" : "no");
+            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no",
+            g_rockConfig.rockNativeMeleeSuppressionEnabled ? "yes" : "no");
         return weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
     }
 

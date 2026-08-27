@@ -117,7 +117,26 @@ int main()
 
     auto meleeThrow = base;
     meleeThrow.weaponDrawn = true;
-    ok &= expectTrue("WandGrip suppresses native melee throw even with weapon drawn", shouldSuppressNativeMeleeThrowAction(meleeThrow));
+    ok &= expectTrue("non-melee WandGrip suppresses native melee throw even with weapon drawn", shouldSuppressNativeMeleeThrowAction(meleeThrow));
+
+    auto nativeHolsteredMelee = base;
+    nativeHolsteredMelee.realMeleeWeaponEquipped = true;
+    ok &= expectFalse("native-mode real melee keeps holstered grip ready handling", shouldSuppressNativeGripReadyAction(nativeHolsteredMelee));
+    ok &= expectFalse("native-mode real melee keeps holstered trigger handling", shouldSuppressNativeTriggerAction(nativeHolsteredMelee));
+
+    auto nativeDrawnMelee = drawnGrip;
+    nativeDrawnMelee.realMeleeWeaponEquipped = true;
+    ok &= expectFalse("native-mode real melee keeps drawn grip reload handling", shouldSuppressNativeGripReloadAction(nativeDrawnMelee));
+    ok &= expectFalse("native-mode real melee keeps melee throw handling", shouldSuppressNativeMeleeThrowAction(nativeDrawnMelee));
+
+    auto suppressedHolsteredMelee = nativeHolsteredMelee;
+    suppressedHolsteredMelee.nativeMeleeSuppressionActive = true;
+    ok &= expectTrue("suppressed real melee claims holstered grip ready handling", shouldSuppressNativeGripReadyAction(suppressedHolsteredMelee));
+
+    auto suppressedDrawnMelee = nativeDrawnMelee;
+    suppressedDrawnMelee.nativeMeleeSuppressionActive = true;
+    ok &= expectTrue("suppressed real melee claims drawn grip reload handling", shouldSuppressNativeGripReloadAction(suppressedDrawnMelee));
+    ok &= expectTrue("suppressed real melee claims melee throw handling", shouldSuppressNativeMeleeThrowAction(suppressedDrawnMelee));
 
     auto menuFavorites = favorites;
     menuFavorites.menuInputActive = true;

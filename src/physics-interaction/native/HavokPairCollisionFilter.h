@@ -16,10 +16,13 @@ namespace rock
      * hknpPairCollisionFilter entries. The service never retains transient
      * body pointers; collision-object identities only guard body-ID reuse.
      */
-    class HavokPairCollisionLeaseSet
+    template <std::size_t MaximumPairs, std::size_t OwnerGroupCount>
+    class BasicHavokPairCollisionLeaseSet
     {
     public:
-        static constexpr std::size_t kMaximumPairs = 34;
+        static_assert(MaximumPairs > 0);
+        static_assert(OwnerGroupCount > 0);
+        static constexpr std::size_t kMaximumPairs = MaximumPairs;
 
         struct DesiredPair
         {
@@ -32,7 +35,7 @@ namespace rock
         {
             bool filterAvailable{ false };
             std::uint32_t activePairCount{ 0 };
-            std::array<std::uint32_t, 2> activePairsByOwnerGroup{};
+            std::array<std::uint32_t, OwnerGroupCount> activePairsByOwnerGroup{};
         };
 
         [[nodiscard]] ReconcileResult reconcile(
@@ -61,5 +64,11 @@ namespace rock
         RE::hknpWorld* _world{ nullptr };
         void* _filter{ nullptr };
         std::array<PairIdentity, kMaximumPairs> _activePairs{};
+        std::size_t _activePairCount{ 0 };
     };
+
+    using HavokPairCollisionLeaseSet =
+        BasicHavokPairCollisionLeaseSet<34, 2>;
+    using NativeMeleePairCollisionLeaseSet =
+        BasicHavokPairCollisionLeaseSet<1600, 1>;
 }

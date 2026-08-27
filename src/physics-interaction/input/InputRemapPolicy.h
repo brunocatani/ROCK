@@ -49,6 +49,8 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
+        bool realMeleeWeaponEquipped{ false };
+        bool nativeMeleeSuppressionActive{ false };
         bool pipboyHandEngaged{ false };
         bool takeEquipHandEngaged{ false };
         bool takeEquipTargetEligible{ false };
@@ -175,18 +177,27 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
+        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
+            return false;
+        }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
                (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
+        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
+            return false;
+        }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
                (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)
     {
+        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
+            return false;
+        }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
                input.weaponDrawn && input.primaryHandEvent;
     }
@@ -253,6 +264,9 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
     {
+        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
+            return false;
+        }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
     }
 

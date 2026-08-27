@@ -4,6 +4,7 @@
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
+#include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
@@ -153,11 +154,6 @@ namespace rock::input_remap_runtime
         constexpr std::ptrdiff_t kNativeSecondaryWandDeviceIdOffset = 0x8D0;
         constexpr int kNativeReloadActionId = 0x6C;
         constexpr std::uint32_t kNativeActionPriorityQueue = 2;
-        constexpr std::uintptr_t kMeleeThrowFallbackDrawPressPatchSite = 0x0FC8C88;
-        constexpr std::uintptr_t kMeleeThrowFallbackDrawReleasePatchSite = 0x0FC8E7E;
-        constexpr std::uint8_t kConditionalShortJumpGreaterEqual = 0x7D;
-        constexpr std::uint8_t kUnconditionalShortJump = 0xEB;
-        constexpr std::uint8_t kMeleeThrowFallbackBranchDisplacement = 0x0D;
         constexpr std::string_view kNativeEventActivate{ "Activate" };
         constexpr std::string_view kNativeEventWandAccept{ "WandAccept" };
         constexpr std::string_view kNativeEventWandGrip{ "WandGrip" };
@@ -200,6 +196,7 @@ namespace rock::input_remap_runtime
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
+        std::atomic<bool> s_realMeleeWeaponEquipped{ false };
         std::array<std::atomic<bool>, 2> s_handHeldWeapon{};
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
@@ -223,7 +220,6 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_menuOpenEventHookInstalled{ false };
         std::atomic<bool> s_nativeVatsVansDecisionHookInstalled{ false };
         std::atomic<bool> s_nativeVatsVansDecisionHookInstallFailed{ false };
-        std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
         std::atomic<bool> s_pipboyMenuOpen{ false };
@@ -997,6 +993,8 @@ namespace rock::input_remap_runtime
                 .primaryHandEvent = false,
                 .equippedWeaponFiringGripInputActive = s_equippedWeaponFiringGripInputActive.load(std::memory_order_acquire),
                 .equippedWeaponPrimaryDetached = s_equippedWeaponPrimaryDetached.load(std::memory_order_acquire),
+                .realMeleeWeaponEquipped = s_realMeleeWeaponEquipped.load(std::memory_order_acquire),
+                .nativeMeleeSuppressionActive = isNativeMeleeSuppressionActive(),
                 .eventMatched = eventMatched,
             };
         }
@@ -1986,81 +1984,6 @@ namespace rock::input_remap_runtime
             return true;
         }
 
-        bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
-        {
-            REL::Relocation<std::uintptr_t> site{ REL::Offset(siteOffset) };
-            auto* bytes = reinterpret_cast<std::uint8_t*>(site.address());
-            if (!bytes) {
-                ROCK_LOG_ERROR(Input, "{} patch failed: site is null", label);
-                return false;
-            }
-
-            if (bytes[1] != kMeleeThrowFallbackBranchDisplacement) {
-                ROCK_LOG_ERROR(Input,
-                    "{} patch validation failed at 0x{:X}: expected branch displacement 0x{:02X}, found 0x{:02X}",
-                    label,
-                    site.address(),
-                    kMeleeThrowFallbackBranchDisplacement,
-                    bytes[1]);
-                return false;
-            }
-
-            const auto desiredOpcode = suppress ? kUnconditionalShortJump : kConditionalShortJumpGreaterEqual;
-            const auto expectedCurrentOpcode = suppress ? kConditionalShortJumpGreaterEqual : kUnconditionalShortJump;
-            if (bytes[0] == desiredOpcode) {
-                return true;
-            }
-            if (bytes[0] != expectedCurrentOpcode) {
-                ROCK_LOG_ERROR(Input,
-                    "{} patch validation failed at 0x{:X}: expected opcode 0x{:02X} or 0x{:02X}, found 0x{:02X}",
-                    label,
-                    site.address(),
-                    desiredOpcode,
-                    expectedCurrentOpcode,
-                    bytes[0]);
-                return false;
-            }
-
-            DWORD oldProtect = 0;
-            if (!VirtualProtect(bytes, sizeof(std::uint8_t), kPageExecuteReadWrite, &oldProtect)) {
-                ROCK_LOG_ERROR(Input, "{} patch failed at 0x{:X}: VirtualProtect failed", label, site.address());
-                return false;
-            }
-
-            bytes[0] = desiredOpcode;
-            FlushInstructionCache(GetCurrentProcess(), bytes, sizeof(std::uint8_t));
-            VirtualProtect(bytes, sizeof(std::uint8_t), oldProtect, &oldProtect);
-
-            ROCK_LOG_INFO(Input, "{} MeleeThrow fallback draw branch at 0x{:X}", suppress ? "Patched" : "Restored", site.address());
-            return true;
-        }
-
-        bool updateMeleeThrowFallbackPatches(bool suppress)
-        {
-            const bool firstPatchOk = writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawPressPatchSite,
-                suppress,
-                "MeleeThrowHandler fallback draw press");
-            const bool secondPatchOk = writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawReleasePatchSite,
-                suppress,
-                "MeleeThrowHandler fallback draw release");
-
-            if (suppress && !(firstPatchOk && secondPatchOk)) {
-                (void)writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawPressPatchSite,
-                    false,
-                    "MeleeThrowHandler fallback draw press rollback");
-                (void)writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawReleasePatchSite,
-                    false,
-                    "MeleeThrowHandler fallback draw release rollback");
-                s_meleeThrowFallbackPatchesApplied.store(false, std::memory_order_release);
-                return false;
-            }
-
-            if (firstPatchOk && secondPatchOk) {
-                s_meleeThrowFallbackPatchesApplied.store(suppress, std::memory_order_release);
-            }
-            return firstPatchOk && secondPatchOk;
-        }
-
         bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings)
         {
             bool ready = installNativeVatsVansInputSuppressionHook();
@@ -2071,8 +1994,6 @@ namespace rock::input_remap_runtime
             }
             ready = installMeleeThrowEventSuppressionHook() && ready;
             ready = installPipboyPauseArbitrationHooks() && ready;
-
-            ready = updateMeleeThrowFallbackPatches(true) && ready;
             return ready;
         }
 
@@ -2213,6 +2134,11 @@ namespace rock::input_remap_runtime
         if (!weaponDrawn) {
             blockManualScopeInputUntilRelease();
         }
+    }
+
+    void setRealMeleeWeaponEquipped(bool equipped)
+    {
+        s_realMeleeWeaponEquipped.store(equipped, std::memory_order_release);
     }
 
     void setHandHeldWeapon(const bool isLeft, const bool heldWeapon)
