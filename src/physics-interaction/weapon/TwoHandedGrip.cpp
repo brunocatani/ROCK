@@ -2008,6 +2008,10 @@ namespace rock
                 state.lastHandWorld = resolvedHandWorld;
                 state.hasLastHandWorld = true;
 
+                const bool preserveAuthoredPhysicalRelation =
+                    !isLeft &&
+                    _authoredPrimaryFiringHandWorldActive &&
+                    _hasRightNaturalBoneInDampedDriver;
                 const bool preserveGunstockPhysicalRelation =
                     g_rockConfig.rockGunstockModeEnabled &&
                     _gunstockWeaponEligibility.eligible &&
@@ -2017,7 +2021,9 @@ namespace rock
                     (isLeft ?
                             _hasLeftNaturalBoneInDampedDriver :
                             _hasRightNaturalBoneInDampedDriver);
-                if (driverValid && !preserveGunstockPhysicalRelation) {
+                if (driverValid &&
+                    !preserveGunstockPhysicalRelation &&
+                    !preserveAuthoredPhysicalRelation) {
                     const RE::NiTransform driverToHandLocal =
                         scope_safe_hand_frame_math::captureDriverToHandLocal(driverFrame.world, resolvedHandWorld);
                     if (isUsableHandAuthorityTransform(driverToHandLocal)) {
@@ -2068,6 +2074,23 @@ namespace rock
                 firingState.currentHandWorld = physicalFiringHandWorld;
                 firingState.currentHandWorldValid = true;
                 firingState.lastHandWorld = physicalFiringHandWorld;
+                firingState.hasLastHandWorld = true;
+            }
+        } else if (_authoredPrimaryFiringHandWorldActive) {
+            // Position-only authored presentation owns the rendered right
+            // hand; every solver-frame consumer must keep seeing controller
+            // intent, so replay the frozen physical wrist frame instead of
+            // the root-flattened readback of ROCK's own output.
+            RE::NiTransform physicalHandWorld{};
+            RE::NiTransform driverWorld{};
+            if (tryResolvePhysicalHandFrame(
+                    false,
+                    physicalHandWorld,
+                    driverWorld)) {
+                auto& firingState = _scopeSafeHandFrames[1];
+                firingState.currentHandWorld = physicalHandWorld;
+                firingState.currentHandWorldValid = true;
+                firingState.lastHandWorld = physicalHandWorld;
                 firingState.hasLastHandWorld = true;
             }
         }
@@ -2788,6 +2811,9 @@ namespace rock
         _nativeScopeTransitionFinalTraceSample = 0;
         _nativeScopeTransitionFinalTracePending = false;
         _scopeHandAuthorityPublishedThisFrame = {};
+        if (_authoredPrimaryFiringHandWorldActive) {
+            clearAuthoredPrimaryFiringHandWorldAuthority();
+        }
         clearPrimaryGripFingerPose(_firingHandIsLeft);
         clearPrimaryGripWorldAuthority(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
@@ -3373,7 +3399,8 @@ namespace rock
 
     bool TwoHandedGrip::hasVisualAuthorityForHand(const bool isLeft) const
     {
-        if (_gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
+        if ((!isLeft && _authoredPrimaryFiringHandWorldActive) ||
+            _gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
             _gunstockDedicatedHandAuthorityActive[isLeft ? 0u : 1u] ||
             isHandVisualReturnActive(isLeft) ||
             partGrip(isLeft).active) {
@@ -7904,6 +7931,9 @@ namespace rock
     void TwoHandedGrip::clearAuthoredPrimaryFiringGripCanonical(
         const char* reason)
     {
+        if (_authoredPrimaryFiringHandWorldActive) {
+            clearAuthoredPrimaryFiringHandWorldAuthority();
+        }
         if (_rightFiringHandCanonicalSource !=
             RightFiringCanonicalSource::AuthoredAnimation) {
             return;
@@ -7922,15 +7952,76 @@ namespace rock
     bool TwoHandedGrip::applyAuthoredPrimaryGripWeaponAlignment(
         RE::NiNode* weaponNode,
         const RE::NiTransform& solvedWeaponWorld,
+        const RE::NiTransform* solvedFiringHandWorld,
         const std::uint64_t currentWeaponGenerationKey)
     {
         if (blocksAuthoredPrimaryGripWeaponAlignment() || isWeaponVisualReturnActive()) {
             return false;
         }
-        return applyWeaponVisualAuthority(
-            weaponNode,
-            solvedWeaponWorld,
-            currentWeaponGenerationKey);
+        if (!solvedFiringHandWorld) {
+            if (_authoredPrimaryFiringHandWorldActive) {
+                clearAuthoredPrimaryFiringHandWorldAuthority();
+            }
+            return applyWeaponVisualAuthority(
+                weaponNode,
+                solvedWeaponWorld,
+                currentWeaponGenerationKey);
+        }
+
+        if (!isUsableHandAuthorityTransform(*solvedFiringHandWorld) ||
+            !frik_visual_authority::applyExternalHandWorldTransform(
+                PRIMARY_GRIP_TAG,
+                frik_visual_authority::Hand::Right,
+                *solvedFiringHandWorld,
+                GRIP_HAND_POSE_PRIORITY)) {
+            if (_authoredPrimaryFiringHandWorldActive) {
+                clearAuthoredPrimaryFiringHandWorldAuthority();
+            }
+            return false;
+        }
+        // Publish the fixed weapon after the hand: hFRIK's arm solve excludes
+        // the weapon subtree, but the weapon world must remain the final
+        // authored frame in this presentation pass.
+        if (!applyWeaponVisualAuthority(
+                weaponNode,
+                solvedWeaponWorld,
+                currentWeaponGenerationKey)) {
+            clearAuthoredPrimaryFiringHandWorldAuthority();
+            return false;
+        }
+
+        _authoredPrimaryFiringHandWorldActive = true;
+        _authoredPrimaryFiringHandWorldRefreshed = true;
+        recordScopeHandAuthorityPublication(
+            scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip,
+            false);
+        clearHandVisualReturn(
+            false,
+            "authored-position-only-hand-acquired",
+            false);
+        recordPublishedHandWorld(false, *solvedFiringHandWorld);
+        return true;
+    }
+
+    void TwoHandedGrip::beginAuthoredPrimaryFiringGripFrame()
+    {
+        _authoredPrimaryFiringHandWorldRefreshed = false;
+    }
+
+    void TwoHandedGrip::finishAuthoredPrimaryFiringGripFrame()
+    {
+        if (_authoredPrimaryFiringHandWorldActive &&
+            !_authoredPrimaryFiringHandWorldRefreshed) {
+            clearAuthoredPrimaryFiringHandWorldAuthority();
+        }
+    }
+
+    void TwoHandedGrip::clearAuthoredPrimaryFiringHandWorldAuthority()
+    {
+        // clearPrimaryGripWorldAuthority(false) resets the position-only
+        // state itself so every existing PrimaryGrip clear path releases
+        // this presentation through the same role machinery.
+        clearPrimaryGripWorldAuthority(false);
     }
 
     void TwoHandedGrip::observeGunstockWeaponEligibility(
@@ -8403,7 +8494,8 @@ namespace rock
         return GunstockAlignmentDebugYieldReason::None;
     }
 
-    bool TwoHandedGrip::tryResolveGunstockPhysicalFiringFrame(
+    bool TwoHandedGrip::tryResolvePhysicalHandFrame(
+        const bool isLeft,
         RE::NiTransform& outHandWorld,
         RE::NiTransform& outDriverWorld) const
     {
@@ -8411,14 +8503,14 @@ namespace rock
         outDriverWorld = {};
         auto* playerNodes = f4vr::getPlayerNodes();
         RE::NiNode* dampedDriver = playerNodes ?
-            (_firingHandIsLeft ?
+            (isLeft ?
                     playerNodes->SecondaryMeleeWeaponOffsetNode2 :
                     playerNodes->primaryWeaponOffsetNOde) :
             nullptr;
-        const RE::NiTransform& boneInDriver = _firingHandIsLeft ?
+        const RE::NiTransform& boneInDriver = isLeft ?
             _leftNaturalBoneInDampedDriver :
             _rightNaturalBoneInDampedDriver;
-        const bool relationValid = _firingHandIsLeft ?
+        const bool relationValid = isLeft ?
             _hasLeftNaturalBoneInDampedDriver :
             _hasRightNaturalBoneInDampedDriver;
         if (!dampedDriver ||
@@ -8434,6 +8526,34 @@ namespace rock
             boneInDriver);
         return isUsableHandAuthorityTransform(outHandWorld) &&
                isFiniteTransform(outDriverWorld);
+    }
+
+    bool TwoHandedGrip::tryResolveGunstockPhysicalFiringFrame(
+        RE::NiTransform& outHandWorld,
+        RE::NiTransform& outDriverWorld) const
+    {
+        return tryResolvePhysicalHandFrame(
+            _firingHandIsLeft,
+            outHandWorld,
+            outDriverWorld);
+    }
+
+    bool TwoHandedGrip::tryGetAuthoredPrimaryTrackedFiringHandWorld(
+        RE::NiTransform& outHandWorld) const
+    {
+        RE::NiTransform driverWorld{};
+        if (tryResolvePhysicalHandFrame(false, outHandWorld, driverWorld)) {
+            return true;
+        }
+        // While ROCK presents the right firing hand, the rendered hand is
+        // ROCK's own output; reading it back would freeze the solve. The
+        // natural relation refreshes again as soon as authority releases.
+        if (_authoredPrimaryFiringHandWorldActive) {
+            outHandWorld = {};
+            return false;
+        }
+        return tryGetSolverHandTransform(false, outHandWorld) &&
+               isUsableHandAuthorityTransform(outHandWorld);
     }
 
     bool TwoHandedGrip::tryGetGunstockTrackedFiringHandWorld(
@@ -10046,6 +10166,10 @@ namespace rock
     void TwoHandedGrip::clearPrimaryGripWorldAuthority(
         const bool isLeft)
     {
+        if (!isLeft) {
+            _authoredPrimaryFiringHandWorldActive = false;
+            _authoredPrimaryFiringHandWorldRefreshed = false;
+        }
         _hasLastPublishedHandWorld[isLeft ? 0u : 1u] = false;
         if (_scopeMenuOpenThisFrame || _scopeMenuClosedThisFrame) {
             deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isLeft);

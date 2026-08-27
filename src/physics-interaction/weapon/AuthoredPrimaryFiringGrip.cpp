@@ -506,12 +506,23 @@ namespace rock
 
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
         RE::NiTransform trackedHandWorld{};
-        if (!frik_visual_authority::tryGetHandWorldTransform(
+        // Position-only mode owns the presented right hand, so the solve
+        // must read controller intent from the physical driver frame; the
+        // presented hand would be ROCK's own previous output.
+        const bool trackedHandAvailable =
+            _positionOnlyAlignmentActive ?
+            weaponAuthority.tryGetAuthoredPrimaryTrackedFiringHandWorld(
+                trackedHandWorld) :
+            frik_visual_authority::tryGetHandWorldTransform(
                 frik_visual_authority::handFromBool(
                     input.rockFiringHandIsLeft),
-                trackedHandWorld)) {
+                trackedHandWorld);
+        if (!trackedHandAvailable) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
-            endSession("presented-hand-unavailable");
+            endSession(
+                _positionOnlyAlignmentActive ?
+                    "physical-hand-frame-unavailable" :
+                    "presented-hand-unavailable");
             return;
         }
         RE::NiTransform gunstockTrackedHandWorld{};
@@ -621,9 +632,27 @@ namespace rock
             }
         }
 
+        // Position-only mode moves the authored wrist correction onto the
+        // hand: the weapon keeps the native rotation while the presented
+        // right hand seats at the authored grip on that weapon frame.
+        RE::NiTransform solvedFiringHandWorld{};
+        if (_positionOnlyAlignmentActive) {
+            solvedFiringHandWorld = transform_math::composeTransforms(
+                solvedWeaponWorld,
+                authoredPrimaryHandInWeapon);
+            if (!finiteTransform(solvedFiringHandWorld)) {
+                weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+                endSession("position-only-hand-target-invalid");
+                return;
+            }
+        }
+
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
                 solvedWeaponWorld,
+                _positionOnlyAlignmentActive ?
+                    &solvedFiringHandWorld :
+                    nullptr,
                 input.weaponGenerationKey)) {
             if (!_applyFailureLogged) {
                 ROCK_LOG_WARN(Animation,
@@ -744,7 +773,9 @@ namespace rock
                 input.weaponNode->local.translate.y,
                 input.weaponNode->local.translate.z,
                 _positionOnlyAlignmentActive ? "position-only" : "full-rigid",
-                "controller-driven");
+                _positionOnlyAlignmentActive ?
+                    "weapon-relative-authored" :
+                    "controller-driven");
             _sessionLogged = true;
         }
     }

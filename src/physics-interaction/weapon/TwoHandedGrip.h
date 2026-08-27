@@ -582,7 +582,25 @@ namespace rock
         bool applyAuthoredPrimaryGripWeaponAlignment(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
+            const RE::NiTransform* solvedFiringHandWorld,
             std::uint64_t currentWeaponGenerationKey);
+
+        /*
+         * Position-only frame contract: the authored runtime must republish
+         * the right firing-hand world every frame it stays active. A frame
+         * that ends without a refresh releases the hand back to hFRIK.
+         */
+        void beginAuthoredPrimaryFiringGripFrame();
+        void finishAuthoredPrimaryFiringGripFrame();
+
+        /*
+         * Controller intent for the position-only authored solve. Resolves
+         * the physical damped-driver wrist frame; once ROCK owns the right
+         * firing-hand presentation it fails closed instead of reading the
+         * presented hand back as solver input.
+         */
+        bool tryGetAuthoredPrimaryTrackedFiringHandWorld(
+            RE::NiTransform& outHandWorld) const;
 
         /*
          * Final primary gunstock presentation. The already-solved weapon and
@@ -1391,6 +1409,10 @@ namespace rock
         bool tryResolveGunstockPhysicalFiringFrame(
             RE::NiTransform& outHandWorld,
             RE::NiTransform& outDriverWorld) const;
+        bool tryResolvePhysicalHandFrame(
+            bool isLeft,
+            RE::NiTransform& outHandWorld,
+            RE::NiTransform& outDriverWorld) const;
         bool tryResolveGunstockPrimaryGroupCorrection(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
@@ -1423,6 +1445,7 @@ namespace rock
             bool isLeft,
             bool preserveAuthoredFingerPose = false);
         void clearPrimaryGripWorldAuthority(bool isLeft);
+        void clearAuthoredPrimaryFiringHandWorldAuthority();
 
         static bool blockFrikPrimaryWeaponPose();
 
@@ -1563,6 +1586,11 @@ namespace rock
         bool _authoredPrimaryFingerPosePublished{ false };
         bool _authoredPrimaryFingerPoseBlockEngaged{ false };
         bool _authoredPrimaryFingerPoseSuppressed{ false };
+        // Position-only authored presentation: ROCK owns the right firing-hand
+        // world (weapon-relative authored wrist) while the weapon keeps its
+        // native rotation. Cleared whenever the authored runtime skips a frame.
+        bool _authoredPrimaryFiringHandWorldActive{ false };
+        bool _authoredPrimaryFiringHandWorldRefreshed{ false };
         bool _leftHandHoldingObjectForPose{ false };
         bool _rightHandHoldingObjectForPose{ false };
 
