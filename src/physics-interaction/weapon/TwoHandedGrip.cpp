@@ -41,6 +41,10 @@ namespace rock
     {
         constexpr const char* PRIMARY_GRIP_TAG = "ROCK_WeaponPrimaryGrip";
         constexpr const char* AUTHORED_PRIMARY_POSE_BLOCK_TAG = "ROCK_AuthoredPrimaryPose";
+        constexpr const char* AUTHORED_PRIMARY_HAND_WORLD_TAG =
+            "ROCK_AuthoredPrimaryWorld";
+        constexpr const char* AUTHORED_PRIMARY_WEAPON_NODE_OWNERSHIP_TAG =
+            "ROCK_AuthoredPrimaryWeaponNode";
         constexpr const char* PRIMARY_DETACH_TAG = "ROCK_WeaponPrimaryDetach";
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         constexpr const char* GUNSTOCK_ALIGNMENT_TAG =
@@ -2788,6 +2792,7 @@ namespace rock
         _nativeScopeTransitionFinalTraceSample = 0;
         _nativeScopeTransitionFinalTracePending = false;
         _scopeHandAuthorityPublishedThisFrame = {};
+        clearAuthoredPrimaryPositionOnlyAuthority();
         clearPrimaryGripFingerPose(_firingHandIsLeft);
         clearPrimaryGripWorldAuthority(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
@@ -3373,7 +3378,9 @@ namespace rock
 
     bool TwoHandedGrip::hasVisualAuthorityForHand(const bool isLeft) const
     {
-        if (_gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
+        if ((!isLeft &&
+                _authoredPrimaryPositionOnlyAuthorityActive) ||
+            _gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
             _gunstockDedicatedHandAuthorityActive[isLeft ? 0u : 1u] ||
             isHandVisualReturnActive(isLeft) ||
             partGrip(isLeft).active) {
@@ -7904,6 +7911,7 @@ namespace rock
     void TwoHandedGrip::clearAuthoredPrimaryFiringGripCanonical(
         const char* reason)
     {
+        clearAuthoredPrimaryPositionOnlyAuthority();
         if (_rightFiringHandCanonicalSource !=
             RightFiringCanonicalSource::AuthoredAnimation) {
             return;
@@ -7919,18 +7927,77 @@ namespace rock
         clearRightFiringHandCanonicalFrame();
     }
 
+    void TwoHandedGrip::beginAuthoredPrimaryFiringGripFrame()
+    {
+        _authoredPrimaryPositionOnlyFrameRefreshed = false;
+    }
+
+    void TwoHandedGrip::finishAuthoredPrimaryFiringGripFrame()
+    {
+        if (_authoredPrimaryPositionOnlyAuthorityActive &&
+            !_authoredPrimaryPositionOnlyFrameRefreshed) {
+            clearAuthoredPrimaryPositionOnlyAuthority();
+        }
+    }
+
     bool TwoHandedGrip::applyAuthoredPrimaryGripWeaponAlignment(
         RE::NiNode* weaponNode,
         const RE::NiTransform& solvedWeaponWorld,
+        const RE::NiTransform* solvedFiringHandWorld,
         const std::uint64_t currentWeaponGenerationKey)
     {
         if (blocksAuthoredPrimaryGripWeaponAlignment() || isWeaponVisualReturnActive()) {
             return false;
         }
-        return applyWeaponVisualAuthority(
-            weaponNode,
-            solvedWeaponWorld,
-            currentWeaponGenerationKey);
+        if (!solvedFiringHandWorld) {
+            clearAuthoredPrimaryPositionOnlyAuthority();
+            return applyWeaponVisualAuthority(
+                weaponNode,
+                solvedWeaponWorld,
+                currentWeaponGenerationKey);
+        }
+        if (!weaponNode ||
+            !isUsableHandAuthorityTransform(*solvedFiringHandWorld)) {
+            return false;
+        }
+        if (!_authoredPrimaryPositionOnlyWeaponBlockEngaged) {
+            if (!frik_visual_authority::blockPrimaryWeaponNodeOwnership(
+                    AUTHORED_PRIMARY_WEAPON_NODE_OWNERSHIP_TAG,
+                    true)) {
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    2000,
+                    "TwoHandedGrip: position-only authored hand rejected because weapon-node ownership could not be blocked");
+                return false;
+            }
+            _authoredPrimaryPositionOnlyWeaponBlockEngaged = true;
+        }
+        if (!frik_visual_authority::applyExternalHandWorldTransform(
+                AUTHORED_PRIMARY_HAND_WORLD_TAG,
+                frik_visual_authority::Hand::Right,
+                *solvedFiringHandWorld,
+                GRIP_HAND_POSE_PRIORITY)) {
+            clearAuthoredPrimaryPositionOnlyAuthority();
+            return false;
+        }
+        _authoredPrimaryPositionOnlyAuthorityActive = true;
+        // Publish the fixed weapon last so the visible frame remains the
+        // unrotated game frame even when the hand and weapon share a subtree.
+        if (!applyWeaponVisualAuthority(
+                weaponNode,
+                solvedWeaponWorld,
+                currentWeaponGenerationKey)) {
+            clearAuthoredPrimaryPositionOnlyAuthority();
+            return false;
+        }
+
+        _authoredPrimaryPositionOnlyFrameRefreshed = true;
+        clearHandVisualReturn(
+            false,
+            "authored-position-only-hand-acquired",
+            false);
+        recordPublishedHandWorld(false, *solvedFiringHandWorld);
+        return true;
     }
 
     void TwoHandedGrip::observeGunstockWeaponEligibility(
@@ -8434,6 +8501,58 @@ namespace rock
             boneInDriver);
         return isUsableHandAuthorityTransform(outHandWorld) &&
                isFiniteTransform(outDriverWorld);
+    }
+
+    bool TwoHandedGrip::tryGetAuthoredPrimaryPhysicalFiringFrame(
+        RE::NiTransform& outHandWorld,
+        RE::NiTransform& outDriverWorld)
+    {
+        outHandWorld = {};
+        outDriverWorld = {};
+        auto* playerNodes = f4vr::getPlayerNodes();
+        auto* dampedDriver = playerNodes ?
+            playerNodes->primaryWeaponOffsetNOde :
+            nullptr;
+        if (!dampedDriver ||
+            !isFiniteTransform(dampedDriver->world)) {
+            return false;
+        }
+
+        outDriverWorld = dampedDriver->world;
+        if (_hasRightNaturalBoneInDampedDriver &&
+            isFiniteTransform(_rightNaturalBoneInDampedDriver)) {
+            outHandWorld = transform_math::composeTransforms(
+                outDriverWorld,
+                _rightNaturalBoneInDampedDriver);
+            return isUsableHandAuthorityTransform(outHandWorld);
+        }
+        if (_authoredPrimaryPositionOnlyAuthorityActive ||
+            !frik_visual_authority::tryGetHandWorldTransform(
+                frik_visual_authority::Hand::Right,
+                outHandWorld) ||
+            !isUsableHandAuthorityTransform(outHandWorld)) {
+            outHandWorld = {};
+            outDriverWorld = {};
+            return false;
+        }
+
+        const RE::NiTransform boneInDriver =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(outDriverWorld),
+                outHandWorld);
+        constexpr float kMaxBoneToDriverDistance = 30.0f;
+        if (!isUsableHandAuthorityTransform(boneInDriver) ||
+            std::sqrt(dot(
+                boneInDriver.translate,
+                boneInDriver.translate)) >
+                kMaxBoneToDriverDistance) {
+            outHandWorld = {};
+            outDriverWorld = {};
+            return false;
+        }
+        _rightNaturalBoneInDampedDriver = boneInDriver;
+        _hasRightNaturalBoneInDampedDriver = true;
+        return true;
     }
 
     bool TwoHandedGrip::tryGetGunstockTrackedFiringHandWorld(
@@ -10046,12 +10165,33 @@ namespace rock
     void TwoHandedGrip::clearPrimaryGripWorldAuthority(
         const bool isLeft)
     {
+        if (!isLeft &&
+            _authoredPrimaryPositionOnlyAuthorityActive) {
+            clearAuthoredPrimaryPositionOnlyAuthority();
+        }
         _hasLastPublishedHandWorld[isLeft ? 0u : 1u] = false;
         if (_scopeMenuOpenThisFrame || _scopeMenuClosedThisFrame) {
             deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isLeft);
         } else {
             (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isLeft);
         }
+    }
+
+    void TwoHandedGrip::clearAuthoredPrimaryPositionOnlyAuthority()
+    {
+        if (_authoredPrimaryPositionOnlyAuthorityActive) {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(
+                AUTHORED_PRIMARY_HAND_WORLD_TAG,
+                frik_visual_authority::Hand::Right);
+        }
+        if (_authoredPrimaryPositionOnlyWeaponBlockEngaged) {
+            (void)frik_visual_authority::blockPrimaryWeaponNodeOwnership(
+                AUTHORED_PRIMARY_WEAPON_NODE_OWNERSHIP_TAG,
+                false);
+        }
+        _authoredPrimaryPositionOnlyAuthorityActive = false;
+        _authoredPrimaryPositionOnlyFrameRefreshed = false;
+        _authoredPrimaryPositionOnlyWeaponBlockEngaged = false;
     }
 
     void TwoHandedGrip::clearPrimaryDetachVisualAuthority(bool isLeft)
@@ -10802,8 +10942,14 @@ namespace rock
     {
         const bool wantLeftFiringCarry = _firingHandIsLeft &&
             (_state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly);
+        const bool wantRightPositionOnlyCarry =
+            !_firingHandIsLeft &&
+            _rightFiringCanonicalPositionOnlyAlignment &&
+            _state == TwoHandedState::Gripping &&
+            ownsWeaponTransform();
 
-        if (!wantLeftFiringCarry) {
+        if (!wantLeftFiringCarry &&
+            !wantRightPositionOnlyCarry) {
             releaseFiringHandWeaponNodeOwnership(weaponNode);
             return;
         }
@@ -10817,10 +10963,19 @@ namespace rock
                 return;
             }
             _weaponNodeOwnershipBlockEngaged = true;
-            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: FRIK weapon-node ownership blocked for left-firing carry");
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: FRIK weapon-node ownership blocked mode={}",
+                wantLeftFiringCarry ?
+                    "left-firing-carry" :
+                    "right-position-only-two-hand");
         }
 
         if (!weaponNode) {
+            return;
+        }
+
+        if (wantRightPositionOnlyCarry) {
             return;
         }
 

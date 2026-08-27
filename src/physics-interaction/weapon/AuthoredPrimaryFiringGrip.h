@@ -75,6 +75,7 @@ namespace rock
 
         void endSession(const char* reason);
         void clearStableAuthoredSupportGripSnapshot();
+        void clearPositionOnlyDriverBaseline();
 
         // Non-owning identity witness only; never dereferenced. This catches
         // an equip before WeaponCollision has published the new generation.
@@ -94,6 +95,8 @@ namespace rock
         bool _libraryPublishFailureLogged{ false };
         bool _customFrikOffsetOverrideActive{ false };
         bool _positionOnlyAlignmentActive{ false };
+        RE::NiTransform _positionOnlyWeaponInDriver{};
+        bool _positionOnlyWeaponInDriverValid{ false };
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };
         bool _supportCaptureFailureLogged{ false };
