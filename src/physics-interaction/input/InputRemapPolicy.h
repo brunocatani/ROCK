@@ -49,6 +49,7 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
+        bool equippedWeaponShoulderSheathActive{ false };
         bool realMeleeWeaponEquipped{ false };
         bool nativeMeleeSuppressionActive{ false };
         bool pipboyHandEngaged{ false };
@@ -175,27 +176,35 @@ namespace rock::input_remap_policy
         return mask != 0 && (pressedMask & mask) != 0;
     }
 
+    [[nodiscard]] constexpr bool shouldAllowNativeRealMeleeInput(const NativeActionSuppressionInput& input)
+    {
+        return input.realMeleeWeaponEquipped &&
+               !input.nativeMeleeSuppressionActive &&
+               input.weaponDrawn &&
+               !input.equippedWeaponShoulderSheathActive;
+    }
+
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
-        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
+        if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive);
+               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive || input.equippedWeaponShoulderSheathActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
-        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
+        if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached);
+               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached || input.equippedWeaponShoulderSheathActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)
     {
-        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
+        if (shouldAllowNativeRealMeleeInput(input)) {
             return false;
         }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
@@ -264,9 +273,8 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
     {
-        if (input.realMeleeWeaponEquipped && !input.nativeMeleeSuppressionActive) {
-            return false;
-        }
+        // OpenVR grip is ROCK's fixed grab button. It never belongs to the
+        // native grenade/throw handler, including for a real melee weapon.
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
     }
 

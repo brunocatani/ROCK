@@ -121,13 +121,21 @@ int main()
 
     auto nativeHolsteredMelee = base;
     nativeHolsteredMelee.realMeleeWeaponEquipped = true;
-    ok &= expectFalse("native-mode real melee keeps holstered grip ready handling", shouldSuppressNativeGripReadyAction(nativeHolsteredMelee));
-    ok &= expectFalse("native-mode real melee keeps holstered trigger handling", shouldSuppressNativeTriggerAction(nativeHolsteredMelee));
+    ok &= expectTrue("native-mode real melee still blocks holstered grip ready handling", shouldSuppressNativeGripReadyAction(nativeHolsteredMelee));
+    ok &= expectTrue("native-mode real melee still blocks holstered trigger handling", shouldSuppressNativeTriggerAction(nativeHolsteredMelee));
+    ok &= expectTrue("native-mode real melee still blocks native grip grenade handling", shouldSuppressNativeMeleeThrowAction(nativeHolsteredMelee));
 
     auto nativeDrawnMelee = drawnGrip;
     nativeDrawnMelee.realMeleeWeaponEquipped = true;
     ok &= expectFalse("native-mode real melee keeps drawn grip reload handling", shouldSuppressNativeGripReloadAction(nativeDrawnMelee));
-    ok &= expectFalse("native-mode real melee keeps melee throw handling", shouldSuppressNativeMeleeThrowAction(nativeDrawnMelee));
+    ok &= expectFalse("native-mode real melee keeps drawn trigger handling", shouldSuppressNativeTriggerAction(nativeDrawnMelee));
+    ok &= expectTrue("ROCK grab always blocks native grip grenade handling", shouldSuppressNativeMeleeThrowAction(nativeDrawnMelee));
+
+    auto shoulderStashedMeleeTransition = nativeDrawnMelee;
+    shoulderStashedMeleeTransition.equippedWeaponShoulderSheathActive = true;
+    ok &= expectTrue("shoulder-stashed melee transition blocks native grip ready handling", shouldSuppressNativeGripReadyAction(shoulderStashedMeleeTransition));
+    ok &= expectTrue("shoulder-stashed melee transition blocks native trigger handling", shouldSuppressNativeTriggerAction(shoulderStashedMeleeTransition));
+    ok &= expectTrue("shoulder-stashed melee transition blocks native grip reload handling", shouldSuppressNativeGripReloadAction(shoulderStashedMeleeTransition));
 
     auto suppressedHolsteredMelee = nativeHolsteredMelee;
     suppressedHolsteredMelee.nativeMeleeSuppressionActive = true;

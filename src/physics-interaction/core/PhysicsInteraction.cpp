@@ -2030,6 +2030,7 @@ namespace rock
         _heldWeaponTriggerEquipIntents = {};
         _forceGrabCommittedThisFrame = {};
         _equippedWeaponShoulderSheath = {};
+        input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
         _equippedWeaponSheathRetrievalStates = {};
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
@@ -4843,6 +4844,7 @@ namespace rock
                     .leftFiringGripWeaponLocal =
                         leftFiringGripWeaponLocal,
                 };
+            input_remap_runtime::setEquippedWeaponShoulderSheathActive(true);
             _equippedWeaponSheathRetrievalStates = {};
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon shoulder sheathed formID={:08X} instance={:#x} equipIndex={} sourceHand={} zone={} confidence={:.2f} leftTransfer={} state={}({})->{}({}) result={}",
@@ -4913,6 +4915,7 @@ namespace rock
                     _equippedWeaponShoulderSheath.zone));
         }
         _equippedWeaponShoulderSheath = {};
+        input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
         _equippedWeaponSheathRetrievalStates = {};
     }
 
@@ -5799,6 +5802,7 @@ namespace rock
         _authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
         if (!_initialized) {
             _equippedWeaponShoulderSheath = {};
+            input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
             _equippedWeaponSheathRetrievalStates = {};
             _equippedWeaponSheathCommittedThisFrame = {};
             _equippedWeaponUnsheathCommittedThisFrame = {};
