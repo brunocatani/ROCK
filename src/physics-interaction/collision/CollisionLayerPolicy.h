@@ -451,6 +451,12 @@ namespace rock::collision_layer_policy
         mask = withoutLayer(mask, FO4_LAYER_UNIDENTIFIED);
         mask = withoutLayer(mask, FO4_LAYER_NONCOLLIDABLE);
         mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
+        // The vanilla equipped-weapon bodies occupy the same rendered weapon
+        // as ROCK's generated bodies and own native melee and gun-bash hits.
+        // Keep those two representations from contacting each other. The
+        // native bodies remain the sole owner of weapon-layer contact, while
+        // ROCK keeps all configured clutter and world contact.
+        mask = withoutLayer(mask, FO4_LAYER_WEAPON);
         mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
         mask = withoutLayer(mask, FO4_LAYER_CAMERASPHERE);
         mask = withoutLayer(mask, FO4_LAYER_ITEMPICK);

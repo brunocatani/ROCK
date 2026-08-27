@@ -69,6 +69,4 @@ namespace rock
 
     using HavokPairCollisionLeaseSet =
         BasicHavokPairCollisionLeaseSet<34, 2>;
-    using NativeMeleePairCollisionLeaseSet =
-        BasicHavokPairCollisionLeaseSet<1600, 1>;
 }

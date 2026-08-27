@@ -409,6 +409,27 @@ int main()
     ok &= expectFalse("native controller object suppression does not manage ROCK body layer",
         collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_BODY));
 
+    auto generatedWeaponMatrix = makeFullyEnabledMatrix();
+    collision_layer_policy::applyRockWeaponLayerPolicy(
+        generatedWeaponMatrix.data(),
+        false,
+        false);
+    ok &= expectLayerPair("ROCK weapon excludes the co-located native weapon layer",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_WEAPON,
+        collision_layer_policy::FO4_LAYER_WEAPON,
+        false);
+    ok &= expectLayerPair("ROCK weapon preserves clutter collision",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_WEAPON,
+        collision_layer_policy::FO4_LAYER_CLUTTER,
+        true);
+    ok &= expectLayerPair("ROCK weapon preserves NPC biped collision",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_WEAPON,
+        collision_layer_policy::FO4_LAYER_BIPED,
+        true);
+
     ok &= expectTrue("clutter cars map to a dedicated dynamic-world layer",
         collision_layer_policy::dynamicWorldCarLayerForNativeLayer(collision_layer_policy::FO4_LAYER_CLUTTER) ==
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);

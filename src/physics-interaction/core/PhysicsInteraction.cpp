@@ -2295,17 +2295,6 @@ namespace rock
                 weaponClassification.classificationResolved &&
                 weaponClassification.sizeClass == WeaponSizeClass::Melee;
             input_remap_runtime::setRealMeleeWeaponEquipped(realMeleeWeaponEquipped);
-            /*
-             * FO4VR installs its VRMeleeImpact callback on collision objects
-             * for both melee weapons and ranged-weapon gun bash. Isolate the
-             * native bodies from ROCK's generated bodies for every drawn
-             * weapon while the native melee chain owns impact and damage.
-             */
-            _weaponCollision.updateNativeMeleeCollisionIsolation(
-                hknp,
-                weaponNode,
-                runtime.weaponDrawn &&
-                    !isNativeMeleeSuppressionActive());
         }
 
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
