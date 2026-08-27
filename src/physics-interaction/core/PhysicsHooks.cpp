@@ -987,11 +987,50 @@ namespace rock
                 if (!partnerIsPlayer) {
                     std::uint32_t actorDetailCount = 0;
                     if (shouldEmitNativeMeleeTrace(s_actorPathDetailCount, actorDetailCount, 30, 50)) {
+                        /*
+                         * Mirror of the native resolution walk (raw disassembly
+                         * of RVA 0xEFF000, 2026-08-27): partner hknpBody =
+                         * *(world+0x20) + id*0x90; body+0x88 is a
+                         * bhkNPCollisionObject*, its sceneObject at +0x10 feeds
+                         * TESObjectREFR::FindReferenceFor3D. Also reads the
+                         * player cooldown MODE byte (+0x948) and the common
+                         * post-dispatch value (+0x90C): in table mode a native
+                         * dispatch never touches +0x908, so +0x90C is the only
+                         * reliable "native dispatched a hit" witness.
+                         */
+                        std::uintptr_t bodyArray = 0;
+                        std::uint32_t bodyFlags = 0;
+                        std::uint32_t bodyKey = 0;
+                        void* collisionObject = nullptr;
+                        void* sceneObject = nullptr;
+                        RE::TESObjectREFR* nativeRef = nullptr;
+                        if (native_memory::tryReadField(world, 0x20, bodyArray) && bodyArray != 0) {
+                            auto* bodyPtr = reinterpret_cast<void*>(bodyArray + static_cast<std::uintptr_t>(otherId) * 0x90);
+                            native_memory::tryReadField(bodyPtr, 0x40, bodyFlags);
+                            native_memory::tryReadField(bodyPtr, 0x60, bodyKey);
+                            if (native_memory::tryReadField(bodyPtr, 0x88, collisionObject) && collisionObject &&
+                                native_memory::tryReadField(collisionObject, 0x10, sceneObject) && sceneObject) {
+                                nativeRef = RE::TESObjectREFR::FindReferenceFor3D(static_cast<RE::NiAVObject*>(sceneObject));
+                            }
+                        }
+                        std::uint8_t cooldownMode = 0;
+                        float commonCooldown = 0.0f;
+                        if (actorIsPlayer && actor) {
+                            native_memory::tryReadField(actor, 0x948, cooldownMode);
+                            native_memory::tryReadField(actor, 0x90C, commonCooldown);
+                        }
                         ROCK_LOG_INFO(Combat,
-                            "NATIVE-MELEE-TRACE actor-path partner: layer={} bodyId={} ref=0x{:08X} filter=0x{:08X} flag11={} cooldown={:.3f} total={}",
+                            "NATIVE-MELEE-TRACE actor-path partner: layer={} bodyId={} flags=0x{:X} key={} npObj={} scene={} nativeRef=0x{:08X} ownRef=0x{:08X} cdMode={} cdCommon={:.3f} filter=0x{:08X} flag11={} cooldown={:.3f} total={}",
                             partnerLayer,
                             otherId,
+                            bodyFlags,
+                            bodyKey,
+                            collisionObject ? "ok" : "null",
+                            sceneObject ? "ok" : "null",
+                            nativeRef ? nativeRef->GetFormID() : 0u,
                             partnerRef ? partnerRef->GetFormID() : 0u,
+                            cooldownMode,
+                            commonCooldown,
                             otherFilterInfo,
                             eventFlag,
                             cooldown,
