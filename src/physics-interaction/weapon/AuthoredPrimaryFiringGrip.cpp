@@ -637,6 +637,24 @@ namespace rock
             return;
         }
 
+        if (_positionOnlyAlignmentActive) {
+            const RE::NiTransform solvedFiringHandWorld =
+                transform_math::composeTransforms(
+                    solvedWeaponWorld,
+                    authoredPrimaryHandInWeapon);
+            if (!finiteTransform(solvedFiringHandWorld) ||
+                !weaponAuthority.applyAuthoredPrimaryFiringHandPresentation(
+                    input.weaponNode,
+                    solvedFiringHandWorld)) {
+                ROCK_LOG_SAMPLE_WARN(
+                    Animation,
+                    2000,
+                    "Authored primary firing hand presentation unavailable weaponKey=0x{:X} capture={}",
+                    currentWeaponKey,
+                    resolvedCaptureSequence);
+            }
+        }
+
         if (!weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
                 input.weaponNode,
                 authoredPrimaryHandInWeapon,

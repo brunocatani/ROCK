@@ -3373,7 +3373,8 @@ namespace rock
 
     bool TwoHandedGrip::hasVisualAuthorityForHand(const bool isLeft) const
     {
-        if (_gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
+        if ((!isLeft && _authoredPrimaryHandPresentationActive) ||
+            _gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
             _gunstockDedicatedHandAuthorityActive[isLeft ? 0u : 1u] ||
             isHandVisualReturnActive(isLeft) ||
             partGrip(isLeft).active) {
@@ -7931,6 +7932,175 @@ namespace rock
             weaponNode,
             solvedWeaponWorld,
             currentWeaponGenerationKey);
+    }
+
+    void TwoHandedGrip::beginAuthoredPrimaryFiringHandPresentationFrame() noexcept
+    {
+        _authoredPrimaryHandPresentationActive = false;
+    }
+
+    bool TwoHandedGrip::applyAuthoredPrimaryFiringHandPresentation(
+        RE::NiNode* weaponNode,
+        const RE::NiTransform& solvedHandWorld)
+    {
+        using BoneTree = f4vr::BSFlattenedBoneTree;
+        constexpr int kMaxFlattenedTransforms = 768;
+
+        auto* visibleBoneTree = f4vr::getFlattenedBoneTree();
+        if (!weaponNode ||
+            !isFiniteTransform(weaponNode->world) ||
+            !isUsableHandAuthorityTransform(solvedHandWorld) ||
+            !visibleBoneTree ||
+            !visibleBoneTree->transforms ||
+            visibleBoneTree->numTransforms <= 0 ||
+            visibleBoneTree->numTransforms > kMaxFlattenedTransforms) {
+            return false;
+        }
+
+        const auto transformNameEquals = [](
+                                             const BoneTree::BoneTransforms& transform,
+                                             const char* name) {
+            const char* transformName = transform.name.c_str();
+            return transformName && name &&
+                _stricmp(transformName, name) == 0;
+        };
+        int handIndex = -1;
+        for (int index = 0; index < visibleBoneTree->numTransforms; ++index) {
+            const auto& transform = visibleBoneTree->transforms[index];
+            if (transform.refNode &&
+                transformNameEquals(transform, "RArm_Hand")) {
+                handIndex = index;
+                break;
+            }
+        }
+        if (handIndex < 0) {
+            return false;
+        }
+
+        auto* handNode = visibleBoneTree->transforms[handIndex].refNode;
+        if (!handNode || !handNode->parent || handNode == weaponNode ||
+            !isFiniteTransform(handNode->local) ||
+            !isUsableHandAuthorityTransform(handNode->world) ||
+            !isFiniteTransform(handNode->parent->world)) {
+            return false;
+        }
+
+        const auto belongsToHandPresentation = [visibleBoneTree,
+                                                   handIndex,
+                                                   weaponNode,
+                                                   &transformNameEquals](int index) {
+            for (int depth = 0;
+                 index >= 0 && index < visibleBoneTree->numTransforms &&
+                 depth < visibleBoneTree->numTransforms;
+                 ++depth) {
+                const auto& transform = visibleBoneTree->transforms[index];
+                if (transform.refNode == weaponNode ||
+                    transformNameEquals(transform, "Weapon") ||
+                    transformNameEquals(transform, "WeaponLeft")) {
+                    return false;
+                }
+                if (index == handIndex) {
+                    return true;
+                }
+                const int parentIndex = transform.parPos;
+                if (parentIndex == index) {
+                    break;
+                }
+                index = parentIndex;
+            }
+            return false;
+        };
+
+        const RE::NiTransform originalFlattenedHandWorld =
+            visibleBoneTree->transforms[handIndex].world;
+        if (!isUsableHandAuthorityTransform(originalFlattenedHandWorld)) {
+            return false;
+        }
+        const RE::NiTransform inverseOriginalFlattenedHandWorld =
+            transform_math::invertTransform(originalFlattenedHandWorld);
+        bool foundPresentationBone = false;
+        for (int index = 0; index < visibleBoneTree->numTransforms; ++index) {
+            if (!belongsToHandPresentation(index)) {
+                continue;
+            }
+            foundPresentationBone = true;
+            const auto& originalWorld =
+                visibleBoneTree->transforms[index].world;
+            const RE::NiTransform handLocal =
+                transform_math::composeTransforms(
+                    inverseOriginalFlattenedHandWorld,
+                    originalWorld);
+            const RE::NiTransform targetWorld =
+                transform_math::composeTransforms(
+                    solvedHandWorld,
+                    handLocal);
+            if (!isFiniteTransform(originalWorld) ||
+                !isFiniteTransform(handLocal) ||
+                !isFiniteTransform(targetWorld)) {
+                return false;
+            }
+        }
+        if (!foundPresentationBone) {
+            return false;
+        }
+
+        const RE::NiTransform originalHandLocal = handNode->local;
+        const RE::NiTransform originalWeaponLocal = weaponNode->local;
+        const RE::NiTransform originalWeaponWorld = weaponNode->world;
+        const RE::NiTransform solvedHandLocal =
+            weapon_visual_authority_math::worldTargetToParentLocal(
+                handNode->parent->world,
+                solvedHandWorld);
+        if (!isFiniteTransform(solvedHandLocal)) {
+            return false;
+        }
+
+        const char* ignoredWeaponNodeName = weaponNode->name.c_str();
+        handNode->local = solvedHandLocal;
+        f4vr::updateTransformsDown(
+            handNode,
+            true,
+            ignoredWeaponNodeName);
+        const bool handApplied = areTransformsNearlyEqual(
+            handNode->world,
+            solvedHandWorld,
+            0.01f);
+        const bool weaponPreserved = areTransformsNearlyEqual(
+            weaponNode->world,
+            originalWeaponWorld,
+            0.0001f);
+        if (!handApplied || !weaponPreserved) {
+            handNode->local = originalHandLocal;
+            f4vr::updateTransformsDown(
+                handNode,
+                true,
+                ignoredWeaponNodeName);
+            weaponNode->local = originalWeaponLocal;
+            weaponNode->world = originalWeaponWorld;
+            return false;
+        }
+
+        for (int index = 0; index < visibleBoneTree->numTransforms; ++index) {
+            if (!belongsToHandPresentation(index)) {
+                continue;
+            }
+            const RE::NiTransform handLocal =
+                transform_math::composeTransforms(
+                    inverseOriginalFlattenedHandWorld,
+                    visibleBoneTree->transforms[index].world);
+            visibleBoneTree->transforms[index].world =
+                transform_math::composeTransforms(
+                    solvedHandWorld,
+                    handLocal);
+        }
+
+        _authoredPrimaryHandPresentationActive = true;
+        clearHandVisualReturn(
+            false,
+            "authored-primary-hand-presentation",
+            false);
+        recordPublishedHandWorld(false, solvedHandWorld);
+        return true;
     }
 
     void TwoHandedGrip::observeGunstockWeaponEligibility(
