@@ -881,6 +881,9 @@ namespace rock
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
+            // Latched with the authored primary canonical. In this mode the
+            // support seat may translate the weapon but never rotate it.
+            bool authoredSupportPositionOnlyAlignment{ false };
             std::uint64_t authoredSupportCaptureSequence{ 0 };
             /*
              * AttachOnly glue: the hand stays visually attached to the part

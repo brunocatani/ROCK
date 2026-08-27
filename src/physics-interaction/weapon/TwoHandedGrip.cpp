@@ -4076,6 +4076,11 @@ namespace rock
                 _authorityMode = authoredSupportAuthorityMode;
             }
             grip.authoredSupportGrip = true;
+            grip.authoredSupportPositionOnlyAlignment =
+                !_firingHandIsLeft &&
+                _rightFiringCanonicalPositionOnlyAlignment &&
+                _rightFiringHandCanonicalSource ==
+                    RightFiringCanonicalSource::AuthoredAnimation;
             grip.authoredSupportCaptureSequence =
                 _authoredSupportGripCandidate.captureSequence;
             grip.attachmentRoot = weaponNode;
@@ -5096,7 +5101,10 @@ namespace rock
                    _authorityMode == weapon_support_authority_policy::
                                          WeaponSupportAuthorityMode::
                                              FullTwoHandedSolver) {
-            supportBaselineName = "authored-ramped";
+            supportBaselineName =
+                supportGrip.authoredSupportPositionOnlyAlignment ?
+                "authored-position-only" :
+                "authored-ramped";
         }
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: grip active weapon='{}', "
@@ -5128,9 +5136,9 @@ namespace rock
             /*
              * Authored support keeps its established independent hand-seat
              * interpolation. Publish one exact alpha-zero weapon frame now so
-             * its position-axis and palm-normal corrections both begin from
-             * the firing-hand carry instead of appearing one frame later as
-             * an authority refresh.
+             * its position correction, and its rotation in full-rigid mode,
+             * begin from the firing-hand carry instead of appearing one frame
+             * later as an authority refresh.
              */
             updateFullWeaponAuthorityGrip(weaponNode, 0.0f);
         }
@@ -5606,19 +5614,42 @@ namespace rock
                     _rotationBlend :
                     1.0f);
 
-        const auto solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
-        if (!solved.solved) {
-            if (dynamicAcquisition || supportInputBaselineActive) {
-                clearDynamicSupportAcquisition(
-                    "full-target-solve-degenerate",
-                    true);
+        WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
+        RE::NiTransform appliedWeaponWorld{};
+        if (supportGrip.authoredSupportPositionOnlyAlignment) {
+            /*
+             * The experimental authored mode treats the support seat as a
+             * position constraint only. A rigid transform cannot place both
+             * hand seats at independent controller targets without rotation,
+             * so the support seat owns translation and both presented hands
+             * remain locked to their authored weapon-local frames.
+             */
+            appliedWeaponWorld = solverInput.weaponWorldTransform;
+            const RE::NiPoint3 supportCorrection = sub(
+                solverInput.supportTargetWorld,
+                currentSupportWorld);
+            appliedWeaponWorld.translate =
+                appliedWeaponWorld.translate + supportCorrection;
+            if (!isFiniteTransform(appliedWeaponWorld)) {
+                _hasSolvedWeaponTransform = false;
+                ROCK_LOG_WARN(Weapon,
+                    "TwoHandedGrip: clearing authored position-only support grip because its translation solve was invalid");
                 transitionToInactive(false);
+                return;
             }
-            return;
+        } else {
+            solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
+            if (!solved.solved) {
+                if (dynamicAcquisition || supportInputBaselineActive) {
+                    clearDynamicSupportAcquisition(
+                        "full-target-solve-degenerate",
+                        true);
+                    transitionToInactive(false);
+                }
+                return;
+            }
+            appliedWeaponWorld = solved.weaponWorldTransform;
         }
-
-        RE::NiTransform appliedWeaponWorld =
-            solved.weaponWorldTransform;
         if (dynamicAcquisition) {
             auto& acquisition = _dynamicSupportAcquisition;
             if (!acquisition.durationInitialized) {
