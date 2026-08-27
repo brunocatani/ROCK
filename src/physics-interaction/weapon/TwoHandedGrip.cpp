@@ -5625,6 +5625,9 @@ namespace rock
              * remain locked to their authored weapon-local frames.
              */
             appliedWeaponWorld = solverInput.weaponWorldTransform;
+            const RE::NiPoint3 primaryCorrection = sub(
+                primaryController,
+                currentPrimaryGripWorld);
             const RE::NiPoint3 supportCorrection = sub(
                 solverInput.supportTargetWorld,
                 currentSupportWorld);
@@ -5637,6 +5640,27 @@ namespace rock
                 transitionToInactive(false);
                 return;
             }
+            ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+                "Authored support position-only authority trace: primaryIntent=({:.3f},{:.3f},{:.3f}) supportCommand=({:.3f},{:.3f},{:.3f}) primaryTarget=({:.3f},{:.3f},{:.3f}) supportTarget=({:.3f},{:.3f},{:.3f}) weaponT=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f}) blend={:.3f}",
+                primaryCorrection.x,
+                primaryCorrection.y,
+                primaryCorrection.z,
+                supportCorrection.x,
+                supportCorrection.y,
+                supportCorrection.z,
+                primaryController.x,
+                primaryController.y,
+                primaryController.z,
+                solverInput.supportTargetWorld.x,
+                solverInput.supportTargetWorld.y,
+                solverInput.supportTargetWorld.z,
+                solverInput.weaponWorldTransform.translate.x,
+                solverInput.weaponWorldTransform.translate.y,
+                solverInput.weaponWorldTransform.translate.z,
+                appliedWeaponWorld.translate.x,
+                appliedWeaponWorld.translate.y,
+                appliedWeaponWorld.translate.z,
+                _rotationBlend);
         } else {
             solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
             if (!solved.solved) {
