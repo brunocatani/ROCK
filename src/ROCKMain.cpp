@@ -716,7 +716,6 @@ namespace
                 frikApi->setHandPoseCustomLocalTransformsWithPriority != nullptr &&
                 frikApi->applyExternalHandWorldTransform != nullptr &&
                 frikApi->clearExternalHandWorldTransform != nullptr &&
-                frikApi->blockPrimaryWeaponNodeOwnership != nullptr &&
                 frikApi->blockOffHandWeaponGripping != nullptr &&
                 frikApi->registerWeaponHandRecoilController != nullptr &&
                 frikApi->unregisterWeaponHandRecoilController != nullptr;

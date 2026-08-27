@@ -582,13 +582,7 @@ namespace rock
         bool applyAuthoredPrimaryGripWeaponAlignment(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
-            const RE::NiTransform* solvedFiringHandWorld,
             std::uint64_t currentWeaponGenerationKey);
-        void beginAuthoredPrimaryFiringGripFrame();
-        void finishAuthoredPrimaryFiringGripFrame();
-        bool tryGetAuthoredPrimaryPhysicalFiringFrame(
-            RE::NiTransform& outHandWorld,
-            RE::NiTransform& outDriverWorld);
 
         /*
          * Final primary gunstock presentation. The already-solved weapon and
@@ -683,6 +677,7 @@ namespace rock
         void setGrabbedObjectHandPoseOwnership(
             bool leftHandHoldingObject,
             bool rightHandHoldingObject);
+
         /*
          * Ephemeral pre-update candidate derived from Bethesda's paired
          * support-arm pass. AuthoredPrimaryFiringGripRuntime clears it at the
@@ -1428,7 +1423,6 @@ namespace rock
             bool isLeft,
             bool preserveAuthoredFingerPose = false);
         void clearPrimaryGripWorldAuthority(bool isLeft);
-        void clearAuthoredPrimaryPositionOnlyAuthority();
 
         static bool blockFrikPrimaryWeaponPose();
 
@@ -1569,9 +1563,6 @@ namespace rock
         bool _authoredPrimaryFingerPosePublished{ false };
         bool _authoredPrimaryFingerPoseBlockEngaged{ false };
         bool _authoredPrimaryFingerPoseSuppressed{ false };
-        bool _authoredPrimaryPositionOnlyAuthorityActive{ false };
-        bool _authoredPrimaryPositionOnlyFrameRefreshed{ false };
-        bool _authoredPrimaryPositionOnlyWeaponBlockEngaged{ false };
         bool _leftHandHoldingObjectForPose{ false };
         bool _rightHandHoldingObjectForPose{ false };
 
