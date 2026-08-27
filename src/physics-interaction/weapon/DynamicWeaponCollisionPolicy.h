@@ -378,6 +378,49 @@ namespace rock::dynamic_weapon_collision_policy
         return std::sqrt(x * x + y * y + z * z);
     }
 
+    struct GripRecoveryDecision
+    {
+        float distanceGameUnits{ 0.0f };
+        bool resetNow{ false };
+    };
+
+    [[nodiscard]] inline GripRecoveryDecision evaluateGripRecovery(
+        const RE::NiTransform& liveContactBodyWorld,
+        const RE::NiTransform& requestedGripAuthorityWorld,
+        const RE::NiPoint3& centerWeaponLocal,
+        float weaponScale,
+        float recoveryDistanceGameUnits)
+    {
+        if (!isFiniteTransform(liveContactBodyWorld) ||
+            !isFiniteTransform(requestedGripAuthorityWorld) ||
+            !isFinitePoint(centerWeaponLocal) ||
+            !std::isfinite(weaponScale) ||
+            std::abs(weaponScale) <= 0.0001f ||
+            !std::isfinite(recoveryDistanceGameUnits) ||
+            recoveryDistanceGameUnits <= 0.0f) {
+            return {};
+        }
+
+        // The constraint anchors the firing-grip authority at the weapon-root
+        // origin. Reconstruct that point from the live contact body so a large
+        // rotational failure around the body center cannot hide the separation.
+        const RE::NiTransform liveWeaponRootWorld = reconstructWeaponRoot(
+            liveContactBodyWorld,
+            centerWeaponLocal,
+            weaponScale);
+        const float distanceGameUnits = translationDeltaGameUnits(
+            liveWeaponRootWorld,
+            requestedGripAuthorityWorld);
+        if (!std::isfinite(distanceGameUnits)) {
+            return {};
+        }
+
+        return {
+            .distanceGameUnits = distanceGameUnits,
+            .resetNow = distanceGameUnits > recoveryDistanceGameUnits,
+        };
+    }
+
     inline float rotationDeltaDegrees(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
     {
         float matchingAxisDotSum = 0.0f;

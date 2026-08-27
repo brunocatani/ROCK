@@ -199,6 +199,27 @@ int main()
     ok &= expectPoint("reconstructed root", reconstructed.translate, weaponRoot.translate);
     ok &= expectNear("reconstructed rotation", rotationDeltaDegrees(reconstructed, weaponRoot), 0.0f, 0.05f);
 
+    RE::NiTransform rotatedLiveBody = bodyTarget;
+    rotatedLiveBody.rotate = rock::transform_math::makeIdentityTransform<RE::NiTransform>().rotate;
+    const auto gripRecovery = evaluateGripRecovery(
+        rotatedLiveBody,
+        gripAuthorityTarget,
+        geometry.centerWeaponLocal,
+        weaponRoot.scale,
+        25.0f);
+    ok &= expectNear(
+        "grip recovery measures reconstructed authority instead of body center",
+        gripRecovery.distanceGameUnits,
+        std::sqrt(808.0f));
+    ok &= gripRecovery.resetNow;
+    ok &= !evaluateGripRecovery(
+               rotatedLiveBody,
+               gripAuthorityTarget,
+               geometry.centerWeaponLocal,
+               weaponRoot.scale,
+               30.0f)
+               .resetNow;
+
     RE::NiTransform sampledRequested = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
     sampledRequested.translate = RE::NiPoint3{ 10.0f, 0.0f, 0.0f };
     RE::NiTransform sampledLive = sampledRequested;

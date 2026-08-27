@@ -278,6 +278,7 @@ namespace rock
         DebugSnapshot _debugSnapshot{};
 
         std::atomic<bool> _enabledAtomic{ false };
+        std::atomic<float> _gripRecoveryDistanceGameUnitsAtomic{ 210.0f };
         std::atomic<std::uint32_t> _bodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<bool> _rebuildRequestedAtomic{ false };
         std::atomic<std::uint64_t> _proxyPairCallbackSequenceAtomic{ 0 };

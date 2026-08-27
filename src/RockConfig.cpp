@@ -405,6 +405,14 @@ namespace rock
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxLinearVelocity", rockWeaponCollisionMaxLinearVelocity));
         rockWeaponCollisionMaxAngularVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
+        rockWeaponCollisionGripRecoveryDistanceGameUnits = readClampedFloat(
+            ini,
+            SECTION,
+            "fWeaponCollisionGripRecoveryDistanceGameUnits",
+            rockWeaponCollisionGripRecoveryDistanceGameUnits,
+            210.0f,
+            35.0f,
+            700.0f);
         rockWeaponInteractionTouchRadius = readClampedFloat(ini,
             SECTION,
             "fWeaponInteractionTouchRadius",

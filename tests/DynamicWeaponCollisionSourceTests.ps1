@@ -66,7 +66,22 @@ Require-Pattern $runtimePolicy `
     'Dynamic weapon compound production constants must retain the qualified values.'
 Require-Pattern $runtime `
     'advanceDivergenceDwell\([\s\S]*_divergenceDwellSeconds[\s\S]*placeGeneratedKeyframedBodyImmediately\([\s\S]*_body[\s\S]*_physicsRequestedTarget' `
-    'The real colliding weapon body must recover only after persistent requested-target divergence.'
+    'Normal requested-center divergence must retain its persistent recovery path.'
+Require-Pattern $runtimePolicy `
+    'evaluateGripRecovery\([\s\S]*reconstructWeaponRoot\([\s\S]*requestedGripAuthorityWorld[\s\S]*distanceGameUnits\s*>\s*recoveryDistanceGameUnits' `
+    'Catastrophic recovery must measure the reconstructed live firing-grip authority instead of the contact-body center.'
+Require-Pattern $runtimeSource `
+    'evaluateGripRecovery\([\s\S]*_physicsRequestedAuthorityTarget[\s\S]*_gripRecoveryDistanceGameUnitsAtomic[\s\S]*contact body reset after catastrophic grip separation[\s\S]*catastrophic grip reset failed; requesting collider rebuild' `
+    'Catastrophic grip separation must reset immediately and rebuild the collider if direct placement fails.'
+Require-Pattern 'src/RockConfig.h' `
+    'rockWeaponCollisionGripRecoveryDistanceGameUnits\s*=\s*210\.0f' `
+    'RockConfig must expose the three-metre catastrophic weapon grip recovery limit.'
+Require-Pattern 'src/RockConfig.cpp' `
+    'fWeaponCollisionGripRecoveryDistanceGameUnits' `
+    'RockConfig must load the catastrophic weapon grip recovery limit.'
+Require-Pattern 'data/config/ROCK_example.ini' `
+    'fWeaponCollisionGripRecoveryDistanceGameUnits\s*=\s*210\.0' `
+    'The example INI must document the catastrophic weapon grip recovery limit.'
 Require-Pattern $interaction `
     'dynamic_weapon_collision_policy::kDynamicCompoundEnabled[\s\S]*runtime\.weaponDrawn' `
     'Dynamic weapon compound activation must use fixed compiled policy.'

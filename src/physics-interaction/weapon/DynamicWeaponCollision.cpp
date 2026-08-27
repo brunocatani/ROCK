@@ -396,6 +396,9 @@ namespace rock
             // ROCK does not publish a later manual-grip pose.
             _frameRequestedWeaponWorld = weaponNode->world;
         }
+        _gripRecoveryDistanceGameUnitsAtomic.store(
+            g_rockConfig.rockWeaponCollisionGripRecoveryDistanceGameUnits,
+            std::memory_order_release);
         _enabledAtomic.store(_frameAcceptingIntent, std::memory_order_release);
     }
 
@@ -1106,15 +1109,18 @@ namespace rock
                     liveContactBodyWorld,
                     _physicsRequestedTarget) :
                 0.0f;
-            const auto dwell = dynamic_weapon_collision_policy::advanceDivergenceDwell(
-                _divergenceDwellSeconds,
-                requestedGapGameUnits,
-                driveResult.driveDeltaSeconds);
-            _divergenceDwellSeconds = dwell.elapsedSeconds;
-            if (dwell.recoverNow) {
-                // Bound recovery attempts even if the engine rejects a body
-                // placement. Persistent divergence must accrue a new dwell
-                // interval before another attempt.
+            const auto gripRecovery = hasLiveContactBody ?
+                dynamic_weapon_collision_policy::evaluateGripRecovery(
+                    liveContactBodyWorld,
+                    _physicsRequestedAuthorityTarget,
+                    _createdCenterWeaponLocal,
+                    _createdWeaponScale,
+                    _gripRecoveryDistanceGameUnitsAtomic.load(
+                        std::memory_order_acquire)) :
+                dynamic_weapon_collision_policy::GripRecoveryDecision{};
+            if (gripRecovery.resetNow) {
+                // This is an independent catastrophic-failure boundary. It
+                // does not wait for normal contact convergence or its dwell.
                 _divergenceDwellSeconds = 0.0f;
                 contactBodyRecovered = placeGeneratedKeyframedBodyImmediately(
                     _body,
@@ -1123,11 +1129,49 @@ namespace rock
                     ROCK_LOG_SAMPLE_WARN(
                         Weapon,
                         1000,
-                        "Dynamic weapon contact body recovered after persistent divergence: body={} gap={:.2f} threshold={:.2f} dwell={:.3f}s",
+                        "Dynamic weapon contact body reset after catastrophic grip separation: body={} gripGap={:.2f} threshold={:.2f}",
                         _body.getBodyId().value,
-                        requestedGapGameUnits,
-                        dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits,
-                        dynamic_weapon_collision_policy::kDivergenceTeleportDwellSeconds);
+                        gripRecovery.distanceGameUnits,
+                        _gripRecoveryDistanceGameUnitsAtomic.load(
+                            std::memory_order_relaxed));
+                } else {
+                    _rebuildRequestedAtomic.store(true, std::memory_order_release);
+                    _droveThisSubstep = false;
+                    clearPublishedPhysicsSnapshot();
+                    ROCK_LOG_SAMPLE_WARN(
+                        Weapon,
+                        1000,
+                        "Dynamic weapon catastrophic grip reset failed; requesting collider rebuild: body={} gripGap={:.2f} threshold={:.2f}",
+                        _body.getBodyId().value,
+                        gripRecovery.distanceGameUnits,
+                        _gripRecoveryDistanceGameUnitsAtomic.load(
+                            std::memory_order_relaxed));
+                    return;
+                }
+            } else {
+                const auto dwell = dynamic_weapon_collision_policy::advanceDivergenceDwell(
+                    _divergenceDwellSeconds,
+                    requestedGapGameUnits,
+                    driveResult.driveDeltaSeconds);
+                _divergenceDwellSeconds = dwell.elapsedSeconds;
+                if (dwell.recoverNow) {
+                    // Bound recovery attempts even if the engine rejects a body
+                    // placement. Persistent divergence must accrue a new dwell
+                    // interval before another attempt.
+                    _divergenceDwellSeconds = 0.0f;
+                    contactBodyRecovered = placeGeneratedKeyframedBodyImmediately(
+                        _body,
+                        _physicsRequestedTarget);
+                    if (contactBodyRecovered) {
+                        ROCK_LOG_SAMPLE_WARN(
+                            Weapon,
+                            1000,
+                            "Dynamic weapon contact body recovered after persistent divergence: body={} gap={:.2f} threshold={:.2f} dwell={:.3f}s",
+                            _body.getBodyId().value,
+                            requestedGapGameUnits,
+                            dynamic_weapon_collision_policy::kDivergenceTeleportDistanceGameUnits,
+                            dynamic_weapon_collision_policy::kDivergenceTeleportDwellSeconds);
+                    }
                 }
             }
         } else {
