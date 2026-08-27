@@ -2138,7 +2138,16 @@ namespace rock::input_remap_runtime
 
     void setRealMeleeWeaponEquipped(bool equipped)
     {
-        s_realMeleeWeaponEquipped.store(equipped, std::memory_order_release);
+        const bool previous = s_realMeleeWeaponEquipped.exchange(equipped, std::memory_order_acq_rel);
+        if (previous != equipped) {
+            // NATIVE-MELEE-TRACE: this flag selects the native input bypass for
+            // real melee weapons; a melee weapon that never turns it on keeps
+            // ROCK's trigger/grip suppression active and starves native melee.
+            ROCK_LOG_INFO(Input,
+                "NATIVE-MELEE-TRACE realMeleeWeaponEquipped {} -> {}",
+                previous ? "yes" : "no",
+                equipped ? "yes" : "no");
+        }
     }
 
     void setHandHeldWeapon(const bool isLeft, const bool heldWeapon)
