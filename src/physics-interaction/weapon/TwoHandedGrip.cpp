@@ -4768,6 +4768,13 @@ namespace rock
             return;
         }
 
+        /*
+         * Position-only authored mode must also reuse the canonical: the
+         * solver hand deliberately reports the physical (natural) wrist while
+         * ROCK presents the authored seat, so recapturing the relation from
+         * it would rebase the whole two-hand hold - presented seat and
+         * PAPER's manual-cycle baseline - onto the un-authored wrist frame.
+         */
         const bool reuseRightFiringCanonicalGrip =
             scope_safe_hand_frame_math::
                 shouldReuseRightFiringCanonicalGrip(
@@ -4778,7 +4785,15 @@ namespace rock
                         decision.weaponGenerationKey,
                         currentEquippedWeaponOwnershipKey),
                     _rightFiringHandCanonicalGenerationKey,
-                    decision.weaponGenerationKey);
+                    decision.weaponGenerationKey) ||
+            (!_firingHandIsLeft &&
+                _rightFiringCanonicalPositionOnlyAlignment &&
+                _rightFiringHandCanonicalSource ==
+                    RightFiringCanonicalSource::AuthoredAnimation &&
+                hasRightFiringHandCanonicalFrame(
+                    weaponNode,
+                    decision.weaponGenerationKey,
+                    currentEquippedWeaponOwnershipKey));
         if (_scopeMenuOpenThisFrame && !_firingHandIsLeft &&
             !reuseRightFiringCanonicalGrip) {
             ROCK_LOG_SAMPLE_WARN(
