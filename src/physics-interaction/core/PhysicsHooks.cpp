@@ -1019,19 +1019,67 @@ namespace rock
                             native_memory::tryReadField(actor, 0x948, cooldownMode);
                             native_memory::tryReadField(actor, 0x90C, commonCooldown);
                         }
+                        /*
+                         * Direct reject-gate values from the raw disassembly of
+                         * 0xEFF000 (Ghidra 2026-08-27): teammate bit 26 of
+                         * target+0x2D0; the opaque attacker conjunction
+                         * (+0x9E8==1 && +0xA90!=0); hostility; base weapon
+                         * type (velocity gate applies only to non-hostile +
+                         * type>6); primary wand tracked speed at +0x28
+                         * (threshold 300.0) and angular at +0x2C.
+                         */
+                        std::uint32_t targetNiFlags = 0;
+                        std::uint32_t targetFormFlags = 0;
+                        RE::Actor* targetActor = nullptr;
+                        bool hostile = false;
+                        if (nativeRef) {
+                            native_memory::tryReadField(nativeRef, 0x2D0, targetNiFlags);
+                            native_memory::tryReadField(nativeRef, 0x10, targetFormFlags);
+                            if (nativeRef->formType == RE::ENUM_FORM_ID::kACHR) {
+                                targetActor = static_cast<RE::Actor*>(nativeRef);
+                            }
+                            if (actor && targetActor) {
+                                hostile = actor->GetHostileToActor(targetActor);
+                            }
+                        }
+                        std::uint32_t attacker9E8 = 0;
+                        std::uint32_t attackerA90 = 0;
+                        if (actor) {
+                            native_memory::tryReadField(actor, 0x9E8, attacker9E8);
+                            native_memory::tryReadField(actor, 0xA90, attackerA90);
+                        }
+                        int weaponType = -1;
+                        if (auto* equippedItem = f4vr::getEquippedWeaponItem()) {
+                            if (auto* weaponForm = equippedItem->item.object; weaponForm && weaponForm->formType == RE::ENUM_FORM_ID::kWEAP) {
+                                weaponType = static_cast<int>(static_cast<const RE::TESObjectWEAP*>(weaponForm)->weaponData.type.get());
+                            }
+                        }
+                        float wandLinear = -1.0f;
+                        float wandAngular = -1.0f;
+                        static const REL::Relocation<void**> s_primaryWandController{ REL::Offset(0x5AC8EB0) };
+                        if (void* wand = *s_primaryWandController) {
+                            native_memory::tryReadField(wand, 0x28, wandLinear);
+                            native_memory::tryReadField(wand, 0x2C, wandAngular);
+                        }
                         ROCK_LOG_INFO(Combat,
-                            "NATIVE-MELEE-TRACE actor-path partner: layer={} bodyId={} flags=0x{:X} key={} npObj={} scene={} nativeRef=0x{:08X} ownRef=0x{:08X} cdMode={} cdCommon={:.3f} filter=0x{:08X} flag11={} cooldown={:.3f} total={}",
+                            "NATIVE-MELEE-TRACE actor-path partner: layer={} bodyId={} flags=0x{:X} npObj={} scene={} nativeRef=0x{:08X} teammate={} niFlags=0x{:08X} formFlags=0x{:08X} hostile={} atk9E8={} atkA90={} weapType={} wandLin={:.1f} wandAng={:.2f} cdMode={} cdCommon={:.3f} flag11={} cd908={:.3f} total={}",
                             partnerLayer,
                             otherId,
                             bodyFlags,
-                            bodyKey,
                             collisionObject ? "ok" : "null",
                             sceneObject ? "ok" : "null",
                             nativeRef ? nativeRef->GetFormID() : 0u,
-                            partnerRef ? partnerRef->GetFormID() : 0u,
+                            (targetNiFlags >> 26) & 1u,
+                            targetNiFlags,
+                            targetFormFlags,
+                            hostile ? "yes" : "no",
+                            attacker9E8,
+                            attackerA90,
+                            weaponType,
+                            wandLinear,
+                            wandAngular,
                             cooldownMode,
                             commonCooldown,
-                            otherFilterInfo,
                             eventFlag,
                             cooldown,
                             total);
