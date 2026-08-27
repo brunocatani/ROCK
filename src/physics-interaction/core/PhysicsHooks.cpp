@@ -913,6 +913,10 @@ namespace rock
             static std::atomic<std::uint32_t> s_rockPartnerCount{ 0 };
             static std::atomic<std::int64_t> s_lastSummaryMs{ 0 };
             static std::atomic<std::uint32_t> s_detailCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathPlayerCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathNpcCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathReflessCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathDetailCount{ 0 };
 
             const auto total = s_totalCount.fetch_add(1, std::memory_order_relaxed) + 1;
 
@@ -951,6 +955,51 @@ namespace rock
                 s_rockPartnerCount.fetch_add(1, std::memory_order_relaxed);
             }
 
+            /*
+             * NATIVE-MELEE-TRACE partner identity for the actor-path layers
+             * (charcontroller 30, biped 8, deadbip 32, bipedNoCC 33). These are
+             * the layers a landed NPC hit must arrive on, and they are rare in
+             * the event stream, so per-event ref resolution here is bounded.
+             * The identity split answers the open question directly: does the
+             * NPC's controller ever reach this callback, or only the player's?
+             */
+            const std::uint32_t partnerLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            const bool actorPathPartner = decoded &&
+                (partnerLayer == collision_layer_policy::FO4_LAYER_CHARCONTROLLER ||
+                    partnerLayer == collision_layer_policy::FO4_LAYER_BIPED ||
+                    partnerLayer == collision_layer_policy::FO4_LAYER_DEADBIP ||
+                    partnerLayer == collision_layer_policy::FO4_LAYER_BIPED_NO_CC);
+            if (actorPathPartner) {
+                auto* player = RE::PlayerCharacter::GetSingleton();
+                auto* cell = player ? player->GetParentCell() : nullptr;
+                auto* bhkWorld = cell ? cell->GetbhkWorld() : nullptr;
+                const auto otherId = bodyIds[1u - ourIndex];
+                RE::TESObjectREFR* partnerRef =
+                    bhkWorld ? resolveBodyToRef(bhkWorld, world, RE::hknpBodyId{ otherId }) : nullptr;
+                const bool partnerIsPlayer = partnerRef && partnerRef == player;
+                if (partnerIsPlayer) {
+                    s_actorPathPlayerCount.fetch_add(1, std::memory_order_relaxed);
+                } else if (partnerRef) {
+                    s_actorPathNpcCount.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    s_actorPathReflessCount.fetch_add(1, std::memory_order_relaxed);
+                }
+                if (!partnerIsPlayer) {
+                    std::uint32_t actorDetailCount = 0;
+                    if (shouldEmitNativeMeleeTrace(s_actorPathDetailCount, actorDetailCount, 30, 50)) {
+                        ROCK_LOG_INFO(Combat,
+                            "NATIVE-MELEE-TRACE actor-path partner: layer={} bodyId={} ref=0x{:08X} filter=0x{:08X} flag11={} cooldown={:.3f} total={}",
+                            partnerLayer,
+                            otherId,
+                            partnerRef ? partnerRef->GetFormID() : 0u,
+                            otherFilterInfo,
+                            eventFlag,
+                            cooldown,
+                            total);
+                    }
+                }
+            }
+
             std::uint32_t detailCount = 0;
             if (shouldEmitNativeMeleeTrace(s_detailCount, detailCount, 20, 500)) {
                 ROCK_LOG_INFO(Combat,
@@ -987,12 +1036,15 @@ namespace rock
                     written += static_cast<std::size_t>(result);
                 }
                 ROCK_LOG_INFO(Combat,
-                    "NATIVE-MELEE-TRACE VRMeleeImpact summary: total={} flag11={} cooldownActive={} decodeFailed={} rockPartnerDropped={} partnerLayers=[{}]",
+                    "NATIVE-MELEE-TRACE VRMeleeImpact summary: total={} flag11={} cooldownActive={} decodeFailed={} rockPartnerDropped={} actorPath[player={} npc={} refless={}] partnerLayers=[{}]",
                     total,
                     s_flaggedCount.load(std::memory_order_relaxed),
                     s_cooldownActiveCount.load(std::memory_order_relaxed),
                     s_decodeFailedCount.load(std::memory_order_relaxed),
                     s_rockPartnerCount.load(std::memory_order_relaxed),
+                    s_actorPathPlayerCount.load(std::memory_order_relaxed),
+                    s_actorPathNpcCount.load(std::memory_order_relaxed),
+                    s_actorPathReflessCount.load(std::memory_order_relaxed),
                     histogram);
             }
 
