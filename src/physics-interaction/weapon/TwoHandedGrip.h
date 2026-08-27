@@ -585,16 +585,6 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey);
 
         /*
-         * Position-only mode keeps the game weapon as the immutable frame and
-         * overlays the authored wrist on the visible right-hand branch. This
-         * path does not acquire FRIK hand or weapon-node ownership.
-         */
-        void beginAuthoredPrimaryFiringHandPresentationFrame() noexcept;
-        bool applyAuthoredPrimaryFiringHandPresentation(
-            RE::NiNode* weaponNode,
-            const RE::NiTransform& solvedHandWorld);
-
-        /*
          * Final primary gunstock presentation. The already-solved weapon and
          * every participating posed hand rotate as one rigid group so the
          * neutral bore follows the damped firing-wrist +X axis, followed by
@@ -1573,7 +1563,6 @@ namespace rock
         bool _authoredPrimaryFingerPosePublished{ false };
         bool _authoredPrimaryFingerPoseBlockEngaged{ false };
         bool _authoredPrimaryFingerPoseSuppressed{ false };
-        bool _authoredPrimaryHandPresentationActive{ false };
         bool _leftHandHoldingObjectForPose{ false };
         bool _rightHandHoldingObjectForPose{ false };
 
