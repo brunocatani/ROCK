@@ -1981,6 +1981,12 @@ namespace rock
 
         constexpr std::size_t kMaximumWeaponLocalHierarchyDepth = 64;
 
+        [[nodiscard]] bool weaponSceneNodePointerPlausible(const RE::NiAVObject* node) noexcept
+        {
+            const auto address = reinterpret_cast<std::uintptr_t>(node);
+            return address >= 0x10000 && address <= 0x0000'7FFF'FFFF'FFFFull;
+        }
+
         [[nodiscard]] bool tryResolveDescendantLocalTransform(
             const RE::NiAVObject* ancestor,
             const RE::NiAVObject* descendant,
@@ -2003,7 +2009,9 @@ namespace rock
             std::size_t pathLength = 0;
             auto* cursor = descendant;
             while (cursor && cursor != ancestor) {
-                if (pathLength >= reversePath.size() || !weaponTransformFinite(cursor->local)) {
+                if (!weaponSceneNodePointerPlausible(cursor) ||
+                    pathLength >= reversePath.size() ||
+                    !weaponTransformFinite(cursor->local)) {
                     outDescendantLocal = {};
                     return false;
                 }
@@ -2393,6 +2401,70 @@ namespace rock
             }
         }
         return nullptr;
+    }
+
+    bool WeaponCollision::activeWeaponBodyRootMatches(const RE::NiAVObject* currentWeaponRoot) const
+    {
+        if (!currentWeaponRoot) {
+            return false;
+        }
+
+        bool foundBody = false;
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+            foundBody = true;
+            if (instance.driveNode != currentWeaponRoot) {
+                return false;
+            }
+        }
+        return foundBody;
+    }
+
+    bool WeaponCollision::retireActiveWeaponBodiesForSceneTransition(RE::hknpWorld* world, const char* reason)
+    {
+        if (!world || getCurrentWeaponGenerationKey() == 0 || getWeaponBodyCount() == 0 ||
+            !bankHasWeaponBody(activeWeaponBodies())) {
+            return false;
+        }
+
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        const std::uint32_t retiredBodyCount = bankWeaponBodyCount(activeWeaponBodies());
+
+        /*
+         * The engine owns the equipped weapon scene graph. Once its identity,
+         * instance, or root changes, every cached NiAVObject pointer from the
+         * previous graph becomes invalid immediately. Remove the generated body
+         * bank from all collision and publication paths before any deferred OMOD
+         * repair, visual stabilization, or staged body creation can return.
+         * Native body payloads still use the normal delayed reclamation path.
+         */
+        clearAtomicBodyIds();
+        resetWeaponBodySetGeneration();
+        destroyWeaponBodyBank(activeWeaponBodies(), true);
+        clearGeneratedSourceCompletenessTracking();
+        clearPendingWeaponVisualRebuild();
+        clearGeneratedSourceCache();
+        resetVisualSourceUnavailableRetention();
+        _detachedSourceExclusionEquippedKey = 0;
+        _detachedSourceExclusionGroups.clear();
+        _omodPrebuildReconciliationEquippedKey = 0;
+        _omodPrebuildReconciliationRoot = nullptr;
+
+        ROCK_LOG_INFO(Weapon,
+            "Retired generated weapon bodies before scene transition reason={} bodies={} cached(identity/ownership/form)=({:016X}/{:016X}/{:08X}) observed(identity/ownership/form)=({:016X}/{:016X}/{:08X})",
+            reason ? reason : "unknown",
+            retiredBodyCount,
+            _cachedWeaponIdentityKey,
+            _cachedWeaponOwnershipKey,
+            _cachedWeaponFormID,
+            _observedEquippedWeaponIdentityKey,
+            _observedEquippedWeaponOwnershipKey,
+            _observedEquippedWeaponFormID);
+        return true;
     }
 
     weapon_generated_source_completeness_policy::GeneratedSourceCompleteness WeaponCollision::summarizeGeneratedSources(const std::vector<GeneratedHullSource>& sources)
@@ -2918,28 +2990,39 @@ namespace rock
         return true;
     }
 
-    bool WeaponCollision::generatedSourceCacheMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const
+    bool WeaponCollision::generatedSourceCacheMatches(
+        std::uint64_t equippedKey,
+        std::uint64_t ownershipKey,
+        std::uint64_t visualKey,
+        const RE::NiAVObject* weaponRoot) const
     {
         return _generatedSourceCache.valid &&
                _generatedSourceCache.equippedKey == equippedKey &&
+               _generatedSourceCache.ownershipKey == ownershipKey &&
                _generatedSourceCache.visualKey == visualKey &&
+               _generatedSourceCache.weaponRootAddress == reinterpret_cast<std::uintptr_t>(weaponRoot) &&
                !_generatedSourceCache.sources.empty() &&
                _generatedSourceCache.summary.signature != 0;
     }
 
     void WeaponCollision::storeGeneratedSourceCache(std::uint64_t equippedKey,
+        std::uint64_t ownershipKey,
         std::uint64_t visualKey,
+        const RE::NiAVObject* weaponRoot,
         std::vector<GeneratedHullSource> sources,
         const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary)
     {
-        if (equippedKey == 0 || visualKey == 0 || sources.empty() || summary.signature == 0) {
+        if (equippedKey == 0 || ownershipKey == 0 || visualKey == 0 || !weaponRoot ||
+            sources.empty() || summary.signature == 0) {
             clearGeneratedSourceCache();
             return;
         }
 
         _generatedSourceCache.valid = true;
         _generatedSourceCache.equippedKey = equippedKey;
+        _generatedSourceCache.ownershipKey = ownershipKey;
         _generatedSourceCache.visualKey = visualKey;
+        _generatedSourceCache.weaponRootAddress = reinterpret_cast<std::uintptr_t>(weaponRoot);
         _generatedSourceCache.sources = std::move(sources);
         _generatedSourceCache.summary = summary;
     }
@@ -2960,6 +3043,7 @@ namespace rock
         std::uint64_t visualKey,
         std::uint64_t identityKey,
         std::uint64_t ownershipKey,
+        const RE::NiAVObject* weaponRoot,
         std::uint32_t weaponFormID,
         const WeaponVisualKeyStats& visualKeyStats,
         bool replacingExisting,
@@ -2967,7 +3051,8 @@ namespace rock
         std::vector<GeneratedHullSource> sources,
         const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary)
     {
-        if (equippedKey == 0 || ownershipKey == 0 || weaponFormID == 0 || sources.empty() || summary.signature == 0) {
+        if (equippedKey == 0 || ownershipKey == 0 || !weaponRoot || weaponFormID == 0 ||
+            sources.empty() || summary.signature == 0) {
             return false;
         }
 
@@ -2979,6 +3064,7 @@ namespace rock
         _pendingGeneratedWeaponBuild.visualKey = visualKey;
         _pendingGeneratedWeaponBuild.identityKey = identityKey;
         _pendingGeneratedWeaponBuild.ownershipKey = ownershipKey;
+        _pendingGeneratedWeaponBuild.weaponRootAddress = reinterpret_cast<std::uintptr_t>(weaponRoot);
         _pendingGeneratedWeaponBuild.weaponFormID = weaponFormID;
         _pendingGeneratedWeaponBuild.visualRootCount = visualKeyStats.rootCount;
         _pendingGeneratedWeaponBuild.visibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
@@ -2990,11 +3076,13 @@ namespace rock
     bool WeaponCollision::pendingGeneratedWeaponBuildMatches(
         std::uint64_t equippedKey,
         std::uint64_t ownershipKey,
+        const RE::NiAVObject* weaponRoot,
         std::uint32_t weaponFormID) const
     {
         return _pendingGeneratedWeaponBuild.active &&
                _pendingGeneratedWeaponBuild.equippedKey == equippedKey &&
                _pendingGeneratedWeaponBuild.ownershipKey == ownershipKey &&
+               _pendingGeneratedWeaponBuild.weaponRootAddress == reinterpret_cast<std::uintptr_t>(weaponRoot) &&
                _pendingGeneratedWeaponBuild.weaponFormID == weaponFormID;
     }
 
@@ -3360,6 +3448,9 @@ namespace rock
         }
 
         const auto& bank = activeWeaponBodies();
+        if (!activeWeaponBodyRootMatches(currentWeaponRoot)) {
+            return false;
+        }
         const std::uint32_t expectedBodyCount = getWeaponBodyCount();
         if (expectedBodyCount == 0 || outChildren.size() < expectedBodyCount) {
             return false;
@@ -3679,9 +3770,8 @@ namespace rock
                 continue;
             }
 
-            RE::NiAVObject* packageDriveRoot = resolvePackageDriveNode(activeWeaponBodies(), nullptr);
             outInfo.sourceName = instance.sourceName;
-            outInfo.interactionRootName = packageDriveRoot ? safeNodeName(packageDriveRoot) : "";
+            outInfo.interactionRootName = instance.driveRootName;
             outInfo.sourceRootName = instance.sourceRootName;
             return true;
         }
@@ -3753,6 +3843,10 @@ namespace rock
         if (bodyId == INVALID_BODY_ID) {
             return false;
         }
+        if (getCurrentWeaponGenerationKey() == 0 ||
+            !activeWeaponBodyRootMatches(currentWeaponRoot)) {
+            return false;
+        }
 
         for (const auto& instance : activeWeaponBodies()) {
             if (!instance.body.isValid() ||
@@ -3775,7 +3869,8 @@ namespace rock
         for (auto& view : outViews) {
             view = {};
         }
-        if (outViews.empty()) {
+        if (outViews.empty() || getCurrentWeaponGenerationKey() == 0 ||
+            !activeWeaponBodyRootMatches(currentWeaponRoot)) {
             return 0;
         }
 
@@ -3849,6 +3944,7 @@ namespace rock
         };
         if (!currentWeaponRoot ||
             currentGeneration == 0 ||
+            !activeWeaponBodyRootMatches(currentWeaponRoot) ||
             pointsWorld.empty() ||
             pointsWorld.size() > kMaximumPointCount ||
             outWitnesses.size() != pointsWorld.size() ||
@@ -4376,6 +4472,7 @@ namespace rock
                    std::isfinite(point.z);
         };
         if (!weaponNode || currentGeneration == 0 ||
+            !activeWeaponBodyRootMatches(weaponNode) ||
             !pointFinite(probeWorldPoint) ||
             !std::isfinite(probeRadiusGame) || probeRadiusGame <= 0.0f) {
             return false;
@@ -4385,10 +4482,7 @@ namespace rock
         const WeaponBodyInstance* bestInstance = nullptr;
         int boundsCandidateCount = 0;
         int surfaceCandidateCount = 0;
-        const RE::NiAVObject* packageDriveRoot = resolvePackageDriveNode(activeWeaponBodies(), const_cast<RE::NiAVObject*>(weaponNode));
-        if (!packageDriveRoot) {
-            return false;
-        }
+        const RE::NiAVObject* packageDriveRoot = weaponNode;
 
         for (const auto& instance : activeWeaponBodies()) {
             if (!instance.body.isValid()) {
@@ -4729,15 +4823,34 @@ namespace rock
         _observedEquippedWeaponOwnershipKey = observedOwnershipKey;
         _observedEquippedWeaponFormID = observedFormID;
         _observedEquippedWeaponInstanceContentKey = observedInstanceContentKey;
-        updateWeaponEmitterSnapshot(weaponNode, observedKey);
 
         const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool workbenchExitRequested =
             weaponNode != nullptr && _workbenchExitRebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool keyChanged = observedKey != 0 && observedKey != _cachedWeaponKey;
-        const bool missingBodies = observedKey != 0 && !hasWeaponBody();
         const bool identityKeyChanged = observedIdentityKey != 0 && observedIdentityKey != _cachedWeaponIdentityKey;
-        bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || keyChanged || missingBodies;
+        const bool ownershipKeyChanged =
+            _cachedWeaponOwnershipKey != 0 && observedOwnershipKey != _cachedWeaponOwnershipKey;
+        const bool hadPublishedWeaponBodies =
+            getCurrentWeaponGenerationKey() != 0 &&
+            getWeaponBodyCount() != 0 &&
+            hasWeaponBody();
+        const bool activeRootChanged =
+            hadPublishedWeaponBodies && weaponNode && !activeWeaponBodyRootMatches(weaponNode);
+        if (hadPublishedWeaponBodies &&
+            (identityKeyChanged || ownershipKeyChanged || activeRootChanged || workbenchExitRequested)) {
+            const char* transitionReason = identityKeyChanged ?
+                "equipped-identity-changed" :
+                (ownershipKeyChanged ?
+                        "equipped-ownership-changed" :
+                        (activeRootChanged ? "weapon-root-changed" : "scene-rebuild-requested"));
+            retireActiveWeaponBodiesForSceneTransition(world, transitionReason);
+        }
+        updateWeaponEmitterSnapshot(weaponNode, observedKey);
+
+        const bool missingBodies = observedKey != 0 && !hasWeaponBody();
+        bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || keyChanged ||
+            ownershipKeyChanged || activeRootChanged || missingBodies;
         bool rebuildDiagnosticsRecorded = false;
 
         const auto recordRebuildDiagnostics = [&]() {
@@ -4776,8 +4889,12 @@ namespace rock
         }
 
         if (_pendingGeneratedWeaponBuild.active) {
-            const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested ||
-                !pendingGeneratedWeaponBuildMatches(observedKey, observedOwnershipKey, observedFormID);
+            const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested || activeRootChanged ||
+                !pendingGeneratedWeaponBuildMatches(
+                    observedKey,
+                    observedOwnershipKey,
+                    weaponNode,
+                    observedFormID);
             if (pendingInvalidated) {
                 ROCK_LOG_INFO(Weapon,
                     "Generated weapon staged create cancelled: pendingKey={:016X} observedKey={:016X} pendingVisual={:016X} driveRebuild={} workbenchExit={}",
@@ -4941,7 +5058,11 @@ namespace rock
                 std::size_t generatedCount = 0;
                 bool usedCachedSources = false;
 
-                if (generatedSourceCacheMatches(observedKey, observedVisualKey)) {
+                if (generatedSourceCacheMatches(
+                        observedKey,
+                        observedOwnershipKey,
+                        observedVisualKey,
+                        weaponNode)) {
                     generatedSources = _generatedSourceCache.sources;
                     generatedSummary = _generatedSourceCache.summary;
                     generatedCount = generatedSources.size();
@@ -5059,7 +5180,13 @@ namespace rock
                 destroyWeaponBodyBank(targetBank, true);
 
                 if (!usedCachedSources) {
-                    storeGeneratedSourceCache(observedKey, observedVisualKey, generatedSources, generatedSummary);
+                    storeGeneratedSourceCache(
+                        observedKey,
+                        observedOwnershipKey,
+                        observedVisualKey,
+                        weaponNode,
+                        generatedSources,
+                        generatedSummary);
                 }
 
                 recordRebuildDiagnostics();
@@ -5069,6 +5196,7 @@ namespace rock
                         observedVisualKey,
                         observedIdentityKey,
                         observedOwnershipKey,
+                        weaponNode,
                         observedFormID,
                         visualKeyStats,
                         replacingExisting,
@@ -6138,6 +6266,7 @@ namespace rock
             instance.driveNode = source.driveRoot ? source.driveRoot : source.sourceRoot;
             instance.sourceNode = source.sourceRoot;
             instance.sourceName = source.sourceName;
+            instance.driveRootName = instance.driveNode ? safeNodeName(instance.driveNode) : "";
             instance.sourceRootName = source.sourceRoot ? safeNodeName(source.sourceRoot) : "";
             instance.generatedLocalCenterGame = source.localCenterGame;
             instance.generatedSourceLocalCenterGame = source.sourceLocalCenterGame;
@@ -6363,6 +6492,7 @@ namespace rock
         instance.driveNode = nullptr;
         instance.sourceNode = nullptr;
         instance.sourceName.clear();
+        instance.driveRootName.clear();
         instance.sourceRootName.clear();
         instance.generatedLocalCenterGame = {};
         instance.generatedSourceLocalCenterGame = {};
@@ -6815,7 +6945,7 @@ namespace rock
             }
         }
 
-        std::size_t removeStaleRockOmodEnrichmentContainers(
+        std::vector<RE::NiNode*> findStaleRockOmodEnrichmentContainers(
             RE::NiAVObject* weaponRoot,
             const std::unordered_set<std::uint32_t>& activeOmodFormIds)
         {
@@ -6824,7 +6954,8 @@ namespace rock
             std::size_t visited = 0;
             collectRockOmodEnrichmentContainersRecursive(weaponRoot, containers, visited);
 
-            std::size_t removed = 0;
+            std::vector<RE::NiNode*> staleContainers;
+            staleContainers.reserve(containers.size());
             for (auto* container : containers) {
                 std::uint32_t formId = 0;
                 const char* rawName = container ? container->name.c_str() : nullptr;
@@ -6835,6 +6966,23 @@ namespace rock
 
                 auto* parent = container->parent ? container->parent->IsNode() : nullptr;
                 if (!parent) {
+                    continue;
+                }
+                staleContainers.push_back(container);
+            }
+            return staleContainers;
+        }
+
+        std::size_t removeStaleRockOmodEnrichmentContainers(
+            const std::vector<RE::NiNode*>& staleContainers)
+        {
+            std::size_t removed = 0;
+            for (auto* container : staleContainers) {
+                std::uint32_t formId = 0;
+                const char* rawName = container ? container->name.c_str() : nullptr;
+                auto* parent = container && container->parent ? container->parent->IsNode() : nullptr;
+                if (!rawName || !parent ||
+                    !tryParseRockOmodEnrichmentFormId(rawName, formId)) {
                     continue;
                 }
                 RE::NiPointer<RE::NiAVObject> detached;
@@ -7686,9 +7834,14 @@ namespace rock
                 activeOmodFormIds.insert(record.formId);
             }
         }
-        const std::size_t staleEnrichmentCount =
-            removeStaleRockOmodEnrichmentContainers(weaponNode, activeOmodFormIds);
-        if (staleEnrichmentCount != 0) {
+        const auto staleEnrichmentContainers =
+            findStaleRockOmodEnrichmentContainers(weaponNode, activeOmodFormIds);
+        if (!staleEnrichmentContainers.empty()) {
+            retireActiveWeaponBodiesForSceneTransition(
+                _cachedWorld,
+                "omod-stale-enrichment-removal");
+            const std::size_t staleEnrichmentCount =
+                removeStaleRockOmodEnrichmentContainers(staleEnrichmentContainers);
             ROCK_LOG_INFO(Weapon,
                 "OMOD-HEAL run={} removed {} stale ROCK-owned enrichment container(s); requesting collider rebuild",
                 runIndex,
@@ -8149,6 +8302,7 @@ namespace rock
          */
         std::size_t selfHealAttemptCount = 0;
         std::size_t selfHealSuccessCount = 0;
+        bool activeSceneSourceBankRetired = false;
         if (!selfHealCandidates.empty()) {
             // Functional repair targets the exact update root whose visible
             // geometry feeds collider capture. The token census remains a
@@ -8409,6 +8563,12 @@ namespace rock
                      * housing directly from the guarded raw template instead.
                      */
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                    if (!activeSceneSourceBankRetired) {
+                        retireActiveWeaponBodiesForSceneTransition(
+                            _cachedWorld,
+                            "omod-scene-enrichment");
+                        activeSceneSourceBankRetired = true;
+                    }
                     _omodSelfHealAttempted.insert(attemptKey);
                     ++selfHealAttemptCount;
                     const bool nativeWholeModelEligible = weapon_omod_audit_policy::shouldAttemptWholeModelAttach(
@@ -8555,13 +8715,17 @@ namespace rock
 
         auto& bank = activeWeaponBodies();
         RE::NiAVObject* cachedPackageDriveNode = resolvePackageDriveNode(bank, nullptr);
-        RE::NiAVObject* packageDriveNode = fallbackWeaponNode ? fallbackWeaponNode : cachedPackageDriveNode;
-        if (!packageDriveNode) {
+        if (!fallbackWeaponNode || !activeWeaponBodyRootMatches(fallbackWeaponNode)) {
+            _driveRebuildRequested.store(true, std::memory_order_release);
+            ROCK_LOG_SAMPLE_WARN(Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Generated weapon source update rejected: cached root 0x{:X} does not own current root 0x{:X}; requesting rebuild",
+                static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(cachedPackageDriveNode)),
+                static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(fallbackWeaponNode)));
             return;
         }
+        RE::NiAVObject* packageDriveNode = fallbackWeaponNode;
         const RE::NiTransform packageWorld = packageDriveNode->world;
-        const bool packageRootDiffersFromCached = cachedPackageDriveNode && cachedPackageDriveNode != packageDriveNode;
-        bool updatedPublishedRoots = false;
 
         (void)drivenSourceNodes;
         (void)drivenSourceNodeCount;
@@ -8570,28 +8734,6 @@ namespace rock
             auto& instance = bank[i];
             if (!instance.body.isValid()) {
                 continue;
-            }
-
-            if (instance.driveNode && instance.driveNode != packageDriveNode) {
-                ROCK_LOG_SAMPLE_WARN(Weapon,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon package drive root mismatch bodyId={} bodyRoot=0x{:X} packageRoot='{}' packageRootAddr=0x{:X} sourceRoot='{}' - using current package root for motion",
-                    instance.body.getBodyId().value,
-                    static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(instance.driveNode)),
-                    safeNodeName(packageDriveNode),
-                    static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(packageDriveNode)),
-                    instance.sourceRootName);
-            }
-
-            if (packageRootDiffersFromCached && instance.publicationIndex < MAX_WEAPON_BODIES) {
-                if (!updatedPublishedRoots) {
-                    beginWeaponBodyPublication();
-                    updatedPublishedRoots = true;
-                }
-                _weaponBodyInteractionRootsAtomic[instance.publicationIndex].store(reinterpret_cast<std::uintptr_t>(packageDriveNode), std::memory_order_release);
-                if (instance.driveNode && instance.driveNode != packageDriveNode) {
-                    _weaponBodySourceRootsAtomic[instance.publicationIndex].store(0, std::memory_order_release);
-                }
             }
 
             RE::NiTransform sourceWorld{};
@@ -8605,10 +8747,6 @@ namespace rock
             const RE::NiPoint3& centerGame = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);
             queueBodyTarget(instance, generatedTransform, sourceDeltaSeconds);
-        }
-
-        if (updatedPublishedRoots) {
-            endWeaponBodyPublication();
         }
 
     }

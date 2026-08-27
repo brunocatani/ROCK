@@ -383,6 +383,7 @@ namespace rock
             RE::NiAVObject* driveNode{ nullptr };
             RE::NiAVObject* sourceNode{ nullptr };
             std::string sourceName;
+            std::string driveRootName;
             std::string sourceRootName;
             RE::NiPoint3 generatedLocalCenterGame{};
             RE::NiPoint3 generatedSourceLocalCenterGame{};
@@ -427,7 +428,9 @@ namespace rock
         {
             bool valid{ false };
             std::uint64_t equippedKey{ 0 };
+            std::uint64_t ownershipKey{ 0 };
             std::uint64_t visualKey{ 0 };
+            std::uintptr_t weaponRootAddress{ 0 };
             std::vector<GeneratedHullSource> sources;
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
@@ -469,6 +472,7 @@ namespace rock
             std::uint64_t visualKey{ 0 };
             std::uint64_t identityKey{ 0 };
             std::uint64_t ownershipKey{ 0 };
+            std::uintptr_t weaponRootAddress{ 0 };
             std::uint32_t weaponFormID{ 0 };
             std::uint32_t visualRootCount{ 0 };
             std::uint32_t visibleTriShapeCount{ 0 };
@@ -490,6 +494,8 @@ namespace rock
         static bool bankHasWeaponBody(const WeaponBodyBank& bank);
         static std::uint32_t bankWeaponBodyCount(const WeaponBodyBank& bank);
         static RE::NiAVObject* resolvePackageDriveNode(const WeaponBodyBank& bank, RE::NiAVObject* fallbackWeaponNode);
+        bool activeWeaponBodyRootMatches(const RE::NiAVObject* currentWeaponRoot) const;
+        bool retireActiveWeaponBodiesForSceneTransition(RE::hknpWorld* world, const char* reason);
         bool tryBuildSupportGripEvidenceView(
             const WeaponBodyInstance& instance,
             const RE::NiAVObject* currentWeaponRoot,
@@ -566,9 +572,15 @@ namespace rock
             const std::vector<GeneratedHullSource>& sources);
         void resetVisualSourceUnavailableRetention();
         bool canRetainCurrentWeaponBodiesForVisualSourceMiss(std::uint64_t observedIdentityKey, RE::NiAVObject* currentWeaponRoot, float retainSecondsLimit, float measuredDeltaSeconds);
-        bool generatedSourceCacheMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const;
-        void storeGeneratedSourceCache(std::uint64_t equippedKey,
+        bool generatedSourceCacheMatches(
+            std::uint64_t equippedKey,
+            std::uint64_t ownershipKey,
             std::uint64_t visualKey,
+            const RE::NiAVObject* weaponRoot) const;
+        void storeGeneratedSourceCache(std::uint64_t equippedKey,
+            std::uint64_t ownershipKey,
+            std::uint64_t visualKey,
+            const RE::NiAVObject* weaponRoot,
             std::vector<GeneratedHullSource> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
         void clearPendingGeneratedWeaponBuild(RE::hknpWorld* world, bool destroyTargetBank);
@@ -576,6 +588,7 @@ namespace rock
             std::uint64_t visualKey,
             std::uint64_t identityKey,
             std::uint64_t ownershipKey,
+            const RE::NiAVObject* weaponRoot,
             std::uint32_t weaponFormID,
             const WeaponVisualKeyStats& visualKeyStats,
             bool replacingExisting,
@@ -586,6 +599,7 @@ namespace rock
         bool pendingGeneratedWeaponBuildMatches(
             std::uint64_t equippedKey,
             std::uint64_t ownershipKey,
+            const RE::NiAVObject* weaponRoot,
             std::uint32_t weaponFormID) const;
 
         std::uint64_t getEquippedWeaponIdentityKey(
