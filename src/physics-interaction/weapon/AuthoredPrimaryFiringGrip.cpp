@@ -597,6 +597,28 @@ namespace rock
             return;
         }
 
+        /*
+         * Plausibility gate: a mid-equip/mid-rebuild weapon node can sit
+         * thousands of units from the hand for a few frames (observed
+         * 9410gu leaving a weapon workbench). Applying that as a
+         * "correction" hurls the weapon across the cell and flickers the
+         * session. Normal carry mismatch stays under ~5gu; fail closed far
+         * above that and log loudly until the transforms are sane again.
+         */
+        constexpr float kMaxPlausibleHandMismatchGameUnits = 50.0f;
+        const float liveHandMismatch =
+            translationDistance(trackedHandWorld, currentAuthoredHandWorld);
+        if (!(liveHandMismatch <= kMaxPlausibleHandMismatchGameUnits)) {
+            ROCK_LOG_SAMPLE_WARN(Animation, 1000,
+                "Authored primary firing grip suspended on implausible hand mismatch weaponKey=0x{:X} mismatch={:.1f}gu bound={:.1f}gu",
+                currentWeaponKey,
+                liveHandMismatch,
+                kMaxPlausibleHandMismatchGameUnits);
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            endSession("authored-hand-mismatch-implausible");
+            return;
+        }
+
         if (_positionOnlyAlignmentActive) {
             const RE::NiPoint3 authoredGripWeaponLocal =
                 computeGrabLegacyPalmPivotAWorldFromHandBasis(

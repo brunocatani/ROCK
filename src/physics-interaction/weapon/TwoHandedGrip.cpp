@@ -3377,6 +3377,25 @@ namespace rock
                 continue;
             }
 
+            /*
+             * Position-only carry re-seats the right hand at the authored
+             * grip the moment the session resumes. Returning to the physical
+             * wrist first showed the un-authored pose for a split second and
+             * then snapped. Target the authored seat on the live (possibly
+             * still returning) weapon so the return lands where the session
+             * resumes. The physical target stays the fallback for drops and
+             * for an implausibly distant seat.
+             */
+            if (!isLeft) {
+                RE::NiTransform seatTargetWorld{};
+                if (tryResolveAuthoredPositionOnlySeatWorld(seatTargetWorld) &&
+                    hand_visual_lerp_math::distanceGameUnits(
+                        seatTargetWorld.translate,
+                        targetWorld.translate) <= 50.0f) {
+                    targetWorld = seatTargetWorld;
+                }
+            }
+
             const auto result = hand_visual_lerp_math::driveVisualReturn(
                 state,
                 targetWorld,
@@ -7997,6 +8016,32 @@ namespace rock
         }
         return tryGetSolverHandTransform(false, outHandWorld) &&
                isUsableHandAuthorityTransform(outHandWorld);
+    }
+
+    bool TwoHandedGrip::tryResolveAuthoredPositionOnlySeatWorld(
+        RE::NiTransform& outHandWorld) const
+    {
+        outHandWorld = {};
+        // Carry states only: on drop/holster the session will not resume,
+        // so the return keeps its physical endpoint.
+        if (_firingHandIsLeft ||
+            !_rightFiringCanonicalPositionOnlyAlignment ||
+            _rightFiringHandCanonicalSource !=
+                RightFiringCanonicalSource::AuthoredAnimation ||
+            (_state != TwoHandedState::PrimaryOnly &&
+                _state != TwoHandedState::Gripping) ||
+            !_activeWeaponNode ||
+            !hasRightFiringHandCanonicalFrame(
+                _activeWeaponNode,
+                _activeWeaponGenerationKey,
+                _activeEquippedWeaponOwnershipKey) ||
+            !isFiniteTransform(_activeWeaponNode->world)) {
+            return false;
+        }
+        outHandWorld = transform_math::composeTransforms(
+            _activeWeaponNode->world,
+            _rightFiringHandCanonicalWeaponLocal);
+        return isUsableHandAuthorityTransform(outHandWorld);
     }
 
     bool TwoHandedGrip::applyWeaponVisualAuthority(

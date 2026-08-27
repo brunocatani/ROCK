@@ -440,6 +440,15 @@ namespace rock
             RE::NiTransform& outHandWorld) const;
 
         /*
+         * Authored seat on the live weapon while a position-only carry will
+         * resume; the right-hand visual return targets it so the hand lands
+         * where the session re-seats it instead of flashing the physical
+         * wrist first.
+         */
+        bool tryResolveAuthoredPositionOnlySeatWorld(
+            RE::NiTransform& outHandWorld) const;
+
+        /*
          * Binds Bethesda's exact RArm_Hand-in-Weapon relation to ROCK's
          * existing firing canonical by node identity, collision generation,
          * and equipped ownership. When a complete firing-finger pose is
