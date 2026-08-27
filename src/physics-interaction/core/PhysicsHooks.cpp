@@ -893,13 +893,24 @@ namespace rock
          * histogram of the partner body so one session shows whether an
          * NPC-layer partner ever reaches the native callback.
          */
-        void traceVrMeleeImpactPartner(RE::Actor* actor, void* contactEvent, void* collisionEvent, bool actorIsPlayer)
+        /*
+         * Returns true when the event's partner body sits on a ROCK-owned
+         * collision layer. The caller must then drop the event instead of
+         * forwarding it to the native VRMeleeImpact callback: the native code
+         * accepts any ref-less non-static body as a "hit the world" melee
+         * target, performs the hit, and arms the ~0.7s melee cooldown, so one
+         * ROCK self-contact at swing start silently eats the real NPC hit
+         * (verified in-game 2026-08-27: cooldown armed by a
+         * ROCK_DynamicWeaponCompound partner on 95% of events).
+         */
+        bool traceVrMeleeImpactPartner(RE::Actor* actor, void* contactEvent, void* collisionEvent, bool actorIsPlayer)
         {
             static std::array<std::atomic<std::uint32_t>, 128> s_layerCounts{};
             static std::atomic<std::uint32_t> s_totalCount{ 0 };
             static std::atomic<std::uint32_t> s_flaggedCount{ 0 };
             static std::atomic<std::uint32_t> s_cooldownActiveCount{ 0 };
             static std::atomic<std::uint32_t> s_decodeFailedCount{ 0 };
+            static std::atomic<std::uint32_t> s_rockPartnerCount{ 0 };
             static std::atomic<std::int64_t> s_lastSummaryMs{ 0 };
             static std::atomic<std::uint32_t> s_detailCount{ 0 };
 
@@ -932,6 +943,12 @@ namespace rock
             }
             if (!decoded) {
                 s_decodeFailedCount.fetch_add(1, std::memory_order_relaxed);
+            }
+            const bool rockPartner =
+                decoded &&
+                collision_layer_policy::isRockOwnedMatrixLayer(otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            if (rockPartner) {
+                s_rockPartnerCount.fetch_add(1, std::memory_order_relaxed);
             }
 
             std::uint32_t detailCount = 0;
@@ -970,13 +987,16 @@ namespace rock
                     written += static_cast<std::size_t>(result);
                 }
                 ROCK_LOG_INFO(Combat,
-                    "NATIVE-MELEE-TRACE VRMeleeImpact summary: total={} flag11={} cooldownActive={} decodeFailed={} partnerLayers=[{}]",
+                    "NATIVE-MELEE-TRACE VRMeleeImpact summary: total={} flag11={} cooldownActive={} decodeFailed={} rockPartnerDropped={} partnerLayers=[{}]",
                     total,
                     s_flaggedCount.load(std::memory_order_relaxed),
                     s_cooldownActiveCount.load(std::memory_order_relaxed),
                     s_decodeFailedCount.load(std::memory_order_relaxed),
+                    s_rockPartnerCount.load(std::memory_order_relaxed),
                     histogram);
             }
+
+            return rockPartner;
         }
 
         bool hookedWeaponSwingHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
@@ -1077,7 +1097,16 @@ namespace rock
                 return;
             }
 
-            traceVrMeleeImpactPartner(actor, contactEvent, collisionEvent, input.actorIsPlayer);
+            /*
+             * Drop events whose partner is a ROCK-owned body before native
+             * sees them. The native melee event stream ignores the collision
+             * filter, so this hook is the only boundary that can keep ROCK's
+             * co-located colliders from consuming the melee hit and arming
+             * the cooldown. Undecodable events pass through unchanged.
+             */
+            if (traceVrMeleeImpactPartner(actor, contactEvent, collisionEvent, input.actorIsPlayer)) {
+                return;
+            }
 
             if (g_originalVrMeleeImpactCallback) {
                 g_originalVrMeleeImpactCallback(actor, contactEvent, collisionEvent);

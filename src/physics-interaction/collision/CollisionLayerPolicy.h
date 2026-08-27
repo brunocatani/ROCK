@@ -127,6 +127,20 @@ namespace rock::collision_layer_policy
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON || layer == ROCK_LAYER_BODY;
     }
 
+    /*
+     * Every matrix row ROCK owns or re-homes bodies onto. Used by the
+     * VRMeleeImpact hook to identify contact partners that must never be
+     * visible to the native melee contact-to-hit path: that event stream
+     * bypasses the collision filter entirely (verified in-game: events arrive
+     * for matrix-disabled pairs and for bodies carrying the no-collide bit),
+     * so ROCK bodies can only be excluded at the hook boundary.
+     */
+    inline constexpr bool isRockOwnedMatrixLayer(std::uint32_t layer)
+    {
+        return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
+               (layer >= ROCK_LAYER_BODY && layer <= ROCK_LAYER_NATIVE_HELD_WEAPON);
+    }
+
     inline constexpr bool isDynamicPropInteractionLayer(std::uint32_t layer)
     {
         switch (layer) {
