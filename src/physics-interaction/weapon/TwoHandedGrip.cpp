@@ -5623,13 +5623,28 @@ namespace rock
              * hand seats at independent controller targets without rotation,
              * so the support seat owns translation and both presented hands
              * remain locked to their authored weapon-local frames.
+             *
+             * The anchor must be the REAL offhand controller palm pivot, not
+             * the locked-ray aiming target. That target is
+             * primaryController + lockedSeparation * axisDirection, built
+             * only to feed the rotation solve; used as a position anchor it
+             * moves opposite to lateral firing-hand motion whenever the
+             * physical hands are closer than the locked authored separation
+             * (lever coefficient 1 - locked/current goes negative), which
+             * inverted right-hand movement. Anchoring to supportController
+             * cancels the firing-hand terms exactly: translation is owned by
+             * the offhand, rotation stays on the authored firing-hand chain.
              */
             appliedWeaponWorld = solverInput.weaponWorldTransform;
             const RE::NiPoint3 primaryCorrection = sub(
                 primaryController,
                 currentPrimaryGripWorld);
+            const RE::NiPoint3 positionOnlySupportTarget = lerpPoint(
+                currentSupportWorld,
+                supportController,
+                _rotationBlend);
             const RE::NiPoint3 supportCorrection = sub(
-                solverInput.supportTargetWorld,
+                positionOnlySupportTarget,
                 currentSupportWorld);
             appliedWeaponWorld.translate =
                 appliedWeaponWorld.translate + supportCorrection;
@@ -5651,9 +5666,9 @@ namespace rock
                 primaryController.x,
                 primaryController.y,
                 primaryController.z,
-                solverInput.supportTargetWorld.x,
-                solverInput.supportTargetWorld.y,
-                solverInput.supportTargetWorld.z,
+                positionOnlySupportTarget.x,
+                positionOnlySupportTarget.y,
+                positionOnlySupportTarget.z,
                 solverInput.weaponWorldTransform.translate.x,
                 solverInput.weaponWorldTransform.translate.y,
                 solverInput.weaponWorldTransform.translate.z,
