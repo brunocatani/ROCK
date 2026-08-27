@@ -3671,13 +3671,13 @@ namespace rock
         }
 
         // Full alignment retains its established presented-hand endpoint.
-        // Position-only return uses the physical solver hand because the
-        // manual primary-grip visual can still be active at release.
+        // Position-only return reads the same physical-frame chain as the
+        // authored session, so the slerp endpoint and the resumed session
+        // agree on the tracked hand.
         RE::NiTransform trackedRightHandWorld{};
         const bool trackedHandAvailable =
             _rightFiringCanonicalPositionOnlyAlignment ?
-            tryGetSolverHandTransform(
-                false,
+            tryGetAuthoredPrimaryTrackedFiringHandWorld(
                 trackedRightHandWorld) :
             frik_visual_authority::tryGetHandWorldTransform(
                 frik_visual_authority::Hand::Right,
@@ -3689,10 +3689,26 @@ namespace rock
 
         RE::NiTransform authoredWeaponWorld{};
         if (_rightFiringCanonicalPositionOnlyAlignment) {
+            /*
+             * The native reference must be the LIVE weapon local: hFRIK
+             * republishes the native Weapon transform earlier in this same
+             * frame, before ROCK writes, and the resumed session realigns
+             * from that live pose. The grab-time _weaponNodeLocalBaseline is
+             * stale here - it carries the session's own palm shift and, for
+             * grabs committed around ScopeMenu, the scope-driven local - so
+             * a return targeted at it lands away from the session pose and
+             * the weapon snaps on completion (vanilla scoped weapons).
+             */
+            if (weaponNode->parent != nativeParent) {
+                return false;
+            }
             const RE::NiTransform nativeWeaponWorld =
                 transform_math::composeTransforms(
                     nativeParent->world,
-                    nativeBaselineLocal);
+                    weaponNode->local);
+            if (!isFiniteTransform(nativeWeaponWorld)) {
+                return false;
+            }
             const RE::NiPoint3 trackedPalmWorld =
                 computeGrabLegacyPalmPivotAWorldFromHandBasis(
                     trackedRightHandWorld,
