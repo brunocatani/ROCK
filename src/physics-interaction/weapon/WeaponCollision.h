@@ -227,7 +227,7 @@ namespace rock
         void updateNativeMeleeCollisionIsolation(
             RE::hknpWorld* world,
             RE::NiAVObject* weaponNode,
-            bool realMeleeWeaponEquipped);
+            bool isolationEnabled);
 
         void requestWorkbenchExitRebuild();
 

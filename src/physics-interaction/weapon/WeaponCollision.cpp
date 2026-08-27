@@ -4702,7 +4702,7 @@ namespace rock
     void WeaponCollision::updateNativeMeleeCollisionIsolation(
         RE::hknpWorld* world,
         RE::NiAVObject* weaponNode,
-        const bool realMeleeWeaponEquipped)
+        const bool isolationEnabled)
     {
         const auto clearTarget = [&]() {
             const bool hadTarget = _nativeMeleeIsolationRoot ||
@@ -4723,7 +4723,7 @@ namespace rock
             publishNativeMeleeCollisionBodyIds({}, 0, false);
         };
 
-        if (!world || !weaponNode || !realMeleeWeaponEquipped) {
+        if (!world || !weaponNode || !isolationEnabled) {
             clearTarget();
             return;
         }
