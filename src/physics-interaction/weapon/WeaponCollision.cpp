@@ -3,6 +3,8 @@
 
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
@@ -4573,12 +4575,235 @@ namespace rock
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
         clearAtomicBodyIds();
+        restoreNativeHeldWeaponRelayer(world, "initialize");
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
     }
 
+    void WeaponCollision::abandonNativeHeldWeaponRelayerState() noexcept
+    {
+        _nativeHeldWeaponRoot = nullptr;
+        _nativeHeldWeaponGenerationKey = 0;
+        _nativeHeldWeaponRescanFrames = 0;
+        _nativeHeldWeaponBodies = {};
+        _nativeHeldWeaponBodyCount = 0;
+    }
+
+    void WeaponCollision::restoreNativeHeldWeaponRelayer(RE::hknpWorld* world, const char* reason)
+    {
+        if (_nativeHeldWeaponBodyCount == 0) {
+            abandonNativeHeldWeaponRelayerState();
+            return;
+        }
+
+        std::uint32_t restored = 0;
+        if (world) {
+            for (std::uint32_t index = 0; index < _nativeHeldWeaponBodyCount; ++index) {
+                const auto& tagged = _nativeHeldWeaponBodies[index];
+                std::uint32_t currentFilterInfo = 0;
+                // The tagged filterInfo carries ROCK_LAYER_NATIVE_HELD_WEAPON,
+                // which only this re-layer writes; a mismatch means the body
+                // was destroyed, recycled, or re-owned — leave it alone.
+                if (tagged.bodyId == INVALID_BODY_ID ||
+                    !body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ tagged.bodyId }, currentFilterInfo) ||
+                    currentFilterInfo != tagged.taggedFilterInfo) {
+                    continue;
+                }
+                if (body_collision::setFilterInfo(world, RE::hknpBodyId{ tagged.bodyId }, tagged.originalFilterInfo)) {
+                    ++restored;
+                }
+            }
+        }
+
+        ROCK_LOG_INFO(Weapon,
+            "Native held-weapon re-layer released: restored={}/{} reason={}",
+            restored,
+            _nativeHeldWeaponBodyCount,
+            reason ? reason : "unknown");
+        abandonNativeHeldWeaponRelayerState();
+    }
+
+    void WeaponCollision::updateNativeHeldWeaponRelayer(RE::hknpWorld* world, RE::NiAVObject* weaponNode, const bool enabled)
+    {
+        if (!world || !weaponNode || !enabled) {
+            if (_nativeHeldWeaponBodyCount != 0 || _nativeHeldWeaponRoot) {
+                restoreNativeHeldWeaponRelayer(world, !world ? "world-lost" : (!weaponNode ? "weapon-node-lost" : "relayer-disabled"));
+            }
+            return;
+        }
+
+        const auto generationKey = getCurrentWeaponGenerationKey();
+        const bool identityChanged =
+            weaponNode != _nativeHeldWeaponRoot || generationKey != _nativeHeldWeaponGenerationKey;
+        if (identityChanged && (_nativeHeldWeaponBodyCount != 0 || _nativeHeldWeaponRoot)) {
+            restoreNativeHeldWeaponRelayer(world, "weapon-identity-changed");
+        }
+
+        if (!identityChanged && _nativeHeldWeaponBodyCount != 0 &&
+            ++_nativeHeldWeaponRescanFrames < NATIVE_HELD_WEAPON_RESCAN_FRAMES) {
+            return;
+        }
+        _nativeHeldWeaponRescanFrames = 0;
+
+        struct ScanContext
+        {
+            WeaponCollision* self{ nullptr };
+            std::array<std::uint32_t, MAX_NATIVE_HELD_WEAPON_BODIES> bodyIds{};
+            std::uint32_t count{ 0 };
+            bool overflow{ false };
+
+            bool append(const std::uint32_t bodyId)
+            {
+                if (!self || bodyId == WeaponCollision::INVALID_BODY_ID ||
+                    self->isWeaponBodyIdAtomic(bodyId)) {
+                    return true;
+                }
+                for (std::uint32_t index = 0; index < count; ++index) {
+                    if (bodyIds[index] == bodyId) {
+                        return true;
+                    }
+                }
+                if (count >= bodyIds.size()) {
+                    overflow = true;
+                    return false;
+                }
+                bodyIds[count++] = bodyId;
+                return true;
+            }
+        } context{ this };
+
+        auto visitBody = [](const std::uint32_t bodyId, void* userData) {
+            auto* scanContext = static_cast<ScanContext*>(userData);
+            return scanContext && scanContext->append(bodyId);
+        };
+        std::uint32_t visitedNodes = 0;
+        auto scanNode = [&](auto&& self, RE::NiAVObject* node, const int depth) -> void {
+            if (!node || depth <= 0 || visitedNodes >= 1024 || context.overflow) {
+                return;
+            }
+            ++visitedNodes;
+            if (auto* collisionObject = node->collisionObject.get()) {
+                (void)havok_runtime::forEachPhysicsSystemBodyIdDetailed(
+                    collisionObject,
+                    world,
+                    256,
+                    visitBody,
+                    &context);
+            }
+            if (auto* niNode = node->IsNode()) {
+                auto& children = niNode->GetRuntimeData().children;
+                for (auto index = decltype(children.size()){ 0 }; index < children.size(); ++index) {
+                    self(self, children[index].get(), depth - 1);
+                }
+            }
+        };
+        scanNode(scanNode, weaponNode, 64);
+
+        if (context.overflow) {
+            ROCK_LOG_SAMPLE_WARN(Weapon,
+                5000,
+                "Native held-weapon re-layer scan overflow: candidates>{}",
+                context.bodyIds.size());
+        }
+
+        /*
+         * Rebuild the tag set from the fresh candidate list. Bodies that are
+         * already re-homed keep their lease; layer-5 bodies get tagged; any
+         * other layer fails the plausibility gate closed. Previously tagged
+         * bodies that left the subtree are restored individually.
+         */
+        std::array<NativeHeldWeaponTaggedBody, MAX_NATIVE_HELD_WEAPON_BODIES> nextBodies{};
+        std::uint32_t nextCount = 0;
+        std::uint32_t taggedNow = 0;
+        std::uint32_t skippedLayer = 0;
+        for (std::uint32_t index = 0; index < context.count; ++index) {
+            const auto bodyId = context.bodyIds[index];
+            std::uint32_t filterInfo = 0;
+            if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filterInfo)) {
+                continue;
+            }
+
+            const NativeHeldWeaponTaggedBody* existing = nullptr;
+            for (std::uint32_t taggedIndex = 0; taggedIndex < _nativeHeldWeaponBodyCount; ++taggedIndex) {
+                if (_nativeHeldWeaponBodies[taggedIndex].bodyId == bodyId) {
+                    existing = &_nativeHeldWeaponBodies[taggedIndex];
+                    break;
+                }
+            }
+            if (existing && filterInfo == existing->taggedFilterInfo) {
+                nextBodies[nextCount++] = *existing;
+                continue;
+            }
+
+            const auto layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            if (layer != collision_layer_policy::FO4_LAYER_WEAPON) {
+                ++skippedLayer;
+                continue;
+            }
+
+            const std::uint32_t taggedFilterInfo =
+                (filterInfo & ~collision_layer_policy::FO4_LAYER_FILTER_MASK) |
+                collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON;
+            if (!body_collision::setFilterInfo(world, RE::hknpBodyId{ bodyId }, taggedFilterInfo)) {
+                continue;
+            }
+            nextBodies[nextCount++] = NativeHeldWeaponTaggedBody{
+                .bodyId = bodyId,
+                .originalFilterInfo = filterInfo,
+                .taggedFilterInfo = taggedFilterInfo,
+            };
+            ++taggedNow;
+        }
+
+        std::uint32_t restoredDeparted = 0;
+        for (std::uint32_t taggedIndex = 0; taggedIndex < _nativeHeldWeaponBodyCount; ++taggedIndex) {
+            const auto& tagged = _nativeHeldWeaponBodies[taggedIndex];
+            bool carried = false;
+            for (std::uint32_t index = 0; index < nextCount; ++index) {
+                if (nextBodies[index].bodyId == tagged.bodyId) {
+                    carried = true;
+                    break;
+                }
+            }
+            if (carried) {
+                continue;
+            }
+            std::uint32_t currentFilterInfo = 0;
+            if (body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ tagged.bodyId }, currentFilterInfo) &&
+                currentFilterInfo == tagged.taggedFilterInfo &&
+                body_collision::setFilterInfo(world, RE::hknpBodyId{ tagged.bodyId }, tagged.originalFilterInfo)) {
+                ++restoredDeparted;
+            }
+        }
+
+        const bool changed = identityChanged || taggedNow != 0 || restoredDeparted != 0 ||
+            nextCount != _nativeHeldWeaponBodyCount;
+        _nativeHeldWeaponRoot = weaponNode;
+        _nativeHeldWeaponGenerationKey = generationKey;
+        _nativeHeldWeaponBodies = nextBodies;
+        _nativeHeldWeaponBodyCount = nextCount;
+
+        if (changed && (nextCount != 0 || taggedNow != 0 || restoredDeparted != 0)) {
+            ROCK_LOG_INFO(Weapon,
+                "Native held-weapon re-layer active: bodies={} newlyTagged={} restoredDeparted={} skippedNonWeaponLayer={} generatedBodies={}",
+                nextCount,
+                taggedNow,
+                restoredDeparted,
+                skippedLayer,
+                getWeaponBodyCount());
+        }
+        if (nextCount == 0 && getWeaponBodyCount() != 0) {
+            ROCK_LOG_SAMPLE_WARN(Weapon,
+                5000,
+                "Native held-weapon re-layer found no native weapon-layer bodies: generatedBodies={} skippedNonWeaponLayer={}",
+                getWeaponBodyCount(),
+                skippedLayer);
+        }
+    }
+
     void WeaponCollision::shutdown()
     {
+        restoreNativeHeldWeaponRelayer(_cachedWorld, "shutdown");
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
             destroyWeaponBody(_cachedWorld);
@@ -4636,6 +4861,8 @@ namespace rock
         _usingReplacementWeaponBodies = false;
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
+        // The world is gone; the tagged native bodies died with it.
+        abandonNativeHeldWeaponRelayerState();
         ROCK_LOG_INFO(Weapon, "Weapon collision wrappers abandoned after Havok world loss");
     }
 

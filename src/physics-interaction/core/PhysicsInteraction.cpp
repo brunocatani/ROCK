@@ -2295,6 +2295,13 @@ namespace rock
                 weaponClassification.classificationResolved &&
                 weaponClassification.sizeClass == WeaponSizeClass::Melee;
             input_remap_runtime::setRealMeleeWeaponEquipped(realMeleeWeaponEquipped);
+            /*
+             * Re-home the equipped weapon's native bodies off FO4_LAYER_WEAPON
+             * whenever a weapon is drawn (melee and gun bash alike, in both
+             * suppression modes): ROCK's co-located colliders otherwise flood
+             * the native VR melee contact queue and starve the real hit.
+             */
+            _weaponCollision.updateNativeHeldWeaponRelayer(hknp, weaponNode, runtime.weaponDrawn);
         }
 
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
@@ -4025,6 +4032,10 @@ namespace rock
                     !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _expectedDynamicWorldCarClutterLayerMask);
                 const bool dynamicWorldCarLargeClutterMaskDrifted = _expectedDynamicWorldCarLargeClutterLayerMask != 0 &&
                     !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _expectedDynamicWorldCarLargeClutterLayerMask);
+                const bool nativeHeldWeaponMaskDrifted = _expectedNativeHeldWeaponLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(
+                        matrix[collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON],
+                        _expectedNativeHeldWeaponLayerMask);
                 const bool actorToolPairsDrifted =
                     _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
                     !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
@@ -4033,7 +4044,7 @@ namespace rock
                     _nativeCharacterControllerLayerPolicyCaptured &&
                     !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
                 if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
-                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
+                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || nativeHeldWeaponMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
                     nativeControllerObjectPairsDrifted) {
                     const auto currentNativeCharacterControllerMask =
                         _nativeCharacterControllerLayerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
@@ -6298,6 +6309,7 @@ namespace rock
             collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
         _expectedDynamicWorldCarClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
         _expectedDynamicWorldCarLargeClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
+        _expectedNativeHeldWeaponLayerMask = matrix[collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON];
         _expectedNativeCharacterControllerLayerMask =
             collision_layer_policy::nativeCharacterControllerExpectedMask(
                 _originalNativeCharacterControllerLayerMask,

@@ -410,15 +410,16 @@ int main()
         collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_BODY));
 
     auto generatedWeaponMatrix = makeFullyEnabledMatrix();
-    collision_layer_policy::applyRockWeaponLayerPolicy(
+    collision_layer_policy::applyRockGeneratedLayerPolicies(
         generatedWeaponMatrix.data(),
+        true,
         false,
         false);
-    ok &= expectLayerPair("ROCK weapon excludes the co-located native weapon layer",
+    ok &= expectLayerPair("ROCK weapon keeps world weapon-layer collision",
         generatedWeaponMatrix,
         collision_layer_policy::ROCK_LAYER_WEAPON,
         collision_layer_policy::FO4_LAYER_WEAPON,
-        false);
+        true);
     ok &= expectLayerPair("ROCK weapon preserves clutter collision",
         generatedWeaponMatrix,
         collision_layer_policy::ROCK_LAYER_WEAPON,
@@ -428,6 +429,36 @@ int main()
         generatedWeaponMatrix,
         collision_layer_policy::ROCK_LAYER_WEAPON,
         collision_layer_policy::FO4_LAYER_BIPED,
+        true);
+    ok &= expectLayerPair("native held weapon excludes ROCK generated weapon",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
+        collision_layer_policy::ROCK_LAYER_WEAPON,
+        false);
+    ok &= expectLayerPair("native held weapon excludes ROCK hand",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
+        collision_layer_policy::ROCK_LAYER_HAND,
+        false);
+    ok &= expectLayerPair("native held weapon excludes ROCK body",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
+        collision_layer_policy::ROCK_LAYER_BODY,
+        false);
+    ok &= expectLayerPair("native held weapon keeps NPC biped collision",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
+        collision_layer_policy::FO4_LAYER_BIPED,
+        true);
+    ok &= expectLayerPair("native held weapon keeps world weapon-layer collision",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
+        collision_layer_policy::FO4_LAYER_WEAPON,
+        true);
+    ok &= expectLayerPair("native held weapon keeps clutter collision",
+        generatedWeaponMatrix,
+        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
+        collision_layer_policy::FO4_LAYER_CLUTTER,
         true);
 
     ok &= expectTrue("clutter cars map to a dedicated dynamic-world layer",
