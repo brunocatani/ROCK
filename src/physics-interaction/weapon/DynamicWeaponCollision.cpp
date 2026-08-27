@@ -393,7 +393,7 @@ namespace rock
             dynamic_weapon_collision_policy::isFiniteTransform(weaponNode->world);
         if (_frameHasIntent) {
             // Native/F4SE visual authority is the collision-free intent when
-            // ROCK does not publish a later manual-grip or gunstock pose.
+            // ROCK does not publish a later manual-grip pose.
             _frameRequestedWeaponWorld = weaponNode->world;
         }
         _enabledAtomic.store(_frameAcceptingIntent, std::memory_order_release);

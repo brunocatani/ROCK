@@ -182,7 +182,6 @@ Require-Order $interaction @(
     'previousWeaponCollisionPresentationWasLive\(',
     '_dynamicWeaponCollision\.beginFrame\(',
     '_twoHandedGrip\.update\(',
-    '_twoHandedGrip\.applyGunstockAlignment\(',
     '_dynamicWeaponCollision\.finishFrame\(',
     'applyWeaponCollisionResolvedAuthority\(',
     '_weaponCollision\.updateBodiesFromCurrentSourceTransforms\('

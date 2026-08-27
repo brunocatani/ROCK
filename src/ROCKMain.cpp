@@ -584,11 +584,6 @@ namespace
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::AfterRock,
             frameTiming);
-        if (s_pluginLoaded && s_frikAvailable &&
-            s_physicsInteraction) {
-            s_physicsInteraction->
-                finalizeGunstockPresentationAfterNativeAnimation();
-        }
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::Complete,
             frameTiming);

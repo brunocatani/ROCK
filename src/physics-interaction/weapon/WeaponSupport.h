@@ -960,8 +960,7 @@ namespace rock
 
         /*
          * A support-input baseline makes the support hand contribute only motion
-         * that happens after capture. It is shared by ordinary dynamic support
-         * and physical gunstocks: the visual grip target remains mesh-relative
+         * that happens after capture: the visual grip target remains mesh-relative
          * to the weapon, while this frozen relation calibrates the current hand
          * input onto that target. Resolving the same input reproduces the target
          * exactly, without attach-time weapon correction or assumptions about

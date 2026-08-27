@@ -87,9 +87,9 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rebuildNativeSc
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
     'Scope presentation must not invent a camera-to-bore axis mapping over the captured native frame.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeCameraWeaponLocal|hasBoreFrameWeaponLocal|boreFrameWeaponLocal' `
-    'The final gunstock writer must not keep a separate guessed scope orientation path.'
+    'The final weapon writer must not keep a separate guessed scope orientation path.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'applyWeaponVisualAuthority[\s\S]*scopeTargetReady[\s\S]*resolveRigidAnchorFrameWorld\([\s\S]*weaponNode->world,[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*immediateCameraWeaponLocal[\s\S]*native scope retained weapon-local frame relationError' `
-    'Every final weapon transform, including gunstock fine tuning, must transport and verify the immutable camera frame rigidly.'
+    'Every final weapon transform must transport and verify the immutable camera frame rigidly.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeGeometryDecision|native_scope_activation_geometry|isInsideCone|stabilizeExitDecision' `
     'The retired ROCK cone solver and its exit debounce must not remain callable.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'refreshNativeScopeAnchor[\s\S]*rockNativeScopeForceFiringGripFallback[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*_primaryGripConfidence[\s\S]*native_scope_sight_anchor_policy::resolve[\s\S]*FiringGripFallback' `

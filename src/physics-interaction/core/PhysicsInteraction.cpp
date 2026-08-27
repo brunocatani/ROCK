@@ -2080,23 +2080,6 @@ namespace rock
         _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
-    void PhysicsInteraction::finalizeGunstockPresentationAfterNativeAnimation()
-    {
-        if (!_initialized.load(std::memory_order_acquire) ||
-            !g_rockConfig.rockGunstockModeEnabled ||
-            !runtime_state::isLocalSkeletonReady() ||
-            (provider::currentNativeAnimationAuthorityFlagsV1() &
-                authored_weapon_grip_capture_policy::kWeapon) == 0) {
-            return;
-        }
-
-        auto* weaponNode = resolveEquippedWeaponInteractionNode();
-        (void)_twoHandedGrip.
-            finalizeGunstockPresentationAfterNativeWeaponAnimation(
-                weaponNode,
-                _weaponCollision.getCurrentWeaponGenerationKey());
-    }
-
     bool PhysicsInteraction::tryGetManualScopeDirectTransitionTarget(
         std::uint64_t& outWeaponGenerationKey,
         std::uint32_t& outNativeOverlayIndex) const
@@ -2967,30 +2950,6 @@ namespace rock
                 tryReadNativeScopeRequestState(nativeScopeRequestActive);
             const bool manualScopeActivationRequested =
                 input_remap_runtime::isManualScopeActivationRequested();
-            const bool gunstockObservationActive =
-                g_rockConfig.rockGunstockModeEnabled ||
-                g_rockConfig.rockDebugDrawGunstockAlignment;
-            RE::NiAVObject* gunstockProjectileNode =
-                gunstockObservationActive ?
-                getEquippedProjectileNode() :
-                nullptr;
-            /*
-             * FO4VR 1.2.72 binary verification (2026-08-06): native
-             * TESObjectWEAP paths at 0x14033FF00 and 0x140334260 read the type
-             * byte at object +0x2CF; the native type-label table's index 9 is
-             * referenced by CombatBehaviorTreeGun. Pair that kGun witness with
-             * the collision observer's form boundary before it may establish
-             * generation-latched gunstock eligibility.
-             */
-            const bool gunstockGunTypeObserved =
-                gunstockObservationActive &&
-                observedEquippedWeapon &&
-                currentWeaponGenerationKey != 0 &&
-                _weaponCollision.getCurrentObservedEquippedWeaponFormID() ==
-                    observedEquippedWeapon->formID &&
-                observedEquippedWeapon->weaponData.type ==
-                    RE::WEAPON_TYPE::kGun;
-
             const EquippedWeaponGripFrameInput gripFrameInput{
                 .leftGripHeld = gripPressed,
                 .rightGripHeld = rightGripHeld,
@@ -3002,7 +2961,6 @@ namespace rock
                 .manualScopeActivationRequested = manualScopeActivationRequested,
                 .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
                 .nativeScopeRequestActive = nativeScopeRequestActive,
-                .gunstockPresentationBlocked = frame.menuBlocked,
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
@@ -3017,8 +2975,6 @@ namespace rock
             const TwoHandedGripUpdateResult gripUpdateResult =
                 _twoHandedGrip.update(
                     weaponNode,
-                    gunstockProjectileNode,
-                    gunstockGunTypeObserved,
                     leftWeaponContact,
                     rightWeaponContact,
                     gripFrameInput,
@@ -3031,27 +2987,6 @@ namespace rock
                     supportAuthorityMode,
                     firingGripProximityAuthorityEnabled,
                     effectiveHandlingSettings);
-            const bool gunstockNeutralSampleBlocked =
-                g_rockConfig.rockGunstockModeEnabled &&
-                (input_remap_runtime::isRawButtonPhysicallyHeld(
-                     _twoHandedGrip.isFiringHandLeft(),
-                     input_remap_policy::
-                         kOpenVrSteamVrTriggerButtonId) ||
-                    frame.reloadBoundaryActive);
-            _twoHandedGrip.prepareGunstockAlignmentDebugSnapshot(
-                weaponNode,
-                gunstockProjectileNode,
-                _weaponCollision.
-                    getCurrentObservedEquippedWeaponFormID(),
-                currentWeaponGenerationKey,
-                gunstockNeutralSampleBlocked,
-                frame.menuBlocked);
-            (void)_twoHandedGrip.applyGunstockAlignment(
-                weaponNode,
-                gunstockProjectileNode,
-                currentWeaponGenerationKey,
-                gunstockNeutralSampleBlocked,
-                frame.menuBlocked);
             reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
@@ -3524,10 +3459,6 @@ namespace rock
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
             }
-            _twoHandedGrip.finalizeGunstockAlignmentDebugSnapshot(
-                weaponNode,
-                gunstockProjectileNode,
-                currentWeaponGenerationKey);
         }
 
         return EquippedWeaponFrameResult{

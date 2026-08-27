@@ -1,6 +1,5 @@
 #pragma once
 
-#include "physics-interaction/weapon/GunstockAlignmentPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
 namespace rock::two_handed_grip_internal
@@ -11,5 +10,4 @@ namespace rock::two_handed_grip_internal
     [[nodiscard]] bool tryGetRootFlattenedHandBoneTransform(
         bool isLeft,
         RE::NiTransform& outTransform);
-    [[nodiscard]] gunstock_alignment_policy::FineTuneDegrees configuredGunstockFineTune();
 }

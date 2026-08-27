@@ -525,13 +525,6 @@ namespace rock
                     "presented-hand-unavailable");
             return;
         }
-        RE::NiTransform gunstockTrackedHandWorld{};
-        if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
-                input.weaponNode,
-                input.weaponGenerationKey,
-                gunstockTrackedHandWorld)) {
-            trackedHandWorld = gunstockTrackedHandWorld;
-        }
         if (!finiteTransform(liveWeaponWorld) || !finiteTransform(trackedHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("live-transform-invalid");

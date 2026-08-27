@@ -26,7 +26,6 @@ namespace
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
     constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
-    constexpr auto GUNSTOCK_SECTION = "Gunstock";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr float kDefaultWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
@@ -337,34 +336,6 @@ namespace rock
             WEAPON_HANDEDNESS_SECTION,
             "bLeftHandedMode",
             rockLeftHandedMode);
-        rockGunstockModeEnabled = ini.GetBoolValue(
-            GUNSTOCK_SECTION,
-            "bAlignBarrelToControllerForward",
-            rockGunstockModeEnabled);
-        rockGunstockAlignmentPitchDegrees = readClampedFloat(
-            ini,
-            GUNSTOCK_SECTION,
-            "fAlignmentPitchDegrees",
-            rockGunstockAlignmentPitchDegrees,
-            0.0f,
-            -180.0f,
-            180.0f);
-        rockGunstockAlignmentYawDegrees = readClampedFloat(
-            ini,
-            GUNSTOCK_SECTION,
-            "fAlignmentYawDegrees",
-            rockGunstockAlignmentYawDegrees,
-            0.0f,
-            -180.0f,
-            180.0f);
-        rockGunstockAlignmentRollDegrees = readClampedFloat(
-            ini,
-            GUNSTOCK_SECTION,
-            "fAlignmentRollDegrees",
-            rockGunstockAlignmentRollDegrees,
-            0.0f,
-            -180.0f,
-            180.0f);
         rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
@@ -681,8 +652,6 @@ namespace rock
             ini.GetBoolValue(SECTION, "bDebugDrawWeaponAuthority", rockDebugDrawWeaponAuthority);
         rockDebugDrawLooseWeaponGripZones =
             ini.GetBoolValue(SECTION, "bDebugDrawLooseWeaponGripZones", rockDebugDrawLooseWeaponGripZones);
-        rockDebugDrawGunstockAlignment =
-            ini.GetBoolValue(SECTION, "bDebugDrawGunstockAlignment", rockDebugDrawGunstockAlignment);
         rockDebugDrawDynamicWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
         rockDebugDumpWeaponAnimNodes = ini.GetBoolValue(SECTION, "bDebugDumpWeaponAnimNodes", rockDebugDumpWeaponAnimNodes);
         rockDebugMaxWeaponBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));

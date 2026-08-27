@@ -43,7 +43,6 @@ namespace rock::debug_visualization_policy
         bool weaponAuthority{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
-        bool gunstockAlignment{ false };
         bool nativeScopeActivation{ false };
         bool worldOriginDiagnostics{ false };
     };
@@ -90,7 +89,6 @@ namespace rock::debug_visualization_policy
         bool weaponAuthority{ false };
         bool looseWeaponGripZones{ false };
         bool authoredGripActivationZones{ false };
-        bool gunstockAlignment{ false };
         bool nativeScopeActivation{ false };
         bool worldOriginDiagnostics{ false };
     };
@@ -156,7 +154,6 @@ namespace rock::debug_visualization_policy
             .looseWeaponGripZones = input.looseWeaponGripZones,
             .authoredGripActivationZones =
                 input.authoredGripActivationZones,
-            .gunstockAlignment = input.gunstockAlignment,
             .nativeScopeActivation = input.nativeScopeActivation,
             .worldOriginDiagnostics = input.worldOriginDiagnostics,
         };
