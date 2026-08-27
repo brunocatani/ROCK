@@ -2204,6 +2204,27 @@ namespace rock
             return;
         }
 
+        if (_rightFiringCanonicalPositionOnlyAlignment &&
+            _rightFiringHandCanonicalSource ==
+                RightFiringCanonicalSource::AuthoredAnimation) {
+            /*
+             * The authored pre-pass already rebuilt this frame's clean
+             * position-only intent from the physical driver. Replacing its
+             * presented-hand parent with the physical hand here would turn
+             * the authored hand-in-weapon local back into the full-rigid
+             * alignment. That made ROCK alternate between the enabled and
+             * disabled experimental modes after a collision-hand pulse.
+             */
+            if (isFiniteTransform(weaponNode->world)) {
+                _weaponVisualIntentObserver(
+                    _weaponVisualIntentObserverContext,
+                    weaponNode,
+                    weaponNode->world,
+                    currentWeaponGenerationKey);
+            }
+            return;
+        }
+
         RE::NiNode* rightHand = resolveFirstPersonHandNode(false);
         if (!rightHand || weaponNode->parent != rightHand) {
             return;
