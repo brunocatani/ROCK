@@ -5614,80 +5614,58 @@ namespace rock
                     _rotationBlend :
                     1.0f);
 
-        WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
-        RE::NiTransform appliedWeaponWorld{};
         if (supportGrip.authoredSupportPositionOnlyAlignment) {
             /*
-             * The experimental authored mode treats the support seat as a
-             * position constraint only. A rigid transform cannot place both
-             * hand seats at independent controller targets without rotation,
-             * so the support seat owns translation and both presented hands
-             * remain locked to their authored weapon-local frames.
+             * Experimental authored mode. The rotation this mode removes is
+             * the palm-normal twist about the primary-support grip axis -
+             * the roll that corkscrews the weapon around its own barrel on
+             * offhand attach - not the axis-aiming rotation. Keep the proven
+             * full solve (axis aim toward the offhand plus primary-anchored
+             * translation) and drop only the roll term.
              *
-             * The anchor must be the REAL offhand controller palm pivot, not
-             * the locked-ray aiming target. That target is
-             * primaryController + lockedSeparation * axisDirection, built
-             * only to feed the rotation solve; used as a position anchor it
-             * moves opposite to lateral firing-hand motion whenever the
-             * physical hands are closer than the locked authored separation
-             * (lever coefficient 1 - locked/current goes negative), which
-             * inverted right-hand movement. Anchoring to supportController
-             * cancels the firing-hand terms exactly: translation is owned by
-             * the offhand, rotation stays on the authored firing-hand chain.
+             * Do NOT reintroduce "freeze all rotation and let the support
+             * seat own translation". Tried twice (locked-ray anchor, then
+             * real offhand-controller anchor): the native weapon rotation
+             * swings with wrist/arm IK as the firing hand translates, and
+             * the weapon-origin-to-support-seat lever converts that swing
+             * into inverted, amplified weapon motion around the static
+             * offhand seat. Trace evidence 2026-08-27, Docs/ROCK/lessons.
              */
-            appliedWeaponWorld = solverInput.weaponWorldTransform;
-            const RE::NiPoint3 primaryCorrection = sub(
-                primaryController,
-                currentPrimaryGripWorld);
-            const RE::NiPoint3 positionOnlySupportTarget = lerpPoint(
-                currentSupportWorld,
-                supportController,
-                _rotationBlend);
-            const RE::NiPoint3 supportCorrection = sub(
-                positionOnlySupportTarget,
-                currentSupportWorld);
-            appliedWeaponWorld.translate =
-                appliedWeaponWorld.translate + supportCorrection;
-            if (!isFiniteTransform(appliedWeaponWorld)) {
-                _hasSolvedWeaponTransform = false;
-                ROCK_LOG_WARN(Weapon,
-                    "TwoHandedGrip: clearing authored position-only support grip because its translation solve was invalid");
+            solverInput.useSupportNormalTwist = false;
+            solverInput.supportNormalTwistFactor = 0.0f;
+        }
+
+        WeaponTwoHandedSolverResult<RE::NiTransform> solved{};
+        RE::NiTransform appliedWeaponWorld{};
+        solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
+        if (!solved.solved) {
+            if (dynamicAcquisition || supportInputBaselineActive) {
+                clearDynamicSupportAcquisition(
+                    "full-target-solve-degenerate",
+                    true);
                 transitionToInactive(false);
-                return;
             }
+            return;
+        }
+        appliedWeaponWorld = solved.weaponWorldTransform;
+        if (supportGrip.authoredSupportPositionOnlyAlignment) {
             ROCK_LOG_SAMPLE_INFO(Weapon, 250,
-                "Authored support position-only authority trace: primaryIntent=({:.3f},{:.3f},{:.3f}) supportCommand=({:.3f},{:.3f},{:.3f}) primaryTarget=({:.3f},{:.3f},{:.3f}) supportTarget=({:.3f},{:.3f},{:.3f}) weaponT=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f}) blend={:.3f}",
-                primaryCorrection.x,
-                primaryCorrection.y,
-                primaryCorrection.z,
-                supportCorrection.x,
-                supportCorrection.y,
-                supportCorrection.z,
+                "Authored support position-only authority trace: primaryTarget=({:.3f},{:.3f},{:.3f}) supportTarget=({:.3f},{:.3f},{:.3f}) weaponT=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f}) axisRotDeg={:.2f} twist=disabled blend={:.3f}",
                 primaryController.x,
                 primaryController.y,
                 primaryController.z,
-                positionOnlySupportTarget.x,
-                positionOnlySupportTarget.y,
-                positionOnlySupportTarget.z,
+                solverInput.supportTargetWorld.x,
+                solverInput.supportTargetWorld.y,
+                solverInput.supportTargetWorld.z,
                 solverInput.weaponWorldTransform.translate.x,
                 solverInput.weaponWorldTransform.translate.y,
                 solverInput.weaponWorldTransform.translate.z,
                 appliedWeaponWorld.translate.x,
                 appliedWeaponWorld.translate.y,
                 appliedWeaponWorld.translate.z,
+                weapon_support_acquisition_math::rotationAngleRadians(
+                    solved.rotationDelta) * RADIANS_TO_DEGREES,
                 _rotationBlend);
-        } else {
-            solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
-            if (!solved.solved) {
-                if (dynamicAcquisition || supportInputBaselineActive) {
-                    clearDynamicSupportAcquisition(
-                        "full-target-solve-degenerate",
-                        true);
-                    transitionToInactive(false);
-                }
-                return;
-            }
-            appliedWeaponWorld = solved.weaponWorldTransform;
         }
         if (dynamicAcquisition) {
             auto& acquisition = _dynamicSupportAcquisition;
