@@ -336,39 +336,11 @@ namespace rock
 
         void serviceRetiredWeaponBodies(std::uint32_t completedPhysicsSteps = 1);
 
-        /*
-         * Native held-weapon re-layer: while the weapon is drawn, the player's
-         * equipped native weapon bodies (the ones carrying the native VR melee
-         * contact-to-hit callback) are moved from FO4_LAYER_WEAPON onto
-         * ROCK_LAYER_NATIVE_HELD_WEAPON so ROCK's co-located generated
-         * colliders stop flooding the native melee contact queue. Original
-         * filterInfo values are tracked and restored on weapon change,
-         * holster, shutdown, and disable.
-         */
-        void updateNativeHeldWeaponRelayer(RE::hknpWorld* world, RE::NiAVObject* weaponNode, bool enabled);
-        void restoreNativeHeldWeaponRelayer(RE::hknpWorld* world, const char* reason);
-        void abandonNativeHeldWeaponRelayerState() noexcept;
-
     private:
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;
         static constexpr std::uint32_t RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS = 8;
         static constexpr std::size_t MAX_RETIRED_GENERATED_WEAPON_BODY_PAYLOADS = MAX_WEAPON_BODIES * 4;
-        static constexpr std::uint32_t MAX_NATIVE_HELD_WEAPON_BODIES = 16;
-        static constexpr std::uint32_t NATIVE_HELD_WEAPON_RESCAN_FRAMES = 120;
-
-        struct NativeHeldWeaponTaggedBody
-        {
-            std::uint32_t bodyId{ INVALID_BODY_ID };
-            std::uint32_t originalFilterInfo{ 0 };
-            std::uint32_t taggedFilterInfo{ 0 };
-        };
-        // Non-owning identity anchor only; never dereferenced.
-        RE::NiAVObject* _nativeHeldWeaponRoot{ nullptr };
-        std::uint64_t _nativeHeldWeaponGenerationKey{ 0 };
-        std::uint32_t _nativeHeldWeaponRescanFrames{ 0 };
-        std::array<NativeHeldWeaponTaggedBody, MAX_NATIVE_HELD_WEAPON_BODIES> _nativeHeldWeaponBodies{};
-        std::uint32_t _nativeHeldWeaponBodyCount{ 0 };
 
         struct GeneratedHullSource
         {

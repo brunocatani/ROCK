@@ -471,7 +471,6 @@ namespace rock
         std::uint64_t _expectedDynamicWeaponProxyLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarClutterLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarLargeClutterLayerMask = 0;
-        std::uint64_t _expectedNativeHeldWeaponLayerMask = 0;
         std::uint64_t _originalNativeCharacterControllerLayerMask = 0;
         std::uint64_t _expectedNativeCharacterControllerLayerMask = 0;
         bool _nativeCharacterControllerLayerPolicyCaptured = false;

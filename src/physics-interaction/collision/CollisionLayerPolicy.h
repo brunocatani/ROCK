@@ -101,16 +101,6 @@ namespace rock::collision_layer_policy
      * pairs are suppressed by the native counted pair filter instead.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY = 52;
-    /*
-     * The player's equipped native weapon bodies are re-homed onto this row
-     * while the weapon is drawn. Its mask is a runtime clone of the live
-     * FO4_LAYER_WEAPON row minus every ROCK-generated layer: the native VR
-     * melee contact-to-hit path (VRMeleeImpact) keeps all vanilla contact,
-     * while ROCK's co-located hand/weapon/body colliders stop flooding the
-     * native melee contact queue with self-contacts. World weapon bodies stay
-     * on FO4_LAYER_WEAPON and keep full ROCK contact.
-     */
-    inline constexpr std::uint32_t ROCK_LAYER_NATIVE_HELD_WEAPON = 53;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
@@ -128,17 +118,17 @@ namespace rock::collision_layer_policy
     }
 
     /*
-     * Every matrix row ROCK owns or re-homes bodies onto. Used by the
-     * VRMeleeImpact hook to identify contact partners that must never be
-     * visible to the native melee contact-to-hit path: that event stream
-     * bypasses the collision filter entirely (verified in-game: events arrive
-     * for matrix-disabled pairs and for bodies carrying the no-collide bit),
-     * so ROCK bodies can only be excluded at the hook boundary.
+     * Every matrix row ROCK creates bodies on. Used by the VRMeleeImpact hook
+     * to identify contact partners that must never be visible to the native
+     * melee contact-to-hit path: that event stream bypasses the collision
+     * filter entirely (verified in-game: events arrive for matrix-disabled
+     * pairs and for bodies carrying the no-collide bit), so ROCK bodies can
+     * only be excluded at the hook boundary.
      */
     inline constexpr bool isRockOwnedMatrixLayer(std::uint32_t layer)
     {
         return layer == ROCK_LAYER_HAND || layer == ROCK_LAYER_WEAPON ||
-               (layer >= ROCK_LAYER_BODY && layer <= ROCK_LAYER_NATIVE_HELD_WEAPON);
+               (layer >= ROCK_LAYER_BODY && layer <= ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
     }
 
     inline constexpr bool isDynamicPropInteractionLayer(std::uint32_t layer)
@@ -475,10 +465,12 @@ namespace rock::collision_layer_policy
         mask = withoutLayer(mask, FO4_LAYER_UNIDENTIFIED);
         mask = withoutLayer(mask, FO4_LAYER_NONCOLLIDABLE);
         mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
-        // FO4_LAYER_WEAPON stays enabled: dropped and NPC weapon bodies keep
-        // physical contact with ROCK's generated weapon. The player's own
-        // equipped native weapon bodies are re-homed onto
-        // ROCK_LAYER_NATIVE_HELD_WEAPON instead, which excludes this layer.
+        // FO4_LAYER_WEAPON stays enabled: dropped weapons, NPC weapons, and
+        // the player's equipped native weapon bodies keep physical contact
+        // with ROCK's generated weapon. Native melee protection lives in the
+        // VRMeleeImpact hook, which drops ROCK-owned contact partners before
+        // native hit processing sees them (that event stream ignores this
+        // matrix entirely).
         mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
         mask = withoutLayer(mask, FO4_LAYER_CAMERASPHERE);
         mask = withoutLayer(mask, FO4_LAYER_ITEMPICK);
@@ -742,54 +734,6 @@ namespace rock::collision_layer_policy
             buildRockDynamicWeaponProxyExpectedMask());
     }
 
-    inline constexpr std::uint64_t buildRockNativeHeldWeaponExpectedMask(std::uint64_t nativeWeaponRowMask)
-    {
-        /*
-         * Clone of the live vanilla weapon row so the equipped native weapon
-         * bodies keep every native contact (NPC bipeds, world, other weapons)
-         * minus every ROCK-generated layer. ROCK self-contacts otherwise
-         * saturate the native VR melee contact queue during the swing hit
-         * window (measured: 500+ VRMeleeImpact contact events per swing) and
-         * starve the real NPC hit.
-         */
-        std::uint64_t mask = matrixAddressableMask(nativeWeaponRowMask);
-        mask = withoutLayer(mask, ROCK_LAYER_HAND);
-        mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
-        mask = withoutLayer(mask, ROCK_LAYER_RELOAD);
-        mask = withoutLayer(mask, ROCK_LAYER_BODY);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
-        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
-        mask = withoutLayer(mask, ROCK_LAYER_NATIVE_HELD_WEAPON);
-        // ROCK re-homes explodable-car clutter onto dedicated rows; mirror the
-        // vanilla weapon-vs-clutter semantics there so a swung weapon still
-        // registers native melee contact against tagged cars.
-        if (maskEnablesLayer(nativeWeaponRowMask, FO4_LAYER_CLUTTER)) {
-            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
-        } else {
-            mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
-        }
-        if (maskEnablesLayer(nativeWeaponRowMask, FO4_LAYER_CLUTTER_LARGE)) {
-            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
-        } else {
-            mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
-        }
-        return mask;
-    }
-
-    inline void applyRockNativeHeldWeaponLayerPolicy(std::uint64_t* matrix)
-    {
-        if (!matrix) {
-            return;
-        }
-        // Must run after the hand/weapon/body policies so the source row's
-        // ROCK bits are final before they are stripped from the clone.
-        applyLayerExpectedMask(matrix,
-            ROCK_LAYER_NATIVE_HELD_WEAPON,
-            buildRockNativeHeldWeaponExpectedMask(matrix[FO4_LAYER_WEAPON]));
-    }
-
     inline void applyRockDynamicWorldCarLayerPolicies(std::uint64_t* matrix)
     {
         if (!matrix) {
@@ -842,6 +786,5 @@ namespace rock::collision_layer_policy
         applyRockDynamicHandProxyLayerPolicies(matrix);
         applyRockDynamicWeaponProxyLayerPolicy(matrix);
         applyRockDynamicWorldCarLayerPolicies(matrix);
-        applyRockNativeHeldWeaponLayerPolicy(matrix);
     }
 }

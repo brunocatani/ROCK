@@ -430,36 +430,16 @@ int main()
         collision_layer_policy::ROCK_LAYER_WEAPON,
         collision_layer_policy::FO4_LAYER_BIPED,
         true);
-    ok &= expectLayerPair("native held weapon excludes ROCK generated weapon",
-        generatedWeaponMatrix,
-        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
-        collision_layer_policy::ROCK_LAYER_WEAPON,
-        false);
-    ok &= expectLayerPair("native held weapon excludes ROCK hand",
-        generatedWeaponMatrix,
-        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
-        collision_layer_policy::ROCK_LAYER_HAND,
-        false);
-    ok &= expectLayerPair("native held weapon excludes ROCK body",
-        generatedWeaponMatrix,
-        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
-        collision_layer_policy::ROCK_LAYER_BODY,
-        false);
-    ok &= expectLayerPair("native held weapon keeps NPC biped collision",
-        generatedWeaponMatrix,
-        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
-        collision_layer_policy::FO4_LAYER_BIPED,
-        true);
-    ok &= expectLayerPair("native held weapon keeps world weapon-layer collision",
-        generatedWeaponMatrix,
-        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
-        collision_layer_policy::FO4_LAYER_WEAPON,
-        true);
-    ok &= expectLayerPair("native held weapon keeps clutter collision",
-        generatedWeaponMatrix,
-        collision_layer_policy::ROCK_LAYER_NATIVE_HELD_WEAPON,
-        collision_layer_policy::FO4_LAYER_CLUTTER,
-        true);
+    ok &= expectTrue("VRMeleeImpact drop set covers every ROCK-owned layer",
+        collision_layer_policy::isRockOwnedMatrixLayer(collision_layer_policy::ROCK_LAYER_HAND) &&
+            collision_layer_policy::isRockOwnedMatrixLayer(collision_layer_policy::ROCK_LAYER_WEAPON) &&
+            collision_layer_policy::isRockOwnedMatrixLayer(collision_layer_policy::ROCK_LAYER_BODY) &&
+            collision_layer_policy::isRockOwnedMatrixLayer(collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY) &&
+            collision_layer_policy::isRockOwnedMatrixLayer(collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY));
+    ok &= expectFalse("VRMeleeImpact drop set keeps the native weapon layer visible",
+        collision_layer_policy::isRockOwnedMatrixLayer(collision_layer_policy::FO4_LAYER_WEAPON));
+    ok &= expectFalse("VRMeleeImpact drop set keeps the NPC biped layer visible",
+        collision_layer_policy::isRockOwnedMatrixLayer(collision_layer_policy::FO4_LAYER_BIPED));
 
     ok &= expectTrue("clutter cars map to a dedicated dynamic-world layer",
         collision_layer_policy::dynamicWorldCarLayerForNativeLayer(collision_layer_policy::FO4_LAYER_CLUTTER) ==
