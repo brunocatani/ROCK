@@ -13,6 +13,7 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
+#include "physics-interaction/native/NativeMemory.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RockConfig.h"
@@ -24,8 +25,10 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string_view>
@@ -878,6 +881,104 @@ namespace rock
             return outCount <= burst || outCount % period == 0;
         }
 
+        /*
+         * NATIVE-MELEE-TRACE partner decode. Layout verified against the raw
+         * disassembly of the FO4VR VRMeleeImpact callback (RVA 0xEFF000):
+         *   contactEvent + 0x00 : hknpWorld*
+         *   contactEvent + 0x20 : int, our body's index in the event pair
+         *   collisionEvent+ 0x08 : int[2], the pair's body ids
+         *   collisionEvent+ 0x11 : byte, event flag (native returns when == 1)
+         *   player       + 0x908 : float, native melee cooldown gate
+         * Every read is guarded and fails closed. Aggregates a per-layer
+         * histogram of the partner body so one session shows whether an
+         * NPC-layer partner ever reaches the native callback.
+         */
+        void traceVrMeleeImpactPartner(RE::Actor* actor, void* contactEvent, void* collisionEvent, bool actorIsPlayer)
+        {
+            static std::array<std::atomic<std::uint32_t>, 128> s_layerCounts{};
+            static std::atomic<std::uint32_t> s_totalCount{ 0 };
+            static std::atomic<std::uint32_t> s_flaggedCount{ 0 };
+            static std::atomic<std::uint32_t> s_cooldownActiveCount{ 0 };
+            static std::atomic<std::uint32_t> s_decodeFailedCount{ 0 };
+            static std::atomic<std::int64_t> s_lastSummaryMs{ 0 };
+            static std::atomic<std::uint32_t> s_detailCount{ 0 };
+
+            const auto total = s_totalCount.fetch_add(1, std::memory_order_relaxed) + 1;
+
+            std::uint8_t eventFlag = 0;
+            if (collisionEvent && native_memory::tryReadField(collisionEvent, 0x11, eventFlag) && eventFlag == 1) {
+                s_flaggedCount.fetch_add(1, std::memory_order_relaxed);
+            }
+            float cooldown = 0.0f;
+            if (actorIsPlayer && actor && native_memory::tryReadField(actor, 0x908, cooldown) && cooldown > 0.0f) {
+                s_cooldownActiveCount.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            std::uint32_t ourIndex = 0xFFFF'FFFFu;
+            std::uint32_t bodyIds[2] = { 0x7FFF'FFFFu, 0x7FFF'FFFFu };
+            std::uint32_t otherFilterInfo = 0;
+            bool decoded = false;
+            RE::hknpWorld* world = nullptr;
+            if (contactEvent && collisionEvent &&
+                native_memory::tryReadField(contactEvent, 0x0, world) && world &&
+                native_memory::tryReadField(contactEvent, 0x20, ourIndex) && ourIndex <= 1 &&
+                native_memory::tryReadField(collisionEvent, 0x08, bodyIds[0]) &&
+                native_memory::tryReadField(collisionEvent, 0x0C, bodyIds[1])) {
+                const auto otherId = bodyIds[1u - ourIndex];
+                if (body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ otherId }, otherFilterInfo)) {
+                    s_layerCounts[otherFilterInfo & 0x7F].fetch_add(1, std::memory_order_relaxed);
+                    decoded = true;
+                }
+            }
+            if (!decoded) {
+                s_decodeFailedCount.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            std::uint32_t detailCount = 0;
+            if (shouldEmitNativeMeleeTrace(s_detailCount, detailCount, 20, 500)) {
+                ROCK_LOG_INFO(Combat,
+                    "NATIVE-MELEE-TRACE VRMeleeImpact event: player={} ourIndex={} bodies=[{},{}] otherFilter=0x{:08X} flag11={} cooldown={:.3f} total={}",
+                    actorIsPlayer ? "yes" : "no",
+                    ourIndex,
+                    bodyIds[0],
+                    bodyIds[1],
+                    otherFilterInfo,
+                    eventFlag,
+                    cooldown,
+                    total);
+            }
+
+            const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                                   .count();
+            auto lastMs = s_lastSummaryMs.load(std::memory_order_acquire);
+            if (nowMs - lastMs >= 2000 &&
+                s_lastSummaryMs.compare_exchange_strong(lastMs, nowMs, std::memory_order_acq_rel)) {
+                char histogram[224];
+                std::size_t written = 0;
+                histogram[0] = '\0';
+                for (std::uint32_t layer = 0; layer < s_layerCounts.size(); ++layer) {
+                    const auto count = s_layerCounts[layer].load(std::memory_order_relaxed);
+                    if (count == 0) {
+                        continue;
+                    }
+                    const auto result = std::snprintf(
+                        histogram + written, sizeof(histogram) - written, "L%u:%u ", layer, count);
+                    if (result <= 0 || written + static_cast<std::size_t>(result) >= sizeof(histogram)) {
+                        break;
+                    }
+                    written += static_cast<std::size_t>(result);
+                }
+                ROCK_LOG_INFO(Combat,
+                    "NATIVE-MELEE-TRACE VRMeleeImpact summary: total={} flag11={} cooldownActive={} decodeFailed={} partnerLayers=[{}]",
+                    total,
+                    s_flaggedCount.load(std::memory_order_relaxed),
+                    s_cooldownActiveCount.load(std::memory_order_relaxed),
+                    s_decodeFailedCount.load(std::memory_order_relaxed),
+                    histogram);
+            }
+        }
+
         bool hookedWeaponSwingHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
         {
             const auto input = makeNativeMeleePolicyInput(actor);
@@ -976,16 +1077,7 @@ namespace rock
                 return;
             }
 
-            static std::atomic<std::uint32_t> traceCounter{ 0 };
-            std::uint32_t count = 0;
-            if (shouldEmitNativeMeleeTrace(traceCounter, count, 40, 120)) {
-                ROCK_LOG_INFO(Combat,
-                    "NATIVE-MELEE-TRACE VRMeleeImpact native call: player={} contactEvent={:p} collisionEvent={:p} count={}",
-                    input.actorIsPlayer ? "yes" : "no",
-                    contactEvent,
-                    collisionEvent,
-                    count);
-            }
+            traceVrMeleeImpactPartner(actor, contactEvent, collisionEvent, input.actorIsPlayer);
 
             if (g_originalVrMeleeImpactCallback) {
                 g_originalVrMeleeImpactCallback(actor, contactEvent, collisionEvent);
