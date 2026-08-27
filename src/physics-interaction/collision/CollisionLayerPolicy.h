@@ -407,8 +407,16 @@ namespace rock::collision_layer_policy
 
     inline constexpr std::uint64_t nativeCharacterControllerObjectSuppressionLayerMask()
     {
+        /*
+         * FO4_LAYER_WEAPON stays OUT of this suppression mask: native VR melee
+         * lands NPC hits through weapon(5) x charcontroller(30) contact, so
+         * severing that pair here disables melee damage entirely. The self-hit
+         * loop the severance once guarded against is handled by identity, not
+         * by layer: the VRMeleeImpact hook drops ROCK-owned partners, and the
+         * native callback rejects player-ref partners (verified in-game: L30
+         * events never armed the melee cooldown).
+         */
         return layerBitOrZero(FO4_LAYER_CLUTTER) |
-               layerBitOrZero(FO4_LAYER_WEAPON) |
                layerBitOrZero(FO4_LAYER_DEBRIS_SMALL) |
                layerBitOrZero(FO4_LAYER_DEBRIS_LARGE) |
                layerBitOrZero(FO4_LAYER_SHELLCASING) |

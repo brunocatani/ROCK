@@ -391,7 +391,7 @@ int main()
         collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, true);
 
     ok &= expectLayerPair("native controller excludes ordinary clutter at the matrix", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, false);
-    ok &= expectLayerPair("native controller no longer hits weapon objects", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, false);
+    ok &= expectLayerPair("native controller keeps weapon objects for native melee", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, true);
     ok &= expectLayerPair("native controller no longer hits small debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_SMALL, false);
     ok &= expectLayerPair("native controller no longer hits large debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_LARGE, false);
     ok &= expectLayerPair("native controller no longer hits shell casings", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_SHELLCASING, false);
