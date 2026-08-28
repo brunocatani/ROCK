@@ -53,6 +53,18 @@ namespace rock::equipped_weapon_drop_policy
         bool gripReleased{ false };
     };
 
+    [[nodiscard]] inline constexpr bool resolveShoulderSheathReleaseIntent(
+        const bool toggleGrabEnabled,
+        const bool gripPhysicallyHeld,
+        const bool gripPhysicallyReleased) noexcept
+    {
+        // A confirmed shoulder lease temporarily restores physical input. A
+        // latched toggle grip may already be physically open when the dwell
+        // confirms, so the open level is the release intent in toggle mode.
+        return toggleGrabEnabled ?
+            !gripPhysicallyHeld : gripPhysicallyReleased;
+    }
+
     [[nodiscard]] inline constexpr bool canCommitNativeShoulderSheath(
         const NativeShoulderSheathInput& input) noexcept
     {

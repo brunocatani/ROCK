@@ -2671,50 +2671,6 @@ namespace rock
 
             const auto toggleOccupancyBefore =
                 _twoHandedGrip.getGripOccupancy();
-            const auto toToggleButtonState = [](const GrabButtonState& state) {
-                return equipped_weapon_toggle_grab_policy::ButtonState{
-                    .held = state.held,
-                    .pressed = state.pressed,
-                    .released = state.released,
-                };
-            };
-            const auto toggleGrabDecision =
-                equipped_weapon_toggle_grab_policy::prepare(
-                    _equippedWeaponToggleGrabState,
-                    equipped_weapon_toggle_grab_policy::Input{
-                        .enabled = _equippedWeaponHandlingSettings.
-                            toggleGrabEnabled,
-                        .inputAllowed = !inputBlockingMenuActive,
-                        .weaponOwnershipKey =
-                            currentEquippedWeaponOwnershipKey,
-                        .occupancy = {
-                            .left = toggleOccupancyBefore.left.
-                                weaponEngaged(),
-                            .right = toggleOccupancyBefore.right.
-                                weaponEngaged(),
-                        },
-                        .left = toToggleButtonState(
-                            leftPhysicalGripState),
-                        .right = toToggleButtonState(
-                            rightPhysicalGripState),
-                    });
-            if (_equippedWeaponHandlingSettings.toggleGrabEnabled) {
-                leftGripHeld = toggleGrabDecision.left.held;
-                rightGripHeld = toggleGrabDecision.right.held;
-                const auto& logicalPrimaryGrip = firingHandIsLeft ?
-                    toggleGrabDecision.left : toggleGrabDecision.right;
-                primaryGripInput = EquippedWeaponPrimaryGripInput{
-                    .held = logicalPrimaryGrip.held,
-                    .pressed = logicalPrimaryGrip.pressed,
-                    .released = logicalPrimaryGrip.released,
-                };
-                _equippedWeaponToggleGrabReleasePressConsumedThisFrame[
-                    equipped_weapon_toggle_grab_policy::handIndex(true)] =
-                    toggleGrabDecision.leftReleasePressConsumed;
-                _equippedWeaponToggleGrabReleasePressConsumedThisFrame[
-                    equipped_weapon_toggle_grab_policy::handIndex(false)] =
-                    toggleGrabDecision.rightReleasePressConsumed;
-            }
 
             bool primaryOnlyGripStartedThisFrame = false;
             if (firingGripOwnershipFeatureAvailable && !inputBlockingMenuActive && !_twoHandedGrip.isManualOwnershipActive()) {
@@ -2833,6 +2789,7 @@ namespace rock
              * dwell can never confirm a later release.
              */
             std::array<shoulder_stash::Decision, 2> equippedWeaponStashCommitDecisions{};
+            std::array<bool, 2> equippedWeaponToggleShoulderInputLeases{};
             bool nativeShoulderSheathRequested = false;
             auto nativeShoulderSheathSourceHand =
                 equipped_weapon_drop_policy::SourceHand::None;
@@ -2954,6 +2911,13 @@ namespace rock
                         commitLease = {};
                     }
 
+                    if (_equippedWeaponHandlingSettings.toggleGrabEnabled &&
+                        equippedWeaponStashCommitDecisions[stashHandIndex].
+                            confirmedForCommit) {
+                        equippedWeaponToggleShoulderInputLeases[stashHandIndex] =
+                            true;
+                    }
+
                     if (nativeShoulderGestureAvailable &&
                         stashHandIsLeft == firingHandIsLeft &&
                         equippedWeaponStashCommitDecisions[stashHandIndex].
@@ -2989,10 +2953,12 @@ namespace rock
                                             .handEmpty = stashHandEmpty,
                                             .detectorConfirmed = true,
                                             .gripReleased =
-                                                _equippedWeaponHandlingSettings.
-                                                        toggleGrabEnabled ?
-                                                    primaryGripInput.released :
-                                                    primaryState.released,
+                                                equipped_weapon_drop_policy::
+                                                    resolveShoulderSheathReleaseIntent(
+                                                        _equippedWeaponHandlingSettings.
+                                                            toggleGrabEnabled,
+                                                        gripPhysicallyHeld,
+                                                        primaryState.released),
                                         });
                         if (nativeShoulderSheathRequested) {
                             nativeShoulderSheathSourceHand =
@@ -3017,6 +2983,59 @@ namespace rock
                         }
                     }
                 }
+            }
+
+            const auto toToggleButtonState = [](const GrabButtonState& state) {
+                return equipped_weapon_toggle_grab_policy::ButtonState{
+                    .held = state.held,
+                    .pressed = state.pressed,
+                    .released = state.released,
+                };
+            };
+            const auto toggleGrabDecision =
+                equipped_weapon_toggle_grab_policy::prepare(
+                    _equippedWeaponToggleGrabState,
+                    equipped_weapon_toggle_grab_policy::Input{
+                        .enabled = _equippedWeaponHandlingSettings.
+                            toggleGrabEnabled,
+                        .inputAllowed = !inputBlockingMenuActive,
+                        .weaponOwnershipKey =
+                            currentEquippedWeaponOwnershipKey,
+                        .occupancy = {
+                            .left = toggleOccupancyBefore.left.
+                                weaponEngaged(),
+                            .right = toggleOccupancyBefore.right.
+                                weaponEngaged(),
+                        },
+                        .leftShoulderLeaseActive =
+                            equippedWeaponToggleShoulderInputLeases[
+                                equipped_weapon_toggle_grab_policy::handIndex(
+                                    true)],
+                        .rightShoulderLeaseActive =
+                            equippedWeaponToggleShoulderInputLeases[
+                                equipped_weapon_toggle_grab_policy::handIndex(
+                                    false)],
+                        .left = toToggleButtonState(
+                            leftPhysicalGripState),
+                        .right = toToggleButtonState(
+                            rightPhysicalGripState),
+                    });
+            if (_equippedWeaponHandlingSettings.toggleGrabEnabled) {
+                leftGripHeld = toggleGrabDecision.left.held;
+                rightGripHeld = toggleGrabDecision.right.held;
+                const auto& logicalPrimaryGrip = firingHandIsLeft ?
+                    toggleGrabDecision.left : toggleGrabDecision.right;
+                primaryGripInput = EquippedWeaponPrimaryGripInput{
+                    .held = logicalPrimaryGrip.held,
+                    .pressed = logicalPrimaryGrip.pressed,
+                    .released = logicalPrimaryGrip.released,
+                };
+                _equippedWeaponToggleGrabReleasePressConsumedThisFrame[
+                    equipped_weapon_toggle_grab_policy::handIndex(true)] =
+                    toggleGrabDecision.leftReleasePressConsumed;
+                _equippedWeaponToggleGrabReleasePressConsumedThisFrame[
+                    equipped_weapon_toggle_grab_policy::handIndex(false)] =
+                    toggleGrabDecision.rightReleasePressConsumed;
             }
 
             const auto captureScopeHandDriverFrame = [](RE::NiNode* driverNode) {
@@ -3236,6 +3255,8 @@ namespace rock
                          * reference is created. Once this action is selected, a
                          * failed native transition must never become a world drop.
                          */
+                        _equippedWeaponSheathCommittedThisFrame[
+                            sourceHandIndex] = true;
                         (void)submitEquippedWeaponShoulderSheath(
                             observedEquippedWeaponFormID,
                             observedEquippedWeaponInstanceData,
@@ -4956,6 +4977,8 @@ namespace rock
                 isShoulderStashedPresentationState(
                     sheathResult.stateAfter);
         if (sheathAccepted) {
+            equipped_weapon_toggle_grab_policy::reset(
+                _equippedWeaponToggleGrabState);
             clearEquippedWeaponHandAssignment(
                 "shoulder-weapon-sheathed",
                 true);

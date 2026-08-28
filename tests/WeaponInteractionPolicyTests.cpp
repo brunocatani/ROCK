@@ -1746,6 +1746,18 @@ int main()
         ok &= expectTrue("new right weapon occupancy owns its acquisition press",
             toggleAcquisition.rightGripAcquired);
         toggleInput.occupancy = { .left = true, .right = true };
+        toggleInput.leftShoulderLeaseActive = true;
+        toggleInput.left = { .released = true };
+        toggleInput.right = { .released = true };
+        toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectTrue("confirmed shoulder lease exposes the open left grip",
+            !toggleDecision.left.held && toggleDecision.left.released);
+        ok &= expectFalse("shoulder lease does not consume its release as a toggle press",
+            toggleDecision.leftReleasePressConsumed);
+        ok &= expectTrue("shoulder lease leaves the peer toggle latch active",
+            toggleDecision.right.held && !toggleDecision.right.released);
+
+        toggleInput.leftShoulderLeaseActive = false;
         toggleInput.left = { .released = true };
         toggleInput.right = { .released = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
@@ -2137,6 +2149,14 @@ int main()
         equippedWeaponShoulderStashAvailable(true));
     ok &= expectFalse("ROCK shoulder stash setting remains authoritative",
         equippedWeaponShoulderStashAvailable(false));
+    ok &= expectTrue("open toggle grip commits after confirmed shoulder dwell",
+        resolveShoulderSheathReleaseIntent(true, false, false));
+    ok &= expectFalse("held toggle grip waits for physical shoulder release",
+        resolveShoulderSheathReleaseIntent(true, true, false));
+    ok &= expectFalse("hold mode still requires a physical release edge",
+        resolveShoulderSheathReleaseIntent(false, false, false));
+    ok &= expectTrue("hold mode preserves its physical shoulder release edge",
+        resolveShoulderSheathReleaseIntent(false, false, true));
 
     const NativeShoulderSheathInput nativeShoulderSheath{
         .handlingEnabled = true,
