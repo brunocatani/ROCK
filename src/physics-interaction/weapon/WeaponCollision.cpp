@@ -6446,6 +6446,7 @@ namespace rock
             if (!retired.occupied()) {
                 retired.bodyPayload = payload;
                 retired.remainingPhysicsSteps = RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS;
+                retired.processLifetimeHold = false;
                 ++_retiredWeaponBodyPayloadCount;
                 ROCK_LOG_SAMPLE_DEBUG(Weapon,
                     1000,
@@ -6458,14 +6459,10 @@ namespace rock
             }
         }
 
-        /*
-         * A leak is safer than freeing a collision object that native pathing or
-         * collision readers may still touch after a generated weapon rebuild.
-         */
-        ROCK_LOG_ERROR(Weapon,
-            "Retired generated weapon body queue full; intentionally leaking body {} payload to avoid native use-after-free",
-            payload.bodyId);
-        payload = {};
+        BethesdaPhysicsBody::retainRetiredPayloadForProcessLifetime(
+            payload,
+            "weapon-body-queue",
+            _retiredWeaponBodyPayloads.size());
     }
 
     void WeaponCollision::setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled)
@@ -8790,15 +8787,29 @@ namespace rock
         }
     }
 
-    void WeaponCollision::serviceRetiredWeaponBodies(std::uint32_t completedPhysicsSteps)
+    void WeaponCollision::serviceRetiredWeaponBodies(
+        RE::hknpWorld* currentWorld,
+        std::uint32_t completedPhysicsSteps)
     {
-        if (completedPhysicsSteps == 0) {
+        if (!currentWorld || completedPhysicsSteps == 0) {
             return;
         }
 
         std::scoped_lock lock(_retiredWeaponBodyPayloadMutex);
         for (auto& retired : _retiredWeaponBodyPayloads) {
             if (!retired.occupied()) {
+                continue;
+            }
+            if (retired.processLifetimeHold) {
+                continue;
+            }
+            if (retired.bodyPayload.retiredHknpWorld != currentWorld) {
+                retired.processLifetimeHold = true;
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    1000,
+                    "Retired generated weapon body {} belongs to a departed Havok world; retaining its complete native payload for process lifetime",
+                    retired.bodyPayload.bodyId);
                 continue;
             }
 
@@ -8809,14 +8820,17 @@ namespace rock
             }
 
             const auto bodyId = retired.bodyPayload.bodyId;
-            BethesdaPhysicsBody::releaseRetiredPayload(retired.bodyPayload);
+            if (!BethesdaPhysicsBody::quarantineRetiredPayload(retired.bodyPayload)) {
+                retired.processLifetimeHold = true;
+                continue;
+            }
             retired = {};
             if (_retiredWeaponBodyPayloadCount > 0) {
                 --_retiredWeaponBodyPayloadCount;
             }
             ROCK_LOG_SAMPLE_DEBUG(Weapon,
                 1000,
-                "Retired generated weapon body {} payload reclaimed activeRetired={}",
+                "Retired generated weapon body {} transferred to collision-object quarantine activeRetired={}",
                 bodyId,
                 _retiredWeaponBodyPayloadCount);
         }

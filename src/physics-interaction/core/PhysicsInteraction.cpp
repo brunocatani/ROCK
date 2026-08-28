@@ -7273,12 +7273,12 @@ namespace rock
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
-        _weaponCollision.serviceRetiredWeaponBodies();
-        // Frees hand/body bone-collider and grab-authority-proxy collision objects
-        // that were world-removed on the main thread, only after the broadphase has
-        // been rebuilt by this step. Runs here so all deferred collider teardown
-        // shares the same post-solve grace cadence as weapon bodies and constraints.
-        BethesdaPhysicsBody::serviceRetiredDeferredPayloads();
+        _weaponCollision.serviceRetiredWeaponBodies(world);
+        // Neutralizes hand/body and grab-authority wrappers removed on the main
+        // thread after the broadphase grace, while retaining their addresses for
+        // native late readers. All generated body owners share this post-solve
+        // cadence and exact-world witness.
+        BethesdaPhysicsBody::serviceRetiredDeferredPayloads(world);
     }
 
 #include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"

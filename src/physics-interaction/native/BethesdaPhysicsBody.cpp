@@ -8,6 +8,7 @@
 #include "RE/Havok/hknpBody.h"
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <intrin.h>
 #include <mutex>
@@ -159,6 +160,64 @@ namespace rock
     constexpr std::uint32_t kStaticLocalMotionIndex = kInvalidGeneratedId;
     constexpr std::uint32_t kGeneratedBodyRuntimeFlags = 0x0802'0000;
     constexpr std::uint32_t kRebuildBodyCollisionState = 0;
+
+    namespace
+    {
+        struct RetiredDeferredBody
+        {
+            RetiredBethesdaPhysicsBodyPayload payload{};
+            std::uint32_t remainingPhysicsSteps = 0;
+            bool processLifetimeHold = false;
+
+            [[nodiscard]] bool occupied() const { return payload.occupied(); }
+        };
+
+        /*
+         * Fixed process-lifetime ownership for neutralized bhkNPCollisionObject
+         * addresses. Native FO4VR readers retain uncounted raw pointers after a
+         * generated body leaves the world. The 2026-08-28 weapon-switch crash at
+         * Fallout4VR.exe+1E08DF3 proved that eight completed physics steps are not
+         * a release boundary: GetCollisionFilterInfo still reached the old wrapper
+         * and indexed hknpBody with its stale mapped ID.
+         *
+         * Each quarantined object is reduced to its 0x30-byte wrapper; its owner
+         * node and bhkPhysicsSystem are detached after the existing grace window.
+         * The address then remains valid until process exit. Capacity is fixed so
+         * repeated weapon changes cannot grow an unbounded container. Exhaustion
+         * fails closed by rejecting all subsequent generated-body creation.
+         */
+        inline constexpr std::uint32_t kRetiredDeferredBodyGraceSteps = 8;
+        inline constexpr std::size_t kMaxRetiredDeferredBodies = 512;
+        inline constexpr std::size_t kMaxProcessLifetimeCollisionObjectTombstones = 65'536;
+
+        std::mutex s_retiredDeferredBodyMutex;
+        std::array<RetiredDeferredBody, kMaxRetiredDeferredBodies> s_retiredDeferredBodies{};
+        std::uint32_t s_retiredDeferredBodyCount = 0;
+        std::mutex s_collisionObjectTombstoneMutex;
+        std::array<void*, kMaxProcessLifetimeCollisionObjectTombstones> s_collisionObjectTombstones{};
+        std::size_t s_collisionObjectTombstoneCount = 0;
+        std::atomic_bool s_retirementQuarantineExhausted{ false };
+        std::atomic_bool s_retirementCreateRejectionLogged{ false };
+
+        void markRetirementQuarantineExhausted(
+            const char* owner,
+            std::uint32_t bodyId,
+            void* collisionObject,
+            std::size_t capacity)
+        {
+            const bool firstFailure =
+                !s_retirementQuarantineExhausted.exchange(true, std::memory_order_acq_rel);
+            if (firstFailure) {
+                ROCK_LOG_CRITICAL(
+                    BethesdaBody,
+                    "Generated-body retirement quarantine exhausted owner={} body={} collisionObject={:p} capacity={}; future generated-body creation is disabled",
+                    owner ? owner : "unknown",
+                    bodyId,
+                    collisionObject,
+                    capacity);
+            }
+        }
+    }
 
     static std::uint16_t generatedInitialMotionPropertiesId(BethesdaMotionType motionType)
     {
@@ -346,6 +405,14 @@ namespace rock
     {
         if (_created) {
             ROCK_LOG_WARN(BethesdaBody, "create() called on already-created body — destroy first");
+            return false;
+        }
+        if (s_retirementQuarantineExhausted.load(std::memory_order_acquire)) {
+            if (!s_retirementCreateRejectionLogged.exchange(true, std::memory_order_acq_rel)) {
+                ROCK_LOG_CRITICAL(
+                    BethesdaBody,
+                    "Generated-body creation rejected because the process-lifetime retirement quarantine is exhausted");
+            }
             return false;
         }
         if (!world || !bhkWorld || !shape) {
@@ -742,56 +809,130 @@ namespace rock
 
         outPayload.collisionObject = _collisionObject;
         outPayload.niNode = _niNode;
+        outPayload.retiredHknpWorld = _createdHknpWorld;
         outPayload.bodyId = _bodyId.value;
         reset();
         return outPayload.occupied();
     }
 
-    void BethesdaPhysicsBody::releaseRetiredPayload(RetiredBethesdaPhysicsBodyPayload& payload)
+    bool BethesdaPhysicsBody::quarantineRetiredPayload(RetiredBethesdaPhysicsBodyPayload& payload)
     {
         if (!payload.occupied()) {
-            return;
+            payload = {};
+            return true;
         }
 
         auto* collisionObject = payload.collisionObject;
-        auto* niNode = payload.niNode;
-        detachAndReleaseNiNode(collisionObject, niNode);
-        if (collisionObject) {
-            releaseRefCounted(collisionObject);
+        if (!collisionObject) {
+            auto* niNode = payload.niNode;
+            detachAndReleaseNiNode(nullptr, niNode);
+            payload = {};
+            return true;
         }
-        payload = {};
-    }
 
-    namespace
-    {
-        struct RetiredDeferredBody
+        std::size_t tombstoneIndex = 0;
         {
-            RetiredBethesdaPhysicsBodyPayload payload{};
-            std::uint32_t remainingPhysicsSteps = 0;
-
-            [[nodiscard]] bool occupied() const { return payload.occupied(); }
-        };
+            std::scoped_lock quarantineLock(s_collisionObjectTombstoneMutex);
+            if (s_collisionObjectTombstoneCount >= s_collisionObjectTombstones.size()) {
+                markRetirementQuarantineExhausted(
+                    "collision-object-tombstone",
+                    payload.bodyId,
+                    collisionObject,
+                    s_collisionObjectTombstones.size());
+                return false;
+            }
+            tombstoneIndex = s_collisionObjectTombstoneCount++;
+        }
 
         /*
-         * Grace window before a world-removed collision object is freed, in
-         * completed physics steps. Matches the weapon-body and grab-constraint
-         * queues (RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS /
-         * kRetiredGrabConstraintPayloadGraceSteps == 8): an hknp keyframed body
-         * stays reachable from the broadphase until the next step rebuilds it,
-         * so the object must outlive at least one full step after removal.
-         *
-         * The queue is a single file-local service shared by every collider
-         * class that used to free immediately (hand + body bone colliders, the
-         * grab-authority proxy). It is only touched under s_retiredDeferredBodyMutex
-         * from retireDeferred() (main thread) and serviceRetiredDeferredPayloads()
-         * (physics post-solve phase), so the two phases never race the free.
+         * Reserve permanent ownership before neutralizing the object. The
+         * payload owns the original collision-object reference transferred from
+         * BethesdaPhysicsBody, while the NiNode owns a second reference. Detach
+         * the node first, then sever and release the bhkPhysicsSystem edge. Any
+         * late native call through the retained wrapper now takes the same null
+         * fail-closed path as bhkNPCollisionObject::GetCollisionFilterInfo.
          */
-        inline constexpr std::uint32_t kRetiredDeferredBodyGraceSteps = 8;
-        inline constexpr std::size_t kMaxRetiredDeferredBodies = 512;
+        auto* niNode = payload.niNode;
+        detachAndReleaseNiNode(collisionObject, niNode);
 
-        std::mutex s_retiredDeferredBodyMutex;
-        std::array<RetiredDeferredBody, kMaxRetiredDeferredBodies> s_retiredDeferredBodies{};
-        std::uint32_t s_retiredDeferredBodyCount = 0;
+        auto* physicsSystemSlot = reinterpret_cast<void* volatile*>(
+            reinterpret_cast<std::uintptr_t>(collisionObject) +
+            offsets::kCollisionObject_PhysSystemPtr);
+        auto* observedPhysicsSystem =
+            InterlockedCompareExchangePointer(physicsSystemSlot, nullptr, nullptr);
+        auto* observedInstance = nativePhysicsSystemInstance(observedPhysicsSystem);
+        auto* observedInstanceWorld =
+            observedInstance ? nativeWorldFromPhysicsSystem(observedPhysicsSystem) : nullptr;
+        const auto systemBodyIndex = *reinterpret_cast<const std::uint32_t*>(
+            reinterpret_cast<std::uintptr_t>(collisionObject) +
+            offsets::kCollisionObject_SystemBodyIndex);
+        RE::hknpBodyId mappedBodyId{ kInvalidGeneratedId };
+        const bool mappingReadable =
+            observedPhysicsSystem &&
+            observedInstance &&
+            observedInstanceWorld == payload.retiredHknpWorld &&
+            systemBodyIndex < 4096;
+        if (mappingReadable) {
+            static REL::Relocation<PhysicsSystemGetBodyId_t> getBodyId{
+                REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId)
+            };
+            getBodyId(
+                observedPhysicsSystem,
+                &mappedBodyId,
+                static_cast<std::int32_t>(systemBodyIndex));
+        }
+
+        ROCK_LOG_SAMPLE_DEBUG(
+            BethesdaBody,
+            1000,
+            "Retired wrapper quarantine witness body={} mappedBody={} mappingReadable={} systemBodyIndex={} collisionObject={:p} physicsSystem={:p} instance={:p} retiredWorld={:p} instanceWorld={:p}",
+            payload.bodyId,
+            mappedBodyId.value,
+            mappingReadable ? "yes" : "no",
+            systemBodyIndex,
+            collisionObject,
+            observedPhysicsSystem,
+            observedInstance,
+            static_cast<void*>(payload.retiredHknpWorld),
+            static_cast<void*>(observedInstanceWorld));
+
+        auto* physicsSystem = InterlockedExchangePointer(physicsSystemSlot, nullptr);
+        if (physicsSystem) {
+            releaseRefCounted(physicsSystem);
+        }
+
+        s_collisionObjectTombstones[tombstoneIndex] = collisionObject;
+        const auto bodyId = payload.bodyId;
+        payload = {};
+
+        ROCK_LOG_SAMPLE_DEBUG(
+            BethesdaBody,
+            1000,
+            "Retired body {} collision object neutralized and quarantined for process lifetime activeQuarantined={}",
+            bodyId,
+            tombstoneIndex + 1);
+        return true;
+    }
+
+    void BethesdaPhysicsBody::retainRetiredPayloadForProcessLifetime(
+        RetiredBethesdaPhysicsBodyPayload& payload,
+        const char* owner,
+        std::size_t capacity)
+    {
+        if (!payload.occupied()) {
+            payload = {};
+            return;
+        }
+
+        markRetirementQuarantineExhausted(
+            owner,
+            payload.bodyId,
+            payload.collisionObject,
+            capacity);
+        // Ownership is intentionally transferred to process lifetime without a
+        // release. Creation is now disabled, so only the finite set of bodies
+        // already live when capacity failed can enter this emergency path.
+        payload = {};
     }
 
     void BethesdaPhysicsBody::retireDeferred(void* bhkWorld)
@@ -817,27 +958,38 @@ namespace rock
             }
         }
 
-        /*
-         * Queue full: leaking one collision object is strictly safer than freeing
-         * memory the native broadphase may still reference this frame. The payload
-         * has already been removed from the world, so this leaks memory only, not a
-         * live-world dangling body.
-         */
-        ROCK_LOG_ERROR(BethesdaBody,
-            "Retired deferred body queue full; intentionally leaking collision object {:p} (body {}) to avoid native use-after-free",
-            payload.collisionObject,
-            payload.bodyId);
+        // Queue exhaustion is a terminal safety boundary for generated-body
+        // creation. Preserve this already-retired payload for process lifetime;
+        // the remaining live set is finite once new creates are rejected.
+        retainRetiredPayloadForProcessLifetime(
+            payload,
+            "deferred-body-queue",
+            s_retiredDeferredBodies.size());
     }
 
-    void BethesdaPhysicsBody::serviceRetiredDeferredPayloads(std::uint32_t completedPhysicsSteps)
+    void BethesdaPhysicsBody::serviceRetiredDeferredPayloads(
+        RE::hknpWorld* currentWorld,
+        std::uint32_t completedPhysicsSteps)
     {
-        if (completedPhysicsSteps == 0) {
+        if (!currentWorld || completedPhysicsSteps == 0) {
             return;
         }
 
         std::scoped_lock lock(s_retiredDeferredBodyMutex);
         for (auto& retired : s_retiredDeferredBodies) {
             if (!retired.occupied()) {
+                continue;
+            }
+            if (retired.processLifetimeHold) {
+                continue;
+            }
+            if (retired.payload.retiredHknpWorld != currentWorld) {
+                retired.processLifetimeHold = true;
+                ROCK_LOG_SAMPLE_WARN(
+                    BethesdaBody,
+                    1000,
+                    "Retired body {} belongs to a departed Havok world; retaining its complete native payload for process lifetime",
+                    retired.payload.bodyId);
                 continue;
             }
 
@@ -848,14 +1000,17 @@ namespace rock
             }
 
             const auto bodyId = retired.payload.bodyId;
-            releaseRetiredPayload(retired.payload);
+            if (!quarantineRetiredPayload(retired.payload)) {
+                retired.processLifetimeHold = true;
+                continue;
+            }
             retired = {};
             if (s_retiredDeferredBodyCount > 0) {
                 --s_retiredDeferredBodyCount;
             }
             ROCK_LOG_SAMPLE_DEBUG(BethesdaBody,
                 1000,
-                "Retired deferred body {} collision object reclaimed activeRetired={}",
+                "Retired deferred body {} transferred to collision-object quarantine activeRetired={}",
                 bodyId,
                 s_retiredDeferredBodyCount);
         }

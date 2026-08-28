@@ -334,7 +334,7 @@ namespace rock
 
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
-        void serviceRetiredWeaponBodies(std::uint32_t completedPhysicsSteps = 1);
+        void serviceRetiredWeaponBodies(RE::hknpWorld* currentWorld, std::uint32_t completedPhysicsSteps = 1);
 
     private:
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
@@ -407,6 +407,7 @@ namespace rock
         {
             RetiredBethesdaPhysicsBodyPayload bodyPayload{};
             std::uint32_t remainingPhysicsSteps{ 0 };
+            bool processLifetimeHold{ false };
 
             [[nodiscard]] bool occupied() const { return bodyPayload.occupied(); }
         };
