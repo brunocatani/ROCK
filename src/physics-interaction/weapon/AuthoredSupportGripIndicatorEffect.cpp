@@ -13,7 +13,7 @@ namespace rock
     namespace
     {
         constexpr const char* kIndicatorNif =
-            "Data/Meshes/ROCK/selection_beam_segment.nif";
+            "Data/Meshes/ROCK/authored_support_grip_indicator_bright.nif";
         constexpr const char* kIndicatorNodeName =
             "ROCK_AuthoredSupportGripIndicator";
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
@@ -74,7 +74,7 @@ namespace rock
         }
 
         try {
-            auto* marker = f4vr::loadNifFromFile(kIndicatorNif);
+            auto* marker = f4vr::loadNifObjectFromFile(kIndicatorNif);
             if (!marker) {
                 ROCK_LOG_WARN(Weapon,
                     "Authored support-grip indicator disabled: source load returned null for '{}'",

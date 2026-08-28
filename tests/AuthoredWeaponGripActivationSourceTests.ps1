@@ -22,6 +22,13 @@ function Reject-Text {
     }
 }
 
+function Require-Path {
+    param([string]$Path, [string]$Message)
+    if (-not (Test-Path -LiteralPath (Join-Path $Root $Path))) {
+        $failures.Add("$Path`: $Message")
+    }
+}
+
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
     'baseEquipSlot\s*=\s*weapon->GetEquipSlot\(nullptr\)[\s\S]{0,260}effectiveEquipSlot\s*=\s*weapon->GetEquipSlot\(instanceData\)' `
     'Authored-grip family diagnostics must read both base and effective BGSEquipType behavior slots.'
@@ -87,9 +94,16 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'authoredInteractionCandidateValid[\s\S]{0,1800}supportGripAllowed[\s\S]{0,800}providerPartAuthorityActive[\s\S]{0,800}supportHandHoldingObject' `
     'The gameplay cue must require a routed, unreserved, provider-free candidate and an available support hand.'
 
+Require-Path 'data/mod/Meshes/ROCK/authored_support_grip_indicator_bright.nif' `
+    'The high-visibility authored support-grip sphere must be packaged as a ROCK-owned asset.'
+
 Require-Text 'src/physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.cpp' `
-    'Data/Meshes/ROCK/selection_beam_segment\.nif[\s\S]*loadNifFromFile[\s\S]*AttachChild[\s\S]*worldPointToLocal[\s\S]*setVisible\(true, true\)' `
-    'The gameplay cue must preload and reuse the packaged green sphere as a world-root scenegraph effect.'
+    'Data/Meshes/ROCK/authored_support_grip_indicator_bright\.nif[\s\S]*loadNifObjectFromFile[\s\S]*AttachChild[\s\S]*worldPointToLocal[\s\S]*setVisible\(true, true\)' `
+    'The gameplay cue must preload and reuse the dedicated bright sphere as a world-root scenegraph effect.'
+
+Require-Text 'src/rock_support/Fo4VrRuntime.cpp' `
+    'loadNifRootAddress[\s\S]*loadNifFromFile[\s\S]*loadNifObjectFromFile' `
+    'The runtime NIF loader must preserve node callers while allowing the indicator to own a BSTriShape root safely.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.cpp' `
     'void\s+AuthoredSupportGripIndicatorEffect::shutdown\(\)[\s\S]*clearMarker\(true\)[\s\S]*void\s+AuthoredSupportGripIndicatorEffect::abandonSceneGraph\(\)[\s\S]*clearMarker\(false\)' `

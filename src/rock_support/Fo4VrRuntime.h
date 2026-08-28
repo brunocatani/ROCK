@@ -178,6 +178,8 @@ namespace rock::fo4vr
     void updateTransformsDown(RE::NiAVObject* node, bool updateSelf, const char* ignoredNode = nullptr) noexcept;
 
     [[nodiscard]] RE::NiNode* loadNifFromFile(const std::string& path);
+    [[nodiscard]] RE::NiAVObject* loadNifObjectFromFile(
+        const std::string& path);
 }
 
 namespace f4vr = rock::fo4vr;

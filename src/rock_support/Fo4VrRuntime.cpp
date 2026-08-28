@@ -29,6 +29,25 @@ namespace rock::fo4vr
             }
             return false;
         }
+
+        [[nodiscard]] std::uint64_t loadNifRootAddress(
+            const std::string& path)
+        {
+            const std::string normalizedPath =
+                path.starts_with("Data") ? path : "Data/Meshes/" + path;
+            if (!std::filesystem::exists(normalizedPath)) {
+                throw std::runtime_error(
+                    "NIF file not found: " + normalizedPath);
+            }
+
+            std::uint64_t flags[2]{ 0x0, 0xED };
+            std::uint64_t loadedObject = 0;
+            loadNif(
+                reinterpret_cast<std::uint64_t>(normalizedPath.c_str()),
+                reinterpret_cast<std::uint64_t>(&loadedObject),
+                reinterpret_cast<std::uint64_t>(&flags));
+            return loadedObject;
+        }
     }
 
     RE::PlayerCharacter* getPlayer() noexcept
@@ -372,17 +391,11 @@ namespace rock::fo4vr
 
     RE::NiNode* loadNifFromFile(const std::string& path)
     {
-        const std::string normalizedPath = path.starts_with("Data") ? path : "Data/Meshes/" + path;
-        if (!std::filesystem::exists(normalizedPath)) {
-            throw std::runtime_error("NIF file not found: " + normalizedPath);
-        }
+        return reinterpret_cast<RE::NiNode*>(loadNifRootAddress(path));
+    }
 
-        std::uint64_t flags[2]{ 0x0, 0xED };
-        std::uint64_t loadedNode = 0;
-        loadNif(
-            reinterpret_cast<std::uint64_t>(normalizedPath.c_str()),
-            reinterpret_cast<std::uint64_t>(&loadedNode),
-            reinterpret_cast<std::uint64_t>(&flags));
-        return reinterpret_cast<RE::NiNode*>(loadedNode);
+    RE::NiAVObject* loadNifObjectFromFile(const std::string& path)
+    {
+        return reinterpret_cast<RE::NiAVObject*>(loadNifRootAddress(path));
     }
 }

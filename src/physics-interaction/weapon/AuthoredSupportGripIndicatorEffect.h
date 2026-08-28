@@ -33,7 +33,7 @@ namespace rock
         void setVisible(bool visible, bool updateTransforms);
         void clearMarker(bool detachFromKnownValidParent);
 
-        RE::NiPointer<RE::NiNode> _marker;
+        RE::NiPointer<RE::NiAVObject> _marker;
         RE::NiNode* _parent{ nullptr };
         bool _active{ false };
         bool _assetLoadFailed{ false };
