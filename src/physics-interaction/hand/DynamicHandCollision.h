@@ -2,6 +2,7 @@
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
+#include "physics-interaction/hand/DynamicHandWeaponContactState.h"
 #include "physics-interaction/hand/DynamicHandCollisionTransitionPolicy.h"
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
@@ -127,6 +128,15 @@ namespace rock
             const DynamicBodyContactSource& source,
             bool otherIsHand,
             bool otherIsWeapon) noexcept;
+        void recordDynamicWeaponContactCallback(
+            const DynamicBodyContactSource& source,
+            std::uint32_t weaponProxyBodyId,
+            std::uint32_t weaponBodyId,
+            std::uint64_t weaponGenerationKey,
+            const RE::NiPoint3& contactPointGame,
+            const RE::NiPoint3* contactNormalGame) noexcept;
+        [[nodiscard]] dynamic_hand_weapon_contact_state::Collection
+        collectFreshWeaponContacts(bool isLeft) const noexcept;
 
         [[nodiscard]] bool tryClassifySurfaceContactSourceAtomic(
             std::uint32_t bodyId,
@@ -455,6 +465,7 @@ namespace rock
 
         std::array<HandSlots, 2> _hands{};
         dynamic_hand_surface_contact_state::State _surfaceContacts{};
+        dynamic_hand_weapon_contact_state::State _weaponContacts{};
         std::atomic<std::uint64_t> _surfaceImpulsePairSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _surfaceProcessedPairSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _surfaceEligiblePairSequenceAtomic{ 0 };

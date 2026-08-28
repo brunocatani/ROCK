@@ -2183,6 +2183,245 @@ namespace rock
         bool rightPartGripActive = false;
     };
 
+    bool PhysicsInteraction::tryResolveDynamicWeaponContactForHand(
+        const bool isLeft,
+        const HandFrameInput& handInput,
+        RE::NiNode* weaponNode,
+        WeaponInteractionContact& outContact) const
+    {
+        outContact = {};
+        if (!weaponNode || handInput.disabled) {
+            return false;
+        }
+
+        const std::uint64_t currentGeneration =
+            _weaponCollision.getCurrentWeaponGenerationKey();
+        const std::uint32_t currentProxyBodyId =
+            _dynamicWeaponCollision.proxyBodyIdForDebug().value;
+        if (currentGeneration == 0 ||
+            currentProxyBodyId ==
+                dynamic_hand_weapon_contact_state::kInvalidBodyId) {
+            return false;
+        }
+
+        struct Candidate
+        {
+            bool valid{ false };
+            bool palmContact{ false };
+            std::uint32_t bodyId{
+                dynamic_hand_weapon_contact_state::kInvalidBodyId
+            };
+            std::uint32_t handChildMask{ 0 };
+            std::uint8_t fingerMask{ 0 };
+            std::uint8_t contactCount{ 0 };
+            RE::NiPoint3 pointSumWeaponLocal{};
+            RE::NiPoint3 palmPointWeaponLocal{};
+            float youngestAgeSeconds{
+                (std::numeric_limits<float>::infinity)()
+            };
+            float minimumAnchorDistanceSquared{
+                (std::numeric_limits<float>::infinity)()
+            };
+            WeaponInteractionContact semantic{};
+        };
+
+        std::array<
+            Candidate,
+            dynamic_hand_collision_telemetry::kBodiesPerHand>
+            candidates{};
+        std::size_t candidateCount = 0;
+        WeaponPhysicalContactWitness witness{};
+        std::array<float, 5> fingerAges{
+            (std::numeric_limits<float>::infinity)(),
+            (std::numeric_limits<float>::infinity)(),
+            (std::numeric_limits<float>::infinity)(),
+            (std::numeric_limits<float>::infinity)(),
+            (std::numeric_limits<float>::infinity)(),
+        };
+        std::array<std::size_t, 5> fingerSegments{};
+
+        const auto contacts =
+            _dynamicHandCollision.collectFreshWeaponContacts(isLeft);
+        for (std::size_t recordIndex = 0;
+             recordIndex < contacts.count &&
+             recordIndex < contacts.records.size();
+             ++recordIndex) {
+            const auto& record = contacts.records[recordIndex];
+            if (!record.valid || record.isLeft != isLeft ||
+                record.handSlot >=
+                    dynamic_hand_collision_telemetry::kFirstForearmSlot ||
+                record.weaponProxyBodyId != currentProxyBodyId ||
+                record.weaponGenerationKey != currentGeneration) {
+                continue;
+            }
+
+            WeaponInteractionContact semantic{};
+            if (!_weaponCollision.tryGetWeaponContactAtomic(
+                    record.weaponBodyId,
+                    semantic) ||
+                !semantic.valid ||
+                semantic.weaponGenerationKey != currentGeneration) {
+                continue;
+            }
+
+            RE::NiPoint3 pointWeaponLocal{};
+            if (!_dynamicWeaponCollision.
+                    tryConvertContactPointToWeaponLocal(
+                        record.contactPointGame,
+                        currentGeneration,
+                        pointWeaponLocal)) {
+                continue;
+            }
+            const RE::NiPoint3 pointWorld =
+                transform_math::localPointToWorld(
+                    weaponNode->world,
+                    pointWeaponLocal);
+            const RE::NiPoint3 anchorDelta{
+                pointWorld.x - handInput.grabAnchorWorld.x,
+                pointWorld.y - handInput.grabAnchorWorld.y,
+                pointWorld.z - handInput.grabAnchorWorld.z,
+            };
+            const float anchorDistanceSquared =
+                anchorDelta.x * anchorDelta.x +
+                anchorDelta.y * anchorDelta.y +
+                anchorDelta.z * anchorDelta.z;
+            if (!std::isfinite(anchorDistanceSquared)) {
+                continue;
+            }
+
+            Candidate* candidate = nullptr;
+            for (std::size_t index = 0; index < candidateCount; ++index) {
+                if (candidates[index].bodyId == record.weaponBodyId) {
+                    candidate = &candidates[index];
+                    break;
+                }
+            }
+            if (!candidate && candidateCount < candidates.size()) {
+                candidate = &candidates[candidateCount++];
+                candidate->valid = true;
+                candidate->bodyId = record.weaponBodyId;
+                candidate->semantic = semantic;
+            }
+            if (!candidate) {
+                continue;
+            }
+
+            candidate->pointSumWeaponLocal.x += pointWeaponLocal.x;
+            candidate->pointSumWeaponLocal.y += pointWeaponLocal.y;
+            candidate->pointSumWeaponLocal.z += pointWeaponLocal.z;
+            candidate->contactCount = static_cast<std::uint8_t>(
+                (std::min)(
+                    static_cast<unsigned>(candidate->contactCount) + 1u,
+                    0xFFu));
+            candidate->handChildMask |=
+                1u << static_cast<std::uint32_t>(record.handSlot);
+            candidate->youngestAgeSeconds = (std::min)(
+                candidate->youngestAgeSeconds,
+                record.secondsSinceContact);
+            candidate->minimumAnchorDistanceSquared = (std::min)(
+                candidate->minimumAnchorDistanceSquared,
+                anchorDistanceSquared);
+
+            if (record.handSlot ==
+                dynamic_hand_collision_telemetry::kPalmSlot) {
+                candidate->palmContact = true;
+                candidate->palmPointWeaponLocal = pointWeaponLocal;
+                continue;
+            }
+            if (!dynamic_hand_collision_telemetry::isFingerSlot(
+                    record.handSlot)) {
+                continue;
+            }
+            const std::size_t finger =
+                dynamic_hand_collision_telemetry::
+                    fingerIndexForBodyIndex(record.handSlot);
+            const std::size_t segment =
+                dynamic_hand_collision_telemetry::
+                    fingerSegmentIndexForBodyIndex(record.handSlot);
+            if (finger >= witness.fingerPointsWeaponLocal.size()) {
+                continue;
+            }
+            candidate->fingerMask |= static_cast<std::uint8_t>(
+                1u << static_cast<std::uint32_t>(finger));
+            if (record.secondsSinceContact < fingerAges[finger] ||
+                (record.secondsSinceContact == fingerAges[finger] &&
+                    segment > fingerSegments[finger])) {
+                fingerAges[finger] = record.secondsSinceContact;
+                fingerSegments[finger] = segment;
+                witness.fingerPointsWeaponLocal[finger] =
+                    pointWeaponLocal;
+                witness.fingerContactMask |= static_cast<std::uint8_t>(
+                    1u << static_cast<std::uint32_t>(finger));
+            }
+        }
+
+        const auto fingerCount = [](const std::uint8_t mask) {
+            std::uint8_t count = 0;
+            for (std::uint8_t bit = 0; bit < 5; ++bit) {
+                if ((mask & static_cast<std::uint8_t>(1u << bit)) != 0) {
+                    ++count;
+                }
+            }
+            return count;
+        };
+        const auto betterCandidate = [&fingerCount](
+                                         const Candidate& candidate,
+                                         const Candidate& current) {
+            if (!current.valid) {
+                return true;
+            }
+            if (candidate.palmContact != current.palmContact) {
+                return candidate.palmContact;
+            }
+            const auto candidateFingers = fingerCount(candidate.fingerMask);
+            const auto currentFingers = fingerCount(current.fingerMask);
+            if (candidateFingers != currentFingers) {
+                return candidateFingers > currentFingers;
+            }
+            if (candidate.contactCount != current.contactCount) {
+                return candidate.contactCount > current.contactCount;
+            }
+            if (candidate.youngestAgeSeconds !=
+                current.youngestAgeSeconds) {
+                return candidate.youngestAgeSeconds <
+                       current.youngestAgeSeconds;
+            }
+            if (candidate.minimumAnchorDistanceSquared !=
+                current.minimumAnchorDistanceSquared) {
+                return candidate.minimumAnchorDistanceSquared <
+                       current.minimumAnchorDistanceSquared;
+            }
+            return candidate.bodyId < current.bodyId;
+        };
+
+        Candidate selected{};
+        for (std::size_t index = 0; index < candidateCount; ++index) {
+            if (candidates[index].valid &&
+                betterCandidate(candidates[index], selected)) {
+                selected = candidates[index];
+            }
+        }
+        if (!selected.valid || selected.contactCount == 0) {
+            return false;
+        }
+
+        const float inverseContactCount =
+            1.0f / static_cast<float>(selected.contactCount);
+        witness.valid = true;
+        witness.pointWeaponLocal = selected.palmContact ?
+            selected.palmPointWeaponLocal :
+            RE::NiPoint3{
+                selected.pointSumWeaponLocal.x * inverseContactCount,
+                selected.pointSumWeaponLocal.y * inverseContactCount,
+                selected.pointSumWeaponLocal.z * inverseContactCount,
+            };
+        witness.handChildMask = selected.handChildMask;
+        witness.ageSeconds = selected.youngestAgeSeconds;
+        outContact = selected.semantic;
+        outContact.physicalContact = witness;
+        return true;
+    }
+
     PhysicsInteraction::EquippedWeaponFrameResult PhysicsInteraction::updateEquippedWeaponFrame(
         const PhysicsFrameContext& frame,
         RE::bhkWorld* bhk,
@@ -2362,25 +2601,18 @@ namespace rock
             auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact) {
                 auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
                 auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
-                auto& acquisitionState = _weaponInteractionAcquisitionStates[isLeft ? 0u : 1u];
 
-                // Drain the physics-thread notification, but do not use an
-                // arbitrary finger/body callback as palm-touch provenance.
-                // Touch is the deterministic overlap below for both physical
-                // hands and for either firing/support role.
+                // Layer-43 callbacks remain provider evidence. Equipped dynamic
+                // grabs consume the solver-resolved compound contact below.
                 (void)bodyIdAtomic.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
 
-                const RE::NiPoint3 legacyPalmPivotWorld =
-                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                        handInput.rawHandWorld,
-                        isLeft);
-                const bool touchObserved = weaponNode &&
-                    _weaponCollision.tryFindInteractionContactNearPoint(
+                const bool physicalContactObserved =
+                    tryResolveDynamicWeaponContactForHand(
+                        isLeft,
+                        handInput,
                         weaponNode,
-                        legacyPalmPivotWorld,
-                        g_rockConfig.rockWeaponInteractionTouchRadius,
                         outContact);
-                if (touchObserved) {
+                if (physicalContactObserved) {
                     publishWeaponInteractionContact(isLeft, outContact);
                 } else if (weaponNode && probeAllowed) {
                     if (_weaponCollision.tryFindInteractionContactNearPoint(
@@ -2414,10 +2646,11 @@ namespace rock
                     }
                 }
 
-                outContact.acquisitionSource = weapon_interaction_acquisition_policy::resolve(
-                    acquisitionState,
-                    touchObserved,
-                    outContact.valid);
+                outContact.acquisitionSource = physicalContactObserved ?
+                    WeaponInteractionAcquisitionSource::PhysicalContact :
+                    (outContact.valid ?
+                            WeaponInteractionAcquisitionSource::ProximityProbe :
+                            WeaponInteractionAcquisitionSource::None);
                 switch (outContact.acquisitionSource) {
                 case WeaponInteractionAcquisitionSource::PhysicalContact:
                     return weapon_debug_notification_policy::WeaponContactSource::Contact;
@@ -4172,7 +4405,6 @@ namespace rock
         _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
         _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
         _leftWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
-        _weaponInteractionAcquisitionStates[0] = {};
     }
 
     void PhysicsInteraction::clearRightWeaponContact()
@@ -4185,7 +4417,6 @@ namespace rock
         _rightWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
         _rightWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
         _rightWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
-        _weaponInteractionAcquisitionStates[1] = {};
     }
 
     bool PhysicsInteraction::isHandContactEvidenceSuppressed(bool isLeft) const

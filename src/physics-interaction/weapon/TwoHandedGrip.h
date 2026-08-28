@@ -878,17 +878,20 @@ namespace rock
             RE::NiPoint3 normalLocal{};
             RE::NiPoint3 gripSourceLocal{};
             RE::NiPoint3 normalSourceLocal{};
+            RE::NiPoint3 physicalAnchorHandLocal{};
             RE::NiTransform handWeaponLocal{};
             RE::NiTransform handSourceLocal{};
             RE::NiTransform attachmentWeaponLocal{};
             bool hasHandWeaponLocal{ false };
             bool hasSourceFrames{ false };
             bool hasAttachmentWeaponLocal{ false };
+            bool hasPhysicalAnchorHandLocal{ false };
             RE::NiAVObject* attachmentRoot{ nullptr };
             WeaponGripPoseId gripPose{ WeaponGripPoseId::BarrelWrap };
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
+            bool preservePhysicalContactAnchor{ false };
             // Latched with the authored primary canonical. In this mode the
             // support seat may translate the weapon but never rotate it.
             bool authoredSupportPositionOnlyAlignment{ false };

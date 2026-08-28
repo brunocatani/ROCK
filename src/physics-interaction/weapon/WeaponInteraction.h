@@ -12,48 +12,6 @@
 
 namespace rock
 {
-    namespace weapon_interaction_acquisition_policy
-    {
-        inline constexpr std::uint8_t kTouchGraceFrames = 2;
-
-        struct State
-        {
-            std::uint8_t touchGraceFramesRemaining{ 0 };
-        };
-
-        /*
-         * The small legacy-palm overlap can flicker for a presentation frame
-         * at collider seams. Keep a two-frame touch lease so a continuously
-         * touching hand cannot be reclassified as an authored proximity snap.
-         * The lease affects provenance only; a valid current touch/probe
-         * candidate is still required before a grab can start.
-         *
-         * Clock domain: deliberately a consecutive-publication count, not an
-         * elapsed duration. The flicker it bridges is quantized per
-         * presentation frame, so the number of missed publications to
-         * tolerate is rate-independent while its elapsed time is not.
-         */
-        [[nodiscard]] inline constexpr WeaponInteractionAcquisitionSource resolve(
-            State& state,
-            bool touchObserved,
-            bool candidateResolved)
-        {
-            if (touchObserved) {
-                state.touchGraceFramesRemaining = kTouchGraceFrames;
-                return candidateResolved ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::None;
-            }
-
-            const bool touchLeaseActive = state.touchGraceFramesRemaining > 0;
-            if (touchLeaseActive) {
-                --state.touchGraceFramesRemaining;
-            }
-            if (!candidateResolved) {
-                return WeaponInteractionAcquisitionSource::None;
-            }
-            return touchLeaseActive ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::ProximityProbe;
-        }
-    }
-
     /*
      * Left-hand weapon behavior needs one authority. Generated layer 44 weapon
      * colliders can describe authored parts, but ROCK's live weapon interaction
@@ -81,6 +39,7 @@ namespace rock
         decision.sourceRoot = contact.sourceRoot;
         decision.weaponGenerationKey = contact.weaponGenerationKey;
         decision.acquisitionSource = contact.acquisitionSource;
+        decision.physicalContact = contact.physicalContact;
 
         if (weapon_support_grip_policy::canUseContactForSupportGrip(contact, runtimeState)) {
             decision.kind = WeaponInteractionKind::SupportGrip;

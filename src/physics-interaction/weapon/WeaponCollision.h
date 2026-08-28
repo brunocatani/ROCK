@@ -187,6 +187,7 @@ namespace rock
         {
             const RE::hknpShape* shape{ nullptr };
             RE::NiTransform shapeInWeapon{};
+            std::uint32_t sourceBodyId{ 0x7FFF'FFFFu };
         };
 
         struct CompoundChildPoseSnapshot

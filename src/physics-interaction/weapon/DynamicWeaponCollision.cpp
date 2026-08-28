@@ -891,6 +891,14 @@ namespace rock
         _createdWeaponScale = scale;
         _createdCompoundChildCount = static_cast<std::uint32_t>(compoundGeometry.children.size());
         _createdCompoundPointCount = compoundGeometry.sourcePointCount;
+        _createdSourceBodyIds.fill(kInvalidBodyId);
+        _createdSourceBodyIdCount = _createdCompoundChildCount;
+        for (std::size_t childIndex = 0;
+             childIndex < compoundGeometry.children.size();
+             ++childIndex) {
+            _createdSourceBodyIds[childIndex] =
+                compoundGeometry.children[childIndex].sourceBodyId;
+        }
         _created = true;
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
@@ -1384,6 +1392,68 @@ namespace rock
         return bodyId != kInvalidBodyId && _bodyIdAtomic.load(std::memory_order_acquire) == bodyId;
     }
 
+    bool DynamicWeaponCollisionRuntime::tryClassifyContactChildAtomic(
+        const std::uint32_t bodyId,
+        const std::uint32_t shapeKey,
+        ContactChildSource& outSource) const noexcept
+    {
+        outSource = {};
+        if (!isProxyBodyIdAtomic(bodyId)) {
+            return false;
+        }
+        const auto childIndex =
+            _compoundShape.tryResolveChildIndex(shapeKey);
+        if (!childIndex ||
+            *childIndex >= _createdSourceBodyIdCount ||
+            *childIndex >= _createdSourceBodyIds.size()) {
+            return false;
+        }
+        const std::uint32_t sourceBodyId =
+            _createdSourceBodyIds[*childIndex];
+        if (sourceBodyId == kInvalidBodyId ||
+            _createdGenerationKey == 0) {
+            return false;
+        }
+        outSource.valid = true;
+        outSource.proxyBodyId = bodyId;
+        outSource.sourceBodyId = sourceBodyId;
+        outSource.childIndex = static_cast<std::uint32_t>(*childIndex);
+        outSource.weaponGenerationKey = _createdGenerationKey;
+        return true;
+    }
+
+    bool DynamicWeaponCollisionRuntime::tryConvertContactPointToWeaponLocal(
+        const RE::NiPoint3& contactPointGame,
+        const std::uint64_t expectedGenerationKey,
+        RE::NiPoint3& outPointWeaponLocal) const
+    {
+        outPointWeaponLocal = {};
+        PhysicsSnapshot snapshot{};
+        if (expectedGenerationKey == 0 ||
+            !readPhysicsSnapshot(snapshot) ||
+            !snapshot.valid || snapshot.teleported ||
+            snapshot.bodyId !=
+                _bodyIdAtomic.load(std::memory_order_acquire) ||
+            snapshot.generationKey != expectedGenerationKey ||
+            snapshot.generationKey != _createdGenerationKey) {
+            return false;
+        }
+        const RE::NiTransform liveWeaponWorld =
+            dynamic_weapon_collision_policy::reconstructWeaponRoot(
+                snapshot.liveProxyBodyWorld,
+                _createdCenterWeaponLocal,
+                snapshot.weaponScale);
+        if (!dynamic_weapon_collision_policy::isFiniteTransform(
+                liveWeaponWorld)) {
+            return false;
+        }
+        outPointWeaponLocal = transform_math::worldPointToLocal(
+            liveWeaponWorld,
+            contactPointGame);
+        return dynamic_weapon_collision_policy::isFinitePoint(
+            outPointWeaponLocal);
+    }
+
     void DynamicWeaponCollisionRuntime::recordObstacleContactCallback(
         RE::hknpWorld* world,
         const std::uint32_t proxyBodyId,
@@ -1506,6 +1576,8 @@ namespace rock
         _createdWeaponScale = 1.0f;
         _createdCompoundChildCount = 0;
         _createdCompoundPointCount = 0;
+        _createdSourceBodyIds.fill(kInvalidBodyId);
+        _createdSourceBodyIdCount = 0;
         _created = false;
         _droveThisSubstep = false;
         _physicsRequestedTargetValid = false;
