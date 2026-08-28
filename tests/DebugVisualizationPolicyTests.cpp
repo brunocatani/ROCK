@@ -13,6 +13,7 @@ namespace
                !state.bodyBoneColliders &&
                !state.dynamicHandColliders &&
                !state.weaponColliders &&
+               !state.grabbedWeaponPartCollider &&
                !state.dynamicWeaponColliders &&
                !state.grabAuthorityProxyCollider &&
                !state.grabPivotSourceCollider;
@@ -26,6 +27,7 @@ namespace
         .bodyBoneColliders = true,
         .dynamicHandColliders = true,
         .weaponColliders = true,
+        .grabbedWeaponPartCollider = true,
         .dynamicWeaponColliders = true,
         .grabForceTorque = true,
         .grabPivotSourceCollider = true,
@@ -50,6 +52,7 @@ namespace
         .bodyBoneColliders = true,
         .dynamicHandColliders = true,
         .weaponColliders = true,
+        .grabbedWeaponPartCollider = true,
         .dynamicWeaponColliders = true,
         .grabForceTorque = true,
         .grabPivotSourceCollider = true,
@@ -62,6 +65,7 @@ namespace
     static_assert(selectedColliderChildren.bodyBoneColliders);
     static_assert(selectedColliderChildren.dynamicHandColliders);
     static_assert(selectedColliderChildren.weaponColliders);
+    static_assert(selectedColliderChildren.grabbedWeaponPartCollider);
     static_assert(selectedColliderChildren.dynamicWeaponColliders);
     static_assert(selectedColliderChildren.grabAuthorityProxyCollider);
     static_assert(selectedColliderChildren.grabPivotSourceCollider);

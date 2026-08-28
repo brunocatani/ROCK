@@ -12,6 +12,7 @@ namespace rock::debug_visualization_policy
         bool bodyBoneColliders{ false };
         bool dynamicHandColliders{ false };
         bool weaponColliders{ false };
+        bool grabbedWeaponPartCollider{ false };
         bool dynamicWeaponColliders{ false };
 
         bool handAxes{ false };
@@ -57,6 +58,7 @@ namespace rock::debug_visualization_policy
         bool bodyBoneColliders{ false };
         bool dynamicHandColliders{ false };
         bool weaponColliders{ false };
+        bool grabbedWeaponPartCollider{ false };
         bool dynamicWeaponColliders{ false };
         bool grabAuthorityProxyCollider{ false };
         bool grabPivotSourceCollider{ false };
@@ -111,6 +113,8 @@ namespace rock::debug_visualization_policy
             .bodyBoneColliders = colliders && input.bodyBoneColliders,
             .dynamicHandColliders = colliders && input.dynamicHandColliders,
             .weaponColliders = colliders && input.weaponColliders,
+            .grabbedWeaponPartCollider =
+                colliders && input.grabbedWeaponPartCollider,
             .dynamicWeaponColliders =
                 colliders && input.dynamicWeaponColliders,
             .grabAuthorityProxyCollider =

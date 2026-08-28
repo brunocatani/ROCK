@@ -388,6 +388,8 @@
             .dynamicHandColliders =
                 g_rockConfig.rockDebugDrawDynamicHandColliders,
             .weaponColliders = g_rockConfig.rockDebugDrawWeaponColliders,
+            .grabbedWeaponPartCollider =
+                g_rockConfig.rockDebugDrawGrabbedWeaponPartCollider,
             .dynamicWeaponColliders =
                 g_rockConfig.rockDebugDrawDynamicWeaponColliders,
             .handAxes = g_rockConfig.rockDebugShowHandAxes,
@@ -449,6 +451,8 @@
         const bool drawDynamicHandColliders =
             visualization.dynamicHandColliders;
         const bool drawWeaponColliders = visualization.weaponColliders;
+        const bool drawGrabbedWeaponPartCollider =
+            visualization.grabbedWeaponPartCollider;
         const bool drawDynamicWeaponColliders =
             visualization.dynamicWeaponColliders;
         const bool drawGrabAuthorityProxyCollider =
@@ -498,10 +502,49 @@
             visualization.nativeScopeActivation;
         const bool drawWorldOriginDiagnostics =
             visualization.worldOriginDiagnostics;
+
+        std::array<std::uint32_t, 2> grabbedWeaponPartColliderBodyIds{
+            INVALID_BODY_ID,
+            INVALID_BODY_ID,
+        };
+        std::uint32_t grabbedWeaponPartColliderCount = 0;
+        const auto isGrabbedWeaponPartColliderBody =
+            [&](const std::uint32_t bodyId) {
+                for (std::uint32_t index = 0;
+                     index < grabbedWeaponPartColliderCount;
+                     ++index) {
+                    if (grabbedWeaponPartColliderBodyIds[index] == bodyId) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+        if (drawGrabbedWeaponPartCollider) {
+            for (const bool isLeft : { false, true }) {
+                HandGripReport report{};
+                _twoHandedGrip.getHandGripReport(isLeft, report);
+                if (!report.active ||
+                    report.bodyId == INVALID_BODY_ID ||
+                    !isProviderWeaponBodyCurrentV1(
+                        report.weaponGenerationKey,
+                        report.bodyId) ||
+                    isGrabbedWeaponPartColliderBody(report.bodyId) ||
+                    grabbedWeaponPartColliderCount >=
+                        grabbedWeaponPartColliderBodyIds.size()) {
+                    continue;
+                }
+
+                grabbedWeaponPartColliderBodyIds[
+                    grabbedWeaponPartColliderCount++] = report.bodyId;
+            }
+        }
+        const bool hasGrabbedWeaponPartCollider =
+            grabbedWeaponPartColliderCount > 0;
         const bool drawAnyRockColliderBodies =
             drawHandColliders || drawHandBoneColliders ||
             drawBodyBoneColliders || drawDynamicHandColliders ||
-            drawWeaponColliders || drawDynamicWeaponColliders ||
+            drawWeaponColliders || hasGrabbedWeaponPartCollider ||
+            drawDynamicWeaponColliders ||
             drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
             ROCK_LOG_INFO(Hand,
@@ -3664,6 +3707,23 @@
                 }
             }
 
+            for (std::uint32_t index = 0;
+                 index < grabbedWeaponPartColliderCount;
+                 ++index) {
+                const std::uint32_t bodyId =
+                    grabbedWeaponPartColliderBodyIds[index];
+                RE::NiTransform currentTarget{};
+                const bool hasCurrentTarget =
+                    drawColliderPhaseDiagnostics &&
+                    _weaponCollision.tryGetBodyTargetForDebug(
+                        bodyId,
+                        currentTarget);
+                addBodyWithTarget(
+                    RE::hknpBodyId{ bodyId },
+                    debug::BodyOverlayRole::FocusedWeaponPart,
+                    hasCurrentTarget ? &currentTarget : nullptr);
+            }
+
             if (drawWeaponColliders) {
                 const auto weaponSnapshot =
                     _weaponCollision.getWeaponBodySnapshotAtomic();
@@ -3672,6 +3732,10 @@
                 for (std::uint32_t i = 0;
                      i < weaponSnapshot.count && i < maximumWeaponBodies;
                      ++i) {
+                    if (isGrabbedWeaponPartColliderBody(
+                            weaponSnapshot.bodyIds[i])) {
+                        continue;
+                    }
                     RE::NiTransform currentTarget{};
                     const bool hasCurrentTarget =
                         drawColliderPhaseDiagnostics &&

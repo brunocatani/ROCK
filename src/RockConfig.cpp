@@ -648,6 +648,10 @@ namespace rock
             rockDebugMaxBodyBoneBodiesDrawn = 64;
         }
         rockDebugDrawWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawWeaponColliders", rockDebugDrawWeaponColliders);
+        rockDebugDrawGrabbedWeaponPartCollider = ini.GetBoolValue(
+            SECTION,
+            "bDebugDrawGrabbedWeaponPartCollider",
+            rockDebugDrawGrabbedWeaponPartCollider);
         rockDebugDrawNativeScopeActivation =
             ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
         rockDebugDrawAuthoredGripActivationZones =

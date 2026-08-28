@@ -170,6 +170,7 @@ namespace rock
         int rockDebugMaxHandBoneBodiesDrawn = 48;
         int rockDebugMaxBodyBoneBodiesDrawn = 32;
         bool rockDebugDrawWeaponColliders = false;
+        bool rockDebugDrawGrabbedWeaponPartCollider = false;
         bool rockDebugDrawNativeScopeActivation = false;
         bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawWeaponAuthority = false;
