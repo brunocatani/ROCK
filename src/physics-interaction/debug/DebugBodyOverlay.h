@@ -258,7 +258,7 @@ namespace rock::debug
         AuthoredSupportGripPalmSeat,
         AuthoredSupportGripLiveSample,
         AuthoredSupportGripError,
-        AuthoredGripActivationLeftAxis,
+        AuthoredGripActivationSupportSideAxis,
         AuthoredGripActivationDownAxis,
         AuthoredGripActivationReferenceAxis,
         AuthoredGripActivationAllowedRegion,

@@ -2312,9 +2312,10 @@
                     labelAnchor,
                     2.1f,
                     kSeatColor,
-                    "AUTHORED SUPPORT SEAT %s%s d=%.2f r=%.2f %s",
+                    "AUTHORED SUPPORT SEAT %s topology=%s d=%.2f r=%.2f %s",
                     snapshot.supportHandIsLeft ? "LEFT" : "RIGHT",
-                    snapshot.mirroredForRightSupport ? " MIRRORED" : "",
+                    authored_weapon_grip_activation_policy::handTopologyName(
+                        snapshot.handTopology),
                     snapshot.weaponRelativeDistanceGameUnits,
                     snapshot.touchRadiusGameUnits,
                     snapshot.insideTouchRadius ? "INSIDE" : "OUTSIDE");
@@ -2357,9 +2358,9 @@
                             };
                         };
                         addMarkerLine(
-                            debug::MarkerOverlayRole::AuthoredGripActivationLeftAxis,
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
                             snapshot.authoredPalmSeatWorld,
-                            axisEnd(snapshot.leftAxisWorld));
+                            axisEnd(snapshot.supportSideAxisWorld));
                         addMarkerLine(
                             debug::MarkerOverlayRole::AuthoredGripActivationDownAxis,
                             snapshot.authoredPalmSeatWorld,
@@ -2424,22 +2425,25 @@
 
                         const auto drawWireSweptActivationRegion = [&]() {
                             const auto canonicalPoint = [&](
-                                const float leftOffset,
+                                const float supportSideOffset,
                                 const float downOffset,
                                 const float referenceOffset) {
                                 return RE::NiPoint3{
                                     snapshot.authoredPalmSeatWorld.x +
-                                        snapshot.leftAxisWorld.x * leftOffset +
+                                        snapshot.supportSideAxisWorld.x *
+                                            supportSideOffset +
                                         snapshot.downAxisWorld.x * downOffset +
                                         snapshot.referenceAxisWorld.x *
                                             referenceOffset,
                                     snapshot.authoredPalmSeatWorld.y +
-                                        snapshot.leftAxisWorld.y * leftOffset +
+                                        snapshot.supportSideAxisWorld.y *
+                                            supportSideOffset +
                                         snapshot.downAxisWorld.y * downOffset +
                                         snapshot.referenceAxisWorld.y *
                                             referenceOffset,
                                     snapshot.authoredPalmSeatWorld.z +
-                                        snapshot.leftAxisWorld.z * leftOffset +
+                                        snapshot.supportSideAxisWorld.z *
+                                            supportSideOffset +
                                         snapshot.downAxisWorld.z * downOffset +
                                         snapshot.referenceAxisWorld.z *
                                             referenceOffset,
@@ -2466,20 +2470,20 @@
                                     static_cast<float>(segment) *
                                     (0.5f * std::numbers::pi_v<float>) /
                                     static_cast<float>(ArcSegmentCount);
-                                const float leftScale = std::cos(angle);
+                                const float supportSideScale = std::cos(angle);
                                 const float downScale = std::sin(angle);
                                 const auto center = canonicalPoint(
-                                    leftScale * drawRadiusGameUnits,
+                                    supportSideScale * drawRadiusGameUnits,
                                     downScale * drawRadiusGameUnits,
                                     0.0f);
                                 const auto positive = canonicalPoint(
-                                    leftScale *
+                                    supportSideScale *
                                         activationBoundary.axialGameUnits,
                                     downScale *
                                         activationBoundary.axialGameUnits,
                                     activationBoundary.rimRadiusGameUnits);
                                 const auto negative = canonicalPoint(
-                                    leftScale *
+                                    supportSideScale *
                                         activationBoundary.axialGameUnits,
                                     downScale *
                                         activationBoundary.axialGameUnits,
@@ -2503,7 +2507,7 @@
                             }
 
                             const auto drawEndpointCap =
-                                [&](const bool leftEndpoint) {
+                                [&](const bool supportSideEndpoint) {
                                 constexpr std::size_t SegmentCount = 12;
                                 RE::NiPoint3 previous{};
                                 for (std::size_t segment = 0;
@@ -2518,10 +2522,10 @@
                                         std::cos(angle) *
                                         activationBoundary.rimRadiusGameUnits;
                                     const auto point = canonicalPoint(
-                                        leftEndpoint ?
+                                        supportSideEndpoint ?
                                             activationBoundary.axialGameUnits :
                                             tangentOffset,
-                                        leftEndpoint ?
+                                        supportSideEndpoint ?
                                             tangentOffset :
                                             activationBoundary.axialGameUnits,
                                         std::sin(angle) *
@@ -2544,7 +2548,7 @@
                                 authored_weapon_grip_activation_policy::
                                     WeaponFamily::OneHandGun) {
                             drawWireCone(
-                                snapshot.leftAxisWorld,
+                                snapshot.supportSideAxisWorld,
                                 snapshot.downAxisWorld,
                                 snapshot.referenceAxisWorld);
                         }
@@ -2609,10 +2613,10 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -8.4f },
                         1.65f,
                         verdictColor,
-                        "d=%.2f cap=%.2f leftDot=%.3f downDot=%.3f arcDot=%.3f region=%s spatial=%s",
+                        "d=%.2f cap=%.2f sideDot=%.3f downDot=%.3f arcDot=%.3f region=%s spatial=%s",
                         snapshot.weaponRelativeDistanceGameUnits,
                         snapshot.radialCapGameUnits,
-                        snapshot.leftDot,
+                        snapshot.supportSideDot,
                         snapshot.downDot,
                         snapshot.sweptArcDot,
                         authored_weapon_grip_activation_policy::activationRegionName(
@@ -2622,11 +2626,12 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.4f },
                         1.65f,
                         kCoordinateColor,
-                        "gates class=%d radial=%d direction=%d scope=%d stable=%d",
+                        "gates axes=%d class=%d radial=%d direction=%d topology=%d stable=%d",
+                        snapshot.canonicalAxesValid ? 1 : 0,
                         snapshot.classifierSupported ? 1 : 0,
                         snapshot.radialPass ? 1 : 0,
                         snapshot.directionPass ? 1 : 0,
-                        snapshot.scopePass ? 1 : 0,
+                        snapshot.topologyPass ? 1 : 0,
                         snapshot.directionUsedLastStableSample ? 1 : 0);
                     addTextLineSized(
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -12.4f },

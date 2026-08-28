@@ -2579,8 +2579,8 @@ namespace rock
                 .weaponFamily = authoredActivation.weaponFamily,
                 .authoredSeatWorld = toIndicatorVector(
                     authoredActivation.authoredPalmSeatWorld),
-                .leftAxisWorld = toIndicatorVector(
-                    authoredActivation.leftAxisWorld),
+                .supportSideAxisWorld = toIndicatorVector(
+                    authoredActivation.supportSideAxisWorld),
                 .downAxisWorld = toIndicatorVector(
                     authoredActivation.downAxisWorld),
                 .activationStateValid = authoredActivationStateMatches,
@@ -2845,6 +2845,8 @@ namespace rock
         _authoredSupportLastStableApproachDirectionWorld = {};
         _authoredSupportLastStableDirectionGenerationKey = 0;
         _authoredSupportLastStableDirectionCaptureSequence = 0;
+        _authoredSupportLastStableDirectionHandTopology =
+            authored_weapon_grip_activation_policy::HandTopology::Invalid;
         _authoredSupportLastStableApproachDirectionValid = false;
         clearAllVisualReturns("reset", false, true);
         clearNativeScopeOverlayAuthority(true);
@@ -3019,6 +3021,153 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::tryResolveAuthoredSupportActivationAxes(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const authored_weapon_grip_activation_policy::HandTopology
+            handTopology,
+        RE::NiPoint3& outSupportSideAxisWorld,
+        RE::NiPoint3& outDownAxisWorld,
+        RE::NiPoint3& outReferenceAxisWorld) const
+    {
+        outSupportSideAxisWorld = {};
+        outDownAxisWorld = {};
+        outReferenceAxisWorld = {};
+
+        using authored_weapon_grip_activation_policy::HandTopology;
+        if (handTopology == HandTopology::Invalid ||
+            !weaponNode || currentWeaponGenerationKey == 0 ||
+            !isInvertibleTransform(weaponNode->world) ||
+            !_hasRightFiringHandCanonicalWeaponLocal ||
+            _rightFiringHandCanonicalSource !=
+                RightFiringCanonicalSource::AuthoredAnimation ||
+            _rightFiringHandCanonicalWeaponNode != weaponNode ||
+            _rightFiringHandCanonicalGenerationKey !=
+                currentWeaponGenerationKey ||
+            !isFiniteTransform(_rightFiringHandCanonicalWeaponLocal)) {
+            return false;
+        }
+
+        const auto normalizeVector = [](const RE::NiPoint3& input,
+                                         RE::NiPoint3& output) {
+            output = {};
+            const float lengthSquared =
+                input.x * input.x +
+                input.y * input.y +
+                input.z * input.z;
+            if (!std::isfinite(lengthSquared) ||
+                lengthSquared <= 0.000001f) {
+                return false;
+            }
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            output = RE::NiPoint3{
+                input.x * inverseLength,
+                input.y * inverseLength,
+                input.z * inverseLength,
+            };
+            return std::isfinite(output.x) &&
+                   std::isfinite(output.y) &&
+                   std::isfinite(output.z);
+        };
+
+        /*
+         * The native authored frame defines the RIGHT-fire/LEFT-support
+         * activation axes. The LEFT-fire/RIGHT-support topology must not reuse
+         * that left-facing cone. Reflect both axes through weapon-local X, the
+         * same bilateral plane used by the mirrored right support seat. This
+         * keeps LEFT and RIGHT topology independent while preserving DOWN and
+         * the full swept cone as an exact geometric mirror.
+         */
+        const RE::NiTransform rightFiringHandWorld =
+            transform_math::composeTransforms(
+                weaponNode->world,
+                _rightFiringHandCanonicalWeaponLocal);
+        if (!isFiniteTransform(rightFiringHandWorld)) {
+            return false;
+        }
+
+        RE::NiPoint3 nativeLeftAxisWorld{};
+        if (!normalizeVector(
+                computePalmNormalFromHandBasis(
+                    rightFiringHandWorld,
+                    false),
+                nativeLeftAxisWorld)) {
+            return false;
+        }
+        const RE::NiPoint3 nativeThumbUpWorld =
+            transformHandspaceDirection(
+                rightFiringHandWorld,
+                RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+                false);
+        const float thumbSideProjection =
+            nativeThumbUpWorld.x * nativeLeftAxisWorld.x +
+            nativeThumbUpWorld.y * nativeLeftAxisWorld.y +
+            nativeThumbUpWorld.z * nativeLeftAxisWorld.z;
+        const RE::NiPoint3 orthogonalUpWorld{
+            nativeThumbUpWorld.x -
+                nativeLeftAxisWorld.x * thumbSideProjection,
+            nativeThumbUpWorld.y -
+                nativeLeftAxisWorld.y * thumbSideProjection,
+            nativeThumbUpWorld.z -
+                nativeLeftAxisWorld.z * thumbSideProjection,
+        };
+        RE::NiPoint3 normalizedUpWorld{};
+        if (!normalizeVector(orthogonalUpWorld, normalizedUpWorld)) {
+            return false;
+        }
+        const RE::NiPoint3 nativeDownAxisWorld{
+            -normalizedUpWorld.x,
+            -normalizedUpWorld.y,
+            -normalizedUpWorld.z,
+        };
+
+        const auto orientAxisForTopology = [&](
+                                               const RE::NiPoint3&
+                                                   rightTopologyAxisWorld,
+                                               RE::NiPoint3& outAxisWorld) {
+            const RE::NiPoint3 rightTopologyAxisWeaponLocal =
+                transform_math::worldVectorToLocal(
+                    weaponNode->world,
+                    rightTopologyAxisWorld);
+            const auto orientedAxisWeaponLocal =
+                authored_weapon_grip_activation_policy::
+                    orientRightFiringAxisForTopology(
+                        authored_weapon_grip_activation_policy::Vec3{
+                            rightTopologyAxisWeaponLocal.x,
+                            rightTopologyAxisWeaponLocal.y,
+                            rightTopologyAxisWeaponLocal.z,
+                        },
+                        handTopology);
+            return normalizeVector(
+                transform_math::localVectorToWorld(
+                    weaponNode->world,
+                    RE::NiPoint3{
+                        orientedAxisWeaponLocal.x,
+                        orientedAxisWeaponLocal.y,
+                        orientedAxisWeaponLocal.z,
+                    }),
+                outAxisWorld);
+        };
+        if (!orientAxisForTopology(
+                nativeLeftAxisWorld,
+                outSupportSideAxisWorld) ||
+            !orientAxisForTopology(
+                nativeDownAxisWorld,
+                outDownAxisWorld)) {
+            return false;
+        }
+
+        const RE::NiPoint3 referenceAxis{
+            outSupportSideAxisWorld.y * outDownAxisWorld.z -
+                outSupportSideAxisWorld.z * outDownAxisWorld.y,
+            outSupportSideAxisWorld.z * outDownAxisWorld.x -
+                outSupportSideAxisWorld.x * outDownAxisWorld.z,
+            outSupportSideAxisWorld.x * outDownAxisWorld.y -
+                outSupportSideAxisWorld.y * outDownAxisWorld.x,
+        };
+        return normalizeVector(referenceAxis, outReferenceAxisWorld);
+    }
+
     void TwoHandedGrip::refreshAuthoredSupportGripActivationState(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
@@ -3041,19 +3190,26 @@ namespace rock
             return;
         }
 
+        const bool supportHandIsLeft = !_firingHandIsLeft;
+        const auto handTopology =
+            authored_weapon_grip_activation_policy::resolveHandTopology(
+                _firingHandIsLeft,
+                supportHandIsLeft);
         if (_authoredSupportLastStableDirectionGenerationKey !=
                 candidate.weaponGenerationKey ||
             _authoredSupportLastStableDirectionCaptureSequence !=
-                candidate.captureSequence) {
+                candidate.captureSequence ||
+            _authoredSupportLastStableDirectionHandTopology !=
+                handTopology) {
             _authoredSupportLastStableApproachDirectionWorld = {};
             _authoredSupportLastStableDirectionGenerationKey =
                 candidate.weaponGenerationKey;
             _authoredSupportLastStableDirectionCaptureSequence =
                 candidate.captureSequence;
+            _authoredSupportLastStableDirectionHandTopology = handTopology;
             _authoredSupportLastStableApproachDirectionValid = false;
         }
 
-        const bool supportHandIsLeft = !_firingHandIsLeft;
         RE::NiTransform authoredSupportHandWeaponLocal{};
         std::array<RE::NiTransform, 15> authoredSupportFingerLocalTransforms{};
         std::uint16_t authoredSupportFingerLocalTransformMask = 0;
@@ -3105,7 +3261,7 @@ namespace rock
         snapshot.weaponGenerationKey = candidate.weaponGenerationKey;
         snapshot.captureSequence = candidate.captureSequence;
         snapshot.supportHandIsLeft = supportHandIsLeft;
-        snapshot.mirroredForRightSupport = !supportHandIsLeft;
+        snapshot.handTopology = handTopology;
         snapshot.insideTouchRadius =
             proximity.weaponRelativeDistanceGameUnits <=
             snapshot.touchRadiusGameUnits;
@@ -3128,82 +3284,14 @@ namespace rock
                     .meleeOrUnarmed = meleeOrUnarmed,
                 });
 
-        const bool canonicalCurrent =
-            !_firingHandIsLeft &&
-            supportHandIsLeft &&
-            _hasRightFiringHandCanonicalWeaponLocal &&
-            _rightFiringHandCanonicalSource ==
-                RightFiringCanonicalSource::AuthoredAnimation &&
-            _rightFiringHandCanonicalWeaponNode == weaponNode &&
-            _rightFiringHandCanonicalGenerationKey ==
-                currentWeaponGenerationKey &&
-            isFiniteTransform(_rightFiringHandCanonicalWeaponLocal);
-        if (canonicalCurrent) {
-            const RE::NiTransform firingHandWorld =
-                transform_math::composeTransforms(
-                    activationWeaponWorld,
-                    _rightFiringHandCanonicalWeaponLocal);
-            const auto normalizeVector = [](const RE::NiPoint3& input,
-                                             RE::NiPoint3& output) {
-                output = {};
-                const float lengthSquared =
-                    input.x * input.x +
-                    input.y * input.y +
-                    input.z * input.z;
-                if (!std::isfinite(lengthSquared) ||
-                    lengthSquared <= 0.000001f) {
-                    return false;
-                }
-                const float inverseLength = 1.0f / std::sqrt(lengthSquared);
-                output = RE::NiPoint3{
-                    input.x * inverseLength,
-                    input.y * inverseLength,
-                    input.z * inverseLength,
-                };
-                return std::isfinite(output.x) &&
-                       std::isfinite(output.y) &&
-                       std::isfinite(output.z);
-            };
-            RE::NiPoint3 leftAxis{};
-            const bool leftAxisValid = normalizeVector(
-                computePalmNormalFromHandBasis(firingHandWorld, false),
-                leftAxis);
-            const RE::NiPoint3 thumbUp = transformHandspaceDirection(
-                firingHandWorld,
-                RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-                false);
-            const float thumbLeftProjection =
-                thumbUp.x * leftAxis.x +
-                thumbUp.y * leftAxis.y +
-                thumbUp.z * leftAxis.z;
-            RE::NiPoint3 orthogonalUp{
-                thumbUp.x - leftAxis.x * thumbLeftProjection,
-                thumbUp.y - leftAxis.y * thumbLeftProjection,
-                thumbUp.z - leftAxis.z * thumbLeftProjection,
-            };
-            RE::NiPoint3 normalizedUp{};
-            const bool upAxisValid =
-                leftAxisValid && normalizeVector(orthogonalUp, normalizedUp);
-            if (leftAxisValid && upAxisValid) {
-                snapshot.leftAxisWorld = leftAxis;
-                snapshot.downAxisWorld = RE::NiPoint3{
-                    -normalizedUp.x,
-                    -normalizedUp.y,
-                    -normalizedUp.z,
-                };
-                const RE::NiPoint3 referenceAxis{
-                    leftAxis.y * snapshot.downAxisWorld.z -
-                        leftAxis.z * snapshot.downAxisWorld.y,
-                    leftAxis.z * snapshot.downAxisWorld.x -
-                        leftAxis.x * snapshot.downAxisWorld.z,
-                    leftAxis.x * snapshot.downAxisWorld.y -
-                        leftAxis.y * snapshot.downAxisWorld.x,
-                };
-                snapshot.canonicalAxesValid = normalizeVector(
-                    referenceAxis,
-                    snapshot.referenceAxisWorld);
-            }
-        }
+        snapshot.canonicalAxesValid =
+            tryResolveAuthoredSupportActivationAxes(
+                weaponNode,
+                currentWeaponGenerationKey,
+                handTopology,
+                snapshot.supportSideAxisWorld,
+                snapshot.downAxisWorld,
+                snapshot.referenceAxisWorld);
 
         using ActivationVec3 =
             authored_weapon_grip_activation_policy::Vec3;
@@ -3214,12 +3302,13 @@ namespace rock
             authored_weapon_grip_activation_policy::evaluateDirectionGate(
                 authored_weapon_grip_activation_policy::DirectionGateInput{
                     .weaponFamily = snapshot.weaponFamily,
+                    .handTopology = handTopology,
                     .authoredSeatWorld = toActivationVector(
                         snapshot.authoredPalmSeatWorld),
                     .liveProbeWorld = toActivationVector(
                         snapshot.liveTouchProbeWorld),
-                    .leftAxisWorld = toActivationVector(
-                        snapshot.leftAxisWorld),
+                    .supportSideAxisWorld = toActivationVector(
+                        snapshot.supportSideAxisWorld),
                     .downAxisWorld = toActivationVector(
                         snapshot.downAxisWorld),
                     .lastStableDirectionWorld = toActivationVector(
@@ -3227,16 +3316,13 @@ namespace rock
                     .radialCapGameUnits = snapshot.radialCapGameUnits,
                     .lastStableDirectionValid =
                         _authoredSupportLastStableApproachDirectionValid,
-                    .rightFiringLeftSupportScope =
-                        snapshot.canonicalAxesValid &&
-                        !_firingHandIsLeft && supportHandIsLeft,
                 });
         snapshot.approachDirectionWorld = RE::NiPoint3{
             gate.approachDirectionWorld.x,
             gate.approachDirectionWorld.y,
             gate.approachDirectionWorld.z,
         };
-        snapshot.leftDot = gate.leftDot;
+        snapshot.supportSideDot = gate.supportSideDot;
         snapshot.downDot = gate.downDot;
         snapshot.sweptArcDot = gate.sweptArcDot;
         snapshot.selectedRegion = gate.selectedRegion;
@@ -3245,7 +3331,7 @@ namespace rock
             gate.usedLastStableDirection;
         snapshot.radialPass = gate.radialPass;
         snapshot.directionPass = gate.directionPass;
-        snapshot.scopePass = gate.scopePass;
+        snapshot.topologyPass = gate.topologyPass;
         snapshot.activationSpatialPass = gate.spatialPass;
         if (gate.directionValid &&
             gate.radialDistanceGameUnits >=
@@ -4213,7 +4299,7 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} leftDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} topology={} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
@@ -4226,7 +4312,9 @@ namespace rock
                     authoredActivation.poseSurfaceWitnessCount),
                 static_cast<unsigned>(
                     authoredActivation.poseSurfaceWitnessMask),
-                authoredActivation.leftDot,
+                authored_weapon_grip_activation_policy::handTopologyName(
+                    authoredActivation.handTopology),
+                authoredActivation.supportSideDot,
                 authoredActivation.downDot,
                 authoredActivation.sweptArcDot,
                 authored_weapon_grip_activation_policy::activationRegionName(
@@ -4253,7 +4341,7 @@ namespace rock
 
         if (authoredSupportCandidateForHandValid) {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} leftDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} class={} radial={} direction={} scope={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
+                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} topology={} axes={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} class={} radial={} direction={} topologyGate={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
                 isLeft ? "left" : "right",
                 decision.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::PhysicalContact ?
@@ -4263,6 +4351,9 @@ namespace rock
                         "probe" : "none"),
                 authored_weapon_grip_activation_policy::weaponFamilyName(
                     authoredActivation.weaponFamily),
+                authored_weapon_grip_activation_policy::handTopologyName(
+                    authoredActivation.handTopology),
+                authoredActivation.canonicalAxesValid ? "pass" : "fail",
                 authoredActivationZoneValid ? "pass" : "fail",
                 authoredPoseSurfaceEvidenceValid ? "pass" : "fail",
                 authoredSeatWeaponSurfaceValid ? "pass" : "fail",
@@ -4272,7 +4363,7 @@ namespace rock
                     authoredActivation.poseSurfaceWitnessMask),
                 authoredActivation.weaponRelativeDistanceGameUnits,
                 authoredActivation.radialCapGameUnits,
-                authoredActivation.leftDot,
+                authoredActivation.supportSideDot,
                 authoredActivation.downDot,
                 authoredActivation.sweptArcDot,
                 authored_weapon_grip_activation_policy::activationRegionName(
@@ -4280,7 +4371,7 @@ namespace rock
                 authoredActivation.classifierSupported ? "pass" : "fail",
                 authoredActivation.radialPass ? "pass" : "fail",
                 authoredActivation.directionPass ? "pass" : "fail",
-                authoredActivation.scopePass ? "pass" : "fail",
+                authoredActivation.topologyPass ? "pass" : "fail",
                 providerPartAuthority.active ? "yes" : "no",
                 grip.attachOnly ? "yes" : "no",
                 authoredSupportFrameValid &&

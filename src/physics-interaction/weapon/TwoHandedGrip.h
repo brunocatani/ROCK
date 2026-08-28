@@ -143,7 +143,7 @@ namespace rock
         RE::NiPoint3 authoredPalmSeatWorld{};
         RE::NiPoint3 liveTouchProbeWeaponLocal{};
         RE::NiPoint3 liveTouchProbeWorld{};
-        RE::NiPoint3 leftAxisWorld{};
+        RE::NiPoint3 supportSideAxisWorld{};
         RE::NiPoint3 downAxisWorld{};
         RE::NiPoint3 referenceAxisWorld{};
         RE::NiPoint3 approachDirectionWorld{};
@@ -155,7 +155,7 @@ namespace rock
         float frameAgreementErrorGameUnits{ 0.0f };
         float touchRadiusGameUnits{ 0.0f };
         float radialCapGameUnits{ 0.0f };
-        float leftDot{ -1.0f };
+        float supportSideDot{ -1.0f };
         float downDot{ -1.0f };
         float sweptArcDot{ -1.0f };
         std::uint64_t weaponGenerationKey{ 0 };
@@ -166,13 +166,15 @@ namespace rock
         authored_weapon_grip_activation_policy::WeaponFamily weaponFamily{
             authored_weapon_grip_activation_policy::WeaponFamily::Unknown
         };
+        authored_weapon_grip_activation_policy::HandTopology handTopology{
+            authored_weapon_grip_activation_policy::HandTopology::Invalid
+        };
         authored_weapon_grip_activation_policy::ActivationRegion selectedRegion{
             authored_weapon_grip_activation_policy::ActivationRegion::None
         };
         std::uint8_t poseSurfaceWitnessMask{ 0 };
         std::uint8_t poseSurfaceWitnessCount{ 0 };
         bool supportHandIsLeft{ true };
-        bool mirroredForRightSupport{ false };
         bool insideTouchRadius{ false };
         bool effectiveEquipSlotUsesInstanceData{ false };
         bool classifierSupported{ false };
@@ -180,7 +182,7 @@ namespace rock
         bool directionUsedLastStableSample{ false };
         bool radialPass{ false };
         bool directionPass{ false };
-        bool scopePass{ false };
+        bool topologyPass{ false };
         bool activationSpatialPass{ false };
         bool poseEvidencePass{ false };
         bool currentSupportGripActive{ false };
@@ -1111,6 +1113,13 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
             std::uint16_t& outFingerLocalTransformMask) const;
+        bool tryResolveAuthoredSupportActivationAxes(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            authored_weapon_grip_activation_policy::HandTopology handTopology,
+            RE::NiPoint3& outSupportSideAxisWorld,
+            RE::NiPoint3& outDownAxisWorld,
+            RE::NiPoint3& outReferenceAxisWorld) const;
         void refreshAuthoredSupportGripActivationState(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
@@ -1487,6 +1496,10 @@ namespace rock
         RE::NiPoint3 _authoredSupportLastStableApproachDirectionWorld{};
         std::uint64_t _authoredSupportLastStableDirectionGenerationKey{ 0 };
         std::uint64_t _authoredSupportLastStableDirectionCaptureSequence{ 0 };
+        authored_weapon_grip_activation_policy::HandTopology
+            _authoredSupportLastStableDirectionHandTopology{
+                authored_weapon_grip_activation_policy::HandTopology::Invalid
+            };
         bool _authoredSupportLastStableApproachDirectionValid{ false };
 
         /*

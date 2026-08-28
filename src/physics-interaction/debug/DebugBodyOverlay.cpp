@@ -3199,7 +3199,7 @@ namespace rock::debug
                 color[2] = 0.03f;
                 color[3] = 0.98f;
                 break;
-            case MarkerOverlayRole::AuthoredGripActivationLeftAxis:
+            case MarkerOverlayRole::AuthoredGripActivationSupportSideAxis:
                 color[0] = 0.05f;
                 color[1] = 0.9f;
                 color[2] = 1.0f;

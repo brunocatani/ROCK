@@ -31,16 +31,41 @@ Require-Text 'src/physics-interaction/weapon/WeaponClassificationPolicy.h' `
     'The shared classifier must retain the locally verified RightHand, BothHandsLeftOptional, and BothHands behavior-slot identities.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'WeaponFamily::OneHandGun[\s\S]*selectedRegion\s*=\s*ActivationRegion::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*sweptArcDotSquared[\s\S]*ActivationRegion::Arc' `
-    'One-hand weapons must expose LEFT only while two-hand weapons use the LEFT-to-DOWN swept activation region.'
+    'HandTopology[\s\S]*RightFiringLeftSupport[\s\S]*LeftFiringRightSupport[\s\S]*resolveHandTopology[\s\S]*ActivationRegion::Left[\s\S]*ActivationRegion::Right' `
+    'Authored activation must retain separate right-fire/left-support and left-fire/right-support topology identities.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'kIndicatorOffsetGameUnits\s*=\s*5\.0f[\s\S]*evaluateIndicator[\s\S]*WeaponFamily::OneHandGun[\s\S]*leftAxisWorld[\s\S]*WeaponFamily::TwoHandGun[\s\S]*downAxisWorld' `
-    'The gameplay indicator must retain the fixed five-unit LEFT/DOWN family anchors.'
+    'orientRightFiringAxisForTopology[\s\S]*RightFiringLeftSupport[\s\S]*rightFiringAxisWeaponLocal[\s\S]*LeftFiringRightSupport[\s\S]*-rightFiringAxisWeaponLocal\.x[\s\S]*rightFiringAxisWeaponLocal\.y[\s\S]*rightFiringAxisWeaponLocal\.z' `
+    'Left firing must mirror the native authored activation axes through weapon-local X instead of reusing the left-facing cone.'
+
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
+    'WeaponFamily::OneHandGun[\s\S]*selectedRegion\s*=\s*lateralRegion[\s\S]*WeaponFamily::TwoHandGun[\s\S]*sweptArcDotSquared[\s\S]*ActivationRegion::Arc' `
+    'One-hand weapons must use the topology side while two-hand weapons sweep from that side to DOWN.'
+
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
+    'kIndicatorOffsetGameUnits\s*=\s*5\.0f[\s\S]*evaluateIndicator[\s\S]*WeaponFamily::OneHandGun[\s\S]*supportSideAxisWorld[\s\S]*WeaponFamily::TwoHandGun[\s\S]*downAxisWorld' `
+    'The gameplay indicator must retain the fixed five-unit topology-side/DOWN family anchors.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshAuthoredSupportGripActivationState\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
     'The activation state must consume the shared policy and bounded captured-pose surface witnesses.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'tryResolveAuthoredSupportActivationAxes[\s\S]*worldVectorToLocal\([\s\S]*orientRightFiringAxisForTopology[\s\S]*localVectorToWorld\(' `
+    'Runtime activation axes must mirror through the current Weapon frame before returning to world space.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'resolveHandTopology\(\s*_firingHandIsLeft,\s*supportHandIsLeft\)[\s\S]*_authoredSupportLastStableDirectionHandTopology\s*!=[\s\S]*handTopology[\s\S]*_authoredSupportLastStableApproachDirectionWorld\s*=\s*\{\}' `
+    'A firing-hand topology change must clear the last approach direction so LEFT state cannot leak into RIGHT activation.'
+
+foreach ($activationPath in @(
+    'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h',
+    'src/physics-interaction/weapon/TwoHandedGrip.cpp',
+    'src/physics-interaction/weapon/TwoHandedGrip.h')) {
+    Reject-Text $activationPath `
+        'rightFiringLeftSupportScope|\.leftAxisWorld|\.scopePass' `
+        'Authored activation must not restore the retired one-sided LEFT-only scope contract.'
+}
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshAuthoredSupportGripActivationState\([\s\S]*true\);[\s\S]*\.activationZoneValid\s*=\s*authoredActivationZoneValid[\s\S]*\.authoredPoseSurfaceEvidenceValid\s*=[\s\S]*authoredPoseSurfaceEvidenceValid' `
@@ -83,8 +108,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Physics shutdown must preserve the cue scene-node valid/stale world distinction.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*drawWireSweptActivationRegion[\s\S]*ENFORCED AUTHORED ACTIVATION' `
-    'The pre-grab overlay must draw the one-hand cone and two-hand swept region while explicitly identifying its enforced verdict.'
+    'rockDebugDrawAuthoredGripActivationZones[\s\S]*topology=%s[\s\S]*supportSideAxisWorld[\s\S]*drawWireCone[\s\S]*drawWireSweptActivationRegion[\s\S]*ENFORCED AUTHORED ACTIVATION' `
+    'The pre-grab overlay must draw and identify the enforced topology-specific cone rather than labeling every lateral axis LEFT.'
 
 foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `

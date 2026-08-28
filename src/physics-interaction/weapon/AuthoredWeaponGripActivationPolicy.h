@@ -30,13 +30,55 @@ namespace rock::authored_weapon_grip_activation_policy
         Unsupported,
     };
 
+    /*
+     * Authored support data originates from Bethesda's native
+     * right-firing/left-support graph, but ambidextrous carry has two distinct
+     * runtime topologies. Keep them explicit: collapsing this back to a single
+     * "authored scope" previously made every valid mirrored right-support pose
+     * fall through to dynamic grab.
+     */
+    enum class HandTopology : std::uint8_t
+    {
+        Invalid,
+        RightFiringLeftSupport,
+        LeftFiringRightSupport,
+    };
+
     enum class ActivationRegion : std::uint8_t
     {
         None,
         Left,
+        Right,
         Arc,
         Down,
     };
+
+    [[nodiscard]] constexpr HandTopology resolveHandTopology(
+        const bool firingHandIsLeft,
+        const bool supportHandIsLeft)
+    {
+        if (!firingHandIsLeft && supportHandIsLeft) {
+            return HandTopology::RightFiringLeftSupport;
+        }
+        if (firingHandIsLeft && !supportHandIsLeft) {
+            return HandTopology::LeftFiringRightSupport;
+        }
+        return HandTopology::Invalid;
+    }
+
+    [[nodiscard]] constexpr ActivationRegion supportSideRegion(
+        const HandTopology topology)
+    {
+        switch (topology) {
+        case HandTopology::RightFiringLeftSupport:
+            return ActivationRegion::Left;
+        case HandTopology::LeftFiringRightSupport:
+            return ActivationRegion::Right;
+        case HandTopology::Invalid:
+        default:
+            return ActivationRegion::None;
+        }
+    }
 
     struct WeaponFamilyInput
     {
@@ -78,6 +120,32 @@ namespace rock::authored_weapon_grip_activation_policy
         float y{ 0.0f };
         float z{ 0.0f };
     };
+
+    /*
+     * Axis input is weapon-local and authored for the native right-firing
+     * topology. The support-pose mirror reflects weapon-local X, so activation
+     * axes must use the identical reflection: lateral changes LEFT to RIGHT,
+     * while every non-lateral component (including the DOWN endpoint) remains
+     * geometrically mirrored with the authored seat.
+     */
+    [[nodiscard]] constexpr Vec3 orientRightFiringAxisForTopology(
+        const Vec3& rightFiringAxisWeaponLocal,
+        const HandTopology topology)
+    {
+        switch (topology) {
+        case HandTopology::RightFiringLeftSupport:
+            return rightFiringAxisWeaponLocal;
+        case HandTopology::LeftFiringRightSupport:
+            return Vec3{
+                -rightFiringAxisWeaponLocal.x,
+                rightFiringAxisWeaponLocal.y,
+                rightFiringAxisWeaponLocal.z,
+            };
+        case HandTopology::Invalid:
+        default:
+            return {};
+        }
+    }
 
     [[nodiscard]] constexpr Vec3 subtract(const Vec3& lhs, const Vec3& rhs)
     {
@@ -153,21 +221,21 @@ namespace rock::authored_weapon_grip_activation_policy
     struct DirectionGateInput
     {
         WeaponFamily weaponFamily{ WeaponFamily::Unknown };
+        HandTopology handTopology{ HandTopology::Invalid };
         Vec3 authoredSeatWorld{};
         Vec3 liveProbeWorld{};
-        Vec3 leftAxisWorld{};
+        Vec3 supportSideAxisWorld{};
         Vec3 downAxisWorld{};
         Vec3 lastStableDirectionWorld{};
         float radialCapGameUnits{ 0.0f };
         bool lastStableDirectionValid{ false };
-        bool rightFiringLeftSupportScope{ true };
     };
 
     struct DirectionGateResult
     {
         Vec3 approachDirectionWorld{};
         float radialDistanceGameUnits{ 0.0f };
-        float leftDot{ -1.0f };
+        float supportSideDot{ -1.0f };
         float downDot{ -1.0f };
         float sweptArcDot{ -1.0f };
         ActivationRegion selectedRegion{ ActivationRegion::None };
@@ -176,7 +244,7 @@ namespace rock::authored_weapon_grip_activation_policy
         bool familySupported{ false };
         bool radialPass{ false };
         bool directionPass{ false };
-        bool scopePass{ false };
+        bool topologyPass{ false };
         bool spatialPass{ false };
     };
 
@@ -193,7 +261,9 @@ namespace rock::authored_weapon_grip_activation_policy
             std::isfinite(input.radialCapGameUnits) &&
             input.radialCapGameUnits >= 0.0f &&
             result.radialDistanceGameUnits <= input.radialCapGameUnits;
-        result.scopePass = input.rightFiringLeftSupportScope;
+        const ActivationRegion lateralRegion =
+            supportSideRegion(input.handTopology);
+        result.topologyPass = lateralRegion != ActivationRegion::None;
 
         if (result.radialDistanceGameUnits >= kMinimumDirectionDistanceGameUnits) {
             result.directionValid = tryNormalize(radialVector, result.approachDirectionWorld);
@@ -203,49 +273,55 @@ namespace rock::authored_weapon_grip_activation_policy
             result.usedLastStableDirection = result.directionValid;
         }
 
-        Vec3 normalizedLeft{};
+        Vec3 normalizedSupportSide{};
         Vec3 normalizedDown{};
-        const bool leftValid = tryNormalize(input.leftAxisWorld, normalizedLeft);
+        const bool supportSideValid = tryNormalize(
+            input.supportSideAxisWorld,
+            normalizedSupportSide);
         const bool downValid = tryNormalize(input.downAxisWorld, normalizedDown);
-        if (result.directionValid && leftValid) {
-            result.leftDot = dot(result.approachDirectionWorld, normalizedLeft);
+        if (result.directionValid && supportSideValid) {
+            result.supportSideDot = dot(
+                result.approachDirectionWorld,
+                normalizedSupportSide);
         }
         if (result.directionValid && downValid) {
             result.downDot = dot(result.approachDirectionWorld, normalizedDown);
         }
 
         if (input.weaponFamily == WeaponFamily::OneHandGun &&
-            result.directionValid && leftValid &&
-            result.leftDot >= kActivationConeMinimumDot) {
+            result.topologyPass && result.directionValid && supportSideValid &&
+            result.supportSideDot >= kActivationConeMinimumDot) {
             result.directionPass = true;
-            result.selectedRegion = ActivationRegion::Left;
+            result.selectedRegion = lateralRegion;
         } else if (input.weaponFamily == WeaponFamily::TwoHandGun &&
-                   result.directionValid && leftValid && downValid) {
+                   result.topologyPass && result.directionValid &&
+                   supportSideValid && downValid) {
             /*
-             * LEFT and DOWN are an orthogonal pair derived from the canonical
-             * firing-hand frame. The nearest axis on their quarter-circle is
-             * the normalized planar projection while both components are
-             * positive; outside that interval, the nearest endpoint wins.
-             * Comparing that closest-axis dot against the original 45-degree
-             * threshold produces the exact union of cones swept along the arc.
+             * The topology-specific support side (LEFT or RIGHT) and DOWN are
+             * an orthogonal pair derived from the same canonical frame. The
+             * nearest axis on their quarter-circle is the normalized planar
+             * projection while both components are positive; outside that
+             * interval, the nearest endpoint wins. Comparing that closest-axis
+             * dot against the original 45-degree threshold produces the exact
+             * union of cones swept along the arc.
              */
-            const float axisDot = dot(normalizedLeft, normalizedDown);
+            const float axisDot = dot(normalizedSupportSide, normalizedDown);
             if (std::isfinite(axisDot) &&
                 std::abs(axisDot) <=
                     kSweptArcAxisOrthogonalityTolerance) {
                 ActivationRegion nearestRegion = ActivationRegion::None;
-                if (result.leftDot > 0.0f && result.downDot > 0.0f) {
+                if (result.supportSideDot > 0.0f && result.downDot > 0.0f) {
                     const float sweptArcDotSquared =
-                        result.leftDot * result.leftDot +
+                        result.supportSideDot * result.supportSideDot +
                         result.downDot * result.downDot;
                     if (std::isfinite(sweptArcDotSquared) &&
                         sweptArcDotSquared >= 0.0f) {
                         result.sweptArcDot = std::sqrt(sweptArcDotSquared);
                         nearestRegion = ActivationRegion::Arc;
                     }
-                } else if (result.leftDot >= result.downDot) {
-                    result.sweptArcDot = result.leftDot;
-                    nearestRegion = ActivationRegion::Left;
+                } else if (result.supportSideDot >= result.downDot) {
+                    result.sweptArcDot = result.supportSideDot;
+                    nearestRegion = lateralRegion;
                 } else {
                     result.sweptArcDot = result.downDot;
                     nearestRegion = ActivationRegion::Down;
@@ -262,7 +338,7 @@ namespace rock::authored_weapon_grip_activation_policy
             result.familySupported &&
             result.radialPass &&
             result.directionPass &&
-            result.scopePass;
+            result.topologyPass;
         return result;
     }
 
@@ -270,7 +346,7 @@ namespace rock::authored_weapon_grip_activation_policy
     {
         WeaponFamily weaponFamily{ WeaponFamily::Unknown };
         Vec3 authoredSeatWorld{};
-        Vec3 leftAxisWorld{};
+        Vec3 supportSideAxisWorld{};
         Vec3 downAxisWorld{};
         bool activationStateValid{ false };
         bool activationSpatialPass{ false };
@@ -303,7 +379,7 @@ namespace rock::authored_weapon_grip_activation_policy
         Vec3 indicatorAxis{};
         switch (input.weaponFamily) {
         case WeaponFamily::OneHandGun:
-            indicatorAxis = input.leftAxisWorld;
+            indicatorAxis = input.supportSideAxisWorld;
             break;
         case WeaponFamily::TwoHandGun:
             indicatorAxis = input.downAxisWorld;
@@ -363,6 +439,8 @@ namespace rock::authored_weapon_grip_activation_policy
         switch (region) {
         case ActivationRegion::Left:
             return "LEFT";
+        case ActivationRegion::Right:
+            return "RIGHT";
         case ActivationRegion::Arc:
             return "ARC";
         case ActivationRegion::Down:
@@ -370,6 +448,20 @@ namespace rock::authored_weapon_grip_activation_policy
         case ActivationRegion::None:
         default:
             return "NONE";
+        }
+    }
+
+    [[nodiscard]] constexpr const char* handTopologyName(
+        const HandTopology topology)
+    {
+        switch (topology) {
+        case HandTopology::RightFiringLeftSupport:
+            return "RIGHT_FIRE_LEFT_SUPPORT";
+        case HandTopology::LeftFiringRightSupport:
+            return "LEFT_FIRE_RIGHT_SUPPORT";
+        case HandTopology::Invalid:
+        default:
+            return "INVALID";
         }
     }
 }
