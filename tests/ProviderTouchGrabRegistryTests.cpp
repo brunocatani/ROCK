@@ -333,6 +333,53 @@ namespace
         assert(match.matched);
         assert(match.target.targetId == original.targetId);
     }
+
+    void testDisjointTwoHandWildcardsCoexist()
+    {
+        constexpr std::uint64_t owner = 0xA030;
+        constexpr std::uint64_t scope = 0xB030;
+        auto registry = std::make_unique<TouchGrabRegistry>();
+        auto right = wildcardAnchor(30, std::uint64_t{ 1 } << 5);
+        auto left = wildcardAnchor(31, std::uint64_t{ 1 } << 5);
+        right.flags &= ~flag(
+            RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+        left.flags &= ~flag(
+            RockProviderTouchGrabTargetFlagV1::AllowRightHand);
+        right.flags |= flag(
+            RockProviderTouchGrabTargetFlagV1::AllowTwoHands);
+        left.flags |= flag(
+            RockProviderTouchGrabTargetFlagV1::AllowTwoHands);
+        const std::array targets{ right, left };
+
+        assert(registry->setScope(
+                   owner,
+                   scope,
+                   targets.data(),
+                   static_cast<std::uint32_t>(targets.size()),
+                   1) == TouchGrabRegistry::RegistrationResult::Ok);
+        const auto rightMatch = registry->resolve(
+            500,
+            5,
+            TouchGrabMotionClassV1::Static,
+            RockProviderHand::Right,
+            11,
+            12,
+            13,
+            1);
+        const auto leftMatch = registry->resolve(
+            500,
+            5,
+            TouchGrabMotionClassV1::Static,
+            RockProviderHand::Left,
+            11,
+            12,
+            13,
+            1);
+        assert(rightMatch.matched);
+        assert(leftMatch.matched);
+        assert(rightMatch.target.targetId == right.targetId);
+        assert(leftMatch.target.targetId == left.targetId);
+    }
 }
 
 int main()
@@ -340,5 +387,6 @@ int main()
     testValidationAndExplicitPriority();
     testLeaseRefreshStateAndYield();
     testScopeReplacementIsTransactional();
+    testDisjointTwoHandWildcardsCoexist();
     return 0;
 }

@@ -7,6 +7,7 @@
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/SurfaceMeshGrabPolicy.h"
+#include "physics-interaction/grab/TouchGrabJoinPolicy.h"
 #include "physics-interaction/grab/TouchGrabMath.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
@@ -880,9 +881,38 @@ namespace rock
             match.scopeToken,
             match.target.targetId,
             match.target.targetGeneration);
+        bool joinedCompatibleTarget = false;
         if (targetOnBody && active != targetOnBody) {
-            _lastAttemptReport.failure = AttemptFailure::TargetConflict;
-            return false;
+            provider::TouchGrabTargetMatchV1 activeRegistration{};
+            const bool activeRegistrationCurrent =
+                !targetOnBody->globalSurface &&
+                provider::currentTouchGrabTargetV1(
+                    targetOnBody->ownerToken,
+                    targetOnBody->scopeToken,
+                    targetOnBody->target.targetId,
+                    targetOnBody->target.targetGeneration,
+                    worldGeneration,
+                    skeletonGeneration,
+                    providerGeneration,
+                    activeRegistration) &&
+                !activeRegistration.yieldRequested &&
+                sameRuntimeContract(
+                    targetOnBody->target,
+                    activeRegistration.target);
+            if (!activeRegistrationCurrent ||
+                !touch_grab_join_policy::canJoinSameBody(
+                    targetOnBody->ownerToken,
+                    targetOnBody->scopeToken,
+                    targetOnBody->target,
+                    match.ownerToken,
+                    match.scopeToken,
+                    match.target)) {
+                _lastAttemptReport.failure =
+                    AttemptFailure::TargetConflict;
+                return false;
+            }
+            active = targetOnBody;
+            joinedCompatibleTarget = true;
         }
         if (active) {
             if (active->bodyId != bodyId.value ||
@@ -909,6 +939,18 @@ namespace rock
                 _lastAttemptReport.failure =
                     AttemptFailure::HandAttachmentFailed;
                 return false;
+            }
+            if (joinedCompatibleTarget) {
+                ROCK_LOG_INFO(
+                    Hand,
+                    "Touch grab joined compatible target: hand={} owner={:016X} scope={:016X} activeTarget={} requestedTarget={} generation={} body={}",
+                    isLeft ? "left" : "right",
+                    active->ownerToken,
+                    active->scopeToken,
+                    active->target.targetId,
+                    match.target.targetId,
+                    active->target.targetGeneration,
+                    active->bodyId);
             }
             publishState(
                 *active,
