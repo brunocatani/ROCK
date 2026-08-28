@@ -148,6 +148,186 @@ int main()
     bool ok = true;
 
     {
+        TestTransform rightNativeWeaponInWand =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        rightNativeWeaponInWand.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.23f, 0.51f, 0.83f }),
+            31.0f);
+        rightNativeWeaponInWand.translate = { 8.0f, -3.0f, 4.0f };
+        rightNativeWeaponInWand.scale = 2.0f;
+
+        const TestTransform leftWeaponInWand =
+            rock::left_firing_position_only_math::
+                mirrorRightWeaponInWandOrientation(
+                    rightNativeWeaponInWand);
+        const TestVector3 weaponForward{ 0.0f, 1.0f, 0.0f };
+        const TestTransform rightNativeWeaponOrientation =
+            rock::left_firing_position_only_math::orientationOnly(
+                rightNativeWeaponInWand);
+        const TestVector3 rightBarrel =
+            rock::transform_math::localVectorToWorld(
+                rightNativeWeaponOrientation,
+                weaponForward);
+        const TestVector3 leftBarrel =
+            rock::transform_math::localVectorToWorld(
+                leftWeaponInWand,
+                weaponForward);
+        ok &= expectVectorNear(
+            "left native weapon mirror negates only barrel lateral component",
+            leftBarrel,
+            TestVector3{ -rightBarrel.x, rightBarrel.y, rightBarrel.z });
+        const TestVector3 rightLateral =
+            rock::transform_math::localVectorToWorld(
+                rightNativeWeaponOrientation,
+                TestVector3{ 1.0f, 0.0f, 0.0f });
+        const TestVector3 leftCorrespondingLateral =
+            rock::transform_math::localVectorToWorld(
+                leftWeaponInWand,
+                TestVector3{ -1.0f, 0.0f, 0.0f });
+        ok &= expectVectorNear(
+            "left native weapon mirror maps right +X to left -X",
+            leftCorrespondingLateral,
+            TestVector3{
+                -rightLateral.x,
+                rightLateral.y,
+                rightLateral.z });
+        const TestVector3 rightUp =
+            rock::transform_math::localVectorToWorld(
+                rightNativeWeaponOrientation,
+                TestVector3{ 0.0f, 0.0f, 1.0f });
+        const TestVector3 leftUp =
+            rock::transform_math::localVectorToWorld(
+                leftWeaponInWand,
+                TestVector3{ 0.0f, 0.0f, 1.0f });
+        ok &= expectVectorNear(
+            "left native weapon mirror maps right +Z to left +Z",
+            leftUp,
+            TestVector3{ -rightUp.x, rightUp.y, rightUp.z });
+        ok &= expectVectorNear(
+            "left native weapon orientation discards right-wand translation",
+            leftWeaponInWand.translate,
+            TestVector3{});
+        ok &= expectNear(
+            "left native weapon orientation is unit scale",
+            leftWeaponInWand.scale,
+            1.0f);
+        const auto& mirroredRotation = leftWeaponInWand.rotate.entry;
+        const float mirroredDeterminant =
+            mirroredRotation[0][0] *
+                (mirroredRotation[1][1] * mirroredRotation[2][2] -
+                    mirroredRotation[1][2] * mirroredRotation[2][1]) -
+            mirroredRotation[0][1] *
+                (mirroredRotation[1][0] * mirroredRotation[2][2] -
+                    mirroredRotation[1][2] * mirroredRotation[2][0]) +
+            mirroredRotation[0][2] *
+                (mirroredRotation[1][0] * mirroredRotation[2][1] -
+                    mirroredRotation[1][1] * mirroredRotation[2][0]);
+        ok &= expectNear(
+            "bilateral weapon mirror remains a proper rotation",
+            mirroredDeterminant,
+            1.0f);
+
+        TestTransform leftWandWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        leftWandWorld.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.3f, 0.7f, -0.2f }),
+            23.0f);
+        leftWandWorld.translate = { 40.0f, -12.0f, 9.0f };
+
+        TestTransform liveWeaponWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        liveWeaponWorld.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            -67.0f);
+        liveWeaponWorld.translate = { -100.0f, 55.0f, 13.0f };
+        liveWeaponWorld.scale = 1.25f;
+        const TestVector3 firingGripWeaponLocal{ 2.0f, 6.0f, -1.0f };
+        const TestVector3 physicalLeftGripTargetWorld{ 18.0f, 27.0f, 33.0f };
+        const TestTransform solvedLeftWeapon =
+            rock::left_firing_position_only_math::
+                resolveWeaponWorldPositionOnly(
+                    leftWandWorld,
+                    leftWeaponInWand,
+                    liveWeaponWorld,
+                    firingGripWeaponLocal,
+                    physicalLeftGripTargetWorld);
+        const TestVector3 solvedGripWorld =
+            rock::transform_math::localPointToWorld(
+                solvedLeftWeapon,
+                firingGripWeaponLocal);
+        ok &= expectVectorNear(
+            "left position-only weapon solve seats authored firing point",
+            solvedGripWorld,
+            physicalLeftGripTargetWorld);
+        ok &= expectNear(
+            "left position-only weapon solve preserves live weapon scale",
+            solvedLeftWeapon.scale,
+            liveWeaponWorld.scale);
+
+        TestTransform expectedLeftWeaponOrientation =
+            rock::transform_math::composeTransforms(
+                leftWandWorld,
+                leftWeaponInWand);
+        expectedLeftWeaponOrientation.translate = solvedLeftWeapon.translate;
+        expectedLeftWeaponOrientation.scale = liveWeaponWorld.scale;
+        ok &= expectTransformNear(
+            "left weapon orientation depends only on native aim, not authored wrist",
+            solvedLeftWeapon,
+            expectedLeftWeaponOrientation);
+
+        TestTransform authoredLeftWristA =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        authoredLeftWristA.translate = { 1.5f, -2.0f, 0.75f };
+        TestTransform authoredLeftWristB = authoredLeftWristA;
+        authoredLeftWristB.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            47.0f);
+        const TestTransform solvedAfterAuthoredWristChange =
+            rock::left_firing_position_only_math::
+                resolveWeaponWorldPositionOnly(
+                    leftWandWorld,
+                    leftWeaponInWand,
+                    liveWeaponWorld,
+                    firingGripWeaponLocal,
+                    physicalLeftGripTargetWorld);
+        ok &= expectTransformNear(
+            "authored wrist rotation cannot alter left weapon aim",
+            solvedAfterAuthoredWristChange,
+            solvedLeftWeapon);
+
+        const TestTransform presentedLeftWristA =
+            rock::transform_math::composeTransforms(
+                solvedLeftWeapon,
+                authoredLeftWristA);
+        const TestTransform presentedLeftWristB =
+            rock::transform_math::composeTransforms(
+                solvedLeftWeapon,
+                authoredLeftWristB);
+        const TestVector3 presentedFingerAxisA =
+            rock::transform_math::localVectorToWorld(
+                presentedLeftWristA,
+                TestVector3{ 0.0f, 1.0f, 0.0f });
+        const TestVector3 presentedFingerAxisB =
+            rock::transform_math::localVectorToWorld(
+                presentedLeftWristB,
+                TestVector3{ 0.0f, 1.0f, 0.0f });
+        const TestVector3 presentedAxisDelta{
+            presentedFingerAxisA.x - presentedFingerAxisB.x,
+            presentedFingerAxisA.y - presentedFingerAxisB.y,
+            presentedFingerAxisA.z - presentedFingerAxisB.z,
+        };
+        ok &= expectTrue(
+            "authored wrist rotation remains visible on the presented hand",
+            std::sqrt(
+                presentedAxisDelta.x * presentedAxisDelta.x +
+                presentedAxisDelta.y * presentedAxisDelta.y +
+                presentedAxisDelta.z * presentedAxisDelta.z) >
+                0.1f);
+    }
+
+    {
         TestTransform supportInputAtAttach =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         supportInputAtAttach.rotate = makeAxisAngleRotation(

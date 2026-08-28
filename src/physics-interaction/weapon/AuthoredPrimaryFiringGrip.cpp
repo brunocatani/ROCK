@@ -392,9 +392,10 @@ namespace rock
         /*
          * Physical-left firing already owns the weapon transform through
          * TwoHandedGrip, so the right-controller inverse alignment below must
-         * stay disabled. The harvested right canonical is still the exact
-         * weapon-relative source for both finger sets; bind it to the stable
-         * equipped identity and publish only the mirrored left pose.
+         * stay disabled. The harvested right canonical remains the exact
+         * authored wrist/finger source; bind it to the stable equipped
+         * identity so TwoHandedGrip can publish the normalized left weapon
+         * and authored left hand as separate authorities.
          */
         if (input.rockFiringHandIsLeft) {
             const bool canonicalReady =
@@ -709,7 +710,7 @@ namespace rock
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
                 "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) "
-                "mode=position-only primaryHand=weapon-relative-authored physicalLeftSource=mirrored-authored-canonical",
+                "mode=position-only primaryHand=weapon-relative-authored physicalLeftSource=authored-seat-plus-native-weapon-aim",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence, harvestedRelationAvailable ? "native-idle-preharvest" : "live-equipped-fallback",

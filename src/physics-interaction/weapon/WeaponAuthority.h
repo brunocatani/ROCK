@@ -462,6 +462,72 @@ namespace rock::native_scope_overlay_follow_math
     }
 }
 
+// ---- LeftFiringPositionOnlyMath.h ----
+
+namespace rock::left_firing_position_only_math
+{
+    template <class Transform>
+    [[nodiscard]] inline Transform orientationOnly(const Transform& source)
+    {
+        Transform result = source;
+        result.translate = {};
+        result.scale = 1.0f;
+        return result;
+    }
+
+    /*
+     * Weapon geometry uses +Y as muzzle-forward and +X as its lateral axis.
+     * Conjugating the right weapon-in-wand orientation by the X reflection
+     * mirrors the lateral component while retaining a proper rotation. The
+     * authored hand relation is deliberately absent: wrist correction is a
+     * presentation input and must never become weapon aim authority.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform mirrorRightWeaponInWandOrientation(
+        const Transform& rightWeaponInWand)
+    {
+        Transform lateralMirror =
+            transform_math::makeIdentityTransform<Transform>();
+        lateralMirror.rotate.entry[0][0] = -1.0f;
+        return orientationOnly(transform_math::composeTransforms(
+            lateralMirror,
+            transform_math::composeTransforms(
+                orientationOnly(rightWeaponInWand),
+                lateralMirror)));
+    }
+
+    /*
+     * Build the left weapon from the mirrored native orientation, then move
+     * only its translation until the same weapon-local firing point reaches
+     * the physical left-hand target. Scale remains owned by the live weapon.
+     */
+    template <class Transform, class Point>
+    [[nodiscard]] inline Transform resolveWeaponWorldPositionOnly(
+        const Transform& leftWandWorld,
+        const Transform& leftWeaponInWandOrientation,
+        const Transform& liveWeaponWorld,
+        const Point& firingGripWeaponLocal,
+        const Point& physicalGripTargetWorld)
+    {
+        Transform solvedWeaponWorld = transform_math::composeTransforms(
+            leftWandWorld,
+            orientationOnly(leftWeaponInWandOrientation));
+        solvedWeaponWorld.translate = liveWeaponWorld.translate;
+        solvedWeaponWorld.scale = liveWeaponWorld.scale;
+
+        const Point currentGripWorld = transform_math::localPointToWorld(
+            solvedWeaponWorld,
+            firingGripWeaponLocal);
+        solvedWeaponWorld.translate.x +=
+            physicalGripTargetWorld.x - currentGripWorld.x;
+        solvedWeaponWorld.translate.y +=
+            physicalGripTargetWorld.y - currentGripWorld.y;
+        solvedWeaponWorld.translate.z +=
+            physicalGripTargetWorld.z - currentGripWorld.z;
+        return solvedWeaponWorld;
+    }
+}
+
 // ---- ScopeSafeHandFrameMath.h ----
 
 namespace rock::scope_safe_hand_frame_math

@@ -139,7 +139,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'tryCaptureLeftFiringGripTransfer[\s\S]{0,1500}activeLeftCaptureCurrent[\s\S]{0,900}tryBuildCurrentLeftFiringGripCapture' `
     'Left transfer capture must prefer the active left carry and fall back to the current native-right canonical.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'bool\s+TwoHandedGrip::beginPrimaryOnlyGrip\([\s\S]{0,700}retainUntilPhysicalGrip[\s\S]{0,3200}_persistentEquippedCarryActive\s*=\s*true[\s\S]{0,200}_persistentEquippedCarryDetachArmed\s*=\s*false' `
+    'bool\s+TwoHandedGrip::beginPrimaryOnlyGrip\([\s\S]{0,700}retainUntilPhysicalGrip[\s\S]{0,5600}_persistentEquippedCarryActive\s*=\s*true[\s\S]{0,200}_persistentEquippedCarryDetachArmed\s*=\s*false' `
     'A delayed committed transfer must not interpret an already-released draw squeeze as a weapon drop.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     '_equippedWeaponSheathCommittedThisFrame\[handIndex\]\s*\|\|[\s\S]{0,120}_equippedWeaponUnsheathCommittedThisFrame\[handIndex\][\s\S]{0,900}readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]{0,500}clearSelectionState\(false\)' `

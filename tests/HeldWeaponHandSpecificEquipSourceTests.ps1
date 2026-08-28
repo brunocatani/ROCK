@@ -207,8 +207,8 @@ Require-Text 'src/physics-interaction/hand/Hand.h' `
     'Native transfers must be able to consume the release pin while invalidating its raw alias.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'firingHandIsLeft\s*&&[\s\S]{0,180}!capturedFiringHandWeaponLocal[\s\S]{0,500}blockFrikPrimaryWeaponPose\(\)[\s\S]{0,500}setFiringHand\(firingHandIsLeft,[\s\S]{0,300}_primaryHandWeaponLocal\s*=\s*\*capturedFiringHandWeaponLocal' `
-    'Left primary-only ownership must fail closed without the captured loose-weapon hold and commit the originating hand before transition.'
+    'if\s*\(firingHandIsLeft\)[\s\S]{0,500}tryBuildCurrentLeftFiringGripCapture[\s\S]{0,1800}!retainUntilPhysicalGrip[\s\S]{0,900}capturedFiringHandWeaponLocal[\s\S]{0,1200}hasRightNativeWeaponAimFrame[\s\S]{0,500}captureRightNativeWeaponAimFrame[\s\S]{0,900}blockFrikPrimaryWeaponPose\(\)[\s\S]{0,500}setFiringHand\(firingHandIsLeft,[\s\S]{0,300}_primaryHandWeaponLocal\s*=\s*resolvedLeftHandWeaponLocal' `
+    'Left primary-only ownership must resolve a current normalized seat or committed equipped transfer, require the native aim baseline, and commit the originating hand before transition.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'RE::TESObjectREFR\* gripZoneHoverCandidate\s*=\s*nullptr;\s*if\s*\(\s*!isLeft\s*&&' `

@@ -665,11 +665,11 @@ namespace rock
 
         /*
          * Pip-Boy left-hand assignment starts without a physical grab hold.
-         * This entry point reuses the generation-bound native right-hand
-         * canonical pose, mirrors it through the live wand frames, and marks
-         * the resulting PrimaryOnly session as persistent until the selected
-         * inventory stack is unequipped or the player deliberately arms and
-         * releases the firing-hand grab.
+         * This entry point reuses the generation-bound authored left hand seat
+         * together with the separately captured native right weapon-in-wand
+         * orientation, then marks the resulting PrimaryOnly session as
+         * persistent until the selected inventory stack is unequipped or the
+         * player deliberately arms and releases the firing-hand grab.
          */
         bool beginPersistentEquippedCarry(
             RE::NiNode* weaponNode,
@@ -690,7 +690,7 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             RE::NiTransform& outFiringHandWeaponLocal,
-            RE::NiPoint3& outFiringGripWeaponLocal) const;
+            RE::NiPoint3& outFiringGripWeaponLocal);
 
         /*
          * Captures a left-hand transfer frame before a native transition can
@@ -703,13 +703,14 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             RE::NiTransform& outFiringHandWeaponLocal,
-            RE::NiPoint3& outFiringGripWeaponLocal) const;
+            RE::NiPoint3& outFiringGripWeaponLocal);
 
         /*
-         * Mirrors FRIK's canonical right-hand per-weapon hold into the left
-         * controller/hand basis. Both inputs are weapon-root-local, so the
-         * result is independent of whichever hand is currently probing or
-         * loosely holding the world model.
+         * Legacy loose-model hold resolver. It mirrors the canonical right
+         * hand relation and applies the effective left-aim trim because loose
+         * weapons have no native equipped weapon-in-wand baseline. Equipped
+         * carry uses the untrimmed authored-seat variant privately and applies
+         * aim trim to the separately mirrored native weapon orientation.
          */
         static bool tryBuildMirroredLeftFiringHandWeaponLocal(
             const RE::NiTransform& canonicalRightHandWeaponLocal,
@@ -1032,10 +1033,10 @@ namespace rock
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
             bool primaryDetachEnabled);
 
-        // Rigid left-firing weapon carry: weapon = firing hand ∘ inverse of the
-        // captured weapon-relative grip frame. Used by PrimaryOnly and
-        // VisualOnlySupport while the LEFT hand occupies the firing grip
-        // (right-firing keeps FRIK-native carry in those states).
+        // Position-only left-firing carry. The actual native right
+        // weapon-in-wand orientation is mirrored to the left wand, translated
+        // to the physical left firing point, and then the authored left wrist
+        // is published separately. Used by PrimaryOnly and VisualOnlySupport.
         bool solveLeftFiringWeaponCarry(RE::NiNode* weaponNode);
 
         bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode);
@@ -1043,17 +1044,30 @@ namespace rock
         void releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
 
         /*
-         * Canonical right-hand firing hold. Snapshotted whenever the RIGHT
-         * hand captures the firing grip (it then carries FRIK's authored
-         * per-weapon offsets); a LEFT takeover applies this frame MIRRORED so
-         * the left hand holds the weapon with the same offsets adapted to the
-         * left bone basis, instead of freezing the live squeeze orientation.
+         * Canonical right-hand firing seat. It retains authored wrist/position
+         * data and is mirrored only for left-hand presentation. Left weapon
+         * aim comes from the separate native weapon-in-wand frame below; the
+         * canonical wrist must never become weapon rotation authority again.
          */
         void rememberRightFiringHandCanonicalFrame();
         void refreshRightNativeCanonicalFrame(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey);
+        bool canCaptureRightNativeWeaponAimFrame() const;
+        bool captureRightNativeWeaponAimFrame(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey);
+        bool hasRightNativeWeaponAimFrame(
+            const RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey) const;
+        bool tryResolveLeftPositionOnlyCarryFrames(
+            RE::NiNode* weaponNode,
+            RE::NiTransform& outPhysicalHandWorld,
+            RE::NiTransform& outPresentedHandWorld,
+            RE::NiTransform& outWeaponWorld) const;
         void refreshNaturalHandInWandFrames();
         void clearRightFiringHandCanonicalFrame();
         bool hasRightFiringHandCanonicalFrame(
@@ -1065,6 +1079,15 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             bool* outUsedAuthoredCanonical = nullptr,
             bool logDiagnostic = true) const;
+
+        static bool tryBuildMirroredLeftFiringHandWeaponLocalImpl(
+            const RE::NiTransform& canonicalRightHandWeaponLocal,
+            const RE::NiPoint3& firingGripWeaponLocal,
+            const RE::NiTransform& rightHandWorld,
+            const RE::NiTransform& leftHandWorld,
+            RE::NiTransform& outHandWeaponLocal,
+            bool applyHandlingTrim,
+            bool logDiagnostic);
 
         bool tryBuildMirroredRightSupportHandWeaponLocal(
             const RE::NiTransform& leftHandWeaponLocal,
@@ -1343,6 +1366,16 @@ namespace rock
             RightFiringCanonicalSource::None
         };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
+        struct RightNativeWeaponAimFrame
+        {
+            RE::NiTransform weaponInWandOrientation{};
+            // Non-owning identity witness only; compared, never dereferenced.
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t weaponOwnershipKey{ 0 };
+            bool valid{ false };
+        };
+        RightNativeWeaponAimFrame _rightNativeWeaponAimFrame{};
         std::array<RE::NiTransform, 15> _rightFiringFingerLocalTransforms{};
         std::array<RE::NiTransform, 15> _leftFiringFingerLocalTransforms{};
         std::uint16_t _rightFiringFingerLocalTransformMask{ 0 };
@@ -1356,6 +1389,9 @@ namespace rock
         // native rotation. Cleared whenever the authored runtime skips a frame.
         bool _authoredPrimaryFiringHandWorldActive{ false };
         bool _authoredPrimaryFiringHandWorldRefreshed{ false };
+        // Left position-only carry owns the authored firing wrist separately
+        // from the mirrored native weapon orientation.
+        bool _leftFiringHandWorldActive{ false };
         bool _leftHandHoldingObjectForPose{ false };
         bool _rightHandHoldingObjectForPose{ false };
 
@@ -1536,6 +1572,7 @@ namespace rock
 
         // Rate limiter for the left-firing carry aim diagnostic.
         int _leftFiringAimLogCounter{ 0 };
+        bool _leftFiringPositionOnlyTracePending{ false };
     };
 
 }
