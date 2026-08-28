@@ -286,10 +286,6 @@ namespace rock
             }
         };
         rockDeveloperModeEnabled = ini.GetBoolValue(DEBUG_SECTION, "bDeveloperModeEnabled", rockDeveloperModeEnabled);
-        rockExperimentalAuthoredGripPositionOnlyAlignment = ini.GetBoolValue(
-            DEBUG_SECTION,
-            "bExperimentalAuthoredGripPositionOnlyAlignment",
-            rockExperimentalAuthoredGripPositionOnlyAlignment);
         rockLogLevel = logging_policy::clampLogLevel(static_cast<int>(ini.GetLongValue(LOGGING_SECTION, "iLogLevel", rockLogLevel)));
         rockLogPattern = ini.GetValue(DEBUG_SECTION, "sLogPattern", rockLogPattern.c_str());
         if (rockLogPattern.empty()) {

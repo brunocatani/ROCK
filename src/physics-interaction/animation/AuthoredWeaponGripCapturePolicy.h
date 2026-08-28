@@ -298,25 +298,6 @@ namespace rock::authored_weapon_grip_capture_policy
                    kCompleteAuthoredSupportFingerLocalTransformMask;
     }
 
-    template <class Transform, class Compose>
-    [[nodiscard]] constexpr Transform resolveAuthoredPrimaryHandWorld(
-        const Transform& liveWeaponWorld,
-        const Transform& authoredHandInWeapon,
-        Compose&& compose)
-    {
-        return compose(liveWeaponWorld, authoredHandInWeapon);
-    }
-
-    template <class Transform, class Compose, class Invert>
-    [[nodiscard]] constexpr Transform resolveAuthoredPrimaryWeaponWorld(
-        const Transform& trackedPrimaryHandWorld,
-        const Transform& authoredHandInWeapon,
-        Compose&& compose,
-        Invert&& invert)
-    {
-        return compose(trackedPrimaryHandWorld, invert(authoredHandInWeapon));
-    }
-
     template <class Transform, class Point, class LocalPointToWorld>
     [[nodiscard]] constexpr Transform
         resolveAuthoredPrimaryWeaponWorldPositionOnly(

@@ -922,46 +922,6 @@ namespace rock::authored_weapon_grip_capture
         return true;
     }
 
-    bool tryResolvePrimaryFiringGripAlignment(
-        const RE::NiNode* expectedWeaponNode,
-        const RE::NiTransform& liveWeaponWorld,
-        const RE::NiTransform& trackedPrimaryHandWorld,
-        RE::NiTransform& outWeaponWorld,
-        RE::NiTransform& outCurrentAuthoredHandWorld,
-        RE::NiTransform& outAuthoredPrimaryHandInWeapon,
-        std::uint64_t& outCaptureSequence)
-    {
-        if (!finiteTransform(liveWeaponWorld) ||
-            !finiteTransform(trackedPrimaryHandWorld) ||
-            !tryGetPrimaryFiringGripRelation(
-                expectedWeaponNode,
-                outAuthoredPrimaryHandInWeapon,
-                outCaptureSequence)) {
-            return false;
-        }
-        outCurrentAuthoredHandWorld = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryHandWorld(
-            liveWeaponWorld,
-            outAuthoredPrimaryHandInWeapon,
-            [](const RE::NiTransform& parent, const RE::NiTransform& child) {
-                return transform_math::composeTransforms(parent, child);
-            });
-        outWeaponWorld = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorld(
-            trackedPrimaryHandWorld,
-            outAuthoredPrimaryHandInWeapon,
-            [](const RE::NiTransform& parent, const RE::NiTransform& child) {
-                return transform_math::composeTransforms(parent, child);
-            },
-            [](const RE::NiTransform& transform) {
-                return transform_math::invertTransform(transform);
-            });
-        if (!finiteTransform(outCurrentAuthoredHandWorld) ||
-            !finiteTransform(outWeaponWorld)) {
-            return false;
-        }
-
-        return true;
-    }
-
     bool tryResolveAuthoredSupportGrip(
         const RE::NiNode* expectedWeaponNode,
         RE::NiTransform& outSupportHandInWeapon,

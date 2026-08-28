@@ -76,8 +76,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportBaseline
     'Dynamic attach must preserve the weapon while retaining the established live-input visual hand transition.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripFingerPose\(\s*primaryHandIsLeft,\s*_returningWeaponVisual\.localTransition\.active\s*&&\s*_returningWeaponVisual\.followsAuthoredPrimaryGrip\)[\s\S]*clearPrimaryGripWorldAuthority\(primaryHandIsLeft\)[\s\S]*restoreFrikPrimaryWeaponPose' `
     'Primary-only ownership must clear the locked hand root while retaining an in-flight authored firing pose through the return handoff.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*tryGetHandWorldTransform[\s\S]*resolveAuthoredPrimaryWeaponWorld[\s\S]*worldTargetToParentLocal' `
-    'A right-firing weapon return must resolve its endpoint from the same presented-hand source as the steady authored primary alignment.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*tryGetAuthoredPrimaryTrackedFiringHandWorld[\s\S]*nativeWeaponWorld[\s\S]*resolveAuthoredPrimaryWeaponWorldPositionOnly[\s\S]*worldTargetToParentLocal' `
+    'A right-firing weapon return must use the physical driver and live native weapon frame consumed by mandatory position-only alignment.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'state\.followsAuthoredPrimaryGrip[\s\S]*state\.lastTargetLocal[\s\S]*driveVisualReturn\(\s*state\.localTransition,\s*targetLocal' `
     'The weapon return must retain the last valid authored endpoint and never fall back to the native offset mid-handoff.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'updateVisualOnlySupportGrip\(RE::NiNode\* weaponNode,\s*float dt\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*false,\s*true,\s*dt' `

@@ -25,27 +25,6 @@ int main()
     };
 
     constexpr AffineTransform authoredHandInWeapon{ 2.0f, 10.0f };
-    constexpr AffineTransform liveWeaponWorld{ 6.0f, 100.0f };
-    constexpr auto authoredHandWorld = resolveAuthoredPrimaryHandWorld(
-        liveWeaponWorld,
-        authoredHandInWeapon,
-        compose);
-    static_assert(authoredHandWorld.scale == 12.0f);
-    static_assert(authoredHandWorld.translate == 160.0f);
-
-    constexpr AffineTransform trackedHandWorld{ 12.0f, 300.0f };
-    constexpr auto alignedWeaponWorld = resolveAuthoredPrimaryWeaponWorld(
-        trackedHandWorld,
-        authoredHandInWeapon,
-        compose,
-        invert);
-    constexpr auto alignedHandWorld = compose(
-        alignedWeaponWorld,
-        authoredHandInWeapon);
-    static_assert(alignedWeaponWorld.scale == 6.0f);
-    static_assert(alignedWeaponWorld.translate == 240.0f);
-    static_assert(alignedHandWorld.scale == trackedHandWorld.scale);
-    static_assert(alignedHandWorld.translate == trackedHandWorld.translate);
 
     struct Point3
     {

@@ -64,14 +64,6 @@ namespace rock::authored_weapon_grip_capture
         const RE::NiNode* expectedWeaponNode,
         RE::NiTransform& outAuthoredPrimaryHandInWeapon,
         std::uint64_t& outCaptureSequence);
-    [[nodiscard]] bool tryResolvePrimaryFiringGripAlignment(
-        const RE::NiNode* expectedWeaponNode,
-        const RE::NiTransform& liveWeaponWorld,
-        const RE::NiTransform& trackedPrimaryHandWorld,
-        RE::NiTransform& outWeaponWorld,
-        RE::NiTransform& outCurrentAuthoredHandWorld,
-        RE::NiTransform& outAuthoredPrimaryHandInWeapon,
-        std::uint64_t& outCaptureSequence);
     [[nodiscard]] bool tryResolveAuthoredSupportGrip(
         const RE::NiNode* expectedWeaponNode,
         RE::NiTransform& outSupportHandInWeapon,

@@ -145,7 +145,6 @@ namespace rock
         _canonicalPublishFailureLogged = false;
         _libraryPublishFailureLogged = false;
         _customFrikOffsetOverrideActive = false;
-        _positionOnlyAlignmentActive = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
         _supportCaptureFailureLogged = false;
@@ -210,8 +209,6 @@ namespace rock
             _fingerMirrorFailureLogged = false;
 
             _customFrikOffsetOverrideActive = false;
-            _positionOnlyAlignmentActive =
-                input.positionOnlyAlignmentRequested;
             _frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
             if (input.weapon && input.weaponNode) {
                 const auto customFrikOffset =
@@ -420,7 +417,6 @@ namespace rock
                         input.weaponGenerationKey,
                         currentWeaponKey,
                         authoredLookup.captureSequence,
-                        _positionOnlyAlignmentActive,
                         rightFingerPose,
                         leftFingerPose)) {
                     _canonicalPublishFailureLogged = false;
@@ -506,23 +502,13 @@ namespace rock
 
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
         RE::NiTransform trackedHandWorld{};
-        // Position-only mode owns the presented right hand, so the solve
-        // must read controller intent from the physical driver frame; the
-        // presented hand would be ROCK's own previous output.
-        const bool trackedHandAvailable =
-            _positionOnlyAlignmentActive ?
-            weaponAuthority.tryGetAuthoredPrimaryTrackedFiringHandWorld(
-                trackedHandWorld) :
-            frik_visual_authority::tryGetHandWorldTransform(
-                frik_visual_authority::handFromBool(
-                    input.rockFiringHandIsLeft),
-                trackedHandWorld);
-        if (!trackedHandAvailable) {
+        // ROCK owns the presented right hand, so controller intent must come
+        // from the physical driver frame. Reading the presented hand here
+        // would feed ROCK's previous output back into the solve.
+        if (!weaponAuthority.tryGetAuthoredPrimaryTrackedFiringHandWorld(
+                trackedHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
-            endSession(
-                _positionOnlyAlignmentActive ?
-                    "physical-hand-frame-unavailable" :
-                    "presented-hand-unavailable");
+            endSession("physical-hand-frame-unavailable");
             return;
         }
         if (!finiteTransform(liveWeaponWorld) || !finiteTransform(trackedHandWorld)) {
@@ -540,31 +526,10 @@ namespace rock
             authoredPrimaryHandInWeapon = authoredLookup.rightHandWeaponLocal;
             resolvedCaptureSequence = authoredLookup.captureSequence;
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
-            if (_positionOnlyAlignmentActive) {
-                alignmentResolved =
-                    finiteTransform(authoredPrimaryHandInWeapon) &&
-                    finiteTransform(currentAuthoredHandWorld);
-            } else {
-                solvedWeaponWorld =
-                    authored_weapon_grip_capture_policy::
-                        resolveAuthoredPrimaryWeaponWorld(
-                            trackedHandWorld,
-                            authoredPrimaryHandInWeapon,
-                            [](const RE::NiTransform& parent,
-                                const RE::NiTransform& child) {
-                                return transform_math::composeTransforms(
-                                    parent,
-                                    child);
-                            },
-                            [](const RE::NiTransform& transform) {
-                                return transform_math::invertTransform(transform);
-                            });
-                alignmentResolved =
-                    finiteTransform(authoredPrimaryHandInWeapon) &&
-                    finiteTransform(currentAuthoredHandWorld) &&
-                    finiteTransform(solvedWeaponWorld);
-            }
-        } else if (_positionOnlyAlignmentActive) {
+            alignmentResolved =
+                finiteTransform(authoredPrimaryHandInWeapon) &&
+                finiteTransform(currentAuthoredHandWorld);
+        } else {
             alignmentResolved =
                 authored_weapon_grip_capture::
                     tryGetPrimaryFiringGripRelation(
@@ -580,16 +545,6 @@ namespace rock
                 alignmentResolved =
                     finiteTransform(currentAuthoredHandWorld);
             }
-        } else {
-            alignmentResolved = authored_weapon_grip_capture::tryResolvePrimaryFiringGripAlignment(
-                input.weaponNode,
-                liveWeaponWorld,
-                trackedHandWorld,
-                solvedWeaponWorld,
-                currentAuthoredHandWorld,
-                authoredPrimaryHandInWeapon,
-                resolvedCaptureSequence) &&
-                resolvedCaptureSequence > _captureSequenceFloor;
         }
         if (!alignmentResolved) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
@@ -619,55 +574,49 @@ namespace rock
             return;
         }
 
-        if (_positionOnlyAlignmentActive) {
-            const RE::NiPoint3 authoredGripWeaponLocal =
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                    authoredPrimaryHandInWeapon,
-                    false);
-            const RE::NiPoint3 trackedPalmWorld =
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                    trackedHandWorld,
-                    false);
-            solvedWeaponWorld =
-                authored_weapon_grip_capture_policy::
-                    resolveAuthoredPrimaryWeaponWorldPositionOnly(
-                        liveWeaponWorld,
-                        authoredGripWeaponLocal,
-                        trackedPalmWorld,
-                        [](const RE::NiTransform& transform,
-                            const RE::NiPoint3& point) {
-                            return transform_math::localPointToWorld(
-                                transform,
-                                point);
-                        });
-            if (!finiteTransform(solvedWeaponWorld)) {
-                weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
-                endSession("position-only-alignment-invalid");
-                return;
-            }
+        const RE::NiPoint3 authoredGripWeaponLocal =
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                authoredPrimaryHandInWeapon,
+                false);
+        const RE::NiPoint3 trackedPalmWorld =
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                trackedHandWorld,
+                false);
+        solvedWeaponWorld =
+            authored_weapon_grip_capture_policy::
+                resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                    liveWeaponWorld,
+                    authoredGripWeaponLocal,
+                    trackedPalmWorld,
+                    [](const RE::NiTransform& transform,
+                        const RE::NiPoint3& point) {
+                        return transform_math::localPointToWorld(
+                            transform,
+                            point);
+                    });
+        if (!finiteTransform(solvedWeaponWorld)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            endSession("position-only-alignment-invalid");
+            return;
         }
 
-        // Position-only mode moves the authored wrist correction onto the
-        // hand: the weapon keeps the native rotation while the presented
-        // right hand seats at the authored grip on that weapon frame.
-        RE::NiTransform solvedFiringHandWorld{};
-        if (_positionOnlyAlignmentActive) {
-            solvedFiringHandWorld = transform_math::composeTransforms(
+        // The authored wrist correction belongs to the presented hand: the
+        // weapon keeps its native rotation while the right hand seats at the
+        // authored grip on that weapon frame.
+        const RE::NiTransform solvedFiringHandWorld =
+            transform_math::composeTransforms(
                 solvedWeaponWorld,
                 authoredPrimaryHandInWeapon);
-            if (!finiteTransform(solvedFiringHandWorld)) {
-                weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
-                endSession("position-only-hand-target-invalid");
-                return;
-            }
+        if (!finiteTransform(solvedFiringHandWorld)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            endSession("position-only-hand-target-invalid");
+            return;
         }
 
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
                 solvedWeaponWorld,
-                _positionOnlyAlignmentActive ?
-                    &solvedFiringHandWorld :
-                    nullptr,
+                solvedFiringHandWorld,
                 input.weaponGenerationKey)) {
             if (!_applyFailureLogged) {
                 ROCK_LOG_WARN(Animation,
@@ -687,7 +636,6 @@ namespace rock
                 input.weaponGenerationKey,
                 currentWeaponKey,
                 resolvedCaptureSequence,
-                _positionOnlyAlignmentActive,
                 rightFingerPose,
                 leftFingerPose)) {
             if (!_canonicalPublishFailureLogged) {
@@ -730,33 +678,23 @@ namespace rock
         _active = true;
         _applyFailureLogged = false;
 
-        if (_positionOnlyAlignmentActive) {
-            const RE::NiPoint3 authoredGripWeaponLocal =
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                    authoredPrimaryHandInWeapon,
-                    false);
-            const RE::NiPoint3 publishedGripWorld =
-                transform_math::localPointToWorld(
-                    input.weaponNode->world,
-                    authoredGripWeaponLocal);
-            const RE::NiPoint3 trackedPalmWorld =
-                computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                    trackedHandWorld,
-                    false);
-            ROCK_LOG_SAMPLE_DEBUG(
-                Animation,
-                1000,
-                "Authored position-only trace weaponKey=0x{:X} generation=0x{:X} palmError={:.4f}gu rotationReadbackMaxDelta={:.7f} scaleDelta={:.7f}",
-                currentWeaponKey,
-                input.weaponGenerationKey,
-                pointDistance(publishedGripWorld, trackedPalmWorld),
-                rotationMatrixMaxDelta(
-                    liveWeaponWorld,
-                    input.weaponNode->world),
-                std::abs(
-                    liveWeaponWorld.scale -
-                    input.weaponNode->world.scale));
-        }
+        const RE::NiPoint3 publishedGripWorld =
+            transform_math::localPointToWorld(
+                input.weaponNode->world,
+                authoredGripWeaponLocal);
+        ROCK_LOG_SAMPLE_DEBUG(
+            Animation,
+            1000,
+            "Authored position-only trace weaponKey=0x{:X} generation=0x{:X} palmError={:.4f}gu rotationReadbackMaxDelta={:.7f} scaleDelta={:.7f}",
+            currentWeaponKey,
+            input.weaponGenerationKey,
+            pointDistance(publishedGripWorld, trackedPalmWorld),
+            rotationMatrixMaxDelta(
+                liveWeaponWorld,
+                input.weaponNode->world),
+            std::abs(
+                liveWeaponWorld.scale -
+                input.weaponNode->world.scale));
 
         // A shot can temporarily suppress Bethesda's paired support-arm pass.
         // Keep the candidate frame-fresh by republishing the last verified
@@ -770,8 +708,8 @@ namespace rock
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
-                "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) mode={} "
-                "primaryHand={} physicalLeftSource=mirrored-authored-canonical",
+                "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) "
+                "mode=position-only primaryHand=weapon-relative-authored physicalLeftSource=mirrored-authored-canonical",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence, harvestedRelationAvailable ? "native-idle-preharvest" : "live-equipped-fallback",
@@ -786,11 +724,7 @@ namespace rock
                 input.weaponNode->world.translate.z,
                 input.weaponNode->local.translate.x,
                 input.weaponNode->local.translate.y,
-                input.weaponNode->local.translate.z,
-                _positionOnlyAlignmentActive ? "position-only" : "full-rigid",
-                _positionOnlyAlignmentActive ?
-                    "weapon-relative-authored" :
-                    "controller-driven");
+                input.weaponNode->local.translate.z);
             _sessionLogged = true;
         }
     }

@@ -44,7 +44,7 @@ foreach ($removedPath in @(
     }
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $Root 'data/config/ROCK_example.ini')) {
+if (-not (Test-Path -LiteralPath (Join-Path $Root 'data/config/ROCK_example.ini'))) {
     $failures.Add('The sole Git-tracked ROCK_example.ini is missing.')
 }
 

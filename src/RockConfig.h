@@ -49,9 +49,6 @@ namespace rock
         float rockGrabInputForceSeconds = 0.08f;
 
         bool rockDeveloperModeEnabled = false;
-        // Experimental authored firing-grip mode. The native FRIK/game weapon
-        // rotation remains unchanged while ROCK aligns only the palm seat.
-        bool rockExperimentalAuthoredGripPositionOnlyAlignment = false;
 
         int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";

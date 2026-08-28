@@ -165,8 +165,16 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator
     'Menu, compatibility, and visual-authority mutation blocks must still advance the hard bridge presentation lease.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    'clearModel\("presentation-ended"[\s\S]{0,700}native-handoff-republish-failed[\s\S]{0,700}applyExternalHandWorldTransform' `
-    'Visual handoff must release the phantom while keeping the authored finger and hand-transform payload alive until the equipped owner acquires it or the absolute lease expires.'
+    'clearModel\("presentation-ended"[\s\S]{0,700}publishHandPoseHandoff\(\)[\s\S]{0,300}native-handoff-republish-failed' `
+    'Visual handoff must release the phantom while keeping only its authored finger payload alive until the equipped owner acquires it or the absolute lease expires.'
+
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    '_hasFiringHandWeaponLocal[\s\S]{0,500}_hasPhysicalHandInWandLocal[\s\S]{0,900}resolveAuthoredPrimaryWeaponWorldPositionOnly' `
+    'The equip bridge must converge an authored hold only by translating the native-rotation weapon toward the physical palm.'
+
+Reject-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'applyExternalHandWorldTransform|_positionOnlyAlignmentActive|rockExperimentalAuthoredGripPositionOnlyAlignment|RockConfig\.h' `
+    'The mandatory position-only equip bridge must not retain selectable mode state, config authority, or the removed full-rigid hand-transform publication.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'const bool nativeWeaponAnimationActive\s*=[\s\S]*?currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*?GUN_STATE::kReloading[\s\S]*?\.nativeWeaponAnimationActive' `

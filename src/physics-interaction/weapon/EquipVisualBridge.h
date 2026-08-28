@@ -161,7 +161,6 @@ namespace rock
         RE::NiTransform _firingHandWeaponLocal{};
         bool _hasFiringHandWeaponLocal = false;
         bool _hasPhysicalHandInWandLocal = false;
-        bool _positionOnlyAlignmentActive = false;
         std::array<RE::NiTransform, 15> _handoffFingerLocalTransforms{};
         std::uint16_t _handoffFingerLocalTransformMask = 0;
         float _elapsedSeconds = 0.0f;

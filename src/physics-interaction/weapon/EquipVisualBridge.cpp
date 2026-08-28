@@ -13,7 +13,6 @@
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -182,9 +181,6 @@ namespace rock
         }
 
         _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
-        _positionOnlyAlignmentActive =
-            g_rockConfig.
-                rockExperimentalAuthoredGripPositionOnlyAlignment;
         RE::NiPoint3 physicalPalmWorld{};
         RE::NiTransform physicalHandWorld{};
         _hasPhysicalHandInWandLocal =
@@ -267,19 +263,6 @@ namespace rock
             _handPoseHandoffActive = true;
             if (!publishHandPoseHandoff()) {
                 clearHandPoseHandoff("initial-publish-failed", false, false);
-            } else if (!_positionOnlyAlignmentActive &&
-                       _hasFiringHandWeaponLocal) {
-                const RE::NiTransform handWorld = transform_math::composeTransforms(
-                    model->world,
-                    _firingHandWeaponLocal);
-                if (!isFiniteTransform(handWorld) ||
-                    !frik_visual_authority::applyExternalHandWorldTransform(
-                        kHandPoseHandoffTag,
-                        handFromBool(_isLeftHand),
-                        handWorld,
-                        kHandPoseHandoffPriority)) {
-                    clearHandPoseHandoff("initial-hand-transform-publish-failed", false, false);
-                }
             }
         }
 
@@ -424,22 +407,6 @@ namespace rock
             if (_handPoseHandoffActive) {
                 if (!publishHandPoseHandoff()) {
                     clearHandPoseHandoff("native-handoff-republish-failed", true, false);
-                } else if (!_positionOnlyAlignmentActive &&
-                           _hasFiringHandWeaponLocal &&
-                           input.nativeVisual &&
-                           input.nativeVisual->weaponRoot &&
-                           isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
-                    const RE::NiTransform handWorld = transform_math::composeTransforms(
-                        input.nativeVisual->weaponRoot->world,
-                        _firingHandWeaponLocal);
-                    if (!isFiniteTransform(handWorld) ||
-                        !frik_visual_authority::applyExternalHandWorldTransform(
-                            kHandPoseHandoffTag,
-                            handFromBool(_isLeftHand),
-                            handWorld,
-                            kHandPoseHandoffPriority)) {
-                        clearHandPoseHandoff("native-handoff-hand-transform-failed", true, false);
-                    }
                 }
             }
             if (!_model && !_handPoseHandoffActive) {
@@ -453,8 +420,6 @@ namespace rock
             _handPoseHandoffActive = true;
         }
 
-        RE::NiTransform handoffWeaponWorld{};
-        bool hasHandoffWeaponWorld = false;
         auto* model = _model.get();
         if (model && !_parent) {
             /*
@@ -463,12 +428,7 @@ namespace rock
              * orphan, ROCK moves it under the world root without stealing a
              * live scene node.
              */
-            if (model->parent) {
-                if (isFiniteTransform(model->world)) {
-                    handoffWeaponWorld = model->world;
-                    hasHandoffWeaponWorld = true;
-                }
-            } else if (!tryAttachToWorldRoot()) {
+            if (!model->parent && !tryAttachToWorldRoot()) {
                 clear("attach-failed", false);
                 return;
             }
@@ -490,8 +450,7 @@ namespace rock
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
             if (_hasFiringHandWeaponLocal) {
-                if (_positionOnlyAlignmentActive &&
-                    _hasPhysicalHandInWandLocal) {
+                if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(
                             handNode->world,
@@ -516,14 +475,6 @@ namespace rock
                                     point);
                             });
                     haveBlendTarget = isFiniteTransform(blendTarget);
-                } else if (!_positionOnlyAlignmentActive) {
-                    RE::NiPoint3 palmWorld{};
-                    RE::NiTransform rootFlattenedHandWorld{};
-                    if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(_isLeftHand, palmWorld, rootFlattenedHandWorld) &&
-                        isFiniteTransform(rootFlattenedHandWorld)) {
-                        blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
-                        haveBlendTarget = isFiniteTransform(blendTarget);
-                    }
                 }
             } else if (input.nativeVisual && input.nativeVisual->weaponRoot &&
                        isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
@@ -541,27 +492,11 @@ namespace rock
 
             model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
             f4vr::updateDown(model, true);
-            handoffWeaponWorld = desiredWorld;
-            hasHandoffWeaponWorld = true;
         }
 
         if (_handPoseHandoffActive) {
             if (!publishHandPoseHandoff()) {
                 clearHandPoseHandoff("republish-failed", true, false);
-            } else if (!_positionOnlyAlignmentActive &&
-                       _hasFiringHandWeaponLocal &&
-                       hasHandoffWeaponWorld) {
-                const RE::NiTransform handWorld = transform_math::composeTransforms(
-                    handoffWeaponWorld,
-                    _firingHandWeaponLocal);
-                if (!isFiniteTransform(handWorld) ||
-                    !frik_visual_authority::applyExternalHandWorldTransform(
-                        kHandPoseHandoffTag,
-                        handFromBool(_isLeftHand),
-                        handWorld,
-                        kHandPoseHandoffPriority)) {
-                    clearHandPoseHandoff("hand-transform-publish-failed", true, false);
-                }
             }
         }
     }
@@ -708,7 +643,6 @@ namespace rock
         _firingHandWeaponLocal = {};
         _hasFiringHandWeaponLocal = false;
         _hasPhysicalHandInWandLocal = false;
-        _positionOnlyAlignmentActive = false;
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;
         _presentationLeaseStartedAt = {};

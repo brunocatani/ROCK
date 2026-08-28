@@ -419,7 +419,7 @@ namespace rock
         bool applyAuthoredPrimaryGripWeaponAlignment(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
-            const RE::NiTransform* solvedFiringHandWorld,
+            const RE::NiTransform& solvedFiringHandWorld,
             std::uint64_t currentWeaponGenerationKey);
 
         /*
@@ -466,7 +466,6 @@ namespace rock
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey,
             std::uint64_t captureSequence,
-            bool positionOnlyAlignment,
             const authored_weapon_grip_library::FiringFingerPose* rightFingerPose = nullptr,
             const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
@@ -889,9 +888,9 @@ namespace rock
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
-            // Latched with the authored primary canonical. In this mode the
-            // support seat may translate the weapon but never rotate it.
-            bool authoredSupportPositionOnlyAlignment{ false };
+            // Right-primary authored support keeps axis aiming and the
+            // primary-anchored solve but never applies palm-normal twist.
+            bool disableAuthoredSupportNormalTwist{ false };
             std::uint64_t authoredSupportCaptureSequence{ 0 };
             /*
              * AttachOnly glue: the hand stays visually attached to the part
@@ -1330,7 +1329,6 @@ namespace rock
             RightFiringCanonicalSource::None
         };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
-        bool _rightFiringCanonicalPositionOnlyAlignment{ false };
         std::array<RE::NiTransform, 15> _rightFiringFingerLocalTransforms{};
         std::array<RE::NiTransform, 15> _leftFiringFingerLocalTransforms{};
         std::uint16_t _rightFiringFingerLocalTransformMask{ 0 };

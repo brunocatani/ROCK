@@ -73,6 +73,24 @@ Reject-Text 'src/RockConfig.h' 'rockAuthoredPrimaryFiringGripTestEnabled' 'The p
 Reject-Text 'data/config/ROCK_example.ini' 'bAuthoredPrimaryFiringGripTestEnabled' 'Users must not be able to disable the production authored primary/equipped-grip path.'
 Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' 'input\.enabled|experiment-disabled' 'The production authored primary grip runtime must not retain its removed experimental gate.'
 
+foreach ($configPath in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK_example.ini')) {
+    Reject-Text $configPath 'ExperimentalAuthoredGripPositionOnlyAlignment' 'Mandatory authored position-only alignment must not remain configurable.'
+}
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'positionOnlyAlignmentRequested|rockExperimentalAuthoredGripPositionOnlyAlignment' 'The frame coordinator must not carry selectable authored-alignment mode state.'
+Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.h' 'positionOnlyAlignmentRequested|_positionOnlyAlignmentActive' 'The authored runtime must not retain selectable position-only mode state.'
+Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' '_positionOnlyAlignmentActive|presented-hand-unavailable|resolveAuthoredPrimaryWeaponWorld\(|tryResolvePrimaryFiringGripAlignment' 'Steady authored alignment must not retain the removed full-rigid branch or presented-hand fallback.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' 'tryGetAuthoredPrimaryTrackedFiringHandWorld[\s\S]*resolveAuthoredPrimaryWeaponWorldPositionOnly[\s\S]*applyAuthoredPrimaryGripWeaponAlignment\([\s\S]{0,300}solvedFiringHandWorld' 'Steady authored alignment must always consume the physical driver, preserve native weapon rotation, and publish the authored hand target.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' '_rightFiringCanonicalPositionOnlyAlignment|bool positionOnlyAlignment|NiTransform\* solvedFiringHandWorld' 'The authored canonical and publisher interfaces must not expose a selectable or nullable full-rigid path.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_rightFiringCanonicalPositionOnlyAlignment|resolveAuthoredPrimaryWeaponWorld\(|if\s*\(\s*!solvedFiringHandWorld' 'Collision intent, canonical reuse, and return transitions must not retain the removed full-rigid path.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*tryGetAuthoredPrimaryTrackedFiringHandWorld[\s\S]*resolveAuthoredPrimaryWeaponWorldPositionOnly' 'Authored weapon return must preserve the same physical-driver position-only contract as steady carry.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'if \(supportGrip\.disableAuthoredSupportNormalTwist\)[\s\S]{0,1600}solverInput\.useSupportNormalTwist\s*=\s*false;[\s\S]{0,200}solverInput\.supportNormalTwistFactor\s*=\s*0\.0f;' 'Authored right-primary support must keep axis aiming while permanently removing palm-normal twist.'
+foreach ($removedFullRigidPath in @(
+        'src/physics-interaction/animation/AuthoredWeaponGripCapture.h',
+        'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp',
+        'src/physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h')) {
+    Reject-Text $removedFullRigidPath 'tryResolvePrimaryFiringGripAlignment|resolveAuthoredPrimaryHandWorld|resolveAuthoredPrimaryWeaponWorld\(' 'The superseded full-rigid authored capture resolver must remain removed.'
+}
+
 if ($failures.Count -gt 0) {
     Write-Host 'AuthoredWeaponGripCaptureSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {
