@@ -20,6 +20,7 @@ namespace rock::authored_weapon_grip_activation_policy
         kActivationConeMinimumDot * kActivationConeMinimumDot;
     inline constexpr float kSweptArcAxisOrthogonalityTolerance = 0.001f;
     inline constexpr float kMinimumDirectionDistanceGameUnits = 0.25f;
+    inline constexpr float kIndicatorOffsetGameUnits = 5.0f;
 
     enum class WeaponFamily : std::uint8_t
     {
@@ -263,6 +264,82 @@ namespace rock::authored_weapon_grip_activation_policy
             result.directionPass &&
             result.scopePass;
         return result;
+    }
+
+    struct IndicatorInput
+    {
+        WeaponFamily weaponFamily{ WeaponFamily::Unknown };
+        Vec3 authoredSeatWorld{};
+        Vec3 leftAxisWorld{};
+        Vec3 downAxisWorld{};
+        bool activationStateValid{ false };
+        bool activationSpatialPass{ false };
+        bool interactionCandidateValid{ false };
+        bool supportGripAllowed{ false };
+        bool providerPartAuthorityActive{ false };
+        bool supportHandHoldingObject{ false };
+        bool supportHandWeaponEngaged{ false };
+    };
+
+    struct IndicatorResult
+    {
+        Vec3 markerWorld{};
+        bool visible{ false };
+    };
+
+    [[nodiscard]] inline IndicatorResult evaluateIndicator(
+        const IndicatorInput& input)
+    {
+        if (!input.activationStateValid ||
+            !input.activationSpatialPass ||
+            !input.interactionCandidateValid ||
+            !input.supportGripAllowed ||
+            input.providerPartAuthorityActive ||
+            input.supportHandHoldingObject ||
+            input.supportHandWeaponEngaged) {
+            return {};
+        }
+
+        Vec3 indicatorAxis{};
+        switch (input.weaponFamily) {
+        case WeaponFamily::OneHandGun:
+            indicatorAxis = input.leftAxisWorld;
+            break;
+        case WeaponFamily::TwoHandGun:
+            indicatorAxis = input.downAxisWorld;
+            break;
+        case WeaponFamily::Unsupported:
+        case WeaponFamily::Unknown:
+        default:
+            return {};
+        }
+
+        Vec3 normalizedAxis{};
+        if (!tryNormalize(indicatorAxis, normalizedAxis) ||
+            !std::isfinite(input.authoredSeatWorld.x) ||
+            !std::isfinite(input.authoredSeatWorld.y) ||
+            !std::isfinite(input.authoredSeatWorld.z)) {
+            return {};
+        }
+
+        const Vec3 markerWorld{
+            input.authoredSeatWorld.x +
+                normalizedAxis.x * kIndicatorOffsetGameUnits,
+            input.authoredSeatWorld.y +
+                normalizedAxis.y * kIndicatorOffsetGameUnits,
+            input.authoredSeatWorld.z +
+                normalizedAxis.z * kIndicatorOffsetGameUnits,
+        };
+        if (!std::isfinite(markerWorld.x) ||
+            !std::isfinite(markerWorld.y) ||
+            !std::isfinite(markerWorld.z)) {
+            return {};
+        }
+
+        return IndicatorResult{
+            .markerWorld = markerWorld,
+            .visible = true,
+        };
     }
 
     [[nodiscard]] constexpr const char* weaponFamilyName(const WeaponFamily family)

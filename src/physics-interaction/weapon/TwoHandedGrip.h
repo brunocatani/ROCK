@@ -115,6 +115,13 @@ namespace rock
         EquippedWeaponGripOccupancy after{};
     };
 
+    struct AuthoredSupportGripIndicatorFrame
+    {
+        RE::NiPoint3 positionWorld{};
+        bool supportHandIsLeft{ true };
+        bool visible{ false };
+    };
+
     struct TwoHandedGripDebugSnapshot
     {
         RE::NiTransform weaponWorld{};
@@ -400,6 +407,12 @@ namespace rock
 
         [[nodiscard]] EquippedWeaponGripOccupancy
             getGripOccupancy() const noexcept;
+
+        [[nodiscard]] AuthoredSupportGripIndicatorFrame
+            getAuthoredSupportGripIndicatorFrame() const noexcept
+        {
+            return _authoredSupportGripIndicatorFrame;
+        }
 
         /*
          * Called after hFRIK's weapon pass. FO4VR has already completed its
@@ -1413,6 +1426,8 @@ namespace rock
 
         std::array<WeaponPartGrip, 2> _partGrips{};
         AuthoredSupportGripCandidate _authoredSupportGripCandidate{};
+        AuthoredSupportGripIndicatorFrame
+            _authoredSupportGripIndicatorFrame{};
         AuthoredSupportGripDebugSnapshot _authoredSupportGripDebugSnapshot{};
         RE::NiPoint3 _authoredSupportLastStableApproachDirectionWorld{};
         std::uint64_t _authoredSupportLastStableDirectionGenerationKey{ 0 };

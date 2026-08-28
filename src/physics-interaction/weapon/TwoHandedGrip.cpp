@@ -2342,10 +2342,36 @@ namespace rock
     {
         const EquippedWeaponGripOccupancy occupancyBefore =
             getGripOccupancy();
-        const auto finishUpdate = [this, &occupancyBefore]() {
+        authored_weapon_grip_activation_policy::IndicatorInput
+            authoredIndicatorInput{};
+        bool authoredIndicatorSupportHandIsLeft = true;
+        const auto finishUpdate = [this,
+                                      &occupancyBefore,
+                                      &authoredIndicatorInput,
+                                      &authoredIndicatorSupportHandIsLeft]() {
+            const EquippedWeaponGripOccupancy occupancyAfter =
+                getGripOccupancy();
+            authoredIndicatorInput.supportHandWeaponEngaged =
+                authoredIndicatorSupportHandIsLeft ?
+                occupancyAfter.left.weaponEngaged() :
+                occupancyAfter.right.weaponEngaged();
+            const auto indicator =
+                authored_weapon_grip_activation_policy::evaluateIndicator(
+                    authoredIndicatorInput);
+            _authoredSupportGripIndicatorFrame =
+                AuthoredSupportGripIndicatorFrame{
+                    .positionWorld = RE::NiPoint3{
+                        indicator.markerWorld.x,
+                        indicator.markerWorld.y,
+                        indicator.markerWorld.z,
+                    },
+                    .supportHandIsLeft =
+                        authoredIndicatorSupportHandIsLeft,
+                    .visible = indicator.visible,
+                };
             return TwoHandedGripUpdateResult{
                 .before = occupancyBefore,
-                .after = getGripOccupancy(),
+                .after = occupancyAfter,
             };
         };
         _leftFiringWeaponRecoilReadyThisUpdate =
@@ -2479,6 +2505,48 @@ namespace rock
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
         const bool supportHandHoldingObject = supportHandIsLeft ? stableFrameInput.leftHandHoldingObject : stableFrameInput.rightHandHoldingObject;
         const EquippedWeaponPrimaryGripInput& primaryGripInput = stableFrameInput.primaryGripInput;
+
+        const auto& authoredActivation =
+            _authoredSupportGripDebugSnapshot;
+        const bool authoredActivationStateMatches =
+            authoredActivation.valid &&
+            authoredActivation.supportHandIsLeft == supportHandIsLeft &&
+            authoredActivation.weaponGenerationKey ==
+                currentWeaponGenerationKey &&
+            authoredActivation.captureSequence ==
+                _authoredSupportGripCandidate.captureSequence;
+        const bool authoredInteractionCandidateValid =
+            supportTouchingSupport &&
+            decision.weaponGenerationKey == currentWeaponGenerationKey &&
+            (decision.acquisitionSource ==
+                    WeaponInteractionAcquisitionSource::PhysicalContact ||
+                decision.acquisitionSource ==
+                    WeaponInteractionAcquisitionSource::ProximityProbe);
+        using IndicatorVec3 =
+            authored_weapon_grip_activation_policy::Vec3;
+        const auto toIndicatorVector = [](const RE::NiPoint3& value) {
+            return IndicatorVec3{ value.x, value.y, value.z };
+        };
+        authoredIndicatorSupportHandIsLeft = supportHandIsLeft;
+        authoredIndicatorInput =
+            authored_weapon_grip_activation_policy::IndicatorInput{
+                .weaponFamily = authoredActivation.weaponFamily,
+                .authoredSeatWorld = toIndicatorVector(
+                    authoredActivation.authoredPalmSeatWorld),
+                .leftAxisWorld = toIndicatorVector(
+                    authoredActivation.leftAxisWorld),
+                .downAxisWorld = toIndicatorVector(
+                    authoredActivation.downAxisWorld),
+                .activationStateValid = authoredActivationStateMatches,
+                .activationSpatialPass =
+                    authoredActivation.activationSpatialPass,
+                .interactionCandidateValid =
+                    authoredInteractionCandidateValid,
+                .supportGripAllowed = supportRuntimeState.supportGripAllowed,
+                .providerPartAuthorityActive =
+                    supportRuntimeState.providerPartAuthority.active,
+                .supportHandHoldingObject = supportHandHoldingObject,
+            };
 
         switch (_state) {
         case TwoHandedState::Inactive:
@@ -2722,6 +2790,7 @@ namespace rock
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         clearDynamicSupportAcquisition("reset", true);
         clearAuthoredSupportGripCandidate();
+        _authoredSupportGripIndicatorFrame = {};
         _authoredSupportGripDebugSnapshot = {};
         _authoredSupportLastStableApproachDirectionWorld = {};
         _authoredSupportLastStableDirectionGenerationKey = 0;

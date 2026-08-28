@@ -2036,6 +2036,7 @@ namespace rock
 
         _rightHand.preloadSelectionBeam();
         _leftHand.preloadSelectionBeam();
+        (void)_authoredSupportGripIndicator.preload();
 
         _hasPrevPositions = false;
         _deltaLogCounter = 0;
@@ -3628,6 +3629,19 @@ namespace rock
         };
     }
 
+    void PhysicsInteraction::updateAuthoredSupportGripIndicator()
+    {
+        const auto frame =
+            _twoHandedGrip.getAuthoredSupportGripIndicatorFrame();
+        const Hand& supportHand =
+            frame.supportHandIsLeft ? _leftHand : _rightHand;
+        if (!frame.visible || supportHand.isHolding()) {
+            _authoredSupportGripIndicator.hide();
+            return;
+        }
+        (void)_authoredSupportGripIndicator.update(frame.positionWorld);
+    }
+
     void PhysicsInteraction::finalizeInteractionFrame(
         const PhysicsFrameContext& frame,
         RE::bhkWorld* bhk,
@@ -3718,6 +3732,7 @@ namespace rock
         }
         updateFeedbackHaptics(frame.deltaSeconds);
 
+        updateAuthoredSupportGripIndicator();
         publishDebugBodyOverlay(frame);
 
         resolveContacts(frame);
@@ -3830,6 +3845,7 @@ namespace rock
         refreshEquippedWeaponHandlingSettings();
         if (!runtime.visualAuthorityAvailable) {
             retireDynamicWeaponForInterruptedFrame();
+            _authoredSupportGripIndicator.hide();
             restoreHeldMassMovementSlowdown("frik-unavailable");
             _shoulderStashStates = {};
             _mouthConsumeStates = {};
@@ -3918,6 +3934,7 @@ namespace rock
                 }
             }
             debug::ClearFrame();
+            _authoredSupportGripIndicator.hide();
             clearEquippedWeaponFiringGripInputState();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             auto* snapshotBhk = getPlayerBhkWorld();
@@ -3970,6 +3987,7 @@ namespace rock
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
             debug::ClearFrame();
+            _authoredSupportGripIndicator.hide();
             restoreHeldMassMovementSlowdown("world-unavailable");
             _shoulderStashStates = {};
             _mouthConsumeStates = {};
@@ -4055,6 +4073,7 @@ namespace rock
                     _stableFrameCountAtomic.load(std::memory_order_acquire));
                 debug::ClearFrame();
                 _twoHandedGrip.reset();
+                _authoredSupportGripIndicator.hide();
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
                 clearEquippedWeaponFiringGripInputState();
                 _shoulderStashStates = {};
@@ -4077,6 +4096,7 @@ namespace rock
                 _stableFrameCountAtomic.load(std::memory_order_acquire));
             debug::ClearFrame();
             _twoHandedGrip.reset();
+            _authoredSupportGripIndicator.hide();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
             _shoulderStashStates = {};
@@ -5985,6 +6005,7 @@ namespace rock
             currentHknp == _cachedHknpWorld;
 
         if (worldValid) {
+            _authoredSupportGripIndicator.shutdown();
             auto* hknp = getHknpWorld(_cachedBhkWorld);
             _dynamicWorldCarCollision.restoreAll(_cachedBhkWorld, hknp, "shutdown");
             _touchGrabRuntime.releaseAll(
@@ -6018,6 +6039,7 @@ namespace rock
             destroyBodyBoneCollisions(_cachedBhkWorld);
             destroyHandCollisions(_cachedBhkWorld);
         } else {
+            _authoredSupportGripIndicator.abandonSceneGraph();
             _dynamicWorldCarCollision.abandon();
             _touchGrabRuntime.abandonAll(
                 provider::RockProviderTouchGrabReleaseReasonV1::

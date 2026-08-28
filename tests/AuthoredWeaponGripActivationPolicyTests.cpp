@@ -258,5 +258,92 @@ int main()
     assert(!result.scopePass);
     assert(!result.spatialPass);
 
+    IndicatorInput indicatorInput{
+        .weaponFamily = WeaponFamily::OneHandGun,
+        .authoredSeatWorld = Vec3{ 1.0f, 2.0f, 3.0f },
+        .leftAxisWorld = Vec3{ -2.0f, 0.0f, 0.0f },
+        .downAxisWorld = Vec3{ 0.0f, 0.0f, -4.0f },
+        .activationStateValid = true,
+        .activationSpatialPass = true,
+        .interactionCandidateValid = true,
+        .supportGripAllowed = true,
+    };
+    auto indicator = evaluateIndicator(indicatorInput);
+    bool indicatorChecksPassed =
+        indicator.visible &&
+        near(indicator.markerWorld.x, -4.0f) &&
+        near(indicator.markerWorld.y, 2.0f) &&
+        near(indicator.markerWorld.z, 3.0f);
+    assert(indicator.visible);
+    assert(near(indicator.markerWorld.x, -4.0f));
+    assert(near(indicator.markerWorld.y, 2.0f));
+    assert(near(indicator.markerWorld.z, 3.0f));
+
+    indicatorInput.weaponFamily = WeaponFamily::TwoHandGun;
+    indicator = evaluateIndicator(indicatorInput);
+    indicatorChecksPassed =
+        indicatorChecksPassed &&
+        indicator.visible &&
+        near(indicator.markerWorld.x, 1.0f) &&
+        near(indicator.markerWorld.y, 2.0f) &&
+        near(indicator.markerWorld.z, -2.0f);
+    assert(indicator.visible);
+    assert(near(indicator.markerWorld.x, 1.0f));
+    assert(near(indicator.markerWorld.y, 2.0f));
+    assert(near(indicator.markerWorld.z, -2.0f));
+
+    const auto indicatorHidden = [](const IndicatorInput& input) {
+        return !evaluateIndicator(input).visible;
+    };
+    {
+        auto input = indicatorInput;
+        input.activationStateValid = false;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.activationSpatialPass = false;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.interactionCandidateValid = false;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.supportGripAllowed = false;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.providerPartAuthorityActive = true;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.supportHandHoldingObject = true;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.supportHandWeaponEngaged = true;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.weaponFamily = WeaponFamily::Unsupported;
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    {
+        auto input = indicatorInput;
+        input.downAxisWorld = {};
+        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
+    }
+    assert(indicatorChecksPassed);
+    if (!indicatorChecksPassed) {
+        return 1;
+    }
+
     return 0;
 }

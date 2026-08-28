@@ -33,6 +33,7 @@
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
+#include "physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
@@ -366,6 +367,7 @@ namespace rock
             bool sourceIsWeapon,
             const Hand* sourceHand = nullptr);
 
+        void updateAuthoredSupportGripIndicator();
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
         void logGrabOverlayPointProbe(const PhysicsFrameContext& frame);
 
@@ -498,6 +500,8 @@ namespace rock
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
+        AuthoredSupportGripIndicatorEffect
+            _authoredSupportGripIndicator;
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
         bool _fixedFiringHandIsLeft{ false };
         bool _equippedWeaponHandlingModeInitialized{ false };

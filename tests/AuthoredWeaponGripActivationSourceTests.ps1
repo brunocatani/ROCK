@@ -34,6 +34,10 @@ Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.
     'WeaponFamily::OneHandGun[\s\S]*selectedRegion\s*=\s*ActivationRegion::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*sweptArcDotSquared[\s\S]*ActivationRegion::Arc' `
     'One-hand weapons must expose LEFT only while two-hand weapons use the LEFT-to-DOWN swept activation region.'
 
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
+    'kIndicatorOffsetGameUnits\s*=\s*5\.0f[\s\S]*evaluateIndicator[\s\S]*WeaponFamily::OneHandGun[\s\S]*leftAxisWorld[\s\S]*WeaponFamily::TwoHandGun[\s\S]*downAxisWorld' `
+    'The gameplay indicator must retain the fixed five-unit LEFT/DOWN family anchors.'
+
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshAuthoredSupportGripActivationState\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
     'The activation state must consume the shared policy and bounded captured-pose surface witnesses.'
@@ -49,6 +53,34 @@ Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'semanticTargetEligible' `
     'Authored activation must not veto a passing cone because generated contact geometry also owns reload/action/socket metadata.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'finishUpdate[\s\S]{0,2200}getGripOccupancy\(\)[\s\S]{0,1200}supportHandWeaponEngaged[\s\S]{0,1200}evaluateIndicator[\s\S]{0,1200}_authoredSupportGripIndicatorFrame' `
+    'Indicator visibility must be finalized from post-transition hand occupancy on the common update exit.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'authoredInteractionCandidateValid[\s\S]{0,1800}supportGripAllowed[\s\S]{0,800}providerPartAuthorityActive[\s\S]{0,800}supportHandHoldingObject' `
+    'The gameplay cue must require a routed, unreserved, provider-free candidate and an available support hand.'
+
+Require-Text 'src/physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.cpp' `
+    'Data/Meshes/ROCK/selection_beam_segment\.nif[\s\S]*loadNifFromFile[\s\S]*AttachChild[\s\S]*worldPointToLocal[\s\S]*setVisible\(true, true\)' `
+    'The gameplay cue must preload and reuse the packaged green sphere as a world-root scenegraph effect.'
+
+Require-Text 'src/physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.cpp' `
+    'void\s+AuthoredSupportGripIndicatorEffect::shutdown\(\)[\s\S]*clearMarker\(true\)[\s\S]*void\s+AuthoredSupportGripIndicatorEffect::abandonSceneGraph\(\)[\s\S]*clearMarker\(false\)' `
+    'The gameplay cue must distinguish valid detach from stale-world abandonment.'
+
+Reject-Text 'src/physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.cpp' `
+    'DebugBodyOverlay|PhysicsInteractionDebugOverlay|debug::' `
+    'The gameplay indicator must not depend on debug-overlay admission or rendering.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    '_authoredSupportGripIndicator\.preload\(\)[\s\S]*updateAuthoredSupportGripIndicator\(\);[\s\S]*publishDebugBodyOverlay\(frame\)' `
+    'PhysicsInteraction must preload and update the gameplay cue independently before debug publication.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'if \(worldValid\)[\s\S]{0,400}_authoredSupportGripIndicator\.shutdown\(\)[\s\S]*else[\s\S]{0,400}_authoredSupportGripIndicator\.abandonSceneGraph\(\)' `
+    'Physics shutdown must preserve the cue scene-node valid/stale world distinction.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*drawWireSweptActivationRegion[\s\S]*ENFORCED AUTHORED ACTIVATION' `
