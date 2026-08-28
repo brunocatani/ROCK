@@ -7,7 +7,22 @@
 namespace rock::weapon_classification_policy
 {
     inline constexpr std::uint32_t kRightHandEquipSlotFormID = 0x00013F42u;
+    inline constexpr std::uint32_t kBothHandsLeftOptionalEquipSlotFormID =
+        0x0004334Du;
     inline constexpr std::uint32_t kBothHandsEquipSlotFormID = 0x00013F45u;
+
+    [[nodiscard]] constexpr bool isOneHandGunBehaviorSlot(
+        const std::uint32_t formID) noexcept
+    {
+        return formID == kRightHandEquipSlotFormID ||
+               formID == kBothHandsLeftOptionalEquipSlotFormID;
+    }
+
+    [[nodiscard]] constexpr bool isTwoHandGunBehaviorSlot(
+        const std::uint32_t formID) noexcept
+    {
+        return formID == kBothHandsEquipSlotFormID;
+    }
 
     struct Input
     {
@@ -82,14 +97,14 @@ namespace rock::weapon_classification_policy
             has(WeaponKeywordFlag::Syringer);
 
         if (pistolKeyword && rifleKeyword) {
-            if (input.effectiveEquipSlotFormID == kRightHandEquipSlotFormID) {
+            if (isOneHandGunBehaviorSlot(input.effectiveEquipSlotFormID)) {
                 return {
                     .sizeClass = WeaponSizeClass::Pistol,
                     .source = WeaponClassificationSource::EquipSlot,
                     .resolved = true,
                 };
             }
-            if (input.effectiveEquipSlotFormID == kBothHandsEquipSlotFormID) {
+            if (isTwoHandGunBehaviorSlot(input.effectiveEquipSlotFormID)) {
                 return {
                     .sizeClass = WeaponSizeClass::Rifle,
                     .source = WeaponClassificationSource::EquipSlot,

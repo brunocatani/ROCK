@@ -24,14 +24,20 @@ int main()
         .equippedWeaponPresent = true,
     }) == WeaponFamily::TwoHandGun);
     static_assert(resolveWeaponFamily(WeaponFamilyInput{
+        .effectiveEquipSlotFormID =
+            kBothHandsLeftOptionalEquipSlotFormID,
+        .equippedWeaponPresent = true,
+    }) == WeaponFamily::OneHandGun);
+    static_assert(resolveWeaponFamily(WeaponFamilyInput{
         .effectiveEquipSlotFormID = kRightHandEquipSlotFormID,
         .equippedWeaponPresent = true,
         .meleeOrUnarmed = true,
     }) == WeaponFamily::Unsupported);
     static_assert(resolveWeaponFamily(WeaponFamilyInput{
-        .effectiveEquipSlotFormID = kBothHandsEquipSlotFormID,
+        .effectiveEquipSlotFormID =
+            kBothHandsLeftOptionalEquipSlotFormID,
         .equippedWeaponPresent = true,
-        .heavyGun = true,
+        .meleeOrUnarmed = true,
     }) == WeaponFamily::Unsupported);
     static_assert(resolveWeaponFamily(WeaponFamilyInput{
         .effectiveEquipSlotFormID = 0xDEADBEEFu,
@@ -58,6 +64,21 @@ int main()
         .weaponFamily = WeaponFamily::OneHandGun,
         .authoredSeatWorld = origin,
         .liveProbeWorld = Vec3{ 5.0f, 0.0f, 0.0f },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 12.0f,
+    });
+    assert(!result.directionPass);
+    assert(!result.spatialPass);
+
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = resolveWeaponFamily(WeaponFamilyInput{
+            .effectiveEquipSlotFormID =
+                kBothHandsLeftOptionalEquipSlotFormID,
+            .equippedWeaponPresent = true,
+        }),
+        .authoredSeatWorld = origin,
+        .liveProbeWorld = Vec3{ 0.0f, 0.0f, -5.0f },
         .leftAxisWorld = left,
         .downAxisWorld = down,
         .radialCapGameUnits = 12.0f,

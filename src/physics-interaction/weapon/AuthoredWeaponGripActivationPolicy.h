@@ -10,6 +10,8 @@ namespace rock::authored_weapon_grip_activation_policy
 {
     inline constexpr std::uint32_t kRightHandEquipSlotFormID =
         weapon_classification_policy::kRightHandEquipSlotFormID;
+    inline constexpr std::uint32_t kBothHandsLeftOptionalEquipSlotFormID =
+        weapon_classification_policy::kBothHandsLeftOptionalEquipSlotFormID;
     inline constexpr std::uint32_t kBothHandsEquipSlotFormID =
         weapon_classification_policy::kBothHandsEquipSlotFormID;
     inline constexpr float kActivationHalfAngleDegrees = 45.0f;
@@ -36,7 +38,6 @@ namespace rock::authored_weapon_grip_activation_policy
         std::uint32_t effectiveEquipSlotFormID{ 0 };
         bool equippedWeaponPresent{ false };
         bool meleeOrUnarmed{ false };
-        bool heavyGun{ false };
     };
 
     [[nodiscard]] constexpr WeaponFamily resolveWeaponFamily(
@@ -45,13 +46,22 @@ namespace rock::authored_weapon_grip_activation_policy
         if (!input.equippedWeaponPresent) {
             return WeaponFamily::Unknown;
         }
-        if (input.meleeOrUnarmed || input.heavyGun) {
+        if (input.meleeOrUnarmed) {
             return WeaponFamily::Unsupported;
         }
-        if (input.effectiveEquipSlotFormID == kRightHandEquipSlotFormID) {
+        /*
+         * Support entry follows the effective BGSEquipType behavior, not the
+         * weapon's size class. Heavy guns with a verified player-hand slot and
+         * a complete authored pose use the same spatial contract; the later
+         * identity, generation, surface, and finger-pose gates still fail
+         * closed when that runtime evidence is unavailable.
+         */
+        if (weapon_classification_policy::isOneHandGunBehaviorSlot(
+                input.effectiveEquipSlotFormID)) {
             return WeaponFamily::OneHandGun;
         }
-        if (input.effectiveEquipSlotFormID == kBothHandsEquipSlotFormID) {
+        if (weapon_classification_policy::isTwoHandGunBehaviorSlot(
+                input.effectiveEquipSlotFormID)) {
             return WeaponFamily::TwoHandGun;
         }
         return WeaponFamily::Unknown;

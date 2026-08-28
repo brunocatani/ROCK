@@ -45,6 +45,20 @@ int main()
     static_assert(convertedPistol.sizeClass == WeaponSizeClass::Rifle);
     static_assert(convertedPistol.source == WeaponClassificationSource::EquipSlot);
 
+    constexpr auto optionallySupportedPistol = classify({
+        .keywordFlags = flags(
+            WeaponKeywordFlag::Pistol,
+            WeaponKeywordFlag::Rifle),
+        .effectiveEquipSlotFormID =
+            kBothHandsLeftOptionalEquipSlotFormID,
+    });
+    static_assert(
+        optionallySupportedPistol.sizeClass == WeaponSizeClass::Pistol);
+    static_assert(
+        optionallySupportedPistol.source ==
+        WeaponClassificationSource::EquipSlot);
+    static_assert(optionallySupportedPistol.resolved);
+
     constexpr auto unresolvedConflictingKeywords = classify({
         .keywordFlags = flags(
             WeaponKeywordFlag::Pistol,
@@ -67,6 +81,10 @@ int main()
     }).resolved);
     static_assert(!classify({
         .effectiveEquipSlotFormID = kBothHandsEquipSlotFormID,
+    }).resolved);
+    static_assert(!classify({
+        .effectiveEquipSlotFormID =
+            kBothHandsLeftOptionalEquipSlotFormID,
     }).resolved);
     static_assert(!classify({}).resolved);
     static_assert(classify({}).source == WeaponClassificationSource::None);

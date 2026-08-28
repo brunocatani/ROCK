@@ -26,9 +26,9 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
     'baseEquipSlot\s*=\s*weapon->GetEquipSlot\(nullptr\)[\s\S]{0,260}effectiveEquipSlot\s*=\s*weapon->GetEquipSlot\(instanceData\)' `
     'Authored-grip family diagnostics must read both base and effective BGSEquipType behavior slots.'
 
-Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'kRightHandEquipSlotFormID\s*=\s*0x00013F42u[\s\S]{0,160}kBothHandsEquipSlotFormID\s*=\s*0x00013F45u' `
-    'The pure classifier must retain the locally verified RightHand and BothHands behavior-slot identities.'
+Require-Text 'src/physics-interaction/weapon/WeaponClassificationPolicy.h' `
+    'kRightHandEquipSlotFormID\s*=\s*0x00013F42u[\s\S]{0,200}kBothHandsLeftOptionalEquipSlotFormID\s*=\s*[\s\r\n]*0x0004334Du[\s\S]{0,200}kBothHandsEquipSlotFormID\s*=\s*0x00013F45u' `
+    'The shared classifier must retain the locally verified RightHand, BothHandsLeftOptional, and BothHands behavior-slot identities.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
     'WeaponFamily::OneHandGun[\s\S]*selectedCone\s*=\s*AllowedCone::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*leftPass\s*\|\|\s*downPass' `

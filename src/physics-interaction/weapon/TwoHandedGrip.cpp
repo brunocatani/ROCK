@@ -2998,9 +2998,6 @@ namespace rock
             identity.effectiveEquipSlotUsesInstanceData;
         const bool meleeOrUnarmed =
             identity.sizeClass == WeaponSizeClass::Melee;
-        const bool heavyGun = hasWeaponKeywordFlag(
-            identity.keywordFlags,
-            WeaponKeywordFlag::HeavyGun);
         snapshot.weaponFamily =
             authored_weapon_grip_activation_policy::resolveWeaponFamily(
                 authored_weapon_grip_activation_policy::WeaponFamilyInput{
@@ -3008,7 +3005,6 @@ namespace rock
                         identity.effectiveEquipSlotFormID,
                     .equippedWeaponPresent = identity.hasEquippedWeapon,
                     .meleeOrUnarmed = meleeOrUnarmed,
-                    .heavyGun = heavyGun,
                 });
 
         const bool canonicalCurrent =
