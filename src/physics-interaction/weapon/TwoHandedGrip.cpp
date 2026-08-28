@@ -5540,21 +5540,45 @@ namespace rock
                             inputToGripTargetLocal,
                         calibratedPrimaryTransform,
                         calibratedSupportTransform);
-            if (inputBaselineResolved) {
+            /*
+             * Dynamic support grabs have TWO intended behaviors, selected by
+             * the grabbed part kind. This split is deliberate product
+             * behavior, not a workaround - keep both paths when refactoring.
+             *
+             * 1) Delta-preserving parts (Magazine, Bolt, ChargingHandle):
+             *    the captured tandem relation is kept as-is for the whole
+             *    hold. The resolved targets start with zero solver error, so
+             *    only post-capture hand deltas move the part/weapon and the
+             *    physical controller-to-seat gap from the accept moment is
+             *    intentionally preserved. These are manipulation parts: the
+             *    player grabs them at a distance and pulls/pushes relative
+             *    to where the grab began, and snapping the seat onto the
+             *    controller would yank the manipulation stroke.
+             *
+             * 2) Every other part (foregrip, handguard, barrel, ...): the
+             *    hold should converge onto the real hand like authored
+             *    grabs, closing the accept-moment gap (alignmentBlend
+             *    below). Without this, a detached grab stayed visibly
+             *    detached for the whole hold.
+             */
+            const bool preserveCaptureDelta =
+                supportGrip.partKind == WeaponPartKind::Magazine ||
+                supportGrip.partKind == WeaponPartKind::Bolt ||
+                supportGrip.partKind == WeaponPartKind::ChargingHandle;
+            if (inputBaselineResolved && !preserveCaptureDelta) {
                 /*
-                 * The captured tandem relation freezes the physical
-                 * controller-to-seat gap from the accept moment into the
-                 * hold: the resolved targets start with zero solver error,
-                 * so only post-capture deltas ever move the weapon and a
-                 * detached grab stays detached. Retarget the support input
-                 * onto the true physical support hand (raw damped driver x
-                 * natural-bone relation; never the rendered hand, which is
-                 * ROCK's own output during the hold) so the seat converges
-                 * onto the real controller the way authored grips do. The
-                 * primary relation stays captured: that hand is already
-                 * seated and anchors weapon translation. If the physical
-                 * frame is unavailable the blend holds and the captured
-                 * tandem target remains the input (previous behavior).
+                 * Behavior 2: retarget the support input onto the true
+                 * physical support hand (raw damped driver x natural-bone
+                 * relation; never the rendered hand, which is ROCK's own
+                 * output during the hold) so the seat converges onto the
+                 * real controller the way authored grips do. The primary
+                 * relation stays captured: that hand is already seated and
+                 * anchors weapon translation. The blend starts at 0 on the
+                 * attach frame (first-publication invariant: attaching must
+                 * not move the weapon) and is advanced only after being
+                 * consumed. If the physical frame is unavailable the blend
+                 * holds and the captured tandem target remains the input
+                 * (behavior 1 as the fail-closed state).
                  */
                 auto& baseline = supportGrip.supportInputBaseline;
                 RE::NiTransform physicalSupportHandWorld{};
