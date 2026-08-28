@@ -200,6 +200,106 @@ namespace rock::weapon_visual_authority_math
 
 namespace rock::weapon_recoil_authority_math
 {
+    /*
+     * Close two-hand support should cut muzzle climb more aggressively than
+     * rearward impulse: the player still feels the shot, but the pistol no
+     * longer inherits the full one-hand angular kick. These are compiled
+     * behavior constants until runtime qualification establishes a stable
+     * tuning contract.
+     */
+    inline constexpr float kVisualOnlySupportTranslationFraction = 0.45f;
+    inline constexpr float kVisualOnlySupportRotationFraction = 0.30f;
+
+    template <class Transform>
+    [[nodiscard]] inline bool tryBuildVisualOnlySupportKick(
+        const Transform& nativeKickLocal,
+        Transform& outControlledKickLocal)
+    {
+        const auto isFiniteKick = [](const Transform& local) {
+            if (!std::isfinite(local.translate.x) ||
+                !std::isfinite(local.translate.y) ||
+                !std::isfinite(local.translate.z) ||
+                !std::isfinite(local.scale) ||
+                std::abs(local.scale) <= 0.000001f) {
+                return false;
+            }
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(local.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+
+        outControlledKickLocal =
+            transform_math::makeIdentityTransform<Transform>();
+        if (!isFiniteKick(nativeKickLocal)) {
+            return false;
+        }
+
+        float nativeQuaternion[4]{};
+        transform_math::niRowsToHavokQuaternion(
+            nativeKickLocal.rotate,
+            nativeQuaternion);
+        float quaternionLengthSquared = 0.0f;
+        for (const float component : nativeQuaternion) {
+            if (!std::isfinite(component)) {
+                return false;
+            }
+            quaternionLengthSquared += component * component;
+        }
+        if (!std::isfinite(quaternionLengthSquared) ||
+            quaternionLengthSquared <= 0.000001f) {
+            return false;
+        }
+        const float inverseQuaternionLength =
+            1.0f / std::sqrt(quaternionLengthSquared);
+        for (float& component : nativeQuaternion) {
+            component *= inverseQuaternionLength;
+        }
+        if (nativeQuaternion[3] < 0.0f) {
+            for (float& component : nativeQuaternion) {
+                component = -component;
+            }
+        }
+
+        const float vectorLength = std::sqrt(
+            nativeQuaternion[0] * nativeQuaternion[0] +
+            nativeQuaternion[1] * nativeQuaternion[1] +
+            nativeQuaternion[2] * nativeQuaternion[2]);
+        float controlledQuaternion[4]{ 0.0f, 0.0f, 0.0f, 1.0f };
+        if (std::isfinite(vectorLength) && vectorLength > 0.000001f) {
+            const float halfAngle = std::atan2(
+                vectorLength,
+                std::clamp(nativeQuaternion[3], -1.0f, 1.0f));
+            const float controlledHalfAngle =
+                halfAngle * kVisualOnlySupportRotationFraction;
+            const float axisScale =
+                std::sin(controlledHalfAngle) / vectorLength;
+            controlledQuaternion[0] = nativeQuaternion[0] * axisScale;
+            controlledQuaternion[1] = nativeQuaternion[1] * axisScale;
+            controlledQuaternion[2] = nativeQuaternion[2] * axisScale;
+            controlledQuaternion[3] = std::cos(controlledHalfAngle);
+        }
+
+        outControlledKickLocal.rotate =
+            transform_math::havokQuaternionToNiRows<
+                decltype(outControlledKickLocal.rotate)>(
+                controlledQuaternion);
+        outControlledKickLocal.translate = {
+            nativeKickLocal.translate.x *
+                kVisualOnlySupportTranslationFraction,
+            nativeKickLocal.translate.y *
+                kVisualOnlySupportTranslationFraction,
+            nativeKickLocal.translate.z *
+                kVisualOnlySupportTranslationFraction,
+        };
+        outControlledKickLocal.scale = 1.0f;
+        return isFiniteKick(outControlledKickLocal);
+    }
+
     template <class Transform>
     [[nodiscard]] inline Transform mirrorLocalAcrossSagittal(
         const Transform& local)

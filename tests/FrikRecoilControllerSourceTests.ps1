@@ -84,12 +84,18 @@ Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     '~TwoHandedGrip\(\)[\s\S]*unregisterWeaponHandRecoilController' `
     'ROCK must unregister the recoil callback before its instance storage is destroyed.'
+Require-Text $Root 'src/physics-interaction/weapon/WeaponSupport.h' `
+    'shouldApplyVisualOnlySupportRecoilAssist[\s\S]{0,500}WeaponSupportAuthorityMode::VisualOnlySupport[\s\S]{0,250}supportGripActive[\s\S]{0,250}!providerAuthorityActive[\s\S]{0,120}!attachOnly' `
+    'Only a committed core visual-only support grip may receive recoil-only authority.'
+Require-Text $Root 'src/physics-interaction/weapon/WeaponAuthority.h' `
+    'kVisualOnlySupportTranslationFraction\s*=\s*0\.45f[\s\S]{0,160}kVisualOnlySupportRotationFraction\s*=\s*0\.30f[\s\S]*tryBuildVisualOnlySupportKick[\s\S]*controlledHalfAngle[\s\S]*kVisualOnlySupportTranslationFraction' `
+    'Close support recoil must use explicit bounded linear and angular fractions.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    '_weaponNodeOwnershipBlockEngaged[\s\S]*_firingHandIsLeft[\s\S]*isManualOwnershipActive\(\)[\s\S]*RecoilHandMask::Primary[\s\S]*RecoilDelivery::Direct[\s\S]*nativeKickLocal' `
-    'ROCK may consume recoil only for its active physical-left firing carry and must preserve the validated native kick directly.'
+    'hasVisualOnlySupportRecoilAssist[\s\S]{0,1800}TwoHandedState::Gripping[\s\S]{0,1800}shouldApplyVisualOnlySupportRecoilAssist[\s\S]*controlWeaponHandRecoil[\s\S]{0,1200}tryBuildVisualOnlySupportKick[\s\S]{0,1300}leftFiringCarryAuthority[\s\S]{0,800}RecoilHandMask::Primary[\s\S]{0,250}RecoilDelivery::Direct[\s\S]{0,250}controlledKickLocal' `
+    'ROCK must add bounded close-support recoil without changing its existing physical-left carry route.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'captureLeftFiringWeaponRecoil\(\*sample\)[\s\S]*weapon_recoil_authority_math::resolveWorldDelta[\s\S]*_leftFiringWeaponRecoilSampleValid\s*=\s*true' `
-    'ROCK must capture the current physical-left weapon recoil without scene-node writes in the callback.'
+    'captureLeftFiringWeaponRecoil\(controlledKickLocal\)[\s\S]*captureLeftFiringWeaponRecoil\([\s\S]{0,220}controlledKickLocal[\s\S]*weapon_recoil_authority_math::resolveWorldDelta\([\s\S]{0,120}controlledKickLocal[\s\S]*_leftFiringWeaponRecoilSampleValid\s*=\s*true' `
+    'ROCK must feed the exact accepted native-or-assisted kick into physical-left weapon publication without callback scene writes.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     '_leftFiringWeaponRecoilReadyThisUpdate[\s\S]{0,700}_firingHandIsLeft[\s\S]{0,300}TwoHandedState::Gripping[\s\S]{0,350}FullTwoHandedSolver[\s\S]{0,1800}composeTransforms\(\s*_leftFiringWeaponRecoilWorldDelta,\s*calibratedPrimaryTransform\)[\s\S]{0,400}_leftFiringWeaponRecoilSupportConstrainedThisUpdate\s*=\s*true' `
     'ROCK must feed physical-left recoil into the full two-hand primary target so the support target constrains the kick.'
@@ -101,7 +107,7 @@ Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'ROCK must skip the terminal raw weapon kick after the full two-hand solver consumed it.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyLeftFiringWeaponRecoil[\s\S]{0,2600}composeTransforms\(\s*_leftFiringWeaponRecoilWorldDelta,\s*weaponNode->world\)' `
-    'ROCK must preserve the direct weapon recoil route for physical-left one-hand and visual-only carry.'
+    'ROCK must preserve the direct weapon recoil route for physical-left one-hand and assisted visual-only carry.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'reconcileDeferredScopeHandAuthority\(weaponNode\);[\s\S]*applyLeftFiringWeaponRecoil\(weaponNode\)[\s\S]*traceNativeScopeTransitionFinalState' `
     'ROCK must finalize left-firing recoil after neutral grip and hand publication but before later presentation passes.'

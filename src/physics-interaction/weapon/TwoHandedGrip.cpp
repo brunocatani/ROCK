@@ -47,7 +47,7 @@ namespace rock
         constexpr const char* WEAPON_COLLISION_HAND_TAG =
             "ROCK_WeaponCollisionHand";
         constexpr const char* WEAPON_NODE_OWNERSHIP_TAG = "ROCK_LeftFiringCarry";
-        constexpr const char* WEAPON_RECOIL_CONTROLLER_TAG = "ROCK_LeftFiringRecoil";
+        constexpr const char* WEAPON_RECOIL_CONTROLLER_TAG = "ROCK_FiringGripRecoil";
         constexpr int GRIP_HAND_POSE_PRIORITY = 100;
         constexpr int WEAPON_COLLISION_HAND_PRIORITY = 110;
         constexpr int RETURN_HAND_VISUAL_PRIORITY = 85;
@@ -1217,6 +1217,30 @@ namespace rock
         }
     }
 
+    bool TwoHandedGrip::hasVisualOnlySupportRecoilAssist() const noexcept
+    {
+        if (_state != TwoHandedState::Gripping ||
+            !_activeWeaponNode ||
+            _activeWeaponGenerationKey == 0 ||
+            _activeEquippedWeaponOwnershipKey == 0 ||
+            (_firingHandIsLeft &&
+                (!_weaponNodeOwnershipBlockEngaged ||
+                    !isManualOwnershipActive()))) {
+            return false;
+        }
+
+        const WeaponPartGrip& supportGrip = partGrip(!_firingHandIsLeft);
+        return supportGrip.weaponGenerationKey ==
+                   _activeWeaponGenerationKey &&
+               supportGrip.gripSequence != 0 &&
+               weapon_support_authority_policy::
+                   shouldApplyVisualOnlySupportRecoilAssist(
+                       _authorityMode,
+                       supportGrip.active,
+                       supportGrip.providerPartAuthority.active,
+                       supportGrip.attachOnly);
+    }
+
     bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(
         const frik::api::FRIKApi::RecoilSample* const sample,
         frik::api::FRIKApi::RecoilResponse* const outResponse,
@@ -1230,11 +1254,26 @@ namespace rock
             return false;
         }
 
-        self->captureLeftFiringWeaponRecoil(*sample);
+        RE::NiTransform controlledKickLocal = sample->nativeKickLocal;
+        const bool visualOnlySupportRecoilAssist =
+            self->hasVisualOnlySupportRecoilAssist() &&
+            weapon_recoil_authority_math::tryBuildVisualOnlySupportKick(
+                sample->nativeKickLocal,
+                controlledKickLocal);
 
-        if (!self->_weaponNodeOwnershipBlockEngaged ||
-            !self->_firingHandIsLeft ||
-            !self->isManualOwnershipActive()) {
+        /*
+         * Physical-left carry already owns a recoil route because hFRIK's
+         * native right-hand weapon glue is blocked. Close visual support adds
+         * the only physical-right route: it changes the primary recoil sample,
+         * never the support controller or steady weapon authority.
+         */
+        const bool leftFiringCarryAuthority =
+            self->_weaponNodeOwnershipBlockEngaged &&
+            self->_firingHandIsLeft &&
+            self->isManualOwnershipActive();
+        self->captureLeftFiringWeaponRecoil(controlledKickLocal);
+        if (!leftFiringCarryAuthority &&
+            !visualOnlySupportRecoilAssist) {
             return false;
         }
 
@@ -1243,12 +1282,12 @@ namespace rock
         outResponse->handMask = static_cast<std::uint32_t>(
             frik::api::FRIKApi::RecoilHandMask::Primary);
         outResponse->delivery = frik::api::FRIKApi::RecoilDelivery::Direct;
-        outResponse->controlledKickLocal = sample->nativeKickLocal;
+        outResponse->controlledKickLocal = controlledKickLocal;
         return true;
     }
 
     void TwoHandedGrip::captureLeftFiringWeaponRecoil(
-        const frik::api::FRIKApi::RecoilSample& sample) noexcept
+        const RE::NiTransform& controlledKickLocal) noexcept
     {
         ++_weaponRecoilSampleSequence;
         _leftFiringWeaponRecoilSampleValid = false;
@@ -1258,7 +1297,7 @@ namespace rock
         if (!_weaponNodeOwnershipBlockEngaged ||
             !_firingHandIsLeft ||
             !isManualOwnershipActive() ||
-            !isFiniteTransform(sample.nativeKickLocal)) {
+            !isFiniteTransform(controlledKickLocal)) {
             return;
         }
 
@@ -1295,7 +1334,7 @@ namespace rock
             identity;
         const RE::NiTransform recoilWorldDelta =
             weapon_recoil_authority_math::resolveWorldDelta(
-                sample.nativeKickLocal,
+                controlledKickLocal,
                 kickParent->world,
                 primaryWandWorld,
                 offhandWandWorld,
@@ -5829,13 +5868,15 @@ namespace rock
                 "authored-position-only" :
                 "authored-ramped";
         }
+        const bool visualOnlyRecoilAssist =
+            hasVisualOnlySupportRecoilAssist();
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: grip active weapon='{}', "
             "primaryLocal=({:.3f},{:.3f},{:.3f}), supportLocal=({:.3f},{:.3f},{:.3f}), "
-            "gripSeparation={:.3f}, primaryGripSource={}, primaryGripConfidence={:.2f}, partKind={}, pose={}, authorityMode={}, supportBaseline={}, generation={:016X}",
+            "gripSeparation={:.3f}, primaryGripSource={}, primaryGripConfidence={:.2f}, partKind={}, pose={}, authorityMode={}, recoilAssist={}, supportBaseline={}, generation={:016X}",
             weaponNode->name.c_str(), _primaryGripLocal.x, _primaryGripLocal.y, _primaryGripLocal.z, supportGrip.gripLocal.x, supportGrip.gripLocal.y, supportGrip.gripLocal.z,
             _lockedGripSeparationWorld, reuseRightFiringCanonicalGrip ? "pre-scope-canonical" : (_scopeMenuOpenThisFrame ? "frik-driver-reconstructed" : "root-flattened"),
-            _primaryGripConfidence, static_cast<int>(supportGrip.partKind), static_cast<int>(supportGrip.gripPose), static_cast<int>(_authorityMode), supportBaselineName, _activeWeaponGenerationKey);
+            _primaryGripConfidence, static_cast<int>(supportGrip.partKind), static_cast<int>(supportGrip.gripPose), static_cast<int>(_authorityMode), visualOnlyRecoilAssist ? "enabled" : "disabled", supportBaselineName, _activeWeaponGenerationKey);
 
         if (useDynamicSupportAcquisition) {
             beginDynamicSupportAcquisition(

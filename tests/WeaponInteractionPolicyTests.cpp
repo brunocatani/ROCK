@@ -1186,6 +1186,48 @@ int main()
     }
 
     {
+        TestTransform nativeKickLocal =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        nativeKickLocal.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            60.0f);
+        nativeKickLocal.translate = { 10.0f, -4.0f, 2.0f };
+
+        TestTransform controlledKickLocal{};
+        ok &= expectTrue(
+            "visual-only support builds a controlled rigid recoil sample",
+            rock::weapon_recoil_authority_math::
+                tryBuildVisualOnlySupportKick(
+                    nativeKickLocal,
+                    controlledKickLocal));
+        TestTransform expectedControlledKick =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        expectedControlledKick.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            18.0f);
+        expectedControlledKick.translate = { 4.5f, -1.8f, 0.9f };
+        ok &= expectTransformNear(
+            "visual-only support reduces angular recoil more than linear impulse",
+            controlledKickLocal,
+            expectedControlledKick);
+
+        TestTransform invalidKick = nativeKickLocal;
+        invalidKick.rotate.entry[0][0] =
+            (std::numeric_limits<float>::quiet_NaN)();
+        TestTransform rejectedKick = nativeKickLocal;
+        ok &= expectFalse(
+            "visual-only support rejects a non-finite native kick",
+            rock::weapon_recoil_authority_math::
+                tryBuildVisualOnlySupportKick(
+                    invalidKick,
+                    rejectedKick));
+        ok &= expectTransformNear(
+            "invalid visual-only recoil fails closed to identity",
+            rejectedKick,
+            rock::transform_math::makeIdentityTransform<TestTransform>());
+    }
+
+    {
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
@@ -2062,6 +2104,7 @@ int main()
     using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
     using rock::weapon_support_authority_policy::canPromoteSupportGripToFiringGrip;
     using rock::weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode;
+    using rock::weapon_support_authority_policy::shouldApplyVisualOnlySupportRecoilAssist;
     using rock::weapon_support_authority_policy::WeaponSupportAuthorityMode;
     ok &= expectTrue("firing-grip proximity contract always applies to eligible equipped weapons",
         canApplyFiringGripProximityAuthority(false));
@@ -2076,6 +2119,36 @@ int main()
     ok &= expectEqual("any weapon grab away from the firing grip takes full authority",
         resolveFiringGripProximityAuthorityMode(6.5f, 6.0f),
         WeaponSupportAuthorityMode::FullTwoHandedSolver);
+    ok &= expectTrue("active core visual-only support receives recoil-only authority",
+        shouldApplyVisualOnlySupportRecoilAssist(
+            WeaponSupportAuthorityMode::VisualOnlySupport,
+            true,
+            false,
+            false));
+    ok &= expectFalse("full two-handed support keeps its geometric recoil solve",
+        shouldApplyVisualOnlySupportRecoilAssist(
+            WeaponSupportAuthorityMode::FullTwoHandedSolver,
+            true,
+            false,
+            false));
+    ok &= expectFalse("inactive visual support never changes recoil",
+        shouldApplyVisualOnlySupportRecoilAssist(
+            WeaponSupportAuthorityMode::VisualOnlySupport,
+            false,
+            false,
+            false));
+    ok &= expectFalse("provider visual glue never inherits recoil authority",
+        shouldApplyVisualOnlySupportRecoilAssist(
+            WeaponSupportAuthorityMode::VisualOnlySupport,
+            true,
+            true,
+            false));
+    ok &= expectFalse("AttachOnly visual glue never inherits recoil authority",
+        shouldApplyVisualOnlySupportRecoilAssist(
+            WeaponSupportAuthorityMode::VisualOnlySupport,
+            true,
+            false,
+            true));
     ok &= expectTrue("active support may attempt handoff regardless of authored or dynamic pose selection",
         canPromoteSupportGripToFiringGrip(true, false));
     ok &= expectFalse("inactive support cannot attempt handoff",

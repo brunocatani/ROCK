@@ -787,8 +787,10 @@ namespace rock
             frik::api::FRIKApi::RecoilResponse* outResponse,
             void* userData) noexcept;
 
+        [[nodiscard]] bool hasVisualOnlySupportRecoilAssist() const noexcept;
+
         void captureLeftFiringWeaponRecoil(
-            const frik::api::FRIKApi::RecoilSample& sample) noexcept;
+            const RE::NiTransform& controlledKickLocal) noexcept;
         bool applyLeftFiringWeaponRecoil(RE::NiNode* weaponNode);
 
         struct LockedHandVisualLerpState
@@ -1699,9 +1701,10 @@ namespace rock
          * game thread. The sequence makes a sample valid for one ROCK update
          * only. It prevents a skipped callback from reusing an old gun kick.
          * Full two-hand left carry consumes that sample in the primary-hand
-         * solver target; one-hand and visual-only carry consume it in the final
-         * direct weapon publication. These routes must remain mutually
-         * exclusive or supported left firing regresses to one-hand recoil.
+         * solver target; one-hand carry consumes the native sample in the final
+         * direct weapon publication; close visual support consumes the
+         * attenuated sample there. These routes must remain mutually exclusive
+         * or supported left firing regresses to one-hand recoil.
          */
         RE::NiTransform _leftFiringWeaponRecoilWorldDelta{};
         std::uint64_t _weaponRecoilSampleSequence{ 0 };

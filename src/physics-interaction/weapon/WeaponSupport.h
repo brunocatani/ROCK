@@ -66,6 +66,24 @@ namespace rock::weapon_support_authority_policy
         return true;
     }
 
+    /*
+     * A close core support grip cannot safely steer the weapon because its two
+     * controller anchors are nearly coincident, but it still represents a real
+     * two-hand firing hold. Give that hold recoil-only authority without
+     * upgrading provider AttachOnly glue or changing the full two-hand solver.
+     */
+    inline constexpr bool shouldApplyVisualOnlySupportRecoilAssist(
+        WeaponSupportAuthorityMode mode,
+        bool supportGripActive,
+        bool providerAuthorityActive,
+        bool attachOnly)
+    {
+        return mode == WeaponSupportAuthorityMode::VisualOnlySupport &&
+               supportGripActive &&
+               !providerAuthorityActive &&
+               !attachOnly;
+    }
+
     inline constexpr bool shouldUseDynamicSupportAcquisition(
         WeaponSupportAuthorityMode mode,
         bool authoredSupportGrip,
