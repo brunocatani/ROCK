@@ -1067,7 +1067,16 @@ namespace rock
             RE::NiNode* weaponNode,
             RE::NiTransform& outPhysicalHandWorld,
             RE::NiTransform& outPresentedHandWorld,
-            RE::NiTransform& outWeaponWorld) const;
+            RE::NiTransform& outWeaponWorld,
+            RE::NiTransform* outDampedAimCarrierWorld = nullptr);
+        bool captureLeftFiringDampedFollowFrame(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& leftWandWorld,
+            const RE::NiTransform& physicalLeftHandWorld);
+        bool hasLeftFiringDampedFollowFrame(
+            const RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey) const;
         void refreshNaturalHandInWandFrames();
         void clearRightFiringHandCanonicalFrame();
         bool hasRightFiringHandCanonicalFrame(
@@ -1376,6 +1385,16 @@ namespace rock
             bool valid{ false };
         };
         RightNativeWeaponAimFrame _rightNativeWeaponAimFrame{};
+        struct LeftFiringDampedFollowFrame
+        {
+            RE::NiTransform handInWandOrientation{};
+            // Non-owning identity witness only; compared, never dereferenced.
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t weaponOwnershipKey{ 0 };
+            bool valid{ false };
+        };
+        LeftFiringDampedFollowFrame _leftFiringDampedFollowFrame{};
         std::array<RE::NiTransform, 15> _rightFiringFingerLocalTransforms{};
         std::array<RE::NiTransform, 15> _leftFiringFingerLocalTransforms{};
         std::uint16_t _rightFiringFingerLocalTransformMask{ 0 };

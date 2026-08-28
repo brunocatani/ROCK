@@ -2885,6 +2885,7 @@ namespace rock
         restoreFrikPrimaryWeaponPose();
         clearRightFiringHandCanonicalFrame();
         _rightNativeWeaponAimFrame = {};
+        _leftFiringDampedFollowFrame = {};
         _rightNaturalBoneInWand = {};
         _leftNaturalBoneInWand = {};
         _rightNaturalBoneInDampedDriver = {};
@@ -5320,6 +5321,7 @@ namespace rock
         // ownership the weapon is FRIK/native-carried by the right hand.
         _firingHandIsLeft = false;
         _leftFiringPositionOnlyTracePending = false;
+        _leftFiringDampedFollowFrame = {};
 
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: grip released");
     }
@@ -5559,6 +5561,16 @@ namespace rock
                 _rightNativeWeaponAimFrame.weaponNodeIdentity =
                     currentWeaponNode;
                 _rightNativeWeaponAimFrame.weaponGenerationKey = 0;
+                if (_leftFiringDampedFollowFrame.valid) {
+                    if (_leftFiringDampedFollowFrame.weaponOwnershipKey !=
+                        currentEquippedWeaponOwnershipKey) {
+                        _leftFiringDampedFollowFrame = {};
+                    } else {
+                        _leftFiringDampedFollowFrame.weaponNodeIdentity =
+                            currentWeaponNode;
+                        _leftFiringDampedFollowFrame.weaponGenerationKey = 0;
+                    }
+                }
             }
             return true;
         }
@@ -5600,6 +5612,17 @@ namespace rock
                 currentWeaponNode;
             _rightNativeWeaponAimFrame.weaponGenerationKey =
                 currentWeaponGenerationKey;
+            if (_leftFiringDampedFollowFrame.valid) {
+                if (_leftFiringDampedFollowFrame.weaponOwnershipKey !=
+                    currentEquippedWeaponOwnershipKey) {
+                    _leftFiringDampedFollowFrame = {};
+                } else {
+                    _leftFiringDampedFollowFrame.weaponNodeIdentity =
+                        currentWeaponNode;
+                    _leftFiringDampedFollowFrame.weaponGenerationKey =
+                        currentWeaponGenerationKey;
+                }
+            }
         }
 
         if (generationChanged || weaponRootChanged) {
@@ -6228,6 +6251,9 @@ namespace rock
         beginHandVisualReturn(_firingHandIsLeft, "primary-detach-part-carry");
         clearPrimaryGripFingerPose(_firingHandIsLeft);
         clearPrimaryGripWorldAuthority(_firingHandIsLeft);
+        if (_firingHandIsLeft) {
+            _leftFiringDampedFollowFrame = {};
+        }
         _primaryHandVisualLerp = {};
         partGrip(!_firingHandIsLeft).visualLerp = {};
         lockPartGripToWeaponRoot(!_firingHandIsLeft);
@@ -6781,11 +6807,13 @@ namespace rock
         RE::NiTransform physicalHandWorld{};
         RE::NiTransform presentedHandWorld{};
         RE::NiTransform solvedWeaponWorld{};
+        RE::NiTransform dampedAimCarrierWorld{};
         if (!tryResolveLeftPositionOnlyCarryFrames(
                 weaponNode,
                 physicalHandWorld,
                 presentedHandWorld,
-                solvedWeaponWorld)) {
+                solvedWeaponWorld,
+                &dampedAimCarrierWorld)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(
                 Weapon,
@@ -6840,11 +6868,12 @@ namespace rock
             auto* playerNodes = f4vr::getPlayerNodes();
             RE::NiNode* leftWand =
                 playerNodes ? playerNodes->SecondaryWandNode : nullptr;
-            if (leftWand && isFiniteTransform(leftWand->world)) {
-                const RE::NiTransform weaponInLeftWand =
+            if (leftWand && isFiniteTransform(leftWand->world) &&
+                isInvertibleTransform(dampedAimCarrierWorld)) {
+                const RE::NiTransform weaponInLeftAimCarrier =
                     transform_math::composeTransforms(
                         transform_math::invertTransform(
-                            leftWand->world),
+                            dampedAimCarrierWorld),
                         weaponNode->world);
                 const RE::NiTransform rightNativeOrientation =
                     left_firing_position_only_math::orientationOnly(
@@ -6852,7 +6881,7 @@ namespace rock
                             weaponInWandOrientation);
                 const RE::NiTransform leftAppliedOrientation =
                     left_firing_position_only_math::orientationOnly(
-                        weaponInLeftWand);
+                        weaponInLeftAimCarrier);
                 const auto axisInFrame = [](
                                              const RE::NiTransform& frame,
                                              const RE::NiPoint3& axis) {
@@ -6912,9 +6941,15 @@ namespace rock
                             physicalHandWorld.rotate,
                             presentedHandWorld.rotate) *
                     RADIANS_TO_DEGREES;
+                const float dampedFollowDegrees =
+                    weapon_support_acquisition_math::
+                        rotationDistanceRadians(
+                            leftWand->world.rotate,
+                            dampedAimCarrierWorld.rotate) *
+                    RADIANS_TO_DEGREES;
                 ROCK_LOG_INFO(
                     Weapon,
-                    "TwoHandedGrip: left position-only normalization generation={:016X} ownership={:016X} rightNativeAxes=(+X:{:.3f}/{:.3f}/{:.3f},+Y:{:.3f}/{:.3f}/{:.3f},+Z:{:.3f}/{:.3f}/{:.3f}) leftAppliedAxes=(-X:{:.3f}/{:.3f}/{:.3f},+Y:{:.3f}/{:.3f}/{:.3f},+Z:{:.3f}/{:.3f}/{:.3f}) gripError={:.4f}gu authoredHandCorrection={:.2f}deg trim=(yaw={:.2f},pitch={:.2f},offset={:.2f}/{:.2f}/{:.2f})",
+                    "TwoHandedGrip: left position-only normalization generation={:016X} ownership={:016X} rightNativeAxes=(+X:{:.3f}/{:.3f}/{:.3f},+Y:{:.3f}/{:.3f}/{:.3f},+Z:{:.3f}/{:.3f}/{:.3f}) leftAppliedAxes=(-X:{:.3f}/{:.3f}/{:.3f},+Y:{:.3f}/{:.3f}/{:.3f},+Z:{:.3f}/{:.3f}/{:.3f}) gripError={:.4f}gu authoredHandCorrection={:.2f}deg dampedFollow={:.2f}deg trim=(yaw={:.2f},pitch={:.2f},offset={:.2f}/{:.2f}/{:.2f})",
                     _activeWeaponGenerationKey,
                     _activeEquippedWeaponOwnershipKey,
                     rightNativeLateral.x,
@@ -6937,6 +6972,7 @@ namespace rock
                     leftAppliedUp.z,
                     gripError,
                     authoredHandCorrectionDegrees,
+                    dampedFollowDegrees,
                     _handlingSettings.leftFiringAimYawDegrees,
                     _handlingSettings.leftFiringAimPitchDegrees,
                     _handlingSettings.
@@ -6951,26 +6987,39 @@ namespace rock
 
         /*
          * Carry-time aim diagnostic (~3s cadence): the final weapon +Y axis in
-         * left-wand space. It should remain the mirrored native right axis
-         * plus only the explicit global aim trim; authored wrist correction
-         * is now published independently above.
+         * the hFRIK-damped aim carrier. It remains the mirrored native right
+         * axis plus only explicit aim trim while the carrier absorbs the hand
+         * damping delta shared by the weapon and authored wrist.
          */
         if (++_leftFiringAimLogCounter >= 270) {
             _leftFiringAimLogCounter = 0;
             auto* playerNodes = f4vr::getPlayerNodes();
-            if (playerNodes && playerNodes->SecondaryWandNode && isFiniteTransform(playerNodes->SecondaryWandNode->world)) {
-                const RE::NiTransform weaponInLeftWandNow = transform_math::composeTransforms(
-                    transform_math::invertTransform(playerNodes->SecondaryWandNode->world), weaponNode->world);
+            RE::NiNode* leftWand =
+                playerNodes ? playerNodes->SecondaryWandNode : nullptr;
+            if (isInvertibleTransform(dampedAimCarrierWorld) &&
+                leftWand && isFiniteTransform(leftWand->world)) {
+                const RE::NiTransform weaponInDampedCarrier =
+                    transform_math::composeTransforms(
+                        transform_math::invertTransform(
+                            dampedAimCarrierWorld),
+                        weaponNode->world);
                 const RE::NiPoint3 barrelNow =
                     transform_math::localVectorToWorld(
                         left_firing_position_only_math::orientationOnly(
-                            weaponInLeftWandNow),
+                            weaponInDampedCarrier),
                         RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+                const float dampedFollowDegrees =
+                    weapon_support_acquisition_math::
+                        rotationDistanceRadians(
+                            leftWand->world.rotate,
+                            dampedAimCarrierWorld.rotate) *
+                    RADIANS_TO_DEGREES;
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: left-firing carry aim barrelInLeftWand=({:.3f},{:.3f},{:.3f})",
+                    "TwoHandedGrip: left-firing carry aim barrelInDampedCarrier=({:.3f},{:.3f},{:.3f}) dampedFollow={:.2f}deg",
                     barrelNow.x,
                     barrelNow.y,
-                    barrelNow.z);
+                    barrelNow.z,
+                    dampedFollowDegrees);
             }
         }
         return true;
@@ -9185,15 +9234,77 @@ namespace rock
                    _rightNativeWeaponAimFrame.weaponInWandOrientation);
     }
 
+    bool TwoHandedGrip::captureLeftFiringDampedFollowFrame(
+        RE::NiNode* weaponNode,
+        const RE::NiTransform& leftWandWorld,
+        const RE::NiTransform& physicalLeftHandWorld)
+    {
+        if (!weaponNode || weaponNode != _activeWeaponNode ||
+            !_firingHandIsLeft ||
+            _activeEquippedWeaponOwnershipKey == 0 ||
+            !isInvertibleTransform(leftWandWorld) ||
+            !isUsableHandAuthorityTransform(physicalLeftHandWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform handInWand =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(leftWandWorld),
+                physicalLeftHandWorld);
+        constexpr float kMaxHandToWandDistance = 30.0f;
+        if (!isFiniteTransform(handInWand) ||
+            std::sqrt(dot(
+                handInWand.translate,
+                handInWand.translate)) > kMaxHandToWandDistance) {
+            return false;
+        }
+
+        _leftFiringDampedFollowFrame = LeftFiringDampedFollowFrame{
+            .handInWandOrientation =
+                left_firing_position_only_math::orientationOnly(
+                    handInWand),
+            .weaponNodeIdentity = weaponNode,
+            .weaponGenerationKey = _activeWeaponGenerationKey,
+            .weaponOwnershipKey = _activeEquippedWeaponOwnershipKey,
+            .valid = true,
+        };
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: left firing damped-follow reference captured generation={:016X} ownership={:016X}",
+            _activeWeaponGenerationKey,
+            _activeEquippedWeaponOwnershipKey);
+        return true;
+    }
+
+    bool TwoHandedGrip::hasLeftFiringDampedFollowFrame(
+        const RE::NiNode* weaponNode,
+        const std::uint64_t weaponGenerationKey,
+        const std::uint64_t weaponOwnershipKey) const
+    {
+        return weaponNode && weaponOwnershipKey != 0 &&
+               _leftFiringDampedFollowFrame.valid &&
+               _leftFiringDampedFollowFrame.weaponNodeIdentity == weaponNode &&
+               _leftFiringDampedFollowFrame.weaponGenerationKey ==
+                   weaponGenerationKey &&
+               _leftFiringDampedFollowFrame.weaponOwnershipKey ==
+                   weaponOwnershipKey &&
+               isFiniteTransform(
+                   _leftFiringDampedFollowFrame.handInWandOrientation);
+    }
+
     bool TwoHandedGrip::tryResolveLeftPositionOnlyCarryFrames(
         RE::NiNode* weaponNode,
         RE::NiTransform& outPhysicalHandWorld,
         RE::NiTransform& outPresentedHandWorld,
-        RE::NiTransform& outWeaponWorld) const
+        RE::NiTransform& outWeaponWorld,
+        RE::NiTransform* const outDampedAimCarrierWorld)
     {
         outPhysicalHandWorld = {};
         outPresentedHandWorld = {};
         outWeaponWorld = {};
+        if (outDampedAimCarrierWorld) {
+            *outDampedAimCarrierWorld = {};
+        }
         if (!weaponNode || weaponNode != _activeWeaponNode ||
             !_firingHandIsLeft || !_hasFiringHandWeaponLocal ||
             !hasRightNativeWeaponAimFrame(
@@ -9230,6 +9341,30 @@ namespace rock
             return false;
         }
 
+        if (!hasLeftFiringDampedFollowFrame(
+                weaponNode,
+                _activeWeaponGenerationKey,
+                _activeEquippedWeaponOwnershipKey) &&
+            !captureLeftFiringDampedFollowFrame(
+                weaponNode,
+                leftWand->world,
+                outPhysicalHandWorld)) {
+            return false;
+        }
+        const RE::NiTransform dampedAimCarrierWorld =
+            left_firing_position_only_math::
+                resolveDampedAimCarrierWorld(
+                    leftWand->world,
+                    _leftFiringDampedFollowFrame.
+                        handInWandOrientation,
+                    outPhysicalHandWorld);
+        if (!isFiniteTransform(dampedAimCarrierWorld)) {
+            return false;
+        }
+        if (outDampedAimCarrierWorld) {
+            *outDampedAimCarrierWorld = dampedAimCarrierWorld;
+        }
+
         RE::NiTransform leftWeaponInWand =
             left_firing_position_only_math::
                 mirrorRightWeaponInWandOrientation(
@@ -9260,7 +9395,7 @@ namespace rock
         outWeaponWorld =
             left_firing_position_only_math::
                 resolveWeaponWorldPositionOnly(
-                    leftWand->world,
+                    dampedAimCarrierWorld,
                     leftWeaponInWand,
                     weaponNode->world,
                     _primaryGripLocal,
@@ -9799,6 +9934,7 @@ namespace rock
         if (_persistentEquippedCarryActive) {
             _persistentEquippedCarryDetachArmed = false;
         }
+        _leftFiringDampedFollowFrame = {};
         _firingHandIsLeft = isLeft;
         _leftFiringPositionOnlyTracePending = isLeft;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand switched to {} reason={}", isLeft ? "left" : "right", reason ? reason : "unknown");

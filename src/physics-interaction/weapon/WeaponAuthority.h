@@ -497,6 +497,41 @@ namespace rock::left_firing_position_only_math
     }
 
     /*
+     * Reapply hFRIK's real hand damping without asking hFRIK to smooth an
+     * external hand target. The reference hand-in-carrier orientation is
+     * frozen when ROCK takes left-firing authority. On later frames the raw
+     * wand extrapolates that reference while the physical hand follows
+     * hFRIK's damped offset node. Their world-rotation delta is therefore the
+     * exact damping correction already selected by hFRIK. Applying it to the
+     * carrier lets the weapon and authored hand consume one shared filter.
+     * Translation remains owned by the position-only grip solve below.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveDampedAimCarrierWorld(
+        const Transform& rawCarrierWorld,
+        const Transform& referenceHandInCarrierOrientation,
+        const Transform& dampedPhysicalHandWorld)
+    {
+        const Transform rawHandWorldOrientation =
+            transform_math::composeTransforms(
+                orientationOnly(rawCarrierWorld),
+                orientationOnly(referenceHandInCarrierOrientation));
+        const Transform dampingWorldRotation =
+            transform_math::composeTransforms(
+                orientationOnly(dampedPhysicalHandWorld),
+                transform_math::invertTransform(
+                    rawHandWorldOrientation));
+        const Transform dampedCarrierOrientation =
+            transform_math::composeTransforms(
+                orientationOnly(dampingWorldRotation),
+                orientationOnly(rawCarrierWorld));
+
+        Transform result = rawCarrierWorld;
+        result.rotate = dampedCarrierOrientation.rotate;
+        return result;
+    }
+
+    /*
      * Build the left weapon from the mirrored native orientation, then move
      * only its translation until the same weapon-local firing point reaches
      * the physical left-hand target. Scale remains owned by the live weapon.

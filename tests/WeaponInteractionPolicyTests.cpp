@@ -228,6 +228,77 @@ int main()
             mirroredDeterminant,
             1.0f);
 
+        TestTransform rawLeftWandWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        rawLeftWandWorld.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ -0.4f, 0.7f, 0.2f }),
+            28.0f);
+        rawLeftWandWorld.translate = { 15.0f, -6.0f, 11.0f };
+        TestTransform referenceHandInWand =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        referenceHandInWand.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.6f, 0.1f, -0.5f }),
+            -19.0f);
+        referenceHandInWand.translate = { 2.0f, -5.0f, 3.0f };
+        const TestTransform rawReferenceHandWorld =
+            rock::transform_math::composeTransforms(
+                rawLeftWandWorld,
+                referenceHandInWand);
+
+        TestTransform hfrikDampingWorldDelta =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        hfrikDampingWorldDelta.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.2f, -0.3f, 0.8f }),
+            7.0f);
+        hfrikDampingWorldDelta.translate = { -4.0f, 9.0f, 1.0f };
+        const TestTransform dampedPhysicalHandWorld =
+            rock::transform_math::composeTransforms(
+                hfrikDampingWorldDelta,
+                rawReferenceHandWorld);
+        const TestTransform dampedAimCarrierWorld =
+            rock::left_firing_position_only_math::
+                resolveDampedAimCarrierWorld(
+                    rawLeftWandWorld,
+                    referenceHandInWand,
+                    dampedPhysicalHandWorld);
+        TestTransform expectedDampedCarrierWorld = rawLeftWandWorld;
+        expectedDampedCarrierWorld.rotate =
+            rock::transform_math::composeTransforms(
+                rock::left_firing_position_only_math::orientationOnly(
+                    hfrikDampingWorldDelta),
+                rock::left_firing_position_only_math::orientationOnly(
+                    rawLeftWandWorld))
+                .rotate;
+        ok &= expectTransformNear(
+            "hFRIK damped follow applies only the observed hand rotation delta",
+            dampedAimCarrierWorld,
+            expectedDampedCarrierWorld);
+        ok &= expectTransformNear(
+            "zero hFRIK damping delta preserves the raw aim carrier",
+            rock::left_firing_position_only_math::
+                resolveDampedAimCarrierWorld(
+                    rawLeftWandWorld,
+                    referenceHandInWand,
+                    rawReferenceHandWorld),
+            rawLeftWandWorld);
+
+        const TestTransform weaponOnDampedCarrier =
+            rock::transform_math::composeTransforms(
+                dampedAimCarrierWorld,
+                leftWeaponInWand);
+        const TestTransform weaponBackInDampedCarrier =
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(
+                    dampedAimCarrierWorld),
+                weaponOnDampedCarrier);
+        ok &= expectTransformNear(
+            "shared damping preserves mirrored weapon aim in the corrected carrier",
+            weaponBackInDampedCarrier,
+            leftWeaponInWand);
+
         TestTransform leftWandWorld =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         leftWandWorld.rotate = makeAxisAngleRotation(
