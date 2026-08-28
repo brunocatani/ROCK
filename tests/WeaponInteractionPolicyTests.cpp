@@ -2534,6 +2534,26 @@ int main()
     ok &= expectFalse("NonExclusive without a matcher is unusable", semanticsOnly.matched);
     ok &= expectFalse("NonExclusive without a matcher activates nothing", semanticsOnly.whitelistActive);
 
+    {
+        using namespace rock::weapon_interaction_acquisition_policy;
+        State acquisitionState{};
+        ok &= expectEqual("legacy-palm overlap publishes touch acquisition provenance",
+            resolve(acquisitionState, true, true),
+            rock::WeaponInteractionAcquisitionSource::PhysicalContact);
+        ok &= expectEqual("first overlap-gap frame retains touch provenance",
+            resolve(acquisitionState, false, true),
+            rock::WeaponInteractionAcquisitionSource::PhysicalContact);
+        ok &= expectEqual("second overlap-gap frame retains touch provenance",
+            resolve(acquisitionState, false, true),
+            rock::WeaponInteractionAcquisitionSource::PhysicalContact);
+        ok &= expectEqual("probe provenance begins after the bounded touch lease",
+            resolve(acquisitionState, false, true),
+            rock::WeaponInteractionAcquisitionSource::ProximityProbe);
+        ok &= expectEqual("provenance never manufactures a contact candidate",
+            resolve(acquisitionState, false, false),
+            rock::WeaponInteractionAcquisitionSource::None);
+    }
+
     rock::collision_suppression_registry::DelayedRestoreTimer postDropRestore{};
     ok &= expectTrue("post-drop suppression uses grab release delay seconds", postDropRestore.begin(42, 1, 0.8f));
     ok &= expectFalse("post-drop suppression remains active before configured delay", postDropRestore.advance(true, 0.79f));

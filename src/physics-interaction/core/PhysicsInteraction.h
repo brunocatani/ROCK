@@ -370,11 +370,6 @@ namespace rock
 
         void clearLeftWeaponContact();
         void clearRightWeaponContact();
-        [[nodiscard]] bool tryResolveDynamicWeaponContactForHand(
-            bool isLeft,
-            const HandFrameInput& handInput,
-            RE::NiNode* weaponNode,
-            WeaponInteractionContact& outContact) const;
 
         void refreshEquippedWeaponHandlingSettings();
         void reconcileEquippedWeaponHandlingMode();
@@ -729,6 +724,7 @@ namespace rock
         std::atomic<std::uint32_t> _rightWeaponContactGripPose{ static_cast<std::uint32_t>(WeaponGripPoseId::None) };
         std::atomic<std::uint32_t> _rightWeaponContactSequence{ 0 };
         std::atomic<std::uint32_t> _rightWeaponContactMissedFrames{ WEAPON_CONTACT_TIMEOUT_FRAMES + 1 };
+        std::array<weapon_interaction_acquisition_policy::State, 2> _weaponInteractionAcquisitionStates{};
         int _weaponInteractionProbeLogCounter = 0;
         std::atomic<bool> _rightDominantWeaponCollisionSuppressed{ false };
         std::atomic<bool> _leftWeaponSupportCollisionSuppressed{ false };

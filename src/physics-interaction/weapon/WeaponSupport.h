@@ -105,19 +105,6 @@ namespace rock::weapon_support_authority_policy
 
 namespace rock::weapon_support_grip_policy
 {
-    inline constexpr bool usesExperimentalPhysicalContactAnchor(
-        const bool enabled,
-        const WeaponPartKind partKind)
-    {
-        if (!enabled) {
-            return false;
-        }
-        return partKind == WeaponPartKind::Magazine ||
-               partKind == WeaponPartKind::Slide ||
-               partKind == WeaponPartKind::Bolt ||
-               partKind == WeaponPartKind::ChargingHandle;
-    }
-
     /*
      * ROCK gates two-handing by whether the equipped item can accept support
      * authority and by the hand's live contact with the equipped weapon, not by

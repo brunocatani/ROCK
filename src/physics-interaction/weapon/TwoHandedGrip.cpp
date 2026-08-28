@@ -571,62 +571,6 @@ namespace rock
             }
         };
 
-        [[nodiscard]] bool findClosestPhysicalContactGrabPoint(
-            const TransformedSupportGripTriangleView& triangles,
-            const RE::NiPoint3& contactPointWorld,
-            const RE::NiPoint3& handReferenceWorld,
-            const float maximumDistanceGameUnits,
-            GrabPoint& outPoint)
-        {
-            outPoint = {};
-            float bestDistanceSquared =
-                (std::numeric_limits<float>::infinity)();
-            int bestIndex = -1;
-            RE::NiPoint3 bestPosition{};
-            RE::NiPoint3 bestNormal{};
-            for (std::size_t index = 0; index < triangles.size(); ++index) {
-                const TriangleData triangle = triangles[index];
-                float distanceSquared =
-                    (std::numeric_limits<float>::infinity)();
-                const RE::NiPoint3 closest = closestPointOnTriangleToPoint(
-                    contactPointWorld,
-                    triangle,
-                    distanceSquared);
-                if (!std::isfinite(distanceSquared) ||
-                    distanceSquared >= bestDistanceSquared) {
-                    continue;
-                }
-                RE::NiPoint3 normal = normalize(cross(
-                    sub(triangle.v1, triangle.v0),
-                    sub(triangle.v2, triangle.v1)));
-                const RE::NiPoint3 toHand = sub(
-                    handReferenceWorld,
-                    closest);
-                if (dot(normal, toHand) < 0.0f) {
-                    normal = RE::NiPoint3{
-                        -normal.x,
-                        -normal.y,
-                        -normal.z,
-                    };
-                }
-                bestDistanceSquared = distanceSquared;
-                bestIndex = static_cast<int>(index);
-                bestPosition = closest;
-                bestNormal = normal;
-            }
-            const float maximumDistance =
-                (std::max)(0.0f, maximumDistanceGameUnits);
-            if (bestIndex < 0 ||
-                bestDistanceSquared > maximumDistance * maximumDistance) {
-                return false;
-            }
-            outPoint.position = bestPosition;
-            outPoint.normal = bestNormal;
-            outPoint.triangleIndex = bestIndex;
-            outPoint.distance = std::sqrt(bestDistanceSquared);
-            return true;
-        }
-
         void selectNearestSupportGripFingerTriangles(
             std::span<const WeaponCollision::SupportGripEvidenceView> evidenceViews,
             const RE::NiTransform& weaponWorld,
@@ -4251,26 +4195,6 @@ namespace rock
                     "pass" : "fail");
         }
 
-        if (decision.acquisitionSource !=
-                WeaponInteractionAcquisitionSource::PhysicalContact ||
-            !decision.physicalContact.valid) {
-            ROCK_LOG_DEBUG(
-                Weapon,
-                "TwoHandedGrip: dynamic support capture waiting for physical contact hand={} source={}",
-                isLeft ? "left" : "right",
-                decision.acquisitionSource ==
-                        WeaponInteractionAcquisitionSource::ProximityProbe ?
-                    "probe" :
-                    "none");
-            return false;
-        }
-        grip.preservePhysicalContactAnchor =
-            weapon_support_grip_policy::
-                usesExperimentalPhysicalContactAnchor(
-                    g_rockConfig.
-                        rockExperimentalWeaponManipulationPhysicalAnchor,
-                    grip.partKind);
-
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
         for (auto& ranking : fingerScratch.rankings) {
             ranking.clear();
@@ -4295,77 +4219,53 @@ namespace rock
                 .localTriangles = evidenceView.localTriangles,
                 .localToWorld = evidenceView.localToWorld,
             };
-            const RE::NiPoint3 physicalContactWorld =
-                transform_math::localPointToWorld(
-                    weaponNode->world,
-                    decision.physicalContact.pointWeaponLocal);
-            meshFound = findClosestPhysicalContactGrabPoint(
+            meshFound = findClosestGrabPoint(
                 worldEvidence,
-                physicalContactWorld,
                 palmPos,
-                g_rockConfig.
-                    rockGrabFingerContactMeshSnapMaxDistanceGameUnits,
-                grabPoint);
+                palmDir,
+                g_rockConfig.rockGrabLateralWeight,
+                g_rockConfig.rockGrabDirectionalWeight,
+                grabPoint,
+                g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits);
         }
 
-        if (!meshFound) {
-            ROCK_LOG_WARN(
-                Weapon,
-                "TwoHandedGrip: physical contact could not snap to current part mesh hand={} body={} generation={:016X}",
-                isLeft ? "left" : "right",
-                decision.bodyId,
-                decision.weaponGenerationKey);
-            return false;
-        }
-        grip.gripLocal = worldToWeaponLocal(
-            grabPoint.position,
-            weaponNode);
-        grip.grabNormalWorld = grabPoint.normal;
-        const RE::NiPoint3 gripWorldPoint = grabPoint.position;
-        RE::NiTransform adjustedHandTransform = handTransform;
-        if (grip.preservePhysicalContactAnchor) {
-            // Store both sides of the same contact; later hand motion drives
-            // this hand-local point instead of a synthetic palm target.
-            grip.physicalAnchorHandLocal =
-                transform_math::worldPointToLocal(
-                    handTransform,
-                    gripWorldPoint);
-            grip.hasPhysicalAnchorHandLocal =
-                grab_finger_pose_runtime::isFinitePoint(
-                    grip.physicalAnchorHandLocal);
-            if (!grip.hasPhysicalAnchorHandLocal) {
-                return false;
-            }
+        if (meshFound) {
+            grip.gripLocal = worldToWeaponLocal(grabPoint.position, weaponNode);
+            grip.grabNormalWorld = grabPoint.normal;
         } else {
-            constexpr float kDegreesToRadians =
-                0.01745329251994329577f;
-            const float surfaceSeatMaxRadians =
-                g_rockConfig.rockWeaponSupportSurfaceSeatEnabled ?
-                g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees *
-                    kDegreesToRadians :
-                0.0f;
-            const auto surfaceSeat =
-                weapon_support_acquisition_math::
-                    alignHandFrameToGripSurface<
-                        RE::NiTransform,
-                        RE::NiPoint3>(
-                        handTransform,
-                        palmPos,
-                        palmDir,
-                        gripWorldPoint,
-                        grip.grabNormalWorld,
-                        surfaceSeatMaxRadians);
-            adjustedHandTransform = surfaceSeat.valid ?
-                surfaceSeat.handWorld :
-                weapon_two_handed_grip_math::alignHandFrameToGripPoint(
+            grip.gripLocal = worldToWeaponLocal(palmPos, weaponNode);
+            grip.grabNormalWorld = palmDir;
+        }
+        const RE::NiPoint3 gripWorldPoint = meshFound ? grabPoint.position : palmPos;
+        constexpr float kDegreesToRadians =
+            0.01745329251994329577f;
+        const float surfaceSeatMaxRadians =
+            g_rockConfig.rockWeaponSupportSurfaceSeatEnabled && meshFound ?
+            g_rockConfig.rockWeaponSupportSurfaceSeatMaxDegrees *
+                kDegreesToRadians :
+            0.0f;
+        const auto surfaceSeat =
+            weapon_support_acquisition_math::
+                alignHandFrameToGripSurface<
+                    RE::NiTransform,
+                    RE::NiPoint3>(
                     handTransform,
                     palmPos,
-                    gripWorldPoint);
-            grip.surfaceSeatRotationRadians =
-                surfaceSeat.valid ?
-                surfaceSeat.appliedRotationRadians :
-                0.0f;
-        }
+                    palmDir,
+                    gripWorldPoint,
+                    grip.grabNormalWorld,
+                    surfaceSeatMaxRadians);
+        const RE::NiTransform adjustedHandTransform =
+            surfaceSeat.valid ?
+            surfaceSeat.handWorld :
+            weapon_two_handed_grip_math::alignHandFrameToGripPoint(
+                handTransform,
+                palmPos,
+                gripWorldPoint);
+        grip.surfaceSeatRotationRadians =
+            surfaceSeat.valid ?
+            surfaceSeat.appliedRotationRadians :
+            0.0f;
         const RE::NiPoint3 seatedPalmNormal =
             computePalmNormalFromHandBasis(
                 adjustedHandTransform,
@@ -4453,22 +4353,6 @@ namespace rock
                 fingerReferenceSet.lanePointsWorld[lane][count++] =
                     pointWorld;
             };
-
-            for (std::size_t finger = 0;
-                 finger < decision.physicalContact.
-                              fingerPointsWeaponLocal.size();
-                 ++finger) {
-                if ((decision.physicalContact.fingerContactMask &
-                        static_cast<std::uint8_t>(1u << finger)) == 0) {
-                    continue;
-                }
-                appendLanePoint(
-                    finger,
-                    transform_math::localPointToWorld(
-                        weaponNode->world,
-                        decision.physicalContact.
-                            fingerPointsWeaponLocal[finger]));
-            }
 
             for (std::size_t finger = 0;
                  finger < capturedFingerSnapshot.fingers.size();
@@ -4637,28 +4521,6 @@ namespace rock
             auto fingerPoseTargets = grab_finger_pose_runtime::makeSharedGripPoseTarget(frozenGripPoint, frozenGripNormal);
             fingerPoseTargets.useSeatPointForMissingTargets = false;
             fingerPoseTargets.useWholeMeshForMissingTargets = true;
-            for (std::size_t finger = 0;
-                 finger < decision.physicalContact.
-                              fingerPointsWeaponLocal.size();
-                 ++finger) {
-                if ((decision.physicalContact.fingerContactMask &
-                        static_cast<std::uint8_t>(1u << finger)) == 0) {
-                    continue;
-                }
-                const RE::NiPoint3 contactWorld =
-                    transform_math::localPointToWorld(
-                        weaponNode->world,
-                        decision.physicalContact.
-                            fingerPointsWeaponLocal[finger]);
-                fingerPoseTargets.targets[finger] =
-                    weapon_two_handed_grip_math::
-                        virtualizeWorldPointForSeatedHand(
-                            contactWorld,
-                            handTransform,
-                            adjustedHandTransform);
-                fingerPoseTargets.targetValid[finger] = 1;
-                ++fingerPoseTargets.targetCount;
-            }
             /*
              * Equipped support keeps the indexed frozen base, but owns its
              * presentation policy. Loose-grab thumb/index clearing and generic
@@ -5678,10 +5540,33 @@ namespace rock
                             inputToGripTargetLocal,
                         calibratedPrimaryTransform,
                         calibratedSupportTransform);
-            // Normal grips converge to the palm seat. The experimental special
-            // group keeps the contact-time relation for manipulation strokes.
+            /*
+             * Dynamic support grabs have TWO intended behaviors, selected by
+             * the grabbed part kind. This split is deliberate product
+             * behavior, not a workaround - keep both paths when refactoring.
+             *
+             * 1) Delta-preserving parts (Magazine, Bolt, ChargingHandle,
+             *    Slide):
+             *    the captured tandem relation is kept as-is for the whole
+             *    hold. The resolved targets start with zero solver error, so
+             *    only post-capture hand deltas move the part/weapon and the
+             *    physical controller-to-seat gap from the accept moment is
+             *    intentionally preserved. These are manipulation parts: the
+             *    player grabs them at a distance and pulls/pushes relative
+             *    to where the grab began, and snapping the seat onto the
+             *    controller would yank the manipulation stroke.
+             *
+             * 2) Every other part (foregrip, handguard, barrel, ...): the
+             *    hold should converge onto the real hand like authored
+             *    grabs, closing the accept-moment gap (alignmentBlend
+             *    below). Without this, a detached grab stayed visibly
+             *    detached for the whole hold.
+             */
             const bool preserveCaptureDelta =
-                supportGrip.preservePhysicalContactAnchor;
+                supportGrip.partKind == WeaponPartKind::Magazine ||
+                supportGrip.partKind == WeaponPartKind::Bolt ||
+                supportGrip.partKind == WeaponPartKind::ChargingHandle ||
+                supportGrip.partKind == WeaponPartKind::Slide;
             if (inputBaselineResolved && !preserveCaptureDelta) {
                 /*
                  * Behavior 2: retarget the support input onto the true
@@ -5761,11 +5646,6 @@ namespace rock
                 calibratedPrimaryTransform,
                 primaryHandIsLeft);
         const RE::NiPoint3 supportController =
-            supportGrip.preservePhysicalContactAnchor &&
-                    supportGrip.hasPhysicalAnchorHandLocal ?
-            transform_math::localPointToWorld(
-                calibratedSupportTransform,
-                supportGrip.physicalAnchorHandLocal) :
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
                 calibratedSupportTransform,
                 supportHandIsLeft);

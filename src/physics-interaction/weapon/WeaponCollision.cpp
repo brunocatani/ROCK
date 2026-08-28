@@ -3347,7 +3347,6 @@ namespace rock
 
             CompoundGeometryChildSnapshot child{};
             child.shape = instance.shape;
-            child.sourceBodyId = bodyId;
             CompoundChildPoseSnapshot pose{};
             if (!resolveCompoundChildPose(instance, packageDriveNode, pose)) {
                 return fail(CompoundGeometrySnapshotFailure::SourceTransformUnavailable, sourceIndex, bodyId);

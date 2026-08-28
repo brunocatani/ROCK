@@ -584,20 +584,6 @@
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
         const bool bodyBIsDynamicWeapon =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        DynamicWeaponCollisionRuntime::ContactChildSource
-            dynamicWeaponSourceA{};
-        DynamicWeaponCollisionRuntime::ContactChildSource
-            dynamicWeaponSourceB{};
-        const bool bodyAIsDynamicWeaponChild =
-            _dynamicWeaponCollision.tryClassifyContactChildAtomic(
-                bodyIdA,
-                shapeKeyA,
-                dynamicWeaponSourceA);
-        const bool bodyBIsDynamicWeaponChild =
-            _dynamicWeaponCollision.tryClassifyContactChildAtomic(
-                bodyIdB,
-                shapeKeyB,
-                dynamicWeaponSourceB);
         const bool solvedChildContact =
             manifoldPointCount > 0 && manifoldPointCount <= 4;
         if (solvedChildContact && bodyAIsDynamicHand) {
@@ -615,48 +601,6 @@
                     dynamicBodySourceA.isLeft !=
                         dynamicBodySourceB.isLeft,
                 bodyAIsDynamicWeapon);
-        }
-
-        if (solvedChildContact &&
-            ((bodyAIsDynamicHand && bodyBIsDynamicWeaponChild) ||
-                (bodyBIsDynamicHand && bodyAIsDynamicWeaponChild))) {
-            const auto& handSource = bodyAIsDynamicHand ?
-                dynamicBodySourceA :
-                dynamicBodySourceB;
-            const auto& weaponSource = bodyAIsDynamicWeaponChild ?
-                dynamicWeaponSourceA :
-                dynamicWeaponSourceB;
-            RE::NiPoint3 pointGame{};
-            const float scale = havokToGameScale();
-            for (std::int32_t pointIndex = 0;
-                 pointIndex < manifoldPointCount;
-                 ++pointIndex) {
-                const auto* pointHavok =
-                    reinterpret_cast<const float*>(
-                        data + 0x70 + pointIndex * 0x10);
-                pointGame.x += pointHavok[0] * scale;
-                pointGame.y += pointHavok[1] * scale;
-                pointGame.z += pointHavok[2] * scale;
-            }
-            const float inversePointCount =
-                1.0f / static_cast<float>(manifoldPointCount);
-            pointGame.x *= inversePointCount;
-            pointGame.y *= inversePointCount;
-            pointGame.z *= inversePointCount;
-            const auto* normalHavok =
-                reinterpret_cast<const float*>(data + 0x40);
-            const RE::NiPoint3 normalGame{
-                normalHavok[0],
-                normalHavok[1],
-                normalHavok[2],
-            };
-            _dynamicHandCollision.recordDynamicWeaponContactCallback(
-                handSource,
-                weaponSource.proxyBodyId,
-                weaponSource.sourceBodyId,
-                weaponSource.weaponGenerationKey,
-                pointGame,
-                &normalGame);
         }
 
         /*

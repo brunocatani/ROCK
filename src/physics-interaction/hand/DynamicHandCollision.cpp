@@ -24,7 +24,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace rock
 {
@@ -658,38 +657,6 @@ namespace rock
                 slotBit,
                 std::memory_order_release);
         }
-    }
-
-    void DynamicHandCollisionRuntime::recordDynamicWeaponContactCallback(
-        const DynamicBodyContactSource& source,
-        const std::uint32_t weaponProxyBodyId,
-        const std::uint32_t weaponBodyId,
-        const std::uint64_t weaponGenerationKey,
-        const RE::NiPoint3& contactPointGame,
-        const RE::NiPoint3* const contactNormalGame) noexcept
-    {
-        if (!source.valid || source.slot >= kBodiesPerHand) {
-            return;
-        }
-        (void)_weaponContacts.record(
-            source.isLeft,
-            source.slot,
-            source.bodyId,
-            weaponProxyBodyId,
-            weaponBodyId,
-            weaponGenerationKey,
-            contactPointGame,
-            contactNormalGame);
-    }
-
-    dynamic_hand_weapon_contact_state::Collection
-    DynamicHandCollisionRuntime::collectFreshWeaponContacts(
-        const bool isLeft) const noexcept
-    {
-        return _weaponContacts.collectFresh(
-            isLeft,
-            (std::numeric_limits<std::uint32_t>::max)(),
-            dynamic_hand_weapon_contact_state::kContactRetentionSeconds);
     }
 
     bool DynamicHandCollisionRuntime::tryClassifySurfaceContactSourceAtomic(
@@ -1920,7 +1887,6 @@ namespace rock
         retireHand(_hands[0], bhkWorld, false);
         retireHand(_hands[1], bhkWorld, true);
         _surfaceContacts.clear();
-        _weaponContacts.clear();
     }
 
     void DynamicHandCollisionRuntime::reset()
@@ -1978,8 +1944,6 @@ namespace rock
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DynamicHandCollisionFrame);
 
         _surfaceContacts.advanceFrame(
-            frame.timing.valid ? frame.timing.deltaSeconds : 0.0f);
-        _weaponContacts.advanceFrame(
             frame.timing.valid ? frame.timing.deltaSeconds : 0.0f);
         _pendingHapticEvents = {};
         dynamic_hand_collision_telemetry::Snapshot telemetry{};

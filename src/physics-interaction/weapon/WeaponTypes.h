@@ -244,16 +244,6 @@ namespace rock
         std::uint32_t attachPointFormId{ 0 };
     };
 
-    struct WeaponPhysicalContactWitness
-    {
-        bool valid{ false };
-        RE::NiPoint3 pointWeaponLocal{};
-        std::array<RE::NiPoint3, 5> fingerPointsWeaponLocal{};
-        std::uint32_t handChildMask{ 0 };
-        std::uint8_t fingerContactMask{ 0 };
-        float ageSeconds{ 0.0f };
-    };
-
     struct WeaponInteractionContact
     {
         bool valid{ false };
@@ -278,7 +268,6 @@ namespace rock
         float probeDistanceGame{ 0.0f };
         std::uint32_t sequence{ 0 };
         WeaponInteractionAcquisitionSource acquisitionSource{ WeaponInteractionAcquisitionSource::None };
-        WeaponPhysicalContactWitness physicalContact{};
     };
 
     /*
@@ -312,7 +301,6 @@ namespace rock
         RE::NiAVObject* sourceRoot{ nullptr };
         std::uint64_t weaponGenerationKey{ 0 };
         WeaponInteractionAcquisitionSource acquisitionSource{ WeaponInteractionAcquisitionSource::None };
-        WeaponPhysicalContactWitness physicalContact{};
     };
 
     inline constexpr std::size_t kWeaponProviderSourceNameCapacity = 64;

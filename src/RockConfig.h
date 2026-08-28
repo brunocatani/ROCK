@@ -90,7 +90,6 @@ namespace rock
         float rockWeaponCollisionGripRecoveryDistanceGameUnits = 210.0f;
         float rockWeaponInteractionTouchRadius = 2.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
-        bool rockExperimentalWeaponManipulationPhysicalAnchor = false;
         float rockFiringGripProximitySupportRadius = 6.0f;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockWeaponSupportGripHandLerpEnabled = true;

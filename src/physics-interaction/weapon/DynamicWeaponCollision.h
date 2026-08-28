@@ -129,22 +129,6 @@ namespace rock
         void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence);
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
-        struct ContactChildSource
-        {
-            bool valid{ false };
-            std::uint32_t proxyBodyId{ 0x7FFF'FFFFu };
-            std::uint32_t sourceBodyId{ 0x7FFF'FFFFu };
-            std::uint32_t childIndex{ 0xFFFF'FFFFu };
-            std::uint64_t weaponGenerationKey{ 0 };
-        };
-        [[nodiscard]] bool tryClassifyContactChildAtomic(
-            std::uint32_t bodyId,
-            std::uint32_t shapeKey,
-            ContactChildSource& outSource) const noexcept;
-        [[nodiscard]] bool tryConvertContactPointToWeaponLocal(
-            const RE::NiPoint3& contactPointGame,
-            std::uint64_t expectedGenerationKey,
-            RE::NiPoint3& outPointWeaponLocal) const;
         void recordObstacleContactCallback(
             RE::hknpWorld* world,
             std::uint32_t proxyBodyId,
@@ -262,9 +246,6 @@ namespace rock
         float _createdWeaponScale{ 1.0f };
         std::uint32_t _createdCompoundChildCount{ 0 };
         std::size_t _createdCompoundPointCount{ 0 };
-        std::array<std::uint32_t, MAX_WEAPON_COLLISION_BODIES>
-            _createdSourceBodyIds{};
-        std::uint32_t _createdSourceBodyIdCount{ 0 };
         bool _created{ false };
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };

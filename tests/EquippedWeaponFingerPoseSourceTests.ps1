@@ -86,7 +86,7 @@ Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'tryGetSupportGripEvidenceView\(decision\.bodyId, weaponNode, evidenceView\)',
     'TransformedSupportGripTriangleView worldEvidence',
-    'findClosestPhysicalContactGrabPoint\('
+    'findClosestGrabPoint\('
 ) 'Equipped physical grip-point selection must remain tied to the contacted part.'
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'rootFlattenedTwoHandedReader\(\)\.capture\(',
