@@ -1225,7 +1225,8 @@ namespace rock
                 primaryWandWorld,
                 offhandWandWorld,
                 leftIsNativeOffhand);
-        if (!isFiniteTransform(recoilWorldDelta)) {
+        if (!isFiniteTransform(recoilWorldDelta) ||
+            !isInvertibleTransform(recoilWorldDelta)) {
             return;
         }
 
@@ -1239,6 +1240,17 @@ namespace rock
             return true;
         }
         _leftFiringWeaponRecoilReadyThisUpdate = false;
+
+        if (_leftFiringWeaponRecoilSupportConstrainedThisUpdate) {
+            /*
+             * Full two-hand authority already consumed this kick through the
+             * primary-hand target while leaving the support-hand target fixed.
+             * Reapplying the raw delta here would bypass that solve and restore
+             * one-handed recoil for physical-left firing.
+             */
+            _leftFiringWeaponRecoilSupportConstrainedThisUpdate = false;
+            return true;
+        }
 
         if (!weaponNode ||
             !_weaponNodeOwnershipBlockEngaged ||
@@ -2424,6 +2436,7 @@ namespace rock
             _leftFiringWeaponRecoilSampleValid &&
             _weaponRecoilSampleSequence !=
                 _observedWeaponRecoilSampleSequence;
+        _leftFiringWeaponRecoilSupportConstrainedThisUpdate = false;
         _observedWeaponRecoilSampleSequence =
             _weaponRecoilSampleSequence;
         _handlingSettings = handlingSettings;
@@ -2942,6 +2955,7 @@ namespace rock
             _weaponRecoilSampleSequence;
         _leftFiringWeaponRecoilSampleValid = false;
         _leftFiringWeaponRecoilReadyThisUpdate = false;
+        _leftFiringWeaponRecoilSupportConstrainedThisUpdate = false;
         resetLockedHandVisualLerp();
     }
 
@@ -5909,6 +5923,37 @@ namespace rock
                     "missing");
             transitionToInactive(false);
             return;
+        }
+
+        if (_leftFiringWeaponRecoilReadyThisUpdate &&
+            _firingHandIsLeft &&
+            _state == TwoHandedState::Gripping &&
+            _authorityMode == weapon_support_authority_policy::
+                                  WeaponSupportAuthorityMode::
+                                      FullTwoHandedSolver) {
+            /*
+             * Right-firing recoil reaches this solver through hFRIK's physical
+             * primary-hand frame, so the fixed support target constrains the
+             * final weapon kick. Left position-only carry deliberately rebuilds
+             * that physical frame from the damped controller and therefore
+             * excludes hFRIK's controlled recoil. Inject the mirrored world
+             * delta into the LEFT primary target here to preserve the same
+             * two-point solve. One-hand and VisualOnlySupport carry retain the
+             * terminal raw weapon kick in applyLeftFiringWeaponRecoil().
+             */
+            const RE::NiTransform recoiledPrimaryTransform =
+                transform_math::composeTransforms(
+                    _leftFiringWeaponRecoilWorldDelta,
+                    calibratedPrimaryTransform);
+            if (isUsableHandAuthorityTransform(recoiledPrimaryTransform)) {
+                calibratedPrimaryTransform = recoiledPrimaryTransform;
+                _leftFiringWeaponRecoilSupportConstrainedThisUpdate = true;
+            } else {
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    1000,
+                    "TwoHandedGrip: left supported recoil primary-frame integration was invalid; retaining direct weapon recoil");
+            }
         }
 
         const RE::NiPoint3 primaryController =
@@ -8986,8 +9031,31 @@ namespace rock
                 dt,
                 _primaryHandVisualLerp);
         (void)publishAuthoredPrimaryFiringGripFingerPose(_firingHandIsLeft);
+        RE::NiTransform requestedFiringHandWorld = appliedFiringHandWorld;
+        if (_firingHandIsLeft &&
+            _leftFiringWeaponRecoilSupportConstrainedThisUpdate) {
+            /*
+             * hFRIK applies the accepted Direct recoil delta to every external
+             * primary-hand target. The full two-hand solver has already
+             * consumed that delta above, so pre-remove it from this request;
+             * hFRIK's publication composes it back to the exact constrained
+             * hand seat instead of kicking the hand a second time.
+             */
+            requestedFiringHandWorld = transform_math::composeTransforms(
+                transform_math::invertTransform(
+                    _leftFiringWeaponRecoilWorldDelta),
+                appliedFiringHandWorld);
+            if (!isUsableHandAuthorityTransform(
+                    requestedFiringHandWorld)) {
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    1000,
+                    "TwoHandedGrip: left supported recoil hand precompensation was invalid");
+                return false;
+            }
+        }
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
-            PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), appliedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
+            PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), requestedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
             if (_firingHandIsLeft) {
                 _leftFiringHandWorldActive = true;

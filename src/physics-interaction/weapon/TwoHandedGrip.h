@@ -1564,12 +1564,17 @@ namespace rock
          * hFRIK calls the recoil controller before ROCK's update on the same
          * game thread. The sequence makes a sample valid for one ROCK update
          * only. It prevents a skipped callback from reusing an old gun kick.
+         * Full two-hand left carry consumes that sample in the primary-hand
+         * solver target; one-hand and visual-only carry consume it in the final
+         * direct weapon publication. These routes must remain mutually
+         * exclusive or supported left firing regresses to one-hand recoil.
          */
         RE::NiTransform _leftFiringWeaponRecoilWorldDelta{};
         std::uint64_t _weaponRecoilSampleSequence{ 0 };
         std::uint64_t _observedWeaponRecoilSampleSequence{ 0 };
         bool _leftFiringWeaponRecoilSampleValid{ false };
         bool _leftFiringWeaponRecoilReadyThisUpdate{ false };
+        bool _leftFiringWeaponRecoilSupportConstrainedThisUpdate{ false };
 
         float _primaryGripConfidence{ 0.0f };
 
