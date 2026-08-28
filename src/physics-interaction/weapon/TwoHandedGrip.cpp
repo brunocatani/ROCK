@@ -5545,7 +5545,8 @@ namespace rock
              * the grabbed part kind. This split is deliberate product
              * behavior, not a workaround - keep both paths when refactoring.
              *
-             * 1) Delta-preserving parts (Magazine, Bolt, ChargingHandle):
+             * 1) Delta-preserving parts (Magazine, Bolt, ChargingHandle,
+             *    Slide):
              *    the captured tandem relation is kept as-is for the whole
              *    hold. The resolved targets start with zero solver error, so
              *    only post-capture hand deltas move the part/weapon and the
@@ -5564,7 +5565,8 @@ namespace rock
             const bool preserveCaptureDelta =
                 supportGrip.partKind == WeaponPartKind::Magazine ||
                 supportGrip.partKind == WeaponPartKind::Bolt ||
-                supportGrip.partKind == WeaponPartKind::ChargingHandle;
+                supportGrip.partKind == WeaponPartKind::ChargingHandle ||
+                supportGrip.partKind == WeaponPartKind::Slide;
             if (inputBaselineResolved && !preserveCaptureDelta) {
                 /*
                  * Behavior 2: retarget the support input onto the true
