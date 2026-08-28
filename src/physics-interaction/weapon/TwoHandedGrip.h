@@ -853,6 +853,14 @@ namespace rock
             bool active{ false };
             bool pairedDynamicDrivers{ false };
             bool firstPublicationPending{ false };
+            /*
+             * 0 -> 1 ramp that retargets the calibrated support solver input
+             * from the captured tandem-delta target onto the true physical
+             * support hand, closing the controller-to-seat gap frozen in at
+             * capture. Stays 0 on the attach frame so the first publication
+             * cannot move the weapon.
+             */
+            float alignmentBlend{ 0.0f };
         };
 
         /*

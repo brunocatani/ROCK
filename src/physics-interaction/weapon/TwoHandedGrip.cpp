@@ -5540,6 +5540,58 @@ namespace rock
                             inputToGripTargetLocal,
                         calibratedPrimaryTransform,
                         calibratedSupportTransform);
+            if (inputBaselineResolved) {
+                /*
+                 * The captured tandem relation freezes the physical
+                 * controller-to-seat gap from the accept moment into the
+                 * hold: the resolved targets start with zero solver error,
+                 * so only post-capture deltas ever move the weapon and a
+                 * detached grab stays detached. Retarget the support input
+                 * onto the true physical support hand (raw damped driver x
+                 * natural-bone relation; never the rendered hand, which is
+                 * ROCK's own output during the hold) so the seat converges
+                 * onto the real controller the way authored grips do. The
+                 * primary relation stays captured: that hand is already
+                 * seated and anchors weapon translation. If the physical
+                 * frame is unavailable the blend holds and the captured
+                 * tandem target remains the input (previous behavior).
+                 */
+                auto& baseline = supportGrip.supportInputBaseline;
+                RE::NiTransform physicalSupportHandWorld{};
+                RE::NiTransform physicalSupportDriverWorld{};
+                if (tryResolvePhysicalHandFrame(
+                        supportHandIsLeft,
+                        physicalSupportHandWorld,
+                        physicalSupportDriverWorld)) {
+                    ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+                        "TwoHandedGrip: dynamic support alignment blend={:.3f} capturedGap={:.3f}gu grip={} generation={:016X}",
+                        baseline.alignmentBlend,
+                        weaponSolverLength(sub(
+                            calibratedSupportTransform.translate,
+                            physicalSupportHandWorld.translate)),
+                        supportGrip.gripSequence,
+                        supportGrip.weaponGenerationKey);
+                    if (baseline.alignmentBlend > 0.0f) {
+                        calibratedSupportTransform =
+                            scope_safe_hand_frame_math::
+                                interpolateRebaseTransform(
+                                    calibratedSupportTransform,
+                                    physicalSupportHandWorld,
+                                    baseline.alignmentBlend);
+                    }
+                    baseline.alignmentBlend = (std::min)(
+                        1.0f,
+                        baseline.alignmentBlend +
+                            (std::isfinite(dt) && dt > 0.0f ? dt : 0.0f) *
+                                ROTATION_BLEND_SPEED);
+                } else if (baseline.alignmentBlend > 0.0f) {
+                    ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                        "TwoHandedGrip: dynamic support alignment holding at blend={:.3f} because the physical support hand frame is unavailable grip={} generation={:016X}",
+                        baseline.alignmentBlend,
+                        supportGrip.gripSequence,
+                        supportGrip.weaponGenerationKey);
+                }
+            }
         }
         if (supportInputBaselineActive &&
             !inputBaselineResolved) {
