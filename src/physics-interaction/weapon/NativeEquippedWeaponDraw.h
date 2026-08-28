@@ -9,6 +9,8 @@ namespace rock::native_equipped_weapon_draw
         std::uint32_t formID{ 0 };
         std::uintptr_t instanceData{ 0 };
         std::uint32_t equipIndex{ 0 };
+
+        [[nodiscard]] bool operator==(const Identity&) const noexcept = default;
     };
 
     enum class SubmitResult : std::uint8_t
@@ -23,6 +25,10 @@ namespace rock::native_equipped_weapon_draw
         RecoveryPreparationUnavailable,
         RecoveryStateChanged,
         NativeActionRejected,
+        PartialRecoveryUnavailable,
+        PartialRecoveryRejected,
+        PartialActionRecovered,
+        PartialActionFinalized,
     };
 
     struct Result
@@ -30,11 +36,17 @@ namespace rock::native_equipped_weapon_draw
         SubmitResult result{ SubmitResult::MissingPlayer };
         std::uint32_t stateBefore{ 0 };
         std::uint32_t stateAfter{ 0 };
+        std::uint64_t evidenceSequence{ 0 };
+        std::uint32_t matchedActivations{ 0 };
+        std::uint32_t registeredUpdates{ 0 };
+        std::uint32_t activeClips{ 0 };
+        std::uint32_t updatedActiveClips{ 0 };
     };
 
     [[nodiscard]] bool captureCurrentIdentity(Identity& outIdentity) noexcept;
     [[nodiscard]] Result submitExactCurrent(const Identity& expected) noexcept;
     [[nodiscard]] Result submitPreparedExactCurrent(const Identity& expected) noexcept;
+    [[nodiscard]] Result finalizePartialExactCurrent(const Identity& expected) noexcept;
     [[nodiscard]] Result submitSheatheExactCurrent(const Identity& expected) noexcept;
     [[nodiscard]] const char* submitResultName(SubmitResult result) noexcept;
 }

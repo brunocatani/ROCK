@@ -332,6 +332,43 @@ int main()
             !stalledWantToDraw.drawRecoveryExhausted &&
             !stalledWantToDraw.drawRecoveryWindowActive);
 
+    State partialDrawState{
+        .partialDrawRecoveryStartedAtSeconds = 4.0f,
+        .partialDrawRecoveryActive = true,
+    };
+    const auto partialDrawPending = advance(partialDrawState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            4.0f + kPartialDrawCompletionDeadlineSeconds - 0.001f,
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 2,
+    });
+    const auto partialDrawFinalize = advance(partialDrawState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            4.0f + kPartialDrawCompletionDeadlineSeconds,
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 2,
+    });
+    ok &= expect("a clip-proven partial draw must receive one bounded native finalization",
+        partialDrawPending.repair == RepairAction::None &&
+            partialDrawFinalize.repair == RepairAction::FinalizePartialDraw &&
+            partialDrawState.partialDrawRecoveryActive);
+
+    partialDrawState.drawRecoveryExhausted = true;
+    const auto failedPartialDraw = advance(partialDrawState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            4.0f + kPartialDrawCompletionDeadlineSeconds + 0.01f,
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 2,
+    });
+    ok &= expect("a failed partial draw finalization must fail closed",
+        failedPartialDraw.repair == RepairAction::DrawExhausted);
+
     State acknowledgedThenReturned{};
     (void)advance(acknowledgedThenReturned, FrameInput{
         .drawRecoveryElapsedSeconds = 0.25f,

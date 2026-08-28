@@ -20,6 +20,7 @@ namespace rock::equipped_weapon_transition_policy
     constexpr float kDrawRetryIntervalSeconds = 0.50f;
     constexpr float kWantToDrawStallSeconds = 1.00f;
     constexpr float kDrawRecoveryDeadlineSeconds = 3.00f;
+    constexpr float kPartialDrawCompletionDeadlineSeconds = 1.00f;
     constexpr float kPresentationRecoveryGraceSeconds = 0.35f;
     constexpr float kLocalVisibilitySettleSeconds = 0.15f;
     constexpr float kNativeAttachSettleSeconds = 0.35f;
@@ -30,6 +31,7 @@ namespace rock::equipped_weapon_transition_policy
         None,
         RequestDraw,
         RequestPreparedDraw,
+        FinalizePartialDraw,
         DrawExhausted,
         RestoreLocalVisibility,
         QueueNativeAttach,
@@ -44,10 +46,12 @@ namespace rock::equipped_weapon_transition_policy
         std::uint8_t attachAttempts{ 0 };
         float drawRecoveryWindowStartedAtSeconds{ 0.0f };
         float nextDrawRequestAtSeconds{ 0.0f };
+        float partialDrawRecoveryStartedAtSeconds{ 0.0f };
         float presentationRecoveryWindowStartedAtSeconds{ 0.0f };
         float nextPresentationRepairAtSeconds{ 0.0f };
         std::uint32_t drawRequests{ 0 };
         bool drawRecoveryWindowActive{ false };
+        bool partialDrawRecoveryActive{ false };
         bool presentationRecoveryWindowActive{ false };
         bool wantToDrawObserved{ false };
         bool drawRecoveryExhausted{ false };
@@ -93,6 +97,12 @@ namespace rock::equipped_weapon_transition_policy
         state.presentationRecoveryWindowActive = false;
     }
 
+    inline constexpr void resetPartialDrawRecovery(State& state) noexcept
+    {
+        state.partialDrawRecoveryStartedAtSeconds = 0.0f;
+        state.partialDrawRecoveryActive = false;
+    }
+
     [[nodiscard]] inline constexpr bool matchesExpectedIdentity(
         const std::uint32_t currentFormID,
         const std::uintptr_t currentInstanceData,
@@ -127,6 +137,7 @@ namespace rock::equipped_weapon_transition_policy
             state.missingFrames = 0;
             state.drawRequests = 0;
             resetDrawRecoveryWindow(state);
+            resetPartialDrawRecovery(state);
             resetPresentationRecoveryWindow(state);
             return decision;
         }
@@ -155,11 +166,33 @@ namespace rock::equipped_weapon_transition_policy
                 return decision;
             }
 
-            // Drawing is an explicit native acknowledgment. Do not age it
-            // against the request window: the asynchronous animation owns
-            // progress until it reaches Drawn or returns to a retryable state.
+            if (nativeState != NativeWeaponState::Drawing) {
+                resetPartialDrawRecovery(state);
+            }
+
+            // Ordinary Drawing is an explicit native acknowledgment and owns
+            // its progress. A partial-action recovery is different: ROCK
+            // supplied Drawing after verified clip activation, so it retains
+            // a bounded completion deadline until the graph reaches Drawn.
             if (nativeState == NativeWeaponState::Drawing) {
-                resetDrawRecoveryWindow(state);
+                if (!state.partialDrawRecoveryActive) {
+                    resetDrawRecoveryWindow(state);
+                    return decision;
+                }
+
+                state.drawRecoveryWindowStartedAtSeconds = 0.0f;
+                state.nextDrawRequestAtSeconds = 0.0f;
+                state.drawRecoveryWindowActive = false;
+                state.wantToDrawObserved = false;
+                const float partialRecoveryElapsedSeconds =
+                    input.drawRecoveryElapsedSeconds -
+                    state.partialDrawRecoveryStartedAtSeconds;
+                if (state.drawRecoveryExhausted) {
+                    decision.repair = RepairAction::DrawExhausted;
+                } else if (partialRecoveryElapsedSeconds >=
+                           kPartialDrawCompletionDeadlineSeconds) {
+                    decision.repair = RepairAction::FinalizePartialDraw;
+                }
                 return decision;
             }
 
@@ -252,6 +285,7 @@ namespace rock::equipped_weapon_transition_policy
         }
 
         resetDrawRecoveryWindow(state);
+        resetPartialDrawRecovery(state);
 
         const bool exactInstanceRenderable =
             input.nativeInstanceFound &&

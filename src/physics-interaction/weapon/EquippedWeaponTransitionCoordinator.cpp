@@ -382,6 +382,42 @@ namespace rock
             _repairExhaustionLogged = false;
         }
 
+        const auto applyDrawSubmissionOutcome =
+            [this](const native_equipped_weapon_draw::Result& result) noexcept {
+                if (result.result ==
+                        native_equipped_weapon_draw::SubmitResult::
+                            PartialActionRecovered &&
+                    result.stateAfter == static_cast<std::uint32_t>(
+                        held_weapon_equip_state_policy::NativeWeaponState::
+                            Drawing)) {
+                    _policyState.partialDrawRecoveryStartedAtSeconds =
+                        _drawRecoveryElapsedSeconds;
+                    _policyState.partialDrawRecoveryActive = true;
+                    _policyState.drawRecoveryExhausted = false;
+                }
+
+                if (result.result ==
+                        native_equipped_weapon_draw::SubmitResult::
+                            InvalidWeaponState ||
+                    result.result ==
+                        native_equipped_weapon_draw::SubmitResult::
+                            MissingPlayer ||
+                    result.result ==
+                        native_equipped_weapon_draw::SubmitResult::
+                            MissingEquippedWeapon ||
+                    result.result ==
+                        native_equipped_weapon_draw::SubmitResult::
+                            RecoveryPreparationUnavailable ||
+                    result.result ==
+                        native_equipped_weapon_draw::SubmitResult::
+                            PartialRecoveryUnavailable ||
+                    result.result ==
+                        native_equipped_weapon_draw::SubmitResult::
+                            PartialRecoveryRejected) {
+                    _policyState.drawRecoveryExhausted = true;
+                }
+            };
+
         switch (decision.repair) {
         case equipped_weapon_transition_policy::RepairAction::RequestDraw: {
             const auto result = native_equipped_weapon_draw::submitExactCurrent(
@@ -391,7 +427,7 @@ namespace rock
                     .equipIndex = _boundIdentity.equipIndex,
                 });
             ROCK_LOG_INFO(Weapon,
-                "Equipped weapon transition draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={}",
+                "Equipped weapon transition draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={} evidenceSequence={} matchedActivations={} registeredUpdates={} activeClips={} updatedActiveClips={}",
                 sourceName(_source),
                 _boundIdentity.formID,
                 _boundIdentity.instanceData,
@@ -401,12 +437,13 @@ namespace rock
                 held_weapon_equip_state_policy::nativeWeaponStateName(result.stateBefore),
                 result.stateAfter,
                 held_weapon_equip_state_policy::nativeWeaponStateName(result.stateAfter),
-                native_equipped_weapon_draw::submitResultName(result.result));
-            if (result.result == native_equipped_weapon_draw::SubmitResult::InvalidWeaponState ||
-                result.result == native_equipped_weapon_draw::SubmitResult::MissingPlayer ||
-                result.result == native_equipped_weapon_draw::SubmitResult::MissingEquippedWeapon) {
-                _policyState.drawRecoveryExhausted = true;
-            }
+                native_equipped_weapon_draw::submitResultName(result.result),
+                result.evidenceSequence,
+                result.matchedActivations,
+                result.registeredUpdates,
+                result.activeClips,
+                result.updatedActiveClips);
+            applyDrawSubmissionOutcome(result);
             break;
         }
         case equipped_weapon_transition_policy::RepairAction::RequestPreparedDraw: {
@@ -418,7 +455,7 @@ namespace rock
                         .equipIndex = _boundIdentity.equipIndex,
                     });
             ROCK_LOG_INFO(Weapon,
-                "Equipped weapon transition prepared draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={}",
+                "Equipped weapon transition prepared draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={} evidenceSequence={} matchedActivations={} registeredUpdates={} activeClips={} updatedActiveClips={}",
                 sourceName(_source),
                 _boundIdentity.formID,
                 _boundIdentity.instanceData,
@@ -430,18 +467,49 @@ namespace rock
                 result.stateAfter,
                 held_weapon_equip_state_policy::nativeWeaponStateName(
                     result.stateAfter),
+                native_equipped_weapon_draw::submitResultName(result.result),
+                result.evidenceSequence,
+                result.matchedActivations,
+                result.registeredUpdates,
+                result.activeClips,
+                result.updatedActiveClips);
+            applyDrawSubmissionOutcome(result);
+            break;
+        }
+        case equipped_weapon_transition_policy::RepairAction::FinalizePartialDraw: {
+            const auto result =
+                native_equipped_weapon_draw::finalizePartialExactCurrent(
+                    native_equipped_weapon_draw::Identity{
+                        .formID = _boundIdentity.formID,
+                        .instanceData = _boundIdentity.instanceData,
+                        .equipIndex = _boundIdentity.equipIndex,
+                    });
+            ROCK_LOG_INFO(Weapon,
+                "Equipped weapon transition partial draw finalization source={} formID={:08X} instance={:#x} elapsed={:.3f}s state={}({})->{}({}) result={}",
+                sourceName(_source),
+                _boundIdentity.formID,
+                _boundIdentity.instanceData,
+                _drawRecoveryElapsedSeconds,
+                result.stateBefore,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    result.stateBefore),
+                result.stateAfter,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    result.stateAfter),
                 native_equipped_weapon_draw::submitResultName(result.result));
-            if (result.result ==
+            equipped_weapon_transition_policy::resetPartialDrawRecovery(
+                _policyState);
+            if (result.result !=
                     native_equipped_weapon_draw::SubmitResult::
-                        InvalidWeaponState ||
-                result.result ==
-                    native_equipped_weapon_draw::SubmitResult::MissingPlayer ||
-                result.result ==
+                        PartialActionFinalized &&
+                result.result !=
                     native_equipped_weapon_draw::SubmitResult::
-                        MissingEquippedWeapon ||
-                result.result ==
-                    native_equipped_weapon_draw::SubmitResult::
-                        RecoveryPreparationUnavailable) {
+                        RecoveryStateChanged) {
+                _policyState.drawRecoveryWindowStartedAtSeconds =
+                    _drawRecoveryElapsedSeconds -
+                    equipped_weapon_transition_policy::
+                        kDrawRecoveryDeadlineSeconds;
+                _policyState.drawRecoveryWindowActive = true;
                 _policyState.drawRecoveryExhausted = true;
             }
             break;

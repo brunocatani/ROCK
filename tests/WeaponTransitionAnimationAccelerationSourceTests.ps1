@@ -57,6 +57,9 @@ Require-Text $source `
     'publishPlayerGraphCharacters\(input\.player\)[\s\S]*s_runtimeLease\s*=\s*RuntimeLease[\s\S]*s_encodedLease\.store\(encodedLease' `
     'The game thread must publish verified player graph targets before making the transition lease visible to animation callbacks.'
 Require-Text $source `
+    'observeExactLeaseActivation[\s\S]{0,1200}s_runtimeLease\.identity\s*!=\s*identity[\s\S]{0,1000}s_transitionClips[\s\S]{0,800}s_updatedTransitionClips[\s\S]{0,800}s_matchedActivations\.load[\s\S]{0,500}s_registeredUpdateCalls\.load' `
+    'Partial-action evidence must remain exact-lease, active-clip, and observed-update gated.'
+Require-Text $source `
     'std::atomic<std::uintptr_t>\s+s_encodedLease[\s\S]*transitionState\(direction\)[\s\S]*lease\s*&\s*kEncodedStateMask' `
     'Player and transition direction must cross into clip evaluation as one coherent atomic lease.'
 Require-Text $policy `

@@ -87,7 +87,8 @@ namespace rock::weapon_transition_animation_acceleration
         constexpr std::uintptr_t kGraphVtableModuleOffset = 0x2E00A48;
         constexpr std::uintptr_t kGraphCharacterOffset = 0x1C8;
         constexpr std::uint32_t kMaxGraphSlots = 8;
-        constexpr std::size_t kMaxTransitionClips = 32;
+        constexpr std::size_t kMaxTransitionClips =
+            kMaximumActivationEvidenceClips;
 
         constexpr std::uintptr_t kEncodedStateMask = 0x7;
         constexpr std::uint32_t kInvalidNativeState = 0xFFFFFFFFu;
@@ -133,6 +134,8 @@ namespace rock::weapon_transition_animation_acceleration
         std::atomic<std::uint32_t> s_targetCharacterCount{ 0 };
         std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips>
             s_transitionClips{};
+        std::array<std::atomic<std::uintptr_t>, kMaxTransitionClips>
+            s_updatedTransitionClips{};
 
         std::atomic<std::uint32_t> s_activationCalls{ 0 };
         std::atomic<std::uint32_t> s_matchedActivations{ 0 };
@@ -292,6 +295,9 @@ namespace rock::weapon_transition_animation_acceleration
             for (auto& clip : s_transitionClips) {
                 clip.store(0, std::memory_order_relaxed);
             }
+            for (auto& clip : s_updatedTransitionClips) {
+                clip.store(0, std::memory_order_relaxed);
+            }
         }
 
         [[nodiscard]] GraphTargetResult publishPlayerGraphCharacters(
@@ -428,13 +434,18 @@ namespace rock::weapon_transition_animation_acceleration
                     return;
                 }
             }
-            for (auto& slot : s_transitionClips) {
+            for (std::size_t index = 0;
+                 index < s_transitionClips.size();
+                 ++index) {
                 std::uintptr_t empty = 0;
-                if (slot.compare_exchange_strong(
+                if (s_transitionClips[index].compare_exchange_strong(
                         empty,
                         clip,
                         std::memory_order_acq_rel,
                         std::memory_order_relaxed)) {
+                    s_updatedTransitionClips[index].store(
+                        0,
+                        std::memory_order_release);
                     s_registeredClips.fetch_add(
                         1,
                         std::memory_order_relaxed);
@@ -451,26 +462,43 @@ namespace rock::weapon_transition_animation_acceleration
                 s_encodedLease.load(std::memory_order_acquire) == 0) {
                 return;
             }
-            for (auto& slot : s_transitionClips) {
+            for (std::size_t index = 0;
+                 index < s_transitionClips.size();
+                 ++index) {
                 auto expected = clip;
                 // Clear every match: concurrent graph workers can observe
                 // the same activation before either publishes its slot.
-                (void)slot.compare_exchange_strong(
-                    expected,
-                    0,
-                    std::memory_order_acq_rel,
-                    std::memory_order_relaxed);
+                if (s_transitionClips[index].compare_exchange_strong(
+                        expected,
+                        0,
+                        std::memory_order_acq_rel,
+                        std::memory_order_relaxed)) {
+                    auto updated = clip;
+                    (void)s_updatedTransitionClips[index].
+                        compare_exchange_strong(
+                            updated,
+                            0,
+                            std::memory_order_acq_rel,
+                            std::memory_order_relaxed);
+                }
             }
         }
 
-        [[nodiscard]] bool isRegisteredClip(void* clipGenerator) noexcept
+        [[nodiscard]] bool markUpdatedRegisteredClip(
+            void* clipGenerator) noexcept
         {
             const auto clip = reinterpret_cast<std::uintptr_t>(clipGenerator);
             if (!clip) {
                 return false;
             }
-            for (const auto& slot : s_transitionClips) {
-                if (slot.load(std::memory_order_acquire) == clip) {
+            for (std::size_t index = 0;
+                 index < s_transitionClips.size();
+                 ++index) {
+                if (s_transitionClips[index].load(
+                        std::memory_order_acquire) == clip) {
+                    s_updatedTransitionClips[index].store(
+                        clip,
+                        std::memory_order_release);
                     return true;
                 }
             }
@@ -497,7 +525,8 @@ namespace rock::weapon_transition_animation_acceleration
             const float timestep) noexcept
         {
             const auto lease = s_encodedLease.load(std::memory_order_acquire);
-            if (lease == 0 || !isRegisteredClip(clipGenerator)) {
+            if (lease == 0 ||
+                !markUpdatedRegisteredClip(clipGenerator)) {
                 return timestep;
             }
             s_registeredUpdateCalls.fetch_add(1, std::memory_order_relaxed);
@@ -795,6 +824,54 @@ namespace rock::weapon_transition_animation_acceleration
             weapon_transition_animation_acceleration_policy::
                 kAcceleratedSpeedMultiplier);
         return RequestResult::Armed;
+    }
+
+    ActivationEvidence observeExactLeaseActivation(
+        RE::PlayerCharacter* player,
+        const Identity& identity,
+        const Direction direction) noexcept
+    {
+        ActivationEvidence evidence{};
+        const DWORD ownerThreadId =
+            s_ownerThreadId.load(std::memory_order_acquire);
+        if (!s_installed.load(std::memory_order_acquire) || !player ||
+            !identity.valid() || ownerThreadId == 0 ||
+            ownerThreadId != GetCurrentThreadId() ||
+            !s_runtimeLease.active || s_runtimeLease.player != player ||
+            s_runtimeLease.identity != identity ||
+            s_runtimeLease.direction != direction ||
+            s_encodedLease.load(std::memory_order_acquire) == 0) {
+            return evidence;
+        }
+
+        for (std::size_t index = 0;
+             index < s_transitionClips.size();
+             ++index) {
+            const auto clipIdentity = s_transitionClips[index].load(
+                std::memory_order_acquire);
+            if (clipIdentity != 0 &&
+                evidence.activeClips <
+                    evidence.activeClipIdentities.size()) {
+                evidence.activeClipIdentities[evidence.activeClips++] =
+                    clipIdentity;
+            }
+            const auto updatedIdentity =
+                s_updatedTransitionClips[index].load(
+                    std::memory_order_acquire);
+            if (updatedIdentity == clipIdentity && updatedIdentity != 0 &&
+                evidence.updatedActiveClips <
+                    evidence.updatedActiveClipIdentities.size()) {
+                evidence.updatedActiveClipIdentities
+                    [evidence.updatedActiveClips++] = updatedIdentity;
+            }
+        }
+        evidence.sequence = s_runtimeLease.sequence;
+        evidence.matchedActivations =
+            s_matchedActivations.load(std::memory_order_acquire);
+        evidence.registeredUpdates =
+            s_registeredUpdateCalls.load(std::memory_order_acquire);
+        evidence.exactLease = true;
+        return evidence;
     }
 
     void service(const ServiceInput& input) noexcept

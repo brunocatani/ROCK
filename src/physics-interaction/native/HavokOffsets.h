@@ -298,6 +298,18 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_PrepareEquippedWeaponDraw = 0xEF8E60;
 
     /*
+     * Post-acceptance work performed by
+     * PlayerCharacter::DrawWeaponMagicHands at 0x140F78D10. After ActionDraw
+     * accepts, FO4VR sets ActorState to Drawing, calls 0x140F203B0 with false,
+     * then calls 0x140E08A80. A custom weapon graph can partially accept the
+     * action while the aggregate dispatcher reports failure. Recovery may
+     * complete this sequence only with exact-identity player-graph evidence.
+     */
+    constexpr std::uintptr_t kFunc_ApplyAcceptedWeaponDraw = 0xF203B0;
+    constexpr std::uintptr_t kFunc_RefreshActorEquipmentAfterAction = 0xE08A80;
+    constexpr std::uintptr_t kData_DrawSheatheSafetyTimer = 0x37D04E8;
+
+    /*
      * Equipped-weapon 3D attach task submission. Blind raw-disassembly
      * verification against Fallout4VR.exe 1.2.72 on 2026-07-22 confirmed
      * 0x140DAB8F0 submits task type 0x12 and retains both the actor and the

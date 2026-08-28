@@ -77,8 +77,20 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator
     'Every stable-sheathed equip retry must repeat verified native preparation through the exact-identity coordinator.'
 
 Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
-    'kExpectedPrepareDrawEntry[\s\S]{0,1800}kFunc_PrepareEquippedWeaponDraw[\s\S]{0,2500}prepare\(current\.player\)[\s\S]{0,800}DrawWeaponMagicHands\(true\)[\s\S]{0,300}NativeActionRejected' `
+    'kExpectedPrepareDrawEntry[\s\S]{0,3500}kFunc_PrepareEquippedWeaponDraw[\s\S]{0,9000}prepare\(current\.player\)[\s\S]{0,1000}DrawWeaponMagicHands\(true\)[\s\S]{0,700}NativeActionRejected' `
     'Prepared recovery must validate and repeat the verified FO4VR equip preamble and detect synchronous ActionDraw rejection.'
+
+Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
+    'recordRejectedSubmissionWitness[\s\S]{0,2400}existedBeforeSubmission[\s\S]{0,1800}after\.matchedActivations\s*>\s*before\.matchedActivations[\s\S]{0,1600}partialActionWitnessProvesAcceptance[\s\S]{0,2200}hasActiveUpdatedClips\(\)[\s\S]{0,500}hasUpdatedClipFrom[\s\S]{0,3500}kData_DrawSheatheSafetyTimer[\s\S]{0,800}SetWeaponState\([\s\S]{0,160}kDrawing[\s\S]{0,600}drawSheatheSafetyTimer[\s\S]{0,1200}kFunc_ApplyAcceptedWeaponDraw[\s\S]{0,1200}kFunc_RefreshActorEquipmentAfterAction' `
+    'A rejected custom-weapon draw may advance state only after exact player-graph clip evidence and the verified native post-acceptance sequence.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
+    'kPartialDrawCompletionDeadlineSeconds[\s\S]{0,5000}partialDrawRecoveryActive[\s\S]{0,1800}RepairAction::FinalizePartialDraw' `
+    'Partial native draw completion must remain under an elapsed-time deadline.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'PartialActionRecovered[\s\S]{0,500}partialDrawRecoveryStartedAtSeconds[\s\S]{0,3000}RepairAction::FinalizePartialDraw[\s\S]{0,500}finalizePartialExactCurrent' `
+    'The exact-identity coordinator must own partial draw recovery and bounded finalization.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
     'sampleDrawRecoveryWallDelta\(\)[\s\S]{0,300}!input\.visualAuthorityAvailable\s*\|\|\s*input\.menuBlocking\s*\|\|\s*input\.compatibilityBlocking[\s\S]{0,300}_drawRecoveryElapsedSeconds\s*\+=\s*\(std::max\)\([\s\S]{0,160}drawRecoveryWallDelta[\s\S]{0,5000}\.drawRecoveryElapsedSeconds\s*=\s*_drawRecoveryElapsedSeconds' `
