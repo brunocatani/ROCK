@@ -55,6 +55,14 @@ namespace rock::equipped_weapon_toggle_grab_policy
         bool rightReleasePressConsumed{ false };
     };
 
+    struct ReconcileDecision
+    {
+        // The caller must drain the acquisition press for each newly engaged
+        // hand. Otherwise the still-pending edge can look like the next press.
+        bool leftGripAcquired{ false };
+        bool rightGripAcquired{ false };
+    };
+
     [[nodiscard]] inline constexpr std::size_t handIndex(const bool isLeft) noexcept
     {
         return isLeft ? 1u : 0u;
@@ -140,17 +148,18 @@ namespace rock::equipped_weapon_toggle_grab_policy
             return {};
         }
 
-        inline constexpr void reconcileHand(
+        [[nodiscard]] inline constexpr bool reconcileHand(
             HandState& state,
             const bool occupied) noexcept
         {
             if (occupied) {
                 if (state == HandState::Open) {
                     state = HandState::Latched;
+                    return true;
                 } else if (state == HandState::BlockedUntilRelease) {
                     state = HandState::ReleasePending;
                 }
-                return;
+                return false;
             }
 
             if (state == HandState::ReleasePending) {
@@ -158,6 +167,7 @@ namespace rock::equipped_weapon_toggle_grab_policy
             } else if (state == HandState::Latched) {
                 state = HandState::Open;
             }
+            return false;
         }
     }
 
@@ -200,7 +210,7 @@ namespace rock::equipped_weapon_toggle_grab_policy
         };
     }
 
-    inline constexpr void reconcile(
+    [[nodiscard]] inline constexpr ReconcileDecision reconcile(
         RuntimeState& state,
         const bool enabled,
         const std::uint64_t weaponOwnershipKey,
@@ -209,14 +219,16 @@ namespace rock::equipped_weapon_toggle_grab_policy
         if (!enabled || weaponOwnershipKey == 0 ||
             state.weaponOwnershipKey != weaponOwnershipKey) {
             reset(state);
-            return;
+            return {};
         }
 
-        detail::reconcileHand(
-            state.hands[handIndex(true)],
-            occupancy.left);
-        detail::reconcileHand(
-            state.hands[handIndex(false)],
-            occupancy.right);
+        return ReconcileDecision{
+            .leftGripAcquired = detail::reconcileHand(
+                state.hands[handIndex(true)],
+                occupancy.left),
+            .rightGripAcquired = detail::reconcileHand(
+                state.hands[handIndex(false)],
+                occupancy.right),
+        };
     }
 }

@@ -3080,14 +3080,52 @@ namespace rock
                     supportAuthorityMode,
                     firingGripProximityAuthorityEnabled,
                     effectiveHandlingSettings);
-            equipped_weapon_toggle_grab_policy::reconcile(
-                _equippedWeaponToggleGrabState,
-                _equippedWeaponHandlingSettings.toggleGrabEnabled,
-                currentEquippedWeaponOwnershipKey,
-                equipped_weapon_toggle_grab_policy::GripOccupancy{
-                    .left = gripUpdateResult.after.left.weaponEngaged(),
-                    .right = gripUpdateResult.after.right.weaponEngaged(),
-                });
+            const auto toggleReconcileDecision =
+                equipped_weapon_toggle_grab_policy::reconcile(
+                    _equippedWeaponToggleGrabState,
+                    _equippedWeaponHandlingSettings.toggleGrabEnabled,
+                    currentEquippedWeaponOwnershipKey,
+                    equipped_weapon_toggle_grab_policy::GripOccupancy{
+                        .left = gripUpdateResult.after.left.weaponEngaged(),
+                        .right = gripUpdateResult.after.right.weaponEngaged(),
+                    });
+            const auto consumeToggleAcquisitionPress =
+                [this](const bool isLeft, const bool acquired) {
+                if (!acquired) {
+                    return;
+                }
+
+                GrabButtonState acquisitionInput{};
+                if (_firingHandGrabButtonFrameState.valid &&
+                    _firingHandGrabButtonFrameState.isLeft == isLeft) {
+                    acquisitionInput = GrabButtonState{
+                        .held = _firingHandGrabButtonFrameState.held,
+                        .pressed = _firingHandGrabButtonFrameState.pressed,
+                        .released = _firingHandGrabButtonFrameState.released,
+                    };
+                    _firingHandGrabButtonFrameState.valid = false;
+                } else {
+                    acquisitionInput = readGrabButtonState(
+                        isLeft,
+                        input_remap_policy::kGrabButtonId);
+                }
+
+                ROCK_LOG_DEBUG(Weapon,
+                    "Equipped weapon toggle grab armed hand={} acquisitionPress={} physicalHeld={} physicalReleased={}",
+                    isLeft ? "left" : "right",
+                    acquisitionInput.pressed ? "yes" : "no",
+                    acquisitionInput.held ? "yes" : "no",
+                    acquisitionInput.released ? "yes" : "no");
+            };
+            // A successful weapon grip owns the press that acquired it. Drain
+            // that edge before normal-grab suppression can leave it pending;
+            // only a later physical press may toggle this grip open.
+            consumeToggleAcquisitionPress(
+                true,
+                toggleReconcileDecision.leftGripAcquired);
+            consumeToggleAcquisitionPress(
+                false,
+                toggleReconcileDecision.rightGripAcquired);
             reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");

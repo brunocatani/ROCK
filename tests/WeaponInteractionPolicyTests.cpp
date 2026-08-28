@@ -1736,11 +1736,15 @@ int main()
             toggleDecision.leftReleasePressConsumed ||
                 toggleDecision.rightReleasePressConsumed);
 
-        toggle_grab::reconcile(
+        const auto toggleAcquisition = toggle_grab::reconcile(
             toggleState,
             true,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = true, .right = true });
+        ok &= expectTrue("new left weapon occupancy owns its acquisition press",
+            toggleAcquisition.leftGripAcquired);
+        ok &= expectTrue("new right weapon occupancy owns its acquisition press",
+            toggleAcquisition.rightGripAcquired);
         toggleInput.occupancy = { .left = true, .right = true };
         toggleInput.left = { .released = true };
         toggleInput.right = { .released = true };
@@ -1761,22 +1765,22 @@ int main()
             toggleDecision.right.held &&
                 !toggleDecision.rightReleasePressConsumed);
 
-        toggle_grab::reconcile(
+        static_cast<void>(toggle_grab::reconcile(
             toggleState,
             true,
             toggleInput.weaponOwnershipKey,
-            toggle_grab::GripOccupancy{ .left = true, .right = true });
+            toggle_grab::GripOccupancy{ .left = true, .right = true }));
         toggleInput.occupancy = { .left = true, .right = true };
         toggleInput.left = { .held = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
         ok &= expectTrue("pending left release stays logically open for debounce",
             !toggleDecision.left.held && !toggleDecision.left.released);
 
-        toggle_grab::reconcile(
+        static_cast<void>(toggle_grab::reconcile(
             toggleState,
             true,
             toggleInput.weaponOwnershipKey,
-            toggle_grab::GripOccupancy{ .left = false, .right = true });
+            toggle_grab::GripOccupancy{ .left = false, .right = true }));
         toggleInput.occupancy = { .left = false, .right = true };
         toggleInput.left = { .held = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
