@@ -340,6 +340,10 @@ namespace rock
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
             rockAmbidextrousFiringGripEnabled);
+        rockEquippedWeaponToggleGrabEnabled = ini.GetBoolValue(
+            AMBIDEXTROUS_FIRING_SECTION,
+            "bEquippedWeaponToggleGrabEnabled",
+            rockEquippedWeaponToggleGrabEnabled);
         rockFiringGripPromotionRadius = readClampedFloat(
             ini,
             AMBIDEXTROUS_FIRING_SECTION,

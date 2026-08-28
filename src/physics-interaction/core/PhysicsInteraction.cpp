@@ -626,6 +626,29 @@ namespace rock
             };
         }
 
+        GrabButtonState peekGrabButtonState(bool isLeft, int buttonId)
+        {
+            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
+                return {};
+            }
+
+            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
+            if (rawState.available) {
+                return GrabButtonState{
+                    .held = rawState.held,
+                    .pressed = rawState.pressed,
+                    .released = rawState.released,
+                };
+            }
+
+            const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
+            return GrabButtonState{
+                .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
+                .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
+                .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
+            };
+        }
+
         bool readGrabButtonHeld(bool isLeft, int buttonId)
         {
             if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
@@ -2029,6 +2052,9 @@ namespace rock
         _peerHeldJoinRetryStates = {};
         _heldWeaponTriggerEquipIntents = {};
         _forceGrabCommittedThisFrame = {};
+        equipped_weapon_toggle_grab_policy::reset(
+            _equippedWeaponToggleGrabState);
+        _equippedWeaponToggleGrabReleasePressConsumedThisFrame = {};
         _equippedWeaponShoulderSheath = {};
         input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
         _equippedWeaponSheathRetrievalStates = {};
@@ -2494,10 +2520,12 @@ namespace rock
                 (_twoHandedGrip.isPartCarryActive() || firingHandIsLeft);
             (void)consumeWeaponContactForHand(false, frame.right, rightWeaponContactProbeAllowed, rightWeaponContact);
 
-            const bool gripPressed = readGrabButtonHeld(true, input_remap_policy::kGrabButtonId);
-            const bool rightGripHeld = readGrabButtonHeld(false, input_remap_policy::kGrabButtonId);
-            const bool gripConfirmPressed = readGrabButtonPressedEdge(true, input_remap_policy::kGrabButtonId);
-            (void)gripConfirmPressed;
+            auto leftPhysicalGripState =
+                peekGrabButtonState(true, input_remap_policy::kGrabButtonId);
+            auto rightPhysicalGripState =
+                peekGrabButtonState(false, input_remap_policy::kGrabButtonId);
+            bool leftGripHeld = leftPhysicalGripState.held;
+            bool rightGripHeld = rightPhysicalGripState.held;
 
             WeaponInteractionRuntimeState providerInteractionState{};
 
@@ -2574,6 +2602,9 @@ namespace rock
                     // state after the menu closes.
                     primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, input_remap_policy::kGrabButtonId);
                     primaryGrabStateRead = true;
+                    (firingHandIsLeft ? leftPhysicalGripState :
+                                        rightPhysicalGripState) =
+                        primaryGrabState;
                     // Publish the consumed snapshot so the normal grab pipeline
                     // sees the same edges instead of re-consuming cleared ones.
                     _firingHandGrabButtonFrameState = SharedGrabButtonFrameState{
@@ -2631,6 +2662,58 @@ namespace rock
                         .released = primaryState.released,
                     };
                 }
+            }
+
+            if (_equippedWeaponHandlingSettings.toggleGrabEnabled &&
+                !primaryGrabStateRead) {
+                static_cast<void>(readPrimaryGrabState());
+            }
+
+            const auto toggleOccupancyBefore =
+                _twoHandedGrip.getGripOccupancy();
+            const auto toToggleButtonState = [](const GrabButtonState& state) {
+                return equipped_weapon_toggle_grab_policy::ButtonState{
+                    .held = state.held,
+                    .pressed = state.pressed,
+                    .released = state.released,
+                };
+            };
+            const auto toggleGrabDecision =
+                equipped_weapon_toggle_grab_policy::prepare(
+                    _equippedWeaponToggleGrabState,
+                    equipped_weapon_toggle_grab_policy::Input{
+                        .enabled = _equippedWeaponHandlingSettings.
+                            toggleGrabEnabled,
+                        .inputAllowed = !inputBlockingMenuActive,
+                        .weaponOwnershipKey =
+                            currentEquippedWeaponOwnershipKey,
+                        .occupancy = {
+                            .left = toggleOccupancyBefore.left.
+                                weaponEngaged(),
+                            .right = toggleOccupancyBefore.right.
+                                weaponEngaged(),
+                        },
+                        .left = toToggleButtonState(
+                            leftPhysicalGripState),
+                        .right = toToggleButtonState(
+                            rightPhysicalGripState),
+                    });
+            if (_equippedWeaponHandlingSettings.toggleGrabEnabled) {
+                leftGripHeld = toggleGrabDecision.left.held;
+                rightGripHeld = toggleGrabDecision.right.held;
+                const auto& logicalPrimaryGrip = firingHandIsLeft ?
+                    toggleGrabDecision.left : toggleGrabDecision.right;
+                primaryGripInput = EquippedWeaponPrimaryGripInput{
+                    .held = logicalPrimaryGrip.held,
+                    .pressed = logicalPrimaryGrip.pressed,
+                    .released = logicalPrimaryGrip.released,
+                };
+                _equippedWeaponToggleGrabReleasePressConsumedThisFrame[
+                    equipped_weapon_toggle_grab_policy::handIndex(true)] =
+                    toggleGrabDecision.leftReleasePressConsumed;
+                _equippedWeaponToggleGrabReleasePressConsumedThisFrame[
+                    equipped_weapon_toggle_grab_policy::handIndex(false)] =
+                    toggleGrabDecision.rightReleasePressConsumed;
             }
 
             bool primaryOnlyGripStartedThisFrame = false;
@@ -2906,7 +2989,10 @@ namespace rock
                                             .handEmpty = stashHandEmpty,
                                             .detectorConfirmed = true,
                                             .gripReleased =
-                                                primaryState.released,
+                                                _equippedWeaponHandlingSettings.
+                                                        toggleGrabEnabled ?
+                                                    primaryGripInput.released :
+                                                    primaryState.released,
                                         });
                         if (nativeShoulderSheathRequested) {
                             nativeShoulderSheathSourceHand =
@@ -2958,7 +3044,7 @@ namespace rock
             const bool manualScopeActivationRequested =
                 input_remap_runtime::isManualScopeActivationRequested();
             const EquippedWeaponGripFrameInput gripFrameInput{
-                .leftGripHeld = gripPressed,
+                .leftGripHeld = leftGripHeld,
                 .rightGripHeld = rightGripHeld,
                 .leftHandHoldingObject = leftHandHoldingObject,
                 .rightHandHoldingObject = _rightHand.isHolding(),
@@ -2994,6 +3080,14 @@ namespace rock
                     supportAuthorityMode,
                     firingGripProximityAuthorityEnabled,
                     effectiveHandlingSettings);
+            equipped_weapon_toggle_grab_policy::reconcile(
+                _equippedWeaponToggleGrabState,
+                _equippedWeaponHandlingSettings.toggleGrabEnabled,
+                currentEquippedWeaponOwnershipKey,
+                equipped_weapon_toggle_grab_policy::GripOccupancy{
+                    .left = gripUpdateResult.after.left.weaponEngaged(),
+                    .right = gripUpdateResult.after.right.weaponEngaged(),
+                });
             reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
@@ -3659,6 +3753,7 @@ namespace rock
 
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
+        _equippedWeaponToggleGrabReleasePressConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
         const auto retireDynamicWeaponForInterruptedFrame = [this]() {
             if (!_initialized.load(std::memory_order_acquire)) {
@@ -4701,6 +4796,8 @@ namespace rock
         const RockEquippedWeaponHandlingBaseline rockBaseline{
             .ambidextrousHandoffEnabled =
                 g_rockConfig.rockAmbidextrousFiringGripEnabled,
+            .toggleGrabEnabled =
+                g_rockConfig.rockEquippedWeaponToggleGrabEnabled,
             .equippedWeaponShoulderStashEnabled =
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
             .firingGripProximitySupportRadiusGameUnits =
@@ -5798,6 +5895,9 @@ namespace rock
         _equippedWeaponHandlingModeInitialized = false;
         _equippedWeaponHandlingModeReconcilePending = false;
         _fixedLeftCarry = {};
+        equipped_weapon_toggle_grab_policy::reset(
+            _equippedWeaponToggleGrabState);
+        _equippedWeaponToggleGrabReleasePressConsumedThisFrame = {};
         pipboy_equip_runtime::setLeftHandEquipAvailable(false);
         _authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
         if (!_initialized) {
@@ -9718,6 +9818,29 @@ namespace rock
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry(
                 "equipped-weapon-shoulder-gesture-this-frame",
+                true);
+            clearGameplayCandidatesForHand(hand, isLeft);
+            if (hand.hasSelection()) {
+                hand.clearSelectionState(false);
+            }
+            return false;
+        }
+        if (_equippedWeaponToggleGrabReleasePressConsumedThisFrame[
+                handIndex]) {
+            // The second press belongs only to the equipped-weapon latch. Do
+            // not let the same edge start a loose-object, surface, or touch
+            // grab after the weapon state releases this hand.
+            if (_firingHandGrabButtonFrameState.valid &&
+                _firingHandGrabButtonFrameState.isLeft == isLeft) {
+                _firingHandGrabButtonFrameState.valid = false;
+            } else {
+                static_cast<void>(
+                    readGrabButtonState(isLeft, grabButton));
+            }
+            inputSuppressionState.deferredGrabRelease = false;
+            grab_input_intent_policy::reset(inputIntentState);
+            cancelPeerHeldJoinRetry(
+                "equipped-weapon-toggle-release-this-frame",
                 true);
             clearGameplayCandidatesForHand(hand, isLeft);
             if (hand.hasSelection()) {

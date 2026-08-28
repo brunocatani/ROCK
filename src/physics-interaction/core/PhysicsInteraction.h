@@ -36,6 +36,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
+#include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -807,6 +808,10 @@ namespace rock
             bool released{ false };
         };
         SharedGrabButtonFrameState _firingHandGrabButtonFrameState{};
+        equipped_weapon_toggle_grab_policy::RuntimeState
+            _equippedWeaponToggleGrabState{};
+        std::array<bool, 2>
+            _equippedWeaponToggleGrabReleasePressConsumedThisFrame{};
         struct ProviderWeaponPartDriveNodeState
         {
             RE::NiAVObject* node{ nullptr };

@@ -7,6 +7,7 @@ namespace rock
     struct RockEquippedWeaponHandlingBaseline
     {
         bool ambidextrousHandoffEnabled{ false };
+        bool toggleGrabEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
         float firingGripPromotionRadiusGameUnits{ 5.0f };
@@ -23,6 +24,7 @@ namespace rock
         bool firingGripOwnershipEnabled{ false };
         bool primaryDetachEnabled{ false };
         bool ambidextrousHandoffEnabled{ false };
+        bool toggleGrabEnabled{ false };
         bool gripZoneEquipEnabled{ false };
         bool gripZoneHoverHapticsEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
@@ -61,6 +63,9 @@ namespace rock
         settings.primaryDetachEnabled = false;
         settings.ambidextrousHandoffEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
+        // Toggle grab is a ROCK input preference. A handling-provider lease
+        // can add weapon capabilities, but it cannot replace this input mode.
+        settings.toggleGrabEnabled = rockBaseline.toggleGrabEnabled;
         settings.equippedWeaponShoulderStashEnabled =
             rockBaseline.equippedWeaponShoulderStashEnabled;
         // Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety
@@ -138,6 +143,10 @@ namespace rock
         const bool fixedFiringHandChanged) noexcept
     {
         if (fixedFiringHandChanged) {
+            return true;
+        }
+
+        if (previous.toggleGrabEnabled != current.toggleGrabEnabled) {
             return true;
         }
 

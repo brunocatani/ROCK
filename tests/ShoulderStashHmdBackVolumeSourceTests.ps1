@@ -85,7 +85,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'canCommitNativeShoulderSheath[\s\S]{0,1800}primaryState\.released[\s\S]*?_equippedWeaponSheathCommittedThisFrame\[sheathHandIndex\]\s*=\s*true[\s\S]{0,500}submitEquippedWeaponShoulderSheath' `
     'ROCK must commit only the firing hand''s in-zone release and consume that edge before normal world-grab handling.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'RockEquippedWeaponHandlingBaseline[\s\S]{0,240}equippedWeaponShoulderStashEnabled\s*=[\s\r\n]+\s*g_rockConfig\.rockEquippedWeaponShoulderStashEnabled' `
+    'RockEquippedWeaponHandlingBaseline[\s\S]{0,420}equippedWeaponShoulderStashEnabled\s*=[\s\r\n]+\s*g_rockConfig\.rockEquippedWeaponShoulderStashEnabled' `
     'The equipped-weapon handling baseline must consume ROCK''s shoulder stash switch.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'g_rockConfig\.rockRealisticWeaponHandlingEnabled' `

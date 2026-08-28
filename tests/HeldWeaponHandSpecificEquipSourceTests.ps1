@@ -70,11 +70,11 @@ foreach ($configSource in @('src/RockConfig.cpp', 'src/RockConfig.h')) {
 }
 
 Require-Text 'src/RockConfig.h' `
-    'rockAmbidextrousFiringGripEnabled\s*=\s*true[\s\S]{0,220}rockFiringGripPromotionRadius\s*=\s*5\.0f[\s\S]{0,320}rockLeftFiringAimYawDegrees\s*=\s*0\.0f[\s\S]{0,320}rockLeftFiringAimOffsetZGameUnits\s*=\s*0\.0f' `
-    'ROCK must own an enabled standalone ambidextrous baseline and its bounded left-firing tuning.'
+    'rockAmbidextrousFiringGripEnabled\s*=\s*true[\s\S]{0,180}rockEquippedWeaponToggleGrabEnabled\s*=\s*false[\s\S]{0,220}rockFiringGripPromotionRadius\s*=\s*5\.0f[\s\S]{0,320}rockLeftFiringAimYawDegrees\s*=\s*0\.0f[\s\S]{0,320}rockLeftFiringAimOffsetZGameUnits\s*=\s*0\.0f' `
+    'ROCK must own its ambidextrous baseline, opt-in weapon toggle input, and bounded left-firing tuning.'
 Require-Text 'src/RockConfig.cpp' `
-    'AMBIDEXTROUS_FIRING_SECTION\s*=\s*"AmbidextrousFiring"[\s\S]*GetBoolValue\(\s*AMBIDEXTROUS_FIRING_SECTION,\s*"bAmbidextrousFiringGripEnabled"[\s\S]*"fFiringGripPromotionRadius"[\s\S]*"fLeftFiringAimOffsetZGameUnits"' `
-    'ROCK must load its standalone handoff switch and tuning only from [AmbidextrousFiring].'
+    'AMBIDEXTROUS_FIRING_SECTION\s*=\s*"AmbidextrousFiring"[\s\S]*GetBoolValue\(\s*AMBIDEXTROUS_FIRING_SECTION,\s*"bAmbidextrousFiringGripEnabled"[\s\S]*"bEquippedWeaponToggleGrabEnabled"[\s\S]*"fFiringGripPromotionRadius"[\s\S]*"fLeftFiringAimOffsetZGameUnits"' `
+    'ROCK must load its handoff, weapon toggle input, and tuning only from [AmbidextrousFiring].'
 
 foreach ($configPath in @('data/config/ROCK_example.ini')) {
     $configText = Read-Source $configPath
@@ -90,11 +90,12 @@ foreach ($configPath in @('data/config/ROCK_example.ini')) {
     }
     $ambidextrousSection = Read-IniSection $configPath 'AmbidextrousFiring'
     $ambidextrousAssignments = [regex]::Matches($ambidextrousSection, '(?m)^[A-Za-z]\w*\s*=')
-    if ($ambidextrousAssignments.Count -ne 7 -or
+    if ($ambidextrousAssignments.Count -ne 8 -or
         $ambidextrousSection -notmatch '(?m)^bAmbidextrousFiringGripEnabled\s*=\s*true\s*$' -or
+        $ambidextrousSection -notmatch '(?m)^bEquippedWeaponToggleGrabEnabled\s*=\s*false\s*$' -or
         $ambidextrousSection -notmatch '(?m)^fFiringGripPromotionRadius\s*=\s*5\.0\s*$' -or
         ([regex]::Matches($ambidextrousSection, '(?m)^fLeftFiringAim\w+\s*=\s*0\.0\s*$')).Count -ne 5) {
-        $failures.Add("$configPath`: [AmbidextrousFiring] must expose exactly the ROCK baseline switch, promotion radius, and five zeroed left-hold trims.")
+        $failures.Add("$configPath`: [AmbidextrousFiring] must expose the ROCK handoff switch, opt-in weapon toggle input, promotion radius, and five zeroed left-hold trims.")
     }
     $physicsSection = Read-IniSection $configPath 'PhysicsInteraction'
     if ($physicsSection -notmatch '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$') {
@@ -114,6 +115,9 @@ Require-Text 'src/api/ROCKProviderApi.h' `
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'RockEquippedWeaponHandlingBaseline[\s\S]*ambidextrousHandoffEnabled[\s\S]*equippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*settings\.firingGripOwnershipEnabled\s*=[\s\r\n]+\s*rockBaseline\.ambidextrousHandoffEnabled[\s\S]{0,500}settings\.primaryDetachEnabled\s*=\s*false[\s\S]*externalAuthorityActive\s*=\s*true[\s\S]*PrimaryDetach[\s\S]*AmbidextrousHandoff[\s\S]*leftFiringAimOffsetGameUnits' `
     'ROCK shoulder stash must not grant firing ownership or physical detach while a validated V1 addon may explicitly add those capabilities.'
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
+    'toggleGrabEnabled[\s\S]*settings\.toggleGrabEnabled\s*=\s*rockBaseline\.toggleGrabEnabled[\s\S]*if \(!request\)' `
+    'Equipped-weapon toggle grab must remain a ROCK-owned input preference across addon handling leases.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'requiresEquippedWeaponHandlingModeReconcile[\s\S]*fixedFiringHandChanged[\s\S]*previous\.firingGripOwnershipEnabled[\s\S]*previous\.primaryDetachEnabled[\s\S]*previous\.ambidextrousHandoffEnabled[\s\S]*previous\.pipboyTriggerHandEquipEnabled' `
     'Mode reconciliation must follow removed effective capabilities rather than the raw presence of an addon lease.'

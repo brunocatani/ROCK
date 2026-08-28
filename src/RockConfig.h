@@ -74,6 +74,8 @@ namespace rock
         // ROCK-native firing-grip handoff. This remains independent from the
         // addon-owned realistic detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;
+        // Optional ROCK-owned input mode for equipped-weapon grips only.
+        bool rockEquippedWeaponToggleGrabEnabled = false;
         float rockFiringGripPromotionRadius = 5.0f;
         float rockLeftFiringAimYawDegrees = 0.0f;
         float rockLeftFiringAimPitchDegrees = 0.0f;

@@ -3,6 +3,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
@@ -23,6 +24,9 @@
 
 namespace
 {
+    namespace toggle_grab =
+        rock::equipped_weapon_toggle_grab_policy;
+
     enum class TestWeaponType
     {
         kHandToHand = 0,
@@ -1532,6 +1536,7 @@ int main()
 
     const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
         .ambidextrousHandoffEnabled = true,
+        .toggleGrabEnabled = true,
         .equippedWeaponShoulderStashEnabled = true,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
         .firingGripPromotionRadiusGameUnits = 5.5f,
@@ -1553,6 +1558,8 @@ int main()
         coreWeaponHandling.firingGripOwnershipEnabled);
     ok &= expectTrue("base ROCK enables configured ambidextrous handoff",
         coreWeaponHandling.ambidextrousHandoffEnabled);
+    ok &= expectTrue("base ROCK enables configured equipped-weapon toggle grab",
+        coreWeaponHandling.toggleGrabEnabled);
     ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
         coreWeaponHandling.primaryDetachEnabled);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
@@ -1611,6 +1618,8 @@ int main()
         externalHandling.externalAuthorityActive);
     ok &= expectTrue("an addon lease cannot suppress ROCK shoulder stash",
         externalHandling.equippedWeaponShoulderStashEnabled);
+    ok &= expectTrue("an addon lease cannot suppress ROCK toggle grab",
+        externalHandling.toggleGrabEnabled);
     ok &= expectFalse("ROCK stash cannot add detach to a non-detach addon lease",
         externalHandling.primaryDetachEnabled);
     ok &= expectFalse("an active addon request may suppress ROCK ambidextrous handoff",
@@ -1691,6 +1700,109 @@ int main()
             addonPipboyHandling,
             coreWeaponHandling,
             false));
+
+    auto holdToGrabHandling = coreWeaponHandling;
+    holdToGrabHandling.toggleGrabEnabled = false;
+    ok &= expectTrue("changing equipped-weapon grab input mode reconciles live grips",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            coreWeaponHandling,
+            holdToGrabHandling,
+            false));
+
+    {
+        toggle_grab::RuntimeState toggleState{};
+        toggle_grab::Input toggleInput{
+            .enabled = true,
+            .inputAllowed = true,
+            .weaponOwnershipKey = 0x1234u,
+            .occupancy = {},
+            .left = {
+                .held = true,
+                .pressed = true,
+                .released = false,
+            },
+            .right = {
+                .held = true,
+                .pressed = true,
+                .released = false,
+            },
+        };
+        auto toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectTrue("open left weapon grip passes its acquisition press",
+            toggleDecision.left.held && toggleDecision.left.pressed);
+        ok &= expectTrue("open right weapon grip passes its acquisition press",
+            toggleDecision.right.held && toggleDecision.right.pressed);
+        ok &= expectFalse("acquisition presses are not consumed as releases",
+            toggleDecision.leftReleasePressConsumed ||
+                toggleDecision.rightReleasePressConsumed);
+
+        toggle_grab::reconcile(
+            toggleState,
+            true,
+            toggleInput.weaponOwnershipKey,
+            toggle_grab::GripOccupancy{ .left = true, .right = true });
+        toggleInput.occupancy = { .left = true, .right = true };
+        toggleInput.left = { .released = true };
+        toggleInput.right = { .released = true };
+        toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectTrue("left weapon grip stays latched after physical release",
+            toggleDecision.left.held && !toggleDecision.left.released);
+        ok &= expectTrue("right weapon grip stays latched after physical release",
+            toggleDecision.right.held && !toggleDecision.right.released);
+
+        toggleInput.left = { .held = true, .pressed = true };
+        toggleInput.right = {};
+        toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectTrue("second left press requests a logical release",
+            !toggleDecision.left.held && toggleDecision.left.released);
+        ok &= expectTrue("second left press is reserved for the weapon release",
+            toggleDecision.leftReleasePressConsumed);
+        ok &= expectTrue("right weapon grip remains independently latched",
+            toggleDecision.right.held &&
+                !toggleDecision.rightReleasePressConsumed);
+
+        toggle_grab::reconcile(
+            toggleState,
+            true,
+            toggleInput.weaponOwnershipKey,
+            toggle_grab::GripOccupancy{ .left = true, .right = true });
+        toggleInput.occupancy = { .left = true, .right = true };
+        toggleInput.left = { .held = true };
+        toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectTrue("pending left release stays logically open for debounce",
+            !toggleDecision.left.held && !toggleDecision.left.released);
+
+        toggle_grab::reconcile(
+            toggleState,
+            true,
+            toggleInput.weaponOwnershipKey,
+            toggle_grab::GripOccupancy{ .left = false, .right = true });
+        toggleInput.occupancy = { .left = false, .right = true };
+        toggleInput.left = { .held = true };
+        toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectFalse("release press tail cannot re-acquire the left weapon grip",
+            toggleDecision.left.held || toggleDecision.left.pressed);
+        ok &= expectTrue("right latch survives the peer hand release",
+            toggleDecision.right.held);
+
+        toggleInput.left = { .released = true };
+        toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectEqual("physical release rearms only the released hand",
+            toggleState.hands[toggle_grab::handIndex(true)],
+            toggle_grab::HandState::Open);
+        ok &= expectEqual("peer hand remains latched after left rearm",
+            toggleState.hands[toggle_grab::handIndex(false)],
+            toggle_grab::HandState::Latched);
+
+        toggleInput.enabled = false;
+        toggleInput.right = { .held = false, .released = true };
+        toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
+        ok &= expectTrue("disabled toggle mode passes physical release input",
+            toggleDecision.right.released);
+        ok &= expectEqual("disabled toggle mode clears weapon identity",
+            toggleState.weaponOwnershipKey,
+            std::uint64_t{ 0 });
+    }
 
     using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
     using rock::weapon_support_authority_policy::canPromoteSupportGripToFiringGrip;
