@@ -347,11 +347,11 @@ int main()
     auto indicator = evaluateIndicator(indicatorInput);
     bool indicatorChecksPassed =
         indicator.visible &&
-        near(indicator.markerWorld.x, -4.0f) &&
+        near(indicator.markerWorld.x, -2.0f) &&
         near(indicator.markerWorld.y, 2.0f) &&
         near(indicator.markerWorld.z, 3.0f);
     assert(indicator.visible);
-    assert(near(indicator.markerWorld.x, -4.0f));
+    assert(near(indicator.markerWorld.x, -2.0f));
     assert(near(indicator.markerWorld.y, 2.0f));
     assert(near(indicator.markerWorld.z, 3.0f));
 
@@ -360,26 +360,56 @@ int main()
     indicatorChecksPassed =
         indicatorChecksPassed &&
         indicator.visible &&
-        near(indicator.markerWorld.x, 6.0f) &&
+        near(indicator.markerWorld.x, 4.0f) &&
         near(indicator.markerWorld.y, 2.0f) &&
         near(indicator.markerWorld.z, 3.0f);
     assert(indicator.visible);
-    assert(near(indicator.markerWorld.x, 6.0f));
+    assert(near(indicator.markerWorld.x, 4.0f));
     assert(near(indicator.markerWorld.y, 2.0f));
     assert(near(indicator.markerWorld.z, 3.0f));
 
+    constexpr float kThreeUnitDiagonalComponent = 2.12132034f;
     indicatorInput.weaponFamily = WeaponFamily::TwoHandGun;
     indicator = evaluateIndicator(indicatorInput);
     indicatorChecksPassed =
         indicatorChecksPassed &&
         indicator.visible &&
-        near(indicator.markerWorld.x, 1.0f) &&
+        near(
+            indicator.markerWorld.x,
+            1.0f + kThreeUnitDiagonalComponent) &&
         near(indicator.markerWorld.y, 2.0f) &&
-        near(indicator.markerWorld.z, -2.0f);
+        near(
+            indicator.markerWorld.z,
+            3.0f - kThreeUnitDiagonalComponent);
     assert(indicator.visible);
-    assert(near(indicator.markerWorld.x, 1.0f));
+    assert(near(
+        indicator.markerWorld.x,
+        1.0f + kThreeUnitDiagonalComponent));
     assert(near(indicator.markerWorld.y, 2.0f));
-    assert(near(indicator.markerWorld.z, -2.0f));
+    assert(near(
+        indicator.markerWorld.z,
+        3.0f - kThreeUnitDiagonalComponent));
+
+    indicatorInput.supportSideAxisWorld = Vec3{ -2.0f, 0.0f, 0.0f };
+    indicator = evaluateIndicator(indicatorInput);
+    indicatorChecksPassed =
+        indicatorChecksPassed &&
+        indicator.visible &&
+        near(
+            indicator.markerWorld.x,
+            1.0f - kThreeUnitDiagonalComponent) &&
+        near(indicator.markerWorld.y, 2.0f) &&
+        near(
+            indicator.markerWorld.z,
+            3.0f - kThreeUnitDiagonalComponent);
+    assert(indicator.visible);
+    assert(near(
+        indicator.markerWorld.x,
+        1.0f - kThreeUnitDiagonalComponent));
+    assert(near(indicator.markerWorld.y, 2.0f));
+    assert(near(
+        indicator.markerWorld.z,
+        3.0f - kThreeUnitDiagonalComponent));
 
     const auto indicatorHidden = [](const IndicatorInput& input) {
         return !evaluateIndicator(input).visible;

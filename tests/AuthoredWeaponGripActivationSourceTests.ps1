@@ -50,8 +50,12 @@ Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.
     'One-hand weapons must use the topology side while two-hand weapons sweep from that side to DOWN.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'kIndicatorOffsetGameUnits\s*=\s*5\.0f[\s\S]*evaluateIndicator[\s\S]*WeaponFamily::OneHandGun[\s\S]*supportSideAxisWorld[\s\S]*WeaponFamily::TwoHandGun[\s\S]*downAxisWorld' `
-    'The gameplay indicator must retain the fixed five-unit topology-side/DOWN family anchors.'
+    'kIndicatorOffsetGameUnits\s*=\s*3\.0f[\s\S]*evaluateIndicator[\s\S]*WeaponFamily::OneHandGun[\s\S]*indicatorAxis\s*=\s*input\.supportSideAxisWorld[\s\S]*WeaponFamily::TwoHandGun[\s\S]*tryNormalize\([\s\S]*input\.supportSideAxisWorld[\s\S]*tryNormalize\(input\.downAxisWorld[\s\S]*normalizedSupportSide\.x\s*\+\s*normalizedDown\.x' `
+    'The gameplay indicator must use a three-unit topology-side anchor for one-hand weapons and the normalized side/DOWN diagonal for two-hand weapons.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'authoredIndicatorSupportHandIsLeft\s*=\s*supportHandIsLeft[\s\S]{0,700}\.supportSideAxisWorld\s*=\s*toIndicatorVector\([\s\S]{0,120}authoredActivation\.supportSideAxisWorld' `
+    'Indicator placement and ownership must follow the current mirrored support-hand topology for both firing hands.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshAuthoredSupportGripActivationState\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `

@@ -20,7 +20,7 @@ namespace rock::authored_weapon_grip_activation_policy
         kActivationConeMinimumDot * kActivationConeMinimumDot;
     inline constexpr float kSweptArcAxisOrthogonalityTolerance = 0.001f;
     inline constexpr float kMinimumDirectionDistanceGameUnits = 0.25f;
-    inline constexpr float kIndicatorOffsetGameUnits = 5.0f;
+    inline constexpr float kIndicatorOffsetGameUnits = 3.0f;
 
     enum class WeaponFamily : std::uint8_t
     {
@@ -381,9 +381,23 @@ namespace rock::authored_weapon_grip_activation_policy
         case WeaponFamily::OneHandGun:
             indicatorAxis = input.supportSideAxisWorld;
             break;
-        case WeaponFamily::TwoHandGun:
-            indicatorAxis = input.downAxisWorld;
+        case WeaponFamily::TwoHandGun: {
+            // Bisect the swept quarter-arc independently of axis magnitudes.
+            Vec3 normalizedSupportSide{};
+            Vec3 normalizedDown{};
+            if (!tryNormalize(
+                    input.supportSideAxisWorld,
+                    normalizedSupportSide) ||
+                !tryNormalize(input.downAxisWorld, normalizedDown)) {
+                return {};
+            }
+            indicatorAxis = Vec3{
+                normalizedSupportSide.x + normalizedDown.x,
+                normalizedSupportSide.y + normalizedDown.y,
+                normalizedSupportSide.z + normalizedDown.z,
+            };
             break;
+        }
         case WeaponFamily::Unsupported:
         case WeaponFamily::Unknown:
         default:
