@@ -68,6 +68,10 @@ namespace rock
     {
         bool valid{ false };
         RE::NiTransform world{};
+        // Diagnostic witnesses preserve why capture failed without changing
+        // the existing validity contract consumed by the solver.
+        bool nodeAvailable{ false };
+        bool worldFinite{ false };
     };
 
     struct EquippedWeaponGripFrameInput
@@ -90,6 +94,15 @@ namespace rock
         // Grab state of the CURRENT firing hand (debounced release), read by
         // the caller from whichever physical hand isFiringHandLeft() reports.
         EquippedWeaponPrimaryGripInput primaryGripInput{};
+        // Failure-only telemetry inputs. They never participate in grip
+        // decisions; they let an involuntary teardown distinguish physical
+        // input, toggle translation, animation boundaries, and tracking.
+        EquippedWeaponPrimaryGripInput leftPhysicalGripInput{};
+        EquippedWeaponPrimaryGripInput rightPhysicalGripInput{};
+        RE::NiPoint3 hmdPositionWorld{};
+        bool toggleGrabEnabled{ false };
+        bool animationBoundaryActive{ false };
+        bool hasHmdFrame{ false };
     };
 
     struct EquippedWeaponHandGripOccupancy
@@ -837,6 +850,32 @@ namespace rock
             bool followsAuthoredPrimaryGrip{ false };
         };
 
+        struct ScopeSafeHandFrameDiagnostic
+        {
+            RE::NiTransform rootHandWorld{};
+            RE::NiTransform driverWorld{};
+            RE::NiTransform reconstructedHandWorld{};
+            RE::NiTransform currentHandWorld{};
+            scope_safe_hand_frame_math::ResolutionMode resolutionMode{
+                scope_safe_hand_frame_math::ResolutionMode::Unavailable
+            };
+            std::uint32_t consecutiveDriverMissFramesBefore{ 0 };
+            std::uint32_t consecutiveDriverMissFramesAfter{ 0 };
+            bool rootSampleAllowed{ false };
+            bool rootHandValid{ false };
+            bool driverNodeAvailable{ false };
+            bool driverWorldFinite{ false };
+            bool driverFrameValid{ false };
+            bool driverWorldUsable{ false };
+            bool driverToHandLocalAvailable{ false };
+            bool reconstructedHandValid{ false };
+            bool lastHandWorldAvailable{ false };
+            bool collisionPresentationWasLive{ false };
+            bool scopeDriverFrameAuthorityActive{ false };
+            bool physicalFrameOverrideApplied{ false };
+            bool currentHandWorldValid{ false };
+        };
+
         struct ScopeSafeHandFrameState
         {
             RE::NiTransform driverToHandLocal{};
@@ -849,7 +888,71 @@ namespace rock
             bool currentHandWorldValid{ false };
             bool hasLastHandWorld{ false };
             bool rootRebaseActive{ false };
+            ScopeSafeHandFrameDiagnostic diagnostic{};
         };
+
+        enum class LockedHandAuthorityRole : std::uint8_t
+        {
+            None,
+            PrimaryGrip,
+            SupportGrip,
+        };
+
+        struct LockedHandAuthorityAttemptDiagnostic
+        {
+            RE::NiTransform targetWorld{};
+            RE::NiTransform liveWorld{};
+            LockedHandAuthorityRole role{ LockedHandAuthorityRole::None };
+            bool requested{ false };
+            bool bridgeAvailable{ false };
+            bool targetUsable{ false };
+            bool liveWorldAvailable{ false };
+            bool liveWorldUsable{ false };
+            bool applied{ false };
+        };
+
+        struct GripFailureFrameSnapshot
+        {
+            std::array<ScopeSafeHandFrameDiagnostic, 2> handFrames{};
+            std::array<LockedHandAuthorityAttemptDiagnostic, 2>
+                authorityAttempts{};
+            RE::NiTransform weaponWorld{};
+            RE::NiPoint3 hmdPositionWorld{};
+            RE::NiPoint3 playerSpaceDeltaGameUnits{};
+            EquippedWeaponPrimaryGripInput leftPhysicalGripInput{};
+            EquippedWeaponPrimaryGripInput rightPhysicalGripInput{};
+            EquippedWeaponPrimaryGripInput primaryLogicalInput{};
+            EquippedWeaponPrimaryGripInput primaryDebouncedInput{};
+            std::uint64_t frameIndex{ 0 };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
+            std::uint64_t supportGripSequence{ 0 };
+            std::uint32_t weaponFormID{ 0 };
+            std::uint8_t primaryReleaseOpenFrames{ 0 };
+            float deltaSeconds{ 0.0f };
+            TwoHandedState state{ TwoHandedState::Inactive };
+            weapon_support_authority_policy::WeaponSupportAuthorityMode
+                authorityMode{
+                    weapon_support_authority_policy::
+                        WeaponSupportAuthorityMode::FullTwoHandedSolver
+                };
+            bool firingHandIsLeft{ false };
+            bool leftGripHeld{ false };
+            bool rightGripHeld{ false };
+            bool leftHandHoldingObject{ false };
+            bool rightHandHoldingObject{ false };
+            bool toggleGrabEnabled{ false };
+            bool animationBoundaryActive{ false };
+            bool scopeMenuOpen{ false };
+            bool manualScopeActivationRequested{ false };
+            bool nativeScopeRequestStateValid{ false };
+            bool nativeScopeRequestActive{ false };
+            bool hasHmdFrame{ false };
+            bool visualAuthorityAvailable{ false };
+            bool weaponWorldValid{ false };
+        };
+
+        static constexpr std::size_t kGripFailureHistoryCapacity = 30;
 
         enum class SupportInputBaselineKind : std::uint8_t
         {
@@ -980,6 +1083,24 @@ namespace rock
         void transitionToInactive(bool publishRestoredWeaponTransform);
 
         void updateGripping(RE::NiNode* weaponNode, float dt);
+
+        void recordGripFailureFrame(
+            RE::NiNode* weaponNode,
+            const EquippedWeaponGripFrameInput& frameInput,
+            const EquippedWeaponGripFrameInput& stableFrameInput,
+            float dt,
+            std::uint32_t currentWeaponFormID,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey);
+        void recordLockedHandAuthorityAttempt(
+            bool isLeft,
+            LockedHandAuthorityRole role,
+            const RE::NiTransform& targetWorld,
+            const RE::NiTransform* liveWorld,
+            bool bridgeAvailable,
+            bool applied);
+        void logGripFailureIncident(const char* reason);
+        void resetGripFailureDiagnostics();
 
         bool providerPartAuthorityStillCurrent(WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey);
 
@@ -1468,6 +1589,19 @@ namespace rock
         // never tears down authority that the current weapon state still owns.
         std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeDeferredHandAuthorityClears{};
         std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeHandAuthorityPublishedThisFrame{};
+
+        // Fixed-capacity, value-only prehistory. It allocates and formats
+        // nothing in the frame path; an involuntary teardown emits it once at
+        // a controlled rate so transient frame loss is reconstructible.
+        std::array<GripFailureFrameSnapshot, kGripFailureHistoryCapacity>
+            _gripFailureHistory{};
+        std::size_t _gripFailureHistoryNext{ 0 };
+        std::size_t _gripFailureHistoryCount{ 0 };
+        std::size_t _currentGripFailureHistoryIndex{
+            kGripFailureHistoryCapacity
+        };
+        std::uint64_t _gripFailureIncidentSequence{ 0 };
+        float _gripFailureDetailedLogCooldownSeconds{ 0.0f };
 
         // Generation-bound resolved anchor. Generated sight evidence remains
         // preferred; malformed/missing optics use the current firing-grip

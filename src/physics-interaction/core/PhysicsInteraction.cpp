@@ -3041,9 +3041,11 @@ namespace rock
 
             const auto captureScopeHandDriverFrame = [](RE::NiNode* driverNode) {
                 EquippedWeaponScopeHandDriverFrame result{};
-                if (driverNode && finiteNiTransform(driverNode->world)) {
-                    result.valid = true;
+                result.nodeAvailable = driverNode != nullptr;
+                if (driverNode) {
                     result.world = driverNode->world;
+                    result.worldFinite = finiteNiTransform(driverNode->world);
+                    result.valid = result.worldFinite;
                 }
                 return result;
             };
@@ -3077,6 +3079,21 @@ namespace rock
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
+                .leftPhysicalGripInput = EquippedWeaponPrimaryGripInput{
+                    .held = leftPhysicalGripState.held,
+                    .pressed = leftPhysicalGripState.pressed,
+                    .released = leftPhysicalGripState.released,
+                },
+                .rightPhysicalGripInput = EquippedWeaponPrimaryGripInput{
+                    .held = rightPhysicalGripState.held,
+                    .pressed = rightPhysicalGripState.pressed,
+                    .released = rightPhysicalGripState.released,
+                },
+                .hmdPositionWorld = frame.hmdPositionWorld,
+                .toggleGrabEnabled =
+                    _equippedWeaponHandlingSettings.toggleGrabEnabled,
+                .animationBoundaryActive = frame.reloadBoundaryActive,
+                .hasHmdFrame = frame.hasHmdFrame,
             };
             auto effectiveHandlingSettings = _equippedWeaponHandlingSettings;
             effectiveHandlingSettings.firingGripOwnershipEnabled =

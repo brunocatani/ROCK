@@ -63,12 +63,87 @@ namespace rock
         constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
         constexpr std::uint32_t SCOPE_TRANSITION_TRACE_FRAMES = 6;
+        constexpr float GRIP_FAILURE_DETAILED_LOG_COOLDOWN_SECONDS = 2.0f;
         constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS =
             24.0f;
         constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS =
             0.5f;
         constexpr std::size_t WEAPON_PRESENTATION_MAX_DEPTH = 128;
         constexpr std::size_t WEAPON_PRESENTATION_MAX_OBJECTS = 8192;
+
+        const char* twoHandedStateDiagnosticName(
+            const TwoHandedState state)
+        {
+            switch (state) {
+            case TwoHandedState::Inactive:
+                return "inactive";
+            case TwoHandedState::Touching:
+                return "touching";
+            case TwoHandedState::Gripping:
+                return "gripping";
+            case TwoHandedState::PartCarry:
+                return "part-carry";
+            case TwoHandedState::PrimaryOnly:
+                return "primary-only";
+            }
+            return "unknown";
+        }
+
+        const char* supportAuthorityDiagnosticName(
+            const weapon_support_authority_policy::
+                WeaponSupportAuthorityMode mode)
+        {
+            switch (mode) {
+            case weapon_support_authority_policy::
+                WeaponSupportAuthorityMode::FullTwoHandedSolver:
+                return "full";
+            case weapon_support_authority_policy::
+                WeaponSupportAuthorityMode::VisualOnlySupport:
+                return "visual-only";
+            }
+            return "unknown";
+        }
+
+        const char* handFrameResolutionDiagnosticName(
+            const scope_safe_hand_frame_math::ResolutionMode mode)
+        {
+            switch (mode) {
+            case scope_safe_hand_frame_math::ResolutionMode::RootFlattened:
+                return "root";
+            case scope_safe_hand_frame_math::ResolutionMode::
+                DriverReconstructed:
+                return "driver";
+            case scope_safe_hand_frame_math::ResolutionMode::LastKnown:
+                return "last-known";
+            case scope_safe_hand_frame_math::ResolutionMode::Unavailable:
+                return "unavailable";
+            }
+            return "unknown";
+        }
+
+        float diagnosticPointDistance(
+            const RE::NiPoint3& left,
+            const RE::NiPoint3& right)
+        {
+            const RE::NiPoint3 delta = left - right;
+            const float distance = delta.Length();
+            return std::isfinite(distance) ? distance : -1.0f;
+        }
+
+        float diagnosticRotationDeterminant(const RE::NiMatrix3& rotation)
+        {
+            const float determinant =
+                rotation.entry[0][0] *
+                    (rotation.entry[1][1] * rotation.entry[2][2] -
+                        rotation.entry[1][2] * rotation.entry[2][1]) -
+                rotation.entry[0][1] *
+                    (rotation.entry[1][0] * rotation.entry[2][2] -
+                        rotation.entry[1][2] * rotation.entry[2][0]) +
+                rotation.entry[0][2] *
+                    (rotation.entry[1][0] * rotation.entry[2][1] -
+                        rotation.entry[1][1] * rotation.entry[2][0]);
+            return std::isfinite(determinant) ? determinant : -1.0f;
+        }
 
         grab_pinch_pocket_policy::Config
             currentWeaponOppositionPocketConfig()
@@ -1957,9 +2032,13 @@ namespace rock
         const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
             const std::size_t handIndex = isLeft ? 0u : 1u;
             ScopeSafeHandFrameState& state = _scopeSafeHandFrames[handIndex];
+            ScopeSafeHandFrameDiagnostic& diagnostic = state.diagnostic;
+            diagnostic = {};
             state.currentHandWorldValid = false;
 
             RE::NiTransform rootHandWorld{};
+            const bool rootSampleAllowed =
+                !_scopeDriverFrameAuthorityActive;
             const bool rootHandValid = !_scopeDriverFrameAuthorityActive &&
                                        tryGetRootFlattenedHandBoneTransform(isLeft, rootHandWorld);
             const bool driverValid = driverFrame.valid &&
@@ -1980,6 +2059,27 @@ namespace rock
                 state.hasLastHandWorld,
                 state.consecutiveDriverMissFrames,
                 SCOPE_DRIVER_MISS_GRACE_FRAMES);
+
+            diagnostic.rootHandWorld = rootHandWorld;
+            diagnostic.driverWorld = driverFrame.world;
+            diagnostic.reconstructedHandWorld = reconstructedHandWorld;
+            diagnostic.resolutionMode = resolutionMode;
+            diagnostic.consecutiveDriverMissFramesBefore =
+                state.consecutiveDriverMissFrames;
+            diagnostic.rootSampleAllowed = rootSampleAllowed;
+            diagnostic.rootHandValid = rootHandValid;
+            diagnostic.driverNodeAvailable = driverFrame.nodeAvailable;
+            diagnostic.driverWorldFinite = driverFrame.worldFinite;
+            diagnostic.driverFrameValid = driverFrame.valid;
+            diagnostic.driverWorldUsable = driverValid;
+            diagnostic.driverToHandLocalAvailable =
+                state.hasDriverToHandLocal;
+            diagnostic.reconstructedHandValid = reconstructedHandValid;
+            diagnostic.lastHandWorldAvailable = state.hasLastHandWorld;
+            diagnostic.collisionPresentationWasLive =
+                _weaponCollisionHandPresentationFromPreviousFrame[handIndex];
+            diagnostic.scopeDriverFrameAuthorityActive =
+                _scopeDriverFrameAuthorityActive;
 
             if (resolutionMode == scope_safe_hand_frame_math::ResolutionMode::RootFlattened) {
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
@@ -2102,7 +2202,16 @@ namespace rock
                 firingState.currentHandWorldValid = true;
                 firingState.lastHandWorld = physicalHandWorld;
                 firingState.hasLastHandWorld = true;
+                firingState.diagnostic.physicalFrameOverrideApplied = true;
             }
+        }
+
+        for (ScopeSafeHandFrameState& state : _scopeSafeHandFrames) {
+            state.diagnostic.currentHandWorld = state.currentHandWorld;
+            state.diagnostic.currentHandWorldValid =
+                state.currentHandWorldValid;
+            state.diagnostic.consecutiveDriverMissFramesAfter =
+                state.consecutiveDriverMissFrames;
         }
 
         if (_nativeScopeTransitionTraceFramesRemaining > 0) {
@@ -2511,6 +2620,15 @@ namespace rock
         stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
         stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
 
+        recordGripFailureFrame(
+            weaponNode,
+            frameInput,
+            stableFrameInput,
+            dt,
+            weaponCollision.getCurrentObservedEquippedWeaponFormID(),
+            currentWeaponGenerationKey,
+            currentEquippedWeaponOwnershipKey);
+
         if (isManualOwnershipActive() &&
             !reconcileCollisionGeneration(
                 weaponNode,
@@ -2841,6 +2959,394 @@ namespace rock
         };
     }
 
+    void TwoHandedGrip::recordGripFailureFrame(
+        RE::NiNode* weaponNode,
+        const EquippedWeaponGripFrameInput& frameInput,
+        const EquippedWeaponGripFrameInput& stableFrameInput,
+        const float dt,
+        const std::uint32_t currentWeaponFormID,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey)
+    {
+        if (std::isfinite(dt) && dt > 0.0f) {
+            _gripFailureDetailedLogCooldownSeconds = (std::max)(
+                0.0f,
+                _gripFailureDetailedLogCooldownSeconds - dt);
+        }
+
+        const auto& runtime = runtime_state::currentFrame();
+        GripFailureFrameSnapshot snapshot{};
+        snapshot.handFrames[0] = _scopeSafeHandFrames[0].diagnostic;
+        snapshot.handFrames[1] = _scopeSafeHandFrames[1].diagnostic;
+        snapshot.hmdPositionWorld = frameInput.hmdPositionWorld;
+        snapshot.playerSpaceDeltaGameUnits =
+            runtime.playerSpace.deltaGameUnits;
+        snapshot.leftPhysicalGripInput =
+            frameInput.leftPhysicalGripInput;
+        snapshot.rightPhysicalGripInput =
+            frameInput.rightPhysicalGripInput;
+        snapshot.primaryLogicalInput = frameInput.primaryGripInput;
+        snapshot.primaryDebouncedInput = stableFrameInput.primaryGripInput;
+        snapshot.frameIndex = runtime.frameIndex;
+        snapshot.weaponGenerationKey = currentWeaponGenerationKey;
+        snapshot.equippedWeaponOwnershipKey =
+            currentEquippedWeaponOwnershipKey;
+        const WeaponPartGrip& supportGrip = partGrip(!_firingHandIsLeft);
+        snapshot.supportGripSequence =
+            supportGrip.active ? supportGrip.gripSequence : 0;
+        snapshot.weaponFormID = currentWeaponFormID;
+        snapshot.primaryReleaseOpenFrames =
+            _primaryReleaseDebounce.consecutiveOpenFrames;
+        snapshot.deltaSeconds = dt;
+        snapshot.state = _state;
+        snapshot.authorityMode = _authorityMode;
+        snapshot.firingHandIsLeft = _firingHandIsLeft;
+        snapshot.leftGripHeld = stableFrameInput.leftGripHeld;
+        snapshot.rightGripHeld = stableFrameInput.rightGripHeld;
+        snapshot.leftHandHoldingObject =
+            stableFrameInput.leftHandHoldingObject;
+        snapshot.rightHandHoldingObject =
+            stableFrameInput.rightHandHoldingObject;
+        snapshot.toggleGrabEnabled = frameInput.toggleGrabEnabled;
+        snapshot.animationBoundaryActive =
+            frameInput.animationBoundaryActive;
+        snapshot.scopeMenuOpen = frameInput.scopeMenuOpen;
+        snapshot.manualScopeActivationRequested =
+            frameInput.manualScopeActivationRequested;
+        snapshot.nativeScopeRequestStateValid =
+            frameInput.nativeScopeRequestStateValid;
+        snapshot.nativeScopeRequestActive =
+            frameInput.nativeScopeRequestActive;
+        snapshot.hasHmdFrame = frameInput.hasHmdFrame;
+        snapshot.visualAuthorityAvailable =
+            runtime.visualAuthorityAvailable;
+        if (weaponNode) {
+            snapshot.weaponWorld = weaponNode->world;
+            snapshot.weaponWorldValid = isFiniteTransform(weaponNode->world);
+        }
+
+        const std::size_t historyIndex = _gripFailureHistoryNext;
+        _gripFailureHistory[historyIndex] = snapshot;
+        _currentGripFailureHistoryIndex = historyIndex;
+        _gripFailureHistoryNext =
+            (historyIndex + 1) % kGripFailureHistoryCapacity;
+        _gripFailureHistoryCount = (std::min)(
+            kGripFailureHistoryCapacity,
+            _gripFailureHistoryCount + 1);
+    }
+
+    void TwoHandedGrip::recordLockedHandAuthorityAttempt(
+        const bool isLeft,
+        const LockedHandAuthorityRole role,
+        const RE::NiTransform& targetWorld,
+        const RE::NiTransform* const liveWorld,
+        const bool bridgeAvailable,
+        const bool applied)
+    {
+        if (_currentGripFailureHistoryIndex >=
+            kGripFailureHistoryCapacity) {
+            return;
+        }
+
+        auto& snapshot =
+            _gripFailureHistory[_currentGripFailureHistoryIndex];
+        if (snapshot.frameIndex != runtime_state::currentFrame().frameIndex) {
+            return;
+        }
+
+        LockedHandAuthorityAttemptDiagnostic attempt{};
+        attempt.targetWorld = targetWorld;
+        attempt.role = role;
+        attempt.requested = true;
+        attempt.bridgeAvailable = bridgeAvailable;
+        attempt.targetUsable = isUsableHandAuthorityTransform(targetWorld);
+        attempt.liveWorldAvailable = liveWorld != nullptr;
+        if (liveWorld) {
+            attempt.liveWorld = *liveWorld;
+            attempt.liveWorldUsable =
+                isUsableHandAuthorityTransform(*liveWorld);
+        }
+        attempt.applied = applied;
+        snapshot.authorityAttempts[isLeft ? 0u : 1u] = attempt;
+    }
+
+    void TwoHandedGrip::logGripFailureIncident(const char* const reason)
+    {
+        GripFailureFrameSnapshot fallback{};
+        GripFailureFrameSnapshot* current = &fallback;
+        if (_currentGripFailureHistoryIndex <
+            kGripFailureHistoryCapacity) {
+            current =
+                &_gripFailureHistory[_currentGripFailureHistoryIndex];
+        } else {
+            current->frameIndex = runtime_state::currentFrame().frameIndex;
+        }
+
+        current->state = _state;
+        current->authorityMode = _authorityMode;
+        current->firingHandIsLeft = _firingHandIsLeft;
+        current->handFrames[0] = _scopeSafeHandFrames[0].diagnostic;
+        current->handFrames[1] = _scopeSafeHandFrames[1].diagnostic;
+        current->weaponGenerationKey = _activeWeaponGenerationKey;
+        current->equippedWeaponOwnershipKey =
+            _activeEquippedWeaponOwnershipKey;
+        const WeaponPartGrip& supportGrip = partGrip(!_firingHandIsLeft);
+        current->supportGripSequence =
+            supportGrip.active ? supportGrip.gripSequence : 0;
+        if (_activeWeaponNode) {
+            current->weaponWorld = _activeWeaponNode->world;
+            current->weaponWorldValid =
+                isFiniteTransform(_activeWeaponNode->world);
+        }
+
+        const auto occupancy = getGripOccupancy();
+        const std::uint64_t incident =
+            ++_gripFailureIncidentSequence;
+        const bool emitDetailedHistory =
+            _gripFailureDetailedLogCooldownSeconds <= 0.0f;
+        if (emitDetailedHistory) {
+            _gripFailureDetailedLogCooldownSeconds =
+                GRIP_FAILURE_DETAILED_LOG_COOLDOWN_SECONDS;
+        }
+
+        ROCK_LOG_WARN(
+            Weapon,
+            "TwoHandedGrip: grip failure incident={} reason={} frame={} weapon={:08X} generation={:016X} ownership={:016X} grip={} state={} authority={} firingHand={} supportHand={} inputMode={} logicalHeld(L/R)={}/{} physicalL(H/P/R)={}/{}/{} physicalR(H/P/R)={}/{}/{} primaryLogical(H/P/R)={}/{}/{} primaryDebounced(H/P/R)={}/{}/{} releaseOpenFrames={} occupancy(L/R)={}/{} holding(L/R)={}/{} animationBoundary={} scope(menu/manual/nativeValid/nativeActive)={}/{}/{}/{} hmd={} visualAuthority={} history={}",
+            incident,
+            reason ? reason : "unknown",
+            current->frameIndex,
+            current->weaponFormID,
+            current->weaponGenerationKey,
+            current->equippedWeaponOwnershipKey,
+            current->supportGripSequence,
+            twoHandedStateDiagnosticName(current->state),
+            supportAuthorityDiagnosticName(current->authorityMode),
+            current->firingHandIsLeft ? "left" : "right",
+            current->firingHandIsLeft ? "right" : "left",
+            current->toggleGrabEnabled ? "toggle" : "hold",
+            current->leftGripHeld,
+            current->rightGripHeld,
+            current->leftPhysicalGripInput.held,
+            current->leftPhysicalGripInput.pressed,
+            current->leftPhysicalGripInput.released,
+            current->rightPhysicalGripInput.held,
+            current->rightPhysicalGripInput.pressed,
+            current->rightPhysicalGripInput.released,
+            current->primaryLogicalInput.held,
+            current->primaryLogicalInput.pressed,
+            current->primaryLogicalInput.released,
+            current->primaryDebouncedInput.held,
+            current->primaryDebouncedInput.pressed,
+            current->primaryDebouncedInput.released,
+            static_cast<unsigned>(current->primaryReleaseOpenFrames),
+            occupancy.left.weaponEngaged(),
+            occupancy.right.weaponEngaged(),
+            current->leftHandHoldingObject,
+            current->rightHandHoldingObject,
+            current->animationBoundaryActive,
+            current->scopeMenuOpen,
+            current->manualScopeActivationRequested,
+            current->nativeScopeRequestStateValid,
+            current->nativeScopeRequestActive,
+            current->hasHmdFrame,
+            current->visualAuthorityAvailable,
+            emitDetailedHistory ? "emitted" : "rate-limited");
+
+        const auto logHandFrame = [incident](
+                                      const bool isLeft,
+                                      const ScopeSafeHandFrameDiagnostic& hand) {
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: grip failure hand incident={} hand={} resolution={} root(allowed/valid)={}/{} driver(node/finite/frame/usable/calibration)={}/{}/{}/{}/{} reconstructed={} last={} collisionPresentation={} scopeDriver={} miss={}->{} physicalOverride={} current={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) currentT=({:.2f},{:.2f},{:.2f})",
+                incident,
+                isLeft ? "left" : "right",
+                handFrameResolutionDiagnosticName(hand.resolutionMode),
+                hand.rootSampleAllowed,
+                hand.rootHandValid,
+                hand.driverNodeAvailable,
+                hand.driverWorldFinite,
+                hand.driverFrameValid,
+                hand.driverWorldUsable,
+                hand.driverToHandLocalAvailable,
+                hand.reconstructedHandValid,
+                hand.lastHandWorldAvailable,
+                hand.collisionPresentationWasLive,
+                hand.scopeDriverFrameAuthorityActive,
+                hand.consecutiveDriverMissFramesBefore,
+                hand.consecutiveDriverMissFramesAfter,
+                hand.physicalFrameOverrideApplied,
+                hand.currentHandWorldValid,
+                hand.rootHandWorld.translate.x,
+                hand.rootHandWorld.translate.y,
+                hand.rootHandWorld.translate.z,
+                hand.driverWorld.translate.x,
+                hand.driverWorld.translate.y,
+                hand.driverWorld.translate.z,
+                hand.reconstructedHandWorld.translate.x,
+                hand.reconstructedHandWorld.translate.y,
+                hand.reconstructedHandWorld.translate.z,
+                hand.currentHandWorld.translate.x,
+                hand.currentHandWorld.translate.y,
+                hand.currentHandWorld.translate.z);
+        };
+        logHandFrame(true, current->handFrames[0]);
+        logHandFrame(false, current->handFrames[1]);
+
+        const auto authorityRoleName = [](const LockedHandAuthorityRole role) {
+            switch (role) {
+            case LockedHandAuthorityRole::None:
+                return "none";
+            case LockedHandAuthorityRole::PrimaryGrip:
+                return "primary";
+            case LockedHandAuthorityRole::SupportGrip:
+                return "support";
+            }
+            return "unknown";
+        };
+        const auto logAuthorityAttempt = [&](
+                                             const bool isLeft,
+                                             const LockedHandAuthorityAttemptDiagnostic& attempt) {
+            if (!attempt.requested) {
+                return;
+            }
+            const float targetToLiveDistance =
+                attempt.liveWorldAvailable ?
+                diagnosticPointDistance(
+                    attempt.targetWorld.translate,
+                    attempt.liveWorld.translate) :
+                -1.0f;
+            const float targetToLiveRotation =
+                attempt.liveWorldAvailable && attempt.targetUsable &&
+                        attempt.liveWorldUsable ?
+                    hand_visual_lerp_math::rotationDistanceDegrees(
+                        attempt.targetWorld,
+                        attempt.liveWorld) :
+                    -1.0f;
+            const float targetToHmdDistance = current->hasHmdFrame ?
+                diagnosticPointDistance(
+                    attempt.targetWorld.translate,
+                    current->hmdPositionWorld) :
+                -1.0f;
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: grip failure authority incident={} hand={} role={} bridge={} targetUsable={} live(available/usable)={}/{} applied={} targetT=({:.2f},{:.2f},{:.2f}) targetScale={:.6f} targetDet={:.6f} targetToLive=({:.2f}gu,{:.2f}deg) targetToHmd={:.2f}gu liveT=({:.2f},{:.2f},{:.2f})",
+                incident,
+                isLeft ? "left" : "right",
+                authorityRoleName(attempt.role),
+                attempt.bridgeAvailable,
+                attempt.targetUsable,
+                attempt.liveWorldAvailable,
+                attempt.liveWorldUsable,
+                attempt.applied,
+                attempt.targetWorld.translate.x,
+                attempt.targetWorld.translate.y,
+                attempt.targetWorld.translate.z,
+                attempt.targetWorld.scale,
+                diagnosticRotationDeterminant(attempt.targetWorld.rotate),
+                targetToLiveDistance,
+                targetToLiveRotation,
+                targetToHmdDistance,
+                attempt.liveWorld.translate.x,
+                attempt.liveWorld.translate.y,
+                attempt.liveWorld.translate.z);
+        };
+        logAuthorityAttempt(true, current->authorityAttempts[0]);
+        logAuthorityAttempt(false, current->authorityAttempts[1]);
+
+        if (!emitDetailedHistory || _gripFailureHistoryCount == 0) {
+            return;
+        }
+
+        const std::size_t historyStart =
+            _gripFailureHistoryCount == kGripFailureHistoryCapacity ?
+            _gripFailureHistoryNext :
+            0;
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: grip failure history begin incident={} samples={}",
+            incident,
+            _gripFailureHistoryCount);
+        for (std::size_t ordinal = 0;
+             ordinal < _gripFailureHistoryCount;
+             ++ordinal) {
+            const auto& sample = _gripFailureHistory[
+                (historyStart + ordinal) % kGripFailureHistoryCapacity];
+            const auto& leftFrame = sample.handFrames[0];
+            const auto& rightFrame = sample.handFrames[1];
+            const auto& leftAuthority = sample.authorityAttempts[0];
+            const auto& rightAuthority = sample.authorityAttempts[1];
+            const std::uint64_t ageFrames =
+                current->frameIndex >= sample.frameIndex ?
+                current->frameIndex - sample.frameIndex :
+                0;
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: grip failure history incident={} sample={}/{} frame={} ageFrames={} dt={:.5f} state={} authority={} firing={} input={} held(L/R)={}/{} physicalHeld(L/R)={}/{} primary(logical/debounced)={}/{} releaseOpen={} animationBoundary={} scope={} weaponT=({:.2f},{:.2f},{:.2f}) playerDelta=({:.2f},{:.2f},{:.2f}) handL(mode/current/driver/reconstructed/collision)={}/{}/{}/{}/{} handR(mode/current/driver/reconstructed/collision)={}/{}/{}/{}/{} authorityL(role/requested/applied/T)=({}/{}/{}/({:.2f},{:.2f},{:.2f})) authorityR(role/requested/applied/T)=({}/{}/{}/({:.2f},{:.2f},{:.2f}))",
+                incident,
+                ordinal + 1,
+                _gripFailureHistoryCount,
+                sample.frameIndex,
+                ageFrames,
+                sample.deltaSeconds,
+                twoHandedStateDiagnosticName(sample.state),
+                supportAuthorityDiagnosticName(sample.authorityMode),
+                sample.firingHandIsLeft ? "left" : "right",
+                sample.toggleGrabEnabled ? "toggle" : "hold",
+                sample.leftGripHeld,
+                sample.rightGripHeld,
+                sample.leftPhysicalGripInput.held,
+                sample.rightPhysicalGripInput.held,
+                sample.primaryLogicalInput.held,
+                sample.primaryDebouncedInput.held,
+                static_cast<unsigned>(sample.primaryReleaseOpenFrames),
+                sample.animationBoundaryActive,
+                sample.scopeMenuOpen,
+                sample.weaponWorld.translate.x,
+                sample.weaponWorld.translate.y,
+                sample.weaponWorld.translate.z,
+                sample.playerSpaceDeltaGameUnits.x,
+                sample.playerSpaceDeltaGameUnits.y,
+                sample.playerSpaceDeltaGameUnits.z,
+                handFrameResolutionDiagnosticName(leftFrame.resolutionMode),
+                leftFrame.currentHandWorldValid,
+                leftFrame.driverWorldUsable,
+                leftFrame.reconstructedHandValid,
+                leftFrame.collisionPresentationWasLive,
+                handFrameResolutionDiagnosticName(rightFrame.resolutionMode),
+                rightFrame.currentHandWorldValid,
+                rightFrame.driverWorldUsable,
+                rightFrame.reconstructedHandValid,
+                rightFrame.collisionPresentationWasLive,
+                authorityRoleName(leftAuthority.role),
+                leftAuthority.requested,
+                leftAuthority.applied,
+                leftAuthority.targetWorld.translate.x,
+                leftAuthority.targetWorld.translate.y,
+                leftAuthority.targetWorld.translate.z,
+                authorityRoleName(rightAuthority.role),
+                rightAuthority.requested,
+                rightAuthority.applied,
+                rightAuthority.targetWorld.translate.x,
+                rightAuthority.targetWorld.translate.y,
+                rightAuthority.targetWorld.translate.z);
+        }
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: grip failure history end incident={}",
+            incident);
+    }
+
+    void TwoHandedGrip::resetGripFailureDiagnostics()
+    {
+        _gripFailureHistory = {};
+        _gripFailureHistoryNext = 0;
+        _gripFailureHistoryCount = 0;
+        _currentGripFailureHistoryIndex =
+            kGripFailureHistoryCapacity;
+        _gripFailureIncidentSequence = 0;
+        _gripFailureDetailedLogCooldownSeconds = 0.0f;
+    }
+
     void TwoHandedGrip::reset()
     {
         (void)frik_visual_authority::clearExternalHandWorldTransform(
@@ -2879,6 +3385,7 @@ namespace rock
         _nativeScopeActivationDebugSnapshot = {};
         clearNativeScopeRigidFrame();
         _scopeSafeHandFrames = {};
+        resetGripFailureDiagnostics();
         _scopeDriverFrameAuthorityActive = false;
         _nativeScopeRequestStateValid = false;
         _nativeScopeRequestActive = false;
@@ -5797,6 +6304,7 @@ namespace rock
                 supportTransform)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because authoritative hand transforms are unavailable");
+            logGripFailureIncident("authoritative-hand-frame-unavailable");
             transitionToInactive(false);
             return;
         }
@@ -5921,6 +6429,7 @@ namespace rock
                         .valid ?
                     "valid" :
                     "missing");
+            logGripFailureIncident("dynamic-input-baseline-invalid");
             transitionToInactive(false);
             return;
         }
@@ -6036,6 +6545,7 @@ namespace rock
                 clearDynamicSupportAcquisition(
                     "full-target-solve-degenerate",
                     true);
+                logGripFailureIncident("two-hand-target-solve-degenerate");
                 transitionToInactive(false);
             }
             return;
@@ -6217,6 +6727,7 @@ namespace rock
         if (!applyWeaponVisualAuthority(weaponNode, appliedWeaponWorld)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK visual weapon authority failed");
+            logGripFailureIncident("weapon-visual-authority-publication-failed");
             transitionToInactive(false);
             return;
         }
@@ -6229,6 +6740,7 @@ namespace rock
         if (!applyLockedHandVisualAuthority(weaponNode, applyPrimaryHandAuthority, true, dt, &primaryTransform, &supportTransform)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK locked hand authority failed");
+            logGripFailureIncident("locked-hand-authority-publication-failed");
             transitionToInactive(false);
             return;
         }
@@ -6242,6 +6754,8 @@ namespace rock
             ROCK_LOG_WARN(
                 Weapon,
                 "TwoHandedGrip: clearing support grip because final left position-only weapon publication failed");
+            logGripFailureIncident(
+                "final-left-weapon-publication-failed");
             transitionToInactive(false);
             return;
         }
@@ -7875,6 +8389,8 @@ namespace rock
         if (!applyLockedHandVisualAuthority(weaponNode, false, true, dt, nullptr, liveSupportTransform)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing visual-only support grip because ROCK support hand authority failed");
+            logGripFailureIncident(
+                "visual-only-support-authority-publication-failed");
             transitionToInactive(false);
             return;
         }
@@ -9054,8 +9570,19 @@ namespace rock
                 return false;
             }
         }
-        const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
-            PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), requestedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
+        const bool applied =
+            frik_visual_authority::applyExternalHandWorldTransform(
+                PRIMARY_GRIP_TAG,
+                handFromBool(_firingHandIsLeft),
+                requestedFiringHandWorld,
+                GRIP_HAND_POSE_PRIORITY);
+        recordLockedHandAuthorityAttempt(
+            _firingHandIsLeft,
+            LockedHandAuthorityRole::PrimaryGrip,
+            requestedFiringHandWorld,
+            liveHandWorld,
+            true,
+            applied);
         if (applied) {
             if (_firingHandIsLeft) {
                 _leftFiringHandWorldActive = true;
@@ -9099,8 +9626,19 @@ namespace rock
                 acquisitionStart,
                 dt,
                 grip.visualLerp);
-        const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
-            SUPPORT_GRIP_TAG, handFromBool(isLeft), appliedHandWorld, GRIP_HAND_POSE_PRIORITY);
+        const bool applied =
+            frik_visual_authority::applyExternalHandWorldTransform(
+                SUPPORT_GRIP_TAG,
+                handFromBool(isLeft),
+                appliedHandWorld,
+                GRIP_HAND_POSE_PRIORITY);
+        recordLockedHandAuthorityAttempt(
+            isLeft,
+            LockedHandAuthorityRole::SupportGrip,
+            appliedHandWorld,
+            liveHandWorld,
+            true,
+            applied);
         if (applied) {
             recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
             clearHandVisualReturn(isLeft, "part-grip-authority-acquired", false);
