@@ -905,8 +905,8 @@ namespace rock
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
-            // Right-primary authored support keeps axis aiming and the
-            // primary-anchored solve but never applies palm-normal twist.
+            // Both authored support topologies keep axis aiming and the
+            // primary-anchored solve but never apply palm-normal twist.
             bool disableAuthoredSupportNormalTwist{ false };
             std::uint64_t authoredSupportCaptureSequence{ 0 };
             /*

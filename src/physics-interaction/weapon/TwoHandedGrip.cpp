@@ -4257,8 +4257,16 @@ namespace rock
                 _authorityMode = authoredSupportAuthorityMode;
             }
             grip.authoredSupportGrip = true;
+            /*
+             * Palm-normal twist belongs to the retired full-rigid authored
+             * support behavior, not to either ambidextrous topology. The
+             * mirrored right-support pose uses the same authored canonical and
+             * must inherit the exact right-fire/left-support contract: retain
+             * two-point axis aiming and primary-anchored translation, but never
+             * corkscrew the weapon around that axis. Do not gate this by the
+             * current firing hand again.
+             */
             grip.disableAuthoredSupportNormalTwist =
-                !_firingHandIsLeft &&
                 _rightFiringHandCanonicalSource ==
                     RightFiringCanonicalSource::AuthoredAnimation;
             grip.authoredSupportCaptureSequence =
@@ -5956,12 +5964,12 @@ namespace rock
 
         if (supportGrip.disableAuthoredSupportNormalTwist) {
             /*
-             * Authored right-primary support removes the palm-normal twist
-             * about the primary-support grip axis - the roll that corkscrews
-             * the weapon around its own barrel on offhand attach - not the
-             * axis-aiming rotation. Keep the proven full solve (axis aim
-             * toward the offhand plus primary-anchored translation) and drop
-             * only the roll term.
+             * Authored support in either hand topology removes the palm-normal
+             * twist about the primary-support grip axis - the roll that
+             * corkscrews the weapon around its own barrel on offhand attach -
+             * not the axis-aiming rotation. Keep the proven full solve (axis
+             * aim toward the offhand plus primary-anchored translation) and
+             * drop only the roll term.
              *
              * Do NOT reintroduce "freeze all rotation and let the support
              * seat own translation". Tried twice (locked-ray anchor, then
