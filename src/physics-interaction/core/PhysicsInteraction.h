@@ -597,6 +597,10 @@ namespace rock
         // physical hand can claim the same stored shoulder in ambidextrous mode.
         EquippedWeaponShoulderSheathState _equippedWeaponShoulderSheath{};
         std::array<shoulder_stash::RuntimeState, 2> _equippedWeaponSheathRetrievalStates{};
+        // A retrieval squeeze/tap owns its held and release tail. Sheathing
+        // rearms only after that same physical gesture has fully released.
+        std::array<equipped_weapon_drop_policy::ShoulderInputGuardState, 2>
+            _equippedWeaponShoulderInputGuards{};
         std::array<mouth_consume::RuntimeState, 2> _mouthConsumeStates{};
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
 

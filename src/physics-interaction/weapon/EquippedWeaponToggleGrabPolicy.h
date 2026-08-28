@@ -43,8 +43,6 @@ namespace rock::equipped_weapon_toggle_grab_policy
         bool inputAllowed{ false };
         std::uint64_t weaponOwnershipKey{ 0 };
         GripOccupancy occupancy{};
-        bool leftShoulderLeaseActive{ false };
-        bool rightShoulderLeaseActive{ false };
         ButtonState left{};
         ButtonState right{};
     };
@@ -88,7 +86,6 @@ namespace rock::equipped_weapon_toggle_grab_policy
             const ButtonState& physical,
             const bool occupied,
             const bool inputAllowed,
-            const bool shoulderLeaseActive,
             const bool synchronizeOccupancy) noexcept
         {
             if (synchronizeOccupancy) {
@@ -101,15 +98,6 @@ namespace rock::equipped_weapon_toggle_grab_policy
                 } else if (!occupied && state == HandState::ReleasePending) {
                     state = HandState::BlockedUntilRelease;
                 }
-            }
-
-            // A confirmed shoulder stash owns the physical grip gesture. It
-            // must see an already-open button or a later physical release,
-            // without changing the stored toggle state before the sheath
-            // transition commits or the detector lease ends.
-            if (shoulderLeaseActive) {
-                return inputAllowed ?
-                    HandDecision{ .button = physical } : HandDecision{};
             }
 
             switch (state) {
@@ -207,14 +195,12 @@ namespace rock::equipped_weapon_toggle_grab_policy
             input.left,
             input.occupancy.left,
             input.inputAllowed,
-            input.leftShoulderLeaseActive,
             !identityChanged);
         auto right = detail::prepareHand(
             state.hands[handIndex(false)],
             input.right,
             input.occupancy.right,
             input.inputAllowed,
-            input.rightShoulderLeaseActive,
             !identityChanged);
         return Decision{
             .left = left.button,

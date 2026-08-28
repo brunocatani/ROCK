@@ -2059,6 +2059,7 @@ namespace rock
         _equippedWeaponShoulderSheath = {};
         input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
         _equippedWeaponSheathRetrievalStates = {};
+        _equippedWeaponShoulderInputGuards = {};
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
         _bareFistGuardState = {};
@@ -2790,7 +2791,6 @@ namespace rock
              * dwell can never confirm a later release.
              */
             std::array<shoulder_stash::Decision, 2> equippedWeaponStashCommitDecisions{};
-            std::array<bool, 2> equippedWeaponToggleShoulderInputLeases{};
             bool nativeShoulderSheathRequested = false;
             auto nativeShoulderSheathSourceHand =
                 equipped_weapon_drop_policy::SourceHand::None;
@@ -2827,6 +2827,19 @@ namespace rock
                     const std::size_t stashHandIndex = stashHandIsLeft ? 1u : 0u;
                     auto& stashState = _equippedWeaponStashStates[stashHandIndex];
                     auto& commitLease = _equippedWeaponStashCommitLeases[stashHandIndex];
+                    const bool gripPhysicallyHeld =
+                        input_remap_runtime::isRawButtonPhysicallyHeld(
+                            stashHandIsLeft,
+                            input_remap_policy::kGrabButtonId);
+                    if (equipped_weapon_drop_policy::
+                            shouldBlockSheathForRetrievalGesture(
+                                _equippedWeaponShoulderInputGuards[
+                                    stashHandIndex],
+                                gripPhysicallyHeld)) {
+                        shoulder_stash::resetRuntime(stashState);
+                        commitLease = {};
+                        continue;
+                    }
                     if (!stashCarryEligible || equipped_weapon_drop_policy::isLeft(stashCarryHand) != stashHandIsLeft) {
                         shoulder_stash::resetRuntime(stashState);
                         commitLease = {};
@@ -2850,8 +2863,6 @@ namespace rock
                     const auto stashDecision = shoulder_stash::evaluate(stashInput, stashState);
                     equippedWeaponStashCommitDecisions[stashHandIndex] = stashDecision;
 
-                    const bool gripPhysicallyHeld =
-                        input_remap_runtime::isRawButtonPhysicallyHeld(stashHandIsLeft, input_remap_policy::kGrabButtonId);
                     if (gripPhysicallyHeld) {
                         commitLease = {};
                     } else if (!stashDecision.confirmedForCommit) {
@@ -2912,13 +2923,6 @@ namespace rock
                         commitLease = {};
                     }
 
-                    if (_equippedWeaponHandlingSettings.toggleGrabEnabled &&
-                        equippedWeaponStashCommitDecisions[stashHandIndex].
-                            confirmedForCommit) {
-                        equippedWeaponToggleShoulderInputLeases[stashHandIndex] =
-                            true;
-                    }
-
                     if (nativeShoulderGestureAvailable &&
                         stashHandIsLeft == firingHandIsLeft &&
                         equippedWeaponStashCommitDecisions[stashHandIndex].
@@ -2953,12 +2957,12 @@ namespace rock
                                                 carryInput.disabled,
                                             .handEmpty = stashHandEmpty,
                                             .detectorConfirmed = true,
-                                            .gripReleased =
+                                            .explicitInputIntent =
                                                 equipped_weapon_drop_policy::
-                                                    resolveShoulderSheathReleaseIntent(
+                                                    resolveShoulderSheathInputIntent(
                                                         _equippedWeaponHandlingSettings.
                                                             toggleGrabEnabled,
-                                                        gripPhysicallyHeld,
+                                                        primaryState.pressed,
                                                         primaryState.released),
                                         });
                         if (nativeShoulderSheathRequested) {
@@ -3008,14 +3012,6 @@ namespace rock
                             .right = toggleOccupancyBefore.right.
                                 weaponEngaged(),
                         },
-                        .leftShoulderLeaseActive =
-                            equippedWeaponToggleShoulderInputLeases[
-                                equipped_weapon_toggle_grab_policy::handIndex(
-                                    true)],
-                        .rightShoulderLeaseActive =
-                            equippedWeaponToggleShoulderInputLeases[
-                                equipped_weapon_toggle_grab_policy::handIndex(
-                                    false)],
                         .left = toToggleButtonState(
                             leftPhysicalGripState),
                         .right = toToggleButtonState(
@@ -5341,6 +5337,8 @@ namespace rock
                     _equippedWeaponShoulderSheath.
                         leftFiringGripWeaponLocal,
             };
+        _equippedWeaponShoulderInputGuards[handIndex].
+            retrievalGestureActive = true;
         _equippedWeaponUnsheathCommittedThisFrame[handIndex] = true;
         if (g_rockConfig.rockShoulderStashHapticsEnabled) {
             (void)_feedbackHaptics.queue(
@@ -5999,6 +5997,7 @@ namespace rock
             _equippedWeaponShoulderSheath = {};
             input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
             _equippedWeaponSheathRetrievalStates = {};
+            _equippedWeaponShoulderInputGuards = {};
             _equippedWeaponSheathCommittedThisFrame = {};
             _equippedWeaponUnsheathCommittedThisFrame = {};
             return;
@@ -6146,6 +6145,7 @@ namespace rock
         _forceGrabCommittedThisFrame = {};
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
+        _equippedWeaponShoulderInputGuards = {};
         _bareFistGuardState = {};
         _bodyBoneColliderCreateRetryFrames = 0;
         _handColliderCreateRetryFrames = 0;

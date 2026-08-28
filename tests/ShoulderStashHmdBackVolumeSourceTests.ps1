@@ -79,20 +79,29 @@ Reject-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*rockBaseline\.equippedWeaponShoulderStashEnabled' `
     'ROCK''s shoulder-stash baseline must never feed the physical-detach capability.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'canCommitNativeShoulderSheath[\s\S]{0,700}!input\.primaryDetachEnabled[\s\S]{0,300}input\.detectorConfirmed[\s\S]{0,120}input\.gripReleased' `
-    'The native gesture must require a confirmed shoulder release and reject provider detach mode.'
+    'canCommitNativeShoulderSheath[\s\S]{0,700}!input\.primaryDetachEnabled[\s\S]{0,300}input\.detectorConfirmed[\s\S]{0,120}input\.explicitInputIntent' `
+    'The native gesture must require confirmed shoulder geometry plus explicit input and reject provider detach mode.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'resolveShoulderSheathReleaseIntent[\s\S]{0,500}toggleGrabEnabled\s*\?[\s\S]{0,120}!gripPhysicallyHeld\s*:\s*gripPhysicallyReleased' `
-    'A confirmed toggle-grab shoulder lease must treat an already-open physical grip as release intent.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h' `
-    'shoulderLeaseActive[\s\S]{0,700}HandDecision\{\s*\.button\s*=\s*physical\s*\}' `
-    'The toggle state machine must yield the leased shoulder hand to physical grip input without consuming a toggle press.'
+    'resolveShoulderSheathInputIntent[\s\S]{0,500}toggleGrabEnabled\s*\?[\s\S]{0,180}gripPhysicallyPressed\s*\|\|\s*gripPhysicallyReleased\s*:[\s\S]{0,120}gripPhysicallyReleased' `
+    'Toggle shoulder stash must require an explicit tap edge while hold mode keeps its release edge.'
+Reject-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
+    'resolveShoulderSheathInputIntent[\s\S]{0,500}!gripPhysicallyHeld' `
+    'An already-open toggle button must never count as shoulder sheath intent.'
+Reject-Text 'src/physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h' `
+    'ShoulderLeaseActive|shoulderLeaseActive' `
+    'Shoulder proximity must not bypass the toggle latch without an explicit input edge.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'equippedWeaponToggleShoulderInputLeases' `
+    'Runtime must not open a toggle grip solely because the shoulder detector confirmed.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'equippedWeaponToggleShoulderInputLeases[\s\S]{0,1600}confirmedForCommit[\s\S]{0,2600}leftShoulderLeaseActive[\s\S]{0,900}rightShoulderLeaseActive' `
-    'Only a confirmed, hand-specific shoulder candidate may lease physical input from toggle grab.'
+    'shouldBlockSheathForRetrievalGesture[\s\S]{0,500}resetRuntime\(stashState\)[\s\S]{0,120}commitLease\s*=\s*\{\}[\s\S]{0,120}continue' `
+    'The entire held/release tail of a retrieval gesture must bypass shoulder sheath acquisition.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'canCommitNativeShoulderSheath[\s\S]{0,1800}resolveShoulderSheathReleaseIntent[\s\S]{0,700}primaryState\.released[\s\S]*?_equippedWeaponSheathCommittedThisFrame\[sheathHandIndex\]\s*=\s*true[\s\S]{0,500}submitEquippedWeaponShoulderSheath' `
-    'ROCK must commit only the firing hand''s confirmed physical open/release intent and consume it before normal world-grab handling.'
+    '_equippedWeaponShoulderInputGuards\[handIndex\][\s\S]{0,120}retrievalGestureActive\s*=\s*true[\s\S]{0,180}_equippedWeaponUnsheathCommittedThisFrame\[handIndex\]\s*=\s*true' `
+    'An accepted shoulder draw must reserve its physical gesture before later input routing.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'canCommitNativeShoulderSheath[\s\S]{0,1800}resolveShoulderSheathInputIntent[\s\S]{0,700}primaryState\.pressed[\s\S]{0,300}primaryState\.released[\s\S]*?_equippedWeaponSheathCommittedThisFrame\[sheathHandIndex\]\s*=\s*true[\s\S]{0,500}submitEquippedWeaponShoulderSheath' `
+    'ROCK must commit only the firing hand''s confirmed explicit tap/release intent and consume it before normal world-grab handling.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'RockEquippedWeaponHandlingBaseline[\s\S]{0,420}equippedWeaponShoulderStashEnabled\s*=[\s\r\n]+\s*g_rockConfig\.rockEquippedWeaponShoulderStashEnabled' `
     'The equipped-weapon handling baseline must consume ROCK''s shoulder stash switch.'

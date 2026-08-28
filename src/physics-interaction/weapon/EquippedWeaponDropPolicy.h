@@ -50,19 +50,43 @@ namespace rock::equipped_weapon_drop_policy
         bool handDisabled{ false };
         bool handEmpty{ false };
         bool detectorConfirmed{ false };
-        bool gripReleased{ false };
+        bool explicitInputIntent{ false };
     };
 
-    [[nodiscard]] inline constexpr bool resolveShoulderSheathReleaseIntent(
+    [[nodiscard]] inline constexpr bool resolveShoulderSheathInputIntent(
         const bool toggleGrabEnabled,
-        const bool gripPhysicallyHeld,
+        const bool gripPhysicallyPressed,
         const bool gripPhysicallyReleased) noexcept
     {
-        // A confirmed shoulder lease temporarily restores physical input. A
-        // latched toggle grip may already be physically open when the dwell
-        // confirms, so the open level is the release intent in toggle mode.
+        // Spatial confirmation only identifies the shoulder; it never supplies
+        // user intent. Toggle mode accepts either edge of an explicit tap so a
+        // press begun near the dwell boundary can still complete on release.
+        // Hold mode retains its ordinary let-go gesture.
         return toggleGrabEnabled ?
-            !gripPhysicallyHeld : gripPhysicallyReleased;
+            gripPhysicallyPressed || gripPhysicallyReleased :
+            gripPhysicallyReleased;
+    }
+
+    struct ShoulderInputGuardState
+    {
+        bool retrievalGestureActive{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool shouldBlockSheathForRetrievalGesture(
+        ShoulderInputGuardState& state,
+        const bool gripPhysicallyHeld) noexcept
+    {
+        if (!state.retrievalGestureActive) {
+            return false;
+        }
+
+        // Consume the entire gesture that drew the weapon. The release frame
+        // rearms future sheathing but remains owned by retrieval, so a tap
+        // cannot draw and immediately sheathe while still in the back volume.
+        if (!gripPhysicallyHeld) {
+            state.retrievalGestureActive = false;
+        }
+        return true;
     }
 
     [[nodiscard]] inline constexpr bool canCommitNativeShoulderSheath(
@@ -78,7 +102,7 @@ namespace rock::equipped_weapon_drop_policy
                !input.handDisabled &&
                input.handEmpty &&
                input.detectorConfirmed &&
-               input.gripReleased;
+               input.explicitInputIntent;
     }
 
     /*
