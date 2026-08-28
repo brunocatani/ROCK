@@ -70,8 +70,8 @@ Require-Text $physicsPath `
     'Held equip must preflight before release, retain its bridge, and arm the captured physical hand at exact transaction success.'
 
 Require-Text $coordinatorPath `
-    'equipped_weapon_transition_policy::advance[\s\S]{0,3000}RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent[\s\S]*_bridge\.update' `
-    'Normal exact-current native draw recovery and bridge presentation must remain owned by the transition coordinator.'
+    'equipped_weapon_transition_policy::advance[\s\S]{0,5000}RepairAction::RequestPreparedDraw[\s\S]{0,700}native_equipped_weapon_draw::submitPreparedExactCurrent[\s\S]*_bridge\.update' `
+    'Prepared exact-current equip recovery and bridge presentation must remain owned by the transition coordinator.'
 
 Require-Text $coordinatorPath `
     'bindCurrentIdentity\([\s\S]{0,900}completesSuppressedHeldDraw\s*=\s*_waitingForExpectedIdentity[\s\S]{0,300}Source::HeldTriggerEquip[\s\S]{0,180}Source::HeldGripZoneEquip[\s\S]{0,2600}if\s*\(completesSuppressedHeldDraw\)[\s\S]{0,1200}native_equipped_weapon_draw::submitExactCurrent' `

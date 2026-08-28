@@ -65,16 +65,20 @@ Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
     'Native draw recovery must revalidate the exact current form, instance, and equip index before submission.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
-    'kDrawRetryIntervalSeconds[\s\S]{0,200}kWantToDrawStallSeconds[\s\S]{0,200}kDrawRecoveryDeadlineSeconds[\s\S]{0,10000}unacknowledgedSeconds[\s\S]{0,300}kDrawRecoveryDeadlineSeconds[\s\S]{0,300}RepairAction::DrawExhausted[\s\S]{0,700}drawRequests[\s\S]{0,300}RepairAction::RequestDraw' `
-    'Native draw recovery must use a bounded, time-spaced, state-acknowledged window inside the shared transition policy.'
+    'kDrawRetryIntervalSeconds[\s\S]{0,200}kWantToDrawStallSeconds[\s\S]{0,200}kDrawRecoveryDeadlineSeconds[\s\S]{0,10000}NativeWeaponState::WantToSheathe[\s\S]{0,200}NativeWeaponState::Sheathing[\s\S]{0,2500}unacknowledgedSeconds[\s\S]{0,300}kDrawRecoveryDeadlineSeconds[\s\S]{0,700}drawRequests[\s\S]{0,300}RepairAction::RequestPreparedDraw' `
+    'Native equip recovery must wait for holster completion, then use bounded prepared draw requests.'
 
 Reject-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
     'kMaximumDrawAttempts|kDrawSettleFrames|kWantToDrawStallFrames|drawSettleFramesRemaining|wantToDrawFrames' `
     'Native draw recovery must not regress to a frame-count or void-submission attempt budget.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
-    'RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent' `
-    'Every draw retry must pass through the exact-identity transition coordinator.'
+    'RepairAction::RequestPreparedDraw[\s\S]{0,500}native_equipped_weapon_draw::submitPreparedExactCurrent' `
+    'Every stable-sheathed equip retry must repeat verified native preparation through the exact-identity coordinator.'
+
+Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
+    'kExpectedPrepareDrawEntry[\s\S]{0,1800}kFunc_PrepareEquippedWeaponDraw[\s\S]{0,2500}prepare\(current\.player\)[\s\S]{0,800}DrawWeaponMagicHands\(true\)[\s\S]{0,300}NativeActionRejected' `
+    'Prepared recovery must validate and repeat the verified FO4VR equip preamble and detect synchronous ActionDraw rejection.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
     'sampleDrawRecoveryWallDelta\(\)[\s\S]{0,300}!input\.visualAuthorityAvailable\s*\|\|\s*input\.menuBlocking\s*\|\|\s*input\.compatibilityBlocking[\s\S]{0,300}_drawRecoveryElapsedSeconds\s*\+=\s*\(std::max\)\([\s\S]{0,160}drawRecoveryWallDelta[\s\S]{0,5000}\.drawRecoveryElapsedSeconds\s*=\s*_drawRecoveryElapsedSeconds' `

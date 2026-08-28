@@ -327,6 +327,10 @@ namespace rock
         }
 
         const bool bridgeOwnsCull = _bridge.ownsNativeInstanceCull(visual.exactInstance);
+        const auto presentationLocalAttemptsBeforeAdvance =
+            _policyState.localVisibilityAttempts;
+        const auto presentationAttachAttemptsBeforeAdvance =
+            _policyState.attachAttempts;
         auto decision = equipped_weapon_transition_policy::advance(
             _policyState,
             equipped_weapon_transition_policy::FrameInput{
@@ -366,6 +370,17 @@ namespace rock
                 _drawRecoveryElapsedSeconds);
             _drawExhaustionLogged = false;
         }
+        if (_repairExhaustionLogged && nativeRenderableBeforeAdvance) {
+            ROCK_LOG_INFO(Weapon,
+                "Equipped weapon transition presentation recovery resumed source={} formID={:08X} instance={:#x} localAttempts={} attachAttempts={} elapsed={:.3f}s",
+                sourceName(_source),
+                _boundIdentity.formID,
+                _boundIdentity.instanceData,
+                presentationLocalAttemptsBeforeAdvance,
+                presentationAttachAttemptsBeforeAdvance,
+                _drawRecoveryElapsedSeconds);
+            _repairExhaustionLogged = false;
+        }
 
         switch (decision.repair) {
         case equipped_weapon_transition_policy::RepairAction::RequestDraw: {
@@ -390,6 +405,43 @@ namespace rock
             if (result.result == native_equipped_weapon_draw::SubmitResult::InvalidWeaponState ||
                 result.result == native_equipped_weapon_draw::SubmitResult::MissingPlayer ||
                 result.result == native_equipped_weapon_draw::SubmitResult::MissingEquippedWeapon) {
+                _policyState.drawRecoveryExhausted = true;
+            }
+            break;
+        }
+        case equipped_weapon_transition_policy::RepairAction::RequestPreparedDraw: {
+            const auto result =
+                native_equipped_weapon_draw::submitPreparedExactCurrent(
+                    native_equipped_weapon_draw::Identity{
+                        .formID = _boundIdentity.formID,
+                        .instanceData = _boundIdentity.instanceData,
+                        .equipIndex = _boundIdentity.equipIndex,
+                    });
+            ROCK_LOG_INFO(Weapon,
+                "Equipped weapon transition prepared draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={}",
+                sourceName(_source),
+                _boundIdentity.formID,
+                _boundIdentity.instanceData,
+                _policyState.drawRequests,
+                _drawRecoveryElapsedSeconds,
+                result.stateBefore,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    result.stateBefore),
+                result.stateAfter,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    result.stateAfter),
+                native_equipped_weapon_draw::submitResultName(result.result));
+            if (result.result ==
+                    native_equipped_weapon_draw::SubmitResult::
+                        InvalidWeaponState ||
+                result.result ==
+                    native_equipped_weapon_draw::SubmitResult::MissingPlayer ||
+                result.result ==
+                    native_equipped_weapon_draw::SubmitResult::
+                        MissingEquippedWeapon ||
+                result.result ==
+                    native_equipped_weapon_draw::SubmitResult::
+                        RecoveryPreparationUnavailable) {
                 _policyState.drawRecoveryExhausted = true;
             }
             break;
@@ -454,11 +506,26 @@ namespace rock
         case equipped_weapon_transition_policy::RepairAction::Exhausted:
             if (!_repairExhaustionLogged) {
                 _repairExhaustionLogged = true;
+                const float presentationRecoveryWindowSeconds =
+                    (std::max)(
+                        0.0f,
+                        _drawRecoveryElapsedSeconds -
+                            _policyState.
+                                presentationRecoveryWindowStartedAtSeconds);
                 ROCK_LOG_WARN(Weapon,
-                    "Equipped weapon transition recovery exhausted source={} formID={:08X} instance={:#x}",
+                    "Equipped weapon transition presentation recovery exhausted source={} formID={:08X} instance={:#x} exactInstance={} ancestorsVisible={} localVisible={} localAttempts={} attachAttempts={} elapsed={:.3f}s window={:.3f}s deadline={:.3f}s",
                     sourceName(_source),
                     _boundIdentity.formID,
-                    _boundIdentity.instanceData);
+                    _boundIdentity.instanceData,
+                    exactNativeInstanceIsCurrent ? "yes" : "no",
+                    visual.ancestorPathVisible ? "yes" : "no",
+                    visual.instanceLocallyVisible ? "yes" : "no",
+                    _policyState.localVisibilityAttempts,
+                    _policyState.attachAttempts,
+                    _drawRecoveryElapsedSeconds,
+                    presentationRecoveryWindowSeconds,
+                    equipped_weapon_transition_policy::
+                        kPresentationRecoveryDeadlineSeconds);
             }
             break;
         case equipped_weapon_transition_policy::RepairAction::None:

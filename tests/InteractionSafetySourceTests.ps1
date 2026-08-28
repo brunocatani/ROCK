@@ -307,7 +307,7 @@ Require-Text $physicsSource `
     'updateEquippedWeaponTransition\(\)[\s\S]{0,500}getNativeGunState\(player\)[\s\S]{0,600}getNativeWeaponState\(player\)[\s\S]*?nativeStateBeforeEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)[\s\S]*?nativeStateAfterEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)' `
     'Animation ownership, transition observation, admission, and post-equip diagnostics must all use verified native state accessors.'
 Require-Text $nativeWeaponDraw `
-    'submitExactCurrent[\s\S]*?stateBefore\s*=\s*f4vr::getNativeWeaponState\(current\.player\)[\s\S]*?DrawWeaponMagicHands\(true\)[\s\S]*?stateAfter\s*=\s*f4vr::getNativeWeaponState\(current\.player\)' `
+    'submitResolvedDraw[\s\S]*?stateBefore\s*=\s*f4vr::getNativeWeaponState\(current\.player\)[\s\S]*?DrawWeaponMagicHands\(true\)[\s\S]*?stateAfter\s*=\s*f4vr::getNativeWeaponState\(current\.player\)' `
     'Bounded draw recovery must observe both sides of the native call through the verified weapon-state accessor.'
 Require-Text $nativeWeaponDraw `
     'submitSheatheExactCurrent[\s\S]*?stateBefore\s*=\s*f4vr::getNativeWeaponState\(current\.player\)[\s\S]*?DrawWeaponMagicHands\(false\)[\s\S]*?stateAfter\s*=\s*f4vr::getNativeWeaponState\(current\.player\)' `

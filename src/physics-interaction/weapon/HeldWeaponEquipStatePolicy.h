@@ -62,9 +62,11 @@ namespace rock::held_weapon_equip_state_policy
 
     /*
      * FO4VR PlayerCharacter::DrawWeaponMagicHands(true) returns immediately
-     * only for Drawing/Drawn. Sheathed, WantToSheathe, and Sheathing are
-     * valid submissions; the latter two reverse an in-progress holster. The
-     * coordinator retries this request only through a bounded state machine.
+     * only for Drawing/Drawn. Other states reach the native ActionDraw gate,
+     * but the action can reject while a menu-time holster still owns the graph.
+     * Callers that recover an equip must wait for stable Sheathed and repeat
+     * the verified equip-draw preparation. Direct shoulder retrieval may still
+     * ask the engine to reverse its own intentional holster.
      */
     [[nodiscard]] inline constexpr bool shouldSubmitDrawFollowup(
         const std::uint32_t nativeState) noexcept

@@ -288,6 +288,16 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_NativeVRGrabDrop = 0xF1AB90;
 
     /*
+     * Player preparation immediately before the native VR weapon-equip draw.
+     * Fallout4VR.exe 1.2.72 calls 0x140EF8E60 at 0x140E10794, then calls
+     * PlayerCharacter::DrawWeaponMagicHands(true) at 0x140E107A1. The helper
+     * refreshes the player equip-transition flag and timing fields. A draw
+     * recovery after a menu-time rejection must repeat this preparation once
+     * the preceding holster has reached the stable sheathed state.
+     */
+    constexpr std::uintptr_t kFunc_PrepareEquippedWeaponDraw = 0xEF8E60;
+
+    /*
      * Equipped-weapon 3D attach task submission. Blind raw-disassembly
      * verification against Fallout4VR.exe 1.2.72 on 2026-07-22 confirmed
      * 0x140DAB8F0 submits task type 0x12 and retains both the actor and the

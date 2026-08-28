@@ -149,11 +149,10 @@ namespace rock
         Source _requestedCurrentSource{ Source::MenuExit };
         float _activeSeconds{ 0.0f };
         /*
-         * Wall-clock lifecycle watchdog by contract: the draw-recovery
-         * deadline must expire even when the game clock stalls (menus,
-         * loading, blocked updates), because the native draw request it
-         * supervises is asynchronous engine work that continues regardless.
-         * This is deliberately NOT gameplay time.
+         * Wall-clock recovery clock by contract: draw and presentation
+         * deadlines must expire even when the game clock stalls because the
+         * native work they supervise can continue independently. This is
+         * deliberately NOT gameplay time.
          */
         float _drawRecoveryElapsedSeconds{ 0.0f };
         std::chrono::steady_clock::time_point _drawRecoveryLastUpdateAt{};

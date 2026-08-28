@@ -92,6 +92,7 @@ int main()
             holsteredAfterHandoff.repair == RepairAction::None);
 
     const auto lateDetachOne = advance(stableState, FrameInput{
+        .drawRecoveryElapsedSeconds = 0.0f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = true,
@@ -99,6 +100,8 @@ int main()
         .bridgeModelAvailable = true,
     });
     const auto lateDetachTwo = advance(stableState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            kPresentationRecoveryGraceSeconds - 0.001f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = true,
@@ -108,14 +111,23 @@ int main()
     ok &= expect("a late native detach must not resurrect the completed equip bridge",
         !lateDetachOne.presentBridgeModel &&
             lateDetachOne.repair == RepairAction::None);
-    ok &= expect("two missing frames must repair native attachment without a phantom",
+    const auto lateDetachRepair = advance(stableState, FrameInput{
+        .drawRecoveryElapsedSeconds = kPresentationRecoveryGraceSeconds,
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
+        .bridgeModelAvailable = true,
+    });
+    ok &= expect("a late detach must honor native grace before attachment repair",
         !lateDetachTwo.presentBridgeModel &&
-            lateDetachTwo.repair == RepairAction::QueueNativeAttach &&
-            stableState.attachAttempts == 1 &&
-            stableState.attachSettleFramesRemaining == kAttachSettleFrames);
+            lateDetachTwo.repair == RepairAction::None &&
+            lateDetachRepair.repair == RepairAction::QueueNativeAttach &&
+            stableState.attachAttempts == 1);
 
     State hiddenState{};
     const FrameInput hiddenNative{
+        .drawRecoveryElapsedSeconds = 0.0f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = true,
@@ -125,8 +137,11 @@ int main()
         .nativeInstanceLocallyVisible = true,
     };
     (void)advance(hiddenState, hiddenNative);
-    const auto hiddenRepair = advance(hiddenState, hiddenNative);
-    ok &= expect("an existing hidden exact instance must be unculled before reattachment",
+    auto hiddenAfterGrace = hiddenNative;
+    hiddenAfterGrace.drawRecoveryElapsedSeconds =
+        kPresentationRecoveryGraceSeconds;
+    const auto hiddenRepair = advance(hiddenState, hiddenAfterGrace);
+    ok &= expect("an existing hidden exact instance must receive timed visibility repair before reattachment",
         hiddenRepair.repair == RepairAction::RestoreLocalVisibility &&
             hiddenState.localVisibilityAttempts == 1 &&
             hiddenState.attachAttempts == 0);
@@ -160,9 +175,15 @@ int main()
 
     State exhaustedState{
         .missingFrames = kMissingFramesBeforeRepair,
+        .localVisibilityAttempts = kMaximumLocalVisibilityAttempts,
         .attachAttempts = kMaximumAttachAttempts,
+        .presentationRecoveryWindowStartedAtSeconds = 0.0f,
+        .nextPresentationRepairAtSeconds = 0.0f,
+        .presentationRecoveryWindowActive = true,
     };
     const auto exhausted = advance(exhaustedState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            kPresentationRecoveryDeadlineSeconds,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = true,
@@ -170,96 +191,78 @@ int main()
     });
     ok &= expect("native attachment recovery must be bounded",
         exhausted.repair == RepairAction::Exhausted &&
+            exhaustedState.localVisibilityAttempts ==
+                kMaximumLocalVisibilityAttempts &&
             exhaustedState.attachAttempts == kMaximumAttachAttempts);
 
     State drawState{};
-    const auto firstDraw = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.0f,
-        .mutationAllowed = true,
-        .identityMatches = true,
-        .weaponExactlyDrawn = false,
-        .nativeWeaponState = 0,
-        .bridgeModelAvailable = true,
-    });
-    ok &= expect("every bound sheathed weapon must request an immediate draw",
-        firstDraw.presentBridgeModel &&
-            firstDraw.repair == RepairAction::RequestDraw &&
-            drawState.drawRequests == 1 &&
-            drawState.drawRecoveryWindowActive);
-
-    const auto highRateFrame = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.001f,
+    const auto waitForWantToSheathe = advance(drawState, FrameInput{
+        .drawRecoveryElapsedSeconds = 10.0f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 4,
         .bridgeModelAvailable = true,
     });
-    const auto highRateFrameTwo = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.016f,
-        .mutationAllowed = true,
-        .identityMatches = true,
-        .weaponExactlyDrawn = false,
-        .nativeWeaponState = 4,
-        .bridgeModelAvailable = true,
-    });
-    const auto beforeRetryDeadline = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.099f,
+    const auto waitForSheathing = advance(drawState, FrameInput{
+        .drawRecoveryElapsedSeconds = 10.2f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 5,
         .bridgeModelAvailable = true,
     });
-    ok &= expect("high frame rates must not consume a draw retry budget",
-        highRateFrame.presentBridgeModel &&
-            highRateFrame.repair == RepairAction::None &&
-            highRateFrameTwo.repair == RepairAction::None &&
-            beforeRetryDeadline.repair == RepairAction::None &&
-            drawState.drawRequests == 1);
+    ok &= expect("menu-time holstering must finish before equip draw recovery",
+        waitForWantToSheathe.presentBridgeModel &&
+            waitForWantToSheathe.repair == RepairAction::None &&
+            waitForSheathing.repair == RepairAction::None &&
+            drawState.drawRequests == 0 &&
+            !drawState.drawRecoveryWindowActive);
 
-    const auto timedRetry = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = kDrawRetryIntervalSeconds,
+    const auto firstPreparedDraw = advance(drawState, FrameInput{
+        .drawRecoveryElapsedSeconds = 10.25f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 0,
         .bridgeModelAvailable = true,
     });
-    const auto variableRateRetry = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.347f,
+    const auto beforePreparedRetry = advance(drawState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            10.25f + kDrawRetryIntervalSeconds - 0.001f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 0,
         .bridgeModelAvailable = true,
     });
-    const auto noCatchUpBurst = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.351f,
+    const auto preparedRetry = advance(drawState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            10.25f + kDrawRetryIntervalSeconds,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 0,
         .bridgeModelAvailable = true,
     });
-    ok &= expect("draw retries must follow elapsed time without catch-up bursts",
-        timedRetry.repair == RepairAction::RequestDraw &&
-            variableRateRetry.repair == RepairAction::RequestDraw &&
-            noCatchUpBurst.repair == RepairAction::None &&
-            drawState.drawRequests == 3);
+    ok &= expect("stable sheathed recovery must repeat native equip preparation at timed intervals",
+        firstPreparedDraw.repair == RepairAction::RequestPreparedDraw &&
+            beforePreparedRetry.repair == RepairAction::None &&
+            preparedRetry.repair == RepairAction::RequestPreparedDraw &&
+            drawState.drawRequests == 2 &&
+            drawState.drawRecoveryWindowActive);
 
-    const auto delayedNativeReadinessRetry = advance(drawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.451f,
+    const auto preparedDrawExhausted = advance(drawState, FrameInput{
+        .drawRecoveryElapsedSeconds =
+            10.25f + kDrawRecoveryDeadlineSeconds,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 0,
-        .bridgeModelAvailable = true,
     });
-    ok &= expect("a void draw submission must not exhaust recovery after three requests",
-        delayedNativeReadinessRetry.repair == RepairAction::RequestDraw &&
-            drawState.drawRequests == 4 &&
-            !drawState.drawRecoveryExhausted);
+    ok &= expect("prepared draw recovery must remain bounded by acknowledgment time",
+        preparedDrawExhausted.repair == RepairAction::DrawExhausted &&
+            drawState.drawRecoveryExhausted);
 
     State blockedDrawState{};
     const auto blockedDraw = advance(blockedDrawState, FrameInput{
@@ -278,21 +281,21 @@ int main()
 
     State stalledWantToDraw{};
     const auto wantToDrawAcknowledged = advance(stalledWantToDraw, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.36f,
+        .drawRecoveryElapsedSeconds = 0.0f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 1,
     });
     const auto waiting = advance(stalledWantToDraw, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.859f,
+        .drawRecoveryElapsedSeconds = kWantToDrawStallSeconds - 0.001f,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
         .nativeWeaponState = 1,
     });
     const auto stalledRetry = advance(stalledWantToDraw, FrameInput{
-        .drawRecoveryElapsedSeconds = 0.86f,
+        .drawRecoveryElapsedSeconds = kWantToDrawStallSeconds,
         .mutationAllowed = true,
         .identityMatches = true,
         .weaponExactlyDrawn = false,
@@ -306,7 +309,7 @@ int main()
 
     const auto stalledWantToDrawExhausted =
         advance(stalledWantToDraw, FrameInput{
-            .drawRecoveryElapsedSeconds = 1.37f,
+            .drawRecoveryElapsedSeconds = kDrawRecoveryDeadlineSeconds,
             .mutationAllowed = true,
             .identityMatches = true,
             .weaponExactlyDrawn = false,
@@ -346,42 +349,9 @@ int main()
             .nativeWeaponState = 0,
         });
     ok &= expect("a native acknowledgment followed by sheathed must start a fresh recovery window",
-        returnedToSheathed.repair == RepairAction::RequestDraw &&
+        returnedToSheathed.repair == RepairAction::RequestPreparedDraw &&
             acknowledgedThenReturned.drawRequests == 1 &&
             !acknowledgedThenReturned.drawRecoveryExhausted);
-
-    State holsterReversal{};
-    const auto reverseHolster = advance(holsterReversal, FrameInput{
-        .drawRecoveryElapsedSeconds = 10.0f,
-        .mutationAllowed = true,
-        .identityMatches = true,
-        .weaponExactlyDrawn = false,
-        .nativeWeaponState = 5,
-        .bridgeModelAvailable = true,
-    });
-    ok &= expect("a bound weapon must reverse a pre-handoff sheathing state",
-        reverseHolster.repair == RepairAction::RequestDraw);
-
-    State exhaustedDrawState{};
-    const auto initialLateClockDraw = advance(exhaustedDrawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 10.0f,
-        .mutationAllowed = true,
-        .identityMatches = true,
-        .weaponExactlyDrawn = false,
-        .nativeWeaponState = 0,
-    });
-    const auto exhaustedDraw = advance(exhaustedDrawState, FrameInput{
-        .drawRecoveryElapsedSeconds = 11.01f,
-        .mutationAllowed = true,
-        .identityMatches = true,
-        .weaponExactlyDrawn = false,
-        .nativeWeaponState = 0,
-    });
-    ok &= expect("native draw recovery must use a bounded elapsed window, not absolute transition age",
-        initialLateClockDraw.repair == RepairAction::RequestDraw &&
-            exhaustedDraw.repair == RepairAction::DrawExhausted &&
-            exhaustedDrawState.drawRequests == 1 &&
-            exhaustedDrawState.drawRecoveryExhausted);
 
     State invalidDrawState{};
     const auto invalidDraw = advance(invalidDrawState, FrameInput{
