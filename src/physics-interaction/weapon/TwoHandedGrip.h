@@ -150,6 +150,7 @@ namespace rock
         float radialCapGameUnits{ 0.0f };
         float leftDot{ -1.0f };
         float downDot{ -1.0f };
+        float sweptArcDot{ -1.0f };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint64_t captureSequence{ 0 };
         std::uint32_t weaponFormID{ 0 };
@@ -158,8 +159,8 @@ namespace rock
         authored_weapon_grip_activation_policy::WeaponFamily weaponFamily{
             authored_weapon_grip_activation_policy::WeaponFamily::Unknown
         };
-        authored_weapon_grip_activation_policy::AllowedCone selectedCone{
-            authored_weapon_grip_activation_policy::AllowedCone::None
+        authored_weapon_grip_activation_policy::ActivationRegion selectedRegion{
+            authored_weapon_grip_activation_policy::ActivationRegion::None
         };
         std::uint8_t poseSurfaceWitnessMask{ 0 };
         std::uint8_t poseSurfaceWitnessCount{ 0 };

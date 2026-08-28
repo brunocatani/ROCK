@@ -261,7 +261,7 @@ namespace rock::debug
         AuthoredGripActivationLeftAxis,
         AuthoredGripActivationDownAxis,
         AuthoredGripActivationReferenceAxis,
-        AuthoredGripActivationAllowedCone,
+        AuthoredGripActivationAllowedRegion,
         AuthoredGripActivationPass,
         AuthoredGripActivationFail
     };

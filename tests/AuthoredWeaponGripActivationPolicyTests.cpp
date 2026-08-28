@@ -47,6 +47,25 @@ int main()
     const Vec3 origin{};
     const Vec3 left{ -1.0f, 0.0f, 0.0f };
     const Vec3 down{ 0.0f, 0.0f, -1.0f };
+    constexpr float diagonal = 0.70710678118654752440f;
+
+    const auto activationBoundary =
+        resolveActivationBoundaryDimensions(12.0f);
+    assert(activationBoundary.valid);
+    assert(near(
+        activationBoundary.axialGameUnits,
+        8.485281f));
+    assert(near(
+        activationBoundary.rimRadiusGameUnits,
+        8.485281f));
+    assert(near(
+        std::sqrt(
+            activationBoundary.axialGameUnits *
+                activationBoundary.axialGameUnits +
+            activationBoundary.rimRadiusGameUnits *
+                activationBoundary.rimRadiusGameUnits),
+        12.0f));
+    assert(!resolveActivationBoundaryDimensions(0.0f).valid);
 
     auto result = evaluateDirectionGate(DirectionGateInput{
         .weaponFamily = WeaponFamily::OneHandGun,
@@ -57,7 +76,7 @@ int main()
         .radialCapGameUnits = 12.0f,
     });
     assert(result.spatialPass);
-    assert(result.selectedCone == AllowedCone::Left);
+    assert(result.selectedRegion == ActivationRegion::Left);
     assert(near(result.leftDot, 1.0f));
 
     result = evaluateDirectionGate(DirectionGateInput{
@@ -95,10 +114,99 @@ int main()
         .radialCapGameUnits = 12.0f,
     });
     assert(result.spatialPass);
-    assert(result.selectedCone == AllowedCone::Down);
+    assert(result.selectedRegion == ActivationRegion::Down);
     assert(near(result.downDot, 1.0f));
+    assert(near(result.sweptArcDot, 1.0f));
 
-    constexpr float diagonal = 0.70710678118654752440f;
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld =
+            Vec3{ -diagonal * 10.0f, 0.0f, -diagonal * 10.0f },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 12.0f,
+    });
+    assert(result.spatialPass);
+    assert(result.selectedRegion == ActivationRegion::Arc);
+    assert(near(result.sweptArcDot, 1.0f));
+
+    // Regression: the former endpoint-cone union rejected every off-plane
+    // approach at the LEFT/DOWN seam because both endpoint dots fell below
+    // cos(45 degrees). The 90-degree sweep retains a 45-degree half-width.
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld = Vec3{ -7.0f, 1.41421356f, -7.0f },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 12.0f,
+    });
+    assert(result.leftDot < kActivationConeMinimumDot);
+    assert(result.downDot < kActivationConeMinimumDot);
+    assert(result.directionPass);
+    assert(result.spatialPass);
+    assert(result.selectedRegion == ActivationRegion::Arc);
+    assert(near(result.sweptArcDot, 0.989949f));
+
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld =
+            Vec3{ -5.0f, diagonal * 10.0f, -5.0f },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 12.0f,
+    });
+    assert(result.directionPass);
+    assert(result.spatialPass);
+    assert(result.selectedRegion == ActivationRegion::Arc);
+    assert(near(result.sweptArcDot, kActivationConeMinimumDot));
+
+    constexpr float outsideArcPlaneDot = 0.49f;
+    const float outsideArcReferenceDot = std::sqrt(
+        1.0f -
+        2.0f * outsideArcPlaneDot * outsideArcPlaneDot);
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld = Vec3{
+            -outsideArcPlaneDot * 10.0f,
+            outsideArcReferenceDot * 10.0f,
+            -outsideArcPlaneDot * 10.0f,
+        },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 12.0f,
+    });
+    assert(result.sweptArcDot < kActivationConeMinimumDot);
+    assert(!result.directionPass);
+    assert(!result.spatialPass);
+
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld = Vec3{ -8.0f, 5.9160798f, 1.0f },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 12.0f,
+    });
+    assert(result.directionPass);
+    assert(result.spatialPass);
+    assert(result.selectedRegion == ActivationRegion::Left);
+    assert(near(result.sweptArcDot, 0.8f));
+
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld = Vec3{ -5.0f, 0.0f, 0.0f },
+        .leftAxisWorld = left,
+        .downAxisWorld = left,
+        .radialCapGameUnits = 12.0f,
+    });
+    assert(!result.directionPass);
+    assert(!result.spatialPass);
+
     result = evaluateDirectionGate(DirectionGateInput{
         .weaponFamily = WeaponFamily::OneHandGun,
         .authoredSeatWorld = origin,

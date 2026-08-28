@@ -3115,7 +3115,8 @@ namespace rock
         };
         snapshot.leftDot = gate.leftDot;
         snapshot.downDot = gate.downDot;
-        snapshot.selectedCone = gate.selectedCone;
+        snapshot.sweptArcDot = gate.sweptArcDot;
+        snapshot.selectedRegion = gate.selectedRegion;
         snapshot.classifierSupported = gate.familySupported;
         snapshot.directionUsedLastStableSample =
             gate.usedLastStableDirection;
@@ -4088,7 +4089,7 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} leftDot={:.3f} downDot={:.3f} cone={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} leftDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
@@ -4103,8 +4104,9 @@ namespace rock
                     authoredActivation.poseSurfaceWitnessMask),
                 authoredActivation.leftDot,
                 authoredActivation.downDot,
-                authored_weapon_grip_activation_policy::allowedConeName(
-                    authoredActivation.selectedCone),
+                authoredActivation.sweptArcDot,
+                authored_weapon_grip_activation_policy::activationRegionName(
+                    authoredActivation.selectedRegion),
                 authoredSupportPalmToFiringGripDistance,
                 authoredSupportPalmWeaponLocal.x,
                 authoredSupportPalmWeaponLocal.y,
@@ -4127,7 +4129,7 @@ namespace rock
 
         if (authoredSupportCandidateForHandValid) {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} leftDot={:.3f} downDot={:.3f} class={} radial={} direction={} scope={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
+                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} leftDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} class={} radial={} direction={} scope={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
                 isLeft ? "left" : "right",
                 decision.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::PhysicalContact ?
@@ -4148,6 +4150,9 @@ namespace rock
                 authoredActivation.radialCapGameUnits,
                 authoredActivation.leftDot,
                 authoredActivation.downDot,
+                authoredActivation.sweptArcDot,
+                authored_weapon_grip_activation_policy::activationRegionName(
+                    authoredActivation.selectedRegion),
                 authoredActivation.classifierSupported ? "pass" : "fail",
                 authoredActivation.radialPass ? "pass" : "fail",
                 authoredActivation.directionPass ? "pass" : "fail",

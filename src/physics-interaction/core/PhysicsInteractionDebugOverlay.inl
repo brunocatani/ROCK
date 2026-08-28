@@ -2337,18 +2337,23 @@
                     snapshot.frameAgreementErrorGameUnits);
 
                 if (drawAuthoredGripActivationZones) {
-                    const float axisLength = (std::min)(
+                    const float drawRadiusGameUnits = (std::min)(
                         snapshot.radialCapGameUnits,
                         12.0f);
-                    if (snapshot.canonicalAxesValid && axisLength > 0.0f) {
+                    const auto activationBoundary =
+                        authored_weapon_grip_activation_policy::
+                            resolveActivationBoundaryDimensions(
+                                drawRadiusGameUnits);
+                    if (snapshot.canonicalAxesValid &&
+                        activationBoundary.valid) {
                         const auto axisEnd = [&](const RE::NiPoint3& axis) {
                             return RE::NiPoint3{
                                 snapshot.authoredPalmSeatWorld.x +
-                                    axis.x * axisLength,
+                                    axis.x * drawRadiusGameUnits,
                                 snapshot.authoredPalmSeatWorld.y +
-                                    axis.y * axisLength,
+                                    axis.y * drawRadiusGameUnits,
                                 snapshot.authoredPalmSeatWorld.z +
-                                    axis.z * axisLength,
+                                    axis.z * drawRadiusGameUnits,
                             };
                         };
                         addMarkerLine(
@@ -2377,19 +2382,26 @@
                                     static_cast<float>(segment) *
                                     2.0f * std::numbers::pi_v<float> /
                                     static_cast<float>(SegmentCount);
-                                const float radialA = std::cos(angle) * axisLength;
-                                const float radialB = std::sin(angle) * axisLength;
+                                const float radialA =
+                                    std::cos(angle) *
+                                    activationBoundary.rimRadiusGameUnits;
+                                const float radialB =
+                                    std::sin(angle) *
+                                    activationBoundary.rimRadiusGameUnits;
                                 rim[segment] = RE::NiPoint3{
                                     snapshot.authoredPalmSeatWorld.x +
-                                        axis.x * axisLength +
+                                        axis.x *
+                                            activationBoundary.axialGameUnits +
                                         tangentA.x * radialA +
                                         tangentB.x * radialB,
                                     snapshot.authoredPalmSeatWorld.y +
-                                        axis.y * axisLength +
+                                        axis.y *
+                                            activationBoundary.axialGameUnits +
                                         tangentA.y * radialA +
                                         tangentB.y * radialB,
                                     snapshot.authoredPalmSeatWorld.z +
-                                        axis.z * axisLength +
+                                        axis.z *
+                                            activationBoundary.axialGameUnits +
                                         tangentA.z * radialA +
                                         tangentB.z * radialB,
                                 };
@@ -2398,23 +2410,139 @@
                                  segment < SegmentCount;
                                  ++segment) {
                                 addMarkerLine(
-                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedCone,
+                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
                                     rim[segment],
                                     rim[(segment + 1) % SegmentCount]);
                                 if ((segment % (SegmentCount / 4)) == 0) {
                                     addMarkerLine(
-                                        debug::MarkerOverlayRole::AuthoredGripActivationAllowedCone,
+                                        debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
                                         snapshot.authoredPalmSeatWorld,
                                         rim[segment]);
                                 }
                             }
                         };
+
+                        const auto drawWireSweptActivationRegion = [&]() {
+                            const auto canonicalPoint = [&](
+                                const float leftOffset,
+                                const float downOffset,
+                                const float referenceOffset) {
+                                return RE::NiPoint3{
+                                    snapshot.authoredPalmSeatWorld.x +
+                                        snapshot.leftAxisWorld.x * leftOffset +
+                                        snapshot.downAxisWorld.x * downOffset +
+                                        snapshot.referenceAxisWorld.x *
+                                            referenceOffset,
+                                    snapshot.authoredPalmSeatWorld.y +
+                                        snapshot.leftAxisWorld.y * leftOffset +
+                                        snapshot.downAxisWorld.y * downOffset +
+                                        snapshot.referenceAxisWorld.y *
+                                            referenceOffset,
+                                    snapshot.authoredPalmSeatWorld.z +
+                                        snapshot.leftAxisWorld.z * leftOffset +
+                                        snapshot.downAxisWorld.z * downOffset +
+                                        snapshot.referenceAxisWorld.z *
+                                            referenceOffset,
+                                };
+                            };
+                            const auto addAllowedLine = [&](
+                                const RE::NiPoint3& from,
+                                const RE::NiPoint3& to) {
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::
+                                        AuthoredGripActivationAllowedRegion,
+                                    from,
+                                    to);
+                            };
+
+                            constexpr std::size_t ArcSegmentCount = 12;
+                            RE::NiPoint3 previousPositive{};
+                            RE::NiPoint3 previousNegative{};
+                            RE::NiPoint3 previousCenter{};
+                            for (std::size_t segment = 0;
+                                 segment <= ArcSegmentCount;
+                                 ++segment) {
+                                const float angle =
+                                    static_cast<float>(segment) *
+                                    (0.5f * std::numbers::pi_v<float>) /
+                                    static_cast<float>(ArcSegmentCount);
+                                const float leftScale = std::cos(angle);
+                                const float downScale = std::sin(angle);
+                                const auto center = canonicalPoint(
+                                    leftScale * drawRadiusGameUnits,
+                                    downScale * drawRadiusGameUnits,
+                                    0.0f);
+                                const auto positive = canonicalPoint(
+                                    leftScale *
+                                        activationBoundary.axialGameUnits,
+                                    downScale *
+                                        activationBoundary.axialGameUnits,
+                                    activationBoundary.rimRadiusGameUnits);
+                                const auto negative = canonicalPoint(
+                                    leftScale *
+                                        activationBoundary.axialGameUnits,
+                                    downScale *
+                                        activationBoundary.axialGameUnits,
+                                    -activationBoundary.rimRadiusGameUnits);
+                                if (segment > 0) {
+                                    addAllowedLine(previousPositive, positive);
+                                    addAllowedLine(previousNegative, negative);
+                                    addAllowedLine(previousCenter, center);
+                                }
+                                if ((segment % (ArcSegmentCount / 4)) == 0) {
+                                    addAllowedLine(
+                                        snapshot.authoredPalmSeatWorld,
+                                        positive);
+                                    addAllowedLine(
+                                        snapshot.authoredPalmSeatWorld,
+                                        negative);
+                                }
+                                previousPositive = positive;
+                                previousNegative = negative;
+                                previousCenter = center;
+                            }
+
+                            const auto drawEndpointCap =
+                                [&](const bool leftEndpoint) {
+                                constexpr std::size_t SegmentCount = 12;
+                                RE::NiPoint3 previous{};
+                                for (std::size_t segment = 0;
+                                     segment <= SegmentCount;
+                                     ++segment) {
+                                    const float angle =
+                                        0.5f * std::numbers::pi_v<float> +
+                                        static_cast<float>(segment) *
+                                            std::numbers::pi_v<float> /
+                                            static_cast<float>(SegmentCount);
+                                    const float tangentOffset =
+                                        std::cos(angle) *
+                                        activationBoundary.rimRadiusGameUnits;
+                                    const auto point = canonicalPoint(
+                                        leftEndpoint ?
+                                            activationBoundary.axialGameUnits :
+                                            tangentOffset,
+                                        leftEndpoint ?
+                                            tangentOffset :
+                                            activationBoundary.axialGameUnits,
+                                        std::sin(angle) *
+                                            activationBoundary.rimRadiusGameUnits);
+                                    if (segment > 0) {
+                                        addAllowedLine(previous, point);
+                                    }
+                                    if (segment == SegmentCount / 2) {
+                                        addAllowedLine(
+                                            snapshot.authoredPalmSeatWorld,
+                                            point);
+                                    }
+                                    previous = point;
+                                }
+                            };
+                            drawEndpointCap(true);
+                            drawEndpointCap(false);
+                        };
                         if (snapshot.weaponFamily ==
                                 authored_weapon_grip_activation_policy::
-                                    WeaponFamily::OneHandGun ||
-                            snapshot.weaponFamily ==
-                                authored_weapon_grip_activation_policy::
-                                    WeaponFamily::TwoHandGun) {
+                                    WeaponFamily::OneHandGun) {
                             drawWireCone(
                                 snapshot.leftAxisWorld,
                                 snapshot.downAxisWorld,
@@ -2423,10 +2551,7 @@
                         if (snapshot.weaponFamily ==
                             authored_weapon_grip_activation_policy::
                                 WeaponFamily::TwoHandGun) {
-                            drawWireCone(
-                                snapshot.downAxisWorld,
-                                snapshot.leftAxisWorld,
-                                snapshot.referenceAxisWorld);
+                            drawWireSweptActivationRegion();
                         }
                     }
 
@@ -2484,13 +2609,14 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -8.4f },
                         1.65f,
                         verdictColor,
-                        "d=%.2f cap=%.2f leftDot=%.3f downDot=%.3f cone=%s spatial=%s",
+                        "d=%.2f cap=%.2f leftDot=%.3f downDot=%.3f arcDot=%.3f region=%s spatial=%s",
                         snapshot.weaponRelativeDistanceGameUnits,
                         snapshot.radialCapGameUnits,
                         snapshot.leftDot,
                         snapshot.downDot,
-                        authored_weapon_grip_activation_policy::allowedConeName(
-                            snapshot.selectedCone),
+                        snapshot.sweptArcDot,
+                        authored_weapon_grip_activation_policy::activationRegionName(
+                            snapshot.selectedRegion),
                         snapshot.activationSpatialPass ? "PASS" : "FAIL");
                     addTextLineSized(
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.4f },

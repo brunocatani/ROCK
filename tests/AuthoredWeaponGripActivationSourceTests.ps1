@@ -31,8 +31,8 @@ Require-Text 'src/physics-interaction/weapon/WeaponClassificationPolicy.h' `
     'The shared classifier must retain the locally verified RightHand, BothHandsLeftOptional, and BothHands behavior-slot identities.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'WeaponFamily::OneHandGun[\s\S]*selectedCone\s*=\s*AllowedCone::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*leftPass\s*\|\|\s*downPass' `
-    'One-hand weapons must expose LEFT only while two-hand weapons expose the LEFT/DOWN union.'
+    'WeaponFamily::OneHandGun[\s\S]*selectedRegion\s*=\s*ActivationRegion::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*sweptArcDotSquared[\s\S]*ActivationRegion::Arc' `
+    'One-hand weapons must expose LEFT only while two-hand weapons use the LEFT-to-DOWN swept activation region.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshAuthoredSupportGripActivationState\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
@@ -51,8 +51,8 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Authored activation must not veto a passing cone because generated contact geometry also owns reload/action/socket metadata.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `
-    'The pre-grab overlay must be independently enabled and explicitly identify its enforced verdict.'
+    'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*drawWireSweptActivationRegion[\s\S]*ENFORCED AUTHORED ACTIVATION' `
+    'The pre-grab overlay must draw the one-hand cone and two-hand swept region while explicitly identifying its enforced verdict.'
 
 foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `

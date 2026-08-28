@@ -3217,7 +3217,7 @@ namespace rock::debug
                 color[2] = 0.72f;
                 color[3] = 0.9f;
                 break;
-            case MarkerOverlayRole::AuthoredGripActivationAllowedCone:
+            case MarkerOverlayRole::AuthoredGripActivationAllowedRegion:
             case MarkerOverlayRole::AuthoredGripActivationPass:
                 color[0] = 0.25f;
                 color[1] = 1.0f;
