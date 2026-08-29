@@ -528,6 +528,7 @@ namespace rock
         scanOptions.seedHitNode = selection.hitNode;
         scanOptions.requireSameResolvedRef = true;
         scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.allowProjectileLayerForExactTarget = selection.allowProjectileLayerForExactTarget;
         scanOptions.heldBySameHand = &_heldBodyIds;
         scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
         return scanOptions;
@@ -573,6 +574,7 @@ namespace rock
                _grabAcquisitionCache.leftHandBodyId == options.leftHandBodyId &&
                _grabAcquisitionCache.sourceBodyId == options.sourceBodyId &&
                _grabAcquisitionCache.targetKind == options.targetKind &&
+               _grabAcquisitionCache.allowProjectileLayerForExactTarget == options.allowProjectileLayerForExactTarget &&
                _grabAcquisitionCache.maxDepth == options.maxDepth;
     }
 
@@ -616,6 +618,7 @@ namespace rock
             _grabAcquisitionCache.leftHandBodyId = scanOptions.leftHandBodyId;
             _grabAcquisitionCache.sourceBodyId = scanOptions.sourceBodyId;
             _grabAcquisitionCache.targetKind = scanOptions.targetKind;
+            _grabAcquisitionCache.allowProjectileLayerForExactTarget = scanOptions.allowProjectileLayerForExactTarget;
             _grabAcquisitionCache.maxDepth = scanOptions.maxDepth;
             _grabAcquisitionCache.stage = GrabAcquisitionCache::Stage::PreScanRunning;
             _grabAcquisitionCache.valid = true;
@@ -1120,7 +1123,8 @@ namespace rock
         RE::TESObjectREFR* targetRef,
         const RE::NiPoint3& sourcePointWorld,
         std::uint32_t preferredBodyId,
-        float maxDistanceGame)
+        float maxDistanceGame,
+        bool allowProjectileLayerForExactTarget)
     {
         if (!hknpWorld || !targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
             return false;
@@ -1144,6 +1148,7 @@ namespace rock
         scanOptions.requireSameResolvedRef = true;
         scanOptions.allowUnresolvedRefBodies = true;
         scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.allowProjectileLayerForExactTarget = allowProjectileLayerForExactTarget;
         scanOptions.heldBySameHand = &_heldBodyIds;
         scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
 
@@ -1196,6 +1201,7 @@ namespace rock
         selection.hasHitPoint = true;
         selection.hasHitNormal = true;
         selection.forcedArrival = true;
+        selection.allowProjectileLayerForExactTarget = allowProjectileLayerForExactTarget;
 
         if (!selection.isValid()) {
             return false;

@@ -658,8 +658,11 @@ namespace rock
             loose_grenade_runtime::GrenadeRuntimeData runtime{};
             float remainingSeconds{ 0.0f };
             std::uint32_t impactBodyId{ INVALID_CONTACT_BODY_ID };
+            bool releasedSinceArming{ false };
         };
-        static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 4;
+        // Placed mines remain active after release, so retain a bounded pool
+        // larger than the original simultaneous hand-grenade fuse budget.
+        static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 8;
         std::array<PendingForceGrabCommit, 2> _pendingForceGrabCommits{};
         std::array<HeldWeaponTriggerEquipIntent, 2> _heldWeaponTriggerEquipIntents{};
         std::array<bool, 2> _forceGrabCommittedThisFrame{};

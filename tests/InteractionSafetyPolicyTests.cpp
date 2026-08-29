@@ -1,12 +1,22 @@
 #include "physics-interaction/api/InteractionCommandPolicy.h"
 #include "physics-interaction/core/ForceGrabPolicy.h"
+#include "physics-interaction/grenade/LooseThrowablePolicy.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 
 #include <cstdio>
+#include <limits>
 
 namespace
 {
+    enum class TestWeaponType : std::uint8_t
+    {
+        Gun = 9,
+        Grenade = 10,
+        Mine = 11,
+    };
+
     bool expectTrue(const char* label, bool value)
     {
         if (value) {
@@ -83,6 +93,44 @@ int main()
     ok &= expectTrue("part grip always occupies hand", equippedWeaponOccupiesHand(false, true, true, false, true));
     ok &= expectTrue("future left firing hand occupied", equippedWeaponOccupiesHand(true, true, false, true, false));
     ok &= expectFalse("future right offhand remains free", equippedWeaponOccupiesHand(false, true, false, true, false));
+
+    using rock::loose_throwable_policy::DetonationMode;
+    using rock::loose_throwable_policy::classifyDetonationMode;
+    using rock::loose_throwable_policy::isSupportedWeaponType;
+    using rock::loose_throwable_policy::isWithinProximity;
+    using rock::loose_throwable_policy::preservesReferenceAfterDetonation;
+    ok &= expectTrue("grenade is a supported throwable", isSupportedWeaponType(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine));
+    ok &= expectTrue("mine is a supported throwable", isSupportedWeaponType(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine));
+    ok &= expectFalse("gun is not a supported throwable", isSupportedWeaponType(TestWeaponType::Gun, TestWeaponType::Grenade, TestWeaponType::Mine));
+    ok &= expectEqual("generic grenade keeps timed fuse", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::TimedFuse);
+    ok &= expectEqual("Molotov uses impact", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, true, true, 0.0f), DetonationMode::Impact);
+    ok &= expectEqual("placed mine uses proximity", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 100.0f), DetonationMode::Proximity);
+    ok &= expectEqual("projectile-style mine uses impact", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::Impact);
+    ok &= expectEqual("mine with invalid proximity fails closed", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, (std::numeric_limits<float>::quiet_NaN)()), DetonationMode::Unsupported);
+    ok &= expectEqual("throwable without explosion fails closed", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, false, 0.0f), DetonationMode::Unsupported);
+    ok &= expectTrue("pickup impact throwable remains recoverable", preservesReferenceAfterDetonation(DetonationMode::Impact, rock::loose_throwable_policy::kProjectileCanBePickedUp, false));
+    ok &= expectFalse("authored placed-object recovery consumes source prop", preservesReferenceAfterDetonation(DetonationMode::Impact, rock::loose_throwable_policy::kProjectileCanBePickedUp, true));
+    ok &= expectFalse("explosive impact throwable is consumed", preservesReferenceAfterDetonation(DetonationMode::Impact, 0, false));
+    ok &= expectTrue("actor inside mine radius triggers", isWithinProximity(100.0f, 60.0f, 60.0f, 0.0f));
+    ok &= expectFalse("actor outside mine radius does not trigger", isWithinProximity(100.0f, 80.0f, 80.0f, 0.0f));
+
+    using rock::physics_body_classifier::BodyClassificationInput;
+    using rock::physics_body_classifier::BodyMotionType;
+    using rock::physics_body_classifier::InteractionMode;
+    using rock::physics_body_classifier::classifyBody;
+    BodyClassificationInput projectileLayerThrowable{
+        .bodyId = 1,
+        .motionId = 1,
+        .layer = rock::collision_layer_policy::FO4_LAYER_PROJECTILE,
+        .motionType = BodyMotionType::Dynamic,
+        .targetKind = rock::grab_target::Kind::LooseObject,
+    };
+    ok &= expectFalse("organic projectile-layer object remains blocked", classifyBody(projectileLayerThrowable, InteractionMode::ActiveGrab).accepted);
+    projectileLayerThrowable.allowProjectileLayerForExactTarget = true;
+    ok &= expectTrue("exact quick-draw projectile-layer body is admitted", classifyBody(projectileLayerThrowable, InteractionMode::ActiveGrab).accepted);
+    ok &= expectFalse("projectile-layer passive push remains blocked", classifyBody(projectileLayerThrowable, InteractionMode::PassivePush).accepted);
+    projectileLayerThrowable.targetKind = rock::grab_target::Kind::ActorEquipment;
+    ok &= expectFalse("projectile exception cannot escape loose-object target", classifyBody(projectileLayerThrowable, InteractionMode::ActiveGrab).accepted);
 
     using rock::bare_fist_guard_policy::Witness;
     using rock::bare_fist_guard_policy::shouldHolster;

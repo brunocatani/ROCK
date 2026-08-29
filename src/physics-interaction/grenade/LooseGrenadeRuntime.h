@@ -3,6 +3,8 @@
 #include "RE/Bethesda/BSTSmartPointer.h"
 #include "RE/Bethesda/BSPointerHandle.h"
 
+#include "physics-interaction/grenade/LooseThrowablePolicy.h"
+
 #include <cstdint>
 
 namespace RE
@@ -19,15 +21,10 @@ namespace rock::loose_grenade_runtime
 {
     enum class GrenadeDetonationMode : std::uint8_t
     {
+        Unsupported,
         TimedFuse,
-        Impact
-    };
-
-    enum class GrenadeKind : std::uint8_t
-    {
-        NotGrenade,
-        Generic,
-        Molotov
+        Impact,
+        Proximity,
     };
 
     struct GrenadeRuntimeData
@@ -35,7 +32,18 @@ namespace rock::loose_grenade_runtime
         RE::BGSProjectile* projectile{ nullptr };
         RE::BGSExplosion* explosion{ nullptr };
         float fuseSeconds{ 0.0f };
+        float proximityRadiusGameUnits{ 0.0f };
+        float directImpactDamage{ 0.0f };
+        bool preserveReferenceAfterDetonation{ false };
         GrenadeDetonationMode detonationMode{ GrenadeDetonationMode::TimedFuse };
+    };
+
+    struct ProximityScanResult
+    {
+        bool targetFound{ false };
+        bool truncated{ false };
+        std::uint32_t targetActorFormID{ 0 };
+        std::uint32_t actorHandlesScanned{ 0 };
     };
 
     enum class EquippedGrenadeSelectionStatus : std::uint8_t
@@ -65,9 +73,8 @@ namespace rock::loose_grenade_runtime
         std::uint32_t stackId{ 0 };
     };
 
-    [[nodiscard]] bool isGrenadeWeapon(const RE::TESObjectWEAP* weapon) noexcept;
-    [[nodiscard]] bool isGrenadeRef(RE::TESObjectREFR* ref) noexcept;
-    [[nodiscard]] GrenadeKind classifyGrenadeRef(RE::TESObjectREFR* ref) noexcept;
+    [[nodiscard]] bool isThrowableWeapon(const RE::TESObjectWEAP* weapon) noexcept;
+    [[nodiscard]] bool isThrowableRef(RE::TESObjectREFR* ref) noexcept;
     [[nodiscard]] bool resolveGrenadeRuntimeData(
         RE::TESObjectWEAP* weapon,
         RE::TBO_InstanceData* instanceData,
@@ -85,6 +92,9 @@ namespace rock::loose_grenade_runtime
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
     [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
+    [[nodiscard]] ProximityScanResult scanHostileActorsWithinProximity(
+        RE::TESObjectREFR* ref,
+        float radiusGameUnits) noexcept;
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);
     [[nodiscard]] bool returnDroppedReferenceToInventory(RE::TESObjectREFR* ref);
     void disableAndDeleteReference(RE::TESObjectREFR* ref);

@@ -43,7 +43,7 @@ namespace rock
         PendingForceGrabCommitPhase phase{ PendingForceGrabCommitPhase::WaitingForSettle };
 
         RE::ObjectRefHandle targetHandle{};
-        bool targetIsLooseGrenade{ false };
+        bool targetIsLooseThrowable{ false };
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
         bool hasSourcePointOverride{ false };
@@ -54,7 +54,6 @@ namespace rock
 
         // LooseGrenadeQuickDraw bookkeeping.
         std::uint64_t grenadeRequestId{ 0 };
-        loose_grenade_runtime::GrenadeRuntimeData grenadeRuntime{};
 
         // ProviderForceGrabCommand bookkeeping: pre-filled with request identity;
         // only .state/.failure/.targetBodyId are mutated when the commit resolves.

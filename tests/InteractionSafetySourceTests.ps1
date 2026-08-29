@@ -99,6 +99,8 @@ $fo4vrRuntime = Read-Source 'src/rock_support/Fo4VrRuntime.cpp'
 $fo4vrRuntimeHeader = Read-Source 'src/rock_support/Fo4VrRuntime.h'
 $actorStatePolicy = Read-Source 'src/rock_support/Fo4VrActorStatePolicy.h'
 $nativeWeaponDraw = Read-Source 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp'
+$handSource = Read-Source 'src/physics-interaction/hand/Hand.cpp'
+$bodyClassifier = Read-Source 'src/physics-interaction/object/PhysicsBodyClassifier.h'
 $allRuntimeCpp = (
     Get-ChildItem -LiteralPath (Join-Path $Root 'src') -Recurse -File -Filter '*.cpp' |
         Sort-Object FullName |
@@ -137,7 +139,7 @@ Reject-Text ($allRuntimeCpp + "`n" + $fo4vrRuntimeHeader) `
 $equippedSelection = Get-BoundedText $grenadeSource 'EquippedGrenadeSelectionStatus resolveEquippedGrenadeSelection(' 'const char* selectionStatusName(' 'equipped grenade selection'
 Require-OrderedTokens $equippedSelection @(
     'BSAutoReadLock inventoryLock',
-    'isGrenadeWeapon(weapon)',
+    'isThrowableWeapon(weapon)',
     'stack->GetCount() == 0 || !stack->IsEquipped()',
     'equippedGrenadeStackCount != 1',
     'resolveGrenadeRuntimeDataForSources(',
@@ -173,12 +175,12 @@ Require-OrderedTokens $grenadeService @(
     'leftBlockers = forceGrabHandBlockerMask',
     'force_grab_policy::selectGrenadeHand',
     'GrenadeSelectionFailure::HandsBlocked',
-    'Cannot draw grenade - both hands are occupied.',
+    'Cannot draw throwable - both hands are occupied.',
     'dropEquippedGrenadeSelectionToWorld'
-) 'Loose grenade service must choose an available hand and reject blocked hands before inventory removal.'
+) 'Loose throwable service must choose an available hand and reject blocked hands before inventory removal.'
 Require-Text $grenadeService `
     'const bool isLeft\s*=\s*handSelection\.hand\s*==\s*force_grab_policy::HandChoice::Left;[\s\S]*?_pendingForceGrabCommits\[isLeft\s*\?\s*1u\s*:\s*0u\][\s\S]*?handInput\s*=\s*isLeft\s*\?\s*frame\.left\s*:\s*frame\.right' `
-    'The selected grenade hand must drive both the commit slot and spawn anchor.'
+    'The selected throwable hand must drive both the commit slot and spawn anchor.'
 Require-Text $forceGrabPolicy `
     'if\s*\(rightAvailable\)[\s\S]*?HandChoice::Right[\s\S]*?if\s*\(leftAvailable\)[\s\S]*?HandChoice::Left[\s\S]*?GrenadeSelectionFailure::HandsBlocked' `
     'Grenade hand policy must prefer right, fall back to left, then report both hands blocked.'
@@ -199,12 +201,12 @@ Require-Text $selectionUpdate `
     'if\s*\(_pendingForceGrabCommits\[1\]\.active\)[\s\S]*?_leftHand\.clearSelectionState\(false\);[\s\S]*?_leftHand\.stopSelectionBeam\(\);' `
     'A pending left-hand force-grab must suppress organic left-hand selection and beam state.'
 
-$grabInput = Get-BoundedText $physicsSource 'void PhysicsInteraction::updateGrabInput(' 'bool PhysicsInteraction::physicsModOwnsObject(' 'grab input update'
+$grabInput = Get-BoundedText $physicsSource 'bool PhysicsInteraction::prepareGrabInputHand(' 'bool PhysicsInteraction::processTouchGrabInput(' 'grab input prelude'
 Require-Text $grabInput `
-    'if\s*\(_pendingForceGrabCommits\[handIndex\]\.active\)\s*\{[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\);[\s\S]*?cancelPeerHeldJoinRetry[\s\S]*?clearGameplayCandidatesForHand[\s\S]*?clearSelectionState\(false\);[\s\S]*?return;' `
+    'if\s*\(_pendingForceGrabCommits\[handIndex\]\.active\)\s*\{[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\);[\s\S]*?cancelPeerHeldJoinRetry[\s\S]*?clearGameplayCandidatesForHand[\s\S]*?clearSelectionState\(false\);[\s\S]*?return\s+false;' `
     'A pending force-grab must reserve normal input, retry, gameplay-candidate, and selection ownership for its hand.'
 Require-Text $grabInput `
-    'if\s*\(_forceGrabCommittedThisFrame\[handIndex\]\)[\s\S]*?readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\)[\s\S]*?return;' `
+    'if\s*\(_forceGrabCommittedThisFrame\[handIndex\]\)[\s\S]*?readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\)[\s\S]*?return\s+false;' `
     'A successful force-grab must consume stale pre-attachment button edges and skip normal release processing for the rest of its commit frame.'
 
 # Every retry reacquires the exact handle target and commits it in the same
@@ -226,6 +228,15 @@ Require-OrderedTokens $commitService @(
 Require-Text $commitService `
     'if\s*\(!grabbed\)\s*\{[\s\S]*?clearSelectionState\(false\);[\s\S]*?phase\s*=\s*PendingForceGrabCommitPhase::WaitingForSettle' `
     'A refused exact-target commit must reset to settle/reacquire instead of preserving stale ready selection.'
+Require-Text $commitService `
+    'acquireForceGrabLooseSelection[\s\S]*?commit\.origin\s*==\s*PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw\s*&&[\s\S]*?commit\.targetIsLooseThrowable\s*&&[\s\S]*?isThrowableRef\(targetRef\)' `
+    'Only a grenade-mode exact-target commit may request projectile-layer active-grab admission.'
+Require-Text $handSource `
+    'acquireForceGrabLooseSelection[\s\S]*?allowProjectileLayerForExactTarget[\s\S]*?scanOptions\.allowProjectileLayerForExactTarget\s*=\s*allowProjectileLayerForExactTarget[\s\S]*?selection\.allowProjectileLayerForExactTarget\s*=\s*allowProjectileLayerForExactTarget' `
+    'The exact-target projectile-layer capability must survive acquisition into the committed selection.'
+Require-Text $bodyClassifier `
+    'activeExactThrowableProjectileLayer[\s\S]*?InteractionMode::ActiveGrab[\s\S]*?Kind::LooseObject[\s\S]*?allowProjectileLayerForExactTarget[\s\S]*?FO4_LAYER_PROJECTILE[\s\S]*?interactionLayer' `
+    'Projectile-layer admission must remain scoped to an exact loose-object active grab.'
 Reject-Text $pendingCommitHeader `
     'ReadyToCommit' `
     'Pending force-grab state must not reintroduce a stale ReadyToCommit phase.'
@@ -289,8 +300,8 @@ Require-Text $physicsSource `
 # proceed independently per hand.
 $providerCommands = Get-BoundedText $physicsSource 'void PhysicsInteraction::processProviderInteractionCommands(' 'std::size_t PhysicsInteraction::applyProviderWeaponPartDrives(' 'provider interaction command processing'
 Require-Text $providerCommands `
-    'targetIsLooseGrenade\s*=\s*loose_grenade_runtime::isGrenadeRef\(targetRef\)[\s\S]*?handHoldsLooseGrenade\(_rightHand\)[\s\S]*?handHoldsLooseGrenade\(_leftHand\)[\s\S]*?hasActiveLooseGrenadeCommit\(\)[\s\S]*?RockProviderInteractionFailureV1::HandBusy' `
-    'API grenade grabs must reject while any hand holds a grenade or a grenade attach is active.'
+    'targetIsLooseThrowable\s*=\s*loose_grenade_runtime::isThrowableRef\(targetRef\)[\s\S]*?handHoldsLooseGrenade\(_rightHand\)[\s\S]*?handHoldsLooseGrenade\(_leftHand\)[\s\S]*?hasActiveLooseGrenadeCommit\(\)[\s\S]*?RockProviderInteractionFailureV1::HandBusy' `
+    'API throwable grabs must reject while any hand holds a grenade-mode throwable or one is attaching.'
 
 # Bare fists are identified from runtime evidence, not broad hand-to-hand
 # weapon type, so real unarmed weapons remain supported.

@@ -3,10 +3,12 @@
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BGSMod.h"
+#include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BSLock.h"
 #include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/ProcessLists.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESDataHandler.h"
 #include "RE/Bethesda/TESForms.h"
@@ -20,6 +22,14 @@ namespace rock::loose_grenade_runtime
     namespace
     {
         constexpr std::uint32_t kInvalidStackId = 0xFFFF'FFFFu;
+        constexpr std::uint32_t kMaximumProximityActorHandlesScanned = 2048;
+
+        enum class GrenadeKind : std::uint8_t
+        {
+            NotGrenade,
+            Generic,
+            Molotov,
+        };
 
         struct InventoryStackMatch
         {
@@ -209,7 +219,7 @@ namespace rock::loose_grenade_runtime
             GrenadeRuntimeData& outRuntime) noexcept
         {
             outRuntime = {};
-            if (!weapon || weapon->weaponData.type != RE::WEAPON_TYPE::kGrenade) {
+            if (!isThrowableWeapon(weapon)) {
                 return false;
             }
 
@@ -218,15 +228,48 @@ namespace rock::loose_grenade_runtime
                 return false;
             }
 
-            const GrenadeKind kind = classifyGrenadeSources(weapon, instanceData, projectile, objectInstanceExtra);
-            const GrenadeDetonationMode mode =
-                kind == GrenadeKind::Molotov ?
-                    GrenadeDetonationMode::Impact :
-                    GrenadeDetonationMode::TimedFuse;
-            const float configuredFuseSeconds = g_rockConfig.rockRealisticGrenadeFuseSeconds;
-            const float fuseSeconds = std::isfinite(configuredFuseSeconds) && configuredFuseSeconds > 0.0f ?
-                configuredFuseSeconds :
-                projectile->data.explosionTimer;
+            const auto weaponType = weapon->weaponData.type.get();
+            const GrenadeKind kind = classifyGrenadeSources(
+                weapon,
+                instanceData,
+                projectile,
+                objectInstanceExtra);
+            const auto policyMode = loose_throwable_policy::classifyDetonationMode(
+                weaponType,
+                RE::WEAPON_TYPE::kGrenade,
+                RE::WEAPON_TYPE::kMine,
+                kind == GrenadeKind::Molotov,
+                true,
+                projectile->data.explosionProximity);
+            const GrenadeDetonationMode mode = [&]() {
+                switch (policyMode) {
+                case loose_throwable_policy::DetonationMode::TimedFuse:
+                    return GrenadeDetonationMode::TimedFuse;
+                case loose_throwable_policy::DetonationMode::Impact:
+                    return GrenadeDetonationMode::Impact;
+                case loose_throwable_policy::DetonationMode::Proximity:
+                    return GrenadeDetonationMode::Proximity;
+                case loose_throwable_policy::DetonationMode::Unsupported:
+                default:
+                    return GrenadeDetonationMode::Unsupported;
+                }
+            }();
+            if (mode == GrenadeDetonationMode::Unsupported) {
+                return false;
+            }
+
+            float fuseSeconds = 0.0f;
+            if (mode == GrenadeDetonationMode::TimedFuse) {
+                const float configuredFuseSeconds = g_rockConfig.rockRealisticGrenadeFuseSeconds;
+                fuseSeconds = std::isfinite(configuredFuseSeconds) && configuredFuseSeconds > 0.0f ?
+                                  configuredFuseSeconds :
+                                  projectile->data.explosionTimer;
+            } else if (mode == GrenadeDetonationMode::Proximity) {
+                // For placed mines this is an arming delay, not a detonation deadline.
+                fuseSeconds = std::isfinite(projectile->data.explosionTimer) && projectile->data.explosionTimer > 0.0f ?
+                                  projectile->data.explosionTimer :
+                                  0.0f;
+            }
             if (mode == GrenadeDetonationMode::TimedFuse && (!std::isfinite(fuseSeconds) || fuseSeconds <= 0.0f)) {
                 return false;
             }
@@ -235,6 +278,18 @@ namespace rock::loose_grenade_runtime
                 .projectile = projectile,
                 .explosion = projectile->data.explosionType,
                 .fuseSeconds = fuseSeconds,
+                .proximityRadiusGameUnits = mode == GrenadeDetonationMode::Proximity ?
+                                                projectile->data.explosionProximity :
+                                                0.0f,
+                .directImpactDamage =
+                    mode == GrenadeDetonationMode::Impact && weaponType == RE::WEAPON_TYPE::kMine ?
+                        static_cast<float>(weaponInstanceData(weapon, instanceData)->attackDamage) :
+                        0.0f,
+                .preserveReferenceAfterDetonation =
+                    loose_throwable_policy::preservesReferenceAfterDetonation(
+                        policyMode,
+                        projectile->data.flags,
+                        projectile->data.explosionType->data.impactPlacedObject != nullptr),
                 .detonationMode = mode,
             };
             return true;
@@ -282,31 +337,23 @@ namespace rock::loose_grenade_runtime
         }
     }
 
-    bool isGrenadeWeapon(const RE::TESObjectWEAP* weapon) noexcept
+    bool isThrowableWeapon(const RE::TESObjectWEAP* weapon) noexcept
     {
-        // WEAPON_TYPE is a single-valued enum stored in EnumSet; bitmask any() makes guns/mines alias grenades.
-        return weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade;
-    }
-
-    bool isGrenadeRef(RE::TESObjectREFR* ref) noexcept
-    {
-        auto* base = ref ? ref->GetObjectReference() : nullptr;
-        auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
-        return isGrenadeWeapon(weapon);
-    }
-
-    GrenadeKind classifyGrenadeRef(RE::TESObjectREFR* ref) noexcept
-    {
-        auto* base = ref ? ref->GetObjectReference() : nullptr;
-        auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
-        if (!isGrenadeWeapon(weapon)) {
-            return GrenadeKind::NotGrenade;
+        if (!weapon) {
+            return false;
         }
+        // WEAPON_TYPE is single-valued. Explicit equality keeps guns from aliasing thrown types.
+        return loose_throwable_policy::isSupportedWeaponType(
+            weapon->weaponData.type.get(),
+            RE::WEAPON_TYPE::kGrenade,
+            RE::WEAPON_TYPE::kMine);
+    }
 
-        const auto instanceData = resolveReferenceInstanceData(ref);
-        auto* projectile = resolveProjectile(weapon, instanceData.get());
-        const auto* objectInstanceExtra = resolveReferenceObjectInstanceExtra(ref);
-        return classifyGrenadeSources(weapon, instanceData.get(), projectile, objectInstanceExtra);
+    bool isThrowableRef(RE::TESObjectREFR* ref) noexcept
+    {
+        auto* base = ref ? ref->GetObjectReference() : nullptr;
+        auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
+        return isThrowableWeapon(weapon);
     }
 
     bool resolveGrenadeRuntimeData(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instanceData, GrenadeRuntimeData& outRuntime) noexcept
@@ -343,7 +390,7 @@ namespace rock::loose_grenade_runtime
             const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
             for (auto& inventoryItem : player->inventoryList->data) {
                 auto* weapon = inventoryItem.object ? inventoryItem.object->As<RE::TESObjectWEAP>() : nullptr;
-                if (!isGrenadeWeapon(weapon)) {
+                if (!isThrowableWeapon(weapon)) {
                     continue;
                 }
 
@@ -519,13 +566,86 @@ namespace rock::loose_grenade_runtime
     const char* detonationModeName(GrenadeDetonationMode mode) noexcept
     {
         switch (mode) {
+        case GrenadeDetonationMode::Unsupported:
+            return "unsupported";
         case GrenadeDetonationMode::TimedFuse:
             return "timed-fuse";
         case GrenadeDetonationMode::Impact:
             return "impact";
+        case GrenadeDetonationMode::Proximity:
+            return "proximity";
         default:
             return "unknown";
         }
+    }
+
+    ProximityScanResult scanHostileActorsWithinProximity(
+        RE::TESObjectREFR* ref,
+        float radiusGameUnits) noexcept
+    {
+        ProximityScanResult result{};
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* processLists = RE::ProcessLists::GetSingleton();
+        auto* refCell = ref ? ref->GetParentCell() : nullptr;
+        if (!ref || ref->IsDeleted() || ref->IsDisabled() ||
+            !player || !processLists || !refCell ||
+            !std::isfinite(radiusGameUnits) || radiusGameUnits <= 0.0f) {
+            return result;
+        }
+
+        const RE::NiPoint3 source = ref->GetPosition();
+        auto scanHandles = [&](const RE::BSTArray<RE::ActorHandle>& handles) {
+            for (const auto& handle : handles) {
+                if (result.actorHandlesScanned >= kMaximumProximityActorHandlesScanned) {
+                    result.truncated = true;
+                    return true;
+                }
+                ++result.actorHandlesScanned;
+
+                const auto actorPtr = handle.get();
+                auto* actor = actorPtr.get();
+                if (!actor || actor == player || actor->IsDeleted() || actor->IsDisabled() || actor->IsDead(false)) {
+                    continue;
+                }
+
+                auto* actorCell = actor->GetParentCell();
+                if (!actorCell) {
+                    continue;
+                }
+                if (refCell->IsInterior() || actorCell->IsInterior()) {
+                    if (actorCell != refCell) {
+                        continue;
+                    }
+                } else if (actorCell->worldSpace != refCell->worldSpace) {
+                    continue;
+                }
+
+                const RE::NiPoint3 target = actor->GetPosition();
+                if (!loose_throwable_policy::isWithinProximity(
+                        radiusGameUnits,
+                        target.x - source.x,
+                        target.y - source.y,
+                        target.z - source.z)) {
+                    continue;
+                }
+                if (!player->GetHostileToActor(actor) && !actor->GetHostileToActor(player)) {
+                    continue;
+                }
+
+                result.targetFound = true;
+                result.targetActorFormID = actor->GetFormID();
+                return true;
+            }
+            return false;
+        };
+
+        if (scanHandles(processLists->highActorHandles) ||
+            scanHandles(processLists->middleHighActorHandles) ||
+            scanHandles(processLists->middleLowActorHandles) ||
+            scanHandles(processLists->lowActorHandles)) {
+            return result;
+        }
+        return result;
     }
 
     bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref)

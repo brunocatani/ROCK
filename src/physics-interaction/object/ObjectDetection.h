@@ -64,6 +64,9 @@ namespace rock
          * weapons; throwables deliberately preserve their live object rotation.
          */
         bool forcedArrival = false;
+        // Only the exact ROCK-created grenade-mode reference may carry an
+        // authored PROJECTILE-layer body through active-grab admission.
+        bool allowProjectileLayerForExactTarget = false;
         actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
 
         void setReference(RE::TESObjectREFR* value)
@@ -98,6 +101,7 @@ namespace rock
             hasHmdConeDot = false;
             pinchCloseSelectionFallback = false;
             forcedArrival = false;
+            allowProjectileLayerForExactTarget = false;
             actorEquipment = {};
         }
 

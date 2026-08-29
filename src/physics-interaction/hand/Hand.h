@@ -587,7 +587,8 @@ namespace rock
             RE::TESObjectREFR* targetRef,
             const RE::NiPoint3& sourcePointWorld,
             std::uint32_t preferredBodyId,
-            float maxDistanceGame);
+            float maxDistanceGame,
+            bool allowProjectileLayerForExactTarget);
         void clearActorEquipmentDropHandoff(const char* reason = "cleared");
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
@@ -984,6 +985,7 @@ namespace rock
             std::uint32_t leftHandBodyId = INVALID_BODY_ID;
             std::uint32_t sourceBodyId = INVALID_BODY_ID;
             grab_target::Kind targetKind = grab_target::Kind::LooseObject;
+            bool allowProjectileLayerForExactTarget = false;
             int maxDepth = 0;
             Stage stage = Stage::Empty;
             object_physics_body_set::ObjectPhysicsBodyScanCursor scanCursor;
@@ -1007,6 +1009,7 @@ namespace rock
                 leftHandBodyId = INVALID_BODY_ID;
                 sourceBodyId = INVALID_BODY_ID;
                 targetKind = grab_target::Kind::LooseObject;
+                allowProjectileLayerForExactTarget = false;
                 maxDepth = 0;
                 stage = Stage::Empty;
                 scanCursor.clear();

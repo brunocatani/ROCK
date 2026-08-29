@@ -214,6 +214,7 @@ namespace rock::object_physics_body_set
             input.isRockWeaponSourceBody = rawBodyId == options.sourceWeaponBodyId || rawBodyId == options.sourceBodyId;
             input.isHeldBySameHand = containsBodyId(options.heldBySameHand, rawBodyId);
             input.isPlayerBody = record.resolvedRef == RE::PlayerCharacter::GetSingleton();
+            input.allowProjectileLayerForExactTarget = options.allowProjectileLayerForExactTarget;
 
             const auto classification = physics_body_classifier::classifyBody(input, options.mode);
             record.accepted = classification.accepted;

@@ -92,6 +92,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/TransformMath.h"
 
+#include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/ActorValueInfo.h"
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/Events.h"
@@ -7604,7 +7605,7 @@ namespace rock
                     auto* targetRef = targetRefPtr.get();
                     if (targetRef && !loose_grenade_runtime::returnDroppedReferenceToInventory(targetRef)) {
                         ROCK_LOG_WARN(Hand,
-                            "Loose grenade shutdown cleanup left the physical drop in world: ref={:08X} request={}",
+                            "Loose throwable shutdown cleanup left the physical drop in world: ref={:08X} request={}",
                             targetRef->GetFormID(),
                             commit.grenadeRequestId);
                     }
@@ -7659,13 +7660,13 @@ namespace rock
 
     bool PhysicsInteraction::handHoldsLooseGrenade(const Hand& hand) const
     {
-        return hand.isHolding() && loose_grenade_runtime::isGrenadeRef(hand.getHeldRef());
+        return hand.isHolding() && loose_grenade_runtime::isThrowableRef(hand.getHeldRef());
     }
 
     bool PhysicsInteraction::hasActiveLooseGrenadeCommit() const
     {
         for (const auto& commit : _pendingForceGrabCommits) {
-            if (commit.active && commit.targetIsLooseGrenade) {
+            if (commit.active && commit.targetIsLooseThrowable) {
                 return true;
             }
         }
@@ -7714,7 +7715,7 @@ namespace rock
         }
 
         if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
-            ROCK_LOG_WARN(Hand, "Ignored grenade quick draw because the physics world is unavailable");
+            ROCK_LOG_WARN(Hand, "Ignored throwable quick draw because the physics world is unavailable");
             return;
         }
 
@@ -7722,7 +7723,7 @@ namespace rock
 
         if (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) ||
             hasActiveLooseGrenadeCommit()) {
-            ROCK_LOG_INFO(Hand, "Ignored grenade quick draw because a loose grenade is already held or attaching");
+            ROCK_LOG_INFO(Hand, "Ignored throwable quick draw because a loose throwable is already held or attaching");
             return;
         }
 
@@ -7732,10 +7733,10 @@ namespace rock
         if (equippedStatus != loose_grenade_runtime::EquippedGrenadeSelectionStatus::Selected) {
             f4vr::showNotification(
                 equippedStatus == loose_grenade_runtime::EquippedGrenadeSelectionStatus::NoneEquipped ?
-                    "ROCK: No grenade is selected." :
-                    "ROCK: The selected grenade cannot be drawn.");
+                    "ROCK: No grenade or throwable is selected." :
+                    "ROCK: The selected throwable cannot be drawn.");
             ROCK_LOG_WARN(Hand,
-                "Grenade quick draw could not resolve one native equipped stack: status={}",
+                "Throwable quick draw could not resolve one native equipped stack: status={}",
                 loose_grenade_runtime::selectionStatusName(equippedStatus));
             return;
         }
@@ -7747,9 +7748,9 @@ namespace rock
             rightBlockers == 0,
             leftBlockers == 0);
         if (handSelection.failure == force_grab_policy::GrenadeSelectionFailure::HandsBlocked) {
-            f4vr::showNotification("ROCK: Cannot draw grenade - both hands are occupied.");
+            f4vr::showNotification("ROCK: Cannot draw throwable - both hands are occupied.");
             ROCK_LOG_WARN(Hand,
-                "Blocked grenade quick draw before inventory removal: request={} rightBlockers=0x{:02X} leftBlockers=0x{:02X}",
+                "Blocked throwable quick draw before inventory removal: request={} rightBlockers=0x{:02X} leftBlockers=0x{:02X}",
                 equippedSelection.requestId,
                 rightBlockers,
                 leftBlockers);
@@ -7775,9 +7776,9 @@ namespace rock
             equippedSelection,
             dropLocation);
         if (!dropResult.success) {
-            f4vr::showNotification("ROCK: The selected grenade could not be drawn.");
+            f4vr::showNotification("ROCK: The selected throwable could not be drawn.");
             ROCK_LOG_WARN(Hand,
-                "Grenade quick-draw inventory drop failed: weapon={:08X} request={} stack={} reason={}",
+                "Throwable quick-draw inventory drop failed: weapon={:08X} request={} stack={} reason={}",
                 equippedSelection.weapon ? equippedSelection.weapon->GetFormID() : 0,
                 equippedSelection.requestId,
                 equippedSelection.stackId,
@@ -7791,14 +7792,13 @@ namespace rock
             .origin = PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw,
             .phase = PendingForceGrabCommitPhase::WaitingForReference,
             .targetHandle = dropResult.handle,
-            .targetIsLooseGrenade = true,
+            .targetIsLooseThrowable = true,
             .preferredBodyId = INVALID_BODY_ID,
             .maxDistanceGame = kLooseGrenadeQuickDrawMaxDistanceGame,
             .grenadeRequestId = equippedSelection.requestId,
-            .grenadeRuntime = equippedSelection.runtime,
         };
         ROCK_LOG_INFO(Hand,
-            "Grenade quick draw created ref={:08X} weapon={:08X} stack={} request={} hand={}",
+            "Throwable quick draw created ref={:08X} weapon={:08X} stack={} request={} hand={}",
             dropResult.droppedRef ? dropResult.droppedRef->GetFormID() : 0,
             equippedSelection.weapon ? equippedSelection.weapon->GetFormID() : 0,
             dropResult.stackId,
@@ -7831,11 +7831,11 @@ namespace rock
                     const bool returnedToInventory = targetRef && loose_grenade_runtime::returnDroppedReferenceToInventory(targetRef);
                     if (targetRef) {
                         f4vr::showNotification(returnedToInventory ?
-                                "ROCK: Grenade attach failed; returned to inventory." :
-                                "ROCK: Grenade attach failed; it remains at your hand.");
+                                "ROCK: Throwable attach failed; returned to inventory." :
+                                "ROCK: Throwable attach failed; it remains at your hand.");
                     }
                     ROCK_LOG_WARN(Hand,
-                        "Loose grenade force-grab cleanup: ref={:08X} request={} returnedToInventory={}",
+                        "Loose throwable force-grab cleanup: ref={:08X} request={} returnedToInventory={}",
                         targetRef ? targetRef->GetFormID() : 0,
                         commit.grenadeRequestId,
                         returnedToInventory ? "yes" : "no");
@@ -7902,7 +7902,10 @@ namespace rock
                     targetRef,
                     sourcePoint,
                     commit.preferredBodyId,
-                    commit.maxDistanceGame)) {
+                    commit.maxDistanceGame,
+                    commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw &&
+                        commit.targetIsLooseThrowable &&
+                        loose_grenade_runtime::isThrowableRef(targetRef))) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
                     abandon("failed to resolve physics body", provider::RockProviderInteractionFailureV1::TargetBodyMissing, targetRef);
@@ -7997,7 +8000,7 @@ namespace rock
 
             if (commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw) {
                 ROCK_LOG_INFO(Hand,
-                    "Grenade quick draw force-grabbed: ref={:08X} body={} request={}",
+                    "Throwable quick draw force-grabbed: ref={:08X} body={} request={}",
                     heldRef ? heldRef->GetFormID() : 0,
                     primaryBodyId,
                     commit.grenadeRequestId);
@@ -8839,7 +8842,7 @@ namespace rock
     bool PhysicsInteraction::armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame)
     {
         auto* heldRef = hand.getHeldRef();
-        if (!heldRef || !loose_grenade_runtime::isGrenadeRef(heldRef)) {
+        if (!heldRef || !loose_grenade_runtime::isThrowableRef(heldRef)) {
             return false;
         }
 
@@ -8848,7 +8851,7 @@ namespace rock
             if (fuse.active && fuseRefPtr.get() == heldRef) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} hand loose grenade trigger ignored because fuse is already active: ref={:08X} remaining={:.3f}s",
+                    "{} hand loose throwable trigger ignored because activation is already active: ref={:08X} remaining={:.3f}s",
                     hand.handName(),
                     heldRef->GetFormID(),
                     fuse.remainingSeconds);
@@ -8859,7 +8862,7 @@ namespace rock
         loose_grenade_runtime::GrenadeRuntimeData runtime{};
         if (!loose_grenade_runtime::resolveGrenadeRuntimeDataForReference(heldRef, runtime)) {
             ROCK_LOG_WARN(Hand,
-                "{} hand loose grenade trigger could not arm because projectile/explosion/fuse data was missing: ref={:08X}",
+                "{} hand loose throwable trigger could not arm because its authored runtime data is unsupported: ref={:08X}",
                 hand.handName(),
                 heldRef->GetFormID());
             return true;
@@ -8881,7 +8884,7 @@ namespace rock
 
             if (impactBodyId == INVALID_CONTACT_BODY_ID) {
                 ROCK_LOG_WARN(Hand,
-                    "{} hand loose Molotov trigger could not arm impact detonation because no held body id was available: ref={:08X}",
+                    "{} hand loose impact throwable could not arm because no held body id was available: ref={:08X}",
                     hand.handName(),
                     heldRef->GetFormID());
                 return true;
@@ -8901,23 +8904,26 @@ namespace rock
                 .runtime = runtime,
                 .remainingSeconds = runtime.fuseSeconds,
                 .impactBodyId = impactBodyId,
+                .releasedSinceArming = false,
             };
             _armedLooseGrenadeImpactBodyIds[slotIndex].store(
                 runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact ? impactBodyId : INVALID_CONTACT_BODY_ID,
                 std::memory_order_release);
             ROCK_LOG_INFO(Hand,
-                "{} hand armed loose grenade: ref={:08X} projectile={:08X} explosion={:08X} mode={} fuse={:.3f}s impactBody={} frameDt={:.4f}",
+                "{} hand armed loose throwable: ref={:08X} projectile={:08X} explosion={:08X} mode={} delay={:.3f}s proximity={:.1f}gu preserveRef={} impactBody={} frameDt={:.4f}",
                 hand.handName(),
                 heldRef->GetFormID(),
                 runtime.projectile ? runtime.projectile->GetFormID() : 0,
                 runtime.explosion ? runtime.explosion->GetFormID() : 0,
                 loose_grenade_runtime::detonationModeName(runtime.detonationMode),
                 runtime.fuseSeconds,
+                runtime.proximityRadiusGameUnits,
+                runtime.preserveReferenceAfterDetonation ? "yes" : "no",
                 impactBodyId,
                 frame.deltaSeconds);
             const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef);
             ROCK_LOG_DEBUG(Hand,
-                "{} hand loose grenade pin-pull feedback: ref={:08X} played={}",
+                "{} hand loose throwable activation feedback: ref={:08X} played={}",
                 hand.handName(),
                 heldRef->GetFormID(),
                 feedbackPlayed ? "yes" : "no");
@@ -8925,7 +8931,7 @@ namespace rock
         }
 
         ROCK_LOG_WARN(Hand,
-            "{} hand loose grenade trigger could not arm because armed grenade capacity is full: ref={:08X}",
+            "{} hand loose throwable trigger could not arm because armed throwable capacity is full: ref={:08X}",
             hand.handName(),
             heldRef->GetFormID());
         return true;
@@ -8933,6 +8939,7 @@ namespace rock
 
     void PhysicsInteraction::updateLooseGrenadeFuses(const PhysicsFrameContext& frame)
     {
+        constexpr float kPlacedMineProximityPollSeconds = 0.10f;
         const float deltaSeconds = (std::max)(0.0f, frame.deltaSeconds);
         if (deltaSeconds <= 0.0f) {
             return;
@@ -8959,27 +8966,32 @@ namespace rock
         };
 
         auto detonateLooseGrenade = [&](ArmedLooseGrenadeFuseState& fuse,
-                                        std::size_t slotIndex,
-                                        RE::TESObjectREFR* ref,
-                                        const char* reason) {
+                                         std::size_t slotIndex,
+                                         RE::TESObjectREFR* ref,
+                                         const char* reason,
+                                         std::uint32_t triggerActorFormID = 0) {
             const std::uint32_t formID = ref ? ref->GetFormID() : fuse.refFormID;
             releaseHandIfHolding(_rightHand, false, ref, formID);
             releaseHandIfHolding(_leftHand, true, ref, formID);
 
             const bool explosionCreated = loose_grenade_runtime::createExplosionAtReference(ref, fuse.runtime.explosion);
             if (explosionCreated) {
-                loose_grenade_runtime::disableAndDeleteReference(ref);
+                if (!fuse.runtime.preserveReferenceAfterDetonation) {
+                    loose_grenade_runtime::disableAndDeleteReference(ref);
+                }
                 ROCK_LOG_INFO(Hand,
-                    "Loose grenade detonated: ref={:08X} explosion={:08X} mode={} reason={} impactBody={} otherBody={}",
+                    "Loose throwable activated: ref={:08X} explosion={:08X} mode={} reason={} consumed={} triggerActor={:08X} impactBody={} otherBody={}",
                     formID,
                     fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
                     loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode),
                     reason ? reason : "unknown",
+                    fuse.runtime.preserveReferenceAfterDetonation ? "no" : "yes",
+                    triggerActorFormID,
                     fuse.impactBodyId,
                     pendingImpactOtherBodyId);
             } else {
                 ROCK_LOG_WARN(Hand,
-                    "Loose grenade detonation failed; leaving ref loose: ref={:08X} explosion={:08X} mode={} reason={}",
+                    "Loose throwable activation failed; leaving ref loose: ref={:08X} explosion={:08X} mode={} reason={}",
                     formID,
                     fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
                     loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode),
@@ -8999,7 +9011,7 @@ namespace rock
             auto* ref = refPtr.get();
             if (!ref || ref->IsDeleted() || ref->IsDisabled()) {
                 ROCK_LOG_DEBUG(Hand,
-                    "Loose grenade fuse cleared because ref is gone: ref={:08X} remaining={:.3f}s",
+                    "Loose throwable activation cleared because ref is gone: ref={:08X} remaining={:.3f}s",
                     fuse.refFormID,
                     fuse.remainingSeconds);
                 _armedLooseGrenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
@@ -9015,14 +9027,110 @@ namespace rock
                     (_leftHand.isHolding() && _leftHand.getHeldRef() == ref)) {
                     ROCK_LOG_SAMPLE_DEBUG(Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Loose Molotov impact ignored while still held: ref={:08X} impactBody={} otherBody={}",
+                        "Loose impact throwable contact ignored while still held: ref={:08X} impactBody={} otherBody={}",
                         fuse.refFormID,
                         pendingImpactBodyId,
                         pendingImpactOtherBodyId);
                     continue;
                 }
 
-                detonateLooseGrenade(fuse, slotIndex, ref, "impact");
+                auto* impactOtherRef = !isInvalidGrabBodyId(pendingImpactOtherBodyId) ?
+                                           resolveBodyToRef(
+                                               frame.bhkWorld,
+                                               frame.hknpWorld,
+                                               RE::hknpBodyId{ pendingImpactOtherBodyId }) :
+                                           nullptr;
+                auto* player = f4vr::getPlayer();
+                if (impactOtherRef && (impactOtherRef == ref || impactOtherRef == player)) {
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Loose impact throwable ignored self/player contact: ref={:08X} impactBody={} otherBody={} otherRef={:08X}",
+                        fuse.refFormID,
+                        pendingImpactBodyId,
+                        pendingImpactOtherBodyId,
+                        impactOtherRef->GetFormID());
+                    continue;
+                }
+
+                std::uint32_t impactActorFormID = 0;
+                if (impactOtherRef && player &&
+                    impactOtherRef->formType == RE::ENUM_FORM_ID::kACHR &&
+                    std::isfinite(fuse.runtime.directImpactDamage) &&
+                    fuse.runtime.directImpactDamage > 0.0f) {
+                    auto* actor = static_cast<RE::Actor*>(impactOtherRef);
+                    if (!actor->IsDead(false)) {
+                        actor->HandleHealthDamage(player, fuse.runtime.directImpactDamage);
+                        impactActorFormID = actor->GetFormID();
+                        ROCK_LOG_INFO(Hand,
+                            "Loose impact throwable applied direct authored weapon damage: ref={:08X} target={:08X} damage={:.1f}",
+                            fuse.refFormID,
+                            impactActorFormID,
+                            fuse.runtime.directImpactDamage);
+                    }
+                }
+
+                detonateLooseGrenade(
+                    fuse,
+                    slotIndex,
+                    ref,
+                    "impact",
+                    impactActorFormID);
+                continue;
+            }
+
+            if (fuse.runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Proximity) {
+                if ((_rightHand.isHolding() && _rightHand.getHeldRef() == ref) ||
+                    (_leftHand.isHolding() && _leftHand.getHeldRef() == ref)) {
+                    continue;
+                }
+                if (!fuse.releasedSinceArming) {
+                    fuse.releasedSinceArming = true;
+                    ROCK_LOG_INFO(Hand,
+                        "Placed mine released; proximity arming delay started: ref={:08X} delay={:.3f}s radius={:.1f}gu",
+                        fuse.refFormID,
+                        fuse.remainingSeconds,
+                        fuse.runtime.proximityRadiusGameUnits);
+                    continue;
+                }
+                if (fuse.remainingSeconds > 0.0f) {
+                    fuse.remainingSeconds -= deltaSeconds;
+                    if (fuse.remainingSeconds > 0.0f) {
+                        continue;
+                    }
+                    fuse.remainingSeconds = 0.0f;
+                }
+
+                const auto proximity = loose_grenade_runtime::scanHostileActorsWithinProximity(
+                    ref,
+                    fuse.runtime.proximityRadiusGameUnits);
+                if (proximity.truncated) {
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Placed mine proximity scan reached its actor-handle bound: ref={:08X} scanned={}",
+                        fuse.refFormID,
+                        proximity.actorHandlesScanned);
+                }
+                if (proximity.targetFound) {
+                    detonateLooseGrenade(
+                        fuse,
+                        slotIndex,
+                        ref,
+                        "proximity",
+                        proximity.targetActorFormID);
+                    continue;
+                }
+
+                fuse.remainingSeconds = kPlacedMineProximityPollSeconds;
+                continue;
+            }
+
+            if (fuse.runtime.detonationMode != loose_grenade_runtime::GrenadeDetonationMode::TimedFuse) {
+                ROCK_LOG_WARN(Hand,
+                    "Cleared loose throwable with unsupported live mode: ref={:08X} mode={}",
+                    fuse.refFormID,
+                    loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode));
+                _armedLooseGrenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+                fuse = {};
                 continue;
             }
 
@@ -9334,8 +9442,8 @@ namespace rock
                 continue;
             }
 
-            const bool targetIsLooseGrenade = loose_grenade_runtime::isGrenadeRef(targetRef);
-            if (targetIsLooseGrenade &&
+            const bool targetIsLooseThrowable = loose_grenade_runtime::isThrowableRef(targetRef);
+            if (targetIsLooseThrowable &&
                 (handHoldsLooseGrenade(_rightHand) ||
                     handHoldsLooseGrenade(_leftHand) ||
                     hasActiveLooseGrenadeCommit())) {
@@ -9358,7 +9466,7 @@ namespace rock
                 .origin = PendingForceGrabCommitOrigin::ProviderForceGrabCommand,
                 .phase = PendingForceGrabCommitPhase::WaitingForSettle,
                 .targetHandle = targetRef->GetHandle(),
-                .targetIsLooseGrenade = targetIsLooseGrenade,
+                .targetIsLooseThrowable = targetIsLooseThrowable,
                 .preferredBodyId = command.forceGrab.targetBodyId,
                 .maxDistanceGame = command.forceGrab.maxDistanceGame,
                 .hasSourcePointOverride = hasSourcePointOverride,
@@ -10885,7 +10993,7 @@ namespace rock
             hand.hasSelection() &&
             !input_remap_runtime::isMenuInputActive()) {
             auto* selectionRef = hand.getSelection().refr;
-            if (selectionRef && !loose_grenade_runtime::isGrenadeRef(selectionRef)) {
+            if (selectionRef && !loose_grenade_runtime::isThrowableRef(selectionRef)) {
                 gripZoneHoverCandidate = selectionRef;
             }
         }
@@ -10903,7 +11011,7 @@ namespace rock
         if (hand.isHolding()) {
             const Hand& peer = isLeft ? _rightHand : _leftHand;
             auto* heldRefForGameplay = hand.getHeldRef();
-            const bool heldLooseGrenade = loose_grenade_runtime::isGrenadeRef(heldRefForGameplay);
+            const bool heldLooseGrenade = loose_grenade_runtime::isThrowableRef(heldRefForGameplay);
             const bool peerHoldingSameObject =
                 heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
             const bool replayedSameHandTrigger = triggerEquipIntent.pending &&

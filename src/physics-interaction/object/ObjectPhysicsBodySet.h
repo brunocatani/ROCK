@@ -213,6 +213,7 @@ namespace rock::object_physics_body_set
         bool requireSameResolvedRef = false;
         bool allowUnresolvedRefBodies = true;
         bool allowWeaponRefExpansion = true;
+        bool allowProjectileLayerForExactTarget = false;
         const std::vector<std::uint32_t>* heldBySameHand = nullptr;
         int maxDepth = 10;
     };
