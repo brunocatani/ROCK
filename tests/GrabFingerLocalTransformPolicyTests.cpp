@@ -233,6 +233,60 @@ int main()
     ok &= expectBool("hidden FRIK node scale still has usable rotation",
         sceneTransformHasUsableBasis(hiddenScaleTransform), true);
 
+    TestTransform safePublishedFingerTransform = hiddenScaleTransform;
+    safePublishedFingerTransform.scale = 1.0f;
+    ok &= expectBool("rigid local finger transform is safe to publish",
+        fingerLocalTransformIsSafeForPublication(safePublishedFingerTransform), true);
+
+    TestTransform hiddenPublishedFingerTransform = safePublishedFingerTransform;
+    hiddenPublishedFingerTransform.scale = 0.00001f;
+    ok &= expectBool("near-zero local finger scale is rejected before publication",
+        fingerLocalTransformIsSafeForPublication(hiddenPublishedFingerTransform), false);
+
+    TestTransform giantPublishedFingerTransform = safePublishedFingerTransform;
+    giantPublishedFingerTransform.scale = 1000.0f;
+    ok &= expectBool("giant local finger scale is rejected before publication",
+        fingerLocalTransformIsSafeForPublication(giantPublishedFingerTransform), false);
+
+    TestTransform distantPublishedFingerTransform = safePublishedFingerTransform;
+    distantPublishedFingerTransform.translate.x = kMaxPublishedFingerLocalTranslationGameUnits + 1.0f;
+    ok &= expectBool("world-sized local finger translation is rejected before publication",
+        fingerLocalTransformIsSafeForPublication(distantPublishedFingerTransform), false);
+
+    TestTransform shearedPublishedFingerTransform = safePublishedFingerTransform;
+    shearedPublishedFingerTransform.rotate.entry[0][1] = 0.5f;
+    ok &= expectBool("sheared local finger basis is rejected before publication",
+        fingerLocalTransformIsSafeForPublication(shearedPublishedFingerTransform), false);
+
+    TestTransform reflectedPublishedFingerTransform = safePublishedFingerTransform;
+    reflectedPublishedFingerTransform.rotate.entry[2][2] = -1.0f;
+    ok &= expectBool("reflected local finger basis is rejected before publication",
+        fingerLocalTransformIsSafeForPublication(reflectedPublishedFingerTransform), false);
+
+    {
+        rock::frik_visual_authority::FingerLocalTransformOverride target{};
+        target.enabledMask = kFullFingerLocalTransformMask;
+        for (auto& local : target.localTransforms) {
+            local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        }
+
+        rock::grab_finger_local_transform_runtime::State poisonedState{};
+        poisonedState.currentMask = kFullFingerLocalTransformMask;
+        poisonedState.hasCurrentTransforms = true;
+        poisonedState.currentTransforms = target.localTransforms;
+        poisonedState.currentTransforms[0].rotate.entry[0][0] = 1000.0f;
+        const auto recovered = rock::grab_finger_local_transform_runtime::smoothLocalTransforms(
+            target,
+            poisonedState,
+            14.0f,
+            1.0f / 90.0f,
+            false);
+        ok &= expectBool("poisoned dynamic-grab smoothing state resets to the safe target",
+            rock::grab_finger_local_transform_runtime::fingerLocalTransformOverrideIsSafeForPublication(recovered), true);
+        ok &= expectBool("poisoned dynamic-grab smoothing state remains recovered",
+            fingerLocalTransformIsSafeForPublication(poisonedState.currentTransforms[0]), true);
+    }
+
     const TestVector openDirection{ 1.0f, 0.0f, 0.0f };
     const TestVector alternateNormal{ 0.0f, 0.0f, 1.0f };
     ok &= expectVectorClose("open alternate thumb stays on open direction",
