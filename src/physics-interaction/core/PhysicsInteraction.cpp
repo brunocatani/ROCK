@@ -4962,6 +4962,9 @@ namespace rock
         const RockEquippedWeaponHandlingBaseline rockBaseline{
             .ambidextrousHandoffEnabled =
                 g_rockConfig.rockAmbidextrousFiringGripEnabled,
+            .authoredOnlySupportGrabsEnabled =
+                g_rockConfig.
+                    rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled,
             .toggleGrabEnabled =
                 g_rockConfig.rockEquippedWeaponToggleGrabEnabled,
             .equippedWeaponShoulderStashEnabled =

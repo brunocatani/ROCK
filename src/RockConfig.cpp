@@ -336,6 +336,10 @@ namespace rock
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
             rockAmbidextrousFiringGripEnabled);
+        rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled = ini.GetBoolValue(
+            AMBIDEXTROUS_FIRING_SECTION,
+            "bAuthoredOnlyEquippedWeaponSupportGrabsEnabled",
+            rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled);
         rockEquippedWeaponToggleGrabEnabled = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
             "bEquippedWeaponToggleGrabEnabled",

@@ -1829,6 +1829,7 @@ int main()
 
     const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
         .ambidextrousHandoffEnabled = true,
+        .authoredOnlySupportGrabsEnabled = true,
         .toggleGrabEnabled = true,
         .equippedWeaponShoulderStashEnabled = true,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
@@ -1851,6 +1852,8 @@ int main()
         coreWeaponHandling.firingGripOwnershipEnabled);
     ok &= expectTrue("base ROCK enables configured ambidextrous handoff",
         coreWeaponHandling.ambidextrousHandoffEnabled);
+    ok &= expectTrue("base ROCK enables authored-only support acquisition",
+        coreWeaponHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectTrue("base ROCK enables configured equipped-weapon toggle grab",
         coreWeaponHandling.toggleGrabEnabled);
     ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
@@ -1887,6 +1890,8 @@ int main()
         stashOnlyHandling.primaryDetachEnabled);
     ok &= expectFalse("disabled ROCK ambidextrous mode keeps handoff disabled",
         stashOnlyHandling.ambidextrousHandoffEnabled);
+    ok &= expectTrue("authored-only support remains independent of handoff",
+        stashOnlyHandling.authoredOnlySupportGrabsEnabled);
 
     auto fixedOnlyBaseline = stashOnlyBaseline;
     fixedOnlyBaseline.equippedWeaponShoulderStashEnabled = false;
@@ -1913,6 +1918,8 @@ int main()
         externalHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectTrue("an addon lease cannot suppress ROCK toggle grab",
         externalHandling.toggleGrabEnabled);
+    ok &= expectTrue("an addon handling lease cannot suppress authored-only support",
+        externalHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectFalse("ROCK stash cannot add detach to a non-detach addon lease",
         externalHandling.primaryDetachEnabled);
     ok &= expectFalse("an active addon request may suppress ROCK ambidextrous handoff",
@@ -1946,6 +1953,13 @@ int main()
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
             externalHandling,
+            false));
+    auto authoredOnlyDisabledHandling = coreWeaponHandling;
+    authoredOnlyDisabledHandling.authoredOnlySupportGrabsEnabled = false;
+    ok &= expectFalse("authored-only hot reload applies to the next acquisition",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            coreWeaponHandling,
+            authoredOnlyDisabledHandling,
             false));
     auto addonDetachHandling = fixedOnlyHandling;
     addonDetachHandling.firingGripOwnershipEnabled = true;

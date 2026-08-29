@@ -1,0 +1,208 @@
+#include "physics-interaction/weapon/AuthoredSupportGrabPolicy.h"
+
+#include <cassert>
+#include <limits>
+
+using namespace rock::authored_support_grab_policy;
+
+namespace
+{
+    constexpr CapabilityObservationInput usableInput{
+        .modeEnabled = true,
+        .identityCurrent = true,
+        .geometryReady = true,
+        .qualificationExpired = true,
+        .candidatePublished = true,
+        .candidateResolvedForSupportHand = true,
+        .weaponFamilyKnown = true,
+        .weaponFamilySupported = true,
+        .canonicalAxesValid = true,
+        .completeFingerPose = true,
+        .poseEvidenceEvaluated = true,
+        .poseEvidencePass = true,
+    };
+}
+
+int main()
+{
+    static_assert(observeCapability(usableInput).capability ==
+                  Capability::Usable);
+    static_assert([] {
+        auto input = usableInput;
+        input.qualificationExpired = false;
+        return observeCapability(input).capability == Capability::Usable;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.modeEnabled = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Pending &&
+               result.reason == CapabilityReason::ModeDisabled;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.identityCurrent = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Pending &&
+               result.reason == CapabilityReason::AwaitingIdentity;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.geometryReady = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Pending &&
+               result.reason == CapabilityReason::AwaitingGeometry;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.qualificationExpired = false;
+        input.candidatePublished = false;
+        input.candidateResolvedForSupportHand = false;
+        input.poseEvidenceEvaluated = false;
+        input.poseEvidencePass = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Pending &&
+               result.reason == CapabilityReason::AwaitingCandidate;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.candidatePublished = false;
+        input.candidateResolvedForSupportHand = false;
+        input.poseEvidenceEvaluated = false;
+        input.poseEvidencePass = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason ==
+                   CapabilityReason::CaptureUnavailableAfterQualification;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.candidateResolvedForSupportHand = false;
+        input.poseEvidenceEvaluated = false;
+        input.poseEvidencePass = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason ==
+                   CapabilityReason::SupportTopologyUnavailable;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.weaponFamilyKnown = false;
+        input.weaponFamilySupported = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason ==
+                   CapabilityReason::UnclassifiedWeaponFamily;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.weaponFamilySupported = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason == CapabilityReason::UnsupportedWeaponFamily;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.canonicalAxesValid = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason == CapabilityReason::CanonicalAxesUnavailable;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.completeFingerPose = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason ==
+                   CapabilityReason::CompleteFingerPoseUnavailable;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.poseEvidenceEvaluated = false;
+        input.poseEvidencePass = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason == CapabilityReason::PoseEvidenceUnavailable;
+    }());
+    static_assert([] {
+        auto input = usableInput;
+        input.poseEvidencePass = false;
+        const auto result = observeCapability(input);
+        return result.capability == Capability::Unavailable &&
+               result.reason ==
+                   CapabilityReason::PoseOffCurrentWeaponGeometry;
+    }());
+
+    static_assert(select(SelectionInput{
+        .modeEnabled = true,
+        .providerPartAuthorityActive = true,
+        .authoredCaptureEligible = true,
+        .capability = Capability::Usable,
+    }).selection == Selection::ProviderDynamic);
+    static_assert(select(SelectionInput{
+        .modeEnabled = true,
+        .authoredCaptureEligible = true,
+        .capability = Capability::Unavailable,
+    }).selection == Selection::Authored);
+    static_assert(select(SelectionInput{
+        .modeEnabled = false,
+        .capability = Capability::Pending,
+    }).selection == Selection::DynamicUnrestricted);
+    static_assert(select(SelectionInput{
+        .modeEnabled = true,
+        .capability = Capability::Unavailable,
+    }).selection == Selection::DynamicFallback);
+    static_assert([] {
+        constexpr auto result = select(SelectionInput{
+            .modeEnabled = true,
+            .capability = Capability::Pending,
+        });
+        return result.selection == Selection::Reject &&
+               result.reason == SelectionReason::CapabilityPending;
+    }());
+    static_assert([] {
+        constexpr auto result = select(SelectionInput{
+            .modeEnabled = true,
+            .capability = Capability::Usable,
+        });
+        return result.selection == Selection::Reject &&
+               result.reason ==
+                   SelectionReason::AuthoredActivationRejected;
+    }());
+
+    static_assert(captured(Selection::ProviderDynamic));
+    static_assert(captured(Selection::Authored));
+    static_assert(captured(Selection::DynamicFallback));
+    static_assert(captured(Selection::DynamicUnrestricted));
+    static_assert(!captured(Selection::Reject));
+    static_assert(!captured(Selection::Failure));
+    static_assert(!captured(Selection::None));
+    static_assert(kQualificationSeconds > 0.0f);
+    static_assert(kUsableEvidenceLossSeconds >= kQualificationSeconds);
+    static_assert(kUnavailableRecheckSeconds > kQualificationSeconds);
+
+    assert(std::abs(advanceContinuousEvidenceSeconds(
+                        0.10f,
+                        0.05f,
+                        0.20f,
+                        true) -
+                    0.15f) < 0.000001f);
+    assert(advanceContinuousEvidenceSeconds(
+               0.19f,
+               0.05f,
+               0.20f,
+               true) == 0.20f);
+    assert(advanceContinuousEvidenceSeconds(
+               0.19f,
+               0.05f,
+               0.20f,
+               false) == 0.0f);
+    assert(std::abs(advanceContinuousEvidenceSeconds(
+                        0.10f,
+                        (std::numeric_limits<float>::quiet_NaN)(),
+                        0.20f,
+                        true) -
+                    0.10f) < 0.000001f);
+
+    return 0;
+}

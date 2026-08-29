@@ -45,7 +45,8 @@ namespace rock
     // then republished as a frame-scoped candidate. A fully validated stable
     // snapshot bridges transient firing-animation capture gaps only while all
     // weapon/canonical identity witnesses match. Only acquisition can latch
-    // it, so unrestricted dynamic grabs remain intact.
+    // it; the downstream support-grab policy then chooses authored, a matched
+    // provider target, qualified dynamic fallback, or rejection.
     class AuthoredPrimaryFiringGripRuntime
     {
     public:

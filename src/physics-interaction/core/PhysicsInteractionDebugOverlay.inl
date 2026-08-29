@@ -2646,6 +2646,20 @@
                             (snapshot.currentAuthoredSupportGripActive ?
                                 "AUTHORED" : "DYNAMIC") :
                             "IDLE");
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -14.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "authoredOnly capability=%s reason=%s ready=%.3fs selection=%s/%s",
+                        authored_support_grab_policy::capabilityName(
+                            snapshot.authoredCapability),
+                        authored_support_grab_policy::capabilityReasonName(
+                            snapshot.authoredCapabilityReason),
+                        snapshot.authoredCapabilityReadySeconds,
+                        authored_support_grab_policy::selectionName(
+                            snapshot.lastSelection),
+                        authored_support_grab_policy::selectionReasonName(
+                            snapshot.lastSelectionReason));
                 }
             }
         }

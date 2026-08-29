@@ -12,6 +12,7 @@
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/weapon/AuthoredSupportGrabPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
@@ -197,7 +198,22 @@ namespace rock
         bool directionPass{ false };
         bool topologyPass{ false };
         bool activationSpatialPass{ false };
+        bool poseEvidenceEvaluated{ false };
         bool poseEvidencePass{ false };
+        authored_support_grab_policy::Capability authoredCapability{
+            authored_support_grab_policy::Capability::Pending
+        };
+        authored_support_grab_policy::CapabilityReason
+            authoredCapabilityReason{
+                authored_support_grab_policy::CapabilityReason::AwaitingIdentity
+        };
+        authored_support_grab_policy::Selection lastSelection{
+            authored_support_grab_policy::Selection::None
+        };
+        authored_support_grab_policy::SelectionReason lastSelectionReason{
+            authored_support_grab_policy::SelectionReason::None
+        };
+        float authoredCapabilityReadySeconds{ 0.0f };
         bool currentSupportGripActive{ false };
         bool currentAuthoredSupportGripActive{ false };
         bool valid{ false };
@@ -1068,6 +1084,34 @@ namespace rock
             bool valid{ false };
         };
 
+        /*
+         * Authored-only support acquisition cannot use the frame-scoped
+         * candidate as capability authority: the native graph intentionally
+         * invalidates and republishes that candidate around its arm passes.
+         * This identity-bound state latches positive evidence and qualifies
+         * persistent absence in measured ready-state time. weaponNodeIdentity
+         * is a non-owning witness and is never dereferenced from the cache.
+         */
+        struct AuthoredSupportCapabilityState
+        {
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponOwnershipKey{ 0 };
+            std::uint64_t weaponGenerationKey{ 0 };
+            authored_weapon_grip_activation_policy::HandTopology handTopology{
+                authored_weapon_grip_activation_policy::HandTopology::Invalid
+            };
+            authored_support_grab_policy::Capability capability{
+                authored_support_grab_policy::Capability::Pending
+            };
+            authored_support_grab_policy::CapabilityReason reason{
+                authored_support_grab_policy::CapabilityReason::AwaitingIdentity
+            };
+            float readySeconds{ 0.0f };
+            float usableEvidenceMissingSeconds{ 0.0f };
+            float unavailableRecheckSeconds{ 0.0f };
+            bool initialized{ false };
+        };
+
         WeaponPartGrip& partGrip(bool isLeft) { return _partGrips[isLeft ? 0u : 1u]; }
         const WeaponPartGrip& partGrip(bool isLeft) const { return _partGrips[isLeft ? 0u : 1u]; }
 
@@ -1248,6 +1292,28 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const WeaponCollision& weaponCollision,
             bool requirePoseEvidence);
+        void resetAuthoredSupportCapability(const char* reason);
+        void synchronizeAuthoredSupportCapabilityIdentity(
+            RE::NiNode* weaponNode,
+            std::uint64_t weaponOwnershipKey,
+            std::uint64_t weaponGenerationKey,
+            authored_weapon_grip_activation_policy::HandTopology handTopology);
+        void advanceAuthoredSupportCapabilityQualification(
+            bool ready,
+            float deltaSeconds);
+        [[nodiscard]] bool
+            shouldCollectAuthoredSupportCapabilityEvidence() const noexcept;
+        void observeAuthoredSupportCapability(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            const WeaponCollision& weaponCollision);
+        void setAuthoredSupportCapability(
+            authored_support_grab_policy::Capability capability,
+            authored_support_grab_policy::CapabilityReason reason);
+        void recordSupportGrabSelection(
+            const authored_support_grab_policy::SelectionDecision& decision,
+            bool isLeft,
+            std::uint64_t weaponGenerationKey);
 
         /*
          * Reattach validates the hand first and only then commits; a takeover
@@ -1296,7 +1362,7 @@ namespace rock
 
         static RE::NiNode* resolveFirstPersonHandNode(bool isLeft);
 
-        bool capturePartGrip(
+        authored_support_grab_policy::Selection capturePartGrip(
             bool isLeft,
             RE::NiNode* weaponNode,
             const WeaponInteractionDecision& decision,
@@ -1626,6 +1692,12 @@ namespace rock
 
         std::array<WeaponPartGrip, 2> _partGrips{};
         AuthoredSupportGripCandidate _authoredSupportGripCandidate{};
+        AuthoredSupportCapabilityState _authoredSupportCapability{};
+        authored_support_grab_policy::SelectionDecision
+            _lastSupportGrabSelection{};
+        std::uint64_t _lastSupportGrabSelectionGenerationKey{ 0 };
+        bool _lastSupportGrabSelectionHandIsLeft{ true };
+        bool _lastSupportGrabSelectionValid{ false };
         AuthoredSupportGripIndicatorFrame
             _authoredSupportGripIndicatorFrame{};
         AuthoredSupportGripDebugSnapshot _authoredSupportGripDebugSnapshot{};

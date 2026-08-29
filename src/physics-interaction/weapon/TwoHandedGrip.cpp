@@ -2587,6 +2587,14 @@ namespace rock
         _leftFiringWeaponRecoilSupportConstrainedThisUpdate = false;
         _observedWeaponRecoilSampleSequence =
             _weaponRecoilSampleSequence;
+        const bool authoredOnlyModeChanged =
+            _handlingSettings.authoredOnlySupportGrabsEnabled !=
+            handlingSettings.authoredOnlySupportGrabsEnabled;
+        if (authoredOnlyModeChanged) {
+            // The mode is acquisition-only: invalidate qualification so the
+            // next grab uses the new contract, but never tear down a live grip.
+            resetAuthoredSupportCapability("authored-only-mode-changed");
+        }
         _handlingSettings = handlingSettings;
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
@@ -2612,6 +2620,8 @@ namespace rock
         refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
+            resetAuthoredSupportCapability(
+                "skeleton-or-weapon-unavailable");
             clearAllVisualReturns("skeleton-or-weapon-unavailable", true, true);
             if (_state != TwoHandedState::Inactive) {
                 transitionToInactive(false);
@@ -2708,14 +2718,72 @@ namespace rock
          * grip math below is weapon-relative; the hands only choose roles.
          */
         const bool supportHandIsLeft = !_firingHandIsLeft;
+        const auto supportHandTopology =
+            authored_weapon_grip_activation_policy::resolveHandTopology(
+                _firingHandIsLeft,
+                supportHandIsLeft);
         const WeaponInteractionContact& supportWeaponContact = supportHandIsLeft ? leftWeaponContact : rightWeaponContact;
         const WeaponInteractionRuntimeState& supportRuntimeState = supportHandIsLeft ? leftRuntimeState : rightRuntimeState;
         const WeaponInteractionDecision decision = routeWeaponInteraction(supportWeaponContact, supportRuntimeState);
+        /*
+         * FRAME STAGE: the native graph-output and UpdateFirstPersonArm
+         * captures occurred earlier, FRIK has completed its presentation pass,
+         * BeforeRock providers have run, and AuthoredPrimaryFiringGripRuntime
+         * has republished the current canonical/candidate. Qualification here
+         * is therefore post-FRIK, inside ROCK's interaction update, before the
+         * AfterRock/Complete provider phases. It reads generated weapon
+         * geometry from the same generation used by the probes below.
+         */
+        if (_handlingSettings.authoredOnlySupportGrabsEnabled) {
+            synchronizeAuthoredSupportCapabilityIdentity(
+                weaponNode,
+                currentEquippedWeaponOwnershipKey,
+                currentWeaponGenerationKey,
+                supportHandTopology);
+            const bool currentGeometryReady =
+                weaponCollision.getCurrentWeaponGenerationKey() ==
+                    currentWeaponGenerationKey &&
+                weaponCollision.getWeaponBodyCount() > 0;
+            const auto& capabilityRuntime = runtime_state::currentFrame();
+            const bool qualificationReady =
+                _authoredSupportCapability.initialized &&
+                currentGeometryReady &&
+                capabilityRuntime.weaponDrawn &&
+                f4vr::isNodeVisible(weaponNode) &&
+                !capabilityRuntime.localMenuBlocking &&
+                !capabilityRuntime.compatibilityConfigBlocking &&
+                !frameInput.animationBoundaryActive &&
+                supportRuntimeState.supportGripAllowed &&
+                !supportRuntimeState.providerPartAuthority.active;
+            advanceAuthoredSupportCapabilityQualification(
+                qualificationReady,
+                dt);
+        } else {
+            if (_authoredSupportCapability.initialized) {
+                resetAuthoredSupportCapability("authored-only-mode-disabled");
+            }
+            _authoredSupportCapability.reason =
+                authored_support_grab_policy::CapabilityReason::ModeDisabled;
+        }
+        const bool collectCapabilityEvidence =
+            shouldCollectAuthoredSupportCapabilityEvidence();
         refreshAuthoredSupportGripActivationState(
             weaponNode,
             currentWeaponGenerationKey,
             weaponCollision,
-            false);
+            collectCapabilityEvidence);
+        if (_handlingSettings.authoredOnlySupportGrabsEnabled &&
+            !supportRuntimeState.providerPartAuthority.active) {
+            observeAuthoredSupportCapability(
+                weaponNode,
+                currentWeaponGenerationKey,
+                weaponCollision);
+        } else if (_authoredSupportGripDebugSnapshot.valid) {
+            _authoredSupportGripDebugSnapshot.authoredCapability =
+                authored_support_grab_policy::Capability::Pending;
+            _authoredSupportGripDebugSnapshot.authoredCapabilityReason =
+                authored_support_grab_policy::CapabilityReason::ModeDisabled;
+        }
         const bool supportTouchingSupport = decision.kind == WeaponInteractionKind::SupportGrip;
         RE::NiNode* interactionWeaponNode = sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
@@ -2744,6 +2812,10 @@ namespace rock
             return IndicatorVec3{ value.x, value.y, value.z };
         };
         authoredIndicatorSupportHandIsLeft = supportHandIsLeft;
+        const bool authoredCapabilityAllowsIndicator =
+            !_handlingSettings.authoredOnlySupportGrabsEnabled ||
+            _authoredSupportCapability.capability ==
+                authored_support_grab_policy::Capability::Usable;
         authoredIndicatorInput =
             authored_weapon_grip_activation_policy::IndicatorInput{
                 .weaponFamily = authoredActivation.weaponFamily,
@@ -2753,7 +2825,9 @@ namespace rock
                     authoredActivation.supportSideAxisWorld),
                 .downAxisWorld = toIndicatorVector(
                     authoredActivation.downAxisWorld),
-                .activationStateValid = authoredActivationStateMatches,
+                .activationStateValid =
+                    authoredActivationStateMatches &&
+                    authoredCapabilityAllowsIndicator,
                 .activationSpatialPass =
                     authoredActivation.activationSpatialPass,
                 .interactionCandidateValid =
@@ -3398,6 +3472,7 @@ namespace rock
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         clearDynamicSupportAcquisition("reset", true);
         clearAuthoredSupportGripCandidate();
+        resetAuthoredSupportCapability("reset");
         _authoredSupportGripIndicatorFrame = {};
         _authoredSupportGripDebugSnapshot = {};
         _authoredSupportLastStableApproachDirectionWorld = {};
@@ -3903,6 +3978,7 @@ namespace rock
         }
 
         if (collectPoseEvidence) {
+            snapshot.poseEvidenceEvaluated = true;
             std::array<RE::NiPoint3,
                 AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
                 surfaceQueryLandmarksWorld{};
@@ -3977,6 +4053,393 @@ namespace rock
         snapshot.currentAuthoredSupportGripActive =
             activeSupportGrip.active && activeSupportGrip.authoredSupportGrip;
         snapshot.valid = true;
+    }
+
+    void TwoHandedGrip::resetAuthoredSupportCapability(const char* reason)
+    {
+        if (_authoredSupportCapability.initialized) {
+            ROCK_LOG_DEBUG(
+                Weapon,
+                "TwoHandedGrip: authored support capability reset reason={} capability={} detail={} generation={:016X}",
+                reason ? reason : "unknown",
+                authored_support_grab_policy::capabilityName(
+                    _authoredSupportCapability.capability),
+                authored_support_grab_policy::capabilityReasonName(
+                    _authoredSupportCapability.reason),
+                _authoredSupportCapability.weaponGenerationKey);
+        }
+        _authoredSupportCapability = {};
+        _lastSupportGrabSelection = {};
+        _lastSupportGrabSelectionGenerationKey = 0;
+        _lastSupportGrabSelectionHandIsLeft = true;
+        _lastSupportGrabSelectionValid = false;
+    }
+
+    void TwoHandedGrip::synchronizeAuthoredSupportCapabilityIdentity(
+        RE::NiNode* weaponNode,
+        const std::uint64_t weaponOwnershipKey,
+        const std::uint64_t weaponGenerationKey,
+        const authored_weapon_grip_activation_policy::HandTopology handTopology)
+    {
+        using authored_weapon_grip_activation_policy::HandTopology;
+        const bool identityValid = weaponNode &&
+            weaponOwnershipKey != 0 &&
+            weaponGenerationKey != 0 &&
+            handTopology != HandTopology::Invalid;
+        if (!identityValid) {
+            resetAuthoredSupportCapability("identity-unavailable");
+            _authoredSupportCapability.reason =
+                authored_support_grab_policy::CapabilityReason::AwaitingIdentity;
+            return;
+        }
+
+        const auto& state = _authoredSupportCapability;
+        if (state.initialized &&
+            state.weaponNodeIdentity == weaponNode &&
+            state.weaponOwnershipKey == weaponOwnershipKey &&
+            state.weaponGenerationKey == weaponGenerationKey &&
+            state.handTopology == handTopology) {
+            return;
+        }
+
+        resetAuthoredSupportCapability("weapon-or-topology-boundary");
+        _authoredSupportCapability = AuthoredSupportCapabilityState{
+            .weaponNodeIdentity = weaponNode,
+            .weaponOwnershipKey = weaponOwnershipKey,
+            .weaponGenerationKey = weaponGenerationKey,
+            .handTopology = handTopology,
+            .capability = authored_support_grab_policy::Capability::Pending,
+            .reason = authored_support_grab_policy::
+                CapabilityReason::AwaitingQualification,
+            .initialized = true,
+        };
+        ROCK_LOG_DEBUG(
+            Weapon,
+            "TwoHandedGrip: authored support capability qualification started ownership={:016X} generation={:016X} topology={}",
+            weaponOwnershipKey,
+            weaponGenerationKey,
+            authored_weapon_grip_activation_policy::handTopologyName(
+                handTopology));
+    }
+
+    void TwoHandedGrip::advanceAuthoredSupportCapabilityQualification(
+        const bool ready,
+        const float deltaSeconds)
+    {
+        auto& state = _authoredSupportCapability;
+        if (!state.initialized) {
+            return;
+        }
+        if (!ready) {
+            // Absence becomes fallback authority only after continuously ready
+            // elapsed time. Reload/equip/geometry gaps therefore cannot spend
+            // the qualification budget while evidence is unavailable.
+            if (state.capability ==
+                authored_support_grab_policy::Capability::Pending) {
+                state.readySeconds = 0.0f;
+            }
+            state.usableEvidenceMissingSeconds = 0.0f;
+            state.unavailableRecheckSeconds = 0.0f;
+            return;
+        }
+        if (state.capability ==
+            authored_support_grab_policy::Capability::Usable) {
+            const bool supportHandIsLeft = state.handTopology ==
+                authored_weapon_grip_activation_policy::HandTopology::
+                    RightFiringLeftSupport;
+            RE::NiTransform supportHandWeaponLocal{};
+            std::array<RE::NiTransform, 15> supportFingerLocals{};
+            std::uint16_t supportFingerMask = 0;
+            const bool candidateStillResolves =
+                tryResolveAuthoredSupportGripCandidateForHand(
+                    supportHandIsLeft,
+                    state.weaponNodeIdentity,
+                    state.weaponGenerationKey,
+                    supportHandWeaponLocal,
+                    supportFingerLocals,
+                    supportFingerMask) &&
+                supportFingerMask == 0x7FFFu;
+            if (candidateStillResolves) {
+                state.usableEvidenceMissingSeconds = 0.0f;
+                return;
+            }
+
+            state.usableEvidenceMissingSeconds =
+                authored_support_grab_policy::
+                    advanceContinuousEvidenceSeconds(
+                        state.usableEvidenceMissingSeconds,
+                        deltaSeconds,
+                        authored_support_grab_policy::
+                            kUsableEvidenceLossSeconds,
+                        true);
+            if (state.usableEvidenceMissingSeconds >=
+                authored_support_grab_policy::kUsableEvidenceLossSeconds) {
+                state.readySeconds = 0.0f;
+                state.usableEvidenceMissingSeconds = 0.0f;
+                setAuthoredSupportCapability(
+                    authored_support_grab_policy::Capability::Pending,
+                    authored_support_grab_policy::
+                        CapabilityReason::AwaitingCandidate);
+            }
+            return;
+        }
+
+        if (state.capability ==
+            authored_support_grab_policy::Capability::Pending) {
+            state.readySeconds = authored_support_grab_policy::
+                advanceContinuousEvidenceSeconds(
+                    state.readySeconds,
+                    deltaSeconds,
+                    authored_support_grab_policy::kQualificationSeconds,
+                    true);
+        } else {
+            state.unavailableRecheckSeconds =
+                authored_support_grab_policy::
+                    advanceContinuousEvidenceSeconds(
+                        state.unavailableRecheckSeconds,
+                        deltaSeconds,
+                        authored_support_grab_policy::
+                            kUnavailableRecheckSeconds,
+                        true);
+        }
+    }
+
+    bool TwoHandedGrip::shouldCollectAuthoredSupportCapabilityEvidence() const
+        noexcept
+    {
+        const auto& state = _authoredSupportCapability;
+        if (!_handlingSettings.authoredOnlySupportGrabsEnabled ||
+            !state.initialized) {
+            return false;
+        }
+        if (state.capability ==
+            authored_support_grab_policy::Capability::Pending) {
+            return state.readySeconds >=
+                authored_support_grab_policy::kQualificationSeconds;
+        }
+        if (state.capability ==
+            authored_support_grab_policy::Capability::Unavailable) {
+            return state.unavailableRecheckSeconds >=
+                authored_support_grab_policy::kUnavailableRecheckSeconds;
+        }
+        return false;
+    }
+
+    void TwoHandedGrip::setAuthoredSupportCapability(
+        const authored_support_grab_policy::Capability capability,
+        const authored_support_grab_policy::CapabilityReason reason)
+    {
+        auto& state = _authoredSupportCapability;
+        const bool capabilityChanged = state.capability != capability;
+        const bool reasonChanged = state.reason != reason;
+        if (!capabilityChanged && !reasonChanged) {
+            return;
+        }
+
+        state.capability = capability;
+        state.reason = reason;
+        if (capability ==
+            authored_support_grab_policy::Capability::Unavailable) {
+            state.unavailableRecheckSeconds = 0.0f;
+        }
+
+        if (capabilityChanged &&
+            capability != authored_support_grab_policy::Capability::Pending) {
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: authored support capability={} reason={} ownership={:016X} generation={:016X} topology={} ready={:.3f}s",
+                authored_support_grab_policy::capabilityName(capability),
+                authored_support_grab_policy::capabilityReasonName(reason),
+                state.weaponOwnershipKey,
+                state.weaponGenerationKey,
+                authored_weapon_grip_activation_policy::handTopologyName(
+                    state.handTopology),
+                state.readySeconds);
+        } else {
+            ROCK_LOG_DEBUG(
+                Weapon,
+                "TwoHandedGrip: authored support capability={} reason={} generation={:016X}",
+                authored_support_grab_policy::capabilityName(capability),
+                authored_support_grab_policy::capabilityReasonName(reason),
+                state.weaponGenerationKey);
+        }
+    }
+
+    void TwoHandedGrip::observeAuthoredSupportCapability(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const WeaponCollision& weaponCollision)
+    {
+        using authored_weapon_grip_activation_policy::WeaponFamily;
+        using authored_support_grab_policy::Capability;
+
+        auto& state = _authoredSupportCapability;
+        const bool identityCurrent = state.initialized &&
+            state.weaponNodeIdentity == weaponNode &&
+            state.weaponGenerationKey == currentWeaponGenerationKey;
+        const bool geometryReady = identityCurrent &&
+            weaponCollision.getCurrentWeaponGenerationKey() ==
+                currentWeaponGenerationKey &&
+            weaponCollision.getWeaponBodyCount() > 0;
+        const auto& candidate = _authoredSupportGripCandidate;
+        const bool candidatePublished = identityCurrent &&
+            candidate.valid &&
+            candidate.weaponNode == weaponNode &&
+            candidate.weaponGenerationKey == currentWeaponGenerationKey &&
+            candidate.captureSequence != 0;
+
+        const bool supportHandIsLeft = !_firingHandIsLeft;
+        RE::NiTransform supportHandWeaponLocal{};
+        std::array<RE::NiTransform, 15> supportFingerLocals{};
+        std::uint16_t supportFingerMask = 0;
+        const bool candidateResolved = candidatePublished &&
+            tryResolveAuthoredSupportGripCandidateForHand(
+                supportHandIsLeft,
+                weaponNode,
+                currentWeaponGenerationKey,
+                supportHandWeaponLocal,
+                supportFingerLocals,
+                supportFingerMask);
+
+        const auto& snapshot = _authoredSupportGripDebugSnapshot;
+        const bool snapshotCurrent = snapshot.valid &&
+            snapshot.supportHandIsLeft == supportHandIsLeft &&
+            snapshot.weaponGenerationKey == currentWeaponGenerationKey &&
+            snapshot.captureSequence == candidate.captureSequence;
+        const bool familyKnown = snapshotCurrent &&
+            snapshot.weaponFamily != WeaponFamily::Unknown;
+        const auto observation =
+            authored_support_grab_policy::observeCapability(
+                authored_support_grab_policy::CapabilityObservationInput{
+                    .modeEnabled =
+                        _handlingSettings.authoredOnlySupportGrabsEnabled,
+                    .identityCurrent = identityCurrent,
+                    .geometryReady = geometryReady,
+                    .qualificationExpired =
+                        state.readySeconds >=
+                        authored_support_grab_policy::kQualificationSeconds,
+                    .candidatePublished = candidatePublished,
+                    .candidateResolvedForSupportHand = candidateResolved,
+                    .weaponFamilyKnown = familyKnown,
+                    .weaponFamilySupported = snapshotCurrent &&
+                        snapshot.classifierSupported,
+                    .canonicalAxesValid = snapshotCurrent &&
+                        snapshot.canonicalAxesValid,
+                    .completeFingerPose = candidateResolved &&
+                        supportFingerMask == 0x7FFFu,
+                    .poseEvidenceEvaluated = snapshotCurrent &&
+                        snapshot.poseEvidenceEvaluated,
+                    .poseEvidencePass = snapshotCurrent &&
+                        snapshot.poseEvidencePass,
+                });
+
+        // A proven usable pose stays authoritative for this exact identity and
+        // topology across the same transient graph gaps bridged by the stable
+        // authored snapshot. An unavailable result is retained through a
+        // pending recheck but may always recover on new positive evidence.
+        if (state.capability == Capability::Usable &&
+            observation.capability != Capability::Usable) {
+            if (snapshotCurrent && snapshot.poseEvidenceEvaluated) {
+                // A current bounded surface query disproved the previously
+                // usable pose. Re-enter qualification instead of granting an
+                // immediate fallback from one bad animation sample.
+                state.readySeconds = 0.0f;
+                state.usableEvidenceMissingSeconds = 0.0f;
+                setAuthoredSupportCapability(
+                    Capability::Pending,
+                    authored_support_grab_policy::
+                        CapabilityReason::AwaitingQualification);
+            }
+        } else if (state.capability == Capability::Unavailable &&
+                   observation.capability != Capability::Usable &&
+                   !(snapshotCurrent && snapshot.poseEvidenceEvaluated)) {
+            // Retain until the scheduled or acquisition-forced surface
+            // recheck actually ran. A normal frame intentionally omits that
+            // bounded query and therefore carries no demotion evidence.
+        } else {
+            setAuthoredSupportCapability(
+                observation.capability,
+                observation.reason);
+        }
+        if (state.capability == Capability::Unavailable &&
+            ((snapshotCurrent && snapshot.poseEvidenceEvaluated) ||
+                state.unavailableRecheckSeconds >=
+                    authored_support_grab_policy::
+                        kUnavailableRecheckSeconds)) {
+            state.unavailableRecheckSeconds = 0.0f;
+        }
+
+        if (_authoredSupportGripDebugSnapshot.valid) {
+            _authoredSupportGripDebugSnapshot.authoredCapability =
+                state.capability;
+            _authoredSupportGripDebugSnapshot.authoredCapabilityReason =
+                state.reason;
+            _authoredSupportGripDebugSnapshot.authoredCapabilityReadySeconds =
+                state.readySeconds;
+            if (_lastSupportGrabSelectionValid) {
+                _authoredSupportGripDebugSnapshot.lastSelection =
+                    _lastSupportGrabSelection.selection;
+                _authoredSupportGripDebugSnapshot.lastSelectionReason =
+                    _lastSupportGrabSelection.reason;
+            }
+        }
+    }
+
+    void TwoHandedGrip::recordSupportGrabSelection(
+        const authored_support_grab_policy::SelectionDecision& decision,
+        const bool isLeft,
+        const std::uint64_t weaponGenerationKey)
+    {
+        const bool changed = !_lastSupportGrabSelectionValid ||
+            _lastSupportGrabSelection.selection != decision.selection ||
+            _lastSupportGrabSelection.reason != decision.reason ||
+            _lastSupportGrabSelectionGenerationKey != weaponGenerationKey ||
+            _lastSupportGrabSelectionHandIsLeft != isLeft;
+        _lastSupportGrabSelection = decision;
+        _lastSupportGrabSelectionGenerationKey = weaponGenerationKey;
+        _lastSupportGrabSelectionHandIsLeft = isLeft;
+        _lastSupportGrabSelectionValid = true;
+
+        if (_authoredSupportGripDebugSnapshot.valid) {
+            _authoredSupportGripDebugSnapshot.lastSelection =
+                decision.selection;
+            _authoredSupportGripDebugSnapshot.lastSelectionReason =
+                decision.reason;
+        }
+        if (!changed) {
+            return;
+        }
+
+        const auto& capability = _authoredSupportCapability;
+        if (authored_support_grab_policy::captured(decision.selection)) {
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} generation={:016X}",
+                authored_support_grab_policy::selectionName(
+                    decision.selection),
+                authored_support_grab_policy::selectionReasonName(
+                    decision.reason),
+                isLeft ? "left" : "right",
+                authored_support_grab_policy::capabilityName(
+                    capability.capability),
+                authored_support_grab_policy::capabilityReasonName(
+                    capability.reason),
+                weaponGenerationKey);
+        } else {
+            ROCK_LOG_DEBUG(
+                Weapon,
+                "TwoHandedGrip: support grab selection={} reason={} hand={} capability={} capabilityReason={} generation={:016X}",
+                authored_support_grab_policy::selectionName(
+                    decision.selection),
+                authored_support_grab_policy::selectionReasonName(
+                    decision.reason),
+                isLeft ? "left" : "right",
+                authored_support_grab_policy::capabilityName(
+                    capability.capability),
+                authored_support_grab_policy::capabilityReasonName(
+                    capability.reason),
+                weaponGenerationKey);
+        }
     }
 
     void TwoHandedGrip::resetLockedHandVisualLerp()
@@ -4597,7 +5060,7 @@ namespace rock
             decision.weaponGenerationKey);
     }
 
-    bool TwoHandedGrip::capturePartGrip(
+    authored_support_grab_policy::Selection TwoHandedGrip::capturePartGrip(
         bool isLeft,
         RE::NiNode* weaponNode,
         const WeaponInteractionDecision& decision,
@@ -4610,17 +5073,17 @@ namespace rock
             *outCapturedHandWorld = {};
         }
         if (!weaponNode) {
-            return false;
+            return authored_support_grab_policy::Selection::Failure;
         }
         if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(decision.weaponGenerationKey, _activeWeaponGenerationKey)) {
             ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: part grip capture skipped because contact generation is stale hand={}", isLeft ? "left" : "right");
-            return false;
+            return authored_support_grab_policy::Selection::Failure;
         }
 
         RE::NiTransform handTransform{};
         if (!tryGetSolverHandTransform(isLeft, handTransform)) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: part grip capture skipped because authoritative hand transforms are unavailable hand={}", isLeft ? "left" : "right");
-            return false;
+            return authored_support_grab_policy::Selection::Failure;
         }
         if (outCapturedHandWorld) {
             *outCapturedHandWorld = handTransform;
@@ -4676,12 +5139,15 @@ namespace rock
          * and radial cap. The captured palm plus at least two distal
          * fingertips must also have current generated-mesh witnesses, so an
          * animation-zero/default support hand cannot escape to an unrelated
-         * world-space pose. Every rejected authored candidate continues into
-         * the unrestricted dynamic mesh grab below. The final authored seat
-         * also selects visual-only versus full weapon authority. Provider
-         * AttachOnly remains PAPER/consumer glue. Once selected, the exact
-         * hand/weapon relation and 15 finger locals are latched; later
-         * candidate changes cannot move it.
+         * world-space pose. A matched provider target remains the first
+         * authority. Otherwise the authored-only policy permits the dynamic
+         * mesh solver only when the mode is disabled or this exact weapon and
+         * support topology has qualified as lacking a usable authored pose. A
+         * missed cone/radius rejects instead of silently becoming dynamic. The
+         * final authored seat also selects visual-only versus full weapon
+         * authority. Provider AttachOnly remains PAPER/consumer glue. Once
+         * selected, the exact hand/weapon relation and 15 finger locals are
+         * latched; later candidate changes cannot move it.
          */
         const bool authoredWeaponIdentityMatches =
             _authoredSupportGripCandidate.weaponNode == weaponNode;
@@ -4812,7 +5278,31 @@ namespace rock
                         authoredSupportFingerLocalTransformMask ==
                         kCompleteAuthoredFingerMask,
                 });
-        if (useAuthoredSupportGrip) {
+        if (_handlingSettings.authoredOnlySupportGrabsEnabled &&
+            !providerPartAuthority.active) {
+            observeAuthoredSupportCapability(
+                weaponNode,
+                decision.weaponGenerationKey,
+                weaponCollision);
+        }
+        const auto selectionDecision =
+            authored_support_grab_policy::select(
+                authored_support_grab_policy::SelectionInput{
+                    .modeEnabled =
+                        _handlingSettings.authoredOnlySupportGrabsEnabled,
+                    .providerPartAuthorityActive =
+                        providerPartAuthority.active,
+                    .authoredCaptureEligible = useAuthoredSupportGrip,
+                    .capability =
+                        _authoredSupportCapability.capability,
+                });
+        recordSupportGrabSelection(
+            selectionDecision,
+            isLeft,
+            decision.weaponGenerationKey);
+
+        if (selectionDecision.selection ==
+            authored_support_grab_policy::Selection::Authored) {
             if (firingGripProximityAuthorityEnabled) {
                 _authorityMode = authoredSupportAuthorityMode;
             }
@@ -4904,13 +5394,15 @@ namespace rock
                 _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport ?
                     "visual-only" :
                     "full");
-            return true;
+            return selectionDecision.selection;
         }
 
         if (authoredSupportCandidateForHandValid) {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} topology={} axes={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} class={} radial={} direction={} topologyGate={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
+                "TwoHandedGrip: authored support grip not selected hand={} selection={} source={} family={} topology={} axes={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} class={} radial={} direction={} topologyGate={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
                 isLeft ? "left" : "right",
+                authored_support_grab_policy::selectionName(
+                    selectionDecision.selection),
                 decision.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::PhysicalContact ?
                     "physical-contact" :
@@ -4950,6 +5442,14 @@ namespace rock
                 authoredSupportFingerLocalTransformMask ==
                         kCompleteAuthoredFingerMask ?
                     "pass" : "fail");
+        }
+
+        if (selectionDecision.selection ==
+            authored_support_grab_policy::Selection::Reject) {
+            // The transaction-local grip was cleared before selection, so an
+            // intentional policy rejection leaves no partial hand authority.
+            grip = {};
+            return selectionDecision.selection;
         }
 
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
@@ -5521,7 +6021,7 @@ namespace rock
             static_cast<int>(grip.partKind),
             static_cast<int>(grip.gripPose),
             _activeWeaponGenerationKey);
-        return true;
+        return selectionDecision.selection;
     }
 
     void TwoHandedGrip::lockPartGripToWeaponRoot(bool isLeft)
@@ -5751,18 +6251,27 @@ namespace rock
         }
 
         RE::NiTransform supportCaptureHandWorld{};
-        if (!capturePartGrip(
+        const auto partGripCapture = capturePartGrip(
                 supportHandIsLeft,
                 weaponNode,
                 decision,
                 weaponCollision,
                 providerPartAuthority,
                 firingGripProximityAuthorityEnabled,
-                &supportCaptureHandWorld)) {
+                &supportCaptureHandWorld);
+        if (!authored_support_grab_policy::captured(partGripCapture)) {
             rollbackPreparedAcquisition();
-            ROCK_LOG_WARN(
-                Weapon,
-                "TwoHandedGrip: support grip acquisition rolled back because part-grip capture failed");
+            if (partGripCapture ==
+                authored_support_grab_policy::Selection::Reject) {
+                ROCK_LOG_SAMPLE_DEBUG(
+                    Weapon,
+                    1000,
+                    "TwoHandedGrip: support grip acquisition rejected by authored-only policy");
+            } else {
+                ROCK_LOG_WARN(
+                    Weapon,
+                    "TwoHandedGrip: support grip acquisition rolled back because part-grip capture failed");
+            }
             return;
         }
 
@@ -8159,7 +8668,14 @@ namespace rock
                     frameInput.primaryGripInput.pressed,
                     firingHandHoldingObject,
                     freeHandGrip.active)) {
-                if (capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, firingRuntimeState.providerPartAuthority, false)) {
+                if (authored_support_grab_policy::captured(
+                        capturePartGrip(
+                            firingHandIsLeft,
+                            weaponNode,
+                            freeHandDecision,
+                            weaponCollision,
+                            firingRuntimeState.providerPartAuthority,
+                            false))) {
                     /*
                      * AttachOnly keeps its authored source frames so the glued
                      * hand follows provider-driven part motion; it never joins
@@ -8185,7 +8701,14 @@ namespace rock
             const WeaponInteractionDecision supportDecision = routeWeaponInteraction(supportHandContact, supportRuntimeState);
             if (supportDecision.kind == WeaponInteractionKind::SupportGrip &&
                 weapon_two_handed_grip_math::canStartSupportGrip(true, supportGripHeld, supportHandHoldingObject)) {
-                if (capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, supportRuntimeState.providerPartAuthority, false)) {
+                if (authored_support_grab_policy::captured(
+                        capturePartGrip(
+                            supportHandIsLeft,
+                            weaponNode,
+                            supportDecision,
+                            weaponCollision,
+                            supportRuntimeState.providerPartAuthority,
+                            false))) {
                     // Symmetric to the free-hand capture above: attach-only
                     // glue keeps source frames and stays out of the carry.
                     if (supportGrip.attachOnly) {
@@ -10682,6 +11205,9 @@ namespace rock
         }
         _leftFiringDampedFollowFrame = {};
         _firingHandIsLeft = isLeft;
+        // The authored support mirror and activation cone are role-specific.
+        // Never carry a capability verdict across a firing/support hand swap.
+        resetAuthoredSupportCapability("firing-hand-changed");
         _leftFiringPositionOnlyTracePending = isLeft;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand switched to {} reason={}", isLeft ? "left" : "right", reason ? reason : "unknown");
     }
