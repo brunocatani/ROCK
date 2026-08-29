@@ -22,6 +22,9 @@ function Require-Text {
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'kNativeVatsVansDecisionFunctionOffset\s*=\s*0x0BEB280[\s\S]{0,180}kNativeVatsVansDecisionCallSiteOffset\s*=\s*0x1326990' `
     'The native VATS/V.A.N.S. helper and unique MenuOpenHandler callsite must stay pinned to verified FO4VR RVAs.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'kNativeVansHoldThresholdSettingOffset\s*=\s*0x3756388[\s\S]*readNativeVansHoldThresholdSeconds[\s\S]{0,500}sanitizedHoldSeconds' `
+    'ROCK must read and validate the verified native fVANSButtonHeldThreshold value.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'installNativeVatsVansInputSuppressionHook[\s\S]{0,1300}callBytes\[0\]\s*!=\s*0xE8[\s\S]{0,900}decodedTarget\s*!=\s*expectedTarget[\s\S]{0,900}write_call<5>\([\s\S]{0,180}&hookedNativeVatsVansDecision' `
@@ -71,24 +74,41 @@ foreach ($configPath in @('data/config/ROCK_example.ini')) {
 }
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'hookedNativeVatsVansDecision[\s\S]{0,2400}native_vats_input_suppression_policy::update[\s\S]{0,1000}\.suppressVats\s*=\s*g_rockConfig\.rockSuppressNativeVats\s*\|\|[\s\S]{0,500}SuppressNativeVats[\s\S]{0,300}\.suppressVans\s*=\s*true' `
-    'The native helper hook must keep VATS optional while suppressing V.A.N.S. unconditionally.'
+    'hookedNativeVatsVansDecision[\s\S]{0,2600}native_vats_input_suppression_policy::update[\s\S]{0,700}\.heldSeconds\s*=\s*button->QHeldDownSecs\(\)[\s\S]{0,180}\.holdSeconds\s*=\s*holdSeconds[\s\S]{0,800}\.suppressVats\s*=\s*g_rockConfig\.rockSuppressNativeVats\s*\|\|[\s\S]{0,500}SuppressNativeVats[\s\S]{0,300}\.suppressVans\s*=\s*true[\s\S]{0,180}\.reserveHoldGesture\s*=\s*true' `
+    'The native helper hook must keep tap VATS optional, suppress V.A.N.S., and reserve held release for ROCK.'
 
-# The policy is deliberately orthogonal: VATS-only forwards down samples so
-# V.A.N.S. remains available; V.A.N.S.-only forwards release so normal VATS
-# remains available. Each suppression latch survives lease expiry until the
-# corresponding physical gesture reaches release.
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'observePrimaryVatsGrenadeGesture[\s\S]{0,1500}vats_grenade_gesture_policy::update[\s\S]{0,900}s_pendingGrenadeQuickDrawHoldRequest\.store[\s\S]{0,1600}hookedMenuOpenEventHandler[\s\S]{0,1000}NativeWandIdentity::Primary[\s\S]{0,300}observePrimaryVatsGrenadeGesture' `
+    'Primary-wand MenuOpen input must publish quick draw only from the shared hold gesture.'
+
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'consumeGrenadeQuickDrawHoldRequest[\s\S]{0,700}s_pendingGrenadeQuickDrawHoldRequest\.exchange[\s\S]{0,500}s_gameplayInputAllowed[\s\S]{0,300}!isInputBlockingMenuActive' `
+    'The frame thread must consume one eligible grenade hold request and reject stale menu/gameplay requests.'
+
+# Provider phase flags remain orthogonal. ROCK adds a separate hold reservation:
+# short release remains VATS, while a threshold-qualified release is consumed.
 Require-Text 'src/physics-interaction/input/NativeVatsInputSuppressionPolicy.h' `
-    'if\s*\(input\.buttonDown\)[\s\S]{0,900}suppressVansWhileDown[\s\S]{0,400}decision\.forwardNative\s*=\s*false[\s\S]{0,700}if\s*\(input\.released\)[\s\S]{0,500}suppressVatsOnRelease[\s\S]{0,500}reset\(state\)' `
-    'The pure policy must suppress V.A.N.S. on down, VATS on release, and rearm only after release.'
+    'if\s*\(input\.buttonDown\)[\s\S]{0,1300}reserveHoldGesture[\s\S]{0,400}holdThresholdReached[\s\S]{0,800}if\s*\(input\.released\)[\s\S]{0,700}suppressHeldGestureRelease[\s\S]{0,500}suppressVats[\s\S]{0,500}reset\(state\)' `
+    'The pure policy must consume V.A.N.S. while held and consume VATS release only after the reserved hold threshold.'
+
+Require-Text 'src/physics-interaction/input/VatsGrenadeGesturePolicy.h' `
+    'kDefaultHoldSeconds\s*=\s*0\.25f[\s\S]*case State::Idle[\s\S]{0,900}input\.pressed\s*&&\s*input\.held[\s\S]{0,900}State::Pending' `
+    'The shared gesture policy must keep the initial B press pending.'
+Require-Text 'src/physics-interaction/input/VatsGrenadeGesturePolicy.h' `
+    'case State::Pending[\s\S]{0,1400}heldSeconds\s*>=\s*holdSeconds[\s\S]{0,500}State::HoldCommitted[\s\S]{0,180}decision\.requestGrenade\s*=\s*true' `
+    'The shared gesture policy must publish grenade exactly once at the native hold threshold.'
 
 Require-Text 'src/physics-interaction/input/NativeVatsInputSuppressionPolicy.h' `
     'input\.justPressed[\s\S]{0,300}reset\(state\)' `
     'A newly observed press must clear any stale latch left by a release hidden behind a menu transition.'
 
 Require-Text 'tests/InputRemapPolicyTests.cpp' `
-    'V\.A\.N\.S\.-only suppression preserves release-to-VATS[\s\S]{0,2600}VATS-only suppression preserves the native V\.A\.N\.S\. hold path[\s\S]{0,5000}combined suppression consumes the later release after both leases expire' `
-    'Policy tests must lock both independent modes, combined mode, and lease-expiry latching.'
+    'V\.A\.N\.S\.-only suppression preserves release-to-VATS[\s\S]{0,5000}ROCK grenade hold consumes eventual VATS release[\s\S]{0,1800}ROCK short tap preserves release-to-VATS[\s\S]{0,5000}VATS-only suppression preserves the native V\.A\.N\.S\. hold path[\s\S]{0,5000}combined suppression consumes the later release after both leases expire' `
+    'Policy tests must preserve provider phase independence while enforcing tap-VATS and hold-grenade exclusivity.'
+
+Require-Text 'tests/InputRemapPolicyTests.cpp' `
+    'VATS-button press does not immediately draw grenade[\s\S]{0,2600}VATS hold threshold draws grenade once[\s\S]{0,1800}committed VATS hold does not repeat grenade request[\s\S]{0,2600}short VATS tap never draws grenade' `
+    'Gesture tests must reject press-time quick draw, trigger once on hold, and preserve short taps.'
 
 Require-Text 'tests/InputRemapPolicyTests.cpp' `
     'a newly observed press discards stale suppression from a lost release' `
