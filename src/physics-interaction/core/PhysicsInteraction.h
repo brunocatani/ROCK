@@ -580,6 +580,19 @@ namespace rock
         // It is bound to the live equipped instance and revalidates the same
         // spatial candidate on every open-grip frame.
         std::array<EquippedWeaponStashCommitLease, 2> _equippedWeaponStashCommitLeases{};
+        struct EquippedWeaponStashTapIntentLease
+        {
+            bool active{ false };
+            std::uint64_t ownershipKey{ 0 };
+            std::uint8_t remainingFrames{ 0 };
+            body_zone::BodyZoneKind zone{ body_zone::BodyZoneKind::Unknown };
+            shoulder_stash::EvidenceSource source{ shoulder_stash::EvidenceSource::None };
+            std::uint32_t shoulderBodyId{ shoulder_stash::kInvalidBodyId };
+        };
+        // A spatially valid toggle tap is already deliberate input. Retain it
+        // only across the existing two-frame manual-release debounce.
+        std::array<EquippedWeaponStashTapIntentLease, 2>
+            _equippedWeaponStashTapIntentLeases{};
         struct EquippedWeaponShoulderSheathState
         {
             bool active{ false };

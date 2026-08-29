@@ -67,6 +67,17 @@ namespace rock::equipped_weapon_drop_policy
             gripPhysicallyReleased;
     }
 
+    [[nodiscard]] inline constexpr bool hasToggleShoulderTapIntent(
+        const bool toggleGrabEnabled,
+        const bool detectorCandidate,
+        const bool gripPhysicallyPressed,
+        const bool gripPhysicallyReleased) noexcept
+    {
+        return toggleGrabEnabled &&
+               detectorCandidate &&
+               (gripPhysicallyPressed || gripPhysicallyReleased);
+    }
+
     struct ShoulderInputGuardState
     {
         bool retrievalGestureActive{ false };
@@ -146,14 +157,25 @@ namespace rock::equipped_weapon_drop_policy
         bool handDisabled{ false };
         bool handEmpty{ false };
         bool handCanOwnFiringGrip{ false };
+        bool toggleGrabEnabled{ false };
+        bool detectorCandidate{ false };
         bool detectorConfirmed{ false };
         bool sameShoulderZone{ false };
         bool gripPhysicallyHeld{ false };
+        bool gripPhysicallyPressed{ false };
+        bool gripPhysicallyReleased{ false };
     };
 
     [[nodiscard]] inline constexpr bool canRetrieveShoulderStashedWeapon(
         const ShoulderRetrievalInput& input) noexcept
     {
+        const bool holdOrPullIntent =
+            input.detectorConfirmed && input.gripPhysicallyHeld;
+        const bool tapIntent = hasToggleShoulderTapIntent(
+            input.toggleGrabEnabled,
+            input.detectorCandidate,
+            input.gripPhysicallyPressed,
+            input.gripPhysicallyReleased);
         return input.stashActive &&
                input.handlingEnabled &&
                input.identityMatches &&
@@ -162,9 +184,8 @@ namespace rock::equipped_weapon_drop_policy
                !input.handDisabled &&
                input.handEmpty &&
                input.handCanOwnFiringGrip &&
-               input.detectorConfirmed &&
                input.sameShoulderZone &&
-               input.gripPhysicallyHeld;
+               (holdOrPullIntent || tapIntent);
     }
 
     struct ShoulderRetrievalCandidate

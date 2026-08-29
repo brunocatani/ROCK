@@ -84,6 +84,9 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
     'resolveShoulderSheathInputIntent[\s\S]{0,500}toggleGrabEnabled\s*\?[\s\S]{0,180}gripPhysicallyPressed\s*\|\|\s*gripPhysicallyReleased\s*:[\s\S]{0,120}gripPhysicallyReleased' `
     'Toggle shoulder stash must require an explicit tap edge while hold mode keeps its release edge.'
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
+    'hasToggleShoulderTapIntent[\s\S]{0,500}toggleGrabEnabled\s*&&[\s\S]{0,120}detectorCandidate\s*&&[\s\S]{0,120}gripPhysicallyPressed\s*\|\|\s*gripPhysicallyReleased' `
+    'A toggle tap may bypass dwell only while a real shoulder candidate and physical edge coincide.'
 Reject-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
     'resolveShoulderSheathInputIntent[\s\S]{0,500}!gripPhysicallyHeld' `
     'An already-open toggle button must never count as shoulder sheath intent.'
@@ -99,6 +102,12 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     '_equippedWeaponShoulderInputGuards\[handIndex\][\s\S]{0,120}retrievalGestureActive\s*=\s*true[\s\S]{0,180}_equippedWeaponUnsheathCommittedThisFrame\[handIndex\]\s*=\s*true' `
     'An accepted shoulder draw must reserve its physical gesture before later input routing.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'hasToggleShoulderTapIntent[\s\S]{0,1800}EquippedWeaponStashTapIntentLease[\s\S]{0,500}currentEquippedWeaponOwnershipKey[\s\S]{0,500}kPrimaryReleaseConfirmFrames' `
+    'A candidate-qualified tap must arm only an ownership-bound manual-release debounce lease.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'tapIntentLease\.ownershipKey\s*==[\s\S]{0,220}currentEquippedWeaponOwnershipKey[\s\S]{0,700}shoulderStashDwellIdentityMatches[\s\S]{0,900}confirmedForCommit\s*=\s*true' `
+    'A tap lease must retain commit authority only while equipped identity and shoulder geometry remain current.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'canCommitNativeShoulderSheath[\s\S]{0,1800}resolveShoulderSheathInputIntent[\s\S]{0,700}primaryState\.pressed[\s\S]{0,300}primaryState\.released[\s\S]*?_equippedWeaponSheathCommittedThisFrame\[sheathHandIndex\]\s*=\s*true[\s\S]{0,500}submitEquippedWeaponShoulderSheath' `
     'ROCK must commit only the firing hand''s confirmed explicit tap/release intent and consume it before normal world-grab handling.'
@@ -127,8 +136,8 @@ Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
     'resolveExactCurrent\(expected\)[\s\S]{0,900}shouldSubmitSheatheFollowup[\s\S]{0,1000}DrawWeaponMagicHands\(false\)[\s\S]{0,300}getNativeWeaponState\(current\.player\)' `
     'Native sheath must revalidate exact identity and observe both sides of the verified FO4VR state transition.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'serviceEquippedWeaponShoulderSheathRetrieval[\s\S]*?observedWeaponFormID\s*==\s*currentIdentity\.formID[\s\S]*?decision\.zone\s*==\s*_equippedWeaponShoulderSheath\.zone[\s\S]*?isRawButtonPhysicallyHeld[\s\S]*?selectShoulderRetrievalHand[\s\S]*?submitExactCurrent\(\s*currentIdentity\s*\)' `
-    'Retrieval must require the same exact equipped identity, same stored shoulder, physical squeeze, and exact native draw.'
+    'serviceEquippedWeaponShoulderSheathRetrieval[\s\S]*?observedWeaponFormID\s*==\s*currentIdentity\.formID[\s\S]*?decision\.zone\s*==\s*_equippedWeaponShoulderSheath\.zone[\s\S]*?peekGrabButtonState[\s\S]*?detectorCandidate\s*=\s*decision\.candidate[\s\S]*?gripPhysicallyPressed\s*=\s*physicalGripState\.pressed[\s\S]*?selectShoulderRetrievalHand[\s\S]*?submitExactCurrent\(\s*currentIdentity\s*\)' `
+    'Retrieval must require the same exact identity and shoulder plus either a qualified toggle tap or confirmed held pull before exact native draw.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'for\s*\(const bool isLeft\s*:\s*\{\s*false,\s*true\s*\}\)[\s\S]*?ambidextrousHandoffEnabled[\s\S]*?PendingEquippedWeaponPrimaryOnlyGripStart[\s\S]*?\.isLeft\s*=\s*retrieveWithLeftHand' `
     'Retrieval must evaluate both physical hands and carry the selected hand into equipped-weapon ownership.'

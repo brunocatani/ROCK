@@ -2473,6 +2473,14 @@ int main()
         resolveShoulderSheathInputIntent(false, false, false));
     ok &= expectTrue("hold mode preserves its physical shoulder release edge",
         resolveShoulderSheathInputIntent(false, false, true));
+    ok &= expectFalse("toggle tap without a shoulder candidate is rejected",
+        hasToggleShoulderTapIntent(true, false, true, false));
+    ok &= expectFalse("shoulder proximity without a toggle edge is rejected",
+        hasToggleShoulderTapIntent(true, true, false, false));
+    ok &= expectTrue("toggle press activates an immediate shoulder candidate",
+        hasToggleShoulderTapIntent(true, true, true, false));
+    ok &= expectTrue("toggle release activates an immediate shoulder candidate",
+        hasToggleShoulderTapIntent(true, true, false, true));
 
     ShoulderInputGuardState shoulderInputGuard{
         .retrievalGestureActive = true,
@@ -2586,6 +2594,21 @@ int main()
     blockedShoulderRetrieval.gripPhysicallyHeld = false;
     ok &= expectFalse("reach without a physical grip squeeze cannot retrieve",
         canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    auto tapShoulderRetrieval = retrievableShoulderWeapon;
+    tapShoulderRetrieval.toggleGrabEnabled = true;
+    tapShoulderRetrieval.detectorCandidate = true;
+    tapShoulderRetrieval.detectorConfirmed = false;
+    tapShoulderRetrieval.gripPhysicallyHeld = false;
+    tapShoulderRetrieval.gripPhysicallyPressed = true;
+    ok &= expectTrue("toggle press retrieves from a same-zone shoulder candidate",
+        canRetrieveShoulderStashedWeapon(tapShoulderRetrieval));
+    tapShoulderRetrieval.gripPhysicallyPressed = false;
+    tapShoulderRetrieval.gripPhysicallyReleased = true;
+    ok &= expectTrue("toggle release completes a same-zone retrieval tap",
+        canRetrieveShoulderStashedWeapon(tapShoulderRetrieval));
+    tapShoulderRetrieval.detectorCandidate = false;
+    ok &= expectFalse("toggle tap outside the shoulder candidate cannot retrieve",
+        canRetrieveShoulderStashedWeapon(tapShoulderRetrieval));
     ok &= expectEqual("right-only shoulder reach selects right hand",
         selectShoulderRetrievalHand(
             ShoulderRetrievalCandidate{ .eligible = true, .confidence = 0.5f },

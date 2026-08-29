@@ -2059,6 +2059,7 @@ namespace rock
         _equippedWeaponShoulderSheath = {};
         input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
         _equippedWeaponSheathRetrievalStates = {};
+        _equippedWeaponStashTapIntentLeases = {};
         _equippedWeaponShoulderInputGuards = {};
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
@@ -2827,6 +2828,8 @@ namespace rock
                     const std::size_t stashHandIndex = stashHandIsLeft ? 1u : 0u;
                     auto& stashState = _equippedWeaponStashStates[stashHandIndex];
                     auto& commitLease = _equippedWeaponStashCommitLeases[stashHandIndex];
+                    auto& tapIntentLease =
+                        _equippedWeaponStashTapIntentLeases[stashHandIndex];
                     const bool gripPhysicallyHeld =
                         input_remap_runtime::isRawButtonPhysicallyHeld(
                             stashHandIsLeft,
@@ -2838,11 +2841,13 @@ namespace rock
                                 gripPhysicallyHeld)) {
                         shoulder_stash::resetRuntime(stashState);
                         commitLease = {};
+                        tapIntentLease = {};
                         continue;
                     }
                     if (!stashCarryEligible || equipped_weapon_drop_policy::isLeft(stashCarryHand) != stashHandIsLeft) {
                         shoulder_stash::resetRuntime(stashState);
                         commitLease = {};
+                        tapIntentLease = {};
                         continue;
                     }
 
@@ -2862,6 +2867,77 @@ namespace rock
                     const shoulder_stash::RuntimeState stashStateBeforeEvaluation = stashState;
                     const auto stashDecision = shoulder_stash::evaluate(stashInput, stashState);
                     equippedWeaponStashCommitDecisions[stashHandIndex] = stashDecision;
+                    const auto& physicalGripState = stashHandIsLeft ?
+                        leftPhysicalGripState : rightPhysicalGripState;
+                    const bool toggleTapEdge =
+                        _equippedWeaponHandlingSettings.toggleGrabEnabled &&
+                        (physicalGripState.pressed ||
+                            physicalGripState.released);
+                    const bool toggleTapIntent =
+                        equipped_weapon_drop_policy::
+                            hasToggleShoulderTapIntent(
+                                _equippedWeaponHandlingSettings.
+                                    toggleGrabEnabled,
+                                stashDecision.candidate,
+                                physicalGripState.pressed,
+                                physicalGripState.released);
+                    if (toggleTapEdge) {
+                        ROCK_LOG_DEBUG(
+                            Weapon,
+                            "Equipped shoulder tap input hand={} candidate={} confirmed={} zone={} source={} held={} pressed={} released={} speed={:.1f}",
+                            stashHandIsLeft ? "left" : "right",
+                            stashDecision.candidate ? "yes" : "no",
+                            stashDecision.confirmedForCommit ? "yes" : "no",
+                            body_zone::bodyZoneName(stashDecision.zone),
+                            shoulder_stash::evidenceSourceName(
+                                stashDecision.source),
+                            gripPhysicallyHeld ? "yes" : "no",
+                            physicalGripState.pressed ? "yes" : "no",
+                            physicalGripState.released ? "yes" : "no",
+                            stashDecision.speedGameUnitsPerSecond);
+                    }
+                    if (toggleTapIntent) {
+                        tapIntentLease =
+                            EquippedWeaponStashTapIntentLease{
+                                .active = true,
+                                .ownershipKey =
+                                    currentEquippedWeaponOwnershipKey,
+                                .remainingFrames =
+                                    equipped_weapon_manual_ownership_policy::
+                                        kPrimaryReleaseConfirmFrames,
+                                .zone = stashDecision.zone,
+                                .source = stashDecision.source,
+                                .shoulderBodyId =
+                                    stashDecision.shoulderBodyId,
+                            };
+                    }
+                    const bool tapIntentLeaseMatches =
+                        tapIntentLease.active &&
+                        _equippedWeaponHandlingSettings.toggleGrabEnabled &&
+                        tapIntentLease.ownershipKey != 0 &&
+                        tapIntentLease.ownershipKey ==
+                            currentEquippedWeaponOwnershipKey &&
+                        tapIntentLease.remainingFrames > 0 &&
+                        stashDecision.candidate &&
+                        shoulder_stash::shoulderStashDwellIdentityMatches(
+                            tapIntentLease.zone,
+                            tapIntentLease.source,
+                            tapIntentLease.shoulderBodyId,
+                            stashDecision.zone,
+                            stashDecision.source,
+                            stashDecision.shoulderBodyId);
+                    if (tapIntentLease.active) {
+                        if (tapIntentLeaseMatches) {
+                            equippedWeaponStashCommitDecisions[
+                                stashHandIndex].confirmedForCommit = true;
+                            --tapIntentLease.remainingFrames;
+                            if (tapIntentLease.remainingFrames == 0) {
+                                tapIntentLease = {};
+                            }
+                        } else {
+                            tapIntentLease = {};
+                        }
+                    }
 
                     if (gripPhysicallyHeld) {
                         commitLease = {};
@@ -5086,6 +5162,7 @@ namespace rock
         shoulder_stash::resetRuntime(
             _equippedWeaponStashStates[stashHandIndex]);
         _equippedWeaponStashCommitLeases[stashHandIndex] = {};
+        _equippedWeaponStashTapIntentLeases[stashHandIndex] = {};
         return sheathAccepted;
     }
 
@@ -5212,32 +5289,58 @@ namespace rock
             decisions[handIndex] = decision;
             const bool sameShoulderZone =
                 decision.zone == _equippedWeaponShoulderSheath.zone;
-            const bool gripPhysicallyHeld =
+            auto physicalGripState = peekGrabButtonState(
+                isLeft,
+                input_remap_policy::kGrabButtonId);
+            physicalGripState.held =
                 input_remap_runtime::isRawButtonPhysicallyHeld(
                     isLeft,
                     input_remap_policy::kGrabButtonId);
+            const equipped_weapon_drop_policy::ShoulderRetrievalInput
+                retrievalInput{
+                    .stashActive = true,
+                    .handlingEnabled = handlingEnabled,
+                    .identityMatches = identityMatches,
+                    .nativePresentationRetrievable =
+                        nativePresentationRetrievable,
+                    .menuInputActive = menuInputActive,
+                    .handDisabled = handInput.disabled,
+                    .handEmpty = handEmpty,
+                    .handCanOwnFiringGrip = handCanOwnFiringGrip,
+                    .toggleGrabEnabled =
+                        _equippedWeaponHandlingSettings.toggleGrabEnabled,
+                    .detectorCandidate = decision.candidate,
+                    .detectorConfirmed =
+                        decision.confirmedForCommit,
+                    .sameShoulderZone = sameShoulderZone,
+                    .gripPhysicallyHeld = physicalGripState.held,
+                    .gripPhysicallyPressed = physicalGripState.pressed,
+                    .gripPhysicallyReleased = physicalGripState.released,
+                };
+            const bool retrievalEligible =
+                equipped_weapon_drop_policy::
+                    canRetrieveShoulderStashedWeapon(retrievalInput);
+            if (_equippedWeaponHandlingSettings.toggleGrabEnabled &&
+                (physicalGripState.pressed ||
+                    physicalGripState.released)) {
+                ROCK_LOG_DEBUG(
+                    Weapon,
+                    "Equipped shoulder retrieval tap hand={} candidate={} confirmed={} sameZone={} held={} pressed={} released={} eligible={} zone={} source={} speed={:.1f}",
+                    isLeft ? "left" : "right",
+                    decision.candidate ? "yes" : "no",
+                    decision.confirmedForCommit ? "yes" : "no",
+                    sameShoulderZone ? "yes" : "no",
+                    physicalGripState.held ? "yes" : "no",
+                    physicalGripState.pressed ? "yes" : "no",
+                    physicalGripState.released ? "yes" : "no",
+                    retrievalEligible ? "yes" : "no",
+                    body_zone::bodyZoneName(decision.zone),
+                    shoulder_stash::evidenceSourceName(decision.source),
+                    decision.speedGameUnitsPerSecond);
+            }
             candidates[handIndex] =
                 equipped_weapon_drop_policy::ShoulderRetrievalCandidate{
-                    .eligible = equipped_weapon_drop_policy::
-                        canRetrieveShoulderStashedWeapon(
-                            equipped_weapon_drop_policy::
-                                ShoulderRetrievalInput{
-                                    .stashActive = true,
-                                    .handlingEnabled = handlingEnabled,
-                                    .identityMatches = identityMatches,
-                                    .nativePresentationRetrievable =
-                                        nativePresentationRetrievable,
-                                    .menuInputActive = menuInputActive,
-                                    .handDisabled = handInput.disabled,
-                                    .handEmpty = handEmpty,
-                                    .handCanOwnFiringGrip =
-                                        handCanOwnFiringGrip,
-                                    .detectorConfirmed =
-                                        decision.confirmedForCommit,
-                                    .sameShoulderZone = sameShoulderZone,
-                                    .gripPhysicallyHeld =
-                                        gripPhysicallyHeld,
-                                }),
+                    .eligible = retrievalEligible,
                     .confidence = decision.confidence,
                 };
 
@@ -5997,6 +6100,7 @@ namespace rock
             _equippedWeaponShoulderSheath = {};
             input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
             _equippedWeaponSheathRetrievalStates = {};
+            _equippedWeaponStashTapIntentLeases = {};
             _equippedWeaponShoulderInputGuards = {};
             _equippedWeaponSheathCommittedThisFrame = {};
             _equippedWeaponUnsheathCommittedThisFrame = {};
@@ -6145,6 +6249,7 @@ namespace rock
         _forceGrabCommittedThisFrame = {};
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
+        _equippedWeaponStashTapIntentLeases = {};
         _equippedWeaponShoulderInputGuards = {};
         _bareFistGuardState = {};
         _bodyBoneColliderCreateRetryFrames = 0;
