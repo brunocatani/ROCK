@@ -22,6 +22,7 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/native/NativeCharacterProxySafety.h"
 #include "physics-interaction/native/NativeCollisionFilterSafety.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeRagdollSafety.h"
@@ -843,6 +844,12 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     if (!rock::native_ragdoll_safety::install()) {
         logger::warn(
             "ROCK: Native ragdoll teardown safety is unavailable; native ragdoll updates remain unchanged.");
+    }
+
+    logger::info("ROCK: Install native character-proxy teardown safety...");
+    if (!rock::native_character_proxy_safety::install()) {
+        logger::warn(
+            "ROCK: Native character-proxy teardown safety is unavailable; native character-proxy world lookups remain unchanged.");
     }
 
     logger::info("ROCK: Install native collision-filter teardown safety...");
