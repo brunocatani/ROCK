@@ -14,7 +14,6 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
-#include "physics-interaction/weapon/immersive/ImmersiveWeaponPoseHandoff.h"
 
 #include <array>
 #include <cmath>
@@ -1771,25 +1770,62 @@ int main()
             TestVector3{ 18.0f, -7.0f, 23.0f };
         renderedTwoHandWeaponWorld.scale = 1.25f;
 
-        TestTransform leftHandAtDetach =
+        TestTransform authoredLeftHandWeaponLocal =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        leftHandAtDetach.rotate = makeAxisAngleRotation(
+        authoredLeftHandWeaponLocal.rotate = makeAxisAngleRotation(
             rock::weaponSolverNormalize(
-                TestVector3{ -0.23f, 0.81f, 0.38f }),
-            -29.0f);
-        leftHandAtDetach.translate =
-            TestVector3{ -4.0f, 31.0f, 12.0f };
-        leftHandAtDetach.scale = 1.25f;
+                TestVector3{ 0.0f, 1.0f, 0.0f }),
+            90.0f);
+        authoredLeftHandWeaponLocal.translate =
+            TestVector3{ -4.0f, 22.0f, 1.5f };
+        const TestTransform authoredLeftHandTargetAtDetach =
+            rock::transform_math::composeTransforms(
+                renderedTwoHandWeaponWorld,
+                authoredLeftHandWeaponLocal);
 
-        const TestTransform rebasedLeftHandWeaponLocal =
-            rock::immersive_weapon_pose_handoff::
-                captureHandWeaponLocal(
+        TestTransform rawLeftDriverAtDetach =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        rawLeftDriverAtDetach.translate =
+            TestVector3{ -11.0f, 26.0f, 9.0f };
+        rawLeftDriverAtDetach.scale = 1.25f;
+
+        TestTransform driverToAuthoredTargetLocal{};
+        TestTransform driverToWeaponLocal{};
+        ok &= expectTrue(
+            "integrated right detach captures raw-driver to authored-target baseline",
+            rock::weapon_support_acquisition_math::
+                tryCaptureSupportInputBaseline(
+                    rawLeftDriverAtDetach,
+                    authoredLeftHandTargetAtDetach,
+                    driverToAuthoredTargetLocal));
+        ok &= expectTrue(
+            "integrated right detach captures raw-driver to weapon baseline",
+            rock::weapon_support_acquisition_math::
+                tryCaptureSupportInputBaseline(
+                    rawLeftDriverAtDetach,
                     renderedTwoHandWeaponWorld,
-                    leftHandAtDetach);
-        const TestTransform firstPartCarryWeaponWorld =
-            rock::immersive_weapon_pose_handoff::resolveWeaponWorld(
-                leftHandAtDetach,
-                rebasedLeftHandWeaponLocal);
+                    driverToWeaponLocal));
+
+        TestTransform firstAuthoredLeftHandTarget{};
+        TestTransform firstPartCarryWeaponWorld{};
+        ok &= expectTrue(
+            "unchanged raw driver resolves the authored support target",
+            rock::weapon_support_acquisition_math::
+                tryResolveSupportInputTarget(
+                    rawLeftDriverAtDetach,
+                    driverToAuthoredTargetLocal,
+                    firstAuthoredLeftHandTarget));
+        ok &= expectTrue(
+            "unchanged raw driver resolves the rendered weapon pose",
+            rock::weapon_support_acquisition_math::
+                tryResolveSupportInputTarget(
+                    rawLeftDriverAtDetach,
+                    driverToWeaponLocal,
+                    firstPartCarryWeaponWorld));
+        ok &= expectTransformNear(
+            "integrated right detach preserves the authored support target",
+            firstAuthoredLeftHandTarget,
+            authoredLeftHandTargetAtDetach);
         ok &= expectTransformNear(
             "integrated right detach preserves the rendered two-hand pose",
             firstPartCarryWeaponWorld,
@@ -1806,19 +1842,48 @@ int main()
         const TestTransform movedLeftHand =
             rock::transform_math::composeTransforms(
                 postDetachHandDelta,
-                leftHandAtDetach);
-        const TestTransform movedPartCarryWeaponWorld =
-            rock::immersive_weapon_pose_handoff::resolveWeaponWorld(
-                movedLeftHand,
-                rebasedLeftHandWeaponLocal);
+                rawLeftDriverAtDetach);
+        TestTransform movedAuthoredLeftHandTarget{};
+        TestTransform movedPartCarryWeaponWorld{};
+        ok &= expectTrue(
+            "moved raw driver resolves the calibrated authored target",
+            rock::weapon_support_acquisition_math::
+                tryResolveSupportInputTarget(
+                    movedLeftHand,
+                    driverToAuthoredTargetLocal,
+                    movedAuthoredLeftHandTarget));
+        ok &= expectTrue(
+            "moved raw driver resolves the calibrated weapon",
+            rock::weapon_support_acquisition_math::
+                tryResolveSupportInputTarget(
+                    movedLeftHand,
+                    driverToWeaponLocal,
+                    movedPartCarryWeaponWorld));
+        const TestTransform expectedMovedAuthoredTarget =
+            rock::transform_math::composeTransforms(
+                postDetachHandDelta,
+                authoredLeftHandTargetAtDetach);
         const TestTransform expectedMovedWeaponWorld =
             rock::transform_math::composeTransforms(
                 postDetachHandDelta,
                 renderedTwoHandWeaponWorld);
         ok &= expectTransformNear(
+            "part carry retains the controller-to-authored-hand orientation offset",
+            movedAuthoredLeftHandTarget,
+            expectedMovedAuthoredTarget);
+        ok &= expectTransformNear(
             "part carry applies only post-detach left-hand rigid motion",
             movedPartCarryWeaponWorld,
             expectedMovedWeaponWorld);
+        const TestTransform movedAuthoredHandWeaponLocal =
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(
+                    movedPartCarryWeaponWorld),
+                movedAuthoredLeftHandTarget);
+        ok &= expectTransformNear(
+            "part carry never rewrites the authored hand-in-weapon relation",
+            movedAuthoredHandWeaponLocal,
+            authoredLeftHandWeaponLocal);
     }
 
     using namespace rock::contact_pipeline_policy;

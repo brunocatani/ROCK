@@ -65,8 +65,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'transitionToPartCarry\(\)[\s\S]*blockFrikPrimaryWeaponPose\(\)[\s\S]*beginHandVisualReturn\(_firingHandIsLeft,\s*"primary-detach-part-carry"\)[\s\S]*_state\s*=\s*TwoHandedState::PartCarry' `
     'Primary detach must acquire the required blocker before returning only the departing firing hand while PartCarry takes authority immediately.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'blockFrikPrimaryWeaponPose\(\)[\s\S]*beginHandVisualReturn\(_firingHandIsLeft,\s*"primary-detach-part-carry"\)[\s\S]*lockPartGripToWeaponRoot\(carryHandIsLeft\)[\s\S]*carryGrip\.handWeaponLocal\s*=\s*rebasedCarryHandWeaponLocal[\s\S]*_state\s*=\s*TwoHandedState::PartCarry[\s\S]*recordFiringGripDetachedHaptic\(\)' `
-    'Right detach must commit its zero-delta carry relation after blocker acquisition and before PartCarry and haptic publication.'
+    'blockFrikPrimaryWeaponPose\(\)[\s\S]*beginHandVisualReturn\(_firingHandIsLeft,\s*"primary-detach-part-carry"\)[\s\S]*lockPartGripToWeaponRoot\(carryHandIsLeft\)[\s\S]*carryGrip\.supportInputBaseline\s*=\s*partCarryBaseline[\s\S]*_state\s*=\s*TwoHandedState::PartCarry[\s\S]*recordFiringGripDetachedHaptic\(\)' `
+    'Right detach must commit its raw-driver carry baseline after blocker acquisition and before PartCarry and haptic publication.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'releasePartGrip\(supportHandIsLeft,\s*"support-grip-released",\s*true\)[\s\S]*releasePartGrip\(firingHandIsLeft,\s*"free-hand-grip-released",\s*true\)' `
     'Player-driven PartCarry releases must start a per-hand return in both physical directions.'

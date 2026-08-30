@@ -976,14 +976,19 @@ namespace rock
         {
             None = 0,
             Dynamic = 1,
+            PartCarry = 2,
         };
 
         struct SupportInputBaselineState
         {
             RE::NiTransform inputToGripTargetLocal{};
+            // PartCarry only: direct raw-driver-to-weapon relation avoids
+            // inverting the authored wrist frame during the one-anchor solve.
+            RE::NiTransform inputToWeaponLocal{};
             RE::NiTransform primaryInputToGripTargetLocal{};
             RE::NiTransform weaponWorldAtCapture{};
             std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
             std::uint64_t gripSequence{ 0 };
             bool supportHandIsLeft{ false };
             SupportInputBaselineKind kind{ SupportInputBaselineKind::None };
@@ -995,7 +1000,8 @@ namespace rock
              * from the captured tandem-delta target onto the true physical
              * support hand, closing the controller-to-seat gap frozen in at
              * capture. Stays 0 on the attach frame so the first publication
-             * cannot move the weapon.
+             * cannot move the weapon. PartCarry intentionally leaves this at
+             * zero for the entire detached carry.
              */
             float alignmentBlend{ 0.0f };
         };
@@ -1177,11 +1183,9 @@ namespace rock
 
         bool transitionToPartCarry();
 
-        bool tryBuildIntegratedRightDetachPoseHandoff(
+        bool tryBuildIntegratedRightDetachPartCarryBaseline(
             bool carryHandIsLeft,
-            RE::NiTransform& outCarryHandWeaponLocal,
-            float& outTranslationDeltaGameUnits,
-            float& outRotationDeltaDegrees,
+            SupportInputBaselineState& outBaseline,
             const char*& outFailureReason) const;
 
         bool transitionToPrimaryOnly(
@@ -1417,6 +1421,9 @@ namespace rock
         [[nodiscard]] bool isDynamicSupportBaselineActive(
             bool supportHandIsLeft,
             const WeaponPartGrip& supportGrip) const;
+        [[nodiscard]] bool isPartCarryInputBaselineActive(
+            bool pivotHandIsLeft,
+            const WeaponPartGrip& pivotGrip) const;
         [[nodiscard]] bool isSupportInputBaselineActive(
             bool supportHandIsLeft,
             const WeaponPartGrip& supportGrip,
