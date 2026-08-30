@@ -75,20 +75,17 @@ namespace rock::loose_weapon_grip_zone
      * weapon in the tested hand: the primary hand receives the selected
      * canonical pose, the other hand receives ROCK's mirrored firing hold, both
      * expressed as the tested hand's live root-flattened frame plus the hand
-     * transform in weapon-root-local space. outAuthoredPositionOnly reports
-     * when the relation came from ROCK's authored cache: weapon placement must
-     * then consume only its derived firing-grip point and preserve the caller's
-     * weapon rotation. Explicit hFRIK offsets retain full-rigid authority.
-     * Used by pull-catch/force-grab commit; the grip-zone runtimes above share
-     * the same projection. Frame-thread only.
+     * transform in weapon-root-local space (weapon world = hand world o
+     * inverse(hold)). Used by the pull-catch/force-grab commit to seat a far
+     * grabbed weapon directly on its firing grip; the grip-zone runtimes
+     * above share the same projection. Frame-thread only.
      */
     bool tryResolveLooseWeaponFiringHandHold(
         bool isLeft,
         RE::TESObjectREFR* weaponRef,
         RE::NiTransform& outHandWorld,
         RE::NiTransform& outHandWeaponLocal,
-        const char** outReason,
-        bool* outAuthoredPositionOnly = nullptr);
+        const char** outReason);
 
     // Same resolver for a detached world model during loose-to-equipped
     // visual handoff. No reference lifetime is retained.

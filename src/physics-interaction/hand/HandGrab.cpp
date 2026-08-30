@@ -2,7 +2,6 @@
 #include "physics-interaction/hand/HandGrabInternal.h"
 
 #include "physics-interaction/body/BodyBoneColliderSet.h"
-#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 
@@ -1045,49 +1044,24 @@ namespace rock
                 /*
                  * Both firing hands use the same weapon-relative authority resolver.
                  * It enforces custom hFRIK > learned authored > embedded hFRIK and
-                 * performs no filesystem work on this grab path. Explicit hFRIK
-                 * offsets retain their full-rigid contract. ROCK-authored cache data
-                 * follows equipped carry instead: derive only its firing-grip point,
-                 * preserve the pull/arrival weapon rotation, and translate that point
-                 * onto the physical palm.
+                 * performs no filesystem work on this grab path. The complete
+                 * hand-in-weapon relation remains the loose weapon's rotation and
+                 * translation authority; position-only normalization begins only
+                 * after the equipped native Weapon frame exists in the visual bridge.
                  */
                 RE::NiTransform handWorld{};
                 RE::NiTransform handWeaponLocal{};
-                bool authoredPositionOnly = false;
                 const char* holdReason = "canonicalHoldUnavailable";
                 const bool haveDesiredRoot = loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold(
                     isLeft,
                     selection.refr,
                     handWorld,
                     handWeaponLocal,
-                    &holdReason,
-                    &authoredPositionOnly);
+                    &holdReason);
                 if (haveDesiredRoot) {
-                    if (authoredPositionOnly) {
-                        const RE::NiPoint3 authoredGripWeaponLocal =
-                            computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                                handWeaponLocal,
-                                isLeft);
-                        const RE::NiPoint3 physicalPalmWorld =
-                            computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                                handWorld,
-                                isLeft);
-                        frame.desiredRootWorld = authored_weapon_grip_capture_policy::
-                            resolveAuthoredPrimaryWeaponWorldPositionOnly(
-                                rootNode->world,
-                                authoredGripWeaponLocal,
-                                physicalPalmWorld,
-                                [](const RE::NiTransform& transform,
-                                    const RE::NiPoint3& point) {
-                                    return transform_math::localPointToWorld(
-                                        transform,
-                                        point);
-                                });
-                    } else {
-                        frame.desiredRootWorld = multiplyTransforms(
-                            handWorld,
-                            transform_math::invertTransform(handWeaponLocal));
-                    }
+                    frame.desiredRootWorld = multiplyTransforms(
+                        handWorld,
+                        transform_math::invertTransform(handWeaponLocal));
                     frame.sourceVisible = false;
                     frame.reason = holdReason;
                 } else if (!selection.forcedArrival) {
