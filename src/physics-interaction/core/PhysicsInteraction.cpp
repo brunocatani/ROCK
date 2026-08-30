@@ -7710,13 +7710,10 @@ namespace rock
     {
         constexpr float kLooseGrenadeQuickDrawMaxDistanceGame = 96.0f;
 
-        // The MenuControls gesture owner publishes only the held action. Drain
-        // raw edges so a prior B press/release can never replay into a future
-        // consumer, but never use the press edge to draw a throwable.
-        (void)input_remap_runtime::consumeRawButtonState(
+        const auto buttonState = input_remap_runtime::consumeRawButtonState(
             false,
             input_remap_policy::kOpenVrGrenadeQuickDrawButtonId);
-        if (!input_remap_runtime::consumeGrenadeQuickDrawHoldRequest()) {
+        if (!buttonState.available || !buttonState.pressed) {
             return;
         }
 

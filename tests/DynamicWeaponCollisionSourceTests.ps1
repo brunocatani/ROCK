@@ -152,21 +152,6 @@ Require-Pattern $compoundBuilder `
 Require-Pattern $compoundBuilder `
     'RUNTIME_VR_1_2_72[\s\S]*kFunc_DynamicCompoundShape_Ctor[\s\S]*kFunc_DynamicCompoundShape_UpdateInstances[\s\S]*native API validation' `
     'The new FO4VR RVAs must fail closed behind exact executable identity and live entry-byte validation.'
-Require-Pattern $weaponCollisionHeader `
-    'GeneratedHullSource[\s\S]*collisionSoundMaterialId' `
-    'Generated weapon sources must retain the native collision-sound material through staged body creation.'
-Require-Pattern $weaponCollisionSource `
-    'findRegisteredCollisionMaterial\([\s\S]*GetFormArray<RE::BGSMaterialType>[\s\S]*material->materialID[\s\S]*collisionSoundMaterialFromNode\([\s\S]*IsbhkNPCollisionObject\(\)[\s\S]*GetShape\(\)[\s\S]*shape->userData' `
-    'Weapon collision audio must resolve the authored shape tag through the loaded BGSMaterialType catalog.'
-Require-Pattern $weaponCollisionSource `
-    'equippedWeaponWorldModelCollisionSoundMaterial\([\s\S]*GetModel\(\)[\s\S]*loadGeometryInspectionOmodModelTemplate[\s\S]*assignCollisionSoundMaterials\(packageDriveRoot, outSources\)' `
-    'Unresolved assembled parts must use the equipped weapon world collision model rather than a hard-coded material.'
-Require-Pattern $weaponCollisionSource `
-    'tagCollisionSoundMaterial[\s\S]*shape->userData\s*=\s*static_cast<std::uintptr_t>[\s\S]*instance\.body\.create\(' `
-    'Every generated layer-44 shape must publish its authored material before native body insertion.'
-Require-Pattern $runtimeSource `
-    'taggedCollisionSoundChildren[\s\S]*childShape->userData[\s\S]*pendingShape->userData\s*=\s*static_cast<std::uintptr_t>[\s\S]*_body\.create\(' `
-    'The dynamic compound must retain per-leaf tags and publish a top-level tag only for a uniform material set.'
 Require-Pattern $weaponCollisionSource `
     'resolveCompoundChildPose\([\s\S]*tryResolveDescendantLocalTransform\([\s\S]*generatedSourceLocalCenterGame[\s\S]*shapeInWeapon\.scale\s*=\s*1\.0f' `
     'Live compound poses must use the current source hierarchy and baked-scale convention shared by keyframed parts.'

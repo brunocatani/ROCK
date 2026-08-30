@@ -27,19 +27,6 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kHknpWorld_ModifierManager = 0x150;
 
-    /*
-     * FO4VR 1.2.72 collision-query lifetime state. Raw disassembly verified
-     * 2026-08-29: hknpHybridBroadPhase::castShape loads the dispatcher from
-     * world+0x200; hknpWorld::~hknpWorld frees and then nulls that field while
-     * the broadphase can still be present at +0x178. The destructor installs
-     * the vtable at module+0x2DFC540 before beginning teardown.
-     */
-    constexpr std::uintptr_t kHknpWorld_BodyArrayPtr = 0x20;
-    constexpr std::uintptr_t kHknpWorld_BroadPhase = 0x178;
-    constexpr std::uintptr_t kHknpWorld_CollisionQueryDispatcher = 0x200;
-    constexpr std::uintptr_t kHknpWorld_InternalQueryLock = 0x690;
-    constexpr std::uintptr_t kVtable_HknpWorldDestroying = 0x2DFC540;
-
     constexpr std::uintptr_t kModifierMgr_FilterPtr = 0x5E8;
 
     constexpr std::uintptr_t kFilter_CollisionMatrix = 0x1A0;
@@ -219,10 +206,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_World_EnableCollision = 0x1DF9940;
 
     constexpr std::uintptr_t kFunc_World_PickObject = 0x1DF8D60;
-
-    constexpr std::uintptr_t kFunc_HknpWorld_CastShape = 0x15A6C00;
-
-    constexpr std::uintptr_t kFunc_HknpCollisionQueryDispatcherBase_CastShape = 0x15FFC30;
 
     constexpr std::uintptr_t kFunc_World_AddStepListener = 0x1DFA7B0;
 

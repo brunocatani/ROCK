@@ -2,7 +2,6 @@
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
-#include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 
 #include <cstdio>
 
@@ -11,7 +10,6 @@ namespace
     namespace manual = rock::manual_scope_input_policy;
     namespace nativeVats = rock::native_vats_input_suppression_policy;
     namespace pipboyGesture = rock::pipboy_pause_gesture_policy;
-    namespace vatsGrenade = rock::vats_grenade_gesture_policy;
 
     bool expectTrue(const char* label, bool value)
     {
@@ -52,17 +50,6 @@ namespace
         std::printf("%s expected state %u, got %u\n", label, static_cast<unsigned>(expected), static_cast<unsigned>(actual));
         return false;
     }
-
-    bool expectVatsGrenadeState(const char* label,
-        rock::vats_grenade_gesture_policy::State actual,
-        rock::vats_grenade_gesture_policy::State expected)
-    {
-        if (actual == expected) {
-            return true;
-        }
-        std::printf("%s expected state %u, got %u\n", label, static_cast<unsigned>(expected), static_cast<unsigned>(actual));
-        return false;
-    }
 }
 
 int main()
@@ -76,121 +63,7 @@ int main()
     ok &= expectTrue("fixed grab button is OpenVR grip", kGrabButtonId == 2);
     ok &= expectTrue("fixed grab button id is accepted", isAllowedGrabButtonId(kGrabButtonId));
     ok &= expectFalse("SteamVR trigger button id is reserved and rejected for grab", isAllowedGrabButtonId(kOpenVrSteamVrTriggerButtonId));
-    ok &= expectTrue("VATS and grenade hold share OpenVR button 1", buttonMask(kOpenVrGrenadeQuickDrawButtonId) == (std::uint64_t{ 1 } << 1));
-
-    vatsGrenade::RuntimeState vatsGrenadeState{};
-    auto vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .pressed = true,
-            .held = true,
-            .heldSeconds = 0.0f,
-        });
-    ok &= expectVatsGrenadeState(
-        "VATS-button press starts pending gesture",
-        vatsGrenadeDecision.state,
-        vatsGrenade::State::Pending);
-    ok &= expectFalse(
-        "VATS-button press does not immediately draw grenade",
-        vatsGrenadeDecision.requestGrenade);
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .held = true,
-            .heldSeconds = 0.24f,
-        });
-    ok &= expectFalse(
-        "sub-threshold VATS hold remains pending",
-        vatsGrenadeDecision.requestGrenade);
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .held = true,
-            .heldSeconds = vatsGrenade::kDefaultHoldSeconds,
-        });
-    ok &= expectTrue(
-        "VATS hold threshold draws grenade once",
-        vatsGrenadeDecision.requestGrenade);
-    ok &= expectVatsGrenadeState(
-        "VATS hold threshold commits gesture",
-        vatsGrenadeDecision.state,
-        vatsGrenade::State::HoldCommitted);
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .held = true,
-            .heldSeconds = 0.50f,
-        });
-    ok &= expectFalse(
-        "committed VATS hold does not repeat grenade request",
-        vatsGrenadeDecision.requestGrenade);
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .released = true,
-            .heldSeconds = 0.55f,
-        });
-    ok &= expectVatsGrenadeState(
-        "committed VATS hold rearms on release",
-        vatsGrenadeDecision.state,
-        vatsGrenade::State::Idle);
-
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .pressed = true,
-            .held = true,
-        });
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .released = true,
-            .heldSeconds = 0.10f,
-        });
-    ok &= expectFalse(
-        "short VATS tap never draws grenade",
-        vatsGrenadeDecision.requestGrenade);
-    ok &= expectVatsGrenadeState(
-        "short VATS tap rearms on release",
-        vatsGrenadeDecision.state,
-        vatsGrenade::State::Idle);
-
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .pressed = true,
-            .held = true,
-        });
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .released = true,
-            .heldSeconds = 0.30f,
-        });
-    ok &= expectTrue(
-        "release after threshold preserves one grenade request",
-        vatsGrenadeDecision.requestGrenade);
-
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{
-            .held = true,
-            .heldSeconds = 1.0f,
-        });
-    ok &= expectFalse(
-        "untracked VATS hold cannot draw grenade",
-        vatsGrenadeDecision.requestGrenade);
-    ok &= expectVatsGrenadeState(
-        "untracked VATS hold blocks until release",
-        vatsGrenadeDecision.state,
-        vatsGrenade::State::BlockedUntilRelease);
-    vatsGrenadeDecision = vatsGrenade::update(
-        vatsGrenadeState,
-        vatsGrenade::Input{ .released = true });
-    ok &= expectVatsGrenadeState(
-        "blocked VATS gesture rearms on release",
-        vatsGrenadeDecision.state,
-        vatsGrenade::State::Idle);
+    ok &= expectTrue("grenade quick draw owns OpenVR button 1", buttonMask(kOpenVrGrenadeQuickDrawButtonId) == (std::uint64_t{ 1 } << 1));
 
     settings.grabButtonId = kOpenVrSteamVrTriggerButtonId;
     const auto triggerGrabDecision = evaluate(Input{
@@ -507,73 +380,6 @@ int main()
     ok &= expectFalse(
         "V.A.N.S. release rearms its hold latch",
         nativeVatsState.suppressVansWhileDown);
-
-    nativeVats::reset(nativeVatsState);
-    nativeVatsDecision = nativeVats::update(
-        nativeVatsState,
-        nativeVats::Input{
-            .buttonDown = true,
-            .justPressed = true,
-            .heldSeconds = 0.0f,
-            .suppressVans = true,
-            .reserveHoldGesture = true,
-        });
-    ok &= expectFalse(
-        "ROCK grenade gesture consumes native V.A.N.S. down phase",
-        nativeVatsDecision.forwardNative);
-    nativeVatsDecision = nativeVats::update(
-        nativeVatsState,
-        nativeVats::Input{
-            .buttonDown = true,
-            .heldSeconds = vatsGrenade::kDefaultHoldSeconds,
-        });
-    nativeVatsDecision = nativeVats::update(
-        nativeVatsState,
-        nativeVats::Input{
-            .released = true,
-            .heldSeconds = 0.40f,
-        });
-    ok &= expectFalse(
-        "ROCK grenade hold consumes eventual VATS release",
-        nativeVatsDecision.forwardNative);
-    ok &= expectTrue(
-        "ROCK grenade hold reports duration-owned release suppression",
-        nativeVatsDecision.holdReleaseSuppressed);
-
-    nativeVats::reset(nativeVatsState);
-    (void)nativeVats::update(
-        nativeVatsState,
-        nativeVats::Input{
-            .buttonDown = true,
-            .justPressed = true,
-            .heldSeconds = 0.0f,
-            .suppressVans = true,
-            .reserveHoldGesture = true,
-        });
-    nativeVatsDecision = nativeVats::update(
-        nativeVatsState,
-        nativeVats::Input{
-            .released = true,
-            .heldSeconds = 0.10f,
-        });
-    ok &= expectTrue(
-        "ROCK short tap preserves release-to-VATS",
-        nativeVatsDecision.forwardNative);
-    ok &= expectFalse(
-        "ROCK short tap is not classified as held release",
-        nativeVatsDecision.holdReleaseSuppressed);
-
-    nativeVats::reset(nativeVatsState);
-    nativeVatsDecision = nativeVats::update(
-        nativeVatsState,
-        nativeVats::Input{
-            .released = true,
-            .heldSeconds = 0.40f,
-            .reserveHoldGesture = true,
-        });
-    ok &= expectFalse(
-        "long release suppresses VATS even when down sample was hidden",
-        nativeVatsDecision.forwardNative);
 
     nativeVats::reset(nativeVatsState);
     nativeVatsDecision = nativeVats::update(

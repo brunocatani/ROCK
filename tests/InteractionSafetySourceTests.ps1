@@ -108,7 +108,7 @@ $allRuntimeCpp = (
 ) -join "`n"
 
 # Pip-Boy grenade selection must remain native. Quick draw resolves the exact
-# equipped stack from one threshold-qualified B hold, with no inventory cache.
+# equipped stack on one B-button edge, with no hook-owned queue or stale cache.
 Reject-Text $allRuntimeCpp `
     'installEquipHook|hookedEquipObject|PendingEquipRequest|s_pendingEquipRequest' `
     'The retired grenade equip interception and pending-request state must not return.'
@@ -163,14 +163,13 @@ Require-OrderedTokens $dropRequest @(
     'result.reason = "dropped-reference-pending";'
 ) 'A valid RemoveItem handle with a not-yet-resolved reference must remain an asynchronous pending transaction.'
 
-# One threshold-qualified physical right-B hold owns quick draw. Hand selection
-# is decided for both hands before inventory removal; right is preferred with
-# left fallback.
+# One fresh physical right-B edge owns quick draw. Hand selection is decided for
+# both hands before inventory removal; right is preferred with left fallback.
 $grenadeService = Get-BoundedText $physicsSource 'void PhysicsInteraction::serviceLooseGrenadeQuickDraw(' 'void PhysicsInteraction::servicePendingForceGrabCommits(' 'loose grenade quick-draw service'
 Require-OrderedTokens $grenadeService @(
     'consumeRawButtonState(',
     'input_remap_policy::kOpenVrGrenadeQuickDrawButtonId',
-    'consumeGrenadeQuickDrawHoldRequest()',
+    '!buttonState.pressed',
     'resolveEquippedGrenadeSelection(equippedSelection)',
     'rightBlockers = forceGrabHandBlockerMask',
     'leftBlockers = forceGrabHandBlockerMask',
@@ -179,9 +178,6 @@ Require-OrderedTokens $grenadeService @(
     'Cannot draw throwable - both hands are occupied.',
     'dropEquippedGrenadeSelectionToWorld'
 ) 'Loose throwable service must choose an available hand and reject blocked hands before inventory removal.'
-Reject-Text $grenadeService `
-    'buttonState\.pressed|\.pressed\s*\)' `
-    'Loose throwable quick draw must never commit from the initial B press edge.'
 Require-Text $grenadeService `
     'const bool isLeft\s*=\s*handSelection\.hand\s*==\s*force_grab_policy::HandChoice::Left;[\s\S]*?_pendingForceGrabCommits\[isLeft\s*\?\s*1u\s*:\s*0u\][\s\S]*?handInput\s*=\s*isLeft\s*\?\s*frame\.left\s*:\s*frame\.right' `
     'The selected throwable hand must drive both the commit slot and spawn anchor.'

@@ -82,10 +82,6 @@ namespace rock::input_remap_runtime
     // object and developer mode is enabled. See saved_grab_offset feature.
     bool consumePendingSavedGrabOffsetRequest(bool isLeft);
 
-    // Test-and-clear: true once after primary-wand B crosses Bethesda's
-    // V.A.N.S. hold threshold during eligible gameplay. Frame thread only.
-    bool consumeGrenadeQuickDrawHoldRequest();
-
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId);
     // Physical level only: bypasses menu edge rearming so equipped-weapon

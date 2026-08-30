@@ -144,9 +144,9 @@ namespace rock::input_remap_policy
 
     /*
      * OpenVR k_EButton_ApplicationMenu: physical right B on the supported
-     * controller layouts. A short release remains native VATS; crossing the
-     * verified V.A.N.S. hold threshold publishes ROCK grenade quick draw and
-     * consumes that gesture's eventual VATS release.
+     * controller layouts. ROCK owns this button for grenade quick draw. The
+     * native VATS/V.A.N.S. phases are suppressed separately at their verified
+     * game helper.
      */
     inline constexpr int kOpenVrGrenadeQuickDrawButtonId = 1;
 
