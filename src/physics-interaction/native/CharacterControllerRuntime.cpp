@@ -51,6 +51,30 @@ namespace rock::character_controller_runtime
             ControllerResolveStage::Complete
         };
 
+        enum class ControllerDispatchFailure : std::uint8_t
+        {
+            None,
+            UnsupportedRuntime,
+            UnknownVtable,
+            SlotMismatch,
+            PrefixMismatch,
+            ReadFault,
+        };
+
+        struct ControllerDispatchDiagnostic
+        {
+            ControllerDispatchFailure failure{
+                ControllerDispatchFailure::None
+            };
+            std::uintptr_t moduleBase{ 0 };
+            std::uintptr_t actualVtable{ 0 };
+            std::uintptr_t expectedVtable{ 0 };
+            std::uintptr_t actualFunction{ 0 };
+            std::uintptr_t expectedFunction{ 0 };
+        };
+
+        std::atomic<std::uint64_t> s_lastDispatchFailureSignature{ 0 };
+
         [[nodiscard]] const char* resolveStageName(
             const ControllerResolveStage stage) noexcept
         {
@@ -95,6 +119,54 @@ namespace rock::character_controller_runtime
             ROCK_LOG_WARN(PlayerController,
                 "FO4VR player-controller chain failed closed at deepest verified stage '{}'.",
                 resolveStageName(stage));
+        }
+
+        [[nodiscard]] const char* dispatchFailureName(
+            const ControllerDispatchFailure failure) noexcept
+        {
+            switch (failure) {
+            case ControllerDispatchFailure::None:
+                return "none";
+            case ControllerDispatchFailure::UnsupportedRuntime:
+                return "unsupportedRuntime";
+            case ControllerDispatchFailure::UnknownVtable:
+                return "unknownVtable";
+            case ControllerDispatchFailure::SlotMismatch:
+                return "slotMismatch";
+            case ControllerDispatchFailure::PrefixMismatch:
+                return "prefixMismatch";
+            case ControllerDispatchFailure::ReadFault:
+                return "readFault";
+            }
+            return "unknown";
+        }
+
+        void observeDispatchFailure(
+            const RE::bhkCharacterController* controller,
+            const ControllerDispatchDiagnostic& diagnostic) noexcept
+        {
+            std::uint64_t signature =
+                static_cast<std::uint64_t>(diagnostic.failure);
+            signature ^= diagnostic.actualVtable;
+            signature ^= diagnostic.actualFunction << 1;
+            if (signature == 0) {
+                signature = 1;
+            }
+            if (s_lastDispatchFailureSignature.exchange(
+                    signature,
+                    std::memory_order_acq_rel) == signature) {
+                return;
+            }
+            ROCK_LOG_WARN(PlayerController,
+                "Controller dispatch rejected: reason={} controller=0x{:X} moduleBase=0x{:X} vtable=0x{:X} expectedVtable=0x{:X} slot=0x{:X} function=0x{:X} expectedFunction=0x{:X}.",
+                dispatchFailureName(diagnostic.failure),
+                reinterpret_cast<std::uintptr_t>(controller),
+                diagnostic.moduleBase,
+                diagnostic.actualVtable,
+                diagnostic.expectedVtable,
+                kPenetrationVtableSlotOffset,
+                diagnostic.actualFunction,
+                diagnostic.expectedFunction);
         }
 
         [[nodiscard]] bool plausiblePointerWitness(
@@ -192,41 +264,70 @@ namespace rock::character_controller_runtime
 
         [[nodiscard]] const ControllerDispatchSpec* resolveDispatch(
             RE::bhkCharacterController* controller,
-            std::uintptr_t& outPenetrationFunction) noexcept
+            std::uintptr_t& outPenetrationFunction,
+            ControllerDispatchDiagnostic* outDiagnostic = nullptr) noexcept
         {
             outPenetrationFunction = 0;
+            ControllerDispatchDiagnostic diagnostic{};
             if (!controller || !REL::Module::IsVR() ||
                 REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+                diagnostic.failure =
+                    ControllerDispatchFailure::UnsupportedRuntime;
+                if (outDiagnostic) {
+                    *outDiagnostic = diagnostic;
+                }
                 return nullptr;
             }
 
             const auto moduleBase = REL::Module::get().base();
+            diagnostic.moduleBase = moduleBase;
             const ControllerDispatchSpec* matched = nullptr;
             __try {
                 const auto vtable = *reinterpret_cast<const std::uintptr_t*>(
                     controller);
+                diagnostic.actualVtable = vtable;
                 for (const auto& spec : kControllerDispatchSpecs) {
                     if (vtable != moduleBase + spec.vtableRva) {
                         continue;
                     }
+                    diagnostic.expectedVtable =
+                        moduleBase + spec.vtableRva;
                     const auto function =
                         *reinterpret_cast<const std::uintptr_t*>(
                             vtable + kPenetrationVtableSlotOffset);
-                    if (function != moduleBase +
-                            spec.penetrationFunctionRva ||
-                        std::memcmp(
+                    diagnostic.actualFunction = function;
+                    diagnostic.expectedFunction =
+                        moduleBase + spec.penetrationFunctionRva;
+                    if (function != diagnostic.expectedFunction) {
+                        diagnostic.failure =
+                            ControllerDispatchFailure::SlotMismatch;
+                        break;
+                    }
+                    if (std::memcmp(
                             reinterpret_cast<const void*>(function),
                             spec.penetrationPrefix.data(),
                             spec.penetrationPrefix.size()) != 0) {
-                        return nullptr;
+                        diagnostic.failure =
+                            ControllerDispatchFailure::PrefixMismatch;
+                        break;
                     }
                     matched = &spec;
                     outPenetrationFunction = function;
+                    diagnostic.failure = ControllerDispatchFailure::None;
                     break;
+                }
+                if (!matched &&
+                    diagnostic.failure == ControllerDispatchFailure::None) {
+                    diagnostic.failure =
+                        ControllerDispatchFailure::UnknownVtable;
                 }
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 matched = nullptr;
                 outPenetrationFunction = 0;
+                diagnostic.failure = ControllerDispatchFailure::ReadFault;
+            }
+            if (outDiagnostic) {
+                *outDiagnostic = diagnostic;
             }
             return matched;
         }
@@ -307,13 +408,17 @@ namespace rock::character_controller_runtime
             return false;
         }
         std::uintptr_t penetrationFunction = 0;
+        ControllerDispatchDiagnostic dispatchDiagnostic{};
         const auto* dispatch = resolveDispatch(
             controller,
-            penetrationFunction);
+            penetrationFunction,
+            &dispatchDiagnostic);
         if (!dispatch) {
+            observeDispatchFailure(controller, dispatchDiagnostic);
             observeResolveStage(ControllerResolveStage::Dispatch);
             return false;
         }
+        s_lastDispatchFailureSignature.store(0, std::memory_order_release);
 
         bool read = false;
         __try {
