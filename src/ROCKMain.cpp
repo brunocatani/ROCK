@@ -23,6 +23,7 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -835,6 +836,12 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     if (!rock::native_shape_cast_safety::install()) {
         logger::warn(
             "ROCK: Native shape-cast safety is unavailable; native collision queries remain unchanged.");
+    }
+
+    logger::info("ROCK: Install native ragdoll teardown safety...");
+    if (!rock::native_ragdoll_safety::install()) {
+        logger::warn(
+            "ROCK: Native ragdoll teardown safety is unavailable; native ragdoll updates remain unchanged.");
     }
 
     logger::info("ROCK: Install held weapon instant-transition capability...");

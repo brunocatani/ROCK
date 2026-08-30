@@ -35,6 +35,8 @@ namespace rock::offsets
      * the vtable at module+0x2DFC540 before beginning teardown.
      */
     constexpr std::uintptr_t kHknpWorld_BodyArrayPtr = 0x20;
+    constexpr std::uintptr_t kHknpWorld_ConstraintArrayPtr = 0x128;
+    constexpr std::uintptr_t kHknpWorld_ConstraintCount = 0x130;
     constexpr std::uintptr_t kHknpWorld_BroadPhase = 0x178;
     constexpr std::uintptr_t kHknpWorld_CollisionQueryDispatcher = 0x200;
     constexpr std::uintptr_t kHknpWorld_InternalQueryLock = 0x690;
@@ -223,6 +225,9 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_HknpWorld_CastShape = 0x15A6C00;
 
     constexpr std::uintptr_t kFunc_HknpCollisionQueryDispatcherBase_CastShape = 0x15FFC30;
+
+    constexpr std::uintptr_t kFunc_HkbnpRagdollInterface_UpdateConstraints = 0x17B74B0;
+    constexpr std::uintptr_t kFault_HkbnpRagdollInterface_ConstraintRead = 0x17B7534;
 
     constexpr std::uintptr_t kFunc_World_AddStepListener = 0x1DFA7B0;
 
