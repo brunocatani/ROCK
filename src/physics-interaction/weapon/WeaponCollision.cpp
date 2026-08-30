@@ -39,6 +39,7 @@
 #include "RE/Havok/hkReferencedObject.h"
 #include "RE/Havok/hknpCapsuleShape.h"
 #include "RE/Havok/hknpMotion.h"
+#include "RE/Havok/hknpShape.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -58,6 +59,25 @@
 #include <string_view>
 #include <vector>
 
+namespace RE
+{
+    /*
+     * Fallout4VR 1.2.72 hknpCompoundShape::getShapeKeys at 0x1416E2430
+     * and hknpCompressedMeshShape::getShapeKeys at 0x1416026D0 agree on
+     * this 0x18-byte input layout. ROCK uses only the native all-zero
+     * configuration: no parent prefix and no shape-key mask.
+     */
+    struct hknpShape::GetShapeKeysConfig
+    {
+        std::uint32_t parentShapeKey{ 0 };
+        std::uint32_t parentShapeKeyBits{ 0 };
+        hknpShapeKeyMask* shapeKeyMask{ nullptr };
+        std::uint64_t reserved{ 0 };
+    };
+    static_assert(sizeof(hknpShape::GetShapeKeysConfig) == 0x18);
+    static_assert(offsetof(hknpShape::GetShapeKeysConfig, shapeKeyMask) == 0x08);
+}
+
 namespace rock
 {
     namespace
@@ -74,6 +94,10 @@ namespace rock
         constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
         constexpr float GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME = 0.10f;
         constexpr std::size_t MAX_GENERATED_RECAPTURE_DETAIL_ROWS = 8;
+        constexpr std::size_t MAX_COLLISION_SOUND_SHAPE_KEYS = 4096;
+        constexpr std::size_t COLLISION_SOUND_SHAPE_KEY_BATCH = 64;
+        constexpr std::size_t MAX_COLLISION_SOUND_HISTOGRAM_ROWS = 8;
+        constexpr std::uint32_t INVALID_COLLISION_SOUND_SHAPE_KEY = 0xFFFF'FFFF;
         constexpr float GENERATED_SOURCE_COMPONENT_JOIN_TOLERANCE_GAME = 2.0f;
         constexpr float GENERATED_SOURCE_DETACHED_COMPONENT_MIN_GAP_GAME = 24.0f;
         constexpr std::size_t MAX_CACHED_DETACHED_SOURCE_GROUPS =
@@ -1061,12 +1085,33 @@ namespace rock
         {
             std::uint32_t materialId{ 0 };
             const RE::BGSMaterialType* material{ nullptr };
+            bool blocksFallback{ false };
 
             [[nodiscard]] bool valid() const noexcept
             {
                 return materialId != 0 && material != nullptr;
             }
         };
+
+        struct CollisionSoundMaterialDiagnostics
+        {
+            std::size_t inspectedShapes{ 0 };
+            std::size_t simpleShapes{ 0 };
+            std::size_t compositeShapes{ 0 };
+            std::size_t enumeratedShapeKeys{ 0 };
+            std::size_t materialQueries{ 0 };
+            std::size_t zeroMaterialShapeKeys{ 0 };
+            std::size_t unregisteredMaterialShapeKeys{ 0 };
+            std::size_t ambiguousShapes{ 0 };
+            std::size_t incompleteShapes{ 0 };
+            std::size_t truncatedShapes{ 0 };
+            std::size_t stalledShapes{ 0 };
+            std::size_t invalidEnumerationShapes{ 0 };
+            std::unordered_map<std::uint32_t, std::size_t> materialKeyCounts;
+        };
+
+        using CollisionSoundMaterialCache =
+            std::unordered_map<RE::hknpShape*, CollisionSoundMaterialEvidence>;
 
         [[nodiscard]] const RE::BGSMaterialType* findRegisteredCollisionMaterial(
             const std::uint32_t materialId)
@@ -1089,8 +1134,184 @@ namespace rock
             return nullptr;
         }
 
+        [[nodiscard]] std::uint32_t nativeCollisionSoundMaterialForShape(
+            RE::hknpShape* shape,
+            const std::uint32_t shapeKey)
+        {
+            if (!shape) {
+                return 0;
+            }
+
+            using GetMaterialForShape =
+                std::uint32_t (*)(RE::hknpShape*, std::uint32_t);
+            static REL::Relocation<GetMaterialForShape> getMaterialForShape{
+                REL::ID(1349330)
+            };
+            return getMaterialForShape(shape, shapeKey);
+        }
+
         [[nodiscard]] CollisionSoundMaterialEvidence
-        collisionSoundMaterialFromNode(RE::NiAVObject* node)
+        resolveCollisionSoundMaterial(
+            RE::hknpShape* shape,
+            CollisionSoundMaterialDiagnostics& diagnostics)
+        {
+            CollisionSoundMaterialEvidence evidence{};
+            if (!shape) {
+                return evidence;
+            }
+
+            ++diagnostics.inspectedShapes;
+
+            std::unordered_map<std::uint32_t, std::size_t> materialKeyCounts;
+            materialKeyCounts.reserve(4);
+            std::size_t zeroMaterialShapeKeys = 0;
+            const auto recordShapeKey = [&](const std::uint32_t shapeKey) {
+                ++diagnostics.materialQueries;
+                const auto materialId =
+                    nativeCollisionSoundMaterialForShape(shape, shapeKey);
+                if (materialId == 0) {
+                    ++zeroMaterialShapeKeys;
+                    return;
+                }
+                ++materialKeyCounts[materialId];
+            };
+
+            bool scanComplete = true;
+            const bool isComposite = shape->flags.all(
+                RE::hknpShape::FlagsEnum::kIsCompositeShape);
+            if (!isComposite) {
+                ++diagnostics.simpleShapes;
+                recordShapeKey(INVALID_COLLISION_SOUND_SHAPE_KEY);
+            } else {
+                ++diagnostics.compositeShapes;
+                scanComplete = false;
+                RE::hknpShape::GetShapeKeysConfig keyConfig{};
+                std::array<std::uint32_t, COLLISION_SOUND_SHAPE_KEY_BATCH>
+                    shapeKeys{};
+                std::uint32_t previousShapeKey =
+                    INVALID_COLLISION_SOUND_SHAPE_KEY;
+                std::size_t enumeratedShapeKeys = 0;
+                bool enumerationInvalid = false;
+
+                while (enumeratedShapeKeys <
+                       MAX_COLLISION_SOUND_SHAPE_KEYS) {
+                    const auto remaining =
+                        MAX_COLLISION_SOUND_SHAPE_KEYS -
+                        enumeratedShapeKeys;
+                    const auto capacity = static_cast<std::int32_t>(
+                        std::min(remaining, shapeKeys.size()));
+                    const auto shapeKeyCount = shape->GetShapeKeys(
+                        shapeKeys.data(),
+                        capacity,
+                        previousShapeKey,
+                        keyConfig);
+                    if (shapeKeyCount < 0 || shapeKeyCount > capacity) {
+                        ++diagnostics.invalidEnumerationShapes;
+                        enumerationInvalid = true;
+                        break;
+                    }
+                    if (shapeKeyCount == 0) {
+                        scanComplete = true;
+                        break;
+                    }
+
+                    const auto lastShapeKey =
+                        shapeKeys[static_cast<std::size_t>(shapeKeyCount - 1)];
+                    if (lastShapeKey == previousShapeKey) {
+                        ++diagnostics.stalledShapes;
+                        enumerationInvalid = true;
+                        break;
+                    }
+
+                    for (std::int32_t index = 0;
+                         index < shapeKeyCount;
+                         ++index) {
+                        recordShapeKey(
+                            shapeKeys[static_cast<std::size_t>(index)]);
+                    }
+                    enumeratedShapeKeys +=
+                        static_cast<std::size_t>(shapeKeyCount);
+                    previousShapeKey = lastShapeKey;
+
+                    if (shapeKeyCount < capacity) {
+                        scanComplete = true;
+                        break;
+                    }
+                }
+
+                diagnostics.enumeratedShapeKeys += enumeratedShapeKeys;
+                if (!scanComplete && !enumerationInvalid &&
+                    enumeratedShapeKeys ==
+                        MAX_COLLISION_SOUND_SHAPE_KEYS) {
+                    std::uint32_t nextShapeKey = 0;
+                    const auto remainingShapeKeyCount = shape->GetShapeKeys(
+                        &nextShapeKey,
+                        1,
+                        previousShapeKey,
+                        keyConfig);
+                    if (remainingShapeKeyCount == 0) {
+                        scanComplete = true;
+                    } else if (remainingShapeKeyCount == 1 &&
+                               nextShapeKey != previousShapeKey) {
+                        ++diagnostics.truncatedShapes;
+                    } else if (remainingShapeKeyCount == 1) {
+                        ++diagnostics.stalledShapes;
+                    } else {
+                        ++diagnostics.invalidEnumerationShapes;
+                    }
+                }
+
+                if (enumeratedShapeKeys == 0 && scanComplete) {
+                    recordShapeKey(INVALID_COLLISION_SOUND_SHAPE_KEY);
+                }
+            }
+
+            diagnostics.zeroMaterialShapeKeys += zeroMaterialShapeKeys;
+            for (const auto& [materialId, shapeKeyCount] :
+                 materialKeyCounts) {
+                diagnostics.materialKeyCounts[materialId] += shapeKeyCount;
+            }
+
+            if (!scanComplete) {
+                ++diagnostics.incompleteShapes;
+                evidence.blocksFallback = true;
+                return evidence;
+            }
+            if (zeroMaterialShapeKeys != 0) {
+                if (!materialKeyCounts.empty()) {
+                    ++diagnostics.ambiguousShapes;
+                    evidence.blocksFallback = true;
+                }
+                return evidence;
+            }
+            if (materialKeyCounts.size() != 1) {
+                if (materialKeyCounts.size() > 1) {
+                    ++diagnostics.ambiguousShapes;
+                    evidence.blocksFallback = true;
+                }
+                return evidence;
+            }
+
+            const auto [materialId, shapeKeyCount] =
+                *materialKeyCounts.begin();
+            const auto* material =
+                findRegisteredCollisionMaterial(materialId);
+            if (!material) {
+                diagnostics.unregisteredMaterialShapeKeys += shapeKeyCount;
+                evidence.blocksFallback = true;
+                return evidence;
+            }
+
+            evidence.materialId = materialId;
+            evidence.material = material;
+            return evidence;
+        }
+
+        [[nodiscard]] CollisionSoundMaterialEvidence
+        collisionSoundMaterialFromNode(
+            RE::NiAVObject* node,
+            CollisionSoundMaterialCache& cache,
+            CollisionSoundMaterialDiagnostics& diagnostics)
         {
             CollisionSoundMaterialEvidence evidence{};
             if (!node) {
@@ -1111,39 +1332,38 @@ namespace rock
             }
 
             /*
-             * Raw Fallout4VR.exe 1.2.72 disassembly at 0x14061B5C0 and
-             * 0x141E14A60 shows that native collision audio resolves the
-             * low dword of hknpShape::userData through
-             * BGSMaterialType::GetMaterialFromID. bhkNPCollisionObject::
-             * GetShape also returns the serialized body-cinfo shape when a
-             * model template has not been instantiated in a world, so the
-             * authoritative loose-object material can be read without adding
-             * a diagnostic body or reference to the live world.
+             * bhkNPCollisionObject::GetShape returns the serialized body-cinfo
+             * shape when a model template is not instantiated in a world.
+             * Fallout4VR's own GetMaterialForShape handles simple userData,
+             * compound shape tags, nested leaves, and hknpBSMaterialProperties
+             * without adding a diagnostic body to the live world.
              */
-            const auto materialId =
-                static_cast<std::uint32_t>(shape->userData);
-            const auto* material =
-                findRegisteredCollisionMaterial(materialId);
-            if (!material) {
-                return evidence;
+            const auto cached = cache.find(shape);
+            if (cached != cache.end()) {
+                return cached->second;
             }
 
-            evidence.materialId = materialId;
-            evidence.material = material;
+            evidence = resolveCollisionSoundMaterial(shape, diagnostics);
+            cache.emplace(shape, evidence);
             return evidence;
         }
 
         [[nodiscard]] CollisionSoundMaterialEvidence
         nearestCollisionSoundMaterial(
             RE::NiAVObject* sourceNode,
-            const RE::NiAVObject* weaponBoundary)
+            const RE::NiAVObject* weaponBoundary,
+            CollisionSoundMaterialCache& cache,
+            CollisionSoundMaterialDiagnostics& diagnostics)
         {
             constexpr int kMaximumAncestorSteps = 32;
             auto* node = sourceNode;
             for (int step = 0; node && step < kMaximumAncestorSteps;
                  ++step, node = node->parent) {
-                auto evidence = collisionSoundMaterialFromNode(node);
-                if (evidence.valid()) {
+                auto evidence = collisionSoundMaterialFromNode(
+                    node,
+                    cache,
+                    diagnostics);
+                if (evidence.valid() || evidence.blocksFallback) {
                     return evidence;
                 }
                 if (node == weaponBoundary) {
@@ -1158,6 +1378,8 @@ namespace rock
             RE::NiAVObject* node,
             std::unordered_set<std::uintptr_t>& visited,
             std::size_t& visitedCount,
+            CollisionSoundMaterialCache& cache,
+            CollisionSoundMaterialDiagnostics& diagnostics,
             const int depth = 0)
         {
             constexpr int kMaximumDepth = 24;
@@ -1169,8 +1391,11 @@ namespace rock
             }
 
             ++visitedCount;
-            auto evidence = collisionSoundMaterialFromNode(node);
-            if (evidence.valid()) {
+            auto evidence = collisionSoundMaterialFromNode(
+                node,
+                cache,
+                diagnostics);
+            if (evidence.valid() || evidence.blocksFallback) {
                 return evidence;
             }
 
@@ -1184,8 +1409,10 @@ namespace rock
                     children[index].get(),
                     visited,
                     visitedCount,
+                    cache,
+                    diagnostics,
                     depth + 1);
-                if (evidence.valid()) {
+                if (evidence.valid() || evidence.blocksFallback) {
                     return evidence;
                 }
             }
@@ -1193,7 +1420,10 @@ namespace rock
         }
 
         [[nodiscard]] CollisionSoundMaterialEvidence
-        firstCollisionSoundMaterial(RE::NiAVObject* root)
+        firstCollisionSoundMaterial(
+            RE::NiAVObject* root,
+            CollisionSoundMaterialCache& cache,
+            CollisionSoundMaterialDiagnostics& diagnostics)
         {
             std::unordered_set<std::uintptr_t> visited;
             visited.reserve(128);
@@ -1201,12 +1431,15 @@ namespace rock
             return firstCollisionSoundMaterialRecursive(
                 root,
                 visited,
-                visitedCount);
+                visitedCount,
+                cache,
+                diagnostics);
         }
 
         [[nodiscard]] CollisionSoundMaterialEvidence
         equippedWeaponWorldModelCollisionSoundMaterial(
-            std::string& outModelPath)
+            std::string& outModelPath,
+            CollisionSoundMaterialDiagnostics& diagnostics)
         {
             outModelPath.clear();
             auto* equippedItem = f4vr::getEquippedWeaponItem();
@@ -1226,7 +1459,55 @@ namespace rock
             outModelPath = modelPath;
             auto modelRoot =
                 loadGeometryInspectionOmodModelTemplate(outModelPath);
-            return firstCollisionSoundMaterial(modelRoot.get());
+            CollisionSoundMaterialCache modelMaterialCache;
+            modelMaterialCache.reserve(16);
+            return firstCollisionSoundMaterial(
+                modelRoot.get(),
+                modelMaterialCache,
+                diagnostics);
+        }
+
+        [[nodiscard]] std::string collisionSoundMaterialHistogram(
+            const CollisionSoundMaterialDiagnostics& diagnostics)
+        {
+            std::vector<std::pair<std::uint32_t, std::size_t>> rows(
+                diagnostics.materialKeyCounts.begin(),
+                diagnostics.materialKeyCounts.end());
+            std::sort(
+                rows.begin(),
+                rows.end(),
+                [](const auto& lhs, const auto& rhs) {
+                    return lhs.first < rhs.first;
+                });
+
+            std::string histogram;
+            const auto rowCount = std::min(
+                rows.size(),
+                MAX_COLLISION_SOUND_HISTOGRAM_ROWS);
+            for (std::size_t index = 0; index < rowCount; ++index) {
+                std::array<char, 48> row{};
+                const auto written = std::snprintf(
+                    row.data(),
+                    row.size(),
+                    "%s0x%08X:%zu",
+                    histogram.empty() ? "" : ",",
+                    rows[index].first,
+                    rows[index].second);
+                if (written > 0) {
+                    histogram.append(
+                        row.data(),
+                        std::min(
+                            static_cast<std::size_t>(written),
+                            row.size() - 1));
+                }
+            }
+            if (rows.size() > rowCount) {
+                histogram.append(",...");
+            }
+            if (histogram.empty()) {
+                histogram = "none";
+            }
+            return histogram;
         }
 
         template <class SourceRange>
@@ -1234,16 +1515,28 @@ namespace rock
             RE::NiAVObject* assembledWeaponRoot,
             SourceRange& sources)
         {
+            CollisionSoundMaterialCache materialCache;
+            materialCache.reserve(64);
+            CollisionSoundMaterialDiagnostics diagnostics{};
+            diagnostics.materialKeyCounts.reserve(8);
+            std::unordered_set<std::uintptr_t> blockedFallbackSources;
+            blockedFallbackSources.reserve(16);
+
             std::size_t localSourceCount = 0;
             for (auto& source : sources) {
                 const auto localEvidence =
                     nearestCollisionSoundMaterial(
                         source.sourceRoot,
-                        assembledWeaponRoot);
+                        assembledWeaponRoot,
+                        materialCache,
+                        diagnostics);
                 if (localEvidence.valid()) {
                     source.collisionSoundMaterialId =
                         localEvidence.materialId;
                     ++localSourceCount;
+                } else if (localEvidence.blocksFallback) {
+                    blockedFallbackSources.insert(
+                        reinterpret_cast<std::uintptr_t>(&source));
                 }
             }
 
@@ -1259,12 +1552,15 @@ namespace rock
             std::string worldModelPath;
             if (needsFallback) {
                 fallback = equippedWeaponWorldModelCollisionSoundMaterial(
-                    worldModelPath);
+                    worldModelPath,
+                    diagnostics);
                 if (fallback.valid()) {
                     fallbackSource = "world-model";
-                } else {
+                } else if (!fallback.blocksFallback) {
                     fallback = firstCollisionSoundMaterial(
-                        assembledWeaponRoot);
+                        assembledWeaponRoot,
+                        materialCache,
+                        diagnostics);
                     if (fallback.valid()) {
                         fallbackSource = "assembled-root";
                     }
@@ -1276,7 +1572,9 @@ namespace rock
             std::unordered_map<std::uint32_t, std::size_t> materialCounts;
             for (auto& source : sources) {
                 if (source.collisionSoundMaterialId == 0 &&
-                    fallback.valid()) {
+                    fallback.valid() &&
+                    !blockedFallbackSources.contains(
+                        reinterpret_cast<std::uintptr_t>(&source))) {
                     source.collisionSoundMaterialId = fallback.materialId;
                     ++fallbackSourceCount;
                 }
@@ -1305,13 +1603,42 @@ namespace rock
                     worldModelPath);
             }
 
+            const auto nativeMaterialHistogram =
+                collisionSoundMaterialHistogram(diagnostics);
+            ROCK_LOG_SAMPLE_INFO(
+                Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Equipped weapon collision audio native scan: shapes={} simple={} composite={} keys={} queries={} zeroKeys={} unregisteredKeys={} ambiguousShapes={} incompleteShapes={} truncatedShapes={} stalledShapes={} invalidEnumerations={} blockedFallbackSources={} candidates='{}' model='{}'",
+                diagnostics.inspectedShapes,
+                diagnostics.simpleShapes,
+                diagnostics.compositeShapes,
+                diagnostics.enumeratedShapeKeys,
+                diagnostics.materialQueries,
+                diagnostics.zeroMaterialShapeKeys,
+                diagnostics.unregisteredMaterialShapeKeys,
+                diagnostics.ambiguousShapes,
+                diagnostics.incompleteShapes,
+                diagnostics.truncatedShapes,
+                diagnostics.stalledShapes,
+                diagnostics.invalidEnumerationShapes,
+                blockedFallbackSources.size(),
+                nativeMaterialHistogram,
+                worldModelPath);
+
             if (unresolvedSourceCount != 0) {
                 ROCK_LOG_SAMPLE_WARN(
                     Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Equipped weapon collision audio material unresolved: sources={}/{} policy=fail-closed model='{}'",
+                    "Equipped weapon collision audio material unresolved: sources={}/{} policy=fail-closed shapes={} composite={} keys={} zeroKeys={} ambiguousShapes={} incompleteShapes={} candidates='{}' model='{}'",
                     unresolvedSourceCount,
                     sources.size(),
+                    diagnostics.inspectedShapes,
+                    diagnostics.compositeShapes,
+                    diagnostics.enumeratedShapeKeys,
+                    diagnostics.zeroMaterialShapeKeys,
+                    diagnostics.ambiguousShapes,
+                    diagnostics.incompleteShapes,
+                    nativeMaterialHistogram,
                     worldModelPath);
             }
         }

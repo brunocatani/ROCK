@@ -64,7 +64,7 @@ $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 Require-Pattern $runtimePolicy `
     'kDynamicCompoundEnabled\s*=\s*true[\s\S]*kInertiaEnvelopePaddingGameUnits\s*=\s*0\.5f[\s\S]*kInverseInertiaMultiplier\s*=\s*1\.2f[\s\S]*kMaximumLinearVelocityHavok\s*=\s*15\.0f[\s\S]*kMaximumAngularVelocityRadiansPerSecond\s*=\s*35\.0f[\s\S]*kDivergenceTeleportDistanceGameUnits\s*=\s*80\.0f[\s\S]*kDivergenceTeleportDwellSeconds\s*=\s*0\.3f[\s\S]*kMinimumVisualCorrectionTranslationGameUnits\s*=\s*0\.05f[\s\S]*kMinimumVisualCorrectionRotationDegrees\s*=\s*0\.25f' `
     'Dynamic weapon compound production constants must retain the qualified values.'
-Require-Pattern $runtime `
+Require-Pattern $runtimeSource `
     'advanceDivergenceDwell\([\s\S]*_divergenceDwellSeconds[\s\S]*placeGeneratedKeyframedBodyImmediately\([\s\S]*_body[\s\S]*_physicsRequestedTarget' `
     'Normal requested-center divergence must retain its persistent recovery path.'
 Require-Pattern $runtimePolicy `
@@ -156,8 +156,11 @@ Require-Pattern $weaponCollisionHeader `
     'GeneratedHullSource[\s\S]*collisionSoundMaterialId' `
     'Generated weapon sources must retain the native collision-sound material through staged body creation.'
 Require-Pattern $weaponCollisionSource `
-    'findRegisteredCollisionMaterial\([\s\S]*GetFormArray<RE::BGSMaterialType>[\s\S]*material->materialID[\s\S]*collisionSoundMaterialFromNode\([\s\S]*IsbhkNPCollisionObject\(\)[\s\S]*GetShape\(\)[\s\S]*shape->userData' `
-    'Weapon collision audio must resolve the authored shape tag through the loaded BGSMaterialType catalog.'
+    'nativeCollisionSoundMaterialForShape\([\s\S]*REL::ID\(1349330\)[\s\S]*resolveCollisionSoundMaterial\([\s\S]*GetShapeKeys\([\s\S]*MAX_COLLISION_SOUND_SHAPE_KEYS[\s\S]*materialKeyCounts\.size\(\)\s*!=\s*1[\s\S]*findRegisteredCollisionMaterial\(' `
+    'Weapon collision audio must enumerate bounded composite keys and use FO4VR native material resolution without guessing across multiple materials.'
+Require-Pattern $weaponCollisionSource `
+    'CollisionSoundMaterialDiagnostics[\s\S]*zeroMaterialShapeKeys[\s\S]*ambiguousShapes[\s\S]*incompleteShapes[\s\S]*blockedFallbackSources[\s\S]*Equipped weapon collision audio native scan' `
+    'A failed native material resolution must expose bounded cause-separating diagnostics and block ambiguous fallback substitution.'
 Require-Pattern $weaponCollisionSource `
     'equippedWeaponWorldModelCollisionSoundMaterial\([\s\S]*GetModel\(\)[\s\S]*loadGeometryInspectionOmodModelTemplate[\s\S]*assignCollisionSoundMaterials\(packageDriveRoot, outSources\)' `
     'Unresolved assembled parts must use the equipped weapon world collision model rather than a hard-coded material.'

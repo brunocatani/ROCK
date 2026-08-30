@@ -361,9 +361,10 @@ namespace rock
             std::uintptr_t sourceGroupId{ 0 };
             std::string sourceName;
             WeaponPartClassification semantic{};
-            // BGSMaterialType::materialID copied from the authoritative
-            // native collision shape. FO4VR's collision-sound listener reads
-            // this value from hknpShape::userData, not hknpBody::materialId.
+            // BGSMaterialType::materialID resolved from the authoritative
+            // native collision shape and shape key. Generated simple shapes
+            // and compound leaves publish it through hknpShape::userData;
+            // hknpBody::materialId remains the solver-material domain.
             std::uint32_t collisionSoundMaterialId{ 0 };
             bool sourceInWeaponAvailable{ false };
             /*
