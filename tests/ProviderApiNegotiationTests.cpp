@@ -154,6 +154,9 @@ int main()
     assert(supportsNativeVatsVansInputSuppressionV1());
     assert(supportsEquippedWeaponHandRequestV1());
     assert(supportsColliderVisualizationOverrideV1());
+    assert(supportsLogicalInputActionStateV1());
+    assert(supportsPlayerControllerStateV1());
+    assert(supportsPlayerControllerJumpV1());
 
     g_reportedFeatureBits = 0;
     assert(!supportsEquippedWeaponHandRequestV1());
@@ -176,6 +179,12 @@ int main()
         ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES - 1;
     assert(!supportsColliderVisualizationOverrideV1());
     g_reportedTableBytes = sizeof(RockProviderApi);
+
+    RockProviderApi::negotiatedTableByteSize =
+        ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES - 1;
+    assert(!supportsPlayerControllerJumpV1());
+    assert(supportsPlayerControllerStateV1());
+    RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
 
     RockProviderApi::negotiatedFeatureBits2 &=
         ~static_cast<std::uint32_t>(

@@ -370,6 +370,7 @@ namespace rock::provider
         TouchGrabTargets = 1u << 24,
         WorldRaycasts = 1u << 25,
         ColliderVisualizationOverride = 1u << 26,
+        PlayerController = 1u << 27,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -864,6 +865,9 @@ namespace rock::provider
         WorldRaycastRequest = 64,
         WorldRaycastResult = 65,
         ColliderVisualizationRequest = 66,
+        LogicalInputActionState = 67,
+        PlayerControllerState = 68,
+        PlayerControllerJumpRequest = 69,
     };
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
@@ -1139,6 +1143,47 @@ namespace rock::provider
         BlockingMenu = 2,
         ReleaseToRearm = 3,
         InvalidButton = 4,
+    };
+
+    enum class RockProviderLogicalInputActionV1 : std::uint32_t
+    {
+        Jump = 1,
+    };
+
+    enum class RockProviderPlayerControllerImplementationV1 : std::uint32_t
+    {
+        Unknown = 0,
+        Proxy = 1,
+        RigidBody = 2,
+    };
+
+    enum class RockProviderPlayerSupportStateV1 : std::uint32_t
+    {
+        Unsupported = 0,
+        Sliding = 1,
+        Supported = 2,
+    };
+
+    enum class RockProviderPlayerControllerStateFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        PositionValid = 1u << 1,
+        VelocityValid = 1u << 2,
+        ShapeValid = 1u << 3,
+        SupportNormalValid = 1u << 4,
+        Supported = 1u << 5,
+        Sliding = 1u << 6,
+        PenetrationChecked = 1u << 7,
+        Penetrating = 1u << 8,
+        Proxy = 1u << 9,
+        RigidBody = 1u << 10,
+    };
+
+    enum class RockProviderPlayerControllerQueryFlagV1 : std::uint32_t
+    {
+        None = 0,
+        CheckPenetration = 1u << 0,
     };
 
     enum class RockProviderSuppressionInvalidationReasonV1 : std::uint32_t
@@ -1786,6 +1831,76 @@ namespace rock::provider
         float x{ 0.0f };
         float y{ 0.0f };
         float z{ 0.0f };
+    };
+
+    /*
+     * Semantic input observed at the native gameplay handler. pressSequence
+     * changes only on a new press and lets consumers detect the configured
+     * logical Jump action without guessing an OpenVR axis or button mapping.
+     */
+    struct RockProviderLogicalInputActionStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderLogicalInputActionStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderLogicalInputActionV1 action{
+            RockProviderLogicalInputActionV1::Jump
+        };
+        std::uint32_t available{ 0 };
+        std::uint32_t held{ 0 };
+        RockProviderInputAvailabilityReasonV1 availabilityReason{
+            RockProviderInputAvailabilityReasonV1::HookNotSampled
+        };
+        std::uint64_t sampleSequence{ 0 };
+        std::uint64_t pressSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t sampleAgeMilliseconds{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
+    /*
+     * Frame-local value snapshot of FO4VR's native player character controller.
+     * The optional penetration query is bounded and runs only when explicitly
+     * requested. No engine pointer or retained runtime identity crosses the ABI.
+     */
+    struct RockProviderPlayerControllerStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderPlayerControllerStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t flags{ 0 };
+        RockProviderPlayerControllerImplementationV1 implementation{
+            RockProviderPlayerControllerImplementationV1::Unknown
+        };
+        RockProviderPlayerSupportStateV1 supportState{
+            RockProviderPlayerSupportStateV1::Unsupported
+        };
+        std::uint32_t reserved0{ 0 };
+        RockProviderPoint3 positionGame{};
+        RockProviderPoint3 velocityGame{};
+        RockProviderPoint3 supportNormalGame{};
+        float radiusGame{ 0.0f };
+        float heightGame{ 0.0f };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
+    struct RockProviderPlayerControllerJumpRequestV1
+    {
+        std::uint32_t size{
+            sizeof(RockProviderPlayerControllerJumpRequestV1)
+        };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        float heightGameUnits{ 0.0f };
+        std::uint32_t reserved0{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[5]{};
     };
 
     struct RockProviderBounds3
@@ -3038,6 +3153,17 @@ namespace rock::provider
             const RockProviderColliderVisualizationRequestV1* request);
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearColliderVisualizationOverrideV1)(
             std::uint64_t ownerToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getLogicalInputActionStateV1)(
+            std::uint64_t ownerToken,
+            RockProviderLogicalInputActionV1 action,
+            RockProviderLogicalInputActionStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getPlayerControllerStateV1)(
+            std::uint64_t ownerToken,
+            std::uint32_t queryFlags,
+            RockProviderPlayerControllerStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* requestPlayerControllerJumpV1)(
+            std::uint64_t ownerToken,
+            const RockProviderPlayerControllerJumpRequestV1* request);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -3197,6 +3323,12 @@ namespace rock::provider
         offsetof(RockProviderApi, queryWorldRaycastV1) + sizeof(std::declval<RockProviderApi>().queryWorldRaycastV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, clearColliderVisualizationOverrideV1) + sizeof(std::declval<RockProviderApi>().clearColliderVisualizationOverrideV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_LOGICAL_INPUT_ACTION_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getLogicalInputActionStateV1) + sizeof(std::declval<RockProviderApi>().getLogicalInputActionStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getPlayerControllerStateV1) + sizeof(std::declval<RockProviderApi>().getPlayerControllerStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, requestPlayerControllerJumpV1) + sizeof(std::declval<RockProviderApi>().requestPlayerControllerJumpV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -3664,6 +3796,24 @@ namespace rock::provider
                supportsColliderVisualizationOverrideV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsLogicalInputActionStateV1()
+    {
+        return providerApiTableSupportsV1(
+            ROCK_PROVIDER_API_V1_LOGICAL_INPUT_ACTION_STATE_TABLE_BYTES);
+    }
+
+    [[nodiscard]] inline bool supportsPlayerControllerStateV1()
+    {
+        return providerApiTableSupportsV1(
+            ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_STATE_TABLE_BYTES);
+    }
+
+    [[nodiscard]] inline bool supportsPlayerControllerJumpV1()
+    {
+        return providerApiTableSupportsV1(
+            ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -3798,6 +3948,18 @@ namespace rock::provider
     static_assert(alignof(RockProviderColliderVisualizationRequestV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderColliderVisualizationRequestV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderColliderVisualizationRequestV1>);
+    static_assert(sizeof(RockProviderLogicalInputActionStateV1) == 80);
+    static_assert(alignof(RockProviderLogicalInputActionStateV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderLogicalInputActionStateV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderLogicalInputActionStateV1>);
+    static_assert(sizeof(RockProviderPlayerControllerStateV1) == 104);
+    static_assert(alignof(RockProviderPlayerControllerStateV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderPlayerControllerStateV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderPlayerControllerStateV1>);
+    static_assert(sizeof(RockProviderPlayerControllerJumpRequestV1) == 48);
+    static_assert(alignof(RockProviderPlayerControllerJumpRequestV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderPlayerControllerJumpRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderPlayerControllerJumpRequestV1>);
     static_assert(sizeof(RockProviderBodyContactV1) == 128);
     static_assert(alignof(RockProviderBodyContactV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);
@@ -3810,7 +3972,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 720);
+    static_assert(sizeof(RockProviderApi) == 744);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(
         offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
@@ -3832,4 +3994,13 @@ namespace rock::provider
     static_assert(
         offsetof(RockProviderApi, clearColliderVisualizationOverrideV1) ==
         89 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, getLogicalInputActionStateV1) ==
+        90 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, getPlayerControllerStateV1) ==
+        91 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, requestPlayerControllerJumpV1) ==
+        92 * sizeof(void*));
 }

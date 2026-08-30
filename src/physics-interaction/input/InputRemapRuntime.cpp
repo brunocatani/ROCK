@@ -57,6 +57,12 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventFunctionOffset = 0x0FC8AE0;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventVTableSlotOffset = 0x2D8A9F0;
+        // JumpHandler::ShouldHandleEvent receives the semantic Jump ButtonEvent
+        // produced by FO4VR's configured locomotion input, including the VR
+        // analog-up gesture. The hook observes it and always chains unchanged.
+        // FO4VR 1.2.72 raw vtable/function verification: 2026-08-30.
+        constexpr std::uintptr_t kJumpHandlerShouldHandleEventFunctionOffset = 0x0FCDC70;
+        constexpr std::uintptr_t kJumpHandlerShouldHandleEventVTableSlotOffset = 0x2D8A7F0;
         /*
          * MenuOpenHandler is the MenuControls handler that owns the semantic
          * "Pause" event. FO4VR maps OpenVR button 1 (Quest 2 Y on the
@@ -166,6 +172,7 @@ namespace rock::input_remap_runtime
         constexpr std::string_view kNativeEventWandThumbClick{ "WandThumbClick" };
         constexpr std::string_view kNativeEventPipboy{ "Pipboy" };
         constexpr std::string_view kNativeEventPause{ "Pause" };
+        constexpr std::string_view kNativeEventJump{ "Jump" };
 
         using GetControllerState_t = bool (*)(vr::IVRSystem*, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t);
         using GetControllerStateWithPose_t =
@@ -179,6 +186,9 @@ namespace rock::input_remap_runtime
         using PipboyInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         using MenuOpenInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         using NativeVatsVansDecision_t = void (*)(RE::ButtonEvent*);
+        using NativeJumpShouldHandleEvent_t = bool (*)(
+            void*,
+            const RE::InputEvent*);
 
         struct ControllerTracker
         {
@@ -197,6 +207,7 @@ namespace rock::input_remap_runtime
         };
 
         std::atomic<std::uint64_t> s_nextControllerSampleSequence{ 1 };
+        std::atomic<std::uint64_t> s_nextLogicalJumpSequence{ 1 };
 
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
@@ -220,6 +231,12 @@ namespace rock::input_remap_runtime
         // on the frame thread before touching inventory or hand state.
         std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
         std::atomic<bool> s_manualScopeActivationRequested{ false };
+        std::atomic<bool> s_logicalJumpValid{ false };
+        std::atomic<bool> s_logicalJumpHeld{ false };
+        std::atomic<bool> s_logicalJumpReleaseToRearm{ false };
+        std::atomic<std::uint64_t> s_logicalJumpSampleSequence{ 0 };
+        std::atomic<std::uint64_t> s_logicalJumpPressSequence{ 0 };
+        std::atomic<std::uint64_t> s_logicalJumpSampleTickMilliseconds{ 0 };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
         std::atomic<bool> s_activateEventHookInstalled{ false };
@@ -229,6 +246,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_pipboyLightEventHookInstalled{ false };
         std::atomic<bool> s_menuOpenEventHookInstalled{ false };
         std::atomic<bool> s_nativeVatsVansDecisionHookInstalled{ false };
+        std::atomic<bool> s_logicalJumpHookInstalled{ false };
         std::atomic<bool> s_nativeVatsVansDecisionHookInstallFailed{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
@@ -252,6 +270,7 @@ namespace rock::input_remap_runtime
         NativeInputEventHandler_t s_originalPipboyLightEventHandler = nullptr;
         MenuOpenInputEventHandler_t s_originalMenuOpenEventHandler = nullptr;
         NativeVatsVansDecision_t s_originalNativeVatsVansDecision = nullptr;
+        NativeJumpShouldHandleEvent_t s_originalJumpShouldHandleEvent = nullptr;
 
         void blockManualScopeInputUntilRelease()
         {
@@ -968,6 +987,50 @@ namespace rock::input_remap_runtime
             const auto* userEventText = userEvent.c_str();
             const std::string_view name{ userEventText ? userEventText : "", userEvent.length() };
             return name.length() == expected.length() && _strnicmp(name.data(), expected.data(), expected.length()) == 0;
+        }
+
+        void observeLogicalJumpEvent(const RE::InputEvent* event)
+        {
+            if (!eventNameMatches(event, kNativeEventJump)) {
+                return;
+            }
+            const auto* button = event->As<RE::ButtonEvent>();
+            if (!button) {
+                return;
+            }
+
+            const auto sequence = s_nextLogicalJumpSequence.fetch_add(
+                1,
+                std::memory_order_acq_rel);
+            const bool held = button->QPressed();
+            s_logicalJumpHeld.store(held, std::memory_order_release);
+            s_logicalJumpSampleTickMilliseconds.store(
+                GetTickCount64(),
+                std::memory_order_release);
+            s_logicalJumpSampleSequence.store(
+                sequence,
+                std::memory_order_release);
+            if (button->QJustPressed()) {
+                s_logicalJumpPressSequence.store(
+                    sequence,
+                    std::memory_order_release);
+            }
+            if (!held) {
+                s_logicalJumpReleaseToRearm.store(
+                    false,
+                    std::memory_order_release);
+            }
+            s_logicalJumpValid.store(true, std::memory_order_release);
+        }
+
+        bool hookedJumpShouldHandleEvent(
+            void* handler,
+            const RE::InputEvent* event)
+        {
+            observeLogicalJumpEvent(event);
+            return s_originalJumpShouldHandleEvent ?
+                s_originalJumpShouldHandleEvent(handler, event) :
+                false;
         }
 
         enum class NativeWandIdentity : std::uint8_t
@@ -1947,6 +2010,17 @@ namespace rock::input_remap_runtime
                 "ReadyWeaponHandler::HandleEvent suppression");
         }
 
+        bool installLogicalJumpObservationHook()
+        {
+            return installNativeActionVTableHook(
+                kJumpHandlerShouldHandleEventVTableSlotOffset,
+                kJumpHandlerShouldHandleEventFunctionOffset,
+                &hookedJumpShouldHandleEvent,
+                s_originalJumpShouldHandleEvent,
+                s_logicalJumpHookInstalled,
+                "JumpHandler::ShouldHandleEvent observation");
+        }
+
         bool installActivateEventReloadHook()
         {
             return installNativeActionVTableHook(kActivateHandlerHandleEventVTableSlotOffset,
@@ -2075,6 +2149,7 @@ namespace rock::input_remap_runtime
         bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings)
         {
             bool ready = installNativeVatsVansInputSuppressionHook();
+            ready = installLogicalJumpObservationHook() && ready;
             ready = installReadyWeaponEventSuppressionHook() && ready;
             ready = installActivateEventReloadHook() && ready;
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(true, settings.suppressRightFavoritesGameInput)) {
@@ -2212,6 +2287,11 @@ namespace rock::input_remap_runtime
     {
         s_gameplayInputAllowed.store(allowed, std::memory_order_release);
         if (!allowed) {
+            if (s_logicalJumpHeld.load(std::memory_order_acquire)) {
+                s_logicalJumpReleaseToRearm.store(
+                    true,
+                    std::memory_order_release);
+            }
             blockManualScopeInputUntilRelease();
             s_pendingGrenadeQuickDrawHoldRequest.store(
                 false,
@@ -2392,6 +2472,58 @@ namespace rock::input_remap_runtime
     bool isPipboyMenuOpen()
     {
         return s_pipboyMenuOpen.load(std::memory_order_acquire);
+    }
+
+    LogicalJumpState readLogicalJumpState()
+    {
+        LogicalJumpState state{};
+        if (!s_logicalJumpHookInstalled.load(std::memory_order_acquire) ||
+            !s_logicalJumpValid.load(std::memory_order_acquire)) {
+            return state;
+        }
+
+        state.sampleSequence = s_logicalJumpSampleSequence.load(
+            std::memory_order_acquire);
+        state.pressSequence = s_logicalJumpPressSequence.load(
+            std::memory_order_acquire);
+        const auto sampleTick = s_logicalJumpSampleTickMilliseconds.load(
+            std::memory_order_acquire);
+        const auto now = GetTickCount64();
+        state.sampleAgeMilliseconds = static_cast<std::uint32_t>(
+            (std::min<std::uint64_t>)(
+                now >= sampleTick ? now - sampleTick : 0,
+                UINT32_MAX));
+        const bool held = s_logicalJumpHeld.load(std::memory_order_acquire);
+
+        if (!s_gameplayInputAllowed.load(std::memory_order_acquire) ||
+            isInputBlockingMenuActive()) {
+            if (held) {
+                s_logicalJumpReleaseToRearm.store(
+                    true,
+                    std::memory_order_release);
+            }
+            state.availabilityReason =
+                RawButtonAvailabilityReason::BlockingMenu;
+            return state;
+        }
+
+        if (s_logicalJumpReleaseToRearm.load(
+                std::memory_order_acquire)) {
+            if (!held) {
+                s_logicalJumpReleaseToRearm.store(
+                    false,
+                    std::memory_order_release);
+            } else {
+                state.availabilityReason =
+                    RawButtonAvailabilityReason::ReleaseToRearm;
+                return state;
+            }
+        }
+
+        state.available = true;
+        state.held = held;
+        state.availabilityReason = RawButtonAvailabilityReason::Available;
+        return state;
     }
 
     PipboyEquipTriggerResolution consumePipboyEquipTriggerResolution()

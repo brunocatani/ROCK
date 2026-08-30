@@ -2,6 +2,8 @@
 
 #include "RE/NetImmerse/NiPoint.h"
 
+#include <cstdint>
+
 namespace RE
 {
     class Actor;
@@ -10,8 +12,48 @@ namespace RE
 
 namespace rock::character_controller_runtime
 {
+    enum class PlayerControllerImplementation : std::uint8_t
+    {
+        Unknown,
+        Proxy,
+        RigidBody,
+    };
+
+    enum class PlayerSupportState : std::uint8_t
+    {
+        Unsupported = 0,
+        Sliding = 1,
+        Supported = 2,
+    };
+
+    struct PlayerControllerState
+    {
+        bool valid{ false };
+        bool positionValid{ false };
+        bool velocityValid{ false };
+        bool shapeValid{ false };
+        bool supportNormalValid{ false };
+        bool penetrationChecked{ false };
+        bool penetrating{ false };
+        PlayerControllerImplementation implementation{
+            PlayerControllerImplementation::Unknown
+        };
+        PlayerSupportState supportState{ PlayerSupportState::Unsupported };
+        std::uintptr_t controllerIdentity{ 0 };
+        RE::NiPoint3 positionGame{};
+        RE::NiPoint3 velocityGame{};
+        RE::NiPoint3 supportNormal{};
+        float radiusGame{ 0.0f };
+        float heightGame{ 0.0f };
+    };
+
     RE::bhkCharacterController* tryGetActorCharacterController(RE::Actor* actor) noexcept;
     RE::bhkCharacterController* tryGetPlayerCharacterController() noexcept;
+
+    bool tryGetPlayerControllerState(
+        PlayerControllerState& outState,
+        bool checkPenetration) noexcept;
+    bool requestPlayerJump(float heightGameUnits) noexcept;
 
     // Player locomotion velocity (character-controller cachedLinearVelocity), GAME UNITS.
     //

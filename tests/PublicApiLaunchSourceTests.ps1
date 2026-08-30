@@ -146,8 +146,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCKAPI_GetDescriptorV1' `
     'The public SDK must declare the independent V1 descriptor accessor.'
 Require-Text 'src/exports.def' 'ROCKAPI_GetDescriptorV1' `
     'The provider descriptor must be exported independently of the function table.'
-Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*720' `
-    'The append-only V1 function table must retain its exact 90-slot x64 extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*744' `
+    'The append-only V1 function table must retain its exact 93-slot x64 extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsExtV1' `
     'Fixed capacities omitted by the legacy limits prefix must be discoverable through extended limits.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderStructureIdV1[\s\S]*getPublicStructureSizeV1' `
@@ -271,6 +271,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'WorldRaycasts[\s\S]*RockProviderWorldR
     'V1 must expose an append-only, feature-gated, pointer-free world-raycast query.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ColliderVisualizationOverride[\s\S]*RockProviderColliderVisualizationRequestV1[\s\S]*setColliderVisualizationOverrideV1[\s\S]*clearColliderVisualizationOverrideV1[\s\S]*ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES[\s\S]*supportsColliderVisualizationOverrideV1' `
     'V1 must expose an append-only, feature-gated exact-collider visualization override.'
+Require-Text 'src/api/ROCKProviderApi.h' 'PlayerController[\s\S]*RockProviderLogicalInputActionStateV1[\s\S]*RockProviderPlayerControllerStateV1[\s\S]*RockProviderPlayerControllerJumpRequestV1[\s\S]*getLogicalInputActionStateV1[\s\S]*getPlayerControllerStateV1[\s\S]*requestPlayerControllerJumpV1[\s\S]*ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES[\s\S]*supportsPlayerControllerJumpV1' `
+    'V1 must expose append-only logical Jump observation and guarded player-controller jump access.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'provider_collider_visualization::copySnapshot[\s\S]{0,900}FocusedWeaponPart[\s\S]{0,400}PublishFrame\(focusedFrame\)[\s\S]{0,100}return' `
     'Focused collider visualization must replace the complete config-driven overlay frame.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetColliderVisualizationOverrideV1[\s\S]{0,1200}onAnimationOwnerThread\(\)[\s\S]{0,1800}ColliderVisualizationOverride[\s\S]{0,1200}s_lastSnapshot\.weaponGenerationKey[\s\S]{0,900}isProviderWeaponBodyCurrentV1[\s\S]{0,600}provider_collider_visualization::set' `
@@ -503,7 +505,10 @@ $expectedProviderFunctions = [string[]]@(
     'requestEquippedWeaponHandV1',
     'queryWorldRaycastV1',
     'setColliderVisualizationOverrideV1',
-    'clearColliderVisualizationOverrideV1'
+    'clearColliderVisualizationOverrideV1',
+    'getLogicalInputActionStateV1',
+    'getPlayerControllerStateV1',
+    'requestPlayerControllerJumpV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

@@ -33,6 +33,18 @@ namespace rock::input_remap_runtime
         };
     };
 
+    struct LogicalJumpState
+    {
+        bool available{ false };
+        bool held{ false };
+        std::uint64_t sampleSequence{ 0 };
+        std::uint64_t pressSequence{ 0 };
+        std::uint32_t sampleAgeMilliseconds{ 0 };
+        RawButtonAvailabilityReason availabilityReason{
+            RawButtonAvailabilityReason::HookNotSampled
+        };
+    };
+
     struct PipboyEquipTriggerResolution
     {
         pipboy_equip_policy::Hand hand{ pipboy_equip_policy::Hand::Right };
@@ -71,6 +83,7 @@ namespace rock::input_remap_runtime
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();
     bool isPipboyMenuOpen();
+    LogicalJumpState readLogicalJumpState();
 
     // Consumes the menu-generation-bound trigger evidence for one Pip-Boy
     // selection. Physical held state wins; ambiguous/missing input preserves
