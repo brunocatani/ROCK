@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/weapon/immersive/ImmersiveWeaponPoseHandoff.h"
 
 #include <array>
 #include <cmath>
@@ -1759,6 +1760,67 @@ int main()
             1.0f);
     }
 
+    {
+        TestTransform renderedTwoHandWeaponWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        renderedTwoHandWeaponWorld.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.31f, -0.44f, 0.72f }),
+            37.0f);
+        renderedTwoHandWeaponWorld.translate =
+            TestVector3{ 18.0f, -7.0f, 23.0f };
+        renderedTwoHandWeaponWorld.scale = 1.25f;
+
+        TestTransform leftHandAtDetach =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        leftHandAtDetach.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ -0.23f, 0.81f, 0.38f }),
+            -29.0f);
+        leftHandAtDetach.translate =
+            TestVector3{ -4.0f, 31.0f, 12.0f };
+        leftHandAtDetach.scale = 1.25f;
+
+        const TestTransform rebasedLeftHandWeaponLocal =
+            rock::immersive_weapon_pose_handoff::
+                captureHandWeaponLocal(
+                    renderedTwoHandWeaponWorld,
+                    leftHandAtDetach);
+        const TestTransform firstPartCarryWeaponWorld =
+            rock::immersive_weapon_pose_handoff::resolveWeaponWorld(
+                leftHandAtDetach,
+                rebasedLeftHandWeaponLocal);
+        ok &= expectTransformNear(
+            "integrated right detach preserves the rendered two-hand pose",
+            firstPartCarryWeaponWorld,
+            renderedTwoHandWeaponWorld);
+
+        TestTransform postDetachHandDelta =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        postDetachHandDelta.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.56f, 0.14f, -0.63f }),
+            18.0f);
+        postDetachHandDelta.translate =
+            TestVector3{ 6.0f, -2.0f, 9.0f };
+        const TestTransform movedLeftHand =
+            rock::transform_math::composeTransforms(
+                postDetachHandDelta,
+                leftHandAtDetach);
+        const TestTransform movedPartCarryWeaponWorld =
+            rock::immersive_weapon_pose_handoff::resolveWeaponWorld(
+                movedLeftHand,
+                rebasedLeftHandWeaponLocal);
+        const TestTransform expectedMovedWeaponWorld =
+            rock::transform_math::composeTransforms(
+                postDetachHandDelta,
+                renderedTwoHandWeaponWorld);
+        ok &= expectTransformNear(
+            "part carry applies only post-detach left-hand rigid motion",
+            movedPartCarryWeaponWorld,
+            expectedMovedWeaponWorld);
+    }
+
     using namespace rock::contact_pipeline_policy;
 
     const ContactEndpoint weapon{
@@ -1834,6 +1896,7 @@ int main()
         .equippedWeaponShoulderStashEnabled = true,
         .immersiveWeapon = {
             .physicalRightFiringGripDetachEnabled = true,
+            .physicalRightFiringGripDetachPosePreservationEnabled = true,
             .physicalRightFiringGripReattachRadiusGameUnits = 4.0f,
             .physicalRightFiringGripHapticDurationSeconds = 0.11f,
             .physicalRightFiringGripAttachHapticIntensity = 0.81f,
@@ -1877,6 +1940,8 @@ int main()
         integratedRightDetach.firingGripOwnershipEnabled);
     ok &= expectTrue("integrated physical right enables detach",
         integratedRightDetach.primaryDetachEnabled);
+    ok &= expectTrue("integrated physical right selects detach pose preservation",
+        integratedRightDetach.preserveWeaponPoseOnDetach);
     ok &= expectNear("integrated physical right owns reattach radius",
         integratedRightDetach.reattachRadiusGameUnits,
         4.0f);
@@ -1898,6 +1963,8 @@ int main()
         rock::immersive_weapon_policy::DetachAuthority::None);
     ok &= expectFalse("integrated feature cannot detach the physical left hand",
         integratedLeftDetach.primaryDetachEnabled);
+    ok &= expectFalse("integrated feature cannot preserve a physical-left detach pose",
+        integratedLeftDetach.preserveWeaponPoseOnDetach);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
         coreWeaponHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectNear("base ROCK owns firing-grip promotion tuning",
@@ -2009,6 +2076,22 @@ int main()
             coreWeaponHandling,
             authoredOnlyDisabledHandling,
             false));
+    auto detachPosePreservationDisabled = coreWeaponHandling;
+    detachPosePreservationDisabled.immersiveWeapon.
+        physicalRightFiringGripDetachPosePreservationEnabled = false;
+    const auto integratedRightWithoutPosePreservation =
+        rock::resolveEquippedWeaponDetachDecision(
+            detachPosePreservationDisabled,
+            false);
+    ok &= expectTrue("pose preservation off keeps integrated physical-right detach",
+        integratedRightWithoutPosePreservation.primaryDetachEnabled);
+    ok &= expectFalse("pose preservation off selects the legacy carry relation",
+        integratedRightWithoutPosePreservation.preserveWeaponPoseOnDetach);
+    ok &= expectFalse("pose-preservation hot reload does not tear down a legal carry",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            coreWeaponHandling,
+            detachPosePreservationDisabled,
+            false));
     auto addonDetachHandling = fixedOnlyHandling;
     addonDetachHandling.firingGripOwnershipEnabled = true;
     addonDetachHandling.primaryDetachEnabled = true;
@@ -2034,6 +2117,8 @@ int main()
         rock::immersive_weapon_policy::DetachAuthority::None);
     ok &= expectFalse("disabled integrated policy cannot detach physical right",
         disabledIntegratedRightDetach.primaryDetachEnabled);
+    ok &= expectFalse("disabled integrated policy cannot preserve a detach pose",
+        disabledIntegratedRightDetach.preserveWeaponPoseOnDetach);
     ok &= expectTrue("an addon override that disables handoff reconciles the live switch",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
@@ -2064,6 +2149,15 @@ int main()
         legacyStashHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectTrue("legacy provider detach remains available to its other handling paths",
         legacyStashHandling.primaryDetachEnabled);
+    const auto providerRightDetach =
+        rock::resolveEquippedWeaponDetachDecision(
+            legacyStashHandling,
+            false);
+    ok &= expectEqual("provider PrimaryDetach retains physical-right authority",
+        providerRightDetach.authority,
+        rock::immersive_weapon_policy::DetachAuthority::ExternalProvider);
+    ok &= expectFalse("provider right detach does not inherit integrated pose preservation",
+        providerRightDetach.preserveWeaponPoseOnDetach);
     const auto providerLeftDetach =
         rock::resolveEquippedWeaponDetachDecision(
             legacyStashHandling,
@@ -2073,6 +2167,8 @@ int main()
         rock::immersive_weapon_policy::DetachAuthority::ExternalProvider);
     ok &= expectTrue("provider PrimaryDetach remains all-firing-hand capable",
         providerLeftDetach.primaryDetachEnabled);
+    ok &= expectFalse("provider PrimaryDetach does not inherit integrated pose preservation",
+        providerLeftDetach.preserveWeaponPoseOnDetach);
     ok &= expectNear("provider PrimaryDetach owns reattach tuning",
         providerLeftDetach.reattachRadiusGameUnits,
         9.0f);

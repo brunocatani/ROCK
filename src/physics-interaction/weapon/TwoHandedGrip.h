@@ -1177,6 +1177,13 @@ namespace rock
 
         bool transitionToPartCarry();
 
+        bool tryBuildIntegratedRightDetachPoseHandoff(
+            bool carryHandIsLeft,
+            RE::NiTransform& outCarryHandWeaponLocal,
+            float& outTranslationDeltaGameUnits,
+            float& outRotationDeltaDegrees,
+            const char*& outFailureReason) const;
+
         bool transitionToPrimaryOnly(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,

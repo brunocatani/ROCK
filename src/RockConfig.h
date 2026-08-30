@@ -69,6 +69,7 @@ namespace rock
         // to the physical right firing hand; dynamic firing-hand roles do not
         // widen it to the left hand.
         bool rockPhysicalRightFiringGripDetachEnabled = true;
+        bool rockPhysicalRightFiringGripDetachPosePreservationEnabled = true;
         float rockPhysicalRightFiringGripReattachRadiusGameUnits = 3.0f;
         float rockPhysicalRightFiringGripHapticDurationSeconds = 0.10f;
         float rockPhysicalRightFiringGripAttachHapticIntensity = 0.85f;

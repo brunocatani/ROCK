@@ -17,6 +17,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
+#include "physics-interaction/weapon/immersive/ImmersiveWeaponPoseHandoff.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -7465,10 +7466,117 @@ namespace rock
         }
     }
 
+    bool TwoHandedGrip::tryBuildIntegratedRightDetachPoseHandoff(
+        const bool carryHandIsLeft,
+        RE::NiTransform& outCarryHandWeaponLocal,
+        float& outTranslationDeltaGameUnits,
+        float& outRotationDeltaDegrees,
+        const char*& outFailureReason) const
+    {
+        outCarryHandWeaponLocal = {};
+        outTranslationDeltaGameUnits = 0.0f;
+        outRotationDeltaDegrees = 0.0f;
+        outFailureReason = "carry-identity-unavailable";
+
+        const WeaponPartGrip& carryGrip = partGrip(carryHandIsLeft);
+        if (!_activeWeaponNode ||
+            _activeWeaponGenerationKey == 0 ||
+            _activeEquippedWeaponOwnershipKey == 0 ||
+            !carryGrip.active ||
+            !carryGrip.hasHandWeaponLocal) {
+            return false;
+        }
+        if (!_hasLastRenderedWeaponWorld ||
+            !isInvertibleTransform(_lastRenderedWeaponWorld)) {
+            outFailureReason = "no-rendered-frame";
+            return false;
+        }
+
+        RE::NiTransform carryHandWorld{};
+        if (!tryGetSolverHandTransform(
+                carryHandIsLeft,
+                carryHandWorld) ||
+            !isUsableHandAuthorityTransform(carryHandWorld)) {
+            outFailureReason = "no-carry-hand-frame";
+            return false;
+        }
+
+        /*
+         * FRIK may already have rewritten weaponNode->world before ROCK enters
+         * this update. Preserve the final transform ROCK actually published in
+         * the previous render interval, then bind the surviving physical hand
+         * to that transform. The existing one-anchor solve reconstructs the
+         * same weapon world on its first publication and applies only later
+         * hand deltas after that boundary.
+         */
+        outCarryHandWeaponLocal =
+            immersive_weapon_pose_handoff::captureHandWeaponLocal(
+                _lastRenderedWeaponWorld,
+                carryHandWorld);
+        const RE::NiTransform roundTripWeaponWorld =
+            immersive_weapon_pose_handoff::resolveWeaponWorld(
+                carryHandWorld,
+                outCarryHandWeaponLocal);
+        if (!isInvertibleTransform(outCarryHandWeaponLocal) ||
+            !isFiniteTransform(roundTripWeaponWorld)) {
+            outFailureReason = "invalid-rebased-frame";
+            return false;
+        }
+
+        outTranslationDeltaGameUnits =
+            hand_visual_lerp_math::distanceGameUnits(
+                _lastRenderedWeaponWorld.translate,
+                roundTripWeaponWorld.translate);
+        outRotationDeltaDegrees =
+            hand_visual_lerp_math::rotationDistanceDegrees(
+                _lastRenderedWeaponWorld,
+                roundTripWeaponWorld);
+        constexpr float kMaximumTranslationDeltaGameUnits = 0.01f;
+        constexpr float kMaximumRotationDeltaDegrees = 0.05f;
+        const bool roundTripValid =
+            std::isfinite(outTranslationDeltaGameUnits) &&
+            std::isfinite(outRotationDeltaDegrees) &&
+            outTranslationDeltaGameUnits <=
+                kMaximumTranslationDeltaGameUnits &&
+            outRotationDeltaDegrees <= kMaximumRotationDeltaDegrees;
+        outFailureReason = roundTripValid ?
+            "preserved" :
+            "invalid-round-trip";
+        return roundTripValid;
+    }
+
     bool TwoHandedGrip::transitionToPartCarry()
     {
         if (_state == TwoHandedState::PartCarry) {
             return true;
+        }
+
+        const bool carryHandIsLeft = !_firingHandIsLeft;
+        const bool integratedPhysicalRightDetach =
+            !_firingHandIsLeft &&
+            _handlingSettings.detachAuthority ==
+                immersive_weapon_policy::DetachAuthority::
+                    IntegratedPhysicalRight;
+        const bool posePreservationRequested =
+            integratedPhysicalRightDetach &&
+            _handlingSettings.preserveWeaponPoseOnDetach;
+        bool poseHandoffReady = false;
+        const char* poseHandoffReason =
+            integratedPhysicalRightDetach ?
+                "config-disabled" :
+                "not-integrated-physical-right";
+        RE::NiTransform rebasedCarryHandWeaponLocal{};
+        float poseHandoffTranslationDeltaGameUnits = 0.0f;
+        float poseHandoffRotationDeltaDegrees = 0.0f;
+
+        if (posePreservationRequested) {
+            poseHandoffReady =
+                tryBuildIntegratedRightDetachPoseHandoff(
+                    carryHandIsLeft,
+                    rebasedCarryHandWeaponLocal,
+                    poseHandoffTranslationDeltaGameUnits,
+                    poseHandoffRotationDeltaDegrees,
+                    poseHandoffReason);
         }
 
         if (!blockFrikPrimaryWeaponPose()) {
@@ -7489,17 +7597,39 @@ namespace rock
             _leftFiringDampedFollowFrame = {};
         }
         _primaryHandVisualLerp = {};
-        partGrip(!_firingHandIsLeft).visualLerp = {};
-        lockPartGripToWeaponRoot(!_firingHandIsLeft);
+        WeaponPartGrip& carryGrip = partGrip(carryHandIsLeft);
+        carryGrip.visualLerp = {};
+        lockPartGripToWeaponRoot(carryHandIsLeft);
+        if (poseHandoffReady) {
+            carryGrip.handWeaponLocal = rebasedCarryHandWeaponLocal;
+            carryGrip.hasHandWeaponLocal = true;
+        } else if (posePreservationRequested) {
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: integrated right-detach pose handoff unavailable; using legacy part-carry relation reason={}",
+                poseHandoffReason);
+        }
         _rotationBlend = 1.0f;
-        _partCarryPivotIsLeft = !_firingHandIsLeft;
+        _partCarryPivotIsLeft = carryHandIsLeft;
         _partCarryGripSeparationWorld = 0.0f;
         _state = TwoHandedState::PartCarry;
         recordFiringGripDetachedHaptic();
-        ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={}",
-            immersive_weapon_policy::authorityName(
-                _handlingSettings.detachAuthority));
+        if (poseHandoffReady) {
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} poseHandoff=preserved poseSource=last-rendered initialDelta=({:.5f}gu,{:.5f}deg)",
+                immersive_weapon_policy::authorityName(
+                    _handlingSettings.detachAuthority),
+                poseHandoffTranslationDeltaGameUnits,
+                poseHandoffRotationDeltaDegrees);
+        } else {
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} poseHandoff=legacy reason={}",
+                immersive_weapon_policy::authorityName(
+                    _handlingSettings.detachAuthority),
+                poseHandoffReason);
+        }
         return true;
     }
 

@@ -74,6 +74,12 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportGripAppl
     'Full two-handed weapon authority must gate primary visual authority while preserving live hand-frame inputs.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportBaselineAttachPublication[\s\S]{0,700}weaponWorldAtCapture[\s\S]{0,700}applyWeaponVisualAuthority\(weaponNode, appliedWeaponWorld\)[\s\S]{0,1200}applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
     'Dynamic attach must preserve the weapon while retaining the established live-input visual hand transition.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryBuildIntegratedRightDetachPoseHandoff\([\s\S]*_lastRenderedWeaponWorld[\s\S]*tryGetSolverHandTransform\([\s\S]*captureHandWeaponLocal\([\s\S]*transitionToPartCarry\(\)[\s\S]*posePreservationRequested[\s\S]*tryBuildIntegratedRightDetachPoseHandoff\([\s\S]*carryGrip\.handWeaponLocal\s*=\s*rebasedCarryHandWeaponLocal[\s\S]*_state\s*=\s*TwoHandedState::PartCarry' `
+    'Integrated physical-right detach must persist a zero-delta surviving-hand relation from the final rendered two-hand weapon pose before PartCarry publishes.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureHandWeaponLocal\(\s*_activeWeaponNode->world|captureHandWeaponLocal\(\s*weaponNode->world' `
+    'Detach pose preservation must not capture FRIK-rewritten transition-frame weaponNode world state.'
+Reject-Text 'src/physics-interaction/weapon/immersive/ImmersiveWeaponPoseHandoff.h' 'elapsed|duration|blend|lerp|timer|velocity' `
+    'The Immersive Weapons detach handoff must remain an exact frame rebase, not a delayed correction.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripFingerPose\(\s*primaryHandIsLeft,\s*_returningWeaponVisual\.localTransition\.active\s*&&\s*_returningWeaponVisual\.followsAuthoredPrimaryGrip\)[\s\S]*clearPrimaryGripWorldAuthority\(primaryHandIsLeft\)[\s\S]*restoreFrikPrimaryWeaponPose' `
     'Primary-only ownership must clear the locked hand root while retaining an in-flight authored firing pose through the return handoff.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveAuthoredPrimaryWeaponReturnTargetLocal[\s\S]*tryGetAuthoredPrimaryTrackedFiringHandWorld[\s\S]*nativeWeaponWorld[\s\S]*resolveAuthoredPrimaryWeaponWorldPositionOnly[\s\S]*worldTargetToParentLocal' `

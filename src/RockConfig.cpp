@@ -333,6 +333,11 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION,
             "bPhysicalRightFiringGripDetachEnabled",
             rockPhysicalRightFiringGripDetachEnabled);
+        rockPhysicalRightFiringGripDetachPosePreservationEnabled =
+            ini.GetBoolValue(
+                IMMERSIVE_WEAPONS_SECTION,
+                "bPhysicalRightFiringGripDetachPosePreservationEnabled",
+                rockPhysicalRightFiringGripDetachPosePreservationEnabled);
         rockPhysicalRightFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,

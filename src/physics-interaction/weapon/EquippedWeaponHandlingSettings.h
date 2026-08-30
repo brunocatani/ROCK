@@ -29,6 +29,7 @@ namespace rock
         immersive_weapon_policy::DetachAuthority detachAuthority{
             immersive_weapon_policy::DetachAuthority::None
         };
+        bool preserveWeaponPoseOnDetach{ false };
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
         bool toggleGrabEnabled{ false };

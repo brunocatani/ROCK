@@ -2981,6 +2981,9 @@ namespace rock
                 primaryDetachFeatureAvailable ?
                 firingGripDecision.authority :
                 immersive_weapon_policy::DetachAuthority::None;
+            effectiveHandlingSettings.preserveWeaponPoseOnDetach =
+                primaryDetachFeatureAvailable &&
+                firingGripDecision.preserveWeaponPoseOnDetach;
             effectiveHandlingSettings.firingGripReattachRadiusGameUnits =
                 firingGripDecision.reattachRadiusGameUnits;
             effectiveHandlingSettings.weaponGripHapticDurationSeconds =
@@ -4804,6 +4807,9 @@ namespace rock
                 .physicalRightFiringGripDetachEnabled =
                     g_rockConfig.
                         rockPhysicalRightFiringGripDetachEnabled,
+                .physicalRightFiringGripDetachPosePreservationEnabled =
+                    g_rockConfig.
+                        rockPhysicalRightFiringGripDetachPosePreservationEnabled,
                 .physicalRightFiringGripReattachRadiusGameUnits =
                     g_rockConfig.
                         rockPhysicalRightFiringGripReattachRadiusGameUnits,

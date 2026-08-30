@@ -16,6 +16,7 @@ namespace rock::immersive_weapon_policy
         // Runtime snapshots fail closed until RockConfig publishes the loaded
         // compiled/production setting for the current frame.
         bool physicalRightFiringGripDetachEnabled{ false };
+        bool physicalRightFiringGripDetachPosePreservationEnabled{ false };
         float physicalRightFiringGripReattachRadiusGameUnits{ 3.0f };
         float physicalRightFiringGripHapticDurationSeconds{ 0.10f };
         float physicalRightFiringGripAttachHapticIntensity{ 0.85f };
@@ -39,6 +40,7 @@ namespace rock::immersive_weapon_policy
         DetachAuthority authority{ DetachAuthority::None };
         bool firingGripOwnershipEnabled{ false };
         bool primaryDetachEnabled{ false };
+        bool preserveWeaponPoseOnDetach{ false };
         float reattachRadiusGameUnits{ 3.0f };
         float gripHapticDurationSeconds{ 0.10f };
         float gripAttachHapticIntensity{ 0.85f };
@@ -84,6 +86,8 @@ namespace rock::immersive_weapon_policy
                        input.firingHandIsLeft)) {
             decision.authority = DetachAuthority::IntegratedPhysicalRight;
             decision.primaryDetachEnabled = true;
+            decision.preserveWeaponPoseOnDetach = input.integrated.
+                physicalRightFiringGripDetachPosePreservationEnabled;
             decision.reattachRadiusGameUnits = input.integrated.
                 physicalRightFiringGripReattachRadiusGameUnits;
             decision.gripHapticDurationSeconds = input.integrated.
