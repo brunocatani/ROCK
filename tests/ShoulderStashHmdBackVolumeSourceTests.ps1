@@ -35,6 +35,22 @@ function Reject-Text {
     }
 }
 
+function Require-MatchCount {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [int]$Expected,
+        [string]$Message
+    )
+
+    $path = Join-Path $Root $RelativePath
+    $text = Get-Content -Raw -LiteralPath $path
+    $actual = [regex]::Matches($text, $Pattern).Count
+    if ($actual -ne $Expected) {
+        $failures.Add("$RelativePath`: $Message (expected $Expected, found $actual)")
+    }
+}
+
 Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.h' `
     'hmdBackRightOffsetGameUnits\{\s*14\.0f,\s*-18\.0f,\s*-6\.85f\s*\}' `
     'Detector fallback should bias the right HMD back volume farther behind the shoulder.'
@@ -56,19 +72,10 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Equipped-weapon stash candidate acquisition must retain the configured anti-throw speed gate.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
     'equippedWeaponShoulderStashAvailable\([\s\r\n]*bool shoulderStashConfigured[\s\S]{0,120}return shoulderStashConfigured' `
-    'ROCK''s equipped-weapon shoulder stash must be independent of addon detach capability.'
+    'ROCK''s equipped-weapon shoulder stash must remain independent of addon detach capability.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'equippedWeaponShoulderStashActive\s*=\s*[\s\S]{0,220}equippedWeaponShoulderStashAvailable\(\s*_equippedWeaponHandlingSettings\.equippedWeaponShoulderStashEnabled\s*\)' `
-    'Runtime must derive one effective equipped-weapon stash gate from ROCK''s handling settings.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'nativeShoulderGestureAvailable\s*=[\s\S]{0,180}equippedWeaponShoulderStashActive\s*&&[\s\S]{0,180}!_equippedWeaponHandlingSettings\.primaryDetachEnabled[\s\S]{0,600}nativeShoulderGestureHand' `
-    'ROCK''s attached shoulder gesture must use the current firing hand only when addon detach is off.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    '!stashCarryEligible[\s\S]{0,300}resetRuntime\(stashState\)[\s\S]{0,120}commitLease\s*=\s*\{\}' `
-    'Disabled equipped-weapon stash must clear both dwell and fast-release commit-lease state.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'manualStashCommitSelected\s*=[\s\S]{0,180}equippedWeaponShoulderStashActive\s*&&[\s\S]{0,180}confirmedForCommit[\s\S]{0,220}stashCommitSelected\s*=[\s\S]{0,120}nativeShoulderSheathSelected\s*\|\|[\s\S]{0,120}manualStashCommitSelected' `
-    'Final sheath selection must combine the ROCK-native shoulder release and provider manual-carry release without allowing a drop fallthrough.'
+    'Runtime must derive one effective equipped-weapon shoulder gate from ROCK''s handling settings.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=\s*false' `
     'Only an explicit provider PrimaryDetach lease may enable equipped-weapon world dropping.'
@@ -78,99 +85,77 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
 Reject-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*rockBaseline\.equippedWeaponShoulderStashEnabled' `
     'ROCK''s shoulder-stash baseline must never feed the physical-detach capability.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'canCommitNativeShoulderSheath[\s\S]{0,700}!input\.primaryDetachEnabled[\s\S]{0,300}input\.detectorConfirmed[\s\S]{0,120}input\.explicitInputIntent' `
-    'The native gesture must require confirmed shoulder geometry plus explicit input and reject provider detach mode.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'resolveShoulderSheathInputIntent[\s\S]{0,500}toggleGrabEnabled\s*\?[\s\S]{0,180}gripPhysicallyPressed\s*\|\|\s*gripPhysicallyReleased\s*:[\s\S]{0,120}gripPhysicallyReleased' `
-    'Toggle shoulder stash must require an explicit tap edge while hold mode keeps its release edge.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'hasToggleShoulderTapIntent[\s\S]{0,500}toggleGrabEnabled\s*&&[\s\S]{0,120}detectorCandidate\s*&&[\s\S]{0,120}gripPhysicallyPressed\s*\|\|\s*gripPhysicallyReleased' `
-    'A toggle tap may bypass dwell only while a real shoulder candidate and physical edge coincide.'
-Reject-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'resolveShoulderSheathInputIntent[\s\S]{0,500}!gripPhysicallyHeld' `
-    'An already-open toggle button must never count as shoulder sheath intent.'
+
+Require-MatchCount 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'equipped_weapon_shoulder::advance\s*\(' 1 `
+    'Exactly one coordinator advance must own both equipped-weapon shoulder directions.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.h' `
+    'equipped_weapon_shoulder::RuntimeState[\s\r\n]+\s*_equippedWeaponShoulderCoordinatorState' `
+    'PhysicsInteraction must retain one value-state coordinator for equipped shoulder gestures.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'advanceEquippedWeaponShoulderCoordinator\([\s\S]*?makeEquippedWeaponStashDetectorConfig\(handlingEnabled\)[\s\S]*?publishDetectorDecision[\s\S]*?equipped_weapon_shoulder::advance\(' `
+    'The coordinator adapter must consume the existing equipped HMD detector decisions unchanged.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'manualStashCarryHand[\s\S]{0,900}manualCarryActive[\s\S]{0,500}attachedShoulderGestureHand' `
+    'One current carry hand or attached firing hand must feed the coordinator across provider and ROCK-native modes.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'result\.decision\.action\s*!=[\s\r\n]+\s*equipped_weapon_shoulder::Action::SubmitRetrieve[\s\S]{0,1500}submitExactCurrent\([\s\r\n]*\s*currentIdentity\)' `
+    'Coordinator-selected retrieval must retain exact-current native draw execution.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'if\s*\(nativeShoulderSheathRequested\)\s*\{[\s\S]*?submitEquippedWeaponShoulderSheath[\s\S]*?reportExecutionResult' `
+    'Coordinator-selected sheath must execute once and report acceptance back into coordinator state.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'stashCommitSelected\s*=[\s\S]{0,220}suppressEquippedDrop[\s\S]{0,220}shouldAttemptPhysicalDrop\(stashCommitSelected\)' `
+    'Provider drop routing must consume the coordinator''s fail-closed suppression decision.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    '_equippedWeaponShoulderGestureConsumedThisFrame\[handIndex\][\s\S]{0,900}readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]{0,500}clearSelectionState\(false\)' `
+    'A coordinator-owned gesture must be excluded from normal world-grab selection.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'captureCurrentIdentity[\s\S]*?submitSheatheExactCurrent\(sheathIdentity\)[\s\S]*?_equippedWeaponShoulderSheath\s*=[\s\S]*?weaponInstanceData\s*=\s*sheathIdentity\.instanceData[\s\S]*?equipIndex\s*=\s*sheathIdentity\.equipIndex[\s\S]*?weaponOwnershipKey\s*=[\s\r\n]+\s*currentEquippedWeaponOwnershipKey[\s\S]*?zone\s*=\s*stashDecision\.zone' `
+    'Shoulder storage must retain exact identity, stable ownership, and the selected HMD shoulder.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'shoulderOwnershipKey\s*=[\s\S]{0,500}_equippedWeaponShoulderCoordinatorState\.activeAction[\s\S]{0,250}_equippedWeaponShoulderCoordinatorState\.weaponOwnershipKey' `
+    'The native hidden/draw transition must not erase coordinator gesture identity.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.h' `
+    '_equippedWeaponStashCommitLeases|_equippedWeaponStashTapIntentLeases|_equippedWeaponShoulderInputGuards|_equippedWeaponSheathCommittedThisFrame|_equippedWeaponUnsheathCommittedThisFrame' `
+    'Superseded equipped-weapon shoulder leases, guards, and directional flags must stay removed.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'serviceEquippedWeaponShoulderSheathRetrieval|manualStashCommitSelected|canCommitNativeShoulderSheath|hasToggleShoulderTapIntent' `
+    'The old independent sheath/retrieval evaluators must not return.'
 Reject-Text 'src/physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h' `
     'ShoulderLeaseActive|shoulderLeaseActive' `
-    'Shoulder proximity must not bypass the toggle latch without an explicit input edge.'
-Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'equippedWeaponToggleShoulderInputLeases' `
-    'Runtime must not open a toggle grip solely because the shoulder detector confirmed.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'shouldBlockSheathForRetrievalGesture[\s\S]{0,500}resetRuntime\(stashState\)[\s\S]{0,120}commitLease\s*=\s*\{\}[\s\S]{0,120}continue' `
-    'The entire held/release tail of a retrieval gesture must bypass shoulder sheath acquisition.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    '_equippedWeaponShoulderInputGuards\[handIndex\][\s\S]{0,120}retrievalGestureActive\s*=\s*true[\s\S]{0,180}_equippedWeaponUnsheathCommittedThisFrame\[handIndex\]\s*=\s*true' `
-    'An accepted shoulder draw must reserve its physical gesture before later input routing.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'hasToggleShoulderTapIntent[\s\S]{0,1800}EquippedWeaponStashTapIntentLease[\s\S]{0,500}currentEquippedWeaponOwnershipKey[\s\S]{0,500}kPrimaryReleaseConfirmFrames' `
-    'A candidate-qualified tap must arm only an ownership-bound manual-release debounce lease.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'tapIntentLease\.ownershipKey\s*==[\s\S]{0,220}currentEquippedWeaponOwnershipKey[\s\S]{0,700}shoulderStashDwellIdentityMatches[\s\S]{0,900}confirmedForCommit\s*=\s*true' `
-    'A tap lease must retain commit authority only while equipped identity and shoulder geometry remain current.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'canCommitNativeShoulderSheath[\s\S]{0,1800}resolveShoulderSheathInputIntent[\s\S]{0,700}primaryState\.pressed[\s\S]{0,300}primaryState\.released[\s\S]*?_equippedWeaponSheathCommittedThisFrame\[sheathHandIndex\]\s*=\s*true[\s\S]{0,500}submitEquippedWeaponShoulderSheath' `
-    'ROCK must commit only the firing hand''s confirmed explicit tap/release intent and consume it before normal world-grab handling.'
+    'Shoulder proximity must not bypass the toggle latch without coordinator intent.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'RockEquippedWeaponHandlingBaseline[\s\S]{0,420}equippedWeaponShoulderStashEnabled\s*=[\s\r\n]+\s*g_rockConfig\.rockEquippedWeaponShoulderStashEnabled' `
     'The equipped-weapon handling baseline must consume ROCK''s shoulder stash switch.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'g_rockConfig\.rockRealisticWeaponHandlingEnabled' `
     'The focused ROCK sheath feature must not restore the obsolete realistic-weapons master switch.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'shouldArmEquippedWeaponFastReleaseCommitLease[\s\S]*?currentEquippedWeaponOwnershipKey[\s\S]*?equippedWeaponFastReleaseCommitLeaseIsUsable' `
-    'Fast release may bridge the release debounce only through an ownership-bound, spatially revalidated commit lease.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'stashCommitSelected\s*=[\s\S]{0,1400}shouldAttemptPhysicalDrop\(stashCommitSelected\)' `
-    'Physical-drop routing must consume the combined stash selection.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'shoulder sheathe failed[\s\S]{0,600}physical drop is suppressed' `
-    'A selected equipped-weapon stash must fail closed when native sheathing fails.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'captureCurrentIdentity[\s\S]*?submitSheatheExactCurrent\(sheathIdentity\)[\s\S]*?_equippedWeaponShoulderSheath\s*=[\s\S]*?weaponInstanceData\s*=\s*sheathIdentity\.instanceData[\s\S]*?equipIndex\s*=\s*sheathIdentity\.equipIndex[\s\S]*?zone\s*=\s*stashDecision\.zone' `
-    'Shoulder stash must sheath and retain the exact equipped identity plus the confirmed shoulder zone.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'if \(sheathAccepted\)[\s\S]{0,320}equipped_weapon_toggle_grab_policy::reset\([\s\r\n]*\s*_equippedWeaponToggleGrabState\)' `
-    'A successful sheath must clear equipped-weapon toggle ownership before physical shoulder retrieval begins.'
+
 Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
     'resolveExactCurrent\(expected\)[\s\S]{0,900}shouldSubmitSheatheFollowup[\s\S]{0,1000}DrawWeaponMagicHands\(false\)[\s\S]{0,300}getNativeWeaponState\(current\.player\)' `
     'Native sheath must revalidate exact identity and observe both sides of the verified FO4VR state transition.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'serviceEquippedWeaponShoulderSheathRetrieval[\s\S]*?observedWeaponFormID\s*==\s*currentIdentity\.formID[\s\S]*?decision\.zone\s*==\s*_equippedWeaponShoulderSheath\.zone[\s\S]*?peekGrabButtonState[\s\S]*?detectorCandidate\s*=\s*decision\.candidate[\s\S]*?gripPhysicallyPressed\s*=\s*physicalGripState\.pressed[\s\S]*?selectShoulderRetrievalHand[\s\S]*?submitExactCurrent\(\s*currentIdentity\s*\)' `
-    'Retrieval must require the same exact identity and shoulder plus either a qualified toggle tap or confirmed held pull before exact native draw.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'for\s*\(const bool isLeft\s*:\s*\{\s*false,\s*true\s*\}\)[\s\S]*?ambidextrousHandoffEnabled[\s\S]*?PendingEquippedWeaponPrimaryOnlyGripStart[\s\S]*?\.isLeft\s*=\s*retrieveWithLeftHand' `
-    'Retrieval must evaluate both physical hands and carry the selected hand into equipped-weapon ownership.'
+    'Retrieval must evaluate both eligible physical hands and carry the selected hand into weapon ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'pendingPrimaryStartMatchesCurrentWeapon[\s\S]*?tryBuildCurrentLeftFiringGripCapture[\s\S]*?beginPrimaryOnlyGrip' `
-    'A left-hand unsheath must retain the canonical lazy fallback when no pre-sheath transfer frame is available.'
+    'A left-hand retrieval must retain the canonical lazy transfer fallback.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'submitEquippedWeaponShoulderSheath[\s\S]{0,1800}tryCaptureLeftFiringGripTransfer[\s\S]{0,2200}hasLeftFiringGripTransfer\s*=[\s\r\n]+\s*hasLeftFiringGripTransfer' `
-    'Sheathing must capture and retain a left firing-grip frame before native presentation clears live ownership.'
+    'submitEquippedWeaponShoulderSheath[\s\S]{0,1800}tryCaptureLeftFiringGripTransfer[\s\S]{0,2400}hasLeftFiringGripTransfer\s*=[\s\r\n]+\s*hasLeftFiringGripTransfer' `
+    'Sheathing must preserve a left firing-grip transfer before native presentation clears ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'PendingEquippedWeaponPrimaryOnlyGripStart\{[\s\S]{0,500}\.committedTransfer\s*=\s*true[\s\S]{0,700}\.hasFiringHandWeaponLocal\s*=\s*retrieveWithLeftHand\s*&&[\s\S]{0,180}hasLeftFiringGripTransfer' `
-    'An accepted shoulder draw must become a durable selected-hand transfer carrying the pre-sheath left frame.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'shouldStartPendingPrimaryOnlyGrip\([\s\S]{0,320}committedTransfer[\s\S]{0,6000}beginPrimaryOnlyGrip\([\s\S]{0,700}committedTransfer' `
-    'Committed shoulder retrieval must start without a still-held squeeze and protect the carry until physical grip input resumes.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'tryCaptureLeftFiringGripTransfer[\s\S]{0,1500}activeLeftCaptureCurrent[\s\S]{0,900}tryBuildCurrentLeftFiringGripCapture' `
-    'Left transfer capture must prefer the active left carry and fall back to the current native-right canonical.'
+    'Accepted retrieval must become a durable selected-hand transfer.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'bool\s+TwoHandedGrip::beginPrimaryOnlyGrip\([\s\S]{0,700}retainUntilPhysicalGrip[\s\S]{0,5600}_persistentEquippedCarryActive\s*=\s*true[\s\S]{0,200}_persistentEquippedCarryDetachArmed\s*=\s*false' `
-    'A delayed committed transfer must not interpret an already-released draw squeeze as a weapon drop.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    '_equippedWeaponSheathCommittedThisFrame\[handIndex\]\s*\|\|[\s\S]{0,120}_equippedWeaponUnsheathCommittedThisFrame\[handIndex\][\s\S]{0,900}readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]{0,500}clearSelectionState\(false\)' `
-    'Both sheath release and retrieval squeeze must be consumed and excluded from normal world-grab selection in their commit frame.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'firingGripOwnershipFeatureAvailable\s*=\s*equipped_weapon_manual_ownership_policy::featureAvailable\(\s*!_equippedWeaponShoulderSheath\.active[\s\S]{0,500}primaryDetachFeatureAvailable\s*=\s*equipped_weapon_manual_ownership_policy::featureAvailable\(\s*!_equippedWeaponShoulderSheath\.active' `
-    'Ordinary firing-grip and detach input must remain disabled during the shoulder retrieval dwell.'
+    'A committed retrieval must not interpret its initiating gesture as an immediate weapon drop.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'serviceFixedWeaponHand[\s\S]*?if\s*\(_equippedWeaponShoulderSheath\.active\s*\|\|[\s\S]*?_pendingEquippedWeaponPrimaryOnlyGripStart\.pending\)' `
-    'Fixed-hand enforcement must yield while a shoulder sheath or selected retrieval owns the weapon.'
+    'Fixed-hand enforcement must yield while shoulder storage or selected retrieval owns the weapon.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'serviceEquippedWeaponHandAssignment[\s\S]{0,500}if\s*\(_equippedWeaponShoulderSheath\.active\)' `
-    'Pip-Boy/provider hand assignment must not acquire a hidden shoulder-sheathed weapon.'
+    'Provider hand assignment must not acquire a hidden shoulder-sheathed weapon.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
     'currentMatchesIntentionalShoulderSheath[\s\S]*?shoulderSheathFormID[\s\S]*?shoulderSheathInstanceData[\s\S]*?shoulderSheathEquipIndex[\s\S]*?intentional-shoulder-sheathe' `
     'Presentation recovery must yield only to ROCK''s exact identity-bound shoulder sheath.'

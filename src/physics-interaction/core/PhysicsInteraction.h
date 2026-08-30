@@ -36,6 +36,7 @@
 #include "physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
@@ -376,6 +377,14 @@ namespace rock
 
         void refreshEquippedWeaponHandlingSettings();
         void reconcileEquippedWeaponHandlingMode();
+        struct EquippedWeaponShoulderFrameResult
+        {
+            equipped_weapon_shoulder::Decision decision{};
+            equipped_weapon_drop_policy::SourceHand sourceHand{
+                equipped_weapon_drop_policy::SourceHand::None
+            };
+            shoulder_stash::Decision detectorDecision{};
+        };
         bool submitEquippedWeaponShoulderSheath(
             std::uint32_t observedWeaponFormID,
             std::uintptr_t observedWeaponInstanceData,
@@ -384,13 +393,19 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey);
-        void clearEquippedWeaponShoulderSheath(const char* reason);
-        void serviceEquippedWeaponShoulderSheathRetrieval(
+        void clearEquippedWeaponShoulderSheath(
+            const char* reason,
+            bool resetCoordinator = true);
+        EquippedWeaponShoulderFrameResult
+            advanceEquippedWeaponShoulderCoordinator(
             const PhysicsFrameContext& frame,
             bool handlingEnabled,
             bool menuInputActive,
             std::uint32_t observedWeaponFormID,
-            std::uintptr_t observedWeaponInstanceData);
+            std::uintptr_t observedWeaponInstanceData,
+            RE::NiNode* weaponNode,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            bool firingHandIsLeft);
         void serviceFixedWeaponHand(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
@@ -567,32 +582,6 @@ namespace rock
         // Dedicated stash detector states for the equipped-weapon carry gesture so
         // dwell/hysteresis never mixes with a loose object held by the same hand.
         std::array<shoulder_stash::RuntimeState, 2> _equippedWeaponStashStates{};
-        struct EquippedWeaponStashCommitLease
-        {
-            bool active = false;
-            std::uint64_t ownershipKey = 0;
-            std::uint8_t remainingOpenFrames = 0;
-            body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
-            shoulder_stash::EvidenceSource source = shoulder_stash::EvidenceSource::None;
-            shoulder_stash::RuntimeState spatialState{};
-        };
-        // The lease bridges only the release debounce after a confirmed dwell.
-        // It is bound to the live equipped instance and revalidates the same
-        // spatial candidate on every open-grip frame.
-        std::array<EquippedWeaponStashCommitLease, 2> _equippedWeaponStashCommitLeases{};
-        struct EquippedWeaponStashTapIntentLease
-        {
-            bool active{ false };
-            std::uint64_t ownershipKey{ 0 };
-            std::uint8_t remainingFrames{ 0 };
-            body_zone::BodyZoneKind zone{ body_zone::BodyZoneKind::Unknown };
-            shoulder_stash::EvidenceSource source{ shoulder_stash::EvidenceSource::None };
-            std::uint32_t shoulderBodyId{ shoulder_stash::kInvalidBodyId };
-        };
-        // A spatially valid toggle tap is already deliberate input. Retain it
-        // only across the existing two-frame manual-release debounce.
-        std::array<EquippedWeaponStashTapIntentLease, 2>
-            _equippedWeaponStashTapIntentLeases{};
         struct EquippedWeaponShoulderSheathState
         {
             bool active{ false };
@@ -600,6 +589,7 @@ namespace rock
             std::uint32_t weaponFormID{ 0 };
             std::uintptr_t weaponInstanceData{ 0 };
             std::uint32_t equipIndex{ 0 };
+            std::uint64_t weaponOwnershipKey{ 0 };
             body_zone::BodyZoneKind zone{ body_zone::BodyZoneKind::Unknown };
             bool hasLeftFiringGripTransfer{ false };
             RE::NiTransform leftFiringHandWeaponLocal{};
@@ -610,10 +600,8 @@ namespace rock
         // physical hand can claim the same stored shoulder in ambidextrous mode.
         EquippedWeaponShoulderSheathState _equippedWeaponShoulderSheath{};
         std::array<shoulder_stash::RuntimeState, 2> _equippedWeaponSheathRetrievalStates{};
-        // A retrieval squeeze/tap owns its held and release tail. Sheathing
-        // rearms only after that same physical gesture has fully released.
-        std::array<equipped_weapon_drop_policy::ShoulderInputGuardState, 2>
-            _equippedWeaponShoulderInputGuards{};
+        equipped_weapon_shoulder::RuntimeState
+            _equippedWeaponShoulderCoordinatorState{};
         std::array<mouth_consume::RuntimeState, 2> _mouthConsumeStates{};
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
 
@@ -666,8 +654,8 @@ namespace rock
         std::array<PendingForceGrabCommit, 2> _pendingForceGrabCommits{};
         std::array<HeldWeaponTriggerEquipIntent, 2> _heldWeaponTriggerEquipIntents{};
         std::array<bool, 2> _forceGrabCommittedThisFrame{};
-        std::array<bool, 2> _equippedWeaponSheathCommittedThisFrame{};
-        std::array<bool, 2> _equippedWeaponUnsheathCommittedThisFrame{};
+        std::array<bool, 2>
+            _equippedWeaponShoulderGestureConsumedThisFrame{};
         bare_fist_guard_policy::RecheckState _bareFistGuardState{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};
         std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeImpactBodyIds{};
