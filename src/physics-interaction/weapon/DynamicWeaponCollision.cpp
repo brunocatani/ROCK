@@ -814,6 +814,36 @@ namespace rock
                 compoundGeometry.sourcePointCount);
             return false;
         }
+
+        std::size_t taggedCollisionSoundChildren = 0;
+        std::uint32_t compoundCollisionSoundMaterialId = 0;
+        bool collisionSoundMaterialUniform = !compoundChildren.empty();
+        for (std::size_t childIndex = 0;
+             childIndex < compoundChildren.size();
+             ++childIndex) {
+            const auto* childShape = compoundChildren[childIndex].shape;
+            const auto materialId = childShape ?
+                static_cast<std::uint32_t>(childShape->userData) :
+                0u;
+            if (materialId != 0) {
+                ++taggedCollisionSoundChildren;
+            }
+            if (childIndex == 0) {
+                compoundCollisionSoundMaterialId = materialId;
+            } else if (materialId != compoundCollisionSoundMaterialId) {
+                collisionSoundMaterialUniform = false;
+            }
+        }
+        if (!collisionSoundMaterialUniform ||
+            compoundCollisionSoundMaterialId == 0) {
+            compoundCollisionSoundMaterialId = 0;
+        } else if (auto* pendingShape = pendingCompoundShape.get()) {
+            // Contact shape keys preserve per-child material IDs. The
+            // top-level tag is the native fallback for contacts that do not
+            // publish a leaf key, and is valid only when every child agrees.
+            pendingShape->userData = static_cast<std::uintptr_t>(
+                compoundCollisionSoundMaterialId);
+        }
         if (weaponCollision.getCurrentWeaponGenerationKey() != compoundGeometry.generationKey) {
             ROCK_LOG_WARN(
                 Weapon,
@@ -998,13 +1028,16 @@ namespace rock
 
         ROCK_LOG_INFO(
             Weapon,
-            "Dynamic weapon grip-constrained compound created: contactBody={} authorityBody={} constraint={} generation={:016X} children={} points={} authority=grip center=({:.2f},{:.2f},{:.2f}) envelopeHalf=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) inertiaPadding={:.2f} layer={}",
+            "Dynamic weapon grip-constrained compound created: contactBody={} authorityBody={} constraint={} generation={:016X} children={} points={} soundMaterial=0x{:08X} taggedChildren={}/{} authority=grip center=({:.2f},{:.2f},{:.2f}) envelopeHalf=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) inertiaPadding={:.2f} layer={}",
             _body.getBodyId().value,
             _authorityProxy.getBodyId().value,
             _authorityConstraint.constraintId,
             _createdGenerationKey,
             _createdCompoundChildCount,
             _createdCompoundPointCount,
+            compoundCollisionSoundMaterialId,
+            taggedCollisionSoundChildren,
+            compoundChildren.size(),
             _createdCenterWeaponLocal.x,
             _createdCenterWeaponLocal.y,
             _createdCenterWeaponLocal.z,

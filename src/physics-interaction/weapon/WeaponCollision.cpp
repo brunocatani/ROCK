@@ -1057,6 +1057,265 @@ namespace rock
             return loadOmodModelTemplate(modelPath, 0x20);
         }
 
+        struct CollisionSoundMaterialEvidence
+        {
+            std::uint32_t materialId{ 0 };
+            const RE::BGSMaterialType* material{ nullptr };
+
+            [[nodiscard]] bool valid() const noexcept
+            {
+                return materialId != 0 && material != nullptr;
+            }
+        };
+
+        [[nodiscard]] const RE::BGSMaterialType* findRegisteredCollisionMaterial(
+            const std::uint32_t materialId)
+        {
+            if (materialId == 0) {
+                return nullptr;
+            }
+
+            auto* dataHandler = RE::TESDataHandler::GetSingleton();
+            if (!dataHandler) {
+                return nullptr;
+            }
+
+            for (const auto* material :
+                dataHandler->GetFormArray<RE::BGSMaterialType>()) {
+                if (material && material->materialID == materialId) {
+                    return material;
+                }
+            }
+            return nullptr;
+        }
+
+        [[nodiscard]] CollisionSoundMaterialEvidence
+        collisionSoundMaterialFromNode(RE::NiAVObject* node)
+        {
+            CollisionSoundMaterialEvidence evidence{};
+            if (!node) {
+                return evidence;
+            }
+
+            auto* collisionObject = node->collisionObject.get();
+            auto* nativeCollision = collisionObject ?
+                collisionObject->IsbhkNPCollisionObject() :
+                nullptr;
+            if (!nativeCollision || !nativeCollision->spSystem) {
+                return evidence;
+            }
+
+            auto* shape = nativeCollision->GetShape();
+            if (!shape) {
+                return evidence;
+            }
+
+            /*
+             * Raw Fallout4VR.exe 1.2.72 disassembly at 0x14061B5C0 and
+             * 0x141E14A60 shows that native collision audio resolves the
+             * low dword of hknpShape::userData through
+             * BGSMaterialType::GetMaterialFromID. bhkNPCollisionObject::
+             * GetShape also returns the serialized body-cinfo shape when a
+             * model template has not been instantiated in a world, so the
+             * authoritative loose-object material can be read without adding
+             * a diagnostic body or reference to the live world.
+             */
+            const auto materialId =
+                static_cast<std::uint32_t>(shape->userData);
+            const auto* material =
+                findRegisteredCollisionMaterial(materialId);
+            if (!material) {
+                return evidence;
+            }
+
+            evidence.materialId = materialId;
+            evidence.material = material;
+            return evidence;
+        }
+
+        [[nodiscard]] CollisionSoundMaterialEvidence
+        nearestCollisionSoundMaterial(
+            RE::NiAVObject* sourceNode,
+            const RE::NiAVObject* weaponBoundary)
+        {
+            constexpr int kMaximumAncestorSteps = 32;
+            auto* node = sourceNode;
+            for (int step = 0; node && step < kMaximumAncestorSteps;
+                 ++step, node = node->parent) {
+                auto evidence = collisionSoundMaterialFromNode(node);
+                if (evidence.valid()) {
+                    return evidence;
+                }
+                if (node == weaponBoundary) {
+                    break;
+                }
+            }
+            return {};
+        }
+
+        [[nodiscard]] CollisionSoundMaterialEvidence
+        firstCollisionSoundMaterialRecursive(
+            RE::NiAVObject* node,
+            std::unordered_set<std::uintptr_t>& visited,
+            std::size_t& visitedCount,
+            const int depth = 0)
+        {
+            constexpr int kMaximumDepth = 24;
+            constexpr std::size_t kMaximumVisitedNodes = 1024;
+            if (!node || depth > kMaximumDepth ||
+                visitedCount >= kMaximumVisitedNodes ||
+                !visited.insert(reinterpret_cast<std::uintptr_t>(node)).second) {
+                return {};
+            }
+
+            ++visitedCount;
+            auto evidence = collisionSoundMaterialFromNode(node);
+            if (evidence.valid()) {
+                return evidence;
+            }
+
+            auto* treeNode = node->IsNode();
+            if (!treeNode) {
+                return {};
+            }
+            const auto& children = treeNode->GetRuntimeData().children;
+            for (std::uint16_t index = 0; index < children.size(); ++index) {
+                evidence = firstCollisionSoundMaterialRecursive(
+                    children[index].get(),
+                    visited,
+                    visitedCount,
+                    depth + 1);
+                if (evidence.valid()) {
+                    return evidence;
+                }
+            }
+            return {};
+        }
+
+        [[nodiscard]] CollisionSoundMaterialEvidence
+        firstCollisionSoundMaterial(RE::NiAVObject* root)
+        {
+            std::unordered_set<std::uintptr_t> visited;
+            visited.reserve(128);
+            std::size_t visitedCount = 0;
+            return firstCollisionSoundMaterialRecursive(
+                root,
+                visited,
+                visitedCount);
+        }
+
+        [[nodiscard]] CollisionSoundMaterialEvidence
+        equippedWeaponWorldModelCollisionSoundMaterial(
+            std::string& outModelPath)
+        {
+            outModelPath.clear();
+            auto* equippedItem = f4vr::getEquippedWeaponItem();
+            auto* weaponForm = equippedItem ? equippedItem->item.object : nullptr;
+            auto* weapon = weaponForm ? weaponForm->As<RE::TESObjectWEAP>() : nullptr;
+            if (!weapon) {
+                return {};
+            }
+
+            const auto* model =
+                static_cast<const RE::BGSModelMaterialSwap*>(weapon);
+            const char* modelPath = model->GetModel();
+            if (!modelPath || modelPath[0] == '\0') {
+                return {};
+            }
+
+            outModelPath = modelPath;
+            auto modelRoot =
+                loadGeometryInspectionOmodModelTemplate(outModelPath);
+            return firstCollisionSoundMaterial(modelRoot.get());
+        }
+
+        template <class SourceRange>
+        void assignCollisionSoundMaterials(
+            RE::NiAVObject* assembledWeaponRoot,
+            SourceRange& sources)
+        {
+            std::size_t localSourceCount = 0;
+            for (auto& source : sources) {
+                const auto localEvidence =
+                    nearestCollisionSoundMaterial(
+                        source.sourceRoot,
+                        assembledWeaponRoot);
+                if (localEvidence.valid()) {
+                    source.collisionSoundMaterialId =
+                        localEvidence.materialId;
+                    ++localSourceCount;
+                }
+            }
+
+            const bool needsFallback = std::any_of(
+                sources.begin(),
+                sources.end(),
+                [](const auto& source) {
+                    return source.collisionSoundMaterialId == 0;
+                });
+
+            CollisionSoundMaterialEvidence fallback{};
+            std::string fallbackSource = "none";
+            std::string worldModelPath;
+            if (needsFallback) {
+                fallback = equippedWeaponWorldModelCollisionSoundMaterial(
+                    worldModelPath);
+                if (fallback.valid()) {
+                    fallbackSource = "world-model";
+                } else {
+                    fallback = firstCollisionSoundMaterial(
+                        assembledWeaponRoot);
+                    if (fallback.valid()) {
+                        fallbackSource = "assembled-root";
+                    }
+                }
+            }
+
+            std::size_t fallbackSourceCount = 0;
+            std::size_t unresolvedSourceCount = 0;
+            std::unordered_map<std::uint32_t, std::size_t> materialCounts;
+            for (auto& source : sources) {
+                if (source.collisionSoundMaterialId == 0 &&
+                    fallback.valid()) {
+                    source.collisionSoundMaterialId = fallback.materialId;
+                    ++fallbackSourceCount;
+                }
+                if (source.collisionSoundMaterialId == 0) {
+                    ++unresolvedSourceCount;
+                    continue;
+                }
+                ++materialCounts[source.collisionSoundMaterialId];
+            }
+
+            for (const auto& [materialId, sourceCount] : materialCounts) {
+                const auto* material =
+                    findRegisteredCollisionMaterial(materialId);
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "Equipped weapon collision audio material: id=0x{:08X} form={:08X} name='{}' sources={} localSources={} fallbackSources={} fallback={} model='{}'",
+                    materialId,
+                    material ? material->formID : 0,
+                    material && material->materialName.c_str() ?
+                        material->materialName.c_str() :
+                        "(unnamed)",
+                    sourceCount,
+                    localSourceCount,
+                    fallbackSourceCount,
+                    fallbackSource,
+                    worldModelPath);
+            }
+
+            if (unresolvedSourceCount != 0) {
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Equipped weapon collision audio material unresolved: sources={}/{} policy=fail-closed model='{}'",
+                    unresolvedSourceCount,
+                    sources.size(),
+                    worldModelPath);
+            }
+        }
+
         void collectManualScopeStructuralMarkers(
             RE::NiAVObject* node,
             manual_scope_target_policy::StructuralMarkerEvidence& evidence,
@@ -5807,6 +6066,8 @@ namespace rock
             logGeneratedSourceInventory("body-capacity-exact", outSources);
         }
 
+        assignCollisionSoundMaterials(packageDriveRoot, outSources);
+
         for (std::size_t i = 0; i < outSources.size(); ++i) {
             const auto& source = outSources[i];
             const auto coverage = classifyGeneratedHullSemantic(source.semantic);
@@ -5824,13 +6085,14 @@ namespace rock
              */
             const float sourceNodeScale = source.sourceNodeScale;
             ROCK_LOG_TRACE(Weapon,
-                "Generated weapon mesh selected[{}]: category={} source='{}' driveRoot='{}' sourceRoot='{}' points={} center=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f}) sourceLocalCenter=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMin=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMax=({:.2f},{:.2f},{:.2f}) sourceNodeScale={:.4f} weaponRootScale={:.4f}",
+                "Generated weapon mesh selected[{}]: category={} source='{}' driveRoot='{}' sourceRoot='{}' points={} soundMaterial=0x{:08X} center=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f}) sourceLocalCenter=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMin=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMax=({:.2f},{:.2f},{:.2f}) sourceNodeScale={:.4f} weaponRootScale={:.4f}",
                 i,
                 coverage.label,
                 source.sourceName,
                 safeNodeName(source.driveRoot),
                 safeNodeName(source.sourceRoot),
                 source.localPointsGame.size(),
+                source.collisionSoundMaterialId,
                 source.localCenterGame.x,
                 source.localCenterGame.y,
                 source.localCenterGame.z,
@@ -6183,13 +6445,27 @@ namespace rock
         std::size_t attemptedThisFrame = 0;
         const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(options.collisionEnabledOnCreate);
         auto buildSourceShape = [&](const GeneratedHullSource& source) -> RE::hknpShape* {
+            const auto tagCollisionSoundMaterial = [&](RE::hknpShape* shape) {
+                if (shape && source.collisionSoundMaterialId != 0) {
+                    // FOCollisionListener resolves this exact field for both
+                    // simple shapes and compound leaves. The body material
+                    // remains the independently registered solver material.
+                    shape->userData = static_cast<std::uintptr_t>(
+                        source.collisionSoundMaterialId);
+                }
+                return shape;
+            };
+
             if (source.childLocalPointCloudsGame.size() <= 1) {
                 const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
                 const auto& sourcePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;
                 const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
                 const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
                 auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
-                return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK);
+                return tagCollisionSoundMaterial(
+                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(
+                        centeredHavokPoints,
+                        WEAPON_COLLISION_CONVEX_RADIUS_HAVOK));
             }
 
             std::vector<RE::hknpShape*> childShapes;
@@ -6210,6 +6486,8 @@ namespace rock
                     ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
                     continue;
                 }
+
+                tagCollisionSoundMaterial(childShape);
 
                 childShapes.push_back(childShape);
 
@@ -6234,7 +6512,7 @@ namespace rock
                 shapeRemoveRef(childShape);
             }
 
-            return compoundShape;
+            return tagCollisionSoundMaterial(compoundShape);
         };
 
         while (nextSourceIndex < sources.size() && createdCount < MAX_WEAPON_BODIES && attemptedThisFrame < maxSourceAttemptsThisFrame) {
@@ -6327,10 +6605,11 @@ namespace rock
             initializeGeneratedKeyframedBodyDriveState(instance.driveState, initialTransform);
 
             ROCK_LOG_DEBUG(Weapon,
-                "Generated weapon mesh collision body created: meshIndex={} bodyId={} source='{}' driveRoot='{}' sourceRoot='{}' partKind={} supportRole={} reloadRole={} points={} children={} center=({:.2f},{:.2f},{:.2f}) layer=44",
+                "Generated weapon mesh collision body created: meshIndex={} bodyId={} source='{}' driveRoot='{}' sourceRoot='{}' partKind={} supportRole={} reloadRole={} points={} children={} soundMaterial=0x{:08X} center=({:.2f},{:.2f},{:.2f}) layer=44",
                 createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.driveRoot), safeNodeName(source.sourceRoot), static_cast<int>(source.semantic.partKind),
                 static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.localPointsGame.size(),
-                source.childLocalPointCloudsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
+                source.childLocalPointCloudsGame.size(), source.collisionSoundMaterialId,
+                source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
             ++createdCount;
             ++createdThisFrame;
         }
