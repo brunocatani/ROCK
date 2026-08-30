@@ -212,8 +212,8 @@ Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'The hFRIK firing-grip point must be derived from the canonical primary attach pose and projected through the loose weapon, never derived from the tested hand.'
 
 Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
-    'weapon_grip_authority_policy::select\([\s\S]{0,1200}frikCustomFile[\s\S]{0,600}authoredAnimation[\s\S]{0,600}frikEmbeddedResource[\s\S]{0,1600}Source::AuthoredAnimation[\s\S]{0,600}authoredLookup\.rightHandWeaponLocal' `
-    'Loose weapons must select explicit hFRIK JSON before ROCK-authored data, then consume the learned Hand-in-Weapon relation directly.'
+    'weapon_grip_authority_policy::select\([\s\S]{0,1200}frikCustomFile[\s\S]{0,600}authoredAnimation[\s\S]{0,600}frikEmbeddedResource[\s\S]{0,1600}Source::AuthoredAnimation[\s\S]{0,600}authoredLookup\.rightHandWeaponLocal[\s\S]{0,300}authoredPositionOnly\s*=\s*true' `
+    'Loose weapons must select explicit hFRIK JSON before ROCK-authored data and mark only the learned authored relation as position-only weapon authority.'
 
 Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'worldPointToLocal\(attachedRootWorld,\s*palmWorld\)' `
@@ -264,10 +264,11 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Grip-zone hover/equip discovery must not remain right-hand-only.'
 
 # Pull-catch/force-grab canonical auto-align must cover both physical hands
-# through the shared firing-hold resolver.
+# through the shared firing-hold resolver. Authored cache data supplies only
+# the firing point; explicit hFRIK offsets retain full-rigid correction.
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold\([\s\S]{0,160}isLeft,[\s\S]{0,160}selection\.refr[\s\S]{0,300}multiplyTransforms\([\s\S]{0,120}handWorld,[\s\S]{0,120}transform_math::invertTransform\(handWeaponLocal\)\)' `
-    'Pull-catch/force-grab must seat either hand from the shared in-memory canonical hold (weapon = hand world o inverse(hold)).'
+    'loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold\([\s\S]{0,400}authoredPositionOnly[\s\S]{0,600}resolveAuthoredPrimaryWeaponWorldPositionOnly\([\s\S]{0,300}rootNode->world[\s\S]{0,500}else\s*\{[\s\S]{0,300}multiplyTransforms\([\s\S]{0,120}handWorld,[\s\S]{0,120}transform_math::invertTransform\(handWeaponLocal\)\)' `
+    'Pull-catch/force-grab must translate authored cached grips without rotating the loose weapon while retaining full-rigid explicit hFRIK authority.'
 
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     '"notPrimaryHand"' `

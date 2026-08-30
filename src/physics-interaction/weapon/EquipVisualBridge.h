@@ -69,8 +69,10 @@ namespace rock
             RE::TESObjectWEAP* weapon = nullptr;
             // Canonical firing-hand hold for offhand carries (hand transform
             // in weapon-root-local space, valid against the root-flattened
-            // hand frame; weapon world = hand world o inverse(hold)). Same
-            // capture the pending primary-only grip start consumes.
+            // hand frame). ROCK-authored placement derives only the grip point
+            // from this transform and preserves the native weapon rotation;
+            // the complete relation remains necessary for hand presentation.
+            // Same capture the pending primary-only grip start consumes.
             bool hasFiringHandWeaponLocal = false;
             RE::NiTransform firingHandWeaponLocal{};
             float timeoutSeconds = 1.0f;

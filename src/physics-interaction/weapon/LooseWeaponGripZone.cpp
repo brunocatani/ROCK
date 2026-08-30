@@ -34,6 +34,7 @@ namespace rock::loose_weapon_grip_zone
             RE::NiPoint3 gripWeaponLocal{};
             RE::NiTransform firingHandWeaponLocal{};
             bool hasFiringHandWeaponLocal{ false };
+            bool authoredPositionOnly{ false };
             const char* reason{ "notEvaluated" };
         };
 
@@ -143,6 +144,7 @@ namespace rock::loose_weapon_grip_zone
                 canonicalHandWeaponLocal = authoredLookup.rightHandWeaponLocal;
                 state.gripWeaponLocal =
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
+                state.authoredPositionOnly = true;
                 state.reason = authoredLookup.reason;
             } else if (
                 selectedSource == weapon_grip_authority_policy::Source::FrikCustomFile ||
@@ -380,10 +382,14 @@ namespace rock::loose_weapon_grip_zone
         RE::TESObjectREFR* weaponRef,
         RE::NiTransform& outHandWorld,
         RE::NiTransform& outHandWeaponLocal,
-        const char** outReason)
+        const char** outReason,
+        bool* outAuthoredPositionOnly)
     {
         if (outReason) {
             *outReason = "missingWeaponRef";
+        }
+        if (outAuthoredPositionOnly) {
+            *outAuthoredPositionOnly = false;
         }
         if (!weaponRef) {
             return false;
@@ -401,6 +407,9 @@ namespace rock::loose_weapon_grip_zone
 
         outHandWorld = testedHandWorld;
         outHandWeaponLocal = scratch.firingHandWeaponLocal;
+        if (outAuthoredPositionOnly) {
+            *outAuthoredPositionOnly = scratch.authoredPositionOnly;
+        }
         return true;
     }
 

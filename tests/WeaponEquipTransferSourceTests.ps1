@@ -169,8 +169,12 @@ Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'Visual handoff must release the phantom while keeping only its authored finger payload alive until the equipped owner acquires it or the absolute lease expires.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    '_hasFiringHandWeaponLocal[\s\S]{0,500}_hasPhysicalHandInWandLocal[\s\S]{0,900}resolveAuthoredPrimaryWeaponWorldPositionOnly' `
+    '_hasFiringHandWeaponLocal[\s\S]{0,500}_hasPhysicalHandInWandLocal[\s\S]{0,1500}resolveAuthoredPrimaryWeaponWorldPositionOnly' `
     'The equip bridge must converge an authored hold only by translating the native-rotation weapon toward the physical palm.'
+
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'positionOnlyCarrierWorld\s*=[\s\S]{0,300}input\.nativeVisual->weaponRoot->world[\s\S]{0,160}desiredWorld[\s\S]{0,300}resolveAuthoredPrimaryWeaponWorldPositionOnly\([\s\S]{0,180}positionOnlyCarrierWorld' `
+    'Once the equipped model exists, the phantom position-only solve must inherit that exact native weapon rotation before visual handoff.'
 
 Reject-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'applyExternalHandWorldTransform|_positionOnlyAlignmentActive|rockExperimentalAuthoredGripPositionOnlyAlignment|RockConfig\.h' `

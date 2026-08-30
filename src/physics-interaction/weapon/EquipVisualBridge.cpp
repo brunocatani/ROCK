@@ -463,9 +463,16 @@ namespace rock
                         computeGrabLegacyPalmPivotAWorldFromHandBasis(
                             physicalHandWorld,
                             _isLeftHand);
+                    const RE::NiTransform& positionOnlyCarrierWorld =
+                        input.nativeVisual &&
+                                input.nativeVisual->weaponRoot &&
+                                isFiniteTransform(
+                                    input.nativeVisual->weaponRoot->world) ?
+                            input.nativeVisual->weaponRoot->world :
+                            desiredWorld;
                     blendTarget = authored_weapon_grip_capture_policy::
                         resolveAuthoredPrimaryWeaponWorldPositionOnly(
-                            desiredWorld,
+                            positionOnlyCarrierWorld,
                             authoredGripWeaponLocal,
                             physicalPalmWorld,
                             [](const RE::NiTransform& transform,
