@@ -11027,9 +11027,24 @@ namespace rock
         }
         native_idle_grip_preharvest::observeCandidate(std::move(nativeIdleGripCandidate));
 
+        const bool heldWeaponEquipOwnershipEligible =
+            equipped_weapon_manual_ownership_policy::shouldStartHeldWeaponEquipOwnership(
+                equipped_weapon_manual_ownership_policy::HeldWeaponEquipOwnershipInput{
+                    .modes = firingGripModes,
+                    .handIsLeft = isLeft,
+                    .gripHeld = rawGrabInput.held,
+                });
+        /*
+         * The canonical firing-grip frame serves two independent consumers:
+         * optional grip-zone settle detection and hand-preserving trigger
+         * equip. Keep producing it whenever either consumer can use it.
+         */
         loose_weapon_grip_zone::updateHeldLooseWeapon(
             isLeft,
-            gripZoneSettleEquipEnabled && hand.isHoldingLooseWeapon(),
+            equipped_weapon_manual_ownership_policy::shouldTrackHeldWeaponGripFrame(
+                hand.isHoldingLooseWeapon(),
+                gripZoneSettleEquipEnabled,
+                heldWeaponEquipOwnershipEligible),
             hand.getHeldRef(),
             hand.getState() == HandState::HeldBody,
             frame.deltaSeconds,
@@ -11152,12 +11167,7 @@ namespace rock
                 }
 
                 PendingEquippedWeaponPrimaryOnlyGripStart pendingGripStart{};
-                pendingGripStart.pending = equipped_weapon_manual_ownership_policy::shouldStartHeldWeaponEquipOwnership(
-                    equipped_weapon_manual_ownership_policy::HeldWeaponEquipOwnershipInput{
-                        .modes = firingGripModes,
-                        .handIsLeft = isLeft,
-                        .gripHeld = rawGrabInput.held,
-                    });
+                pendingGripStart.pending = heldWeaponEquipOwnershipEligible;
                 pendingGripStart.isLeft = isLeft;
                 const bool handCarryAvailable = !isLeft || ambidextrousHandoffAvailable;
                 const bool capturedLooseHold = pendingGripStart.pending &&

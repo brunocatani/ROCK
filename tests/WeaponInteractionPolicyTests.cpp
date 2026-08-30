@@ -2726,6 +2726,14 @@ int main()
         canSettleEquipInGripZone(true));
     ok &= expectFalse("grip-zone settle equip stays off without an explicit grip-zone capability",
         canSettleEquipInGripZone(false));
+    ok &= expectTrue("left trigger-equip ownership tracks its carry frame without grip-zone settle",
+        shouldTrackHeldWeaponGripFrame(true, false, true));
+    ok &= expectTrue("grip-zone settle independently tracks the held weapon frame",
+        shouldTrackHeldWeaponGripFrame(true, true, false));
+    ok &= expectFalse("grip-frame tracking requires an actually held loose weapon",
+        shouldTrackHeldWeaponGripFrame(false, true, true));
+    ok &= expectFalse("held weapon skips grip-frame work when no consumer is active",
+        shouldTrackHeldWeaponGripFrame(true, false, false));
     ok &= expectTrue("non-detaching ownership ignores an open firing grip",
         shouldRetainPrimaryOnlyOwnership(false, false));
     ok &= expectTrue("detaching ownership remains while the firing grip is held",

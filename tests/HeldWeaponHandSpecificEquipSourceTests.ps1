@@ -169,6 +169,9 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'shouldStartHeldWeaponEquipOwnership[\s\S]{0,260}\.modes\s*=\s*firingGripModes[\s\S]{0,120}\.handIsLeft\s*=\s*isLeft[\s\S]{0,120}\.gripHeld\s*=\s*rawGrabInput\.held' `
     'Direct trigger equip must start integrated-or-provider hand-specific ownership from the originating hand grip.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'heldWeaponEquipOwnershipEligible\s*=[\s\S]{0,420}shouldStartHeldWeaponEquipOwnership[\s\S]{0,900}updateHeldLooseWeapon\([\s\S]{0,220}shouldTrackHeldWeaponGripFrame\([\s\S]{0,180}hand\.isHoldingLooseWeapon\(\)[\s\S]{0,180}gripZoneSettleEquipEnabled[\s\S]{0,180}heldWeaponEquipOwnershipEligible[\s\S]*pendingGripStart\.pending\s*=\s*heldWeaponEquipOwnershipEligible' `
+    'Hand-preserving trigger equip must keep its canonical loose-weapon carry frame even when optional grip-zone settle is unavailable.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'FiringGripModeAvailability[\s\S]{0,260}physicalRightDetachEnabled[\s\S]*shouldStartHeldWeaponEquipOwnership[\s\S]{0,320}appliesToPhysicalHand\([\s\S]{0,160}input\.modes\.physicalRightDetachEnabled[\s\S]{0,120}input\.handIsLeft' `
     'Held-trigger equip must allow integrated detach ownership only for the physical right hand.'

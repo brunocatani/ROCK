@@ -336,6 +336,15 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return gripZoneEquipEnabled;
     }
 
+    [[nodiscard]] inline constexpr bool shouldTrackHeldWeaponGripFrame(
+        const bool holdingLooseWeapon,
+        const bool gripZoneEquipEnabled,
+        const bool equipOwnershipEligible) noexcept
+    {
+        return holdingLooseWeapon &&
+               (gripZoneEquipEnabled || equipOwnershipEligible);
+    }
+
     [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(
         bool primaryDetachEnabled,
         bool primaryGripHeld) noexcept
