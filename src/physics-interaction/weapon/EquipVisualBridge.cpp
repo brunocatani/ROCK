@@ -47,6 +47,29 @@ namespace rock
             return true;
         }
 
+        [[nodiscard]] float rotationDistanceDegrees(
+            const RE::NiTransform& lhs,
+            const RE::NiTransform& rhs)
+        {
+            float lhsQuaternion[4]{};
+            float rhsQuaternion[4]{};
+            transform_math::niRowsToHavokQuaternion(
+                lhs.rotate,
+                lhsQuaternion);
+            transform_math::niRowsToHavokQuaternion(
+                rhs.rotate,
+                rhsQuaternion);
+            const float dot = std::clamp(std::abs(
+                lhsQuaternion[0] * rhsQuaternion[0] +
+                lhsQuaternion[1] * rhsQuaternion[1] +
+                lhsQuaternion[2] * rhsQuaternion[2] +
+                lhsQuaternion[3] * rhsQuaternion[3]),
+                0.0f,
+                1.0f);
+            constexpr float kRadiansToDegrees = 57.29577951308232f;
+            return 2.0f * std::acos(dot) * kRadiansToDegrees;
+        }
+
         [[nodiscard]] bool buildPhysicalHandFingerPose(
             const bool isLeftHand,
             const authored_weapon_grip_library::FiringFingerPose& rightPose,
@@ -250,6 +273,7 @@ namespace rock
                 input.timeoutSeconds);
         _presentationLeaseStartedAt = std::chrono::steady_clock::now();
         _modelPresented = true;
+        _nativeCarrierTraceLogged = false;
         _active = true;
 
         if (authoredLookup.found &&
@@ -463,11 +487,13 @@ namespace rock
                         computeGrabLegacyPalmPivotAWorldFromHandBasis(
                             physicalHandWorld,
                             _isLeftHand);
-                    const RE::NiTransform& positionOnlyCarrierWorld =
+                    const bool nativePositionOnlyCarrierAvailable =
                         input.nativeVisual &&
-                                input.nativeVisual->weaponRoot &&
-                                isFiniteTransform(
-                                    input.nativeVisual->weaponRoot->world) ?
+                        input.nativeVisual->weaponRoot &&
+                        isFiniteTransform(
+                            input.nativeVisual->weaponRoot->world);
+                    const RE::NiTransform& positionOnlyCarrierWorld =
+                        nativePositionOnlyCarrierAvailable ?
                             input.nativeVisual->weaponRoot->world :
                             desiredWorld;
                     blendTarget = authored_weapon_grip_capture_policy::
@@ -482,6 +508,29 @@ namespace rock
                                     point);
                             });
                     haveBlendTarget = isFiniteTransform(blendTarget);
+                    if (nativePositionOnlyCarrierAvailable &&
+                        haveBlendTarget &&
+                        !_nativeCarrierTraceLogged) {
+                        const RE::NiPoint3 looseGripWorld =
+                            transform_math::localPointToWorld(
+                                desiredWorld,
+                                authoredGripWeaponLocal);
+                        const float dx =
+                            looseGripWorld.x - physicalPalmWorld.x;
+                        const float dy =
+                            looseGripWorld.y - physicalPalmWorld.y;
+                        const float dz =
+                            looseGripWorld.z - physicalPalmWorld.z;
+                        ROCK_LOG_INFO(Weapon,
+                            "EquipVisualBridge native position-only convergence formID={:08X} hand={} rotationDelta={:.2f}deg gripCorrection={:.3f}gu",
+                            _weaponFormID,
+                            _isLeftHand ? "left" : "right",
+                            rotationDistanceDegrees(
+                                desiredWorld,
+                                positionOnlyCarrierWorld),
+                            std::sqrt(dx * dx + dy * dy + dz * dz));
+                        _nativeCarrierTraceLogged = true;
+                    }
                 }
             } else if (input.nativeVisual && input.nativeVisual->weaponRoot &&
                        isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
@@ -656,6 +705,7 @@ namespace rock
         _weaponFormID = 0;
         _isLeftHand = false;
         _modelPresented = false;
+        _nativeCarrierTraceLogged = false;
         _active = false;
     }
 }

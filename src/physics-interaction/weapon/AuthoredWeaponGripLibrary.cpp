@@ -27,12 +27,15 @@ namespace rock::authored_weapon_grip_library
             std::uint64_t variantKey{ 0 };
             std::uint64_t instanceContentKey{ 0 };
             RE::NiTransform rightHandWeaponLocal{};
+            RE::NiTransform rightPositionOnlyHandWeaponLocal{};
             FiringFingerPose rightFiringFingerPose{};
             std::uint64_t captureSequence{ 0 };
+            std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
             std::uint64_t publicationOrdinal{ 0 };
             CaptureSource source{ CaptureSource::Unknown };
             bool inPowerArmor{ false };
             bool instanceContentKnown{ false };
+            bool hasRightPositionOnlyHandWeaponLocal{ false };
             bool occupied{ false };
         };
 
@@ -129,9 +132,15 @@ namespace rock::authored_weapon_grip_library
             return LookupResult{
                 .found = true,
                 .rightHandWeaponLocal = entry.rightHandWeaponLocal,
+                .rightPositionOnlyHandWeaponLocal =
+                    entry.rightPositionOnlyHandWeaponLocal,
                 .rightFiringFingerPose = entry.rightFiringFingerPose,
                 .captureSequence = entry.captureSequence,
+                .positionOnlyFrikOffsetRevision =
+                    entry.positionOnlyFrikOffsetRevision,
                 .source = entry.source,
+                .hasRightPositionOnlyHandWeaponLocal =
+                    entry.hasRightPositionOnlyHandWeaponLocal,
                 .usedVariantFallback = usedVariantFallback,
                 .reason = usedVariantFallback ? "authoredAnimationFormFallback" : "authoredAnimationExactVariant",
             };
@@ -227,6 +236,11 @@ namespace rock::authored_weapon_grip_library
             return true;
         }
 
+        if (destination->captureSequence != captureSequence) {
+            destination->rightPositionOnlyHandWeaponLocal = {};
+            destination->positionOnlyFrikOffsetRevision = 0;
+            destination->hasRightPositionOnlyHandWeaponLocal = false;
+        }
         destination->rightHandWeaponLocal = rightHandWeaponLocal;
         destination->rightFiringFingerPose = rightFiringFingerPose ? *rightFiringFingerPose : FiringFingerPose{};
         destination->captureSequence = captureSequence;
@@ -246,6 +260,37 @@ namespace rock::authored_weapon_grip_library
                 destination->rightFiringFingerPose.enabledMask);
         }
         return true;
+    }
+
+    bool publishPositionOnlyHold(
+        const RE::TESObjectWEAP* weapon,
+        const bool inPowerArmor,
+        const std::uint64_t authoredCaptureSequence,
+        const std::uint64_t frikOffsetRevision,
+        const RE::NiTransform& rightPositionOnlyHandWeaponLocal)
+    {
+        const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
+        if (weaponFormId == 0 || authoredCaptureSequence == 0 ||
+            frikOffsetRevision == 0 ||
+            !finiteTransform(rightPositionOnlyHandWeaponLocal)) {
+            return false;
+        }
+
+        for (auto& entry : s_entries) {
+            if (!entry.occupied ||
+                entry.weaponFormId != weaponFormId ||
+                entry.inPowerArmor != inPowerArmor ||
+                entry.captureSequence != authoredCaptureSequence) {
+                continue;
+            }
+
+            entry.rightPositionOnlyHandWeaponLocal =
+                rightPositionOnlyHandWeaponLocal;
+            entry.positionOnlyFrikOffsetRevision = frikOffsetRevision;
+            entry.hasRightPositionOnlyHandWeaponLocal = true;
+            return true;
+        }
+        return false;
     }
 
     LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, const bool inPowerArmor)

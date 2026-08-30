@@ -39,13 +39,14 @@ namespace rock
      * exit restores any native child cull and deterministically releases both
      * scene references and pose authority.
      *
-     * Blend target. begin() re-runs the shared loose-grip resolver against
-     * the filewatch-published hFRIK cache. Both hands therefore converge
-     * on the exact relation used during pull seating: custom JSON first,
-     * ROCK's learned animation pose second, embedded hFRIK data only as a
-     * cold fallback. A first-ever weapon with no authoritative relation uses
-     * the engine Weapon bone until its native graph produces the first ROCK
-     * capture; it never borrows another weapon's cached live local.
+     * Blend target. begin() re-runs the shared loose-grip identity resolver
+     * to recover the authored firing point and hand-pose payload. The retained
+     * loose model already carries the separate position-only placement hold;
+     * once the exact native Weapon frame exists, update() uses that frame as
+     * the rotational carrier and translates only the authored firing point.
+     * Custom JSON remains first authority, followed by ROCK-authored data and
+     * embedded hFRIK fallback. A first-ever weapon never borrows another
+     * weapon's cached position-only hold.
      *
      * Lifetime/threading: main-thread only, driven by PhysicsInteraction's
      * per-frame update. The bridge owns exactly one NiPointer; the scene
@@ -183,6 +184,7 @@ namespace rock
         bool _handPosePayloadAvailable = false;
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;
+        bool _nativeCarrierTraceLogged = false;
         bool _active = false;
     };
 }

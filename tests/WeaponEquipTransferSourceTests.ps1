@@ -176,6 +176,10 @@ Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'positionOnlyCarrierWorld\s*=[\s\S]{0,300}input\.nativeVisual->weaponRoot->world[\s\S]{0,160}desiredWorld[\s\S]{0,300}resolveAuthoredPrimaryWeaponWorldPositionOnly\([\s\S]{0,180}positionOnlyCarrierWorld' `
     'Once the equipped model exists, the phantom position-only solve must inherit that exact native weapon rotation before visual handoff.'
 
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'nativePositionOnlyCarrierAvailable[\s\S]{0,1800}EquipVisualBridge native position-only convergence[\s\S]{0,160}gripCorrection[\s\S]{0,500}rotationDistanceDegrees' `
+    'The first native-carrier convergence frame must record the rotational and grip corrections needed to audit the phantom handoff.'
+
 Reject-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'applyExternalHandWorldTransform|_positionOnlyAlignmentActive|rockExperimentalAuthoredGripPositionOnlyAlignment|RockConfig\.h' `
     'The mandatory position-only equip bridge must not retain selectable mode state, config authority, or the removed full-rigid hand-transform publication.'

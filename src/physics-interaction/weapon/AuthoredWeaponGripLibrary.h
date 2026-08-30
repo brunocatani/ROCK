@@ -42,10 +42,19 @@ namespace rock::authored_weapon_grip_library
     struct LookupResult
     {
         bool found{ false };
+        // Exact animation-authored wrist relation retained for hand and
+        // finger presentation.
         RE::NiTransform rightHandWeaponLocal{};
+        // Physical right-hand relation measured from ROCK's final
+        // position-only equipped pose. Loose weapon placement consumes this
+        // when available so it keeps the native weapon aim while reproducing
+        // the same authored grip translation.
+        RE::NiTransform rightPositionOnlyHandWeaponLocal{};
         FiringFingerPose rightFiringFingerPose{};
         std::uint64_t captureSequence{ 0 };
+        std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
+        bool hasRightPositionOnlyHandWeaponLocal{ false };
         bool usedVariantFallback{ false };
         const char* reason{ "notEvaluated" };
     };
@@ -70,7 +79,8 @@ namespace rock::authored_weapon_grip_library
 
     /*
      * Main-thread, process-local library of Bethesda's exact
-     * RArm_Hand-in-Weapon relation. Entries are keyed by runtime weapon form,
+     * RArm_Hand-in-Weapon relation plus ROCK's separately measured physical
+     * position-only hold. Entries are keyed by runtime weapon form,
      * deterministic equipped-instance content when available, power-armor
      * topology, and the P-Grip child used by hFRIK to distinguish stock
      * variants. Storage is fixed and bounded: publication and lookup do not
@@ -82,6 +92,18 @@ namespace rock::authored_weapon_grip_library
     [[nodiscard]] bool publishResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor,
         const RE::NiTransform& rightHandWeaponLocal, std::uint64_t captureSequence, CaptureSource source,
         const FiringFingerPose* rightFiringFingerPose = nullptr);
+
+    /*
+     * Attach the physical-hand relation measured from the final
+     * position-only equipped solve to the exact authored capture that
+     * produced it. This never replaces the animation-authored wrist relation.
+     */
+    [[nodiscard]] bool publishPositionOnlyHold(
+        const RE::TESObjectWEAP* weapon,
+        bool inPowerArmor,
+        std::uint64_t authoredCaptureSequence,
+        std::uint64_t frikOffsetRevision,
+        const RE::NiTransform& rightPositionOnlyHandWeaponLocal);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
     [[nodiscard]] LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor);

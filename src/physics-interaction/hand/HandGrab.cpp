@@ -1044,10 +1044,11 @@ namespace rock
                 /*
                  * Both firing hands use the same weapon-relative authority resolver.
                  * It enforces custom hFRIK > learned authored > embedded hFRIK and
-                 * performs no filesystem work on this grab path. The complete
-                 * hand-in-weapon relation remains the loose weapon's rotation and
-                 * translation authority; position-only normalization begins only
-                 * after the equipped native Weapon frame exists in the visual bridge.
+                 * performs no filesystem work on this grab path. Explicit hFRIK
+                 * keeps its complete correction. Authored placement receives the
+                 * separate physical-hand relation learned from ROCK's final
+                 * position-only equipped pose, so it rotates into native aim without
+                 * replaying the animation-authored wrist correction.
                  */
                 RE::NiTransform handWorld{};
                 RE::NiTransform handWeaponLocal{};

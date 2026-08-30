@@ -71,14 +71,14 @@ namespace rock::loose_weapon_grip_zone
         RE::NiPoint3& outFiringGripWeaponLocal);
 
     /*
-     * Stateless one-shot resolver of the canonical firing hold for a loose
-     * weapon in the tested hand: the primary hand receives the selected
-     * canonical pose, the other hand receives ROCK's mirrored firing hold, both
-     * expressed as the tested hand's live root-flattened frame plus the hand
-     * transform in weapon-root-local space (weapon world = hand world o
-     * inverse(hold)). Used by the pull-catch/force-grab commit to seat a far
-     * grabbed weapon directly on its firing grip; the grip-zone runtimes
-     * above share the same projection. Frame-thread only.
+     * Stateless one-shot resolver of the loose weapon PLACEMENT hold. For an
+     * authored grip this is the physical-hand relation cached from ROCK's
+     * final position-only equipped solve, not the animation-authored wrist
+     * rotation. If that live cache is not ready, the same position-only hold
+     * is derived from the native/hFRIK carrier; full authored placement is the
+     * final aligned fallback. The other hand receives the matching mirrored
+     * hold. Weapon world = hand world o inverse(hold). Used by pull-catch and
+     * force-grab commit; frame-thread only.
      */
     bool tryResolveLooseWeaponFiringHandHold(
         bool isLeft,
