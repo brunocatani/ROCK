@@ -23,6 +23,7 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
@@ -829,6 +830,12 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Allocate trampoline (2048 bytes)...");
     F4SE::AllocTrampoline(2048);
+
+    logger::info("ROCK: Install native shape-cast safety...");
+    if (!rock::native_shape_cast_safety::install()) {
+        logger::warn(
+            "ROCK: Native shape-cast safety is unavailable; native collision queries remain unchanged.");
+    }
 
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {
