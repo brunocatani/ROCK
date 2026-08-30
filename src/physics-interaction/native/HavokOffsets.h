@@ -229,6 +229,9 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_HkbnpRagdollInterface_UpdateConstraints = 0x17B74B0;
     constexpr std::uintptr_t kFault_HkbnpRagdollInterface_ConstraintRead = 0x17B7534;
 
+    constexpr std::uintptr_t kFunc_BhkNPCollisionObject_GetCollisionFilterInfo = 0x1E08D60;
+    constexpr std::uintptr_t kFault_BhkNPCollisionObject_BodyFilterRead = 0x1E08DF3;
+
     constexpr std::uintptr_t kFunc_World_AddStepListener = 0x1DFA7B0;
 
     constexpr std::uintptr_t kData_BhkWorldRawDeltaSeconds = 0x65A3D70;
