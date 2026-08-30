@@ -180,6 +180,7 @@ namespace rock::authored_support_grab_policy
         Failure,
         Reject,
         ProviderDynamic,
+        DynamicHandoff,
         Authored,
         DynamicFallback,
         DynamicUnrestricted,
@@ -191,6 +192,7 @@ namespace rock::authored_support_grab_policy
         CapabilityPending,
         AuthoredActivationRejected,
         ProviderTargetMatched,
+        AmbidextrousHandoffGrip,
         AuthoredCaptureEligible,
         AuthoredCapabilityUnavailable,
         ModeDisabled,
@@ -200,6 +202,7 @@ namespace rock::authored_support_grab_policy
     {
         bool modeEnabled{ false };
         bool providerPartAuthorityActive{ false };
+        bool dynamicHandoffCaptureEligible{ false };
         bool authoredCaptureEligible{ false };
         Capability capability{ Capability::Pending };
     };
@@ -219,6 +222,16 @@ namespace rock::authored_support_grab_policy
             return {
                 .selection = Selection::ProviderDynamic,
                 .reason = SelectionReason::ProviderTargetMatched,
+            };
+        }
+        // The firing-grip handoff station is a separate, tightly bounded
+        // dynamic acquisition supplied by the ambidextrous state machine. Its
+        // caller retains an authored seat when that seat is already at the
+        // firing grip, so this branch covers only the missing dynamic station.
+        if (input.dynamicHandoffCaptureEligible) {
+            return {
+                .selection = Selection::DynamicHandoff,
+                .reason = SelectionReason::AmbidextrousHandoffGrip,
             };
         }
         if (input.authoredCaptureEligible) {
@@ -250,6 +263,7 @@ namespace rock::authored_support_grab_policy
     [[nodiscard]] constexpr bool captured(const Selection selection) noexcept
     {
         return selection == Selection::ProviderDynamic ||
+               selection == Selection::DynamicHandoff ||
                selection == Selection::Authored ||
                selection == Selection::DynamicFallback ||
                selection == Selection::DynamicUnrestricted;
@@ -317,6 +331,8 @@ namespace rock::authored_support_grab_policy
             return "REJECT";
         case Selection::ProviderDynamic:
             return "PROVIDER";
+        case Selection::DynamicHandoff:
+            return "DYNAMIC_HANDOFF";
         case Selection::Authored:
             return "AUTHORED";
         case Selection::DynamicFallback:
@@ -339,6 +355,8 @@ namespace rock::authored_support_grab_policy
             return "authored-activation-rejected";
         case SelectionReason::ProviderTargetMatched:
             return "provider-target-matched";
+        case SelectionReason::AmbidextrousHandoffGrip:
+            return "ambidextrous-handoff-firing-grip";
         case SelectionReason::AuthoredCaptureEligible:
             return "authored-capture-eligible";
         case SelectionReason::AuthoredCapabilityUnavailable:

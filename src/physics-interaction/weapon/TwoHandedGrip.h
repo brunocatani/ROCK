@@ -1381,6 +1381,7 @@ namespace rock
             const WeaponCollision& weaponCollision,
             const WeaponProviderPartAuthority& providerPartAuthority,
             bool firingGripProximityAuthorityEnabled,
+            bool ambidextrousHandoffCaptureContext,
             RE::NiTransform* outCapturedHandWorld = nullptr);
 
         void lockPartGripToWeaponRoot(bool isLeft);

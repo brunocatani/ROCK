@@ -2490,6 +2490,72 @@ int main()
     ok &= expectFalse("AttachOnly support never inherits firing-grip ownership",
         canPromoteSupportGripToFiringGrip(true, true));
 
+    using rock::weapon_support_authority_policy::DynamicHandoffGripCaptureInput;
+    using rock::weapon_support_authority_policy::shouldCaptureDynamicHandoffGrip;
+    const DynamicHandoffGripCaptureInput dynamicHandoffGrip{
+        .normalSupportAcquisition = true,
+        .ambidextrousHandoffEnabled = true,
+        .firingGripProximityAuthorityEnabled = true,
+        .providerPartAuthorityActive = false,
+        .authoredCaptureEligible = false,
+        .supportPalmToFiringGripDistance = 3.0f,
+        .authoredSeatToFiringGripDistance = 12.0f,
+        .firingGripPromotionRadius = 5.0f,
+    };
+    ok &= expectTrue(
+        "firing-grip station restores dynamic ambidextrous handoff",
+        shouldCaptureDynamicHandoffGrip(dynamicHandoffGrip));
+    {
+        auto input = dynamicHandoffGrip;
+        input.authoredCaptureEligible = true;
+        ok &= expectTrue(
+            "authored support away from firing grip cannot steal dynamic handoff",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
+    {
+        auto input = dynamicHandoffGrip;
+        input.authoredCaptureEligible = true;
+        input.authoredSeatToFiringGripDistance = 4.0f;
+        ok &= expectFalse(
+            "authored firing-grip seat remains preferred for pistols",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
+    {
+        auto input = dynamicHandoffGrip;
+        input.supportPalmToFiringGripDistance = 6.0f;
+        ok &= expectFalse(
+            "dynamic handoff cannot escape the promotion radius",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
+    {
+        auto input = dynamicHandoffGrip;
+        input.providerPartAuthorityActive = true;
+        ok &= expectFalse(
+            "exact provider target remains ahead of dynamic handoff",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
+    {
+        auto input = dynamicHandoffGrip;
+        input.normalSupportAcquisition = false;
+        ok &= expectFalse(
+            "part-carry acquisition cannot use the handoff bypass",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
+    {
+        auto input = dynamicHandoffGrip;
+        input.ambidextrousHandoffEnabled = false;
+        ok &= expectFalse(
+            "disabled ambidextrous mode cannot create a handoff station",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
+    {
+        auto input = dynamicHandoffGrip;
+        input.firingGripProximityAuthorityEnabled = false;
+        ok &= expectFalse(
+            "provider-owned proximity policy cannot create a local handoff station",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
+
     using rock::weapon_interaction_probe_math::isBetterProbeCandidate;
     using rock::weapon_interaction_probe_math::ProbeCandidateRank;
     ok &= expectTrue("closer exact weapon surface always wins",

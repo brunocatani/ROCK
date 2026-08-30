@@ -117,6 +117,52 @@ namespace rock::weapon_support_authority_policy
         return supportGripActive && !attachOnly;
     }
 
+    struct DynamicHandoffGripCaptureInput
+    {
+        bool normalSupportAcquisition{ false };
+        bool ambidextrousHandoffEnabled{ false };
+        bool firingGripProximityAuthorityEnabled{ false };
+        bool providerPartAuthorityActive{ false };
+        bool authoredCaptureEligible{ false };
+        float supportPalmToFiringGripDistance{ 0.0f };
+        float authoredSeatToFiringGripDistance{ 0.0f };
+        float firingGripPromotionRadius{ 0.0f };
+    };
+
+    [[nodiscard]] inline constexpr bool isInsideFiringGripPromotionRadius(
+        const float distance,
+        const float radius) noexcept
+    {
+        return distance >= 0.0f && radius >= 0.0f && distance <= radius;
+    }
+
+    /*
+     * Support-pose selection must not remove the separate dynamic ambidextrous
+     * handoff station at the firing grip. This bypass exists only during an
+     * ordinary support acquisition with the live support palm inside the
+     * promotion radius. Exact provider authority remains ahead of it. If a
+     * usable authored seat is itself inside that same radius (the common pistol
+     * case), retain the authored seat instead of replacing it with dynamic.
+     */
+    [[nodiscard]] inline constexpr bool shouldCaptureDynamicHandoffGrip(
+        const DynamicHandoffGripCaptureInput& input) noexcept
+    {
+        if (!input.normalSupportAcquisition ||
+            !input.ambidextrousHandoffEnabled ||
+            !input.firingGripProximityAuthorityEnabled ||
+            input.providerPartAuthorityActive ||
+            !isInsideFiringGripPromotionRadius(
+                input.supportPalmToFiringGripDistance,
+                input.firingGripPromotionRadius)) {
+            return false;
+        }
+
+        return !input.authoredCaptureEligible ||
+               !isInsideFiringGripPromotionRadius(
+                   input.authoredSeatToFiringGripDistance,
+                   input.firingGripPromotionRadius);
+    }
+
     template <class Transform>
     inline Transform buildVisualOnlySupportHandWorld(const Transform& weaponWorld, const Transform& supportHandWeaponLocal)
     {

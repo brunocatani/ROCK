@@ -136,9 +136,21 @@ int main()
     static_assert(select(SelectionInput{
         .modeEnabled = true,
         .providerPartAuthorityActive = true,
+        .dynamicHandoffCaptureEligible = true,
         .authoredCaptureEligible = true,
         .capability = Capability::Usable,
     }).selection == Selection::ProviderDynamic);
+    static_assert([] {
+        constexpr auto result = select(SelectionInput{
+            .modeEnabled = true,
+            .dynamicHandoffCaptureEligible = true,
+            .authoredCaptureEligible = true,
+            .capability = Capability::Usable,
+        });
+        return result.selection == Selection::DynamicHandoff &&
+               result.reason ==
+                   SelectionReason::AmbidextrousHandoffGrip;
+    }());
     static_assert(select(SelectionInput{
         .modeEnabled = true,
         .authoredCaptureEligible = true,
@@ -171,6 +183,7 @@ int main()
     }());
 
     static_assert(captured(Selection::ProviderDynamic));
+    static_assert(captured(Selection::DynamicHandoff));
     static_assert(captured(Selection::Authored));
     static_assert(captured(Selection::DynamicFallback));
     static_assert(captured(Selection::DynamicUnrestricted));

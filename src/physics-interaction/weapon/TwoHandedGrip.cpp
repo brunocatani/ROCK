@@ -5095,6 +5095,7 @@ namespace rock
         const WeaponCollision& weaponCollision,
         const WeaponProviderPartAuthority& providerPartAuthority,
         const bool firingGripProximityAuthorityEnabled,
+        const bool ambidextrousHandoffCaptureContext,
         RE::NiTransform* const outCapturedHandWorld)
     {
         if (outCapturedHandWorld) {
@@ -5159,15 +5160,24 @@ namespace rock
 
         const RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft);
         const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
+        const RE::NiPoint3 firingGripWorld =
+            weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiPoint3 palmToFiringGrip =
+            sub(palmPos, firingGripWorld);
+        const float supportPalmToFiringGripDistance =
+            std::sqrt(dot(palmToFiringGrip, palmToFiringGrip));
 
         /*
-         * Acquisition-only authored priority. Physical contact and the
-         * proximity probe are equivalent entry sources: an eligible authored
-         * relation wins over both, but only inside the enforced family cone
-         * and radial cap. The captured palm plus at least two distal
-         * fingertips must also have current generated-mesh witnesses, so an
-         * animation-zero/default support hand cannot escape to an unrelated
-         * world-space pose. A matched provider target remains the first
+         * Acquisition-only grip priority. Physical contact and the proximity
+         * probe are equivalent entry sources. Exact provider authority wins
+         * first. A live palm at the firing grip may then select the bounded
+         * dynamic ambidextrous handoff station when the authored seat is not
+         * itself at that grip. Otherwise an eligible authored relation wins,
+         * but only inside the enforced family cone and radial cap. The
+         * captured palm plus at least two distal fingertips must also have
+         * current generated-mesh witnesses, so an animation-zero/default
+         * support hand cannot escape to an unrelated world-space pose. A
+         * matched provider target remains the first
          * authority. Otherwise the authored-only policy permits the dynamic
          * mesh solver only when the mode is disabled or this exact weapon and
          * support topology has qualified as lacking a usable authored pose. A
@@ -5306,6 +5316,30 @@ namespace rock
                         authoredSupportFingerLocalTransformMask ==
                         kCompleteAuthoredFingerMask,
                 });
+        const bool useDynamicHandoffGrip =
+            weapon_support_authority_policy::
+                shouldCaptureDynamicHandoffGrip(
+                    weapon_support_authority_policy::
+                        DynamicHandoffGripCaptureInput{
+                            .normalSupportAcquisition =
+                                ambidextrousHandoffCaptureContext,
+                            .ambidextrousHandoffEnabled =
+                                _handlingSettings.
+                                    ambidextrousHandoffEnabled,
+                            .firingGripProximityAuthorityEnabled =
+                                firingGripProximityAuthorityEnabled,
+                            .providerPartAuthorityActive =
+                                providerPartAuthority.active,
+                            .authoredCaptureEligible =
+                                useAuthoredSupportGrip,
+                            .supportPalmToFiringGripDistance =
+                                supportPalmToFiringGripDistance,
+                            .authoredSeatToFiringGripDistance =
+                                authoredSupportPalmToFiringGripDistance,
+                            .firingGripPromotionRadius =
+                                _handlingSettings.
+                                    firingGripPromotionRadiusGameUnits,
+                        });
         if (_handlingSettings.authoredOnlySupportGrabsEnabled &&
             !providerPartAuthority.active) {
             observeAuthoredSupportCapability(
@@ -5320,6 +5354,8 @@ namespace rock
                         _handlingSettings.authoredOnlySupportGrabsEnabled,
                     .providerPartAuthorityActive =
                         providerPartAuthority.active,
+                    .dynamicHandoffCaptureEligible =
+                        useDynamicHandoffGrip,
                     .authoredCaptureEligible = useAuthoredSupportGrip,
                     .capability =
                         _authoredSupportCapability.capability,
@@ -5385,7 +5421,7 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} topology={} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} topology={} sideDot={:.3f} downDot={:.3f} arcDot={:.3f} region={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>handoff>authored>dynamic",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
@@ -5499,7 +5535,7 @@ namespace rock
 
         GrabPoint grabPoint{};
         bool meshFound = false;
-        if (cachedTrianglesFound) {
+        if (!useDynamicHandoffGrip && cachedTrianglesFound) {
             const TransformedSupportGripTriangleView worldEvidence{
                 .localTriangles = evidenceView.localTriangles,
                 .localToWorld = evidenceView.localToWorld,
@@ -5514,14 +5550,26 @@ namespace rock
                 g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits);
         }
 
-        if (meshFound) {
+        if (useDynamicHandoffGrip) {
+            // This is a real second station at the firing grip, not an
+            // authored support seat or whichever receiver triangle happened
+            // to satisfy the contact probe. Locking the exact station makes
+            // the later promotion test deterministic while the dynamic finger
+            // solver still wraps the live weapon geometry below.
+            supportAttachmentRoot = weaponNode;
+            grip.attachmentRoot = weaponNode;
+            grip.gripLocal = _primaryGripLocal;
+            grip.grabNormalWorld = palmDir;
+        } else if (meshFound) {
             grip.gripLocal = worldToWeaponLocal(grabPoint.position, weaponNode);
             grip.grabNormalWorld = grabPoint.normal;
         } else {
             grip.gripLocal = worldToWeaponLocal(palmPos, weaponNode);
             grip.grabNormalWorld = palmDir;
         }
-        const RE::NiPoint3 gripWorldPoint = meshFound ? grabPoint.position : palmPos;
+        const RE::NiPoint3 gripWorldPoint = useDynamicHandoffGrip ?
+            firingGripWorld :
+            (meshFound ? grabPoint.position : palmPos);
         constexpr float kDegreesToRadians =
             0.01745329251994329577f;
         const float surfaceSeatMaxRadians =
@@ -6013,7 +6061,9 @@ namespace rock
             grip.gripLocal.x,
             grip.gripLocal.y,
             grip.gripLocal.z,
-            meshFound ? "YES" : "FALLBACK",
+            useDynamicHandoffGrip ?
+                "HANDOFF" :
+                (meshFound ? "YES" : "FALLBACK"),
             sourceTriangleCount,
             compositeEvidenceViewCount,
             contactedSourceTriangleCount,
@@ -6286,6 +6336,7 @@ namespace rock
                 weaponCollision,
                 providerPartAuthority,
                 firingGripProximityAuthorityEnabled,
+                true,
                 &supportCaptureHandWorld);
         if (!authored_support_grab_policy::captured(partGripCapture)) {
             rollbackPreparedAcquisition();
@@ -8839,7 +8890,7 @@ namespace rock
             if (freeHandDecision.kind == WeaponInteractionKind::SupportGrip) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: recapturing free-hand part grip under newly matched provider weapon-part target");
                 releasePartGrip(firingHandIsLeft, "provider-part-target-newly-matched");
-                (void)capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, firingRuntimeState.providerPartAuthority, false);
+                (void)capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, firingRuntimeState.providerPartAuthority, false, false);
             }
         }
         if (supportGrip.active && !supportGrip.providerPartAuthority.active &&
@@ -8850,7 +8901,7 @@ namespace rock
             if (supportDecision.kind == WeaponInteractionKind::SupportGrip) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: recapturing support part grip under newly matched provider weapon-part target");
                 releasePartGrip(supportHandIsLeft, "provider-part-target-newly-matched");
-                (void)capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, supportRuntimeState.providerPartAuthority, false);
+                (void)capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, supportRuntimeState.providerPartAuthority, false, false);
             }
         }
 
@@ -8891,6 +8942,7 @@ namespace rock
                             freeHandDecision,
                             weaponCollision,
                             firingRuntimeState.providerPartAuthority,
+                            false,
                             false))) {
                     /*
                      * AttachOnly keeps its authored source frames so the glued
@@ -8924,6 +8976,7 @@ namespace rock
                             supportDecision,
                             weaponCollision,
                             supportRuntimeState.providerPartAuthority,
+                            false,
                             false))) {
                     // Symmetric to the free-hand capture above: attach-only
                     // glue keeps source frames and stays out of the carry.
