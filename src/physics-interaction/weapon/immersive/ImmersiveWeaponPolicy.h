@@ -11,6 +11,21 @@ namespace rock::immersive_weapon_policy
         ExternalProvider,
     };
 
+    enum class DetachedFiringHandPartGrabSelection
+    {
+        Standard,
+        ExactProviderTarget,
+        Reject,
+    };
+
+    struct DetachedFiringHandPartGrabInput
+    {
+        DetachAuthority partCarryAuthority{ DetachAuthority::None };
+        bool detachedHandIsLeft{ false };
+        bool authoredOnlySupportGrabsEnabled{ false };
+        bool exactProviderPartTargetActive{ false };
+    };
+
     struct Config
     {
         // Runtime snapshots fail closed until RockConfig publishes the loaded
@@ -102,6 +117,30 @@ namespace rock::immersive_weapon_policy
             decision.firingGripOwnershipEnabled ||
             decision.primaryDetachEnabled;
         return decision;
+    }
+
+    /*
+     * Integrated physical-right detach is an authored firing-grip contract.
+     * PartCarry tests that firing grip before this policy runs. With ROCK's
+     * authored-only switch enabled, the detached right hand may therefore
+     * capture another weapon part only when the current contact has exact
+     * provider authority. External detach and physical-left behavior retain
+     * the established support-grab selector, as does mode-off operation.
+     */
+    [[nodiscard]] inline constexpr DetachedFiringHandPartGrabSelection
+    resolveDetachedFiringHandPartGrab(
+        const DetachedFiringHandPartGrabInput& input) noexcept
+    {
+        if (input.partCarryAuthority !=
+                DetachAuthority::IntegratedPhysicalRight ||
+            input.detachedHandIsLeft ||
+            !input.authoredOnlySupportGrabsEnabled) {
+            return DetachedFiringHandPartGrabSelection::Standard;
+        }
+
+        return input.exactProviderPartTargetActive ?
+                   DetachedFiringHandPartGrabSelection::ExactProviderTarget :
+                   DetachedFiringHandPartGrabSelection::Reject;
     }
 
     [[nodiscard]] inline constexpr std::string_view authorityName(

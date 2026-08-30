@@ -2019,6 +2019,71 @@ int main()
     ok &= expectNear("integrated physical right owns detach haptic",
         integratedRightDetach.gripDetachHapticIntensity,
         0.31f);
+    ok &= expectEqual(
+        "authored-only integrated right rejects an ordinary detached part grab",
+        rock::immersive_weapon_policy::
+            resolveDetachedFiringHandPartGrab({
+                .partCarryAuthority =
+                    rock::immersive_weapon_policy::DetachAuthority::
+                        IntegratedPhysicalRight,
+                .detachedHandIsLeft = false,
+                .authoredOnlySupportGrabsEnabled = true,
+                .exactProviderPartTargetActive = false,
+            }),
+        rock::immersive_weapon_policy::
+            DetachedFiringHandPartGrabSelection::Reject);
+    ok &= expectEqual(
+        "authored-only integrated right accepts an exact provider part target",
+        rock::immersive_weapon_policy::
+            resolveDetachedFiringHandPartGrab({
+                .partCarryAuthority =
+                    rock::immersive_weapon_policy::DetachAuthority::
+                        IntegratedPhysicalRight,
+                .detachedHandIsLeft = false,
+                .authoredOnlySupportGrabsEnabled = true,
+                .exactProviderPartTargetActive = true,
+            }),
+        rock::immersive_weapon_policy::
+            DetachedFiringHandPartGrabSelection::ExactProviderTarget);
+    ok &= expectEqual(
+        "authored-only off preserves unrestricted detached right selection",
+        rock::immersive_weapon_policy::
+            resolveDetachedFiringHandPartGrab({
+                .partCarryAuthority =
+                    rock::immersive_weapon_policy::DetachAuthority::
+                        IntegratedPhysicalRight,
+                .detachedHandIsLeft = false,
+                .authoredOnlySupportGrabsEnabled = false,
+                .exactProviderPartTargetActive = false,
+            }),
+        rock::immersive_weapon_policy::
+            DetachedFiringHandPartGrabSelection::Standard);
+    ok &= expectEqual(
+        "external detach preserves its established part selection",
+        rock::immersive_weapon_policy::
+            resolveDetachedFiringHandPartGrab({
+                .partCarryAuthority =
+                    rock::immersive_weapon_policy::DetachAuthority::
+                        ExternalProvider,
+                .detachedHandIsLeft = false,
+                .authoredOnlySupportGrabsEnabled = true,
+                .exactProviderPartTargetActive = false,
+            }),
+        rock::immersive_weapon_policy::
+            DetachedFiringHandPartGrabSelection::Standard);
+    ok &= expectEqual(
+        "integrated policy never restricts a physical-left detached hand",
+        rock::immersive_weapon_policy::
+            resolveDetachedFiringHandPartGrab({
+                .partCarryAuthority =
+                    rock::immersive_weapon_policy::DetachAuthority::
+                        IntegratedPhysicalRight,
+                .detachedHandIsLeft = true,
+                .authoredOnlySupportGrabsEnabled = true,
+                .exactProviderPartTargetActive = false,
+            }),
+        rock::immersive_weapon_policy::
+            DetachedFiringHandPartGrabSelection::Standard);
     const auto integratedLeftDetach =
         rock::resolveEquippedWeaponDetachDecision(
             coreWeaponHandling,

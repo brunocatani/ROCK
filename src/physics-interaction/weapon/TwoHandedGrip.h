@@ -1739,6 +1739,12 @@ namespace rock
          */
         bool _partCarryPivotIsLeft{ true };
 
+        // Captured when PartCarry begins so a later provider/config snapshot
+        // cannot silently change which detach contract owns the live carry.
+        immersive_weapon_policy::DetachAuthority _partCarryDetachAuthority{
+            immersive_weapon_policy::DetachAuthority::None
+        };
+
         RE::NiPoint3 _primaryGripLocal{};
 
         float _lockedGripSeparationWorld{ 0.0f };

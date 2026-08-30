@@ -184,6 +184,13 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'canCarryAfterFiringGripDetach\(_authorityMode\)[\s\S]{0,900}transitionToPartCarry\(\)[\s\S]*requestEquippedWeaponDrop\([\s\S]{0,180}primary-released-without-carry-authority' `
     'A firing-grip release must enter part carry only with carry authority and otherwise use the physical drop path.'
 
+Require-Text 'src/physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h' `
+    'resolveDetachedFiringHandPartGrab[\s\S]*IntegratedPhysicalRight[\s\S]{0,180}detachedHandIsLeft[\s\S]{0,180}authoredOnlySupportGrabsEnabled[\s\S]{0,240}DetachedFiringHandPartGrabSelection::Standard[\s\S]{0,220}exactProviderPartTargetActive[\s\S]{0,180}ExactProviderTarget[\s\S]{0,180}Reject' `
+    'Authored-only integrated physical-right carry must reserve ordinary grabs for firing-grip reattach while allowing only exact provider part targets.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'transitionToPartCarry\(\)[\s\S]*_partCarryDetachAuthority\s*=\s*_handlingSettings\.detachAuthority[\s\S]{0,180}_state\s*=\s*TwoHandedState::PartCarry[\s\S]*updatePartCarryGrip\([\s\S]*tryReattachFiringGrip\([\s\S]*resolveDetachedFiringHandPartGrab\([\s\S]{0,900}providerPartAuthority\.active[\s\S]{0,500}DetachedFiringHandPartGrabSelection::Reject[\s\S]*capturePartGrip\(' `
+    'PartCarry must retain its detach origin, try the authored firing grip first, and gate only the former firing hand before generic part capture.'
+
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'updatePrimaryOnlyGrip[\s\S]{0,1000}primaryGripRetained\s*=\s*equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership\(\s*primaryDetachEnabled,\s*primaryGripInput\.held\)' `
     'Non-detaching fixed or addon ownership must ignore grip release while still running equipped-weapon identity cleanup.'

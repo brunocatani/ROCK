@@ -3574,6 +3574,8 @@ namespace rock
         _rotationBlend = 0.0f;
         _partGrips = {};
         _partCarryPivotIsLeft = true;
+        _partCarryDetachAuthority =
+            immersive_weapon_policy::DetachAuthority::None;
         _partCarryGripSeparationWorld = 0.0f;
         _primaryGripLocal = {};
         _lockedGripSeparationWorld = 0.0f;
@@ -6386,6 +6388,8 @@ namespace rock
         }
 
         _state = TwoHandedState::Gripping;
+        _partCarryDetachAuthority =
+            immersive_weapon_policy::DetachAuthority::None;
         _rotationBlend = 0.0f;
         _gripLogCounter = 0;
         _supportGripAgeSeconds = 0.0f;
@@ -6480,6 +6484,8 @@ namespace rock
         _rotationBlend = 0.0f;
         _partGrips = {};
         _partCarryPivotIsLeft = true;
+        _partCarryDetachAuthority =
+            immersive_weapon_policy::DetachAuthority::None;
         _partCarryGripSeparationWorld = 0.0f;
         _primaryGripLocal = {};
         _lockedGripSeparationWorld = 0.0f;
@@ -7618,6 +7624,7 @@ namespace rock
         }
         _rotationBlend = 1.0f;
         _partCarryPivotIsLeft = carryHandIsLeft;
+        _partCarryDetachAuthority = _handlingSettings.detachAuthority;
         _partCarryGripSeparationWorld = 0.0f;
         _state = TwoHandedState::PartCarry;
         recordFiringGripDetachedHaptic();
@@ -8069,6 +8076,8 @@ namespace rock
         }
         _partGrips = {};
         _partCarryPivotIsLeft = true;
+        _partCarryDetachAuthority =
+            immersive_weapon_policy::DetachAuthority::None;
         _partCarryGripSeparationWorld = 0.0f;
         _hasSolvedWeaponTransform = _returningWeaponVisual.localTransition.active && _hasLastRenderedWeaponWorld;
         if (_hasSolvedWeaponTransform) {
@@ -8736,6 +8745,8 @@ namespace rock
                         _rotationBlend = 0.0f;
                     }
                     _state = TwoHandedState::Gripping;
+                    _partCarryDetachAuthority =
+                        immersive_weapon_policy::DetachAuthority::None;
                     // Fresh two-hand configuration: the just-taken firing grip
                     // gets the same release-defer window as a fresh support grab.
                     _supportGripAgeSeconds = 0.0f;
@@ -8850,7 +8861,30 @@ namespace rock
                     frameInput.primaryGripInput.pressed,
                     firingHandHoldingObject,
                     freeHandGrip.active)) {
-                if (authored_support_grab_policy::captured(
+                const auto partGrabSelection =
+                    immersive_weapon_policy::
+                        resolveDetachedFiringHandPartGrab(
+                            immersive_weapon_policy::
+                                DetachedFiringHandPartGrabInput{
+                                    .partCarryAuthority =
+                                        _partCarryDetachAuthority,
+                                    .detachedHandIsLeft = firingHandIsLeft,
+                                    .authoredOnlySupportGrabsEnabled =
+                                        _handlingSettings.
+                                            authoredOnlySupportGrabsEnabled,
+                                    .exactProviderPartTargetActive =
+                                        firingRuntimeState.
+                                            providerPartAuthority.active,
+                                });
+                if (partGrabSelection ==
+                    immersive_weapon_policy::
+                        DetachedFiringHandPartGrabSelection::Reject) {
+                    ROCK_LOG_INFO(
+                        Weapon,
+                        "TwoHandedGrip: detached right-hand part grip rejected reason=authored-firing-grip-or-exact-provider-target-required bodyId={} generation={:016X}",
+                        freeHandDecision.bodyId,
+                        freeHandDecision.weaponGenerationKey);
+                } else if (authored_support_grab_policy::captured(
                         capturePartGrip(
                             firingHandIsLeft,
                             weaponNode,
