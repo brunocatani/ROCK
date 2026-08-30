@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/ROCKProviderApi.h"
+#include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
 
 namespace rock
 {
@@ -10,6 +11,7 @@ namespace rock
         bool authoredOnlySupportGrabsEnabled{ true };
         bool toggleGrabEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
+        immersive_weapon_policy::Config immersiveWeapon{};
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
         float firingGripPromotionRadiusGameUnits{ 5.0f };
         float leftFiringAimYawDegrees{ 0.0f };
@@ -24,6 +26,9 @@ namespace rock
         bool externalAuthorityActive{ false };
         bool firingGripOwnershipEnabled{ false };
         bool primaryDetachEnabled{ false };
+        immersive_weapon_policy::DetachAuthority detachAuthority{
+            immersive_weapon_policy::DetachAuthority::None
+        };
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
         bool toggleGrabEnabled{ false };
@@ -31,6 +36,7 @@ namespace rock
         bool gripZoneHoverHapticsEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
         bool pipboyTriggerHandEquipEnabled{ false };
+        immersive_weapon_policy::Config immersiveWeapon{};
 
         float gripZoneEquipRadiusGameUnits{ 3.0f };
         float gripZoneEquipSettleSeconds{ 0.15f };
@@ -59,9 +65,10 @@ namespace rock
         EquippedWeaponHandlingSettings settings{};
         settings.firingGripOwnershipEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
-        // ROCK's native shoulder gesture never grants physical-detach
-        // authority. Only an explicit handling-provider lease may turn a grab
-        // release into an equipped-weapon world drop.
+        // This base snapshot retains provider detach separately. The
+        // physical-right integrated policy is resolved against the current
+        // firing hand each frame and never widens into a global left-capable
+        // detach bit.
         settings.primaryDetachEnabled = false;
         settings.ambidextrousHandoffEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
@@ -75,6 +82,7 @@ namespace rock
         settings.toggleGrabEnabled = rockBaseline.toggleGrabEnabled;
         settings.equippedWeaponShoulderStashEnabled =
             rockBaseline.equippedWeaponShoulderStashEnabled;
+        settings.immersiveWeapon = rockBaseline.immersiveWeapon;
         // Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety
         // contract, not ambidextrous ownership. ROCK supplies the baseline
         // radius; an active handling owner may replace only that tuning value.
@@ -143,6 +151,31 @@ namespace rock
         return settings;
     }
 
+    [[nodiscard]] inline constexpr immersive_weapon_policy::Decision
+    resolveEquippedWeaponDetachDecision(
+        const EquippedWeaponHandlingSettings& settings,
+        const bool firingHandIsLeft) noexcept
+    {
+        return immersive_weapon_policy::resolve(
+            immersive_weapon_policy::ResolveInput{
+                .integrated = settings.immersiveWeapon,
+                .firingHandIsLeft = firingHandIsLeft,
+                .firingGripOwnershipEnabled =
+                    settings.firingGripOwnershipEnabled,
+                .externalPrimaryDetachEnabled =
+                    settings.externalAuthorityActive &&
+                    settings.primaryDetachEnabled,
+                .externalReattachRadiusGameUnits =
+                    settings.firingGripReattachRadiusGameUnits,
+                .externalGripHapticDurationSeconds =
+                    settings.weaponGripHapticDurationSeconds,
+                .externalGripAttachHapticIntensity =
+                    settings.firingGripAttachHapticIntensity,
+                .externalGripDetachHapticIntensity =
+                    settings.firingGripDetachHapticIntensity,
+            });
+    }
+
     [[nodiscard]] inline constexpr bool
     requiresEquippedWeaponHandlingModeReconcile(
         const EquippedWeaponHandlingSettings& previous,
@@ -161,10 +194,18 @@ namespace rock
         // addon-to-ROCK fallback keeps the same ROCK executor and can preserve
         // its live handoff. Reconcile only when a state-owning capability is
         // removed and the current manual state may no longer be legal.
+        const bool integratedPhysicalRightDetachRemoved =
+            previous.immersiveWeapon.
+                physicalRightFiringGripDetachEnabled &&
+            !current.immersiveWeapon.
+                physicalRightFiringGripDetachEnabled &&
+            !current.primaryDetachEnabled;
+
         return (previous.firingGripOwnershipEnabled &&
                    !current.firingGripOwnershipEnabled) ||
                (previous.primaryDetachEnabled &&
                    !current.primaryDetachEnabled) ||
+               integratedPhysicalRightDetachRemoved ||
                (previous.ambidextrousHandoffEnabled &&
                    !current.ambidextrousHandoffEnabled) ||
                (previous.pipboyTriggerHandEquipEnabled &&

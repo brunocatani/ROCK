@@ -1832,6 +1832,13 @@ int main()
         .authoredOnlySupportGrabsEnabled = true,
         .toggleGrabEnabled = true,
         .equippedWeaponShoulderStashEnabled = true,
+        .immersiveWeapon = {
+            .physicalRightFiringGripDetachEnabled = true,
+            .physicalRightFiringGripReattachRadiusGameUnits = 4.0f,
+            .physicalRightFiringGripHapticDurationSeconds = 0.11f,
+            .physicalRightFiringGripAttachHapticIntensity = 0.81f,
+            .physicalRightFiringGripDetachHapticIntensity = 0.31f,
+        },
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
         .firingGripPromotionRadiusGameUnits = 5.5f,
         .leftFiringAimYawDegrees = 1.5f,
@@ -1858,6 +1865,39 @@ int main()
         coreWeaponHandling.toggleGrabEnabled);
     ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
         coreWeaponHandling.primaryDetachEnabled);
+    const auto integratedRightDetach =
+        rock::resolveEquippedWeaponDetachDecision(
+            coreWeaponHandling,
+            false);
+    ok &= expectEqual("physical right resolves integrated detach authority",
+        integratedRightDetach.authority,
+        rock::immersive_weapon_policy::DetachAuthority::
+            IntegratedPhysicalRight);
+    ok &= expectTrue("integrated physical right enables firing ownership",
+        integratedRightDetach.firingGripOwnershipEnabled);
+    ok &= expectTrue("integrated physical right enables detach",
+        integratedRightDetach.primaryDetachEnabled);
+    ok &= expectNear("integrated physical right owns reattach radius",
+        integratedRightDetach.reattachRadiusGameUnits,
+        4.0f);
+    ok &= expectNear("integrated physical right owns haptic duration",
+        integratedRightDetach.gripHapticDurationSeconds,
+        0.11f);
+    ok &= expectNear("integrated physical right owns attach haptic",
+        integratedRightDetach.gripAttachHapticIntensity,
+        0.81f);
+    ok &= expectNear("integrated physical right owns detach haptic",
+        integratedRightDetach.gripDetachHapticIntensity,
+        0.31f);
+    const auto integratedLeftDetach =
+        rock::resolveEquippedWeaponDetachDecision(
+            coreWeaponHandling,
+            true);
+    ok &= expectEqual("integrated feature grants no physical left detach authority",
+        integratedLeftDetach.authority,
+        rock::immersive_weapon_policy::DetachAuthority::None);
+    ok &= expectFalse("integrated feature cannot detach the physical left hand",
+        integratedLeftDetach.primaryDetachEnabled);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
         coreWeaponHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectNear("base ROCK owns firing-grip promotion tuning",
@@ -1922,6 +1962,14 @@ int main()
         externalHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectFalse("ROCK stash cannot add detach to a non-detach addon lease",
         externalHandling.primaryDetachEnabled);
+    const auto integratedRightUnderNonDetachProvider =
+        rock::resolveEquippedWeaponDetachDecision(
+            externalHandling,
+            false);
+    ok &= expectEqual("non-detach provider cannot suppress integrated physical-right detach",
+        integratedRightUnderNonDetachProvider.authority,
+        rock::immersive_weapon_policy::DetachAuthority::
+            IntegratedPhysicalRight);
     ok &= expectFalse("an active addon request may suppress ROCK ambidextrous handoff",
         externalHandling.ambidextrousHandoffEnabled);
     ok &= expectNear("external authority preserves ROCK's radius without an override",
@@ -1964,11 +2012,28 @@ int main()
     auto addonDetachHandling = fixedOnlyHandling;
     addonDetachHandling.firingGripOwnershipEnabled = true;
     addonDetachHandling.primaryDetachEnabled = true;
-    ok &= expectTrue("removing addon detach capability reconciles manual weapon state",
+    ok &= expectTrue("removing provider detach capability reconciles manual weapon state",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             addonDetachHandling,
             fixedOnlyHandling,
             false));
+    auto integratedDetachDisabled = coreWeaponHandling;
+    integratedDetachDisabled.immersiveWeapon.
+        physicalRightFiringGripDetachEnabled = false;
+    ok &= expectTrue("removing integrated physical-right detach reconciles manual weapon state",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            coreWeaponHandling,
+            integratedDetachDisabled,
+            false));
+    const auto disabledIntegratedRightDetach =
+        rock::resolveEquippedWeaponDetachDecision(
+            integratedDetachDisabled,
+            false);
+    ok &= expectEqual("disabled integrated policy grants no detach authority",
+        disabledIntegratedRightDetach.authority,
+        rock::immersive_weapon_policy::DetachAuthority::None);
+    ok &= expectFalse("disabled integrated policy cannot detach physical right",
+        disabledIntegratedRightDetach.primaryDetachEnabled);
     ok &= expectTrue("an addon override that disables handoff reconciles the live switch",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
@@ -1988,6 +2053,10 @@ int main()
             rock::provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach) |
         static_cast<std::uint32_t>(
             rock::provider::RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash);
+    legacyStashRequest.firingGripReattachRadiusGameUnits = 9.0f;
+    legacyStashRequest.weaponGripHapticDurationSeconds = 0.20f;
+    legacyStashRequest.firingGripAttachHapticIntensity = 0.40f;
+    legacyStashRequest.firingGripDetachHapticIntensity = 0.50f;
     const auto legacyStashHandling = rock::makeEquippedWeaponHandlingSettings(
         fixedOnlyBaseline,
         &legacyStashRequest);
@@ -1995,6 +2064,24 @@ int main()
         legacyStashHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectTrue("legacy provider detach remains available to its other handling paths",
         legacyStashHandling.primaryDetachEnabled);
+    const auto providerLeftDetach =
+        rock::resolveEquippedWeaponDetachDecision(
+            legacyStashHandling,
+            true);
+    ok &= expectEqual("provider PrimaryDetach retains physical-left authority",
+        providerLeftDetach.authority,
+        rock::immersive_weapon_policy::DetachAuthority::ExternalProvider);
+    ok &= expectTrue("provider PrimaryDetach remains all-firing-hand capable",
+        providerLeftDetach.primaryDetachEnabled);
+    ok &= expectNear("provider PrimaryDetach owns reattach tuning",
+        providerLeftDetach.reattachRadiusGameUnits,
+        9.0f);
+    ok &= expectNear("provider PrimaryDetach owns attach haptic tuning",
+        providerLeftDetach.gripAttachHapticIntensity,
+        0.40f);
+    ok &= expectNear("provider PrimaryDetach owns detach haptic tuning",
+        providerLeftDetach.gripDetachHapticIntensity,
+        0.50f);
     ok &= expectTrue("changing the fixed firing hand always reconciles carry ownership",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
@@ -2116,6 +2203,7 @@ int main()
     }
 
     using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
+    using rock::weapon_support_authority_policy::canCarryAfterFiringGripDetach;
     using rock::weapon_support_authority_policy::canPromoteSupportGripToFiringGrip;
     using rock::weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode;
     using rock::weapon_support_authority_policy::shouldApplyVisualOnlySupportRecoilAssist;
@@ -2124,6 +2212,12 @@ int main()
         canApplyFiringGripProximityAuthority(false));
     ok &= expectFalse("firing-grip proximity never changes a provider-mandated grab mode",
         canApplyFiringGripProximityAuthority(true));
+    ok &= expectTrue("full two-hand support can carry after firing-grip detach",
+        canCarryAfterFiringGripDetach(
+            WeaponSupportAuthorityMode::FullTwoHandedSolver));
+    ok &= expectFalse("visual-only support cannot carry after firing-grip detach",
+        canCarryAfterFiringGripDetach(
+            WeaponSupportAuthorityMode::VisualOnlySupport));
     ok &= expectEqual("any weapon grab near the firing grip stays visual-only",
         resolveFiringGripProximityAuthorityMode(5.5f, 6.0f),
         WeaponSupportAuthorityMode::VisualOnlySupport);
@@ -2269,17 +2363,29 @@ int main()
         canStartFreeHandPartGrip(true, true, false, true));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
-    ok &= expectTrue("addon detach mode enables firing-grip ownership",
+    ok &= expectTrue("provider detach mode enables right firing-grip ownership",
         firingGripOwnershipEnabled(FiringGripModeAvailability{
             .primaryDetachEnabled = true,
-        }));
-    ok &= expectTrue("addon handoff mode independently enables firing-grip ownership",
+        }, false));
+    ok &= expectTrue("provider detach mode enables left firing-grip ownership",
+        firingGripOwnershipEnabled(FiringGripModeAvailability{
+            .primaryDetachEnabled = true,
+        }, true));
+    ok &= expectTrue("ambidextrous handoff independently enables firing-grip ownership",
         firingGripOwnershipEnabled(FiringGripModeAvailability{
             .ambidextrousHandoffAvailable = true,
-        }));
-    ok &= expectFalse("firing-grip ownership is disabled when both modes are off",
-        firingGripOwnershipEnabled(FiringGripModeAvailability{}));
-    ok &= expectTrue("left-hand trigger equip starts addon handoff ownership",
+        }, true));
+    ok &= expectTrue("integrated detach enables physical-right firing ownership",
+        firingGripOwnershipEnabled(FiringGripModeAvailability{
+            .physicalRightDetachEnabled = true,
+        }, false));
+    ok &= expectFalse("integrated detach grants no physical-left firing ownership",
+        firingGripOwnershipEnabled(FiringGripModeAvailability{
+            .physicalRightDetachEnabled = true,
+        }, true));
+    ok &= expectFalse("firing-grip ownership is disabled when all modes are off",
+        firingGripOwnershipEnabled(FiringGripModeAvailability{}, false));
+    ok &= expectTrue("left-hand trigger equip starts ambidextrous handoff ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
                 .ambidextrousHandoffAvailable = true,
@@ -2294,11 +2400,26 @@ int main()
             },
             .gripHeld = true,
         }));
-    ok &= expectTrue("addon detach mode can start right-hand ownership",
+    ok &= expectTrue("provider detach mode can start right-hand ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
                 .primaryDetachEnabled = true,
             },
+            .gripHeld = true,
+        }));
+    ok &= expectTrue("integrated detach can start physical-right ownership",
+        shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
+            .modes = FiringGripModeAvailability{
+                .physicalRightDetachEnabled = true,
+            },
+            .gripHeld = true,
+        }));
+    ok &= expectFalse("integrated detach cannot start physical-left ownership",
+        shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
+            .modes = FiringGripModeAvailability{
+                .physicalRightDetachEnabled = true,
+            },
+            .handIsLeft = true,
             .gripHeld = true,
         }));
     ok &= expectFalse("trigger equip ownership requires the same hand grip",
@@ -2311,7 +2432,7 @@ int main()
         }));
     ok &= expectTrue("addon grip-zone flag enables settle equip",
         canSettleEquipInGripZone(true));
-    ok &= expectFalse("grip-zone settle equip stays off without addon authority",
+    ok &= expectFalse("grip-zone settle equip stays off without an explicit grip-zone capability",
         canSettleEquipInGripZone(false));
     ok &= expectTrue("non-detaching ownership ignores an open firing grip",
         shouldRetainPrimaryOnlyOwnership(false, false));

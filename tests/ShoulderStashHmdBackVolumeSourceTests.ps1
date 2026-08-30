@@ -72,16 +72,19 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Equipped-weapon stash candidate acquisition must retain the configured anti-throw speed gate.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
     'equippedWeaponShoulderStashAvailable\([\s\r\n]*bool shoulderStashConfigured[\s\S]{0,120}return shoulderStashConfigured' `
-    'ROCK''s equipped-weapon shoulder stash must remain independent of addon detach capability.'
+    'ROCK''s equipped-weapon shoulder stash must remain independent of integrated and provider detach capability.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'equippedWeaponShoulderStashActive\s*=\s*[\s\S]{0,220}equippedWeaponShoulderStashAvailable\(\s*_equippedWeaponHandlingSettings\.equippedWeaponShoulderStashEnabled\s*\)' `
     'Runtime must derive one effective equipped-weapon shoulder gate from ROCK''s handling settings.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=\s*false' `
-    'Only an explicit provider PrimaryDetach lease may enable equipped-weapon world dropping.'
+    'The base settings snapshot must not widen the integrated physical-right policy into a global detach bit.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*settings\.primaryDetachEnabled\s*\|\|\s*enabled\([\s\r\n]*\s*provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach' `
     'The provider overlay must retain its explicit PrimaryDetach capability.'
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
+    'resolveEquippedWeaponDetachDecision[\s\S]*firingHandIsLeft[\s\S]*settings\.immersiveWeapon[\s\S]*externalPrimaryDetachEnabled' `
+    'Physical-right integrated detach and explicit provider detach must resolve separately from shoulder stash.'
 Reject-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*rockBaseline\.equippedWeaponShoulderStashEnabled' `
     'ROCK''s shoulder-stash baseline must never feed the physical-detach capability.'

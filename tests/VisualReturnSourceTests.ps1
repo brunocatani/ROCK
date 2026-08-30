@@ -52,7 +52,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     '_grabVisualReturn\.active[\s\S]*_grabVisualReturn\.lastApplied[\s\S]*_grabVisualHandLerpStartTransform\s*=\s*acquisitionStart' `
     'A new generic acquisition must start from the last pose rendered by an interrupted return.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'processHand\(_rightHand,\s*false\);[\s\S]*processHand\(_leftHand,\s*true\);[\s\S]*updateGrabVisualReturn\(frame\.right\.rawHandWorld[\s\S]*updateGrabVisualReturn\(frame\.left\.rawHandWorld' `
+    'processGrabInputHand\(frame,\s*_rightHand,\s*false,\s*handContext\);[\s\S]*processGrabInputHand\(frame,\s*_leftHand,\s*true,\s*handContext\);[\s\S]*updateGrabVisualReturn\(frame\.right\.rawHandWorld[\s\S]*updateGrabVisualReturn\(frame\.left\.rawHandWorld' `
     'Empty-hand generic returns must advance after normal input processing for both physical hands.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `

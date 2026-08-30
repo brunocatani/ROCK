@@ -1194,6 +1194,7 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const WeaponCollision& weaponCollision);
 
+        void recordFiringGripDetachedHaptic() noexcept;
         void requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
 
         void updatePrimaryOnlyGrip(

@@ -65,11 +65,20 @@ namespace rock
         int rockPerformanceProfilerWarmupFrames = 120;
         bool rockPerformanceProfilerOverlayText = false;
 
+        // ROCK-native Immersive Weapons boundary. This capability applies only
+        // to the physical right firing hand; dynamic firing-hand roles do not
+        // widen it to the left hand.
+        bool rockPhysicalRightFiringGripDetachEnabled = true;
+        float rockPhysicalRightFiringGripReattachRadiusGameUnits = 3.0f;
+        float rockPhysicalRightFiringGripHapticDurationSeconds = 0.10f;
+        float rockPhysicalRightFiringGripAttachHapticIntensity = 0.85f;
+        float rockPhysicalRightFiringGripDetachHapticIntensity = 0.30f;
+
         // ROCK-exclusive equipped-weapon hand preference. This never reads or
         // mutates Fallout 4 VR's native handedness/controller mapping.
         bool rockLeftHandedMode = false;
         // ROCK-native firing-grip handoff. This remains independent from the
-        // addon-owned realistic detach/drop feature set.
+        // physical-right Immersive Weapons detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;
         // ROCK-local support acquisition policy. Matched provider part
         // targets retain their declared authority; current weapons without a

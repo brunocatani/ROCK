@@ -2928,6 +2928,12 @@ namespace rock
                 } else if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::DropEquippedWeapon) {
                     beginHandVisualReturn(supportHandIsLeft, "support-released-drop");
                     beginHandVisualReturn(_firingHandIsLeft, "primary-released-drop");
+                    if (!_firingHandIsLeft &&
+                        _handlingSettings.detachAuthority ==
+                            immersive_weapon_policy::DetachAuthority::
+                                IntegratedPhysicalRight) {
+                        recordFiringGripDetachedHaptic();
+                    }
                     requestEquippedWeaponDrop(
                         "support-released-primary-not-held",
                         equipped_weapon_drop_policy::sourceForSupportRelease(primaryGripInput.released));
@@ -2967,20 +2973,40 @@ namespace rock
                 // grip in place (seamless hand switch, pistol shooting-cup
                 // flow). State is PrimaryOnly under the new firing hand.
             } else if (handlingSettings.primaryDetachEnabled &&
-                       _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
                        !primaryGripInput.held) {
-                if (transitionToPartCarry()) {
-                    updatePartCarryGrip(
-                        _activeWeaponNode,
-                        dt,
-                        stableFrameInput,
-                        leftWeaponContact,
-                        rightWeaponContact,
-                        weaponCollision,
-                        currentWeaponGenerationKey,
-                        currentEquippedWeaponOwnershipKey,
-                        leftRuntimeState,
-                        rightRuntimeState);
+                if (weapon_support_authority_policy::
+                        canCarryAfterFiringGripDetach(_authorityMode)) {
+                    if (transitionToPartCarry()) {
+                        updatePartCarryGrip(
+                            _activeWeaponNode,
+                            dt,
+                            stableFrameInput,
+                            leftWeaponContact,
+                            rightWeaponContact,
+                            weaponCollision,
+                            currentWeaponGenerationKey,
+                            currentEquippedWeaponOwnershipKey,
+                            leftRuntimeState,
+                            rightRuntimeState);
+                    }
+                } else {
+                    beginHandVisualReturn(
+                        supportHandIsLeft,
+                        "primary-released-noncarry-support-drop");
+                    beginHandVisualReturn(
+                        _firingHandIsLeft,
+                        "primary-released-noncarry-support-drop");
+                    if (!_firingHandIsLeft &&
+                        _handlingSettings.detachAuthority ==
+                            immersive_weapon_policy::DetachAuthority::
+                                IntegratedPhysicalRight) {
+                        recordFiringGripDetachedHaptic();
+                    }
+                    requestEquippedWeaponDrop(
+                        "primary-released-without-carry-authority",
+                        _firingHandIsLeft ?
+                            equipped_weapon_drop_policy::SourceHand::Left :
+                            equipped_weapon_drop_policy::SourceHand::Right);
                 }
             } else {
                 updateGripping(_activeWeaponNode, dt);
@@ -7469,9 +7495,11 @@ namespace rock
         _partCarryPivotIsLeft = !_firingHandIsLeft;
         _partCarryGripSeparationWorld = 0.0f;
         _state = TwoHandedState::PartCarry;
-        _hapticEvents.firingGripDetached = true;
-        _hapticEvents.firingGripDetachedHandIsLeft = _firingHandIsLeft;
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority");
+        recordFiringGripDetachedHaptic();
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={}",
+            immersive_weapon_policy::authorityName(
+                _handlingSettings.detachAuthority));
         return true;
     }
 
@@ -7934,6 +7962,15 @@ namespace rock
         return true;
     }
 
+    void TwoHandedGrip::recordFiringGripDetachedHaptic() noexcept
+    {
+        if (_hapticEvents.firingGripDetached) {
+            return;
+        }
+        _hapticEvents.firingGripDetached = true;
+        _hapticEvents.firingGripDetachedHandIsLeft = _firingHandIsLeft;
+    }
+
     void TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand)
     {
         if (_equippedWeaponDropRequest.requested) {
@@ -7946,10 +7983,12 @@ namespace rock
             .sourceHand = sourceHand,
         };
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: equipped weapon drop requested reason={} sourceHand={} generation={:016X}",
+            "TwoHandedGrip: equipped weapon drop requested reason={} sourceHand={} generation={:016X} detachSource={}",
             reason ? reason : "unknown",
             equipped_weapon_drop_policy::sourceHandName(sourceHand),
-            _activeWeaponGenerationKey);
+            _activeWeaponGenerationKey,
+            immersive_weapon_policy::authorityName(
+                _handlingSettings.detachAuthority));
         clearWeaponVisualReturn("equipped-weapon-drop", true, true);
         transitionToInactive(false);
     }
@@ -7977,6 +8016,12 @@ namespace rock
 
         if (manualDecision.dropRequested) {
             beginHandVisualReturn(_firingHandIsLeft, "primary-only-drop");
+            if (!_firingHandIsLeft &&
+                _handlingSettings.detachAuthority ==
+                    immersive_weapon_policy::DetachAuthority::
+                        IntegratedPhysicalRight) {
+                recordFiringGripDetachedHaptic();
+            }
             requestEquippedWeaponDrop("primary-only-grip-released",
                 _firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
             return;
@@ -8433,9 +8478,11 @@ namespace rock
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = handIsLeft;
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: firing hand reattached at configured grip hand={} hold={}",
+            "TwoHandedGrip: firing hand reattached at configured grip hand={} hold={} detachSource={}",
             handIsLeft ? "left" : "right",
-            holdSource);
+            holdSource,
+            immersive_weapon_policy::authorityName(
+                _handlingSettings.detachAuthority));
         return true;
     }
 
@@ -11306,6 +11353,12 @@ namespace rock
         }
 
         beginHandVisualReturn(_firingHandIsLeft, "ambidextrous-firing-hand-promotion");
+        if (!_firingHandIsLeft &&
+            _handlingSettings.detachAuthority ==
+                immersive_weapon_policy::DetachAuthority::
+                    IntegratedPhysicalRight) {
+            recordFiringGripDetachedHaptic();
+        }
         setFiringHand(supportHandIsLeft, "support-grip-promotion");
         if (!transitionToPrimaryOnly(weaponNode, _activeWeaponGenerationKey, _activeEquippedWeaponOwnershipKey, "firing-grip-hand-promotion")) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: firing-grip promotion failed to enter primary-only; clearing authority");

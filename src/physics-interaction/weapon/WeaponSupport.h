@@ -18,6 +18,7 @@
 
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
+#include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
 
 #include <cstdint>
 
@@ -28,6 +29,13 @@ namespace rock::weapon_support_authority_policy
         FullTwoHandedSolver = 0,
         VisualOnlySupport = 1,
     };
+
+    [[nodiscard]] inline constexpr bool
+    canCarryAfterFiringGripDetach(
+        const WeaponSupportAuthorityMode mode) noexcept
+    {
+        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
+    }
 
     /*
      * The proximity contract applies uniformly to equipped weapons. Provider-
@@ -241,7 +249,11 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     struct FiringGripModeAvailability
     {
+        // Provider PrimaryDetach applies to whichever physical hand currently
+        // owns the firing role. The integrated capability below remains
+        // explicitly physical-right-only.
         bool primaryDetachEnabled{ false };
+        bool physicalRightDetachEnabled{ false };
         bool ambidextrousHandoffAvailable{ false };
     };
 
@@ -252,15 +264,24 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool gripHeld{ false };
     };
 
-    [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(const FiringGripModeAvailability& modes) noexcept
+    [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(
+        const FiringGripModeAvailability& modes,
+        const bool handIsLeft) noexcept
     {
-        return modes.primaryDetachEnabled || modes.ambidextrousHandoffAvailable;
+        return modes.primaryDetachEnabled ||
+               immersive_weapon_policy::appliesToPhysicalHand(
+                   modes.physicalRightDetachEnabled,
+                   handIsLeft) ||
+               modes.ambidextrousHandoffAvailable;
     }
 
     [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(const HeldWeaponEquipOwnershipInput& input) noexcept
     {
         return input.gripHeld &&
                (input.modes.primaryDetachEnabled ||
+                   immersive_weapon_policy::appliesToPhysicalHand(
+                       input.modes.physicalRightDetachEnabled,
+                       input.handIsLeft) ||
                    (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
     }
 

@@ -2553,6 +2553,10 @@ namespace rock
                 _pendingEquippedWeaponPrimaryOnlyGripStart.isLeft :
                 _twoHandedGrip.isFiringHandLeft();
             const bool supportHandIsLeft = !firingHandIsLeft;
+            const auto firingGripDecision =
+                resolveEquippedWeaponDetachDecision(
+                    _equippedWeaponHandlingSettings,
+                    firingHandIsLeft);
 
             /*
              * While the LEFT hand carries the weapon, the node still sits at
@@ -2699,13 +2703,13 @@ namespace rock
                 TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
             const bool firingGripOwnershipFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
                 !_equippedWeaponShoulderSheath.active &&
-                    _equippedWeaponHandlingSettings.firingGripOwnershipEnabled,
+                    firingGripDecision.firingGripOwnershipEnabled,
                 primaryPoseBlockerAvailable,
                 weaponNode != nullptr,
                 currentEquippedWeaponOwnershipKey);
             const bool primaryDetachFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
                 !_equippedWeaponShoulderSheath.active &&
-                    _equippedWeaponHandlingSettings.primaryDetachEnabled,
+                    firingGripDecision.primaryDetachEnabled,
                 primaryPoseBlockerAvailable,
                 weaponNode != nullptr,
                 currentEquippedWeaponOwnershipKey);
@@ -2719,7 +2723,8 @@ namespace rock
                         .committedTransfer =
                             _pendingEquippedWeaponPrimaryOnlyGripStart.
                                 committedTransfer,
-                        .ownershipModeEnabled = _equippedWeaponHandlingSettings.firingGripOwnershipEnabled,
+                        .ownershipModeEnabled =
+                            firingGripDecision.firingGripOwnershipEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
                     })) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
@@ -2972,6 +2977,18 @@ namespace rock
                 ambidextrousHandoffAvailable;
             effectiveHandlingSettings.primaryDetachEnabled =
                 primaryDetachFeatureAvailable;
+            effectiveHandlingSettings.detachAuthority =
+                primaryDetachFeatureAvailable ?
+                firingGripDecision.authority :
+                immersive_weapon_policy::DetachAuthority::None;
+            effectiveHandlingSettings.firingGripReattachRadiusGameUnits =
+                firingGripDecision.reattachRadiusGameUnits;
+            effectiveHandlingSettings.weaponGripHapticDurationSeconds =
+                firingGripDecision.gripHapticDurationSeconds;
+            effectiveHandlingSettings.firingGripAttachHapticIntensity =
+                firingGripDecision.gripAttachHapticIntensity;
+            effectiveHandlingSettings.firingGripDetachHapticIntensity =
+                firingGripDecision.gripDetachHapticIntensity;
             const TwoHandedGripUpdateResult gripUpdateResult =
                 _twoHandedGrip.update(
                     weaponNode,
@@ -3044,31 +3061,69 @@ namespace rock
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon firing-grip ownership started from grip input or held-weapon equip");
             }
             const auto gripHapticEvents = _twoHandedGrip.consumeHapticEvents();
-            const auto queueGripHaptic = [this](bool isLeft, float intensity) {
+            const auto queueGripHaptic = [this](
+                                             const bool isLeft,
+                                             const float durationSeconds,
+                                             const float intensity) {
                 (void)_feedbackHaptics.queue(
                     isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
-                    _equippedWeaponHandlingSettings.weaponGripHapticDurationSeconds,
+                    durationSeconds,
                     intensity);
             };
+            const auto queueFiringGripHaptic = [this, &queueGripHaptic](
+                                                    const bool isLeft,
+                                                    const bool attached) {
+                const auto eventDecision =
+                    resolveEquippedWeaponDetachDecision(
+                        _equippedWeaponHandlingSettings,
+                        isLeft);
+                if (eventDecision.authority ==
+                        immersive_weapon_policy::DetachAuthority::
+                            IntegratedPhysicalRight) {
+                    queueGripHaptic(
+                        isLeft,
+                        eventDecision.gripHapticDurationSeconds,
+                        attached ?
+                            eventDecision.gripAttachHapticIntensity :
+                            eventDecision.gripDetachHapticIntensity);
+                    return;
+                }
+
+                if (_equippedWeaponHandlingSettings.externalAuthorityActive) {
+                    queueGripHaptic(
+                        isLeft,
+                        _equippedWeaponHandlingSettings.
+                            weaponGripHapticDurationSeconds,
+                        attached ?
+                            _equippedWeaponHandlingSettings.
+                                firingGripAttachHapticIntensity :
+                            _equippedWeaponHandlingSettings.
+                                firingGripDetachHapticIntensity);
+                }
+            };
+            if (gripHapticEvents.firingGripAttached) {
+                queueFiringGripHaptic(
+                    gripHapticEvents.firingGripAttachedHandIsLeft,
+                    true);
+            }
+            if (gripHapticEvents.firingGripDetached) {
+                queueFiringGripHaptic(
+                    gripHapticEvents.firingGripDetachedHandIsLeft,
+                    false);
+            }
             if (_equippedWeaponHandlingSettings.externalAuthorityActive) {
-                if (gripHapticEvents.firingGripAttached) {
-                    queueGripHaptic(
-                        gripHapticEvents.firingGripAttachedHandIsLeft,
-                        _equippedWeaponHandlingSettings.firingGripAttachHapticIntensity);
-                }
-                if (gripHapticEvents.firingGripDetached) {
-                    queueGripHaptic(
-                        gripHapticEvents.firingGripDetachedHandIsLeft,
-                        _equippedWeaponHandlingSettings.firingGripDetachHapticIntensity);
-                }
                 if (gripHapticEvents.leftPartGripCaptured) {
                     queueGripHaptic(
                         true,
+                        _equippedWeaponHandlingSettings.
+                            weaponGripHapticDurationSeconds,
                         _equippedWeaponHandlingSettings.supportGripHapticIntensity);
                 }
                 if (gripHapticEvents.rightPartGripCaptured) {
                     queueGripHaptic(
                         false,
+                        _equippedWeaponHandlingSettings.
+                            weaponGripHapticDurationSeconds,
                         _equippedWeaponHandlingSettings.supportGripHapticIntensity);
                 }
             }
@@ -3973,11 +4028,15 @@ namespace rock
             const bool firingHandIsLeft = _twoHandedGrip.isFiringGripOccupied() ?
                 _twoHandedGrip.isFiringHandLeft() :
                 _fixedFiringHandIsLeft;
+            const auto detachDecision =
+                resolveEquippedWeaponDetachDecision(
+                    _equippedWeaponHandlingSettings,
+                    firingHandIsLeft);
             const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(
                 firingHandIsLeft,
                 input_remap_policy::kGrabButtonId);
             _pendingEquippedWeaponPrimaryOnlyGripStart = PendingEquippedWeaponPrimaryOnlyGripStart{
-                .pending = _equippedWeaponHandlingSettings.primaryDetachEnabled &&
+                .pending = detachDecision.primaryDetachEnabled &&
                     primaryGrabHeld,
                 .isLeft = firingHandIsLeft,
             };
@@ -4741,6 +4800,23 @@ namespace rock
                 g_rockConfig.rockEquippedWeaponToggleGrabEnabled,
             .equippedWeaponShoulderStashEnabled =
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
+            .immersiveWeapon = {
+                .physicalRightFiringGripDetachEnabled =
+                    g_rockConfig.
+                        rockPhysicalRightFiringGripDetachEnabled,
+                .physicalRightFiringGripReattachRadiusGameUnits =
+                    g_rockConfig.
+                        rockPhysicalRightFiringGripReattachRadiusGameUnits,
+                .physicalRightFiringGripHapticDurationSeconds =
+                    g_rockConfig.
+                        rockPhysicalRightFiringGripHapticDurationSeconds,
+                .physicalRightFiringGripAttachHapticIntensity =
+                    g_rockConfig.
+                        rockPhysicalRightFiringGripAttachHapticIntensity,
+                .physicalRightFiringGripDetachHapticIntensity =
+                    g_rockConfig.
+                        rockPhysicalRightFiringGripDetachHapticIntensity,
+            },
             .firingGripProximitySupportRadiusGameUnits =
                 g_rockConfig.rockFiringGripProximitySupportRadius,
             .firingGripPromotionRadiusGameUnits =
@@ -11865,6 +11941,8 @@ namespace rock
             TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
         const equipped_weapon_manual_ownership_policy::FiringGripModeAvailability firingGripModes{
             .primaryDetachEnabled = _equippedWeaponHandlingSettings.primaryDetachEnabled,
+            .physicalRightDetachEnabled = _equippedWeaponHandlingSettings.
+                immersiveWeapon.physicalRightFiringGripDetachEnabled,
             .ambidextrousHandoffAvailable = ambidextrousHandoffAvailable,
         };
         const bool gripZoneSettleEquipEnabled =

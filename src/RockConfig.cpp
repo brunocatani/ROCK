@@ -25,6 +25,7 @@ namespace
     constexpr auto LOGGING_SECTION = "Logging";
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
+    constexpr auto IMMERSIVE_WEAPONS_SECTION = "ImmersiveWeapons";
     constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
@@ -327,6 +328,43 @@ namespace rock
             rockGrabInputForceSeconds = 0.08f;
         }
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
+
+        rockPhysicalRightFiringGripDetachEnabled = ini.GetBoolValue(
+            IMMERSIVE_WEAPONS_SECTION,
+            "bPhysicalRightFiringGripDetachEnabled",
+            rockPhysicalRightFiringGripDetachEnabled);
+        rockPhysicalRightFiringGripReattachRadiusGameUnits = readClampedFloat(
+            ini,
+            IMMERSIVE_WEAPONS_SECTION,
+            "fPhysicalRightFiringGripReattachRadiusGameUnits",
+            rockPhysicalRightFiringGripReattachRadiusGameUnits,
+            3.0f,
+            0.25f,
+            30.0f);
+        rockPhysicalRightFiringGripHapticDurationSeconds = readClampedFloat(
+            ini,
+            IMMERSIVE_WEAPONS_SECTION,
+            "fPhysicalRightFiringGripHapticDurationSeconds",
+            rockPhysicalRightFiringGripHapticDurationSeconds,
+            0.10f,
+            0.01f,
+            0.50f);
+        rockPhysicalRightFiringGripAttachHapticIntensity = readClampedFloat(
+            ini,
+            IMMERSIVE_WEAPONS_SECTION,
+            "fPhysicalRightFiringGripAttachHapticIntensity",
+            rockPhysicalRightFiringGripAttachHapticIntensity,
+            0.85f,
+            0.0f,
+            1.0f);
+        rockPhysicalRightFiringGripDetachHapticIntensity = readClampedFloat(
+            ini,
+            IMMERSIVE_WEAPONS_SECTION,
+            "fPhysicalRightFiringGripDetachHapticIntensity",
+            rockPhysicalRightFiringGripDetachHapticIntensity,
+            0.30f,
+            0.0f,
+            1.0f);
 
         rockLeftHandedMode = ini.GetBoolValue(
             WEAPON_HANDEDNESS_SECTION,

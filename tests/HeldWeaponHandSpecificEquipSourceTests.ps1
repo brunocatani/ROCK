@@ -66,8 +66,22 @@ foreach ($legacyPath in @(
 foreach ($configSource in @('src/RockConfig.cpp', 'src/RockConfig.h')) {
     Reject-Text $configSource `
         'rock(?:RealisticWeaponHandlingEnabled|GrabbedWeaponGripZone\w+|WeaponGripHaptic\w+|WeaponFiringGrip\w+|WeaponSupportGripHaptic\w+|GripZoneHover\w+|GrabbedWeaponEquipBridge\w+|MenuTriggerHandEquipEnabled|EquipPreferredHandLeft)' `
-        'Base ROCK config must not regain addon-owned realistic detach, grip-zone, haptic, bridge, or Pip-Boy settings.'
+        'ROCK must not regain the old bundled realistic, grip-zone, support-haptic, bridge, or Pip-Boy settings.'
 }
+
+Require-Text 'src/RockConfig.h' `
+    'rockPhysicalRightFiringGripDetachEnabled\s*=\s*true[\s\S]{0,220}rockPhysicalRightFiringGripReattachRadiusGameUnits\s*=\s*3\.0f[\s\S]{0,260}rockPhysicalRightFiringGripHapticDurationSeconds\s*=\s*0\.10f[\s\S]{0,220}rockPhysicalRightFiringGripAttachHapticIntensity\s*=\s*0\.85f[\s\S]{0,220}rockPhysicalRightFiringGripDetachHapticIntensity\s*=\s*0\.30f' `
+    'ROCK must own one physical-right-only detach contract with bounded attach/detach haptic tuning.'
+Require-Text 'src/RockConfig.cpp' `
+    'IMMERSIVE_WEAPONS_SECTION\s*=\s*"ImmersiveWeapons"[\s\S]*"bPhysicalRightFiringGripDetachEnabled"[\s\S]*"fPhysicalRightFiringGripReattachRadiusGameUnits"[\s\S]*"fPhysicalRightFiringGripHapticDurationSeconds"[\s\S]*"fPhysicalRightFiringGripAttachHapticIntensity"[\s\S]*"fPhysicalRightFiringGripDetachHapticIntensity"' `
+    'ROCK must load only the narrow physical-right detach and attach/detach haptic catalog from [ImmersiveWeapons].'
+
+Require-Text 'src/physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h' `
+    'IntegratedPhysicalRight[\s\S]*ExternalProvider[\s\S]*appliesToPhysicalHand\([\s\S]{0,260}enabled\s*&&\s*!handIsLeft[\s\S]*externalPrimaryDetachEnabled[\s\S]*IntegratedPhysicalRight' `
+    'The integrated policy must bind detach to physical right while preserving explicit provider all-hand authority.'
+Reject-Text 'src/physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h' `
+    'VirtualHolsters|RIW\.dll|ROCKIMMERSIVEWEAPONSAPI|GripZoneEquip|PipboyTriggerHandEquip|EquippedWeaponShoulderStash|EquipVisualBridge' `
+    'The integrated physical-right policy must not absorb RIW compatibility or unrelated weapon features.'
 
 Require-Text 'src/RockConfig.h' `
     'rockAmbidextrousFiringGripEnabled\s*=\s*true[\s\S]{0,420}rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled\s*=\s*true[\s\S]{0,220}rockEquippedWeaponToggleGrabEnabled\s*=\s*false[\s\S]{0,220}rockFiringGripPromotionRadius\s*=\s*5\.0f[\s\S]{0,320}rockLeftFiringAimYawDegrees\s*=\s*0\.0f[\s\S]{0,320}rockLeftFiringAimOffsetZGameUnits\s*=\s*0\.0f' `
@@ -83,6 +97,16 @@ foreach ($configPath in @('data/config/ROCK_example.ini')) {
     if ($realisticAssignments.Count -ne 1 -or
         $realisticSection -notmatch '(?m)^fRealisticGrenadeFuseSeconds\s*=') {
         $failures.Add("$configPath`: [RealisticWeapons] must retain only ROCK grenade fuse ownership.")
+    }
+    $immersiveSection = Read-IniSection $configPath 'ImmersiveWeapons'
+    $immersiveAssignments = [regex]::Matches($immersiveSection, '(?m)^[A-Za-z]\w*\s*=')
+    if ($immersiveAssignments.Count -ne 5 -or
+        $immersiveSection -notmatch '(?m)^bPhysicalRightFiringGripDetachEnabled\s*=\s*true\s*$' -or
+        $immersiveSection -notmatch '(?m)^fPhysicalRightFiringGripReattachRadiusGameUnits\s*=\s*3\.0\s*$' -or
+        $immersiveSection -notmatch '(?m)^fPhysicalRightFiringGripHapticDurationSeconds\s*=\s*0\.10\s*$' -or
+        $immersiveSection -notmatch '(?m)^fPhysicalRightFiringGripAttachHapticIntensity\s*=\s*0\.85\s*$' -or
+        $immersiveSection -notmatch '(?m)^fPhysicalRightFiringGripDetachHapticIntensity\s*=\s*0\.30\s*$') {
+        $failures.Add("$configPath`: [ImmersiveWeapons] must expose exactly the enabled physical-right detach, radius, and attach/detach haptic defaults.")
     }
     $handednessSection = Read-IniSection $configPath 'WeaponHandedness'
     if ($handednessSection -notmatch '(?m)^bLeftHandedMode\s*=\s*false\s*$') {
@@ -103,7 +127,7 @@ foreach ($configPath in @('data/config/ROCK_example.ini')) {
         $failures.Add("$configPath`: [PhysicsInteraction] must expose ROCK's enabled equipped-weapon shoulder stash switch.")
     }
     if ($configText -match '(?m)^(?:bRealisticWeaponHandlingEnabled|fGrabbedWeaponGripZone\w+|fWeapon(?:Firing|Support)?GripHaptic\w+|bGripZoneHoverHapticsEnabled|bGrabbedWeaponEquipBridgeEnabled|bMenuTriggerHandEquipEnabled)\s*=') {
-        $failures.Add("$configPath`: addon-owned realistic detach, grip-zone, haptic, bridge, and Pip-Boy options must remain absent from ROCK.")
+        $failures.Add("$configPath`: old bundled realistic, grip-zone, support-haptic, bridge, and Pip-Boy options must remain absent from ROCK.")
     }
 }
 
@@ -114,8 +138,8 @@ Require-Text 'src/api/ROCKProviderApi.h' `
     'rolling lease returns to ROCK''s configured fallback handling policy' `
     'The V1 lease contract must describe fallback to ROCK configuration rather than a hard-coded firing hand.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'RockEquippedWeaponHandlingBaseline[\s\S]*ambidextrousHandoffEnabled[\s\S]*equippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*settings\.firingGripOwnershipEnabled\s*=[\s\r\n]+\s*rockBaseline\.ambidextrousHandoffEnabled[\s\S]{0,500}settings\.primaryDetachEnabled\s*=\s*false[\s\S]*externalAuthorityActive\s*=\s*true[\s\S]*PrimaryDetach[\s\S]*AmbidextrousHandoff[\s\S]*leftFiringAimOffsetGameUnits' `
-    'ROCK shoulder stash must not grant firing ownership or physical detach while a validated V1 addon may explicitly add those capabilities.'
+    'RockEquippedWeaponHandlingBaseline[\s\S]*immersive_weapon_policy::Config\s+immersiveWeapon[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*settings\.primaryDetachEnabled\s*=\s*false[\s\S]*settings\.immersiveWeapon\s*=\s*rockBaseline\.immersiveWeapon[\s\S]*externalAuthorityActive\s*=\s*true[\s\S]*PrimaryDetach[\s\S]*resolveEquippedWeaponDetachDecision[\s\S]*settings\.immersiveWeapon[\s\S]*externalPrimaryDetachEnabled' `
+    'ROCK must retain provider detach separately, carry the integrated policy snapshot, and resolve both against physical hand identity.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'toggleGrabEnabled[\s\S]*settings\.toggleGrabEnabled\s*=\s*rockBaseline\.toggleGrabEnabled[\s\S]*if \(!request\)' `
     'Equipped-weapon toggle grab must remain a ROCK-owned input preference across addon handling leases.'
@@ -123,28 +147,38 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'authoredOnlySupportGrabsEnabled[\s\S]*settings\.authoredOnlySupportGrabsEnabled\s*=[\s\r\n]+\s*rockBaseline\.authoredOnlySupportGrabsEnabled[\s\S]*if \(!request\)' `
     'Authored-only support acquisition must remain a ROCK-owned preference across addon handling leases; exact part targets override later at capture.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'requiresEquippedWeaponHandlingModeReconcile[\s\S]*fixedFiringHandChanged[\s\S]*previous\.firingGripOwnershipEnabled[\s\S]*previous\.primaryDetachEnabled[\s\S]*previous\.ambidextrousHandoffEnabled[\s\S]*previous\.pipboyTriggerHandEquipEnabled' `
+    'requiresEquippedWeaponHandlingModeReconcile[\s\S]*fixedFiringHandChanged[\s\S]*integratedPhysicalRightDetachRemoved[\s\S]*previous\.firingGripOwnershipEnabled[\s\S]*previous\.primaryDetachEnabled[\s\S]*previous\.ambidextrousHandoffEnabled[\s\S]*previous\.pipboyTriggerHandEquipEnabled' `
     'Mode reconciliation must follow removed effective capabilities rather than the raw presence of an addon lease.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*RockEquippedWeaponHandlingBaseline[\s\S]*rockAmbidextrousFiringGripEnabled[\s\S]*rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled[\s\S]*rockEquippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*if \(fixedFiringHandIsLeft\)[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true[\s\S]*requiresEquippedWeaponHandlingModeReconcile' `
-    'ROCK must build its handoff/authored-only/stash baseline before the addon overlay, preserve fixed-left ownership, and reconcile effective capability loss.'
+    'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*RockEquippedWeaponHandlingBaseline[\s\S]*rockAmbidextrousFiringGripEnabled[\s\S]*rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled[\s\S]*rockEquippedWeaponShoulderStashEnabled[\s\S]*rockPhysicalRightFiringGripDetachEnabled[\s\S]*rockPhysicalRightFiringGripDetachHapticIntensity[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*if \(fixedFiringHandIsLeft\)[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true[\s\S]*requiresEquippedWeaponHandlingModeReconcile' `
+    'ROCK must compose handoff/support/stash and integrated physical-right settings before the provider overlay and fixed-left reconciliation.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'if \(_equippedWeaponHandlingSettings\.ambidextrousHandoffEnabled\s*&&\s*_twoHandedGrip\.isManualOwnershipActive\(\)\)' `
     'Fixed-left fallback must preserve a deliberate handoff from either ROCK or the addon instead of checking external ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'gripZoneSettleEquipEnabled\s*=\s*[\s\S]{0,180}canSettleEquipInGripZone\(\s*_equippedWeaponHandlingSettings\.gripZoneEquipEnabled\s*\)' `
-    'Grip-zone equip and hover discovery must activate only from the addon snapshot.'
+    'Grip-zone equip and hover discovery must remain separate from integrated physical-right detach.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'consumeHapticEvents\(\);[\s\S]{0,700}if \(_equippedWeaponHandlingSettings\.externalAuthorityActive\)' `
-    'Equipped-weapon transition haptics must remain addon-owned while events are always drained.'
+    'consumeHapticEvents\(\);[\s\S]*resolveEquippedWeaponDetachDecision\([\s\S]{0,220}_equippedWeaponHandlingSettings,[\s\S]{0,120}isLeft[\s\S]*IntegratedPhysicalRight[\s\S]*if \(_equippedWeaponHandlingSettings\.externalAuthorityActive\)' `
+    'Firing-grip haptics must select integrated physical-right tuning first while preserving external-provider event tuning.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'shouldStartHeldWeaponEquipOwnership[\s\S]{0,260}\.modes\s*=\s*firingGripModes[\s\S]{0,120}\.handIsLeft\s*=\s*isLeft[\s\S]{0,120}\.gripHeld\s*=\s*rawGrabInput\.held' `
-    'Direct trigger equip must start core-or-addon hand-specific ownership from the originating hand grip.'
+    'Direct trigger equip must start integrated-or-provider hand-specific ownership from the originating hand grip.'
+Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
+    'FiringGripModeAvailability[\s\S]{0,260}physicalRightDetachEnabled[\s\S]*shouldStartHeldWeaponEquipOwnership[\s\S]{0,320}appliesToPhysicalHand\([\s\S]{0,160}input\.modes\.physicalRightDetachEnabled[\s\S]{0,120}input\.handIsLeft' `
+    'Held-trigger equip must allow integrated detach ownership only for the physical right hand.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'effectiveHandlingSettings\.firingGripOwnershipEnabled\s*=[\s\S]{0,160}firingGripOwnershipFeatureAvailable[\s\S]{0,220}effectiveHandlingSettings\.ambidextrousHandoffEnabled\s*=[\s\S]{0,160}ambidextrousHandoffAvailable[\s\S]{0,220}effectiveHandlingSettings\.primaryDetachEnabled\s*=[\s\S]{0,160}primaryDetachFeatureAvailable[\s\S]{0,260}_twoHandedGrip\.update\([\s\S]*effectiveHandlingSettings' `
-    'Two-handed weapon state must receive infrastructure-gated ownership, handoff, and detach values while preserving the active ROCK-or-addon tuning.'
+    'effectiveHandlingSettings\.firingGripOwnershipEnabled\s*=[\s\S]{0,160}firingGripOwnershipFeatureAvailable[\s\S]{0,220}effectiveHandlingSettings\.ambidextrousHandoffEnabled\s*=[\s\S]{0,160}ambidextrousHandoffAvailable[\s\S]{0,220}effectiveHandlingSettings\.primaryDetachEnabled\s*=[\s\S]{0,180}primaryDetachFeatureAvailable[\s\S]*effectiveHandlingSettings\.detachAuthority[\s\S]*effectiveHandlingSettings\.firingGripReattachRadiusGameUnits[\s\S]*_twoHandedGrip\.update\([\s\S]*effectiveHandlingSettings' `
+    'Two-handed weapon state must receive one infrastructure-gated, source-labelled physical-hand detach decision and its selected tuning.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'primary-only-drop[\s\S]{0,500}IntegratedPhysicalRight[\s\S]{0,180}recordFiringGripDetachedHaptic\(\)[\s\S]{0,260}requestEquippedWeaponDrop[\s\S]*ambidextrous-firing-hand-promotion[\s\S]{0,300}IntegratedPhysicalRight[\s\S]{0,180}recordFiringGripDetachedHaptic\(\)' `
+    'Integrated physical-right direct drop and handoff must emit one detach transition event without widening provider behavior.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'canCarryAfterFiringGripDetach\(_authorityMode\)[\s\S]{0,900}transitionToPartCarry\(\)[\s\S]*requestEquippedWeaponDrop\([\s\S]{0,180}primary-released-without-carry-authority' `
+    'A firing-grip release must enter part carry only with carry authority and otherwise use the physical drop path.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'updatePrimaryOnlyGrip[\s\S]{0,1000}primaryGripRetained\s*=\s*equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership\(\s*primaryDetachEnabled,\s*primaryGripInput\.held\)' `
@@ -187,7 +221,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'A retained trigger edge must replay only after the same hand holds the exact selected weapon.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'processHand\(_rightHand,\s*false\);\s*publishHandInputOwnership\(_rightHand,\s*false\);[\s\S]{0,120}processHand\(_leftHand,\s*true\);\s*publishHandInputOwnership\(_leftHand,\s*true\)' `
+    'processGrabInputHand\(frame,\s*_rightHand,\s*false,\s*handContext\);\s*publishHandInputOwnership\(_rightHand,\s*false\);[\s\S]{0,160}processGrabInputHand\(frame,\s*_leftHand,\s*true,\s*handContext\);\s*publishHandInputOwnership\(_leftHand,\s*true\)' `
     'Input ownership must be republished immediately after each hand transition so left Pip-Boy suppression cannot lag a committed grab.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
@@ -203,7 +237,7 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.h' `
     'An active grab must retain its world reference instead of relying on the visual model or a raw pointer.'
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'outSelection\.retainedRef\s*=\s*selection\.retainedRef[\s\S]*const\s+auto\s+selectedRef\s*=\s*validatedSelection\.retainedRef[\s\S]*_savedObjectState\.setReference\(selectedRef\)[\s\S]*outcome\.retainedRef\s*=\s*_savedObjectState\.retainedRef[\s\S]{0,120}outcome\.refr\s*=\s*outcome\.retainedRef\.get\(\)[\s\S]*_savedObjectState\.clear\(\)' `
+    '(?s)^(?=.*outSelection\.retainedRef\s*=\s*selection\.retainedRef)(?=.*const\s+auto\s+selectedRef\s*=\s*validatedSelection\.retainedRef)(?=.*_savedObjectState\.setReference\(selectedRef\))(?=.*outcome\.retainedRef\s*=\s*_savedObjectState\.retainedRef)(?=.*outcome\.refr\s*=\s*outcome\.retainedRef\.get\(\))(?=.*_savedObjectState\.clear\(\))' `
     'Grab commit and release must carry one strong reference across cleanup until the caller explicitly takes transfer ownership.'
 
 Require-Text 'src/physics-interaction/hand/Hand.h' `
