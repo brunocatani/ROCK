@@ -7452,6 +7452,10 @@ namespace rock
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 
+        traceAmbidextrousSupportParity(
+            weaponNode,
+            _rotationBlend >= 0.999f);
+
         RE::NiPoint3 primaryGripFinal = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _primaryGripLocal);
         RE::NiPoint3 offhandGripFinal = resolvePartGripWorld(supportGrip, weaponNode);
 
@@ -8429,6 +8433,10 @@ namespace rock
                         leftFiringAimOffsetYGameUnits,
                     _handlingSettings.
                         leftFiringAimOffsetZGameUnits);
+                traceAmbidextrousWeaponParity(
+                    weaponNode,
+                    "left-primary",
+                    &dampedAimCarrierWorld);
                 _leftFiringPositionOnlyTracePending = false;
             }
         }
@@ -9337,6 +9345,7 @@ namespace rock
 
         _lastSolvedWeaponTransform = weaponNode ? weaponNode->world : RE::NiTransform{};
         _hasSolvedWeaponTransform = _firingHandIsLeft && _hasSolvedWeaponTransform;
+        traceAmbidextrousSupportParity(weaponNode, true);
 
         if (weaponNode && ++_gripLogCounter >= 90) {
             _gripLogCounter = 0;

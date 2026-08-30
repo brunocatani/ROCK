@@ -1533,6 +1533,13 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
         void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);
+        void traceAmbidextrousWeaponParity(
+            RE::NiNode* weaponNode,
+            const char* phase,
+            const RE::NiTransform* leftAimCarrierWorld = nullptr);
+        void traceAmbidextrousSupportParity(
+            RE::NiNode* weaponNode,
+            bool settled);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
@@ -1841,6 +1848,21 @@ namespace rock
         // Rate limiter for the left-firing carry aim diagnostic.
         int _leftFiringAimLogCounter{ 0 };
         bool _leftFiringPositionOnlyTracePending{ false };
+
+        // One acquisition and one settled sample per support-grip identity;
+        // visual-only support emits one combined sample.
+        struct AmbidextrousParitySupportTraceState
+        {
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
+            std::uint64_t supportGripSequence{ 0 };
+            bool firingHandIsLeft{ false };
+            bool attachLogged{ false };
+            bool settledLogged{ false };
+        };
+        AmbidextrousParitySupportTraceState
+            _ambidextrousParitySupportTrace{};
+        std::uint64_t _ambidextrousParityTraceSequence{ 0 };
     };
 
 }
