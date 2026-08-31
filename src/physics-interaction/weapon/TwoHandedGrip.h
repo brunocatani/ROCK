@@ -65,7 +65,12 @@ namespace rock
         bool released{ false };
     };
 
-    struct EquippedWeaponScopeHandDriverFrame
+    /*
+     * Frame-scoped controller/arm-driver snapshot captured before ROCK
+     * publishes weapon or hand presentation. Scope continuity and every grip
+     * solver consume this same immutable input boundary.
+     */
+    struct EquippedWeaponHandDriverFrame
     {
         bool valid{ false };
         RE::NiTransform world{};
@@ -90,8 +95,8 @@ namespace rock
         bool manualScopeActivationRequested{ false };
         bool nativeScopeRequestStateValid{ false };
         bool nativeScopeRequestActive{ false };
-        EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
-        EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
+        EquippedWeaponHandDriverFrame leftHandDriverFrame{};
+        EquippedWeaponHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
         // the caller from whichever physical hand isFiringHandLeft() reports.
         EquippedWeaponPrimaryGripInput primaryGripInput{};
@@ -868,6 +873,11 @@ namespace rock
             bool followsAuthoredPrimaryGrip{ false };
         };
 
+        /*
+         * Scope/root presentation continuity and diagnostics only. These
+         * frames may describe native authored or ROCK-rendered hands and are
+         * therefore excluded from every solver/acquisition input path.
+         */
         struct ScopeSafeHandFrameDiagnostic
         {
             RE::NiTransform rootHandWorld{};
@@ -919,13 +929,13 @@ namespace rock
         struct LockedHandAuthorityAttemptDiagnostic
         {
             RE::NiTransform targetWorld{};
-            RE::NiTransform liveWorld{};
+            RE::NiTransform physicalInputWorld{};
             LockedHandAuthorityRole role{ LockedHandAuthorityRole::None };
             bool requested{ false };
             bool bridgeAvailable{ false };
             bool targetUsable{ false };
-            bool liveWorldAvailable{ false };
-            bool liveWorldUsable{ false };
+            bool physicalInputAvailable{ false };
+            bool physicalInputUsable{ false };
             bool applied{ false };
         };
 
@@ -1148,7 +1158,7 @@ namespace rock
             bool isLeft,
             LockedHandAuthorityRole role,
             const RE::NiTransform& targetWorld,
-            const RE::NiTransform* liveWorld,
+            const RE::NiTransform* physicalInputWorld,
             bool bridgeAvailable,
             bool applied);
         void logGripFailureIncident(const char* reason);
@@ -1441,22 +1451,39 @@ namespace rock
             bool supportHandIsLeft,
             const char* reason);
         void clearSupportInputBaselines();
-        bool tryResolvePhysicalHandFrame(
+
+        /*
+         * Solver/acquisition input boundary. Both hands are reconstructed from
+         * the same frame-scoped pre-publication driver snapshot and the frozen
+         * neutral hand relation. Authored or rendered hand frames never enter
+         * this contract.
+         */
+        struct PhysicalHandInputFrame
+        {
+            RE::NiTransform handWorld{};
+        };
+        struct PhysicalHandInputPair
+        {
+            PhysicalHandInputFrame left{};
+            PhysicalHandInputFrame right{};
+        };
+        bool tryResolvePhysicalHandInputFrame(
             bool isLeft,
-            RE::NiTransform& outHandWorld,
-            RE::NiTransform& outDriverWorld) const;
+            PhysicalHandInputFrame& outFrame) const;
+        bool tryResolvePhysicalHandInputPair(
+            PhysicalHandInputPair& outPair) const;
 
-        bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
+        bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* physicalInputWorld);
 
-        bool applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
+        bool applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* physicalInputWorld);
 
         bool applyLockedHandVisualAuthority(
             RE::NiNode* weaponNode,
             bool applyPrimaryHand,
             bool applySupportHand,
             float dt,
-            const RE::NiTransform* livePrimaryHandWorld = nullptr,
-            const RE::NiTransform* liveSupportHandWorld = nullptr);
+            const RE::NiTransform* physicalPrimaryInputWorld = nullptr,
+            const RE::NiTransform* physicalSupportInputWorld = nullptr);
 
         void publishGripHandPoses(bool isLeft);
 
@@ -1547,10 +1574,17 @@ namespace rock
         void traceAmbidextrousSupportParity(
             RE::NiNode* weaponNode,
             bool settled);
-        bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
+        /*
+         * Unowned root/scope readback. This exists only to bootstrap the frozen
+         * physical relation and to observe native authored presentation while
+         * ROCK owns no hand output. Never use it as weapon-solver input.
+         */
+        bool tryGetUnownedTrackedHandReadbackFrame(
+            bool isLeft,
+            RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
-            const RE::NiTransform* liveHandWorld,
+            const RE::NiTransform* physicalInputWorld,
             float dt,
             LockedHandVisualLerpState& state);
 
@@ -1661,7 +1695,7 @@ namespace rock
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         // Frame-scoped hFRIK/controller drivers captured by
         // PhysicsInteraction before ROCK publishes any hand visuals.
-        std::array<EquippedWeaponScopeHandDriverFrame, 2>
+        std::array<EquippedWeaponHandDriverFrame, 2>
             _currentHandDriverFrames{};
         bool _scopeMenuOpenThisFrame{ false };
         // True only for the first visible frame after ScopeMenu. Role clears

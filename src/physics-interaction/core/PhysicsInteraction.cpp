@@ -2914,8 +2914,8 @@ namespace rock
                     toggleGrabDecision.rightReleasePressConsumed;
             }
 
-            const auto captureScopeHandDriverFrame = [](RE::NiNode* driverNode) {
-                EquippedWeaponScopeHandDriverFrame result{};
+            const auto captureHandDriverFrame = [](RE::NiNode* driverNode) {
+                EquippedWeaponHandDriverFrame result{};
                 result.nodeAvailable = driverNode != nullptr;
                 if (driverNode) {
                     result.world = driverNode->world;
@@ -2925,7 +2925,7 @@ namespace rock
                 return result;
             };
             auto* playerNodes = f4vr::getPlayerNodes();
-            const auto scopeHandDriverNode = [playerNodes](bool isLeft) -> RE::NiNode* {
+            const auto handDriverNode = [playerNodes](bool isLeft) -> RE::NiNode* {
                 if (!playerNodes) {
                     return nullptr;
                 }
@@ -2933,8 +2933,10 @@ namespace rock
                     playerNodes->SecondaryMeleeWeaponOffsetNode2 :
                     playerNodes->primaryWeaponOffsetNOde;
             };
-            const EquippedWeaponScopeHandDriverFrame leftHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(true));
-            const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(false));
+            // Capture the immutable bilateral input pair before TwoHandedGrip
+            // can publish either hand or the weapon during this frame.
+            const EquippedWeaponHandDriverFrame leftHandDriverFrame = captureHandDriverFrame(handDriverNode(true));
+            const EquippedWeaponHandDriverFrame rightHandDriverFrame = captureHandDriverFrame(handDriverNode(false));
             bool nativeScopeRequestActive = false;
             const bool nativeScopeRequestStateValid =
                 tryReadNativeScopeRequestState(nativeScopeRequestActive);

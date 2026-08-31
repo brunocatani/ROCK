@@ -478,18 +478,18 @@ namespace rock
         const float leftRawToDampedDegrees =
             nodeRotationDelta(leftWand, leftDampedDriver);
 
-        RE::NiTransform physicalLeftWorld{};
-        RE::NiTransform physicalRightWorld{};
-        RE::NiTransform leftDriverWorld{};
-        RE::NiTransform rightDriverWorld{};
-        const bool physicalLeftValid = tryResolvePhysicalHandFrame(
+        PhysicalHandInputFrame physicalLeftInput{};
+        PhysicalHandInputFrame physicalRightInput{};
+        const bool physicalLeftValid = tryResolvePhysicalHandInputFrame(
             true,
-            physicalLeftWorld,
-            leftDriverWorld);
-        const bool physicalRightValid = tryResolvePhysicalHandFrame(
+            physicalLeftInput);
+        const bool physicalRightValid = tryResolvePhysicalHandInputFrame(
             false,
-            physicalRightWorld,
-            rightDriverWorld);
+            physicalRightInput);
+        const RE::NiTransform& physicalLeftWorld =
+            physicalLeftInput.handWorld;
+        const RE::NiTransform& physicalRightWorld =
+            physicalRightInput.handWorld;
         RE::NiTransform rootLeftWorld{};
         RE::NiTransform rootRightWorld{};
         const bool rootLeftValid =

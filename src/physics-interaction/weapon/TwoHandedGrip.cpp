@@ -2056,7 +2056,7 @@ namespace rock
             // its visible body. The weapon solver itself remains continuous.
             resetLockedHandVisualLerp();
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: native scope hand-frame menu={} solver={} leftCache={} rightCache={}",
+                "TwoHandedGrip: native scope hand-frame menu={} readback={} leftCache={} rightCache={}",
                 _scopeMenuOpenThisFrame ? "open" : "closed",
                 _scopeDriverFrameAuthorityActive ?
                     (_scopeMenuOpenThisFrame ? "frik-driver" : "frik-driver-latched") :
@@ -2068,7 +2068,7 @@ namespace rock
         // Central game delta; an unmeasurable frame holds the rebase
         // interpolation instead of advancing it by fabricated time.
         const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : 0.0f;
-        const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
+        const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponHandDriverFrame& driverFrame) {
             const std::size_t handIndex = isLeft ? 0u : 1u;
             ScopeSafeHandFrameState& state = _scopeSafeHandFrames[handIndex];
             ScopeSafeHandFrameDiagnostic& diagnostic = state.diagnostic;
@@ -2216,31 +2216,23 @@ namespace rock
         refreshHand(false, frameInput.rightHandDriverFrame);
 
         for (const bool isLeft : { true, false }) {
-            const bool positionOnlyHandWorldActive =
-                isLeft ?
-                _leftFiringHandWorldActive :
-                _authoredPrimaryFiringHandWorldActive;
-            if (!positionOnlyHandWorldActive) {
+            if (!hasVisualAuthorityForHand(isLeft)) {
                 continue;
             }
 
-            // Position-only presentation owns the rendered firing hand. Every
-            // solver consumer must keep seeing controller intent, so replay
-            // the cached physical wrist/driver relation instead of reading
-            // ROCK's previous authored hand output from the flattened tree.
-            RE::NiTransform physicalHandWorld{};
-            RE::NiTransform driverWorld{};
-            if (tryResolvePhysicalHandFrame(
-                    isLeft,
-                    physicalHandWorld,
-                    driverWorld)) {
-                auto& firingState =
+            // Any ROCK-owned hand may already be the previous frame's rendered
+            // output. Keep scope/diagnostic state physical as a second line of
+            // defense; solver paths consume the same pre-publication input
+            // contract directly and never depend on this state.
+            PhysicalHandInputFrame physicalInput{};
+            if (tryResolvePhysicalHandInputFrame(isLeft, physicalInput)) {
+                auto& handState =
                     _scopeSafeHandFrames[isLeft ? 0u : 1u];
-                firingState.currentHandWorld = physicalHandWorld;
-                firingState.currentHandWorldValid = true;
-                firingState.lastHandWorld = physicalHandWorld;
-                firingState.hasLastHandWorld = true;
-                firingState.diagnostic.physicalFrameOverrideApplied = true;
+                handState.currentHandWorld = physicalInput.handWorld;
+                handState.currentHandWorldValid = true;
+                handState.lastHandWorld = physicalInput.handWorld;
+                handState.hasLastHandWorld = true;
+                handState.diagnostic.physicalFrameOverrideApplied = true;
             }
         }
 
@@ -2258,13 +2250,13 @@ namespace rock
                 RE::NiTransform rootWorld{};
                 RE::NiTransform driverWorld{};
                 RE::NiTransform reconstructedWorld{};
-                RE::NiTransform solverWorld{};
+                RE::NiTransform readbackWorld{};
                 bool rootValid{ false };
                 bool driverValid{ false };
                 bool reconstructedValid{ false };
-                bool solverValid{ false };
+                bool readbackValid{ false };
                 float rootToReconstructedDistance{ -1.0f };
-                float rootToSolverDistance{ -1.0f };
+                float rootToReadbackDistance{ -1.0f };
             };
 
             const auto distanceBetween = [](const RE::NiPoint3& left, const RE::NiPoint3& right) {
@@ -2272,7 +2264,7 @@ namespace rock
                 const float distance = delta.Length();
                 return std::isfinite(distance) ? distance : -1.0f;
             };
-            const auto captureHandTrace = [this, &distanceBetween](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
+            const auto captureHandTrace = [this, &distanceBetween](bool isLeft, const EquippedWeaponHandDriverFrame& driverFrame) {
                 HandTrace trace{};
                 const ScopeSafeHandFrameState& state =
                     _scopeSafeHandFrames[isLeft ? 0u : 1u];
@@ -2291,19 +2283,19 @@ namespace rock
                     trace.reconstructedValid =
                         isUsableHandAuthorityTransform(trace.reconstructedWorld);
                 }
-                trace.solverValid = state.currentHandWorldValid;
-                if (trace.solverValid) {
-                    trace.solverWorld = state.currentHandWorld;
+                trace.readbackValid = state.currentHandWorldValid;
+                if (trace.readbackValid) {
+                    trace.readbackWorld = state.currentHandWorld;
                 }
                 if (trace.rootValid && trace.reconstructedValid) {
                     trace.rootToReconstructedDistance = distanceBetween(
                         trace.rootWorld.translate,
                         trace.reconstructedWorld.translate);
                 }
-                if (trace.rootValid && trace.solverValid) {
-                    trace.rootToSolverDistance = distanceBetween(
+                if (trace.rootValid && trace.readbackValid) {
+                    trace.rootToReadbackDistance = distanceBetween(
                         trace.rootWorld.translate,
-                        trace.solverWorld.translate);
+                        trace.readbackWorld.translate);
                 }
                 return trace;
             };
@@ -2332,7 +2324,7 @@ namespace rock
                 SCOPE_TRANSITION_TRACE_FRAMES -
                 _nativeScopeTransitionTraceFramesRemaining;
             ROCK_LOG_INFO(Weapon,
-                "SCOPE-TRANSITION seq={} sample={}/{} buttonRequested={} rendererValid={} rendererActive={} menuOpen={} manual={} state={} driverAuthority={} weaponValid={} weapon=({:.2f},{:.2f},{:.2f}) playerOffsetValid={} playerOffset=({:.2f},{:.2f},{:.2f}) left[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}] right[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}]",
+                "SCOPE-TRANSITION seq={} sample={}/{} buttonRequested={} rendererValid={} rendererActive={} menuOpen={} manual={} state={} driverAuthority={} weaponValid={} weapon=({:.2f},{:.2f},{:.2f}) playerOffsetValid={} playerOffset=({:.2f},{:.2f},{:.2f}) left[root={} driver={} reconstructed={} readback={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) readbackT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToReadback={:.2f}] right[root={} driver={} reconstructed={} readback={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) readbackT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToReadback={:.2f}]",
                 _nativeScopeTransitionTraceSequence,
                 sampleIndex,
                 SCOPE_TRANSITION_TRACE_FRAMES,
@@ -2354,7 +2346,7 @@ namespace rock
                 leftTrace.rootValid ? "yes" : "no",
                 leftTrace.driverValid ? "yes" : "no",
                 leftTrace.reconstructedValid ? "yes" : "no",
-                leftTrace.solverValid ? "yes" : "no",
+                leftTrace.readbackValid ? "yes" : "no",
                 leftTrace.rootWorld.translate.x,
                 leftTrace.rootWorld.translate.y,
                 leftTrace.rootWorld.translate.z,
@@ -2364,15 +2356,15 @@ namespace rock
                 leftTrace.reconstructedWorld.translate.x,
                 leftTrace.reconstructedWorld.translate.y,
                 leftTrace.reconstructedWorld.translate.z,
-                leftTrace.solverWorld.translate.x,
-                leftTrace.solverWorld.translate.y,
-                leftTrace.solverWorld.translate.z,
+                leftTrace.readbackWorld.translate.x,
+                leftTrace.readbackWorld.translate.y,
+                leftTrace.readbackWorld.translate.z,
                 leftTrace.rootToReconstructedDistance,
-                leftTrace.rootToSolverDistance,
+                leftTrace.rootToReadbackDistance,
                 rightTrace.rootValid ? "yes" : "no",
                 rightTrace.driverValid ? "yes" : "no",
                 rightTrace.reconstructedValid ? "yes" : "no",
-                rightTrace.solverValid ? "yes" : "no",
+                rightTrace.readbackValid ? "yes" : "no",
                 rightTrace.rootWorld.translate.x,
                 rightTrace.rootWorld.translate.y,
                 rightTrace.rootWorld.translate.z,
@@ -2382,11 +2374,11 @@ namespace rock
                 rightTrace.reconstructedWorld.translate.x,
                 rightTrace.reconstructedWorld.translate.y,
                 rightTrace.reconstructedWorld.translate.z,
-                rightTrace.solverWorld.translate.x,
-                rightTrace.solverWorld.translate.y,
-                rightTrace.solverWorld.translate.z,
+                rightTrace.readbackWorld.translate.x,
+                rightTrace.readbackWorld.translate.y,
+                rightTrace.readbackWorld.translate.z,
                 rightTrace.rootToReconstructedDistance,
-                rightTrace.rootToSolverDistance);
+                rightTrace.rootToReadbackDistance);
             _nativeScopeTransitionFinalTraceSequence =
                 _nativeScopeTransitionTraceSequence;
             _nativeScopeTransitionFinalTraceSample = sampleIndex;
@@ -2433,15 +2425,14 @@ namespace rock
             return;
         }
 
-        RE::NiTransform physicalRightHandWorld{};
-        if (!tryGetSolverHandTransform(false, physicalRightHandWorld) ||
-            !isUsableHandAuthorityTransform(physicalRightHandWorld)) {
+        PhysicalHandInputFrame rightInput{};
+        if (!tryResolvePhysicalHandInputFrame(false, rightInput)) {
             return;
         }
 
         const RE::NiTransform requestedWeaponWorld =
             transform_math::composeTransforms(
-                physicalRightHandWorld,
+                rightInput.handWorld,
                 weaponNode->local);
         if (!isFiniteTransform(requestedWeaponWorld)) {
             return;
@@ -2462,8 +2453,14 @@ namespace rock
             currentWeaponGenerationKey);
     }
 
-    bool TwoHandedGrip::tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const
+    bool TwoHandedGrip::tryGetUnownedTrackedHandReadbackFrame(
+        const bool isLeft,
+        RE::NiTransform& outTransform) const
     {
+        if (hasVisualAuthorityForHand(isLeft)) {
+            outTransform = {};
+            return false;
+        }
         const ScopeSafeHandFrameState& state = _scopeSafeHandFrames[isLeft ? 0u : 1u];
         if (!state.currentHandWorldValid) {
             outTransform = {};
@@ -3177,7 +3174,7 @@ namespace rock
         const bool isLeft,
         const LockedHandAuthorityRole role,
         const RE::NiTransform& targetWorld,
-        const RE::NiTransform* const liveWorld,
+        const RE::NiTransform* const physicalInputWorld,
         const bool bridgeAvailable,
         const bool applied)
     {
@@ -3198,11 +3195,11 @@ namespace rock
         attempt.requested = true;
         attempt.bridgeAvailable = bridgeAvailable;
         attempt.targetUsable = isUsableHandAuthorityTransform(targetWorld);
-        attempt.liveWorldAvailable = liveWorld != nullptr;
-        if (liveWorld) {
-            attempt.liveWorld = *liveWorld;
-            attempt.liveWorldUsable =
-                isUsableHandAuthorityTransform(*liveWorld);
+        attempt.physicalInputAvailable = physicalInputWorld != nullptr;
+        if (physicalInputWorld) {
+            attempt.physicalInputWorld = *physicalInputWorld;
+            attempt.physicalInputUsable =
+                isUsableHandAuthorityTransform(*physicalInputWorld);
         }
         attempt.applied = applied;
         snapshot.authorityAttempts[isLeft ? 0u : 1u] = attempt;
@@ -3347,18 +3344,18 @@ namespace rock
             if (!attempt.requested) {
                 return;
             }
-            const float targetToLiveDistance =
-                attempt.liveWorldAvailable ?
+            const float targetToPhysicalDistance =
+                attempt.physicalInputAvailable ?
                 diagnosticPointDistance(
                     attempt.targetWorld.translate,
-                    attempt.liveWorld.translate) :
+                    attempt.physicalInputWorld.translate) :
                 -1.0f;
-            const float targetToLiveRotation =
-                attempt.liveWorldAvailable && attempt.targetUsable &&
-                        attempt.liveWorldUsable ?
+            const float targetToPhysicalRotation =
+                attempt.physicalInputAvailable && attempt.targetUsable &&
+                        attempt.physicalInputUsable ?
                     hand_visual_lerp_math::rotationDistanceDegrees(
                         attempt.targetWorld,
-                        attempt.liveWorld) :
+                        attempt.physicalInputWorld) :
                     -1.0f;
             const float targetToHmdDistance = current->hasHmdFrame ?
                 diagnosticPointDistance(
@@ -3367,26 +3364,26 @@ namespace rock
                 -1.0f;
             ROCK_LOG_WARN(
                 Weapon,
-                "TwoHandedGrip: grip failure authority incident={} hand={} role={} bridge={} targetUsable={} live(available/usable)={}/{} applied={} targetT=({:.2f},{:.2f},{:.2f}) targetScale={:.6f} targetDet={:.6f} targetToLive=({:.2f}gu,{:.2f}deg) targetToHmd={:.2f}gu liveT=({:.2f},{:.2f},{:.2f})",
+                "TwoHandedGrip: grip failure authority incident={} hand={} role={} bridge={} targetUsable={} physicalInput(available/usable)={}/{} applied={} targetT=({:.2f},{:.2f},{:.2f}) targetScale={:.6f} targetDet={:.6f} targetToPhysical=({:.2f}gu,{:.2f}deg) targetToHmd={:.2f}gu physicalT=({:.2f},{:.2f},{:.2f})",
                 incident,
                 isLeft ? "left" : "right",
                 authorityRoleName(attempt.role),
                 attempt.bridgeAvailable,
                 attempt.targetUsable,
-                attempt.liveWorldAvailable,
-                attempt.liveWorldUsable,
+                attempt.physicalInputAvailable,
+                attempt.physicalInputUsable,
                 attempt.applied,
                 attempt.targetWorld.translate.x,
                 attempt.targetWorld.translate.y,
                 attempt.targetWorld.translate.z,
                 attempt.targetWorld.scale,
                 diagnosticRotationDeterminant(attempt.targetWorld.rotate),
-                targetToLiveDistance,
-                targetToLiveRotation,
+                targetToPhysicalDistance,
+                targetToPhysicalRotation,
                 targetToHmdDistance,
-                attempt.liveWorld.translate.x,
-                attempt.liveWorld.translate.y,
-                attempt.liveWorld.translate.z);
+                attempt.physicalInputWorld.translate.x,
+                attempt.physicalInputWorld.translate.y,
+                attempt.physicalInputWorld.translate.z);
         };
         logAuthorityAttempt(true, current->authorityAttempts[0]);
         logAuthorityAttempt(false, current->authorityAttempts[1]);
@@ -3885,17 +3882,21 @@ namespace rock
             return;
         }
 
-        RE::NiTransform liveSupportHandWorld{};
-        if (!tryGetSolverHandTransform(supportHandIsLeft, liveSupportHandWorld)) {
+        PhysicalHandInputFrame supportInput{};
+        if (!tryResolvePhysicalHandInputFrame(
+                supportHandIsLeft,
+                supportInput)) {
             return;
         }
+        const RE::NiTransform& physicalSupportHandWorld =
+            supportInput.handWorld;
 
         const RE::NiTransform activationWeaponWorld = weaponNode->world;
 
         AuthoredSupportPalmSeatProximity proximity{};
         if (!resolveAuthoredSupportPalmSeatProximity(
                 activationWeaponWorld,
-                liveSupportHandWorld,
+                physicalSupportHandWorld,
                 authoredSupportHandWeaponLocal,
                 supportHandIsLeft,
                 proximity)) {
@@ -4645,13 +4646,15 @@ namespace rock
                 continue;
             }
 
-            RE::NiTransform targetWorld{};
+            PhysicalHandInputFrame physicalInput{};
             if (!frik_visual_authority::isAvailable() ||
-                !tryGetSolverHandTransform(isLeft, targetWorld) ||
-                !isUsableHandAuthorityTransform(targetWorld)) {
+                !tryResolvePhysicalHandInputFrame(
+                    isLeft,
+                    physicalInput)) {
                 clearHandVisualReturn(isLeft, "tracked-hand-unavailable", true);
                 continue;
             }
+            RE::NiTransform targetWorld = physicalInput.handWorld;
 
             /*
              * Position-only carry re-seats the right hand at the authored
@@ -5020,7 +5023,7 @@ namespace rock
 
     RE::NiTransform TwoHandedGrip::resolveLockedHandVisualTarget(
         const RE::NiTransform& targetWorld,
-        const RE::NiTransform* liveHandWorld,
+        const RE::NiTransform* physicalInputWorld,
         float dt,
         LockedHandVisualLerpState& state)
     {
@@ -5036,7 +5039,7 @@ namespace rock
         }
 
         if (!state.initialized) {
-            const RE::NiTransform startWorld = (liveHandWorld && isFiniteTransform(*liveHandWorld)) ? *liveHandWorld : targetWorld;
+            const RE::NiTransform startWorld = (physicalInputWorld && isFiniteTransform(*physicalInputWorld)) ? *physicalInputWorld : targetWorld;
             const float initialDistance =
                 hand_visual_lerp_math::distanceGameUnits(startWorld.translate, targetWorld.translate);
             const float durationSeconds =
@@ -5108,11 +5111,12 @@ namespace rock
             return authored_support_grab_policy::Selection::Failure;
         }
 
-        RE::NiTransform handTransform{};
-        if (!tryGetSolverHandTransform(isLeft, handTransform)) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: part grip capture skipped because authoritative hand transforms are unavailable hand={}", isLeft ? "left" : "right");
+        PhysicalHandInputFrame handInput{};
+        if (!tryResolvePhysicalHandInputFrame(isLeft, handInput)) {
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: part grip capture skipped because the physical hand input is unavailable hand={}", isLeft ? "left" : "right");
             return authored_support_grab_policy::Selection::Failure;
         }
+        const RE::NiTransform& handTransform = handInput.handWorld;
         if (outCapturedHandWorld) {
             *outCapturedHandWorld = handTransform;
         }
@@ -6153,15 +6157,17 @@ namespace rock
 
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const bool primaryHandIsLeft = _firingHandIsLeft;
-        RE::NiTransform primaryTransform{};
-        if (!tryGetSolverHandTransform(
+        PhysicalHandInputFrame primaryInput{};
+        if (!tryResolvePhysicalHandInputFrame(
                 primaryHandIsLeft,
-                primaryTransform)) {
+                primaryInput)) {
             ROCK_LOG_WARN(
                 Weapon,
                 "TwoHandedGrip: support grip acquisition rejected before commit because the primary hand frame is unavailable");
             return;
         }
+        const RE::NiTransform& physicalPrimaryHandWorld =
+            primaryInput.handWorld;
         if (!primaryHandIsLeft) {
             (void)captureRightNativeWeaponAimFrame(
                 weaponNode,
@@ -6171,7 +6177,7 @@ namespace rock
 
         /*
          * Position-only authored mode must also reuse the canonical: the
-         * solver hand deliberately reports the physical (natural) wrist while
+         * physical input deliberately reports the natural wrist while
          * ROCK presents the authored seat, so recapturing the relation from
          * it would rebase the whole two-hand hold - presented seat and
          * PAPER's manual-cycle baseline - onto the un-authored wrist frame.
@@ -6213,12 +6219,13 @@ namespace rock
         /*
          * A LEFT firing hand entering a two-handed grip KEEPS its captured
          * authored hand seat and grip point; native weapon aim remains in its
-         * separate generation-bound frame. Recapturing from the live hand both
+         * separate generation-bound frame. Recapturing from physical input both
          * replaced that authored hold with the momentary squeeze orientation
          * (round-2 arm break) and rebased the promotion grip point onto
          * whatever pose the node carried at grab time (round-4 role theft).
-         * The right hand recaptures as before - its frames deliberately ride
-         * FRIK's authored carry and feed the canonical snapshot.
+         * Right-hand authored carry is reused through its generation-bound
+         * canonical snapshot; only the no-canonical fallback captures the
+         * controller-derived primary frame below.
          */
         const bool keepLeftFiringHold = _firingHandIsLeft && _hasFiringHandWeaponLocal;
 
@@ -6288,11 +6295,11 @@ namespace rock
         }
 
         const RE::NiPoint3 primaryPalmPos =
-            reuseRightFiringCanonicalGrip ? weaponLocalToWorld(_primaryGripLocal, weaponNode) : computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
+            reuseRightFiringCanonicalGrip ? weaponLocalToWorld(_primaryGripLocal, weaponNode) : computeGrabLegacyPalmPivotAWorldFromHandBasis(physicalPrimaryHandWorld, primaryHandIsLeft);
         if (!keepLeftFiringHold) {
             if (!reuseRightFiringCanonicalGrip) {
                 _primaryGripLocal = worldToWeaponLocal(primaryPalmPos, weaponNode);
-                _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), primaryTransform);
+                _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), physicalPrimaryHandWorld);
             }
             _primaryGripConfidence = 1.0f;
             _hasFiringHandWeaponLocal = true;
@@ -6307,9 +6314,11 @@ namespace rock
          * than assuming the hand is inside the proximity radius.
          */
         if (firingGripProximityAuthorityEnabled) {
-            RE::NiTransform supportTransform{};
-            if (tryGetSolverHandTransform(supportHandIsLeft, supportTransform)) {
-                const RE::NiPoint3 supportPalmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportTransform, supportHandIsLeft);
+            PhysicalHandInputFrame supportInput{};
+            if (tryResolvePhysicalHandInputFrame(
+                    supportHandIsLeft,
+                    supportInput)) {
+                const RE::NiPoint3 supportPalmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportInput.handWorld, supportHandIsLeft);
                 const RE::NiPoint3 supportToGrip = sub(primaryPalmPos, supportPalmPos);
                 const float supportPalmToGripDistance = std::sqrt(dot(supportToGrip, supportToGrip));
                 if (std::isfinite(supportPalmToGripDistance)) {
@@ -6399,7 +6408,7 @@ namespace rock
                     isUsableHandAuthorityTransform(
                         primaryReturn.lastApplied) ?
                 primaryReturn.lastApplied :
-                primaryTransform;
+                physicalPrimaryHandWorld;
             dynamicSupportStartWorld =
                 supportReturn.active &&
                     isUsableHandAuthorityTransform(
@@ -6920,29 +6929,31 @@ namespace rock
                         ROTATION_BLEND_SPEED);
         }
 
-        RE::NiTransform primaryTransform{};
-        RE::NiTransform supportTransform{};
-        RE::NiTransform primaryDriverWorld{};
-        const bool primaryTransformAvailable =
-            primaryHandIsLeft ?
-            tryResolvePhysicalHandFrame(
-                true,
-                primaryTransform,
-                primaryDriverWorld) :
-            tryGetSolverHandTransform(false, primaryTransform);
-        if (!primaryTransformAvailable ||
-            !tryGetSolverHandTransform(
-                supportHandIsLeft,
-                supportTransform)) {
+        /*
+         * INPUT CONTRACT: resolve both controller-driven hands from the same
+         * pre-publication snapshot before reading or writing weapon state.
+         * _primaryHandWeaponLocal and supportGrip.handWeaponLocal are authored
+         * presentation outputs only; neither rendered hand may feed this solve.
+         */
+        PhysicalHandInputPair physicalInputs{};
+        if (!tryResolvePhysicalHandInputPair(physicalInputs)) {
             _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because authoritative hand transforms are unavailable");
-            logGripFailureIncident("authoritative-hand-frame-unavailable");
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because physical hand inputs are unavailable");
+            logGripFailureIncident("physical-hand-input-unavailable");
             transitionToInactive(false);
             return;
         }
+        const PhysicalHandInputFrame& primaryInput = primaryHandIsLeft ?
+            physicalInputs.left : physicalInputs.right;
+        const PhysicalHandInputFrame& supportInput = supportHandIsLeft ?
+            physicalInputs.left : physicalInputs.right;
+        const RE::NiTransform& physicalPrimaryHandWorld =
+            primaryInput.handWorld;
+        const RE::NiTransform& physicalSupportHandWorld =
+            supportInput.handWorld;
 
-        RE::NiTransform calibratedPrimaryTransform = primaryTransform;
-        RE::NiTransform calibratedSupportTransform = supportTransform;
+        RE::NiTransform calibratedPrimaryTransform = physicalPrimaryHandWorld;
+        RE::NiTransform calibratedSupportTransform = physicalSupportHandWorld;
         bool inputBaselineResolved = true;
         if (dynamicBaselineActive) {
             const auto& primaryDriver =
@@ -7002,45 +7013,32 @@ namespace rock
                  * anchors weapon translation. The blend starts at 0 on the
                  * attach frame (first-publication invariant: attaching must
                  * not move the weapon) and is advanced only after being
-                 * consumed. If the physical frame is unavailable the blend
-                 * holds and the captured tandem target remains the input
-                 * (behavior 1 as the fail-closed state).
+                 * consumed. The physical input pair was validated at the
+                 * function boundary, so this branch cannot fall back to a
+                 * rendered support hand.
                  */
                 auto& baseline = supportGrip.supportInputBaseline;
-                RE::NiTransform physicalSupportHandWorld{};
-                RE::NiTransform physicalSupportDriverWorld{};
-                if (tryResolvePhysicalHandFrame(
-                        supportHandIsLeft,
-                        physicalSupportHandWorld,
-                        physicalSupportDriverWorld)) {
-                    ROCK_LOG_SAMPLE_INFO(Weapon, 250,
-                        "TwoHandedGrip: dynamic support alignment blend={:.3f} capturedGap={:.3f}gu grip={} generation={:016X}",
-                        baseline.alignmentBlend,
-                        weaponSolverLength(sub(
-                            calibratedSupportTransform.translate,
-                            physicalSupportHandWorld.translate)),
-                        supportGrip.gripSequence,
-                        supportGrip.weaponGenerationKey);
-                    if (baseline.alignmentBlend > 0.0f) {
-                        calibratedSupportTransform =
-                            scope_safe_hand_frame_math::
-                                interpolateRebaseTransform(
-                                    calibratedSupportTransform,
-                                    physicalSupportHandWorld,
-                                    baseline.alignmentBlend);
-                    }
-                    baseline.alignmentBlend = (std::min)(
-                        1.0f,
-                        baseline.alignmentBlend +
-                            (std::isfinite(dt) && dt > 0.0f ? dt : 0.0f) *
-                                ROTATION_BLEND_SPEED);
-                } else if (baseline.alignmentBlend > 0.0f) {
-                    ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                        "TwoHandedGrip: dynamic support alignment holding at blend={:.3f} because the physical support hand frame is unavailable grip={} generation={:016X}",
-                        baseline.alignmentBlend,
-                        supportGrip.gripSequence,
-                        supportGrip.weaponGenerationKey);
+                ROCK_LOG_SAMPLE_INFO(Weapon, 250,
+                    "TwoHandedGrip: dynamic support alignment blend={:.3f} capturedGap={:.3f}gu grip={} generation={:016X}",
+                    baseline.alignmentBlend,
+                    weaponSolverLength(sub(
+                        calibratedSupportTransform.translate,
+                        physicalSupportHandWorld.translate)),
+                    supportGrip.gripSequence,
+                    supportGrip.weaponGenerationKey);
+                if (baseline.alignmentBlend > 0.0f) {
+                    calibratedSupportTransform =
+                        scope_safe_hand_frame_math::
+                            interpolateRebaseTransform(
+                                calibratedSupportTransform,
+                                physicalSupportHandWorld,
+                                baseline.alignmentBlend);
                 }
+                baseline.alignmentBlend = (std::min)(
+                    1.0f,
+                    baseline.alignmentBlend +
+                        (std::isfinite(dt) && dt > 0.0f ? dt : 0.0f) *
+                            ROTATION_BLEND_SPEED);
             }
         }
         if (supportInputBaselineActive &&
@@ -7364,12 +7362,18 @@ namespace rock
             return;
         }
 
+        /*
+         * OUTPUT CONTRACT: after the physical-input solve is complete, publish
+         * the weapon, then finger poses, then weapon-relative hand visuals.
+         * The physical pair is passed only as one-shot visual interpolation
+         * starts; no published transform is read into a subsequent solve.
+         */
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
         static_assert(weapon_visual_authority_math::weaponVisualPrecedesLockedHandAuthority());
         publishGripHandPoses(supportHandIsLeft);
 
         const bool applyPrimaryHandAuthority = weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_authorityMode);
-        if (!applyLockedHandVisualAuthority(weaponNode, applyPrimaryHandAuthority, true, dt, &primaryTransform, &supportTransform)) {
+        if (!applyLockedHandVisualAuthority(weaponNode, applyPrimaryHandAuthority, true, dt, &physicalPrimaryHandWorld, &physicalSupportHandWorld)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK locked hand authority failed");
             logGripFailureIncident("locked-hand-authority-publication-failed");
@@ -8097,9 +8101,11 @@ namespace rock
             _weaponNodeLocalBaseline = nativeWeaponLocalBaseline;
             _hasWeaponNodeLocalBaseline = true;
 
-            RE::NiTransform primaryTransform{};
-            if (tryGetSolverHandTransform(primaryHandIsLeft, primaryTransform)) {
-                _primaryGripLocal = worldToWeaponLocal(computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft), weaponNode);
+            PhysicalHandInputFrame primaryInput{};
+            if (tryResolvePhysicalHandInputFrame(
+                    primaryHandIsLeft,
+                    primaryInput)) {
+                _primaryGripLocal = worldToWeaponLocal(computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryInput.handWorld, primaryHandIsLeft), weaponNode);
                 _primaryGripConfidence = 1.0f;
             } else {
                 _primaryGripLocal = {};
@@ -8510,8 +8516,8 @@ namespace rock
         if (!weaponNode) {
             return false;
         }
-        RE::NiTransform handTransform{};
-        if (!tryGetSolverHandTransform(handIsLeft, handTransform)) {
+        PhysicalHandInputFrame handInput{};
+        if (!tryResolvePhysicalHandInputFrame(handIsLeft, handInput)) {
             return false;
         }
         RE::NiPoint3 firingGripWeaponLocal{};
@@ -8520,7 +8526,7 @@ namespace rock
                 firingGripWeaponLocal)) {
             return false;
         }
-        const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
+        const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handInput.handWorld, handIsLeft);
         const RE::NiPoint3 firingGripWorld =
             weaponLocalToWorld(firingGripWeaponLocal, weaponNode);
         const RE::NiPoint3 delta = sub(palm, firingGripWorld);
@@ -8623,10 +8629,11 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform handTransform{};
-        if (!tryGetSolverHandTransform(handIsLeft, handTransform)) {
+        PhysicalHandInputFrame handInput{};
+        if (!tryResolvePhysicalHandInputFrame(handIsLeft, handInput)) {
             return false;
         }
+        const RE::NiTransform& handTransform = handInput.handWorld;
 
         RE::NiTransform authoredProbeCanonical{};
         const char* authoredProbeCanonicalSource = "unavailable";
@@ -9121,7 +9128,24 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform pivotHandTransform{};
+        /*
+         * INPUT CONTRACT: always resolve the pivot controller frame before
+         * evaluating a captured driver baseline. The baseline may calibrate
+         * the solver target, but it never replaces the physical frame used to
+         * start hand presentation or to diagnose controller-to-seat error.
+         */
+        PhysicalHandInputFrame pivotInput{};
+        if (!tryResolvePhysicalHandInputFrame(
+                pivotIsLeft,
+                pivotInput)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because the physical pivot hand input is unavailable");
+            transitionToInactive(false);
+            return false;
+        }
+        const RE::NiTransform& physicalPivotHandWorld =
+            pivotInput.handWorld;
+        RE::NiTransform pivotSolverTargetWorld = physicalPivotHandWorld;
         RE::NiTransform calibratedPartCarryWeaponWorld{};
         if (partCarryBaselineActive) {
             const auto& pivotDriver =
@@ -9140,7 +9164,7 @@ namespace rock
                         calibratedPivotDriverWorld,
                         pivotGrip.supportInputBaseline.
                             inputToGripTargetLocal,
-                        pivotHandTransform) ||
+                        pivotSolverTargetWorld) ||
                 !weapon_support_acquisition_math::
                     tryResolveSupportInputTarget(
                         calibratedPivotDriverWorld,
@@ -9155,23 +9179,25 @@ namespace rock
                 transitionToInactive(false);
                 return false;
             }
-        } else if (!tryGetSolverHandTransform(
-                       pivotIsLeft,
-                       pivotHandTransform)) {
-            _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because authoritative hand transforms are unavailable");
-            transitionToInactive(false);
-            return false;
         }
 
+        /*
+         * OUTPUT CONTRACT: each carry branch completes its physical-input
+         * solve and publishes the weapon before publishing finger poses and
+         * weapon-relative hands. Physical frames seed presentation lerps only.
+         */
         if (aimGripCarries) {
-            RE::NiTransform aimHandTransform{};
-            if (!tryGetSolverHandTransform(!pivotIsLeft, aimHandTransform)) {
+            PhysicalHandInputFrame aimInput{};
+            if (!tryResolvePhysicalHandInputFrame(
+                    !pivotIsLeft,
+                    aimInput)) {
                 _hasSolvedWeaponTransform = false;
-                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because aim hand transform is unavailable");
+                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because the physical aim hand input is unavailable");
                 transitionToInactive(false);
                 return false;
             }
+            const RE::NiTransform& physicalAimHandWorld =
+                aimInput.handWorld;
 
             _rotationBlend = (std::min)(1.0f, _rotationBlend + dt * ROTATION_BLEND_SPEED);
 
@@ -9186,8 +9212,8 @@ namespace rock
              * driven part motion; provider part revocation releases the grip
              * in that case.
              */
-            const RE::NiPoint3 pivotPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(pivotHandTransform, pivotIsLeft);
-            const RE::NiPoint3 aimPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(aimHandTransform, !pivotIsLeft);
+            const RE::NiPoint3 pivotPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(pivotSolverTargetWorld, pivotIsLeft);
+            const RE::NiPoint3 aimPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(physicalAimHandWorld, !pivotIsLeft);
             const RE::NiPoint3 currentAimGripWorld = weaponLocalToWorld(aimGrip.gripLocal, weaponNode);
             const RE::NiPoint3 currentPivotGripWorld = weaponLocalToWorld(pivotGrip.gripLocal, weaponNode);
             const RE::NiPoint3 currentSeparationDelta = sub(currentAimGripWorld, currentPivotGripWorld);
@@ -9208,7 +9234,7 @@ namespace rock
             solverInput.primaryTargetWorld = pivotPalm;
             solverInput.supportTargetWorld = blendedAimTarget;
             solverInput.supportNormalLocal = aimGrip.normalLocal;
-            solverInput.supportNormalTargetWorld = computePalmNormalFromHandBasis(aimHandTransform, !pivotIsLeft);
+            solverInput.supportNormalTargetWorld = computePalmNormalFromHandBasis(physicalAimHandWorld, !pivotIsLeft);
             solverInput.useSupportNormalTwist = true;
             solverInput.supportNormalTwistFactor = SUPPORT_NORMAL_TWIST_FACTOR;
 
@@ -9234,8 +9260,8 @@ namespace rock
             publishGripHandPoses(pivotIsLeft);
             publishGripHandPoses(!pivotIsLeft);
 
-            if (!applyPartGripLockedVisual(pivotIsLeft, weaponNode, dt, &pivotHandTransform) ||
-                !applyPartGripLockedVisual(!pivotIsLeft, weaponNode, dt, &aimHandTransform)) {
+            if (!applyPartGripLockedVisual(pivotIsLeft, weaponNode, dt, &physicalPivotHandWorld) ||
+                !applyPartGripLockedVisual(!pivotIsLeft, weaponNode, dt, &physicalAimHandWorld)) {
                 _hasSolvedWeaponTransform = false;
                 ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because ROCK part grip hand authority failed");
                 transitionToInactive(false);
@@ -9247,10 +9273,10 @@ namespace rock
                 solvedWeaponWorld = calibratedPartCarryWeaponWorld;
             } else if (pivotGrip.hasSourceFrames && pivotGrip.hasAttachmentWeaponLocal && resolveCurrentSupportAttachmentRoot(pivotGrip, weaponNode)) {
                 const RE::NiTransform solvedSourceWorld =
-                    transform_math::composeTransforms(pivotHandTransform, transform_math::invertTransform(pivotGrip.handSourceLocal));
+                    transform_math::composeTransforms(pivotSolverTargetWorld, transform_math::invertTransform(pivotGrip.handSourceLocal));
                 solvedWeaponWorld = transform_math::composeTransforms(solvedSourceWorld, transform_math::invertTransform(pivotGrip.attachmentWeaponLocal));
             } else {
-                solvedWeaponWorld = transform_math::composeTransforms(pivotHandTransform, transform_math::invertTransform(pivotGrip.handWeaponLocal));
+                solvedWeaponWorld = transform_math::composeTransforms(pivotSolverTargetWorld, transform_math::invertTransform(pivotGrip.handWeaponLocal));
             }
             if (!isFiniteTransform(solvedWeaponWorld)) {
                 _hasSolvedWeaponTransform = false;
@@ -9268,7 +9294,7 @@ namespace rock
 
             static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
             publishGripHandPoses(pivotIsLeft);
-            if (!applyPartGripLockedVisual(pivotIsLeft, weaponNode, dt, &pivotHandTransform)) {
+            if (!applyPartGripLockedVisual(pivotIsLeft, weaponNode, dt, &physicalPivotHandWorld)) {
                 _hasSolvedWeaponTransform = false;
                 ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because ROCK part grip hand authority failed");
                 transitionToInactive(false);
@@ -9283,11 +9309,14 @@ namespace rock
          * the carry pivot must survive it.
          */
         if (aimGrip.active && aimGrip.attachOnly) {
-            RE::NiTransform attachHandTransform{};
-            const RE::NiTransform* liveAttachHandWorld =
-                tryGetSolverHandTransform(!pivotIsLeft, attachHandTransform) ? &attachHandTransform : nullptr;
+            PhysicalHandInputFrame attachInput{};
+            const RE::NiTransform* physicalAttachInputWorld =
+                tryResolvePhysicalHandInputFrame(
+                    !pivotIsLeft,
+                    attachInput) ?
+                &attachInput.handWorld : nullptr;
             publishGripHandPoses(!pivotIsLeft);
-            if (!applyPartGripLockedVisual(!pivotIsLeft, weaponNode, dt, liveAttachHandWorld)) {
+            if (!applyPartGripLockedVisual(!pivotIsLeft, weaponNode, dt, physicalAttachInputWorld)) {
                 releasePartGrip(!pivotIsLeft, "attach-only-visual-authority-failed");
             }
         }
@@ -9310,11 +9339,11 @@ namespace rock
                 resolvePartGripHandWorld(pivotGrip, weaponNode);
             const float handTargetTranslationDeltaGameUnits =
                 hand_visual_lerp_math::distanceGameUnits(
-                    pivotHandTransform.translate,
+                    pivotSolverTargetWorld.translate,
                     publishedGripTargetWorld.translate);
             const float handTargetRotationDeltaDegrees =
                 hand_visual_lerp_math::rotationDistanceDegrees(
-                    pivotHandTransform,
+                    pivotSolverTargetWorld,
                     publishedGripTargetWorld);
             constexpr float kTranslationWarningGameUnits = 0.01f;
             constexpr float kRotationWarningDegrees = 0.05f;
@@ -9384,9 +9413,15 @@ namespace rock
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
         publishGripHandPoses(supportHandIsLeft);
 
-        RE::NiTransform supportTransform{};
-        const RE::NiTransform* liveSupportTransform = tryGetSolverHandTransform(supportHandIsLeft, supportTransform) ? &supportTransform : nullptr;
-        if (!applyLockedHandVisualAuthority(weaponNode, false, true, dt, nullptr, liveSupportTransform)) {
+        // Output-only support: physical input may seed the visual transition,
+        // but this mode never feeds the rendered support hand into weapon aim.
+        PhysicalHandInputFrame supportInput{};
+        const RE::NiTransform* physicalSupportInputWorld =
+            tryResolvePhysicalHandInputFrame(
+                supportHandIsLeft,
+                supportInput) ?
+            &supportInput.handWorld : nullptr;
+        if (!applyLockedHandVisualAuthority(weaponNode, false, true, dt, nullptr, physicalSupportInputWorld)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing visual-only support grip because ROCK support hand authority failed");
             logGripFailureIncident(
@@ -10191,45 +10226,50 @@ namespace rock
         }
     }
 
-    bool TwoHandedGrip::tryResolvePhysicalHandFrame(
+    bool TwoHandedGrip::tryResolvePhysicalHandInputFrame(
         const bool isLeft,
-        RE::NiTransform& outHandWorld,
-        RE::NiTransform& outDriverWorld) const
+        PhysicalHandInputFrame& outFrame) const
     {
-        outHandWorld = {};
-        outDriverWorld = {};
-        auto* playerNodes = f4vr::getPlayerNodes();
-        RE::NiNode* dampedDriver = playerNodes ?
-            (isLeft ?
-                    playerNodes->SecondaryMeleeWeaponOffsetNode2 :
-                    playerNodes->primaryWeaponOffsetNOde) :
-            nullptr;
+        outFrame = {};
+        const auto& driverSnapshot =
+            _currentHandDriverFrames[isLeft ? 0u : 1u];
         const RE::NiTransform& boneInDriver = isLeft ?
             _leftNaturalBoneInDampedDriver :
             _rightNaturalBoneInDampedDriver;
         const bool relationValid = isLeft ?
             _hasLeftNaturalBoneInDampedDriver :
             _hasRightNaturalBoneInDampedDriver;
-        if (!dampedDriver ||
-            !relationValid ||
-            !isFiniteTransform(dampedDriver->world) ||
+        if (!driverSnapshot.valid || !relationValid ||
+            !isUsableHandAuthorityTransform(driverSnapshot.world) ||
             !isFiniteTransform(boneInDriver)) {
             return false;
         }
 
-        outDriverWorld = dampedDriver->world;
-        outHandWorld = transform_math::composeTransforms(
-            outDriverWorld,
+        outFrame.handWorld = transform_math::composeTransforms(
+            driverSnapshot.world,
             boneInDriver);
-        return isUsableHandAuthorityTransform(outHandWorld) &&
-               isFiniteTransform(outDriverWorld);
+        return isUsableHandAuthorityTransform(outFrame.handWorld);
+    }
+
+    bool TwoHandedGrip::tryResolvePhysicalHandInputPair(
+        PhysicalHandInputPair& outPair) const
+    {
+        outPair = {};
+        PhysicalHandInputPair resolved{};
+        if (!tryResolvePhysicalHandInputFrame(true, resolved.left) ||
+            !tryResolvePhysicalHandInputFrame(false, resolved.right)) {
+            return false;
+        }
+        outPair = resolved;
+        return true;
     }
 
     bool TwoHandedGrip::tryGetAuthoredPrimaryTrackedFiringHandWorld(
         RE::NiTransform& outHandWorld) const
     {
-        RE::NiTransform driverWorld{};
-        if (tryResolvePhysicalHandFrame(false, outHandWorld, driverWorld)) {
+        PhysicalHandInputFrame physicalInput{};
+        if (tryResolvePhysicalHandInputFrame(false, physicalInput)) {
+            outHandWorld = physicalInput.handWorld;
             return true;
         }
         // While ROCK presents the right firing hand, the rendered hand is
@@ -10239,7 +10279,7 @@ namespace rock
             outHandWorld = {};
             return false;
         }
-        return tryGetSolverHandTransform(false, outHandWorld) &&
+        return tryGetUnownedTrackedHandReadbackFrame(false, outHandWorld) &&
                isUsableHandAuthorityTransform(outHandWorld);
     }
 
@@ -10442,6 +10482,12 @@ namespace rock
                 continue;
             }
             RE::NiTransform requestedHandWorld{};
+            /*
+             * PRESENTATION-ONLY readback: collision moves an already rendered
+             * weapon/hand assembly by one common delta. This root frame never
+             * feeds grip acquisition or a weapon solve; the next frame's
+             * physical input is reconstructed from the untouched driver pair.
+             */
             const bool requestedHandValid =
                 tryGetRootFlattenedHandBoneTransform(
                     pulse.isLeft,
@@ -10530,7 +10576,7 @@ namespace rock
         return weaponPublished && handPulsesSucceeded;
     }
 
-    bool TwoHandedGrip::applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld)
+    bool TwoHandedGrip::applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* physicalInputWorld)
     {
         if (!weaponNode || !_hasFiringHandWeaponLocal) {
             return false;
@@ -10548,7 +10594,7 @@ namespace rock
         const RE::NiTransform* acquisitionStart =
             returningHand.active && isUsableHandAuthorityTransform(returningHand.lastApplied) ?
             &returningHand.lastApplied :
-            liveHandWorld;
+            physicalInputWorld;
         const bool synchronizedDynamicAcquisition =
             dynamicSupportAcquisitionMatches(
                 !_firingHandIsLeft,
@@ -10598,7 +10644,7 @@ namespace rock
             _firingHandIsLeft,
             LockedHandAuthorityRole::PrimaryGrip,
             requestedFiringHandWorld,
-            liveHandWorld,
+            physicalInputWorld,
             true,
             applied);
         if (applied) {
@@ -10612,7 +10658,7 @@ namespace rock
         return applied;
     }
 
-    bool TwoHandedGrip::applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld)
+    bool TwoHandedGrip::applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* physicalInputWorld)
     {
         WeaponPartGrip& grip = partGrip(isLeft);
         if (!weaponNode || !grip.active || !grip.hasHandWeaponLocal) {
@@ -10630,7 +10676,7 @@ namespace rock
         const RE::NiTransform* acquisitionStart =
             returningHand.active && isUsableHandAuthorityTransform(returningHand.lastApplied) ?
             &returningHand.lastApplied :
-            liveHandWorld;
+            physicalInputWorld;
         const bool synchronizedDynamicAcquisition =
             dynamicSupportAcquisitionMatches(isLeft, grip);
         const RE::NiTransform appliedHandWorld =
@@ -10654,7 +10700,7 @@ namespace rock
             isLeft,
             LockedHandAuthorityRole::SupportGrip,
             appliedHandWorld,
-            liveHandWorld,
+            physicalInputWorld,
             true,
             applied);
         if (applied) {
@@ -10670,8 +10716,8 @@ namespace rock
         bool applyPrimaryHand,
         bool applySupportHand,
         float dt,
-        const RE::NiTransform* livePrimaryHandWorld,
-        const RE::NiTransform* liveSupportHandWorld)
+        const RE::NiTransform* physicalPrimaryInputWorld,
+        const RE::NiTransform* physicalSupportInputWorld)
     {
         if (!weaponNode) {
             return false;
@@ -10693,10 +10739,10 @@ namespace rock
         bool primaryApplied = true;
         bool supportApplied = true;
         if (applyPrimaryHand) {
-            primaryApplied = applyFiringHandLockedVisual(weaponNode, dt, livePrimaryHandWorld);
+            primaryApplied = applyFiringHandLockedVisual(weaponNode, dt, physicalPrimaryInputWorld);
         }
         if (applySupportHand) {
-            supportApplied = applyPartGripLockedVisual(supportHandIsLeft, weaponNode, dt, liveSupportHandWorld);
+            supportApplied = applyPartGripLockedVisual(supportHandIsLeft, weaponNode, dt, physicalSupportInputWorld);
         }
         if (primaryApplied && supportApplied) {
             return true;
@@ -11042,19 +11088,20 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform physicalDriverWorld{};
-        if (!tryResolvePhysicalHandFrame(
-                true,
-                outPhysicalHandWorld,
-                physicalDriverWorld)) {
+        PhysicalHandInputFrame physicalInput{};
+        if (!tryResolvePhysicalHandInputFrame(true, physicalInput)) {
             // Before the first left-hand publication, the scope-safe frame is
             // still a valid fallback only if ROCK owns no left visual output.
             if (_leftFiringHandWorldActive ||
                 hasVisualAuthorityForHand(true) ||
-                !tryGetSolverHandTransform(true, outPhysicalHandWorld) ||
+                !tryGetUnownedTrackedHandReadbackFrame(
+                    true,
+                    outPhysicalHandWorld) ||
                 !isUsableHandAuthorityTransform(outPhysicalHandWorld)) {
                 return false;
             }
+        } else {
+            outPhysicalHandWorld = physicalInput.handWorld;
         }
 
         auto* playerNodes = f4vr::getPlayerNodes();
@@ -11177,16 +11224,14 @@ namespace rock
             playerNodes ? playerNodes->primaryWandNode : nullptr;
         RE::NiNode* const leftWand =
             playerNodes ? playerNodes->SecondaryWandNode : nullptr;
-        RE::NiNode* const rightDriver =
-            playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr;
-        RE::NiNode* const leftDriver =
-            playerNodes ? playerNodes->SecondaryMeleeWeaponOffsetNode2 :
-                          nullptr;
-        if (!rightWand || !leftWand || !rightDriver || !leftDriver ||
+        const auto& leftDriverSnapshot = _currentHandDriverFrames[0];
+        const auto& rightDriverSnapshot = _currentHandDriverFrames[1];
+        if (!rightWand || !leftWand ||
+            !leftDriverSnapshot.valid || !rightDriverSnapshot.valid ||
             !isUsableHandAuthorityTransform(rightWand->world) ||
             !isUsableHandAuthorityTransform(leftWand->world) ||
-            !isUsableHandAuthorityTransform(rightDriver->world) ||
-            !isUsableHandAuthorityTransform(leftDriver->world)) {
+            !isUsableHandAuthorityTransform(rightDriverSnapshot.world) ||
+            !isUsableHandAuthorityTransform(leftDriverSnapshot.world)) {
             return;
         }
 
@@ -11207,7 +11252,9 @@ namespace rock
         }
 
         RE::NiTransform sourceHandWorld{};
-        if (!tryGetSolverHandTransform(sourceHandIsLeft, sourceHandWorld) ||
+        if (!tryGetUnownedTrackedHandReadbackFrame(
+                sourceHandIsLeft,
+                sourceHandWorld) ||
             !isUsableHandAuthorityTransform(sourceHandWorld)) {
             return;
         }
@@ -11236,11 +11283,11 @@ namespace rock
                 rightBoneInWand);
         const RE::NiTransform leftBoneInDriver =
             transform_math::composeTransforms(
-                transform_math::invertTransform(leftDriver->world),
+                transform_math::invertTransform(leftDriverSnapshot.world),
                 leftHandWorld);
         const RE::NiTransform rightBoneInDriver =
             transform_math::composeTransforms(
-                transform_math::invertTransform(rightDriver->world),
+                transform_math::invertTransform(rightDriverSnapshot.world),
                 rightHandWorld);
 
         constexpr float kMaxBoneToCarrierDistance = 30.0f;
@@ -11317,7 +11364,9 @@ namespace rock
         RE::NiTransform rightHandWorld{};
         if (!playerNodes || !playerNodes->primaryWandNode ||
             !isFiniteTransform(playerNodes->primaryWandNode->world) ||
-            !tryGetSolverHandTransform(false, rightHandWorld)) {
+            !tryGetUnownedTrackedHandReadbackFrame(
+                false,
+                rightHandWorld)) {
             return;
         }
         const RE::NiTransform boneInRightWand = transform_math::composeTransforms(
@@ -11832,10 +11881,13 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform handTransform{};
-        if (!tryGetSolverHandTransform(supportHandIsLeft, handTransform)) {
+        PhysicalHandInputFrame supportInput{};
+        if (!tryResolvePhysicalHandInputFrame(
+                supportHandIsLeft,
+                supportInput)) {
             return false;
         }
+        const RE::NiTransform& handTransform = supportInput.handWorld;
 
         // A left firing hand needs FRIK's right-hand weapon pose blocked for
         // the whole left-firing tenure; abort the promotion if that fails.
