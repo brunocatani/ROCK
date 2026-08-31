@@ -87,10 +87,9 @@ namespace rock::loose_weapon_grip_zone
          * live Weapon-node local is accepted solely when the authored feature
          * is disabled to preserve legacy behavior.
          *
-         * Authored placement is a deliberate hybrid: the tested hand and
-         * native carrier define wrist rotation, while the animation relation
-         * defines wrist position and finger locals. The resulting relation is
-         * fixed in Weapon space and never follows later probing-hand motion.
+         * The tested hand is used only for final world placement. It must
+         * never define the Weapon-relative grip point, or the target follows
+         * the probing hand instead of remaining fixed on the gun.
          */
         bool tryResolveGripWorldForModel(
             const bool isLeft,
@@ -194,40 +193,38 @@ namespace rock::loose_weapon_grip_zone
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
                 state.reason = authoredLookup.reason;
                 const char* carrierFailureReason =
-                    "hybridCacheUnavailable";
+                    "positionOnlyCacheUnavailable";
 
-                if (authoredLookup.hasRightHybridHandWeaponLocal) {
+                if (authoredLookup.hasRightPositionOnlyHandWeaponLocal) {
                     canonicalPlacementHandWeaponLocal =
-                        authoredLookup.rightHybridHandWeaponLocal;
-                    constexpr float kMaximumCachedAuthoredPositionErrorGameUnits =
+                        authoredLookup.rightPositionOnlyHandWeaponLocal;
+                    const RE::NiPoint3 cachedPlacementGripWeaponLocal =
+                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                            canonicalPlacementHandWeaponLocal,
+                            false);
+                    constexpr float kMaximumCachedPlacementGripErrorGameUnits =
                         0.01f;
-                    const float cachedAuthoredPositionError = pointDistance(
-                        canonicalPlacementHandWeaponLocal.translate,
-                        authoredLookup.rightHandWeaponLocal.translate);
+                    const float cachedPlacementGripError = pointDistance(
+                        cachedPlacementGripWeaponLocal,
+                        state.gripWeaponLocal);
                     const bool offsetRevisionMatches =
-                        authoredLookup.hybridFrikOffsetRevision != 0 &&
-                        authoredLookup.hybridFrikOffsetRevision ==
+                        authoredLookup.positionOnlyFrikOffsetRevision != 0 &&
+                        authoredLookup.positionOnlyFrikOffsetRevision ==
                             frik_weapon_offset_cache::currentRevision();
                     canonicalPlacementResolved =
                         offsetRevisionMatches &&
                         isUsableWorldTransform(
                             canonicalPlacementHandWeaponLocal) &&
-                        std::isfinite(cachedAuthoredPositionError) &&
-                        cachedAuthoredPositionError <=
-                            kMaximumCachedAuthoredPositionErrorGameUnits;
+                        std::isfinite(cachedPlacementGripError) &&
+                        cachedPlacementGripError <=
+                            kMaximumCachedPlacementGripErrorGameUnits;
                     if (canonicalPlacementResolved) {
-                        canonicalHandWeaponLocal =
-                            canonicalPlacementHandWeaponLocal;
-                        state.gripWeaponLocal =
-                            computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                                canonicalHandWeaponLocal,
-                                false);
                         state.placementReason =
-                            "authoredNativeCarrierHybridCache";
+                            "authoredEquippedPositionOnlyCache";
                     } else {
                         carrierFailureReason = !offsetRevisionMatches ?
-                            "hybridCacheOffsetRevisionMismatch" :
-                            "hybridCacheInvalid";
+                            "positionOnlyCacheOffsetRevisionMismatch" :
+                            "positionOnlyCacheInvalid";
                     }
                 }
 
@@ -236,44 +233,31 @@ namespace rock::loose_weapon_grip_zone
                     if (tryResolveAttachedRootWorld(
                             attachedRootWorld,
                             carrierFailureReason)) {
-                        const RE::NiTransform nativeCarrierHandWeaponLocal =
+                        const RE::NiTransform positionOnlyWeaponWorld =
+                            authored_weapon_grip_capture_policy::
+                                resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                                    attachedRootWorld,
+                                    state.gripWeaponLocal,
+                                    canonicalPalmWorld,
+                                    [](const RE::NiTransform& transform,
+                                        const RE::NiPoint3& point) {
+                                        return transform_math::localPointToWorld(
+                                            transform,
+                                            point);
+                                    });
+                        canonicalPlacementHandWeaponLocal =
                             transform_math::composeTransforms(
                                 transform_math::invertTransform(
-                                    attachedRootWorld),
+                                    positionOnlyWeaponWorld),
                                 canonicalHandWorld);
-                        const RE::NiTransform hybridHandWeaponLocal =
-                            authored_weapon_grip_capture_policy::
-                                buildNativeRotationAuthoredPositionHandLocal(
-                                    nativeCarrierHandWeaponLocal,
-                                    authoredLookup.rightHandWeaponLocal);
-                        if (isUsableWorldTransform(nativeCarrierHandWeaponLocal) &&
-                            isUsableWorldTransform(hybridHandWeaponLocal)) {
-                            canonicalHandWeaponLocal = hybridHandWeaponLocal;
-                            canonicalPlacementHandWeaponLocal =
-                                hybridHandWeaponLocal;
-                            state.gripWeaponLocal =
-                                computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                                    hybridHandWeaponLocal,
-                                    false);
+                        if (isUsableWorldTransform(
+                                canonicalPlacementHandWeaponLocal)) {
                             canonicalPlacementResolved = true;
                             state.placementReason =
-                                "authoredNativeCarrierHybridFresh";
-                            if (!authored_weapon_grip_library::
-                                    publishHybridHold(
-                                        weapon,
-                                        f4vr::isInPowerArmor(),
-                                        authoredLookup.captureSequence,
-                                        frik_weapon_offset_cache::
-                                            currentRevision(),
-                                        hybridHandWeaponLocal)) {
-                                ROCK_LOG_SAMPLE_WARN(Hand, 1000,
-                                    "Authored loose weapon hybrid hold publication failed formID={:08X} capture={}",
-                                    weapon->formID,
-                                    authoredLookup.captureSequence);
-                            }
+                                "authoredNativeCarrierPositionOnly";
                         } else {
                             carrierFailureReason =
-                                "derivedHybridHoldInvalid";
+                                "derivedPositionOnlyHoldInvalid";
                         }
                     }
                 }
@@ -285,7 +269,7 @@ namespace rock::loose_weapon_grip_zone
                     state.placementReason =
                         "authoredFullRigidFallback";
                     ROCK_LOG_SAMPLE_WARN(Hand, 1000,
-                        "Authored loose weapon hybrid carrier unavailable formID={:08X} source={}; using full authored hold",
+                        "Authored loose weapon position-only carrier unavailable formID={:08X} source={}; using full authored hold",
                         weapon->formID,
                         carrierFailureReason);
                 }

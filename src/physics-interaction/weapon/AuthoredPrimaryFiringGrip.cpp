@@ -178,6 +178,7 @@ namespace rock
         _applyFailureLogged = false;
         _canonicalPublishFailureLogged = false;
         _libraryPublishFailureLogged = false;
+        _positionOnlyHoldPublishFailureLogged = false;
         _customFrikOffsetOverrideActive = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
@@ -243,6 +244,7 @@ namespace rock
             _applyFailureLogged = false;
             _canonicalPublishFailureLogged = false;
             _libraryPublishFailureLogged = false;
+            _positionOnlyHoldPublishFailureLogged = false;
             _supportCaptureFailureLogged = false;
             _mirroredLeftFingerPose = {};
             _mirroredFingerPoseCaptureSequence = 0;
@@ -746,6 +748,63 @@ namespace rock
             }
         } else {
             _libraryPublishFailureLogged = false;
+        }
+
+        /*
+         * The authored relation above remains the presented wrist/finger
+         * authority. Loose weapon placement needs a different relation: the
+         * physical hand measured against the final position-only equipped
+         * weapon. Miniguns retain hFRIK's independent loose-weapon authority
+         * instead of contaminating the native-idle library with this compiled
+         * equipped-only firing seat.
+         */
+        const RE::NiTransform rightPositionOnlyHandWeaponLocal =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(solvedWeaponWorld),
+                trackedHandWorld);
+        const RE::NiPoint3 cachedPositionOnlyGripWeaponLocal =
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                rightPositionOnlyHandWeaponLocal,
+                false);
+        constexpr float kMaximumPositionOnlyHoldGripErrorGameUnits = 0.01f;
+        const float positionOnlyHoldGripError = pointDistance(
+            cachedPositionOnlyGripWeaponLocal,
+            authoredGripWeaponLocal);
+        const bool positionOnlyHoldValid =
+            finiteTransform(rightPositionOnlyHandWeaponLocal) &&
+            std::isfinite(positionOnlyHoldGripError) &&
+            positionOnlyHoldGripError <=
+                kMaximumPositionOnlyHoldGripErrorGameUnits;
+        const bool positionOnlyHoldPublished =
+            compiledMinigunFiringSeat ||
+            (authoredLibraryEntryAvailable &&
+                positionOnlyHoldValid &&
+                authored_weapon_grip_library::publishPositionOnlyHold(
+                    input.weapon,
+                    input.inPowerArmor,
+                    resolvedCaptureSequence,
+                    frik_weapon_offset_cache::currentRevision(),
+                    rightPositionOnlyHandWeaponLocal));
+        if (!positionOnlyHoldPublished) {
+            if (!_positionOnlyHoldPublishFailureLogged) {
+                ROCK_LOG_WARN(Animation,
+                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu",
+                    currentWeaponKey,
+                    resolvedCaptureSequence,
+                    authoredLibraryEntryAvailable ? "yes" : "no",
+                    positionOnlyHoldValid ? "yes" : "no",
+                    positionOnlyHoldGripError);
+                _positionOnlyHoldPublishFailureLogged = true;
+            }
+        } else {
+            _positionOnlyHoldPublishFailureLogged = false;
+            if (!compiledMinigunFiringSeat) {
+                ROCK_LOG_SAMPLE_DEBUG(Animation, 1000,
+                    "Authored position-only loose hold cached weaponKey=0x{:X} capture={} gripError={:.4f}gu",
+                    currentWeaponKey,
+                    resolvedCaptureSequence,
+                    positionOnlyHoldGripError);
+            }
         }
 
         _active = true;
