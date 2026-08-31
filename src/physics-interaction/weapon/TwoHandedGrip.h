@@ -74,6 +74,9 @@ namespace rock
     {
         bool valid{ false };
         RE::NiTransform world{};
+        // Frame-scoped identity witness. Stored calibration may compare this
+        // pointer but never dereference it outside the captured frame.
+        RE::NiNode* nodeIdentity{ nullptr };
         // Diagnostic witnesses preserve why capture failed without changing
         // the existing validity contract consumed by the solver.
         bool nodeAvailable{ false };
@@ -88,6 +91,13 @@ namespace rock
         bool rightHandHoldingObject{ false };
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
+        // Calibration may observe both hands only while the native equipped
+        // weapon is holstered. With a drawn weapon, only the true offhand is
+        // eligible because the firing root contains authored weapon pose.
+        bool weaponDrawn{ false };
+        // Native menus and special presentation modes may pose an otherwise
+        // unowned hand; never treat those roots as neutral calibration.
+        bool handCalibrationBlocked{ false };
         // Menu-open state and renderer-request state are deliberately separate.
         // FO4VR may keep WSScope presentation alive outside an active sight;
         // the renderer request is the authority for actual scope entry/exit.
@@ -553,6 +563,11 @@ namespace rock
             std::uint64_t captureSequence);
 
         void reset();
+        void invalidateNaturalHandDriverCalibration(const char* reason);
+        [[nodiscard]] bool isBilateralHandDriverCalibrationReady() const;
+        void beginPhysicalHandDriverFrame(
+            const EquippedWeaponHandDriverFrame& left,
+            const EquippedWeaponHandDriverFrame& right);
 
         void setWeaponVisualIntentObserver(
             void* context,
@@ -1268,11 +1283,16 @@ namespace rock
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey) const;
-        [[nodiscard]] bool hasStableNaturalHandBasis() const;
-        bool tryResolveStableNaturalHandWorldPair(
+        [[nodiscard]] bool hasIndependentNaturalHandDriverPair() const;
+        [[nodiscard]] bool hasCurrentNaturalHandDriverCalibration(
+            bool isLeft) const;
+        bool tryResolveCurrentNaturalHandWorldPair(
             RE::NiTransform& outRightHandWorld,
             RE::NiTransform& outLeftHandWorld) const;
-        void refreshNaturalHandInWandFrames();
+        void prepareIndependentNaturalHandDriverCalibrationFrame();
+        void refreshIndependentNaturalHandDriverCalibration(
+            RE::NiNode* weaponNode,
+            const EquippedWeaponGripFrameInput& frameInput);
         void clearRightFiringHandCanonicalFrame();
         bool hasRightFiringHandCanonicalFrame(
             const RE::NiNode* weaponNode,
@@ -1295,9 +1315,13 @@ namespace rock
 
         bool tryBuildMirroredRightSupportHandWeaponLocal(
             const RE::NiTransform& leftHandWeaponLocal,
-            RE::NiTransform& outRightHandWeaponLocal,
-            const RE::NiTransform* leftBoneInWandOverride = nullptr,
-            const RE::NiTransform* rightBoneInWandOverride = nullptr) const;
+            RE::NiTransform& outRightHandWeaponLocal) const;
+
+        static bool tryBuildMirroredRightSupportHandWeaponLocalImpl(
+            const RE::NiTransform& leftHandWeaponLocal,
+            const RE::NiTransform& leftBoneInWand,
+            const RE::NiTransform& rightBoneInWand,
+            RE::NiTransform& outRightHandWeaponLocal);
 
         void refreshAuthoredSupportRightMirror();
 
@@ -1683,20 +1707,27 @@ namespace rock
         bool _rightHandHoldingObjectForPose{ false };
 
         /*
-         * Stable neutral hand/controller basis in the raw wand and damped
-         * driver. One genuinely unposed offhand seeds both sides through the
-         * explicit bilateral X/Z hand convention; the pair then remains frozen
-         * until reset so neither native weapon animation nor ROCK's own visual
-         * output can become controller intent.
+         * Independently observed neutral hand relations in hFRIK's immutable
+         * pre-publication driver frames. Each hand owns its own calibration;
+         * neither side is synthesized from the other. The current driver
+         * snapshots reconstruct the bilateral world pair consumed by every
+         * solver and pose path, so a time-varying raw-wand relation is never
+         * cached as a long-lived invariant.
          */
-        RE::NiTransform _rightNaturalBoneInWand{};
-        RE::NiTransform _leftNaturalBoneInWand{};
         RE::NiTransform _rightNaturalBoneInDampedDriver{};
         RE::NiTransform _leftNaturalBoneInDampedDriver{};
-        bool _hasRightNaturalBoneInWand{ false };
-        bool _hasLeftNaturalBoneInWand{ false };
         bool _hasRightNaturalBoneInDampedDriver{ false };
         bool _hasLeftNaturalBoneInDampedDriver{ false };
+        std::array<RE::NiNode*, 2> _naturalHandDriverNodeIdentities{};
+        struct NaturalHandDriverCalibrationCaptureState
+        {
+            RE::NiTransform candidate{};
+            std::uint16_t stableFrames{ 0 };
+            bool candidateValid{ false };
+        };
+        std::array<NaturalHandDriverCalibrationCaptureState, 2>
+            _naturalHandDriverCalibrationCapture{};
+        bool _naturalHandDriverPairReadyLogged{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         // Frame-scoped hFRIK/controller drivers captured by
@@ -1914,9 +1945,9 @@ namespace rock
 
         /*
          * Diagnostic-only observations of each genuinely unowned hand. The
-         * production bilateral basis is intentionally frozen; this trace
-         * independently samples both physical sides across a firing-hand
-         * handoff so a synthetic mirror cannot validate itself.
+         * trace re-observes both physical sides across a firing-hand handoff,
+         * verifies the independent driver calibration, and retains the direct
+         * mirror residual that originally exposed the asymmetric hand bases.
          */
         struct BilateralHandCalibrationTraceState
         {

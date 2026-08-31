@@ -2175,9 +2175,8 @@ namespace rock
                 state.lastHandWorld = resolvedHandWorld;
                 state.hasLastHandWorld = true;
 
-                const bool preserveStableNeutralRelation = isLeft ?
-                    _hasLeftNaturalBoneInDampedDriver :
-                    _hasRightNaturalBoneInDampedDriver;
+                const bool preserveStableNeutralRelation =
+                    hasCurrentNaturalHandDriverCalibration(isLeft);
                 if (driverValid && !preserveStableNeutralRelation) {
                     const RE::NiTransform driverToHandLocal =
                         scope_safe_hand_frame_math::captureDriverToHandLocal(driverFrame.world, resolvedHandWorld);
@@ -2527,6 +2526,14 @@ namespace rock
         return actor_equipment_grab::nodeContainsNode(weaponNode, grip.attachmentRoot, 64) ? grip.attachmentRoot : nullptr;
     }
 
+    void TwoHandedGrip::beginPhysicalHandDriverFrame(
+        const EquippedWeaponHandDriverFrame& left,
+        const EquippedWeaponHandDriverFrame& right)
+    {
+        _currentHandDriverFrames[0] = left;
+        _currentHandDriverFrames[1] = right;
+    }
+
     TwoHandedGripUpdateResult TwoHandedGrip::update(
         RE::NiNode* weaponNode,
         const WeaponInteractionContact& leftWeaponContact,
@@ -2592,8 +2599,9 @@ namespace rock
             resetAuthoredSupportCapability("authored-only-mode-changed");
         }
         _handlingSettings = handlingSettings;
-        _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
-        _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
+        beginPhysicalHandDriverFrame(
+            frameInput.leftHandDriverFrame,
+            frameInput.rightHandDriverFrame);
         setGrabbedObjectHandPoseOwnership(
             frameInput.leftHandHoldingObject,
             frameInput.rightHandHoldingObject);
@@ -2607,6 +2615,7 @@ namespace rock
             ++_nativeScopeCameraDebugSnapshot.framesSinceApply;
         }
 
+        prepareIndependentNaturalHandDriverCalibrationFrame();
         refreshNativeScopeAnchor(
             weaponNode,
             currentWeaponGenerationKey,
@@ -2614,6 +2623,9 @@ namespace rock
             weaponCollision.getCurrentObservedEquippedWeaponFormID(),
             weaponCollision);
         refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
+        refreshIndependentNaturalHandDriverCalibration(
+            weaponNode,
+            frameInput);
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
             resetAuthoredSupportCapability(
@@ -2630,7 +2642,6 @@ namespace rock
             weaponNode,
             currentWeaponGenerationKey);
 
-        refreshNaturalHandInWandFrames();
         refreshAuthoredSupportRightMirror();
 
         updateWeaponVisualReturn(
@@ -3525,6 +3536,7 @@ namespace rock
         _nativeScopeActivationDebugSnapshot = {};
         clearNativeScopeRigidFrame();
         _scopeSafeHandFrames = {};
+        _currentHandDriverFrames = {};
         resetGripFailureDiagnostics();
         _scopeDriverFrameAuthorityActive = false;
         _nativeScopeRequestStateValid = false;
@@ -3549,14 +3561,10 @@ namespace rock
         clearRightFiringHandCanonicalFrame();
         _rightNativeWeaponAimFrame = {};
         _leftFiringDampedFollowFrame = {};
-        _rightNaturalBoneInWand = {};
-        _leftNaturalBoneInWand = {};
-        _rightNaturalBoneInDampedDriver = {};
-        _leftNaturalBoneInDampedDriver = {};
-        _hasRightNaturalBoneInWand = false;
-        _hasLeftNaturalBoneInWand = false;
-        _hasRightNaturalBoneInDampedDriver = false;
-        _hasLeftNaturalBoneInDampedDriver = false;
+        // Driver-to-hand calibration is a skeleton-session invariant, not
+        // weapon or menu state. Preserve completed per-hand observations;
+        // only discard an interrupted stability window.
+        _naturalHandDriverCalibrationCapture = {};
         _authoredPrimaryFingerPoseSuppressed = false;
         _leftFiringHandWorldActive = false;
         _leftFiringPositionOnlyTracePending = false;
@@ -7751,7 +7759,7 @@ namespace rock
 
         RE::NiTransform rightHandWorld{};
         RE::NiTransform leftHandWorld{};
-        if (!tryResolveStableNaturalHandWorldPair(
+        if (!tryResolveCurrentNaturalHandWorldPair(
                 rightHandWorld,
                 leftHandWorld) ||
             !tryBuildMirroredLeftFiringHandWeaponLocalImpl(
@@ -9693,7 +9701,10 @@ namespace rock
         };
 
         _authoredSupportGripCandidate = candidate;
-        refreshAuthoredSupportRightMirror();
+        // The animation hook runs before PhysicsInteraction publishes the
+        // immutable bilateral driver snapshots for this game frame. Defer the
+        // right-hand mirror to update() so wand and driver carriers share one
+        // timestamp instead of mixing current wands with prior-frame drivers.
         return true;
     }
 
@@ -9754,11 +9765,11 @@ namespace rock
 
         if (_firingHandIsLeft) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
-                "TwoHandedGrip: authored right-support mirror unavailable transform={} fingers={} naturalFrames=({}, {})",
+                "TwoHandedGrip: authored right-support mirror unavailable transform={} fingers={} independentDriverCalibration=({}, {})",
                 rightHandTransformMirrored ? "ready" : "missing",
                 rightFingerPoseFinite ? "ready" : "missing",
-                _hasLeftNaturalBoneInWand ? "left" : "no-left",
-                _hasRightNaturalBoneInWand ? "right" : "no-right");
+                _hasLeftNaturalBoneInDampedDriver ? "left" : "no-left",
+                _hasRightNaturalBoneInDampedDriver ? "right" : "no-right");
         }
     }
 
@@ -10241,12 +10252,7 @@ namespace rock
         const RE::NiTransform& boneInDriver = isLeft ?
             _leftNaturalBoneInDampedDriver :
             _rightNaturalBoneInDampedDriver;
-        const bool relationValid = isLeft ?
-            _hasLeftNaturalBoneInDampedDriver :
-            _hasRightNaturalBoneInDampedDriver;
-        if (!driverSnapshot.valid || !relationValid ||
-            !isUsableHandAuthorityTransform(driverSnapshot.world) ||
-            !isFiniteTransform(boneInDriver)) {
+        if (!hasCurrentNaturalHandDriverCalibration(isLeft)) {
             return false;
         }
 
@@ -11183,163 +11189,345 @@ namespace rock
                isUsableHandAuthorityTransform(outPresentedHandWorld);
     }
 
-    bool TwoHandedGrip::hasStableNaturalHandBasis() const
+    void TwoHandedGrip::invalidateNaturalHandDriverCalibration(
+        const char* reason)
     {
-        return _hasRightNaturalBoneInWand &&
-               _hasLeftNaturalBoneInWand &&
-               _hasRightNaturalBoneInDampedDriver &&
-               _hasLeftNaturalBoneInDampedDriver;
+        const bool hadCalibration =
+            _hasLeftNaturalBoneInDampedDriver ||
+            _hasRightNaturalBoneInDampedDriver;
+        _leftNaturalBoneInDampedDriver = {};
+        _rightNaturalBoneInDampedDriver = {};
+        _hasLeftNaturalBoneInDampedDriver = false;
+        _hasRightNaturalBoneInDampedDriver = false;
+        _naturalHandDriverNodeIdentities = {};
+        _naturalHandDriverCalibrationCapture = {};
+        _naturalHandDriverPairReadyLogged = false;
+        for (auto& scopeFrame : _scopeSafeHandFrames) {
+            scopeFrame.driverToHandLocal = {};
+            scopeFrame.hasDriverToHandLocal = false;
+        }
+        if (hadCalibration) {
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: independent hand-driver calibration invalidated reason={}",
+                reason ? reason : "unknown");
+        }
     }
 
-    bool TwoHandedGrip::tryResolveStableNaturalHandWorldPair(
+    bool TwoHandedGrip::hasIndependentNaturalHandDriverPair() const
+    {
+        return _hasLeftNaturalBoneInDampedDriver &&
+               _hasRightNaturalBoneInDampedDriver &&
+               _naturalHandDriverNodeIdentities[0] &&
+               _naturalHandDriverNodeIdentities[1] &&
+               isUsableHandAuthorityTransform(
+                   _leftNaturalBoneInDampedDriver) &&
+               isUsableHandAuthorityTransform(
+                   _rightNaturalBoneInDampedDriver);
+    }
+
+    bool TwoHandedGrip::isBilateralHandDriverCalibrationReady() const
+    {
+        return hasIndependentNaturalHandDriverPair() &&
+               hasCurrentNaturalHandDriverCalibration(true) &&
+               hasCurrentNaturalHandDriverCalibration(false);
+    }
+
+    bool TwoHandedGrip::hasCurrentNaturalHandDriverCalibration(
+        const bool isLeft) const
+    {
+        const std::size_t handIndex = isLeft ? 0u : 1u;
+        const auto& driver = _currentHandDriverFrames[handIndex];
+        const RE::NiTransform& relation = isLeft ?
+            _leftNaturalBoneInDampedDriver :
+            _rightNaturalBoneInDampedDriver;
+        const bool relationValid = isLeft ?
+            _hasLeftNaturalBoneInDampedDriver :
+            _hasRightNaturalBoneInDampedDriver;
+        return relationValid && driver.valid && driver.nodeIdentity &&
+               driver.nodeIdentity ==
+                   _naturalHandDriverNodeIdentities[handIndex] &&
+               isUsableHandAuthorityTransform(driver.world) &&
+               isFiniteTransform(relation) &&
+               std::abs(relation.scale) > 0.0001f;
+    }
+
+    bool TwoHandedGrip::tryResolveCurrentNaturalHandWorldPair(
         RE::NiTransform& outRightHandWorld,
         RE::NiTransform& outLeftHandWorld) const
     {
         outRightHandWorld = {};
         outLeftHandWorld = {};
-        auto* playerNodes = f4vr::getPlayerNodes();
-        RE::NiNode* const rightWand =
-            playerNodes ? playerNodes->primaryWandNode : nullptr;
-        RE::NiNode* const leftWand =
-            playerNodes ? playerNodes->SecondaryWandNode : nullptr;
-        if (!hasStableNaturalHandBasis() || !rightWand || !leftWand ||
-            !isFiniteTransform(rightWand->world) ||
-            !isFiniteTransform(leftWand->world)) {
+        if (!hasIndependentNaturalHandDriverPair() ||
+            !hasCurrentNaturalHandDriverCalibration(true) ||
+            !hasCurrentNaturalHandDriverCalibration(false)) {
             return false;
         }
 
-        outRightHandWorld = transform_math::composeTransforms(
-            rightWand->world,
-            _rightNaturalBoneInWand);
         outLeftHandWorld = transform_math::composeTransforms(
-            leftWand->world,
-            _leftNaturalBoneInWand);
+            _currentHandDriverFrames[0].world,
+            _leftNaturalBoneInDampedDriver);
+        outRightHandWorld = transform_math::composeTransforms(
+            _currentHandDriverFrames[1].world,
+            _rightNaturalBoneInDampedDriver);
         return isUsableHandAuthorityTransform(outRightHandWorld) &&
                isUsableHandAuthorityTransform(outLeftHandWorld);
     }
 
-    void TwoHandedGrip::refreshNaturalHandInWandFrames()
+    void TwoHandedGrip::prepareIndependentNaturalHandDriverCalibrationFrame()
     {
-        if (hasStableNaturalHandBasis()) {
+        const auto clearHandCalibration = [this](
+                                                  const std::size_t handIndex,
+                                                  const char* reason) {
+            bool& relationValid = handIndex == 0u ?
+                _hasLeftNaturalBoneInDampedDriver :
+                _hasRightNaturalBoneInDampedDriver;
+            RE::NiTransform& relation = handIndex == 0u ?
+                _leftNaturalBoneInDampedDriver :
+                _rightNaturalBoneInDampedDriver;
+            const bool hadCalibration = relationValid;
+            relation = {};
+            relationValid = false;
+            _naturalHandDriverNodeIdentities[handIndex] = nullptr;
+            _naturalHandDriverCalibrationCapture[handIndex] = {};
+            _scopeSafeHandFrames[handIndex].driverToHandLocal = {};
+            _scopeSafeHandFrames[handIndex].hasDriverToHandLocal = false;
+            _naturalHandDriverPairReadyLogged = false;
+            if (hadCalibration) {
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "TwoHandedGrip: independent hand-driver calibration cleared hand={} reason={}",
+                    handIndex == 0u ? "left" : "right",
+                    reason ? reason : "unknown");
+            }
+        };
+
+        for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
+            const auto& driver = _currentHandDriverFrames[handIndex];
+            const RE::NiNode* const calibratedDriver =
+                _naturalHandDriverNodeIdentities[handIndex];
+            if (calibratedDriver && driver.nodeIdentity &&
+                calibratedDriver != driver.nodeIdentity) {
+                clearHandCalibration(handIndex, "driver-node-changed");
+            }
+        }
+
+        for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
+            const bool relationValid = handIndex == 0u ?
+                _hasLeftNaturalBoneInDampedDriver :
+                _hasRightNaturalBoneInDampedDriver;
+            const RE::NiTransform& relation = handIndex == 0u ?
+                _leftNaturalBoneInDampedDriver :
+                _rightNaturalBoneInDampedDriver;
+            const auto& driver = _currentHandDriverFrames[handIndex];
+            if (!relationValid || !driver.nodeIdentity ||
+                driver.nodeIdentity !=
+                    _naturalHandDriverNodeIdentities[handIndex]) {
+                continue;
+            }
+            auto& scopeFrame = _scopeSafeHandFrames[handIndex];
+            scopeFrame.driverToHandLocal = relation;
+            scopeFrame.hasDriverToHandLocal = true;
+        }
+    }
+
+    void TwoHandedGrip::refreshIndependentNaturalHandDriverCalibration(
+        RE::NiNode* weaponNode,
+        const EquippedWeaponGripFrameInput& frameInput)
+    {
+        constexpr std::uint16_t kRequiredStableFrames = 8;
+        constexpr float kMaximumRelationDistance = 30.0f;
+        constexpr float kMaximumStableTranslationDelta = 0.05f;
+        constexpr float kMaximumStableRotationRadians =
+            0.0043633231f;  // 0.25 degrees
+        constexpr float kMaximumStableScaleDelta = 0.001f;
+
+        if (!runtime_state::isLocalSkeletonReady() ||
+            frameInput.handCalibrationBlocked ||
+            frameInput.animationBoundaryActive ||
+            frameInput.scopeMenuOpen ||
+            frameInput.manualScopeActivationRequested ||
+            (frameInput.nativeScopeRequestStateValid &&
+                frameInput.nativeScopeRequestActive) ||
+            _scopeDriverFrameAuthorityActive) {
+            _naturalHandDriverCalibrationCapture = {};
             return;
         }
 
-        auto* playerNodes = f4vr::getPlayerNodes();
-        RE::NiNode* const rightWand =
-            playerNodes ? playerNodes->primaryWandNode : nullptr;
-        RE::NiNode* const leftWand =
-            playerNodes ? playerNodes->SecondaryWandNode : nullptr;
-        const auto& leftDriverSnapshot = _currentHandDriverFrames[0];
-        const auto& rightDriverSnapshot = _currentHandDriverFrames[1];
-        if (!rightWand || !leftWand ||
-            !leftDriverSnapshot.valid || !rightDriverSnapshot.valid ||
-            !isUsableHandAuthorityTransform(rightWand->world) ||
-            !isUsableHandAuthorityTransform(leftWand->world) ||
-            !isUsableHandAuthorityTransform(rightDriverSnapshot.world) ||
-            !isUsableHandAuthorityTransform(leftDriverSnapshot.world)) {
+        const bool bothHandsMayBeNeutral =
+            !frameInput.weaponDrawn && !weaponNode;
+        const bool weaponOffhandMayBeNeutral =
+            frameInput.weaponDrawn && weaponNode;
+        if (!bothHandsMayBeNeutral && !weaponOffhandMayBeNeutral) {
+            _naturalHandDriverCalibrationCapture = {};
             return;
         }
 
-        /*
-         * The firing hand may already contain a native weapon animation even
-         * when ROCK owns no visual tag. Seed from the opposite, genuinely free
-         * hand only, then synthesize its partner through the explicit handspace
-         * X/Z bilateral map. Never refresh the result from either rendered hand.
-         */
-        const bool sourceHandIsLeft = !_firingHandIsLeft;
-        const std::size_t sourceIndex = sourceHandIsLeft ? 0u : 1u;
-        const bool sourceHoldingObject = sourceHandIsLeft ?
-            _leftHandHoldingObjectForPose : _rightHandHoldingObjectForPose;
-        if (hasVisualAuthorityForHand(sourceHandIsLeft) ||
-            partGrip(sourceHandIsLeft).active || sourceHoldingObject ||
-            _weaponCollisionHandPresentationFromPreviousFrame[sourceIndex]) {
-            return;
-        }
-
-        RE::NiTransform sourceHandWorld{};
-        if (!tryGetUnownedTrackedHandReadbackFrame(
-                sourceHandIsLeft,
-                sourceHandWorld) ||
-            !isUsableHandAuthorityTransform(sourceHandWorld)) {
-            return;
-        }
-
-        RE::NiNode* const sourceWand =
-            sourceHandIsLeft ? leftWand : rightWand;
-        const RE::NiTransform sourceBoneInWand =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(sourceWand->world),
-                sourceHandWorld);
-        const RE::NiTransform oppositeBoneInWand =
-            left_firing_position_only_math::mirrorOppositeHandFrame(
-                sourceBoneInWand);
-
-        const RE::NiTransform leftBoneInWand = sourceHandIsLeft ?
-            sourceBoneInWand : oppositeBoneInWand;
-        const RE::NiTransform rightBoneInWand = sourceHandIsLeft ?
-            oppositeBoneInWand : sourceBoneInWand;
-        const RE::NiTransform leftHandWorld =
-            transform_math::composeTransforms(
-                leftWand->world,
-                leftBoneInWand);
-        const RE::NiTransform rightHandWorld =
-            transform_math::composeTransforms(
-                rightWand->world,
-                rightBoneInWand);
-        const RE::NiTransform leftBoneInDriver =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(leftDriverSnapshot.world),
-                leftHandWorld);
-        const RE::NiTransform rightBoneInDriver =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(rightDriverSnapshot.world),
-                rightHandWorld);
-
-        constexpr float kMaxBoneToCarrierDistance = 30.0f;
         const auto relationDistance = [](const RE::NiTransform& relation) {
             return std::sqrt(dot(relation.translate, relation.translate));
         };
-        const float leftWandDistance = relationDistance(leftBoneInWand);
-        const float rightWandDistance = relationDistance(rightBoneInWand);
-        const float leftDriverDistance = relationDistance(leftBoneInDriver);
-        const float rightDriverDistance = relationDistance(rightBoneInDriver);
-        if (!isFiniteTransform(leftBoneInWand) ||
-            !isFiniteTransform(rightBoneInWand) ||
-            !isFiniteTransform(leftBoneInDriver) ||
-            !isFiniteTransform(rightBoneInDriver) ||
-            !std::isfinite(leftWandDistance) ||
-            !std::isfinite(rightWandDistance) ||
-            !std::isfinite(leftDriverDistance) ||
-            !std::isfinite(rightDriverDistance) ||
-            leftWandDistance > kMaxBoneToCarrierDistance ||
-            rightWandDistance > kMaxBoneToCarrierDistance ||
-            leftDriverDistance > kMaxBoneToCarrierDistance ||
-            rightDriverDistance > kMaxBoneToCarrierDistance) {
-            return;
+        const auto relationsMatch = [&](
+                                        const RE::NiTransform& first,
+                                        const RE::NiTransform& second) {
+            if (!isFiniteTransform(first) ||
+                !isFiniteTransform(second)) {
+                return false;
+            }
+            const RE::NiPoint3 translationDifference =
+                sub(first.translate, second.translate);
+            const float translationDelta = std::sqrt(dot(
+                translationDifference,
+                translationDifference));
+            const float rotationDelta =
+                weapon_support_acquisition_math::rotationDistanceRadians(
+                    first.rotate,
+                    second.rotate);
+            return std::isfinite(translationDelta) &&
+                   std::isfinite(rotationDelta) &&
+                   translationDelta <=
+                       kMaximumStableTranslationDelta &&
+                   rotationDelta <= kMaximumStableRotationRadians &&
+                   std::abs(first.scale - second.scale) <=
+                       kMaximumStableScaleDelta;
+        };
+
+        for (const bool isLeft : { true, false }) {
+            const std::size_t handIndex = isLeft ? 0u : 1u;
+            auto& capture =
+                _naturalHandDriverCalibrationCapture[handIndex];
+            const auto& driver = _currentHandDriverFrames[handIndex];
+            const bool handMayBeNeutral = bothHandsMayBeNeutral ||
+                (weaponOffhandMayBeNeutral &&
+                    isLeft != _firingHandIsLeft);
+            const bool holdingObject = isLeft ?
+                _leftHandHoldingObjectForPose :
+                _rightHandHoldingObjectForPose;
+            const bool eligible = handMayBeNeutral && driver.valid &&
+                driver.nodeIdentity &&
+                isUsableHandAuthorityTransform(driver.world) &&
+                !hasVisualAuthorityForHand(isLeft) &&
+                !partGrip(isLeft).active && !holdingObject &&
+                !_weaponCollisionHandPresentationFromPreviousFrame[
+                    handIndex];
+            // ScopeSafeHandFrame already performed the sole flattened-tree
+            // readback for this hand. Reuse that immutable raw sample instead
+            // of rescanning the skeleton in this per-frame calibration path.
+            const auto& observationFrame =
+                _scopeSafeHandFrames[handIndex];
+            const auto& rootDiagnostic = observationFrame.diagnostic;
+            const bool rootObservationUsable =
+                rootDiagnostic.rootSampleAllowed &&
+                rootDiagnostic.rootHandValid &&
+                !observationFrame.rootRebaseActive &&
+                isUsableHandAuthorityTransform(
+                    rootDiagnostic.rootHandWorld);
+            if (!eligible || !rootObservationUsable) {
+                capture = {};
+                continue;
+            }
+            const RE::NiTransform& handWorld =
+                rootDiagnostic.rootHandWorld;
+
+            const RE::NiTransform observedRelation =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(driver.world),
+                    handWorld);
+            const float observedDistance =
+                relationDistance(observedRelation);
+            if (!isFiniteTransform(observedRelation) ||
+                !std::isfinite(observedDistance) ||
+                observedDistance > kMaximumRelationDistance) {
+                capture = {};
+                continue;
+            }
+
+            const RE::NiTransform& currentRelation = isLeft ?
+                _leftNaturalBoneInDampedDriver :
+                _rightNaturalBoneInDampedDriver;
+            const bool currentRelationValid = isLeft ?
+                _hasLeftNaturalBoneInDampedDriver :
+                _hasRightNaturalBoneInDampedDriver;
+            // A drawn-weapon offhand may bootstrap a missing side, but only a
+            // holstered bilateral sample may replace established calibration.
+            if (currentRelationValid && weaponOffhandMayBeNeutral) {
+                capture = {};
+                continue;
+            }
+            if (currentRelationValid &&
+                _naturalHandDriverNodeIdentities[handIndex] ==
+                    driver.nodeIdentity &&
+                relationsMatch(currentRelation, observedRelation)) {
+                capture = {};
+                continue;
+            }
+
+            if (!capture.candidateValid ||
+                !relationsMatch(capture.candidate, observedRelation)) {
+                capture = NaturalHandDriverCalibrationCaptureState{
+                    .candidate = observedRelation,
+                    .stableFrames = 1,
+                    .candidateValid = true,
+                };
+                continue;
+            }
+            if (capture.stableFrames < kRequiredStableFrames) {
+                ++capture.stableFrames;
+            }
+            if (capture.stableFrames < kRequiredStableFrames) {
+                continue;
+            }
+
+            RE::NiTransform& storedRelation = isLeft ?
+                _leftNaturalBoneInDampedDriver :
+                _rightNaturalBoneInDampedDriver;
+            bool& storedRelationValid = isLeft ?
+                _hasLeftNaturalBoneInDampedDriver :
+                _hasRightNaturalBoneInDampedDriver;
+            const bool replaced = storedRelationValid;
+            storedRelation = capture.candidate;
+            storedRelationValid = true;
+            _naturalHandDriverNodeIdentities[handIndex] =
+                driver.nodeIdentity;
+            auto& scopeFrame = _scopeSafeHandFrames[handIndex];
+            scopeFrame.driverToHandLocal = storedRelation;
+            scopeFrame.hasDriverToHandLocal = true;
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: independent neutral hand-driver calibration {} hand={} source={} stableFrames={} driverDistance={:.3f}",
+                replaced ? "refreshed" : "captured",
+                isLeft ? "left" : "right",
+                bothHandsMayBeNeutral ?
+                    "holstered-free" :
+                    "weapon-offhand",
+                kRequiredStableFrames,
+                relationDistance(storedRelation));
+            capture = {};
         }
 
-        _leftNaturalBoneInWand = leftBoneInWand;
-        _rightNaturalBoneInWand = rightBoneInWand;
-        _leftNaturalBoneInDampedDriver = leftBoneInDriver;
-        _rightNaturalBoneInDampedDriver = rightBoneInDriver;
-        _hasLeftNaturalBoneInWand = true;
-        _hasRightNaturalBoneInWand = true;
-        _hasLeftNaturalBoneInDampedDriver = true;
-        _hasRightNaturalBoneInDampedDriver = true;
-
-        _scopeSafeHandFrames[0].driverToHandLocal = leftBoneInDriver;
-        _scopeSafeHandFrames[0].hasDriverToHandLocal = true;
-        _scopeSafeHandFrames[1].driverToHandLocal = rightBoneInDriver;
-        _scopeSafeHandFrames[1].hasDriverToHandLocal = true;
-
-        ROCK_LOG_INFO(
-            Weapon,
-            "TwoHandedGrip: stable bilateral neutral hand basis seeded source={}-offhand wandDistance=(L:{:.2f},R:{:.2f}) driverDistance=(L:{:.2f},R:{:.2f})",
-            sourceHandIsLeft ? "left" : "right",
-            leftWandDistance,
-            rightWandDistance,
-            leftDriverDistance,
-            rightDriverDistance);
+        if (hasIndependentNaturalHandDriverPair()) {
+            if (!_naturalHandDriverPairReadyLogged) {
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "TwoHandedGrip: independent bilateral hand-driver calibration ready leftDistance={:.3f} rightDistance={:.3f}",
+                    relationDistance(_leftNaturalBoneInDampedDriver),
+                    relationDistance(_rightNaturalBoneInDampedDriver));
+                _naturalHandDriverPairReadyLogged = true;
+            }
+        } else {
+            _naturalHandDriverPairReadyLogged = false;
+            if (weaponOffhandMayBeNeutral) {
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    2000,
+                    "TwoHandedGrip: bilateral hand-driver calibration pending left={} right={}; holster the weapon briefly so both neutral hands can be observed",
+                    _hasLeftNaturalBoneInDampedDriver ?
+                        "ready" :
+                        "missing",
+                    _hasRightNaturalBoneInDampedDriver ?
+                        "ready" :
+                        "missing");
+            }
+        }
     }
 
     void TwoHandedGrip::refreshRightNativeCanonicalFrame(
@@ -11437,12 +11625,12 @@ namespace rock
             return false;
         }
 
-        // Consume the frozen bilateral neutral pair. Neither native weapon
-        // animation nor ROCK's currently locked support/firing hand may become
-        // the hand-convention basis for this authored mirror.
+        // Reconstruct both independently calibrated neutral hands from this
+        // frame's immutable driver snapshots. Rendered weapon animation and
+        // ROCK's own hand publications can never feed this mirror.
         RE::NiTransform leftHandWorld{};
         RE::NiTransform rightHandWorld{};
-        if (!tryResolveStableNaturalHandWorldPair(
+        if (!tryResolveCurrentNaturalHandWorldPair(
                 rightHandWorld,
                 leftHandWorld)) {
             return false;
@@ -11483,41 +11671,72 @@ namespace rock
 
     bool TwoHandedGrip::tryBuildMirroredRightSupportHandWeaponLocal(
         const RE::NiTransform& leftHandWeaponLocal,
-        RE::NiTransform& outRightHandWeaponLocal,
-        const RE::NiTransform* leftBoneInWandOverride,
-        const RE::NiTransform* rightBoneInWandOverride) const
+        RE::NiTransform& outRightHandWeaponLocal) const
     {
         outRightHandWeaponLocal = {};
-        const bool hasCompleteOverridePair =
-            leftBoneInWandOverride && rightBoneInWandOverride;
-        if ((leftBoneInWandOverride || rightBoneInWandOverride) &&
-            !hasCompleteOverridePair) {
+        RE::NiTransform rightHandWorld{};
+        RE::NiTransform leftHandWorld{};
+        if (!tryResolveCurrentNaturalHandWorldPair(
+                rightHandWorld,
+                leftHandWorld)) {
             return false;
         }
-        if ((!hasCompleteOverridePair &&
-                (!_hasLeftNaturalBoneInWand ||
-                    !_hasRightNaturalBoneInWand)) ||
-            !isFiniteTransform(leftHandWeaponLocal) ||
-            (hasCompleteOverridePair &&
-                (!isFiniteTransform(*leftBoneInWandOverride) ||
-                    !isFiniteTransform(*rightBoneInWandOverride)))) {
+
+        const auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiNode* const leftWand =
+            playerNodes ? playerNodes->SecondaryWandNode : nullptr;
+        RE::NiNode* const rightWand =
+            playerNodes ? playerNodes->primaryWandNode : nullptr;
+        if (!leftWand || !rightWand ||
+            !isUsableHandAuthorityTransform(leftWand->world) ||
+            !isUsableHandAuthorityTransform(rightWand->world)) {
             return false;
         }
-        const RE::NiTransform& leftBoneInWand =
-            hasCompleteOverridePair ?
-                *leftBoneInWandOverride :
-                _leftNaturalBoneInWand;
-        const RE::NiTransform& rightBoneInWand =
-            hasCompleteOverridePair ?
-                *rightBoneInWandOverride :
-                _rightNaturalBoneInWand;
-        if (!isFiniteTransform(leftBoneInWand) ||
+
+        const RE::NiTransform leftBoneInWand =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(leftWand->world),
+                leftHandWorld);
+        const RE::NiTransform rightBoneInWand =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(rightWand->world),
+                rightHandWorld);
+        constexpr float kMaximumBoneToWandDistance = 30.0f;
+        const auto relationUsable = [kMaximumBoneToWandDistance](
+                                        const RE::NiTransform& relation) {
+            return isFiniteTransform(relation) &&
+                   std::sqrt(dot(
+                       relation.translate,
+                       relation.translate)) <=
+                       kMaximumBoneToWandDistance;
+        };
+        if (!relationUsable(leftBoneInWand) ||
+            !relationUsable(rightBoneInWand)) {
+            return false;
+        }
+
+        return tryBuildMirroredRightSupportHandWeaponLocalImpl(
+            leftHandWeaponLocal,
+            leftBoneInWand,
+            rightBoneInWand,
+            outRightHandWeaponLocal);
+    }
+
+    bool TwoHandedGrip::tryBuildMirroredRightSupportHandWeaponLocalImpl(
+        const RE::NiTransform& leftHandWeaponLocal,
+        const RE::NiTransform& leftBoneInWand,
+        const RE::NiTransform& rightBoneInWand,
+        RE::NiTransform& outRightHandWeaponLocal)
+    {
+        outRightHandWeaponLocal = {};
+        if (!isFiniteTransform(leftHandWeaponLocal) ||
+            !isFiniteTransform(leftBoneInWand) ||
             !isFiniteTransform(rightBoneInWand)) {
             return false;
         }
 
         /*
-         * Mirror only ORIENTATION through the physical wand pair. The cached
+         * Mirror only ORIENTATION through the physical wand pair. The current
          * bone-in-wand transforms remove hFRIK's asymmetric hand-bone
          * conventions, but their translations/scales are presentation state
          * and can be collapsed while ROCK owns left-primary carry. Feeding
@@ -11659,7 +11878,7 @@ namespace rock
          * mirrors (previous semantic-palm and bone-anchor mirrors both left
          * a residual yaw/side bias in-game). Conjugating the canonical hold
          * through the wand pair cancels every per-hand bone convention
-         * inside the frozen bilateral bone-in-wand transforms:
+         * inside the current driver-reconstructed bone-in-wand transforms:
          *
          *   weaponInLeftWand = Msag o weaponInRightWand o Mside
          *
@@ -11671,9 +11890,9 @@ namespace rock
          * Effect on the tuned offsets: yaw and roll negate, pitch and
          * fore/aft/vertical placement are preserved.
          *
-         * The caller supplies ROCK's frozen bilateral neutral hand pair, so
-         * neither the native weapon animation nor a previous ROCK publication
-         * can change this convention at takeover time.
+         * The caller supplies the independently calibrated bilateral hand pair
+         * reconstructed from the current immutable drivers. The raw-wand
+         * relation is therefore derived for this frame only and never frozen.
          */
         auto* playerNodes = f4vr::getPlayerNodes();
         if (!playerNodes) {

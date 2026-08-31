@@ -427,7 +427,7 @@ namespace rock
         };
         if (_scopeMenuOpenThisFrame ||
             _scopeDriverFrameAuthorityActive ||
-            !hasStableNaturalHandBasis() ||
+            !hasIndependentNaturalHandDriverPair() ||
             !isFiniteTransform(weaponNode->world) ||
             std::abs(weaponNode->world.scale) <= 0.0001f) {
             resetPendingStability();
@@ -604,28 +604,39 @@ namespace rock
 
             trace.observedBoneInWand[handIndex] = boneInWand;
             trace.observedValid[handIndex] = true;
-            const RE::NiTransform& syntheticWand = isLeft ?
-                _leftNaturalBoneInWand :
-                _rightNaturalBoneInWand;
-            const RE::NiTransform& syntheticDriver = isLeft ?
+            const RE::NiTransform& calibratedDriver = isLeft ?
                 _leftNaturalBoneInDampedDriver :
                 _rightNaturalBoneInDampedDriver;
+            const RE::NiTransform calibratedHandWorld =
+                transform_math::composeTransforms(
+                    driver.world,
+                    calibratedDriver);
+            RE::NiTransform calibratedWand{};
+            if (!captureRelation(
+                    wand->world,
+                    calibratedHandWorld,
+                    kMaximumBoneToCarrierDistance,
+                    calibratedWand)) {
+                trace.observedValid[handIndex] = false;
+                trace.unownedStableFrames[handIndex] = 0;
+                continue;
+            }
             const ParityRotationResidual wandResidual =
-                compareRotationResidual(syntheticWand, boneInWand);
+                compareRotationResidual(calibratedWand, boneInWand);
             const ParityRotationResidual driverResidual =
-                compareRotationResidual(syntheticDriver, boneInDriver);
+                compareRotationResidual(calibratedDriver, boneInDriver);
             ROCK_LOG_INFO(
                 Weapon,
-                "AMBICALIBRATION UNOWNED seq={} hand={} syntheticWandToObservedRotation=({}) syntheticWandToObservedTranslation={:.4f}gu syntheticDriverToObservedRotation=({}) syntheticDriverToObservedTranslation={:.4f}gu observedWandT=({}) observedDriverT=({})",
+                "AMBICALIBRATION UNOWNED seq={} hand={} calibratedWandToObservedRotation=({}) calibratedWandToObservedTranslation={:.4f}gu calibratedDriverToObservedRotation=({}) calibratedDriverToObservedTranslation={:.4f}gu observedWandT=({}) observedDriverT=({})",
                 trace.traceSequence,
                 isLeft ? "left" : "right",
                 formatParityRotationResidual(wandResidual),
                 pointDistance(
-                    syntheticWand.translate,
+                    calibratedWand.translate,
                     boneInWand.translate),
                 formatParityRotationResidual(driverResidual),
                 pointDistance(
-                    syntheticDriver.translate,
+                    calibratedDriver.translate,
                     boneInDriver.translate),
                 formatParityPoint(boneInWand.translate),
                 formatParityPoint(boneInDriver.translate));
@@ -705,7 +716,7 @@ namespace rock
                         true);
                 ROCK_LOG_INFO(
                     Weapon,
-                    "AMBICALIBRATION LEFT_FIRING_CANDIDATE seq={} syntheticBasisToObservedBasisRotation=({}) syntheticBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu rightControl={} currentT=({}) observedBasisT=({})",
+                    "AMBICALIBRATION LEFT_FIRING_CANDIDATE seq={} calibratedBasisToObservedBasisRotation=({}) calibratedBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu rightControl={} currentT=({}) observedBasisT=({})",
                     trace.traceSequence,
                     formatParityRotationResidual(candidateResidual),
                     pointDistance(
@@ -730,11 +741,11 @@ namespace rock
             supportCandidate.weaponGenerationKey ==
                 currentWeaponGenerationKey) {
             RE::NiTransform observedBasisRightSupport{};
-            if (tryBuildMirroredRightSupportHandWeaponLocal(
+            if (tryBuildMirroredRightSupportHandWeaponLocalImpl(
                     supportCandidate.leftHandWeaponLocal,
-                    observedBasisRightSupport,
-                    &trace.observedBoneInWand[0],
-                    &trace.observedBoneInWand[1])) {
+                    trace.observedBoneInWand[0],
+                    trace.observedBoneInWand[1],
+                    observedBasisRightSupport)) {
                 const ParityRotationResidual candidateResidual =
                     compareRotationResidual(
                         supportCandidate.rightHandWeaponLocal,
@@ -749,7 +760,7 @@ namespace rock
                         false);
                 ROCK_LOG_INFO(
                     Weapon,
-                    "AMBICALIBRATION RIGHT_SUPPORT_CANDIDATE seq={} capture={} syntheticBasisToObservedBasisRotation=({}) syntheticBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu currentT=({}) observedBasisT=({})",
+                    "AMBICALIBRATION RIGHT_SUPPORT_CANDIDATE seq={} capture={} calibratedBasisToObservedBasisRotation=({}) calibratedBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu currentT=({}) observedBasisT=({})",
                     trace.traceSequence,
                     supportCandidate.captureSequence,
                     formatParityRotationResidual(candidateResidual),
@@ -1156,7 +1167,7 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Weapon,
-            "AMBIPARITY FRAME seq={} phase={} generation={:016X} ownership={:016X} state={} firing={} authority={} canonical={} canonicalCurrent={} canonicalCapture={} nativeAim={} naturalWand=(L:{},R:{}) naturalDriver=(L:{},R:{}) candidate=(valid:{},rightMirror:{},nodeMatch:{},generationMatch:{},capture:{}) support=(active:{},hand:{},source:{},grip:{},capture:{},fingerMask:0x{:04X}) firingFingerMask=0x{:04X}",
+            "AMBIPARITY FRAME seq={} phase={} generation={:016X} ownership={:016X} state={} firing={} authority={} canonical={} canonicalCurrent={} canonicalCapture={} nativeAim={} independentDriverCalibration=(pair:{},L:{},R:{}) candidate=(valid:{},rightMirror:{},nodeMatch:{},generationMatch:{},capture:{}) support=(active:{},hand:{},source:{},grip:{},capture:{},fingerMask:0x{:04X}) firingFingerMask=0x{:04X}",
             traceSequence,
             phase,
             _activeWeaponGenerationKey,
@@ -1172,10 +1183,13 @@ namespace rock
             rightCanonicalCurrent ? "yes" : "no",
             _rightFiringHandCanonicalCaptureSequence,
             rightNativeAimValid ? "ready" : "missing",
-            _hasLeftNaturalBoneInWand ? "ready" : "missing",
-            _hasRightNaturalBoneInWand ? "ready" : "missing",
-            _hasLeftNaturalBoneInDampedDriver ? "ready" : "missing",
-            _hasRightNaturalBoneInDampedDriver ? "ready" : "missing",
+            hasIndependentNaturalHandDriverPair() ? "ready" : "missing",
+            hasCurrentNaturalHandDriverCalibration(true) ?
+                "current" :
+                "missing",
+            hasCurrentNaturalHandDriverCalibration(false) ?
+                "current" :
+                "missing",
             _authoredSupportGripCandidate.valid ? "yes" : "no",
             _authoredSupportGripCandidate.rightMirrorValid ? "yes" : "no",
             _authoredSupportGripCandidate.weaponNode == weaponNode ?
