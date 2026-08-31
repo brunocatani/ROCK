@@ -28,7 +28,6 @@ namespace rock::authored_weapon_grip_library
             std::uint64_t instanceContentKey{ 0 };
             RE::NiTransform rightHandWeaponLocal{};
             RE::NiTransform rightPositionOnlyHandWeaponLocal{};
-            RE::NiTransform positionOnlyGripAnchorWeaponLocal{};
             FiringFingerPose rightFiringFingerPose{};
             std::uint64_t captureSequence{ 0 };
             std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
@@ -37,7 +36,6 @@ namespace rock::authored_weapon_grip_library
             bool inPowerArmor{ false };
             bool instanceContentKnown{ false };
             bool hasRightPositionOnlyHandWeaponLocal{ false };
-            bool hasPositionOnlyGripAnchorWeaponLocal{ false };
             bool occupied{ false };
         };
 
@@ -136,8 +134,6 @@ namespace rock::authored_weapon_grip_library
                 .rightHandWeaponLocal = entry.rightHandWeaponLocal,
                 .rightPositionOnlyHandWeaponLocal =
                     entry.rightPositionOnlyHandWeaponLocal,
-                .positionOnlyGripAnchorWeaponLocal =
-                    entry.positionOnlyGripAnchorWeaponLocal,
                 .rightFiringFingerPose = entry.rightFiringFingerPose,
                 .captureSequence = entry.captureSequence,
                 .positionOnlyFrikOffsetRevision =
@@ -145,8 +141,6 @@ namespace rock::authored_weapon_grip_library
                 .source = entry.source,
                 .hasRightPositionOnlyHandWeaponLocal =
                     entry.hasRightPositionOnlyHandWeaponLocal,
-                .hasPositionOnlyGripAnchorWeaponLocal =
-                    entry.hasPositionOnlyGripAnchorWeaponLocal,
                 .usedVariantFallback = usedVariantFallback,
                 .reason = usedVariantFallback ? "authoredAnimationFormFallback" : "authoredAnimationExactVariant",
             };
@@ -244,10 +238,8 @@ namespace rock::authored_weapon_grip_library
 
         if (destination->captureSequence != captureSequence) {
             destination->rightPositionOnlyHandWeaponLocal = {};
-            destination->positionOnlyGripAnchorWeaponLocal = {};
             destination->positionOnlyFrikOffsetRevision = 0;
             destination->hasRightPositionOnlyHandWeaponLocal = false;
-            destination->hasPositionOnlyGripAnchorWeaponLocal = false;
         }
         destination->rightHandWeaponLocal = rightHandWeaponLocal;
         destination->rightFiringFingerPose = rightFiringFingerPose ? *rightFiringFingerPose : FiringFingerPose{};
@@ -275,14 +267,12 @@ namespace rock::authored_weapon_grip_library
         const bool inPowerArmor,
         const std::uint64_t authoredCaptureSequence,
         const std::uint64_t frikOffsetRevision,
-        const RE::NiTransform& rightPositionOnlyHandWeaponLocal,
-        const RE::NiTransform& positionOnlyGripAnchorWeaponLocal)
+        const RE::NiTransform& rightPositionOnlyHandWeaponLocal)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         if (weaponFormId == 0 || authoredCaptureSequence == 0 ||
             frikOffsetRevision == 0 ||
-            !finiteTransform(rightPositionOnlyHandWeaponLocal) ||
-            !finiteTransform(positionOnlyGripAnchorWeaponLocal)) {
+            !finiteTransform(rightPositionOnlyHandWeaponLocal)) {
             return false;
         }
 
@@ -296,11 +286,8 @@ namespace rock::authored_weapon_grip_library
 
             entry.rightPositionOnlyHandWeaponLocal =
                 rightPositionOnlyHandWeaponLocal;
-            entry.positionOnlyGripAnchorWeaponLocal =
-                positionOnlyGripAnchorWeaponLocal;
             entry.positionOnlyFrikOffsetRevision = frikOffsetRevision;
             entry.hasRightPositionOnlyHandWeaponLocal = true;
-            entry.hasPositionOnlyGripAnchorWeaponLocal = true;
             return true;
         }
         return false;

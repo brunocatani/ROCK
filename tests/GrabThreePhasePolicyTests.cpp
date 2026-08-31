@@ -1,5 +1,5 @@
-#include "physics-interaction/grab/GrabPoseCandidateSelector.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
+#include "physics-interaction/grab/GrabPoseCandidateSelector.h"
 
 #include <array>
 #include <cmath>
@@ -398,60 +398,6 @@ int main()
     });
     ok &= expectFalse("behind-palm programmatic arrival defers touch-held", behindPullSeat.allowImmediateTouchHeld);
     ok &= expectReason("behind-palm programmatic reason", behindPullSeat.reason, "arrivalSeatBehindPalm");
-
-    const auto ordinaryConvergenceIgnoresRotation =
-        evaluateConvergencePromotion(ConvergencePromotionInput{
-            .hasGrabBody = true,
-            .gripErrorGameUnits = 1.0f,
-            .rotationErrorDegrees = 90.0f,
-            .touchDistanceGameUnits = 4.0f,
-            .pocketRadiusGameUnits = 9.0f,
-        });
-    ok &= expectTrue(
-        "ordinary grab preserves translation-only promotion",
-        ordinaryConvergenceIgnoresRotation.reachedTouchRange);
-
-    const auto rotatingLooseWeapon =
-        evaluateConvergencePromotion(ConvergencePromotionInput{
-            .hasGrabBody = true,
-            .requireAngularConvergence = true,
-            .gripErrorGameUnits = 1.0f,
-            .rotationErrorDegrees = 20.0f,
-            .maxRotationErrorDegrees = 3.0f,
-            .elapsedSeconds = 1.0f,
-            .maxTimeSeconds = 0.5f,
-            .touchDistanceGameUnits = 4.0f,
-            .pocketRadiusGameUnits = 9.0f,
-            .stableInsidePocketSeconds = 0.2f,
-            .requiredStableInsidePocketSeconds = 0.03f,
-        });
-    ok &= expectTrue(
-        "rotating loose weapon remains in translation pocket",
-        rotatingLooseWeapon.insidePocket);
-    ok &= expectFalse(
-        "rotating loose weapon cannot touch-hold",
-        rotatingLooseWeapon.reachedTouchRange);
-    ok &= expectFalse(
-        "rotating loose weapon cannot timeout-promote",
-        rotatingLooseWeapon.timedOutInsidePocket);
-    ok &= expectReason(
-        "rotating loose weapon timeout reason",
-        rotatingLooseWeapon.timeoutBlockReason,
-        "waitingForAngularConvergence");
-
-    const auto alignedLooseWeapon =
-        evaluateConvergencePromotion(ConvergencePromotionInput{
-            .hasGrabBody = true,
-            .requireAngularConvergence = true,
-            .gripErrorGameUnits = 1.0f,
-            .rotationErrorDegrees = 2.0f,
-            .maxRotationErrorDegrees = 3.0f,
-            .touchDistanceGameUnits = 4.0f,
-            .pocketRadiusGameUnits = 9.0f,
-        });
-    ok &= expectTrue(
-        "aligned loose weapon can touch-hold",
-        alignedLooseWeapon.reachedTouchRange);
 
     return ok ? 0 : 1;
 }

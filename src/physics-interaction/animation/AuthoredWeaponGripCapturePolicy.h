@@ -319,39 +319,6 @@ namespace rock::authored_weapon_grip_capture_policy
         return solvedWeaponWorld;
     }
 
-    /*
-     * The animation relation is authored in the equipped Weapon frame, while
-     * a loose reference is driven by its model root. Rebase through P-Grip,
-     * which is the shared rigid frame present in both graphs, so wrapper-local
-     * rotation never leaks into the loose hold.
-     */
-    template <class Transform, class Compose, class Invert>
-    [[nodiscard]] constexpr Transform rebaseRelationThroughSharedGripAnchor(
-        const Transform& sourceGripAnchorRootLocal,
-        const Transform& targetGripAnchorRootLocal,
-        const Transform& relationSourceRootLocal,
-        Compose&& compose,
-        Invert&& invert)
-    {
-        return compose(
-            targetGripAnchorRootLocal,
-            compose(
-                invert(sourceGripAnchorRootLocal),
-                relationSourceRootLocal));
-    }
-
-    template <class Transform, class Compose, class Invert>
-    [[nodiscard]] constexpr Transform resolveRootWorldFromSharedGripAnchor(
-        const Transform& targetGripAnchorWorld,
-        const Transform& sourceGripAnchorRootLocal,
-        Compose&& compose,
-        Invert&& invert)
-    {
-        return compose(
-            targetGripAnchorWorld,
-            invert(sourceGripAnchorRootLocal));
-    }
-
     template <class Transform, class Compose, class Invert>
     [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInPrimaryHand(
         const Transform& authoredPrimaryHandModel,

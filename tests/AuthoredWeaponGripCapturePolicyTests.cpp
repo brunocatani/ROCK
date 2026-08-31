@@ -63,29 +63,6 @@ int main()
     static_assert(positionOnlyWeaponWorld.translate.y == 230.0f);
     static_assert(positionOnlyWeaponWorld.translate.z == 340.0f);
 
-    constexpr AffineTransform sourceGripAnchorRootLocal{ 2.0f, 10.0f };
-    constexpr AffineTransform looseGripAnchorRootLocal{ 3.0f, 20.0f };
-    constexpr AffineTransform handSourceRootLocal{ 4.0f, 30.0f };
-    constexpr auto handLooseRootLocal =
-        rebaseRelationThroughSharedGripAnchor(
-            sourceGripAnchorRootLocal,
-            looseGripAnchorRootLocal,
-            handSourceRootLocal,
-            compose,
-            invert);
-    static_assert(handLooseRootLocal.scale == 6.0f);
-    static_assert(handLooseRootLocal.translate == 50.0f);
-
-    constexpr AffineTransform nativeGripAnchorWorld{ 5.0f, 100.0f };
-    constexpr auto looseRootAlignedToNativeAnchor =
-        resolveRootWorldFromSharedGripAnchor(
-            nativeGripAnchorWorld,
-            sourceGripAnchorRootLocal,
-            compose,
-            invert);
-    static_assert(looseRootAlignedToNativeAnchor.scale == 2.5f);
-    static_assert(looseRootAlignedToNativeAnchor.translate == 75.0f);
-
     constexpr AffineTransform primaryHandModel{ 2.0f, 20.0f };
     constexpr AffineTransform supportHandModel{ 6.0f, 80.0f };
     constexpr auto supportInPrimary =

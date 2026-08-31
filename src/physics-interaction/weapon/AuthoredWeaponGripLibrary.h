@@ -50,16 +50,11 @@ namespace rock::authored_weapon_grip_library
         // when available so it keeps the native weapon aim while reproducing
         // the same authored grip translation.
         RE::NiTransform rightPositionOnlyHandWeaponLocal{};
-        // P-Grip in the equipped Weapon frame at the same capture. Loose
-        // models rebase both hand relations through their own P-Grip frame
-        // instead of assuming their model root equals the Weapon wrapper.
-        RE::NiTransform positionOnlyGripAnchorWeaponLocal{};
         FiringFingerPose rightFiringFingerPose{};
         std::uint64_t captureSequence{ 0 };
         std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
         bool hasRightPositionOnlyHandWeaponLocal{ false };
-        bool hasPositionOnlyGripAnchorWeaponLocal{ false };
         bool usedVariantFallback{ false };
         const char* reason{ "notEvaluated" };
     };
@@ -108,8 +103,7 @@ namespace rock::authored_weapon_grip_library
         bool inPowerArmor,
         std::uint64_t authoredCaptureSequence,
         std::uint64_t frikOffsetRevision,
-        const RE::NiTransform& rightPositionOnlyHandWeaponLocal,
-        const RE::NiTransform& positionOnlyGripAnchorWeaponLocal);
+        const RE::NiTransform& rightPositionOnlyHandWeaponLocal);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
     [[nodiscard]] LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor);

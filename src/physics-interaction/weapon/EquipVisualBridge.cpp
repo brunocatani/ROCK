@@ -47,24 +47,6 @@ namespace rock
             return true;
         }
 
-        [[nodiscard]] bool tryResolveGripAnchorRootLocal(
-            RE::NiAVObject* root,
-            RE::NiTransform& outGripAnchorRootLocal)
-        {
-            outGripAnchorRootLocal = {};
-            auto* gripAnchor = root ? f4vr::findNode(root, "P-Grip") : nullptr;
-            if (!root || !gripAnchor ||
-                !isFiniteTransform(root->world) ||
-                !isFiniteTransform(gripAnchor->world)) {
-                return false;
-            }
-
-            outGripAnchorRootLocal = transform_math::composeTransforms(
-                transform_math::invertTransform(root->world),
-                gripAnchor->world);
-            return isFiniteTransform(outGripAnchorRootLocal);
-        }
-
         [[nodiscard]] float rotationDistanceDegrees(
             const RE::NiTransform& lhs,
             const RE::NiTransform& rhs)
@@ -222,8 +204,6 @@ namespace rock
         }
 
         _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
-        _hasGripAnchorModelLocal =
-            tryResolveGripAnchorRootLocal(model, _gripAnchorModelLocal);
         RE::NiPoint3 physicalPalmWorld{};
         RE::NiTransform physicalHandWorld{};
         _hasPhysicalHandInWandLocal =
@@ -493,57 +473,7 @@ namespace rock
             RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
-            auto* nativeGripSearchRoot =
-                input.nativeVisual ? input.nativeVisual->exactInstance : nullptr;
-            auto* nativeGripAnchor = nativeGripSearchRoot ?
-                f4vr::findNode(nativeGripSearchRoot, "P-Grip") :
-                nullptr;
-            if (!nativeGripAnchor && input.nativeVisual) {
-                nativeGripSearchRoot = input.nativeVisual->weaponRoot;
-                nativeGripAnchor = nativeGripSearchRoot ?
-                    f4vr::findNode(nativeGripSearchRoot, "P-Grip") :
-                    nullptr;
-            }
-            const bool nativeModelAnchorAvailable =
-                _hasGripAnchorModelLocal &&
-                nativeGripAnchor &&
-                isFiniteTransform(nativeGripAnchor->world);
-            if (nativeModelAnchorAvailable) {
-                const auto compose = [](
-                                         const RE::NiTransform& parent,
-                                         const RE::NiTransform& child) {
-                    return transform_math::composeTransforms(parent, child);
-                };
-                const auto invert = [](const RE::NiTransform& transform) {
-                    return transform_math::invertTransform(transform);
-                };
-                blendTarget = authored_weapon_grip_capture_policy::
-                    resolveRootWorldFromSharedGripAnchor(
-                        nativeGripAnchor->world,
-                        _gripAnchorModelLocal,
-                        compose,
-                        invert);
-                haveBlendTarget = isFiniteTransform(blendTarget);
-                if (haveBlendTarget && !_nativeCarrierTraceLogged) {
-                    const RE::NiPoint3 looseAnchorWorld =
-                        transform_math::localPointToWorld(
-                            desiredWorld,
-                            _gripAnchorModelLocal.translate);
-                    const float dx =
-                        looseAnchorWorld.x - nativeGripAnchor->world.translate.x;
-                    const float dy =
-                        looseAnchorWorld.y - nativeGripAnchor->world.translate.y;
-                    const float dz =
-                        looseAnchorWorld.z - nativeGripAnchor->world.translate.z;
-                    ROCK_LOG_INFO(Weapon,
-                        "EquipVisualBridge native model-anchor convergence formID={:08X} hand={} rotationDelta={:.2f}deg anchorCorrection={:.3f}gu",
-                        _weaponFormID,
-                        _isLeftHand ? "left" : "right",
-                        rotationDistanceDegrees(desiredWorld, blendTarget),
-                        std::sqrt(dx * dx + dy * dy + dz * dz));
-                    _nativeCarrierTraceLogged = true;
-                }
-            } else if (_hasFiringHandWeaponLocal) {
+            if (_hasFiringHandWeaponLocal) {
                 if (_hasPhysicalHandInWandLocal) {
                     const RE::NiTransform physicalHandWorld =
                         transform_math::composeTransforms(
@@ -713,8 +643,6 @@ namespace rock
         _parent = nullptr;
         _modelInHandLocal = {};
         _physicalHandInWandLocal = {};
-        _gripAnchorModelLocal = {};
-        _hasGripAnchorModelLocal = false;
         _modelPresented = false;
     }
 

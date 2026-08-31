@@ -42,10 +42,8 @@ namespace rock
      * Blend target. begin() re-runs the shared loose-grip identity resolver
      * to recover the authored firing point and hand-pose payload. The retained
      * loose model already carries the separate position-only placement hold;
-     * once the exact native instance exists, update() aligns the retained
-     * model through the P-Grip frame shared by both graphs. This preserves the
-     * equipped model's real rotation without treating its Weapon wrapper as
-     * though it were the loose model root.
+     * once the exact native Weapon frame exists, update() uses that frame as
+     * the rotational carrier and translates only the authored firing point.
      * Custom JSON remains first authority, followed by ROCK-authored data and
      * embedded hFRIK fallback. A first-ever weapon never borrows another
      * weapon's cached position-only hold.
@@ -160,14 +158,12 @@ namespace rock
         RE::NiNode* _parent = nullptr;
         RE::NiTransform _modelInHandLocal{};
         RE::NiTransform _physicalHandInWandLocal{};
-        RE::NiTransform _gripAnchorModelLocal{};
         // Canonical loose-to-equipped hold (see BeginInput). Re-resolved at
         // begin() against the live filewatch-published hFRIK cache so the
         // bridge obeys the same priority as pull seating and grip-zone equip.
         RE::NiTransform _firingHandWeaponLocal{};
         bool _hasFiringHandWeaponLocal = false;
         bool _hasPhysicalHandInWandLocal = false;
-        bool _hasGripAnchorModelLocal = false;
         std::array<RE::NiTransform, 15> _handoffFingerLocalTransforms{};
         std::uint16_t _handoffFingerLocalTransformMask = 0;
         float _elapsedSeconds = 0.0f;

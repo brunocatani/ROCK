@@ -14,8 +14,6 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
 
-#include "rock_support/Fo4VrRuntime.h"
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -671,18 +669,6 @@ namespace rock
             return;
         }
 
-        RE::NiTransform gripAnchorWeaponLocal{};
-        auto* gripAnchor = f4vr::findNode(input.weaponNode, "P-Grip");
-        bool gripAnchorValid = false;
-        if (gripAnchor && finiteTransform(gripAnchor->world)) {
-            // The solve below changes only Weapon translation, so this local
-            // P-Grip frame is identical in live and solved Weapon space.
-            gripAnchorWeaponLocal = transform_math::composeTransforms(
-                transform_math::invertTransform(liveWeaponWorld),
-                gripAnchor->world);
-            gripAnchorValid = finiteTransform(gripAnchorWeaponLocal);
-        }
-
         // The authored wrist correction belongs to the presented hand: the
         // weapon keeps its native rotation while the right hand seats at the
         // authored grip on that weapon frame.
@@ -786,7 +772,6 @@ namespace rock
             authoredGripWeaponLocal);
         const bool positionOnlyHoldValid =
             finiteTransform(rightPositionOnlyHandWeaponLocal) &&
-            gripAnchorValid &&
             std::isfinite(positionOnlyHoldGripError) &&
             positionOnlyHoldGripError <=
                 kMaximumPositionOnlyHoldGripErrorGameUnits;
@@ -799,16 +784,14 @@ namespace rock
                     input.inPowerArmor,
                     resolvedCaptureSequence,
                     frik_weapon_offset_cache::currentRevision(),
-                    rightPositionOnlyHandWeaponLocal,
-                    gripAnchorWeaponLocal));
+                    rightPositionOnlyHandWeaponLocal));
         if (!positionOnlyHoldPublished) {
             if (!_positionOnlyHoldPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
-                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} anchor={} valid={} gripError={:.4f}gu",
+                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu",
                     currentWeaponKey,
                     resolvedCaptureSequence,
                     authoredLibraryEntryAvailable ? "yes" : "no",
-                    gripAnchorValid ? "yes" : "no",
                     positionOnlyHoldValid ? "yes" : "no",
                     positionOnlyHoldGripError);
                 _positionOnlyHoldPublishFailureLogged = true;
