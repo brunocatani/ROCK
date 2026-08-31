@@ -28,6 +28,7 @@
 
 namespace rock
 {
+    class DirectSkeletonBoneReader;
     class WeaponCollision;
 
     namespace authored_weapon_grip_library
@@ -1604,6 +1605,19 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey);
+        void traceAmbidextrousPoseHierarchy(
+            RE::NiNode* weaponNode,
+            const char* phase,
+            bool supportedTopology);
+        void traceWeaponRecoilSample(
+            const RE::NiTransform& nativeKickLocal,
+            const RE::NiTransform& controlledKickLocal,
+            bool responseAccepted,
+            bool visualOnlySupportRecoilAssist) noexcept;
+        void traceWeaponRecoilConsumer(
+            const char* consumer,
+            const RE::NiTransform* inputWorld,
+            const RE::NiTransform* outputWorld) noexcept;
         /*
          * Unowned root/scope readback. This exists only to bootstrap the frozen
          * physical relation and to observe native authored presentation while
@@ -1967,6 +1981,85 @@ namespace rock
         BilateralHandCalibrationTraceState
             _bilateralHandCalibrationTrace{};
         std::uint64_t _bilateralHandCalibrationTraceSequence{ 0 };
+
+        /*
+         * Diagnostic-only, one-shot snapshots of the complete rendered arm,
+         * wrist, and finger hierarchy in weapon space.  Each topology keeps
+         * a native right-firing control and a ROCK left-firing sample so the
+         * comparison cannot validate only transforms derived from ROCK's own
+         * mirror.  Hand indices are [left, right], mode indices are
+         * [right-firing, left-firing], and topology indices are
+         * [one-hand, supported].
+         */
+        struct PoseHierarchyBoneTrace
+        {
+            RE::NiTransform weaponLocal{};
+            RE::NiTransform parentLocal{};
+            bool weaponLocalValid{ false };
+            bool parentLocalValid{ false };
+        };
+        struct PoseHierarchyHandTrace
+        {
+            std::array<PoseHierarchyBoneTrace, 23> bones{};
+            std::array<RE::NiTransform, 15> publishedFingerLocals{};
+            std::uint16_t publishedFingerMask{ 0 };
+            bool valid{ false };
+        };
+        struct PoseHierarchyModeTrace
+        {
+            std::array<PoseHierarchyHandTrace, 2> hands{};
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
+            std::uint64_t captureSequence{ 0 };
+            bool valid{ false };
+        };
+        struct PoseHierarchyTopologyTrace
+        {
+            std::array<PoseHierarchyModeTrace, 2> modes{};
+            bool comparisonLogged{ false };
+        };
+        struct AmbidextrousPoseHierarchyTraceState
+        {
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t canonicalCaptureSequence{ 0 };
+            std::uint64_t traceSequence{ 0 };
+            std::array<PoseHierarchyTopologyTrace, 2> topologies{};
+        };
+        std::unique_ptr<DirectSkeletonBoneReader>
+            _ambidextrousPoseHierarchyReader;
+        AmbidextrousPoseHierarchyTraceState
+            _ambidextrousPoseHierarchyTrace{};
+        std::uint64_t _ambidextrousPoseHierarchyTraceSequence{ 0 };
+
+        /*
+         * Recoil diagnostics retain only the strongest weapon-local sample
+         * from each firing side and a bounded number of significant frames.
+         * The live sample is then followed through every ROCK consumer so a
+         * frame-conversion error is distinguishable from duplicate delivery.
+         */
+        struct WeaponRecoilPeakTrace
+        {
+            RE::NiTransform weaponLocalDelta{};
+            float strength{ 0.0f };
+            bool valid{ false };
+        };
+        struct WeaponRecoilDiagnosticTraceState
+        {
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t traceSequence{ 0 };
+            std::uint64_t currentSampleSequence{ 0 };
+            RE::NiTransform currentWorldDelta{};
+            RE::NiTransform currentWeaponLocalDelta{};
+            std::array<WeaponRecoilPeakTrace, 2> peaks{};
+            std::array<std::uint16_t, 2> emittedSamples{};
+            std::uint64_t peakRevision{ 0 };
+            std::uint64_t comparedPeakRevision{ 0 };
+            bool currentSampleLogged{ false };
+        };
+        WeaponRecoilDiagnosticTraceState
+            _weaponRecoilDiagnosticTrace{};
+        std::uint64_t _weaponRecoilDiagnosticTraceSequence{ 0 };
     };
 
 }

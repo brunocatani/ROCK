@@ -1193,7 +1193,9 @@ namespace rock
     };
 
     TwoHandedGrip::TwoHandedGrip() :
-        _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>())
+        _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>()),
+        _ambidextrousPoseHierarchyReader(
+            std::make_unique<DirectSkeletonBoneReader>())
     {
         _recoilControllerRegistered =
             frik_visual_authority::registerWeaponHandRecoilController(
@@ -1272,6 +1274,14 @@ namespace rock
             self->_firingHandIsLeft &&
             self->isManualOwnershipActive();
         self->captureLeftFiringWeaponRecoil(controlledKickLocal);
+        const bool responseAccepted =
+            leftFiringCarryAuthority ||
+            visualOnlySupportRecoilAssist;
+        self->traceWeaponRecoilSample(
+            sample->nativeKickLocal,
+            controlledKickLocal,
+            responseAccepted,
+            visualOnlySupportRecoilAssist);
         if (!leftFiringCarryAuthority &&
             !visualOnlySupportRecoilAssist) {
             return false;
@@ -1362,6 +1372,10 @@ namespace rock
              * Reapplying the raw delta here would bypass that solve and restore
              * one-handed recoil for physical-left firing.
              */
+            traceWeaponRecoilConsumer(
+                "terminal-skip-supported",
+                nullptr,
+                nullptr);
             _leftFiringWeaponRecoilSupportConstrainedThisUpdate = false;
             return true;
         }
@@ -1384,10 +1398,12 @@ namespace rock
             return true;
         }
 
+        const RE::NiTransform weaponWorldBeforeRecoil =
+            weaponNode->world;
         const RE::NiTransform recoiledWeaponWorld =
             transform_math::composeTransforms(
                 _leftFiringWeaponRecoilWorldDelta,
-                weaponNode->world);
+                weaponWorldBeforeRecoil);
         if (!isFiniteTransform(recoiledWeaponWorld) ||
             !applyWeaponVisualAuthority(weaponNode, recoiledWeaponWorld)) {
             ROCK_LOG_SAMPLE_WARN(
@@ -1399,6 +1415,10 @@ namespace rock
 
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
+        traceWeaponRecoilConsumer(
+            "terminal-weapon",
+            &weaponWorldBeforeRecoil,
+            &weaponNode->world);
         return true;
     }
 
@@ -3548,6 +3568,11 @@ namespace rock
         _nativeScopeTransitionFinalTraceSample = 0;
         _nativeScopeTransitionFinalTracePending = false;
         _bilateralHandCalibrationTrace = {};
+        _ambidextrousPoseHierarchyTrace = {};
+        if (_ambidextrousPoseHierarchyReader) {
+            _ambidextrousPoseHierarchyReader->resetCache();
+        }
+        _weaponRecoilDiagnosticTrace = {};
         _scopeHandAuthorityPublishedThisFrame = {};
         if (_authoredPrimaryFiringHandWorldActive) {
             clearAuthoredPrimaryFiringHandWorldAuthority();
@@ -7093,13 +7118,19 @@ namespace rock
              * two-point solve. One-hand and VisualOnlySupport carry retain the
              * terminal raw weapon kick in applyLeftFiringWeaponRecoil().
              */
+            const RE::NiTransform primaryBeforeRecoil =
+                calibratedPrimaryTransform;
             const RE::NiTransform recoiledPrimaryTransform =
                 transform_math::composeTransforms(
                     _leftFiringWeaponRecoilWorldDelta,
-                    calibratedPrimaryTransform);
+                    primaryBeforeRecoil);
             if (isUsableHandAuthorityTransform(recoiledPrimaryTransform)) {
                 calibratedPrimaryTransform = recoiledPrimaryTransform;
                 _leftFiringWeaponRecoilSupportConstrainedThisUpdate = true;
+                traceWeaponRecoilConsumer(
+                    "primary-solver",
+                    &primaryBeforeRecoil,
+                    &calibratedPrimaryTransform);
             } else {
                 ROCK_LOG_SAMPLE_WARN(
                     Weapon,
@@ -8304,6 +8335,20 @@ namespace rock
                     "TwoHandedGrip: clearing left-firing carry because authored left-hand presentation failed");
                 transitionToInactive(false);
                 return false;
+            }
+            RE::NiTransform recoilHandReadback{};
+            if (tryGetRootFlattenedHandBoneTransform(
+                    true,
+                    recoilHandReadback)) {
+                traceWeaponRecoilConsumer(
+                    "frik-primary-hand",
+                    &presentedHandWorld,
+                    &recoilHandReadback);
+            } else {
+                traceWeaponRecoilConsumer(
+                    "frik-primary-hand-readback-missing",
+                    nullptr,
+                    nullptr);
             }
             _leftFiringHandWorldActive = true;
             recordScopeHandAuthorityPublication(
@@ -10651,6 +10696,22 @@ namespace rock
                 handFromBool(_firingHandIsLeft),
                 requestedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
+        if (applied && _firingHandIsLeft) {
+            RE::NiTransform recoilHandReadback{};
+            if (tryGetRootFlattenedHandBoneTransform(
+                    true,
+                    recoilHandReadback)) {
+                traceWeaponRecoilConsumer(
+                    "frik-primary-hand",
+                    &requestedFiringHandWorld,
+                    &recoilHandReadback);
+            } else {
+                traceWeaponRecoilConsumer(
+                    "frik-primary-hand-readback-missing",
+                    nullptr,
+                    nullptr);
+            }
+        }
         recordLockedHandAuthorityAttempt(
             _firingHandIsLeft,
             LockedHandAuthorityRole::PrimaryGrip,

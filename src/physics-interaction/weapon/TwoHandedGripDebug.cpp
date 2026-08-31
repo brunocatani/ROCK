@@ -82,6 +82,41 @@ namespace rock
             bool valid{ false };
         };
 
+        struct PoseHierarchyBoneNames
+        {
+            std::string_view label{};
+            std::string_view left{};
+            std::string_view right{};
+            int fingerIndex{ -1 };
+        };
+
+        inline constexpr std::array<PoseHierarchyBoneNames, 23>
+            kPoseHierarchyBoneNames{
+                PoseHierarchyBoneNames{ "Collarbone", "LArm_Collarbone", "RArm_Collarbone", -1 },
+                PoseHierarchyBoneNames{ "UpperArm", "LArm_UpperArm", "RArm_UpperArm", -1 },
+                PoseHierarchyBoneNames{ "UpperTwist1", "LArm_UpperTwist1", "RArm_UpperTwist1", -1 },
+                PoseHierarchyBoneNames{ "UpperTwist2", "LArm_UpperTwist2", "RArm_UpperTwist2", -1 },
+                PoseHierarchyBoneNames{ "ForeArm1", "LArm_ForeArm1", "RArm_ForeArm1", -1 },
+                PoseHierarchyBoneNames{ "ForeArm2", "LArm_ForeArm2", "RArm_ForeArm2", -1 },
+                PoseHierarchyBoneNames{ "ForeArm3", "LArm_ForeArm3", "RArm_ForeArm3", -1 },
+                PoseHierarchyBoneNames{ "Hand", "LArm_Hand", "RArm_Hand", -1 },
+                PoseHierarchyBoneNames{ "Finger11", "LArm_Finger11", "RArm_Finger11", 0 },
+                PoseHierarchyBoneNames{ "Finger12", "LArm_Finger12", "RArm_Finger12", 1 },
+                PoseHierarchyBoneNames{ "Finger13", "LArm_Finger13", "RArm_Finger13", 2 },
+                PoseHierarchyBoneNames{ "Finger21", "LArm_Finger21", "RArm_Finger21", 3 },
+                PoseHierarchyBoneNames{ "Finger22", "LArm_Finger22", "RArm_Finger22", 4 },
+                PoseHierarchyBoneNames{ "Finger23", "LArm_Finger23", "RArm_Finger23", 5 },
+                PoseHierarchyBoneNames{ "Finger31", "LArm_Finger31", "RArm_Finger31", 6 },
+                PoseHierarchyBoneNames{ "Finger32", "LArm_Finger32", "RArm_Finger32", 7 },
+                PoseHierarchyBoneNames{ "Finger33", "LArm_Finger33", "RArm_Finger33", 8 },
+                PoseHierarchyBoneNames{ "Finger41", "LArm_Finger41", "RArm_Finger41", 9 },
+                PoseHierarchyBoneNames{ "Finger42", "LArm_Finger42", "RArm_Finger42", 10 },
+                PoseHierarchyBoneNames{ "Finger43", "LArm_Finger43", "RArm_Finger43", 11 },
+                PoseHierarchyBoneNames{ "Finger51", "LArm_Finger51", "RArm_Finger51", 12 },
+                PoseHierarchyBoneNames{ "Finger52", "LArm_Finger52", "RArm_Finger52", 13 },
+                PoseHierarchyBoneNames{ "Finger53", "LArm_Finger53", "RArm_Finger53", 14 },
+            };
+
         [[nodiscard]] bool finitePoint(const RE::NiPoint3& point)
         {
             return std::isfinite(point.x) && std::isfinite(point.y) &&
@@ -390,6 +425,74 @@ namespace rock
                 residual.semanticComponentsDegrees.y,
                 residual.semanticComponentsDegrees.z);
         }
+
+        [[nodiscard]] float vectorLength(const RE::NiPoint3& value)
+        {
+            const float length = std::sqrt(
+                value.x * value.x + value.y * value.y +
+                value.z * value.z);
+            return std::isfinite(length) ? length : -1.0f;
+        }
+
+        [[nodiscard]] float directionAngleDegrees(
+            const RE::NiPoint3& first,
+            const RE::NiPoint3& second)
+        {
+            const float firstLength = vectorLength(first);
+            const float secondLength = vectorLength(second);
+            if (firstLength <= 0.000001f ||
+                secondLength <= 0.000001f) {
+                return -1.0f;
+            }
+            const float cosine = std::clamp(
+                (first.x * second.x + first.y * second.y +
+                    first.z * second.z) /
+                    (firstLength * secondLength),
+                -1.0f,
+                1.0f);
+            const float angle = std::acos(cosine) * RADIANS_TO_DEGREES;
+            return std::isfinite(angle) ? angle : -1.0f;
+        }
+
+        [[nodiscard]] float recoilDiagnosticStrength(
+            const RE::NiTransform& delta)
+        {
+            if (!isFiniteTransform(delta)) {
+                return 0.0f;
+            }
+            const auto identity =
+                transform_math::makeIdentityTransform<RE::NiTransform>();
+            const ParityRotationResidual rotation =
+                compareRotationResidual(identity, delta);
+            const float translation = vectorLength(delta.translate);
+            if (translation < 0.0f || !rotation.valid) {
+                return 0.0f;
+            }
+            return translation + rotation.totalDegrees * 0.1f;
+        }
+
+        [[nodiscard]] RE::NiTransform expressWorldDeltaInFrame(
+            const RE::NiTransform& worldDelta,
+            const RE::NiTransform& frameWorld)
+        {
+            return transform_math::composeTransforms(
+                transform_math::invertTransform(frameWorld),
+                transform_math::composeTransforms(
+                    worldDelta,
+                    frameWorld));
+        }
+
+        [[nodiscard]] std::string formatRecoilDelta(
+            const RE::NiTransform& delta)
+        {
+            const auto identity =
+                transform_math::makeIdentityTransform<RE::NiTransform>();
+            return fmt::format(
+                "T:{} R:({})",
+                formatParityPoint(delta.translate),
+                formatParityRotationResidual(
+                    compareRotationResidual(identity, delta)));
+        }
     }
 
     void TwoHandedGrip::updateBilateralHandCalibrationTrace(
@@ -550,6 +653,10 @@ namespace rock
                         _rightFiringHandCanonicalWeaponLocal.translate,
                         rightHoldInWeapon.translate),
                     formatParityPoint(rightHoldInWand.translate));
+                traceAmbidextrousPoseHierarchy(
+                    weaponNode,
+                    "right-control",
+                    false);
             }
         } else if (!trace.rightHoldValid) {
             trace.rightHoldStableFrames = 0;
@@ -774,6 +881,723 @@ namespace rock
                         observedBasisRightSupport.translate));
                 trace.rightSupportCandidateLogged = true;
             }
+        }
+    }
+
+    void TwoHandedGrip::traceAmbidextrousPoseHierarchy(
+        RE::NiNode* weaponNode,
+        const char* phase,
+        const bool supportedTopology)
+    {
+        if (!weaponNode || !phase || !_ambidextrousPoseHierarchyReader ||
+            weaponNode != _activeWeaponNode ||
+            _activeWeaponGenerationKey == 0 ||
+            !isFiniteTransform(weaponNode->world) ||
+            std::abs(weaponNode->world.scale) <= 0.0001f) {
+            return;
+        }
+
+        auto& trace = _ambidextrousPoseHierarchyTrace;
+        const bool identityChanged =
+            trace.weaponNodeIdentity != weaponNode ||
+            trace.weaponGenerationKey != _activeWeaponGenerationKey ||
+            trace.canonicalCaptureSequence !=
+                _rightFiringHandCanonicalCaptureSequence;
+        if (identityChanged) {
+            trace = AmbidextrousPoseHierarchyTraceState{
+                .weaponNodeIdentity = weaponNode,
+                .weaponGenerationKey = _activeWeaponGenerationKey,
+                .canonicalCaptureSequence =
+                    _rightFiringHandCanonicalCaptureSequence,
+                .traceSequence =
+                    ++_ambidextrousPoseHierarchyTraceSequence,
+            };
+            _ambidextrousPoseHierarchyReader->resetCache();
+        }
+
+        const std::size_t topologyIndex = supportedTopology ? 1u : 0u;
+        const std::size_t modeIndex = _firingHandIsLeft ? 1u : 0u;
+        auto& topology = trace.topologies[topologyIndex];
+        if (topology.modes[modeIndex].valid) {
+            return;
+        }
+
+        DirectSkeletonBoneSnapshot snapshot{};
+        if (!_ambidextrousPoseHierarchyReader->capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::
+                    CoreBodyAndFingers,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::
+                    GameRootFlattenedBoneTree,
+                snapshot)) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "AMBIPOSE capture unavailable phase={} topology={} firing={}",
+                phase,
+                supportedTopology ? "supported" : "one-hand",
+                _firingHandIsLeft ? "left" : "right");
+            return;
+        }
+
+        const auto findBone = [&snapshot](const std::string_view name)
+            -> const DirectSkeletonBoneEntry* {
+            for (const auto& bone : snapshot.bones) {
+                if (bone.name == name) {
+                    return &bone;
+                }
+            }
+            return nullptr;
+        };
+        const auto findBoneByTreeIndex =
+            [&snapshot](const int treeIndex)
+            -> const DirectSkeletonBoneEntry* {
+            if (treeIndex < 0) {
+                return nullptr;
+            }
+            for (const auto& bone : snapshot.bones) {
+                if (bone.treeIndex == treeIndex) {
+                    return &bone;
+                }
+            }
+            return nullptr;
+        };
+
+        PoseHierarchyModeTrace captured{};
+        captured.equippedWeaponOwnershipKey =
+            _activeEquippedWeaponOwnershipKey;
+        captured.captureSequence =
+            ++_ambidextrousPoseHierarchyTraceSequence;
+        const RE::NiTransform weaponInverse =
+            transform_math::invertTransform(weaponNode->world);
+
+        for (const bool isLeft : { true, false }) {
+            auto& hand = captured.hands[isLeft ? 0u : 1u];
+            std::size_t resolvedBoneCount = 0;
+            for (std::size_t boneIndex = 0;
+                 boneIndex < kPoseHierarchyBoneNames.size();
+                 ++boneIndex) {
+                const auto& names = kPoseHierarchyBoneNames[boneIndex];
+                const auto* bone = findBone(isLeft ? names.left : names.right);
+                if (!bone || !isFiniteTransform(bone->world) ||
+                    std::abs(bone->world.scale) <= 0.0001f) {
+                    continue;
+                }
+
+                auto& outBone = hand.bones[boneIndex];
+                outBone.weaponLocal = transform_math::composeTransforms(
+                    weaponInverse,
+                    bone->world);
+                outBone.weaponLocalValid =
+                    isFiniteTransform(outBone.weaponLocal) &&
+                    std::abs(outBone.weaponLocal.scale) > 0.0001f;
+
+                const auto* parent =
+                    findBoneByTreeIndex(bone->parentTreeIndex);
+                if (parent && isFiniteTransform(parent->world) &&
+                    std::abs(parent->world.scale) > 0.0001f) {
+                    outBone.parentLocal =
+                        transform_math::composeTransforms(
+                            transform_math::invertTransform(parent->world),
+                            bone->world);
+                    outBone.parentLocalValid =
+                        isFiniteTransform(outBone.parentLocal) &&
+                        std::abs(outBone.parentLocal.scale) > 0.0001f;
+                }
+                if (outBone.weaponLocalValid) {
+                    ++resolvedBoneCount;
+                }
+            }
+
+            const bool isFiringRole = isLeft == _firingHandIsLeft;
+            if (isFiringRole) {
+                hand.publishedFingerLocals = isLeft ?
+                    _leftFiringFingerLocalTransforms :
+                    _rightFiringFingerLocalTransforms;
+                hand.publishedFingerMask = isLeft ?
+                    _leftFiringFingerLocalTransformMask :
+                    _rightFiringFingerLocalTransformMask;
+            } else {
+                const auto& support = partGrip(isLeft);
+                if (support.active && support.hasFingerLocalTransforms) {
+                    hand.publishedFingerLocals =
+                        support.fingerLocalTransforms;
+                    hand.publishedFingerMask =
+                        support.fingerLocalTransformMask;
+                }
+            }
+
+            constexpr std::size_t kHandBoneIndex = 7;
+            hand.valid =
+                hand.bones[kHandBoneIndex].weaponLocalValid;
+            ROCK_LOG_INFO(
+                Weapon,
+                "AMBIPOSE CAPTURE seq={} sample={} phase={} topology={} firing={} hand={} role={} bones={}/{} fingerMask=0x{:04X} source={} powerArmor={}",
+                trace.traceSequence,
+                captured.captureSequence,
+                phase,
+                supportedTopology ? "supported" : "one-hand",
+                _firingHandIsLeft ? "left" : "right",
+                isLeft ? "left" : "right",
+                isFiringRole ? "firing" : "support",
+                resolvedBoneCount,
+                kPoseHierarchyBoneNames.size(),
+                hand.publishedFingerMask,
+                skeleton_bone_debug_math::snapshotSourceName(
+                    snapshot.source),
+                snapshot.inPowerArmor ? "yes" : "no");
+        }
+
+        const std::size_t firingHandIndex =
+            _firingHandIsLeft ? 0u : 1u;
+        const std::size_t supportHandIndex =
+            _firingHandIsLeft ? 1u : 0u;
+        captured.valid =
+            captured.hands[firingHandIndex].valid &&
+            (!supportedTopology ||
+                captured.hands[supportHandIndex].valid);
+        if (!captured.valid) {
+            return;
+        }
+        topology.modes[modeIndex] = captured;
+
+        const auto& rightMode = topology.modes[0];
+        const auto& leftMode = topology.modes[1];
+        if (!rightMode.valid || !leftMode.valid ||
+            topology.comparisonLogged) {
+            return;
+        }
+
+        const auto compareRole = [this, &trace, &rightMode, &leftMode,
+                                     supportedTopology](
+                                     const char* role,
+                                     const bool sourceIsLeft,
+                                     const bool targetIsLeft) {
+            const auto& source =
+                rightMode.hands[sourceIsLeft ? 0u : 1u];
+            const auto& target =
+                leftMode.hands[targetIsLeft ? 0u : 1u];
+
+            frik_visual_authority::FingerLocalTransformOverride
+                sourceFingerLocals{};
+            sourceFingerLocals.enabledMask =
+                authored_weapon_grip_library::kCompleteFiringFingerMask;
+            bool sourceFingerLocalsReady = true;
+            for (const auto& names : kPoseHierarchyBoneNames) {
+                if (names.fingerIndex < 0) {
+                    continue;
+                }
+                const auto& sourceBone =
+                    source.bones[static_cast<std::size_t>(
+                        names.fingerIndex + 8)];
+                if (!sourceBone.parentLocalValid) {
+                    sourceFingerLocalsReady = false;
+                    break;
+                }
+                sourceFingerLocals.localTransforms[
+                    static_cast<std::size_t>(names.fingerIndex)] =
+                    sourceBone.parentLocal;
+            }
+            frik_visual_authority::FingerLocalTransformOverride
+                mirroredFingerLocals{};
+            const bool exactFingerMirrorReady =
+                sourceFingerLocalsReady &&
+                frik_visual_authority::mirrorFingerLocalTransforms(
+                    sourceIsLeft ?
+                        frik_visual_authority::Hand::Left :
+                        frik_visual_authority::Hand::Right,
+                    sourceFingerLocals,
+                    mirroredFingerLocals) &&
+                mirroredFingerLocals.enabledMask ==
+                    authored_weapon_grip_library::
+                        kCompleteFiringFingerMask;
+
+            float maximumArmTranslation = 0.0f;
+            float maximumArmRotation = 0.0f;
+            float maximumFingerMirrorTranslation = 0.0f;
+            float maximumFingerMirrorRotation = 0.0f;
+            float maximumSourcePublishedRotation = 0.0f;
+            float maximumTargetPublishedRotation = 0.0f;
+            float handTranslation = -1.0f;
+            float handRotation = -1.0f;
+            std::size_t comparedBones = 0;
+            std::size_t comparedFingers = 0;
+
+            for (std::size_t boneIndex = 0;
+                 boneIndex < kPoseHierarchyBoneNames.size();
+                 ++boneIndex) {
+                const auto& names = kPoseHierarchyBoneNames[boneIndex];
+                const auto& sourceBone = source.bones[boneIndex];
+                const auto& targetBone = target.bones[boneIndex];
+                if (!sourceBone.weaponLocalValid ||
+                    !targetBone.weaponLocalValid) {
+                    ROCK_LOG_INFO(
+                        Weapon,
+                        "AMBIPOSE BONE seq={} topology={} role={} bone={} source={} target={} status=missing sourceValid={} targetValid={}",
+                        trace.traceSequence,
+                        supportedTopology ? "supported" : "one-hand",
+                        role,
+                        names.label,
+                        sourceIsLeft ? "left" : "right",
+                        targetIsLeft ? "left" : "right",
+                        sourceBone.weaponLocalValid ? "yes" : "no",
+                        targetBone.weaponLocalValid ? "yes" : "no");
+                    continue;
+                }
+
+                const RE::NiTransform syntheticMirror =
+                    left_firing_position_only_math::
+                        mirrorOppositeHandFrame(
+                            sourceBone.weaponLocal);
+                const float syntheticTranslation = pointDistance(
+                    syntheticMirror.translate,
+                    targetBone.weaponLocal.translate);
+                const ParityRotationResidual syntheticRotation =
+                    compareRotationResidual(
+                        syntheticMirror,
+                        targetBone.weaponLocal);
+                ++comparedBones;
+                if (boneIndex <= 7) {
+                    maximumArmTranslation = (std::max)(
+                        maximumArmTranslation,
+                        syntheticTranslation);
+                    if (syntheticRotation.valid) {
+                        maximumArmRotation = (std::max)(
+                            maximumArmRotation,
+                            syntheticRotation.totalDegrees);
+                    }
+                }
+                if (boneIndex == 7) {
+                    handTranslation = syntheticTranslation;
+                    handRotation = syntheticRotation.valid ?
+                        syntheticRotation.totalDegrees :
+                        -1.0f;
+                }
+
+                std::string exactFingerMirror = "not-finger";
+                std::string sourceLiveToPublished = "not-published";
+                std::string targetLiveToPublished = "not-published";
+                if (names.fingerIndex >= 0) {
+                    const std::size_t fingerIndex =
+                        static_cast<std::size_t>(names.fingerIndex);
+                    if (exactFingerMirrorReady &&
+                        targetBone.parentLocalValid) {
+                        const auto& expectedLocal =
+                            mirroredFingerLocals.localTransforms[
+                                fingerIndex];
+                        const float translation = pointDistance(
+                            expectedLocal.translate,
+                            targetBone.parentLocal.translate);
+                        const auto rotation = compareRotationResidual(
+                            expectedLocal,
+                            targetBone.parentLocal);
+                        exactFingerMirror = fmt::format(
+                            "T:{:.4f}gu,R:({})",
+                            translation,
+                            formatParityRotationResidual(rotation));
+                        maximumFingerMirrorTranslation = (std::max)(
+                            maximumFingerMirrorTranslation,
+                            translation);
+                        if (rotation.valid) {
+                            maximumFingerMirrorRotation = (std::max)(
+                                maximumFingerMirrorRotation,
+                                rotation.totalDegrees);
+                        }
+                        ++comparedFingers;
+                    }
+
+                    const std::uint16_t fingerBit =
+                        static_cast<std::uint16_t>(1u << fingerIndex);
+                    if (sourceBone.parentLocalValid &&
+                        (source.publishedFingerMask & fingerBit) != 0) {
+                        const auto residual = compareRotationResidual(
+                            source.publishedFingerLocals[fingerIndex],
+                            sourceBone.parentLocal);
+                        sourceLiveToPublished = fmt::format(
+                            "T:{:.4f}gu,R:({})",
+                            pointDistance(
+                                source.publishedFingerLocals[fingerIndex]
+                                    .translate,
+                                sourceBone.parentLocal.translate),
+                            formatParityRotationResidual(residual));
+                        if (residual.valid) {
+                            maximumSourcePublishedRotation = (std::max)(
+                                maximumSourcePublishedRotation,
+                                residual.totalDegrees);
+                        }
+                    }
+                    if (targetBone.parentLocalValid &&
+                        (target.publishedFingerMask & fingerBit) != 0) {
+                        const auto residual = compareRotationResidual(
+                            target.publishedFingerLocals[fingerIndex],
+                            targetBone.parentLocal);
+                        targetLiveToPublished = fmt::format(
+                            "T:{:.4f}gu,R:({})",
+                            pointDistance(
+                                target.publishedFingerLocals[fingerIndex]
+                                    .translate,
+                                targetBone.parentLocal.translate),
+                            formatParityRotationResidual(residual));
+                        if (residual.valid) {
+                            maximumTargetPublishedRotation = (std::max)(
+                                maximumTargetPublishedRotation,
+                                residual.totalDegrees);
+                        }
+                    }
+                }
+
+                const ParityRotationResidual directParentRotation =
+                    sourceBone.parentLocalValid &&
+                            targetBone.parentLocalValid ?
+                        compareRotationResidual(
+                            sourceBone.parentLocal,
+                            targetBone.parentLocal) :
+                        ParityRotationResidual{};
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "AMBIPOSE BONE seq={} topology={} role={} bone={} source={} target={} syntheticWeaponMirror=(T:{:.4f}gu,R:({})) sourceWeaponT=({}) targetWeaponT=({}) parentLocal=(sourceT:{},targetT:{},directR:({})) exactFingerMirror=({}) liveToPublished=(source:{},target:{})",
+                    trace.traceSequence,
+                    supportedTopology ? "supported" : "one-hand",
+                    role,
+                    names.label,
+                    sourceIsLeft ? "left" : "right",
+                    targetIsLeft ? "left" : "right",
+                    syntheticTranslation,
+                    formatParityRotationResidual(syntheticRotation),
+                    formatParityPoint(sourceBone.weaponLocal.translate),
+                    formatParityPoint(targetBone.weaponLocal.translate),
+                    formatParityPoint(sourceBone.parentLocal.translate),
+                    formatParityPoint(targetBone.parentLocal.translate),
+                    formatParityRotationResidual(directParentRotation),
+                    exactFingerMirror,
+                    sourceLiveToPublished,
+                    targetLiveToPublished);
+            }
+
+            ROCK_LOG_INFO(
+                Weapon,
+                "AMBIPOSE SUMMARY seq={} topology={} role={} source={} target={} compared=(bones:{},fingers:{}) syntheticMirrorMax=(armT:{:.4f}gu,armR:{:.4f}deg,handT:{:.4f}gu,handR:{:.4f}deg) exactFingerMirrorMax=(T:{:.4f}gu,R:{:.4f}deg) liveToPublishedMaxRotation=(source:{:.4f}deg,target:{:.4f}deg)",
+                trace.traceSequence,
+                supportedTopology ? "supported" : "one-hand",
+                role,
+                sourceIsLeft ? "left" : "right",
+                targetIsLeft ? "left" : "right",
+                comparedBones,
+                comparedFingers,
+                maximumArmTranslation,
+                maximumArmRotation,
+                handTranslation,
+                handRotation,
+                maximumFingerMirrorTranslation,
+                maximumFingerMirrorRotation,
+                maximumSourcePublishedRotation,
+                maximumTargetPublishedRotation);
+        };
+
+        compareRole("firing", false, true);
+        if (supportedTopology) {
+            compareRole("support", true, false);
+        }
+        topology.comparisonLogged = true;
+    }
+
+    void TwoHandedGrip::traceWeaponRecoilSample(
+        const RE::NiTransform& nativeKickLocal,
+        const RE::NiTransform& controlledKickLocal,
+        const bool responseAccepted,
+        const bool visualOnlySupportRecoilAssist) noexcept
+    {
+        try {
+            auto& trace = _weaponRecoilDiagnosticTrace;
+            trace.currentSampleLogged = false;
+            if (!_activeWeaponNode || _activeWeaponGenerationKey == 0 ||
+                !isFiniteTransform(_activeWeaponNode->world) ||
+                std::abs(_activeWeaponNode->world.scale) <= 0.0001f ||
+                !isFiniteTransform(nativeKickLocal) ||
+                !isFiniteTransform(controlledKickLocal)) {
+                return;
+            }
+
+            constexpr float kMinimumSignificantStrength = 0.0001f;
+            if (recoilDiagnosticStrength(controlledKickLocal) <=
+                kMinimumSignificantStrength) {
+                return;
+            }
+
+            const bool identityChanged =
+                trace.weaponNodeIdentity != _activeWeaponNode ||
+                trace.weaponGenerationKey !=
+                    _activeWeaponGenerationKey;
+            if (identityChanged) {
+                trace = WeaponRecoilDiagnosticTraceState{
+                    .weaponNodeIdentity = _activeWeaponNode,
+                    .weaponGenerationKey =
+                        _activeWeaponGenerationKey,
+                    .traceSequence =
+                        ++_weaponRecoilDiagnosticTraceSequence,
+                };
+            }
+
+            const auto* playerNodes = f4vr::getPlayerNodes();
+            const auto* kickbackNode = playerNodes ?
+                playerNodes->primaryWeaponKickbackRecoilNode :
+                nullptr;
+            const auto* kickParent = kickbackNode ?
+                kickbackNode->parent :
+                nullptr;
+            const auto* leftHandedMode =
+                f4vr::getIniSetting("bLeftHandedMode:VR");
+            if (!playerNodes || !kickParent || !leftHandedMode ||
+                !isFiniteTransform(kickParent->world) ||
+                std::abs(kickParent->world.scale) <= 0.0001f ||
+                !playerNodes->primaryWandNode ||
+                !playerNodes->SecondaryWandNode ||
+                !isFiniteTransform(
+                    playerNodes->primaryWandNode->world) ||
+                !isFiniteTransform(
+                    playerNodes->SecondaryWandNode->world) ||
+                std::abs(
+                    playerNodes->primaryWandNode->world.scale) <=
+                    0.0001f ||
+                std::abs(
+                    playerNodes->SecondaryWandNode->world.scale) <=
+                    0.0001f) {
+                return;
+            }
+
+            const bool nativePrimaryIsLeft =
+                leftHandedMode->GetBinary();
+            const bool targetIsNativeOffhand =
+                _firingHandIsLeft != nativePrimaryIsLeft;
+            const RE::NiTransform& primaryWandWorld =
+                playerNodes->primaryWandNode->world;
+            const RE::NiTransform& offhandWandWorld =
+                playerNodes->SecondaryWandNode->world;
+            const RE::NiTransform kickParentInPrimaryWand =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(
+                        primaryWandWorld),
+                    kickParent->world);
+            RE::NiTransform resolvedKickParentInTargetWand =
+                kickParentInPrimaryWand;
+            RE::NiTransform resolvedKickLocal =
+                controlledKickLocal;
+            if (targetIsNativeOffhand) {
+                resolvedKickParentInTargetWand =
+                    weapon_recoil_authority_math::
+                        mirrorLocalAcrossSagittal(
+                            kickParentInPrimaryWand);
+                resolvedKickLocal =
+                    weapon_recoil_authority_math::
+                        mirrorLocalAcrossSagittal(
+                            controlledKickLocal);
+            }
+
+            const RE::NiTransform worldDelta =
+                weapon_recoil_authority_math::resolveWorldDelta(
+                    controlledKickLocal,
+                    kickParent->world,
+                    primaryWandWorld,
+                    offhandWandWorld,
+                    targetIsNativeOffhand);
+            if (!isFiniteTransform(worldDelta)) {
+                return;
+            }
+            const RE::NiTransform weaponLocalDelta =
+                expressWorldDeltaInFrame(
+                    worldDelta,
+                    _activeWeaponNode->world);
+            if (!isFiniteTransform(weaponLocalDelta)) {
+                return;
+            }
+
+            trace.currentSampleSequence =
+                _weaponRecoilSampleSequence;
+            trace.currentWorldDelta = worldDelta;
+            trace.currentWeaponLocalDelta = weaponLocalDelta;
+
+            constexpr std::uint16_t kMaximumSamplesPerSide = 64;
+            const float strength =
+                recoilDiagnosticStrength(weaponLocalDelta);
+            const std::size_t sideIndex =
+                _firingHandIsLeft ? 1u : 0u;
+            if (!std::isfinite(strength) ||
+                strength <= kMinimumSignificantStrength ||
+                trace.emittedSamples[sideIndex] >=
+                    kMaximumSamplesPerSide) {
+                return;
+            }
+
+            ++trace.emittedSamples[sideIndex];
+            trace.currentSampleLogged = true;
+            const auto& supportGrip = partGrip(!_firingHandIsLeft);
+            const char* rockRoute = "none";
+            if (_firingHandIsLeft &&
+                _weaponNodeOwnershipBlockEngaged &&
+                isManualOwnershipActive()) {
+                rockRoute =
+                    _state == TwoHandedState::Gripping &&
+                            _authorityMode ==
+                                weapon_support_authority_policy::
+                                    WeaponSupportAuthorityMode::
+                                        FullTwoHandedSolver ?
+                        "primary-solver" :
+                        "terminal-weapon";
+            }
+            ROCK_LOG_INFO(
+                Weapon,
+                "AMBIRECOIL SAMPLE seq={} sample={} firing={} state={} support=(active:{},authority:{}) response=(accepted:{},delivery:{},visualAssist:{}) targetNativeOffhand={} nativeLocal=({}) controlledLocal=({}) resolvedLocal=({}) kickParentInPrimaryWand=({}) kickParentInTargetWand=({}) worldDelta=({}) weaponLocalDelta=({}) rockRoute={}",
+                trace.traceSequence,
+                trace.currentSampleSequence,
+                _firingHandIsLeft ? "left" : "right",
+                static_cast<std::uint32_t>(_state),
+                supportGrip.active ? "yes" : "no",
+                _authorityMode ==
+                            weapon_support_authority_policy::
+                                WeaponSupportAuthorityMode::
+                                    FullTwoHandedSolver ?
+                    "full" :
+                    "visual-only",
+                responseAccepted ? "yes" : "no",
+                responseAccepted ? "primary-direct" : "native",
+                visualOnlySupportRecoilAssist ? "yes" : "no",
+                targetIsNativeOffhand ? "yes" : "no",
+                formatRecoilDelta(nativeKickLocal),
+                formatRecoilDelta(controlledKickLocal),
+                formatRecoilDelta(resolvedKickLocal),
+                formatParityPoint(
+                    kickParentInPrimaryWand.translate),
+                formatParityPoint(
+                    resolvedKickParentInTargetWand.translate),
+                formatRecoilDelta(worldDelta),
+                formatRecoilDelta(weaponLocalDelta),
+                rockRoute);
+
+            auto& peak = trace.peaks[sideIndex];
+            if (!peak.valid || strength > peak.strength * 1.01f) {
+                peak = WeaponRecoilPeakTrace{
+                    .weaponLocalDelta = weaponLocalDelta,
+                    .strength = strength,
+                    .valid = true,
+                };
+                ++trace.peakRevision;
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "AMBIRECOIL PEAK seq={} revision={} firing={} strength={:.6f} weaponLocalDelta=({})",
+                    trace.traceSequence,
+                    trace.peakRevision,
+                    _firingHandIsLeft ? "left" : "right",
+                    strength,
+                    formatRecoilDelta(weaponLocalDelta));
+            }
+
+            if (!trace.peaks[0].valid || !trace.peaks[1].valid ||
+                trace.comparedPeakRevision == trace.peakRevision) {
+                return;
+            }
+            trace.comparedPeakRevision = trace.peakRevision;
+            const auto& rightPeak = trace.peaks[0].weaponLocalDelta;
+            const auto& leftPeak = trace.peaks[1].weaponLocalDelta;
+            const RE::NiTransform sagittalMirroredRight =
+                weapon_recoil_authority_math::
+                    mirrorLocalAcrossSagittal(rightPeak);
+            const auto identity =
+                transform_math::makeIdentityTransform<RE::NiTransform>();
+            const auto rightRotation =
+                compareRotationResidual(identity, rightPeak);
+            const auto leftRotation =
+                compareRotationResidual(identity, leftPeak);
+            const auto mirroredRightRotation =
+                compareRotationResidual(
+                    identity,
+                    sagittalMirroredRight);
+            ROCK_LOG_INFO(
+                Weapon,
+                "AMBIRECOIL PARITY seq={} revision={} rightPeak=({}) leftPeak=({}) direct=(translationAxis:{:.4f}deg,rotationAxis:{:.4f}deg,rotationResidual:({})) sagittalAlternative=(translationAxis:{:.4f}deg,rotationAxis:{:.4f}deg,rotationResidual:({}))",
+                trace.traceSequence,
+                trace.peakRevision,
+                formatRecoilDelta(rightPeak),
+                formatRecoilDelta(leftPeak),
+                directionAngleDegrees(
+                    rightPeak.translate,
+                    leftPeak.translate),
+                rightRotation.valid && leftRotation.valid ?
+                    directionAngleDegrees(
+                        rightRotation.semanticComponentsDegrees,
+                        leftRotation.semanticComponentsDegrees) :
+                    -1.0f,
+                formatParityRotationResidual(
+                    compareRotationResidual(rightPeak, leftPeak)),
+                directionAngleDegrees(
+                    sagittalMirroredRight.translate,
+                    leftPeak.translate),
+                mirroredRightRotation.valid && leftRotation.valid ?
+                    directionAngleDegrees(
+                        mirroredRightRotation.semanticComponentsDegrees,
+                        leftRotation.semanticComponentsDegrees) :
+                    -1.0f,
+                formatParityRotationResidual(
+                    compareRotationResidual(
+                        sagittalMirroredRight,
+                        leftPeak)));
+        } catch (...) {
+            _weaponRecoilDiagnosticTrace.currentSampleLogged = false;
+        }
+    }
+
+    void TwoHandedGrip::traceWeaponRecoilConsumer(
+        const char* consumer,
+        const RE::NiTransform* inputWorld,
+        const RE::NiTransform* outputWorld) noexcept
+    {
+        try {
+            const auto& trace = _weaponRecoilDiagnosticTrace;
+            if (!consumer || !trace.currentSampleLogged ||
+                trace.currentSampleSequence !=
+                    _weaponRecoilSampleSequence) {
+                return;
+            }
+            if (!inputWorld || !outputWorld ||
+                !isFiniteTransform(*inputWorld) ||
+                !isFiniteTransform(*outputWorld) ||
+                std::abs(inputWorld->scale) <= 0.0001f ||
+                std::abs(outputWorld->scale) <= 0.0001f) {
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "AMBIRECOIL CONSUMER seq={} sample={} consumer={} routeOnly=yes",
+                    trace.traceSequence,
+                    trace.currentSampleSequence,
+                    consumer);
+                return;
+            }
+
+            const RE::NiTransform expectedOutput =
+                transform_math::composeTransforms(
+                    trace.currentWorldDelta,
+                    *inputWorld);
+            const RE::NiTransform observedLocalDelta =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(*inputWorld),
+                    *outputWorld);
+            const float expectedTranslationError = pointDistance(
+                expectedOutput.translate,
+                outputWorld->translate);
+            const auto expectedRotationError =
+                compareRotationResidual(
+                    expectedOutput,
+                    *outputWorld);
+            ROCK_LOG_INFO(
+                Weapon,
+                "AMBIRECOIL CONSUMER seq={} sample={} consumer={} inputT=({}) outputT=({}) observedLocalDelta=({}) expectedWorldDelta=({}) expectedToObserved=(T:{:.6f}gu,R:({}))",
+                trace.traceSequence,
+                trace.currentSampleSequence,
+                consumer,
+                formatParityPoint(inputWorld->translate),
+                formatParityPoint(outputWorld->translate),
+                formatRecoilDelta(observedLocalDelta),
+                formatRecoilDelta(trace.currentWorldDelta),
+                expectedTranslationError,
+                formatParityRotationResidual(expectedRotationError));
+        } catch (...) {
         }
     }
 
@@ -1300,6 +2124,20 @@ namespace rock
             gripAxisComparison.angularErrorDegrees,
             gripAxisComparison.primaryPointMirrorError,
             gripAxisComparison.supportPointMirrorError);
+
+        const std::string_view phaseName{ phase };
+        if (phaseName == "left-primary") {
+            traceAmbidextrousPoseHierarchy(
+                weaponNode,
+                phase,
+                false);
+        } else if (phaseName == "support-settled" ||
+                   phaseName == "support-visual-only") {
+            traceAmbidextrousPoseHierarchy(
+                weaponNode,
+                phase,
+                true);
+        }
     }
 
     void TwoHandedGrip::traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode)
