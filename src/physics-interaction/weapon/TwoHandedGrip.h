@@ -539,9 +539,13 @@ namespace rock
          * changes an already-active grip.
          */
         void clearAuthoredSupportGripCandidate();
-        [[nodiscard]] bool hasCurrentAuthoredSupportGripCandidate(
-            RE::NiNode* weaponNode,
-            std::uint64_t weaponGenerationKey) const noexcept;
+        [[nodiscard]] authored_support_grab_policy::
+            LeftFiringTakeoverReadiness
+            getLeftFiringTakeoverReadiness(
+                RE::NiNode* weaponNode,
+                std::uint64_t collisionGenerationKey,
+                std::uint64_t weaponOwnershipKey,
+                bool authoredOnlyModeEnabled) const noexcept;
         bool setAuthoredSupportGripCandidate(
             RE::NiNode* weaponNode,
             const RE::NiTransform& handWeaponLocal,
@@ -695,24 +699,32 @@ namespace rock
             bool firingHandIsLeft,
             const RE::NiTransform* capturedFiringHandWeaponLocal,
             const RE::NiPoint3* capturedFiringGripWeaponLocal,
-            bool retainUntilPhysicalGrip = false);
+            bool retainUntilPhysicalGrip = false,
+            bool emitAttachHaptic = true);
 
         /*
-         * Pip-Boy left-hand assignment starts without a physical grab hold.
-         * This entry point reuses the generation-bound authored left hand seat
-         * together with the separately captured native right weapon-in-wand
-         * orientation, then marks the resulting PrimaryOnly session as
-         * persistent until the selected inventory stack is unequipped or the
-         * player deliberately arms and releases the firing-hand grab.
+         * Programmatic fixed, Pip-Boy, and provider left-hand assignments
+         * start without a physical grab hold. This entry point reuses the
+         * generation-bound authored left hand seat together with the
+         * separately captured native right weapon-in-wand orientation, then
+         * marks the resulting PrimaryOnly session as persistent until the
+         * selected inventory stack is unequipped or the player deliberately
+         * acquires and releases the firing-hand grab.
          */
         bool beginPersistentEquippedCarry(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey);
+        bool commitPersistentEquippedCarryInputAcquisition(
+            bool handIsLeft) noexcept;
 
         void clearPersistentEquippedCarry(const char* reason);
         void restoreNativeRightEquippedCarry(const char* reason);
         bool isPersistentEquippedCarryActive() const { return _persistentEquippedCarryActive; }
+        bool isPersistentEquippedCarryInputAcquisitionPending() const
+        {
+            return _persistentEquippedCarryInputAcquisitionPending;
+        }
 
         // Left-hand primary ownership requires ROCK's hFRIK weapon-pose and
         // node-ownership blockers; right-hand native ownership is always
@@ -1185,7 +1197,7 @@ namespace rock
 
         bool transitionToPartCarry();
 
-        bool tryBuildIntegratedRightDetachPartCarryBaseline(
+        bool tryBuildIntegratedDetachPartCarryBaseline(
             bool carryHandIsLeft,
             SupportInputBaselineState& outBaseline,
             const char*& outFailureReason) const;
@@ -1815,6 +1827,7 @@ namespace rock
         equipped_weapon_manual_ownership_policy::GripReleaseDebounceState _primaryReleaseDebounce{};
         bool _persistentEquippedCarryActive{ false };
         bool _persistentEquippedCarryDetachArmed{ false };
+        bool _persistentEquippedCarryInputAcquisitionPending{ false };
 
         /*
          * Whole frames spent in Gripping since the support grab was captured.

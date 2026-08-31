@@ -66,10 +66,9 @@ namespace rock
         EquippedWeaponHandlingSettings settings{};
         settings.firingGripOwnershipEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
-        // This base snapshot retains provider detach separately. The
-        // physical-right integrated policy is resolved against the current
-        // firing hand each frame and never widens into a global left-capable
-        // detach bit.
+        // This base snapshot retains provider detach separately. Integrated
+        // immersive detach is resolved as the same current-firing-role
+        // contract for either physical hand.
         settings.primaryDetachEnabled = false;
         settings.ambidextrousHandoffEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
@@ -154,13 +153,11 @@ namespace rock
 
     [[nodiscard]] inline constexpr immersive_weapon_policy::Decision
     resolveEquippedWeaponDetachDecision(
-        const EquippedWeaponHandlingSettings& settings,
-        const bool firingHandIsLeft) noexcept
+        const EquippedWeaponHandlingSettings& settings) noexcept
     {
         return immersive_weapon_policy::resolve(
             immersive_weapon_policy::ResolveInput{
                 .integrated = settings.immersiveWeapon,
-                .firingHandIsLeft = firingHandIsLeft,
                 .firingGripOwnershipEnabled =
                     settings.firingGripOwnershipEnabled,
                 .externalPrimaryDetachEnabled =
@@ -195,18 +192,18 @@ namespace rock
         // addon-to-ROCK fallback keeps the same ROCK executor and can preserve
         // its live handoff. Reconcile only when a state-owning capability is
         // removed and the current manual state may no longer be legal.
-        const bool integratedPhysicalRightDetachRemoved =
+        const bool integratedImmersiveDetachRemoved =
             previous.immersiveWeapon.
-                physicalRightFiringGripDetachEnabled &&
+                firingGripDetachEnabled &&
             !current.immersiveWeapon.
-                physicalRightFiringGripDetachEnabled &&
+                firingGripDetachEnabled &&
             !current.primaryDetachEnabled;
 
         return (previous.firingGripOwnershipEnabled &&
                    !current.firingGripOwnershipEnabled) ||
                (previous.primaryDetachEnabled &&
                    !current.primaryDetachEnabled) ||
-               integratedPhysicalRightDetachRemoved ||
+               integratedImmersiveDetachRemoved ||
                (previous.ambidextrousHandoffEnabled &&
                    !current.ambidextrousHandoffEnabled) ||
                (previous.pipboyTriggerHandEquipEnabled &&

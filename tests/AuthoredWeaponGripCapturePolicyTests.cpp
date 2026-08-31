@@ -298,33 +298,71 @@ int main()
         return !shouldReuseStableAuthoredSupportGrip(input);
     }());
 
-    constexpr LeftFiringTakeoverSupportCaptureInput pendingLeftTakeover{
-        .pendingStartMatchesCurrentWeapon = true,
-        .primaryOnlyStartRequested = true,
-        .firingHandIsLeft = true,
-        .authoredOnlySupportGrabsEnabled = true,
+    constexpr StableAuthoredSupportGripRebindInput stableSupportRebindable{
+        .snapshotValid = true,
+        .weaponNodeValid = true,
+        .weaponNodeMatches = true,
+        .currentWeaponOwnershipKey = 11,
+        .snapshotWeaponOwnershipKey = 11,
+        .currentWeaponGenerationKey = 23,
+        .snapshotWeaponGenerationKey = 22,
+        .currentWeaponInstanceContentKnown = true,
+        .snapshotWeaponInstanceContentKnown = true,
+        .currentWeaponInstanceContentKey = 55,
+        .snapshotWeaponInstanceContentKey = 55,
+        .currentPrimaryGripCaptureSequence = 33,
+        .snapshotPrimaryGripCaptureSequence = 33,
+        .snapshotSupportGripCaptureSequence = 44,
+        .snapshotFingerLocalTransformMask =
+            kCompleteAuthoredSupportFingerLocalTransformMask,
     };
-    static_assert(shouldReserveNativeRightSupportCaptureFrame(
-        pendingLeftTakeover));
+    static_assert(shouldRebindStableAuthoredSupportGrip(
+        stableSupportRebindable));
     static_assert([=] {
-        auto input = pendingLeftTakeover;
-        input.currentSupportCandidateAvailable = true;
-        return !shouldReserveNativeRightSupportCaptureFrame(input);
+        auto input = stableSupportRebindable;
+        input.currentWeaponGenerationKey =
+            input.snapshotWeaponGenerationKey;
+        return !shouldRebindStableAuthoredSupportGrip(input);
     }());
     static_assert([=] {
-        auto input = pendingLeftTakeover;
-        input.nativeRightCaptureFrameReserved = true;
-        return !shouldReserveNativeRightSupportCaptureFrame(input);
+        auto input = stableSupportRebindable;
+        input.weaponNodeMatches = false;
+        return !shouldRebindStableAuthoredSupportGrip(input);
     }());
     static_assert([=] {
-        auto input = pendingLeftTakeover;
-        input.firingHandIsLeft = false;
-        return !shouldReserveNativeRightSupportCaptureFrame(input);
+        auto input = stableSupportRebindable;
+        input.currentWeaponOwnershipKey = 12;
+        return !shouldRebindStableAuthoredSupportGrip(input);
     }());
     static_assert([=] {
-        auto input = pendingLeftTakeover;
-        input.authoredOnlySupportGrabsEnabled = false;
-        return !shouldReserveNativeRightSupportCaptureFrame(input);
+        auto input = stableSupportRebindable;
+        input.currentWeaponInstanceContentKnown = false;
+        return !shouldRebindStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportRebindable;
+        input.snapshotWeaponInstanceContentKnown = false;
+        return !shouldRebindStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportRebindable;
+        input.snapshotWeaponInstanceContentKey = 56;
+        return !shouldRebindStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportRebindable;
+        input.snapshotPrimaryGripCaptureSequence = 34;
+        return !shouldRebindStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportRebindable;
+        input.snapshotSupportGripCaptureSequence = 0;
+        return !shouldRebindStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportRebindable;
+        input.snapshotFingerLocalTransformMask = 0x3FFFu;
+        return !shouldRebindStableAuthoredSupportGrip(input);
     }());
 
     static_assert(kArms == (1u << 0));

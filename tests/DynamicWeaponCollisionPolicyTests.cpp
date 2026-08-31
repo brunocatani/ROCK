@@ -253,6 +253,8 @@ int main()
     ok &= leftPrimaryOnly.left && !leftPrimaryOnly.right;
     const auto rightTwoHand = selectAttachedHands(false, true, false, true, false);
     ok &= rightTwoHand.left && rightTwoHand.right;
+    const auto leftTwoHand = selectAttachedHands(false, true, true, false, true);
+    ok &= leftTwoHand.left && leftTwoHand.right;
     const auto partCarryBoth = selectAttachedHands(true, false, false, true, true);
     ok &= partCarryBoth.left && partCarryBoth.right;
     const auto partCarryLeftOnly = selectAttachedHands(true, false, true, true, false);

@@ -2150,9 +2150,11 @@ namespace rock::provider
      * to one exact physical hand. This does not select or equip an arbitrary
      * inventory stack: weaponFormId and weaponGenerationKey are optional-zero
      * identity guards for the weapon that is already equipped. The caller
-     * must own the active equipped-weapon handling lease; left-hand requests
-     * additionally require that lease to enable AmbidextrousHandoff. Call only
-     * on ROCK's animation owner thread. RequestQueued means the canonical
+     * must own the active equipped-weapon handling lease with firing-grip
+     * ownership. Explicit right and left assignments have the same authority
+     * requirement; AmbidextrousHandoff governs in-world role swaps, not this
+     * direct assignment. Call only on ROCK's animation owner thread.
+     * RequestQueued means the canonical
      * native-right or persistent-left carry is armed but not yet settled;
      * observe getEquippedWeaponHandlingStateV1 for the effective hand.
      */

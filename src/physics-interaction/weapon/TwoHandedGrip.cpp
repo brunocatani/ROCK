@@ -2662,16 +2662,18 @@ namespace rock
         EquippedWeaponGripFrameInput stableFrameInput = frameInput;
         if (_persistentEquippedCarryActive && isManualOwnershipActive()) {
             /*
-             * A persistent fixed/selected-hand carry has no grab press to
-             * retain PrimaryOnly. Keep
-             * the firing grip virtually closed until the player physically
-             * holds it once; only that armed hand's later release is allowed
-             * through the normal debounce/drop machinery. This preserves all
-             * existing two-hand, detach, stash, and handoff gestures without
-             * an immediate phantom drop on the first post-menu frame.
+             * A persistent carry may begin without a current logical hold.
+             * Keep the firing grip virtually closed until acquisition is
+             * committed by this physical hold or by post-update toggle
+             * reconciliation. Only the armed hand's later release is allowed
+             * through the normal debounce/drop machinery. This avoids an
+             * immediate phantom drop while preserving two-hand, detach,
+             * stash, and handoff gestures.
              */
-            if (frameInput.primaryGripInput.held || frameInput.primaryGripInput.pressed) {
-                _persistentEquippedCarryDetachArmed = true;
+            if (frameInput.primaryGripInput.held ||
+                frameInput.primaryGripInput.pressed) {
+                (void)commitPersistentEquippedCarryInputAcquisition(
+                    _firingHandIsLeft);
             }
             if (!_persistentEquippedCarryDetachArmed) {
                 stableFrameInput.primaryGripInput.held = true;
@@ -2951,15 +2953,16 @@ namespace rock
                 } else if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::DropEquippedWeapon) {
                     beginHandVisualReturn(supportHandIsLeft, "support-released-drop");
                     beginHandVisualReturn(_firingHandIsLeft, "primary-released-drop");
-                    if (!_firingHandIsLeft &&
-                        _handlingSettings.detachAuthority ==
-                            immersive_weapon_policy::DetachAuthority::
-                                IntegratedPhysicalRight) {
+                    if (_handlingSettings.detachAuthority ==
+                        immersive_weapon_policy::DetachAuthority::
+                            IntegratedImmersive) {
                         recordFiringGripDetachedHaptic();
                     }
                     requestEquippedWeaponDrop(
                         "support-released-primary-not-held",
-                        equipped_weapon_drop_policy::sourceForSupportRelease(primaryGripInput.released));
+                        equipped_weapon_drop_policy::sourceForSupportRelease(
+                            primaryGripInput.released,
+                            _firingHandIsLeft));
                 } else {
                     beginHandVisualReturn(supportHandIsLeft, "support-released");
                     beginHandVisualReturn(_firingHandIsLeft, "primary-authority-cleared");
@@ -3019,10 +3022,9 @@ namespace rock
                     beginHandVisualReturn(
                         _firingHandIsLeft,
                         "primary-released-noncarry-support-drop");
-                    if (!_firingHandIsLeft &&
-                        _handlingSettings.detachAuthority ==
-                            immersive_weapon_policy::DetachAuthority::
-                                IntegratedPhysicalRight) {
+                    if (_handlingSettings.detachAuthority ==
+                        immersive_weapon_policy::DetachAuthority::
+                            IntegratedImmersive) {
                         recordFiringGripDetachedHaptic();
                     }
                     requestEquippedWeaponDrop(
@@ -3612,6 +3614,7 @@ namespace rock
         _primaryReleaseDebounce = {};
         _persistentEquippedCarryActive = false;
         _persistentEquippedCarryDetachArmed = false;
+        _persistentEquippedCarryInputAcquisitionPending = false;
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         _primaryHandWeaponLocal = {};
@@ -6503,6 +6506,7 @@ namespace rock
         _primaryReleaseDebounce = {};
         _persistentEquippedCarryActive = false;
         _persistentEquippedCarryDetachArmed = false;
+        _persistentEquippedCarryInputAcquisitionPending = false;
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         resetLockedHandVisualLerp();
@@ -7478,7 +7482,7 @@ namespace rock
         }
     }
 
-    bool TwoHandedGrip::tryBuildIntegratedRightDetachPartCarryBaseline(
+    bool TwoHandedGrip::tryBuildIntegratedDetachPartCarryBaseline(
         const bool carryHandIsLeft,
         SupportInputBaselineState& outBaseline,
         const char*& outFailureReason) const
@@ -7576,24 +7580,23 @@ namespace rock
         }
 
         const bool carryHandIsLeft = !_firingHandIsLeft;
-        const bool integratedPhysicalRightDetach =
-            !_firingHandIsLeft &&
+        const bool integratedImmersiveDetach =
             _handlingSettings.detachAuthority ==
                 immersive_weapon_policy::DetachAuthority::
-                    IntegratedPhysicalRight;
+                    IntegratedImmersive;
         const bool posePreservationRequested =
-            integratedPhysicalRightDetach &&
+            integratedImmersiveDetach &&
             _handlingSettings.preserveWeaponPoseOnDetach;
         bool poseHandoffReady = false;
         const char* poseHandoffReason =
-            integratedPhysicalRightDetach ?
+            integratedImmersiveDetach ?
                 "config-disabled" :
-                "not-integrated-physical-right";
+                "not-integrated-immersive";
         SupportInputBaselineState partCarryBaseline{};
 
         if (posePreservationRequested) {
             poseHandoffReady =
-                tryBuildIntegratedRightDetachPartCarryBaseline(
+                tryBuildIntegratedDetachPartCarryBaseline(
                     carryHandIsLeft,
                     partCarryBaseline,
                     poseHandoffReason);
@@ -7626,7 +7629,8 @@ namespace rock
         } else if (posePreservationRequested) {
             ROCK_LOG_WARN(
                 Weapon,
-                "TwoHandedGrip: integrated right-detach pose handoff unavailable; using legacy part-carry relation reason={}",
+                "TwoHandedGrip: integrated detach pose handoff unavailable; using legacy part-carry relation hand={} reason={}",
+                carryHandIsLeft ? "left" : "right",
                 poseHandoffReason);
         }
         _rotationBlend = 1.0f;
@@ -7638,9 +7642,10 @@ namespace rock
         if (poseHandoffReady) {
             ROCK_LOG_INFO(
                 Weapon,
-                "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} poseHandoff=driver-calibrated driver=left-raw gripTarget=authored poseSource=last-rendered",
+                "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority source={} poseHandoff=driver-calibrated driver={}-raw gripTarget=authored poseSource=last-rendered",
                 immersive_weapon_policy::authorityName(
-                    _handlingSettings.detachAuthority));
+                    _handlingSettings.detachAuthority),
+                carryHandIsLeft ? "left" : "right");
         } else {
             ROCK_LOG_INFO(
                 Weapon,
@@ -7764,7 +7769,8 @@ namespace rock
         const bool firingHandIsLeft,
         const RE::NiTransform* capturedFiringHandWeaponLocal,
         const RE::NiPoint3* capturedFiringGripWeaponLocal,
-        const bool retainUntilPhysicalGrip)
+        const bool retainUntilPhysicalGrip,
+        const bool emitAttachHaptic)
     {
         if (!weaponNode || currentEquippedWeaponOwnershipKey == 0 || _state != TwoHandedState::Inactive ||
             !canBeginPrimaryOnlyGripForHand(firingHandIsLeft)) {
@@ -7848,12 +7854,16 @@ namespace rock
         }
         // Only a fresh grab pulses; transitionToPrimaryOnly is also reached
         // from support-release paths where the firing grip never changed.
-        _hapticEvents.firingGripAttached = true;
-        _hapticEvents.firingGripAttachedHandIsLeft = _firingHandIsLeft;
+        if (emitAttachHaptic) {
+            _hapticEvents.firingGripAttached = true;
+            _hapticEvents.firingGripAttachedHandIsLeft =
+                _firingHandIsLeft;
+        }
         _firingGripSequence = ++_gripCaptureSequence;
         if (retainUntilPhysicalGrip) {
             _persistentEquippedCarryActive = true;
             _persistentEquippedCarryDetachArmed = false;
+            _persistentEquippedCarryInputAcquisitionPending = false;
         }
         return true;
     }
@@ -7889,12 +7899,15 @@ namespace rock
                 currentEquippedWeaponOwnershipKey,
                 true,
                 &mirroredLeftHold,
-                &firingGripWeaponLocal)) {
+                &firingGripWeaponLocal,
+                false,
+                false)) {
             return false;
         }
 
         _persistentEquippedCarryActive = true;
         _persistentEquippedCarryDetachArmed = false;
+        _persistentEquippedCarryInputAcquisitionPending = true;
         const bool usedAuthoredCanonical =
             _rightFiringHandCanonicalSource ==
             RightFiringCanonicalSource::AuthoredAnimation;
@@ -7904,6 +7917,24 @@ namespace rock
             currentEquippedWeaponOwnershipKey,
             usedAuthoredCanonical ? "authored-animation" : "native-carry",
             _rightFiringHandCanonicalCaptureSequence);
+        return true;
+    }
+
+    bool TwoHandedGrip::commitPersistentEquippedCarryInputAcquisition(
+        const bool handIsLeft) noexcept
+    {
+        if (!_persistentEquippedCarryActive ||
+            !isManualOwnershipActive() ||
+            handIsLeft != _firingHandIsLeft) {
+            return false;
+        }
+
+        if (_persistentEquippedCarryInputAcquisitionPending) {
+            _persistentEquippedCarryInputAcquisitionPending = false;
+            _hapticEvents.firingGripAttached = true;
+            _hapticEvents.firingGripAttachedHandIsLeft = handIsLeft;
+        }
+        _persistentEquippedCarryDetachArmed = true;
         return true;
     }
 
@@ -7917,6 +7948,7 @@ namespace rock
             reason ? reason : "unknown");
         _persistentEquippedCarryActive = false;
         _persistentEquippedCarryDetachArmed = false;
+        _persistentEquippedCarryInputAcquisitionPending = false;
         if (isManualOwnershipActive()) {
             transitionToInactive(false);
         }
@@ -8168,10 +8200,9 @@ namespace rock
 
         if (manualDecision.dropRequested) {
             beginHandVisualReturn(_firingHandIsLeft, "primary-only-drop");
-            if (!_firingHandIsLeft &&
-                _handlingSettings.detachAuthority ==
-                    immersive_weapon_policy::DetachAuthority::
-                        IntegratedPhysicalRight) {
+            if (_handlingSettings.detachAuthority ==
+                immersive_weapon_policy::DetachAuthority::
+                    IntegratedImmersive) {
                 recordFiringGripDetachedHaptic();
             }
             requestEquippedWeaponDrop("primary-only-grip-released",
@@ -8876,7 +8907,6 @@ namespace rock
                                 DetachedFiringHandPartGrabInput{
                                     .partCarryAuthority =
                                         _partCarryDetachAuthority,
-                                    .detachedHandIsLeft = firingHandIsLeft,
                                     .authoredOnlySupportGrabsEnabled =
                                         _handlingSettings.
                                             authoredOnlySupportGrabsEnabled,
@@ -8889,7 +8919,8 @@ namespace rock
                         DetachedFiringHandPartGrabSelection::Reject) {
                     ROCK_LOG_INFO(
                         Weapon,
-                        "TwoHandedGrip: detached right-hand part grip rejected reason=authored-firing-grip-or-exact-provider-target-required bodyId={} generation={:016X}",
+                        "TwoHandedGrip: detached firing-hand part grip rejected hand={} reason=authored-firing-grip-or-exact-provider-target-required bodyId={} generation={:016X}",
+                        firingHandIsLeft ? "left" : "right",
                         freeHandDecision.bodyId,
                         freeHandDecision.weaponGenerationKey);
                 } else if (authored_support_grab_policy::captured(
@@ -9513,16 +9544,53 @@ namespace rock
         _authoredSupportGripCandidate = {};
     }
 
-    bool TwoHandedGrip::hasCurrentAuthoredSupportGripCandidate(
+    authored_support_grab_policy::LeftFiringTakeoverReadiness
+    TwoHandedGrip::getLeftFiringTakeoverReadiness(
         RE::NiNode* weaponNode,
-        const std::uint64_t weaponGenerationKey) const noexcept
+        const std::uint64_t collisionGenerationKey,
+        const std::uint64_t weaponOwnershipKey,
+        const bool authoredOnlyModeEnabled) const noexcept
     {
-        const auto& candidate = _authoredSupportGripCandidate;
-        return candidate.valid &&
-               candidate.weaponNode == weaponNode &&
-               weaponGenerationKey != 0 &&
-               candidate.weaponGenerationKey == weaponGenerationKey &&
-               candidate.captureSequence != 0;
+        RE::NiTransform mirroredRightSupportHandWeaponLocal{};
+        std::array<RE::NiTransform, 15> mirroredRightFingerLocals{};
+        std::uint16_t mirroredRightFingerMask = 0;
+        const bool mirroredCandidateAvailable =
+            collisionGenerationKey != 0 &&
+            tryResolveAuthoredSupportGripCandidateForHand(
+                false,
+                weaponNode,
+                collisionGenerationKey,
+                mirroredRightSupportHandWeaponLocal,
+                mirroredRightFingerLocals,
+                mirroredRightFingerMask) &&
+            mirroredRightFingerMask == 0x7FFFu;
+
+        const auto& capability = _authoredSupportCapability;
+        const bool capabilityIdentityCurrent =
+            capability.initialized &&
+            capability.weaponNodeIdentity == weaponNode &&
+            weaponOwnershipKey != 0 &&
+            capability.weaponOwnershipKey == weaponOwnershipKey &&
+            collisionGenerationKey != 0 &&
+            capability.weaponGenerationKey == collisionGenerationKey &&
+            capability.handTopology ==
+                authored_weapon_grip_activation_policy::HandTopology::
+                    RightFiringLeftSupport;
+        return authored_support_grab_policy::
+            resolveLeftFiringTakeoverReadiness(
+                authored_support_grab_policy::
+                    LeftFiringTakeoverReadinessInput{
+                        .targetFiringHandIsLeft = true,
+                        .authoredOnlyModeEnabled =
+                            authoredOnlyModeEnabled,
+                        .collisionGenerationKey =
+                            collisionGenerationKey,
+                        .capabilityIdentityCurrent =
+                            capabilityIdentityCurrent,
+                        .capability = capability.capability,
+                        .mirroredCandidateAvailable =
+                            mirroredCandidateAvailable,
+                    });
     }
 
     bool TwoHandedGrip::setAuthoredSupportGripCandidate(
@@ -11668,10 +11736,9 @@ namespace rock
         }
 
         beginHandVisualReturn(_firingHandIsLeft, "ambidextrous-firing-hand-promotion");
-        if (!_firingHandIsLeft &&
-            _handlingSettings.detachAuthority ==
-                immersive_weapon_policy::DetachAuthority::
-                    IntegratedPhysicalRight) {
+        if (_handlingSettings.detachAuthority ==
+            immersive_weapon_policy::DetachAuthority::
+                IntegratedImmersive) {
             recordFiringGripDetachedHaptic();
         }
         setFiringHand(supportHandIsLeft, "support-grip-promotion");

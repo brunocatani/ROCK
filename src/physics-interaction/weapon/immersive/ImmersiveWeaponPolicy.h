@@ -7,7 +7,7 @@ namespace rock::immersive_weapon_policy
     enum class DetachAuthority
     {
         None,
-        IntegratedPhysicalRight,
+        IntegratedImmersive,
         ExternalProvider,
     };
 
@@ -21,7 +21,6 @@ namespace rock::immersive_weapon_policy
     struct DetachedFiringHandPartGrabInput
     {
         DetachAuthority partCarryAuthority{ DetachAuthority::None };
-        bool detachedHandIsLeft{ false };
         bool authoredOnlySupportGrabsEnabled{ false };
         bool exactProviderPartTargetActive{ false };
     };
@@ -30,18 +29,17 @@ namespace rock::immersive_weapon_policy
     {
         // Runtime snapshots fail closed until RockConfig publishes the loaded
         // compiled/production setting for the current frame.
-        bool physicalRightFiringGripDetachEnabled{ false };
-        bool physicalRightFiringGripDetachPosePreservationEnabled{ false };
-        float physicalRightFiringGripReattachRadiusGameUnits{ 3.0f };
-        float physicalRightFiringGripHapticDurationSeconds{ 0.10f };
-        float physicalRightFiringGripAttachHapticIntensity{ 0.85f };
-        float physicalRightFiringGripDetachHapticIntensity{ 0.30f };
+        bool firingGripDetachEnabled{ false };
+        bool firingGripDetachPosePreservationEnabled{ false };
+        float firingGripReattachRadiusGameUnits{ 3.0f };
+        float firingGripHapticDurationSeconds{ 0.10f };
+        float firingGripAttachHapticIntensity{ 0.85f };
+        float firingGripDetachHapticIntensity{ 0.30f };
     };
 
     struct ResolveInput
     {
         Config integrated{};
-        bool firingHandIsLeft{ false };
         bool firingGripOwnershipEnabled{ false };
         bool externalPrimaryDetachEnabled{ false };
         float externalReattachRadiusGameUnits{ 3.0f };
@@ -62,22 +60,6 @@ namespace rock::immersive_weapon_policy
         float gripDetachHapticIntensity{ 0.30f };
     };
 
-    [[nodiscard]] inline constexpr bool appliesToPhysicalHand(
-        const bool enabled,
-        const bool handIsLeft) noexcept
-    {
-        return enabled && !handIsLeft;
-    }
-
-    [[nodiscard]] inline constexpr bool appliesToPhysicalHand(
-        const Config& config,
-        const bool handIsLeft) noexcept
-    {
-        return appliesToPhysicalHand(
-            config.physicalRightFiringGripDetachEnabled,
-            handIsLeft);
-    }
-
     [[nodiscard]] inline constexpr Decision resolve(
         const ResolveInput& input) noexcept
     {
@@ -96,21 +78,19 @@ namespace rock::immersive_weapon_policy
                 input.externalGripAttachHapticIntensity;
             decision.gripDetachHapticIntensity =
                 input.externalGripDetachHapticIntensity;
-        } else if (appliesToPhysicalHand(
-                       input.integrated,
-                       input.firingHandIsLeft)) {
-            decision.authority = DetachAuthority::IntegratedPhysicalRight;
+        } else if (input.integrated.firingGripDetachEnabled) {
+            decision.authority = DetachAuthority::IntegratedImmersive;
             decision.primaryDetachEnabled = true;
             decision.preserveWeaponPoseOnDetach = input.integrated.
-                physicalRightFiringGripDetachPosePreservationEnabled;
+                firingGripDetachPosePreservationEnabled;
             decision.reattachRadiusGameUnits = input.integrated.
-                physicalRightFiringGripReattachRadiusGameUnits;
+                firingGripReattachRadiusGameUnits;
             decision.gripHapticDurationSeconds = input.integrated.
-                physicalRightFiringGripHapticDurationSeconds;
+                firingGripHapticDurationSeconds;
             decision.gripAttachHapticIntensity = input.integrated.
-                physicalRightFiringGripAttachHapticIntensity;
+                firingGripAttachHapticIntensity;
             decision.gripDetachHapticIntensity = input.integrated.
-                physicalRightFiringGripDetachHapticIntensity;
+                firingGripDetachHapticIntensity;
         }
 
         decision.firingGripOwnershipEnabled =
@@ -120,20 +100,19 @@ namespace rock::immersive_weapon_policy
     }
 
     /*
-     * Integrated physical-right detach is an authored firing-grip contract.
+     * Integrated immersive detach is an authored firing-grip contract.
      * PartCarry tests that firing grip before this policy runs. With ROCK's
-     * authored-only switch enabled, the detached right hand may therefore
+     * authored-only switch enabled, the detached firing hand may therefore
      * capture another weapon part only when the current contact has exact
-     * provider authority. External detach and physical-left behavior retain
-     * the established support-grab selector, as does mode-off operation.
+     * provider authority. External detach and mode-off operation retain the
+     * established support-grab selector.
      */
     [[nodiscard]] inline constexpr DetachedFiringHandPartGrabSelection
     resolveDetachedFiringHandPartGrab(
         const DetachedFiringHandPartGrabInput& input) noexcept
     {
         if (input.partCarryAuthority !=
-                DetachAuthority::IntegratedPhysicalRight ||
-            input.detachedHandIsLeft ||
+                DetachAuthority::IntegratedImmersive ||
             !input.authoredOnlySupportGrabsEnabled) {
             return DetachedFiringHandPartGrabSelection::Standard;
         }
@@ -147,8 +126,8 @@ namespace rock::immersive_weapon_policy
         const DetachAuthority authority) noexcept
     {
         switch (authority) {
-        case DetachAuthority::IntegratedPhysicalRight:
-            return "integrated-physical-right";
+        case DetachAuthority::IntegratedImmersive:
+            return "integrated-immersive";
         case DetachAuthority::ExternalProvider:
             return "external-provider";
         case DetachAuthority::None:

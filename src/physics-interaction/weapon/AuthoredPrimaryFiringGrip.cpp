@@ -205,7 +205,21 @@ namespace rock
             if (!_nativeReloadWasActive) {
                 _captureSequenceFloor = captureStatus.captureSequence;
                 _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
-                clearStableAuthoredSupportGripSnapshot();
+                const auto& stable = _stableAuthoredSupportGrip;
+                const bool preserveLeftSupportSnapshot =
+                    input.rockFiringHandIsLeft &&
+                    stable.valid &&
+                    stable.weaponNodeIdentity == input.weaponNode &&
+                    input.weaponOwnershipKey != 0 &&
+                    stable.weaponOwnershipKey ==
+                        input.weaponOwnershipKey &&
+                    stable.weaponInstanceContentKnown &&
+                    input.weaponInstanceContentKnown &&
+                    stable.weaponInstanceContentKey ==
+                        input.weaponInstanceContentKey;
+                if (!preserveLeftSupportSnapshot) {
+                    clearStableAuthoredSupportGripSnapshot();
+                }
             }
             _nativeReloadWasActive = true;
             endSession("native-reload-authority");
@@ -401,10 +415,68 @@ namespace rock
                 .fingerLocalTransformMask = authoredSupportFingerMask,
                 .weaponOwnershipKey = currentWeaponKey,
                 .weaponGenerationKey = input.weaponGenerationKey,
+                .weaponInstanceContentKey =
+                    input.weaponInstanceContentKey,
                 .primaryGripCaptureSequence = primaryGripCaptureSequence,
                 .supportCaptureSequence = authoredSupportCaptureSequence,
+                .weaponInstanceContentKnown =
+                    input.weaponInstanceContentKnown,
                 .valid = true,
             };
+            return true;
+        };
+
+        const auto rebindStableAuthoredSupportCandidate =
+            [&](const std::uint64_t primaryGripCaptureSequence) {
+            auto& stable = _stableAuthoredSupportGrip;
+            if (!authored_weapon_grip_capture_policy::
+                    shouldRebindStableAuthoredSupportGrip(
+                        authored_weapon_grip_capture_policy::
+                            StableAuthoredSupportGripRebindInput{
+                                .snapshotValid = stable.valid,
+                                .weaponNodeValid =
+                                    input.weaponNode != nullptr,
+                                .weaponNodeMatches =
+                                    stable.weaponNodeIdentity ==
+                                    input.weaponNode,
+                                .currentWeaponOwnershipKey =
+                                    currentWeaponKey,
+                                .snapshotWeaponOwnershipKey =
+                                    stable.weaponOwnershipKey,
+                                .currentWeaponGenerationKey =
+                                    input.weaponGenerationKey,
+                                .snapshotWeaponGenerationKey =
+                                    stable.weaponGenerationKey,
+                                .currentWeaponInstanceContentKnown =
+                                    input.weaponInstanceContentKnown,
+                                .snapshotWeaponInstanceContentKnown =
+                                    stable.weaponInstanceContentKnown,
+                                .currentWeaponInstanceContentKey =
+                                    input.weaponInstanceContentKey,
+                                .snapshotWeaponInstanceContentKey =
+                                    stable.weaponInstanceContentKey,
+                                .currentPrimaryGripCaptureSequence =
+                                    primaryGripCaptureSequence,
+                                .snapshotPrimaryGripCaptureSequence =
+                                    stable.primaryGripCaptureSequence,
+                                .snapshotSupportGripCaptureSequence =
+                                    stable.supportCaptureSequence,
+                                .snapshotFingerLocalTransformMask =
+                                    stable.fingerLocalTransformMask,
+                            })) {
+                return false;
+            }
+
+            const std::uint64_t previousGeneration =
+                stable.weaponGenerationKey;
+            stable.weaponGenerationKey = input.weaponGenerationKey;
+            ROCK_LOG_INFO(
+                Animation,
+                "Authored left-carry support snapshot rebound across same-content generation old=0x{:X} new=0x{:X} weaponKey=0x{:X} content=0x{:X}",
+                previousGeneration,
+                stable.weaponGenerationKey,
+                currentWeaponKey,
+                stable.weaponInstanceContentKey);
             return true;
         };
 
@@ -488,6 +560,8 @@ namespace rock
                         authoredLookup.captureSequence);
                     _canonicalPublishFailureLogged = true;
                 }
+                (void)rebindStableAuthoredSupportCandidate(
+                    authoredLookup.captureSequence);
                 const bool stableSupportPublished =
                     publishStableAuthoredSupportCandidate(
                         authoredLookup.captureSequence);

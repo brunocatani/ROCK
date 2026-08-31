@@ -329,44 +329,44 @@ namespace rock
         }
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
 
-        rockPhysicalRightFiringGripDetachEnabled = ini.GetBoolValue(
+        rockFiringGripDetachEnabled = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
-            "bPhysicalRightFiringGripDetachEnabled",
-            rockPhysicalRightFiringGripDetachEnabled);
-        rockPhysicalRightFiringGripDetachPosePreservationEnabled =
+            "bFiringGripDetachEnabled",
+            rockFiringGripDetachEnabled);
+        rockFiringGripDetachPosePreservationEnabled =
             ini.GetBoolValue(
                 IMMERSIVE_WEAPONS_SECTION,
-                "bPhysicalRightFiringGripDetachPosePreservationEnabled",
-                rockPhysicalRightFiringGripDetachPosePreservationEnabled);
-        rockPhysicalRightFiringGripReattachRadiusGameUnits = readClampedFloat(
+                "bFiringGripDetachPosePreservationEnabled",
+                rockFiringGripDetachPosePreservationEnabled);
+        rockFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
-            "fPhysicalRightFiringGripReattachRadiusGameUnits",
-            rockPhysicalRightFiringGripReattachRadiusGameUnits,
+            "fFiringGripReattachRadiusGameUnits",
+            rockFiringGripReattachRadiusGameUnits,
             3.0f,
             0.25f,
             30.0f);
-        rockPhysicalRightFiringGripHapticDurationSeconds = readClampedFloat(
+        rockFiringGripHapticDurationSeconds = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
-            "fPhysicalRightFiringGripHapticDurationSeconds",
-            rockPhysicalRightFiringGripHapticDurationSeconds,
+            "fFiringGripHapticDurationSeconds",
+            rockFiringGripHapticDurationSeconds,
             0.10f,
             0.01f,
             0.50f);
-        rockPhysicalRightFiringGripAttachHapticIntensity = readClampedFloat(
+        rockFiringGripAttachHapticIntensity = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
-            "fPhysicalRightFiringGripAttachHapticIntensity",
-            rockPhysicalRightFiringGripAttachHapticIntensity,
+            "fFiringGripAttachHapticIntensity",
+            rockFiringGripAttachHapticIntensity,
             0.85f,
             0.0f,
             1.0f);
-        rockPhysicalRightFiringGripDetachHapticIntensity = readClampedFloat(
+        rockFiringGripDetachHapticIntensity = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
-            "fPhysicalRightFiringGripDetachHapticIntensity",
-            rockPhysicalRightFiringGripDetachHapticIntensity,
+            "fFiringGripDetachHapticIntensity",
+            rockFiringGripDetachHapticIntensity,
             0.30f,
             0.0f,
             1.0f);

@@ -78,16 +78,16 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Runtime must derive one effective equipped-weapon shoulder gate from ROCK''s handling settings.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=\s*false' `
-    'The base settings snapshot must not widen the integrated physical-right policy into a global detach bit.'
+    'The base settings snapshot must retain integrated immersive detach separately from provider PrimaryDetach.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*settings\.primaryDetachEnabled\s*\|\|\s*enabled\([\s\r\n]*\s*provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach' `
     'The provider overlay must retain its explicit PrimaryDetach capability.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'resolveEquippedWeaponDetachDecision[\s\S]*firingHandIsLeft[\s\S]*settings\.immersiveWeapon[\s\S]*externalPrimaryDetachEnabled' `
-    'Physical-right integrated detach and explicit provider detach must resolve separately from shoulder stash.'
+    'resolveEquippedWeaponDetachDecision[\s\S]*settings\.immersiveWeapon[\s\S]*externalPrimaryDetachEnabled' `
+    'Role-neutral integrated detach and explicit provider detach must resolve separately from shoulder stash.'
 Reject-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*rockBaseline\.equippedWeaponShoulderStashEnabled' `
-    'ROCK''s shoulder-stash baseline must never feed the physical-detach capability.'
+    'ROCK''s shoulder-stash baseline must never feed the firing-grip detach capability.'
 
 Require-MatchCount 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'equipped_weapon_shoulder::advance\s*\(' 1 `
@@ -139,7 +139,7 @@ Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
     'resolveExactCurrent\(expected\)[\s\S]{0,900}shouldSubmitSheatheFollowup[\s\S]{0,1000}DrawWeaponMagicHands\(false\)[\s\S]{0,300}getNativeWeaponState\(current\.player\)' `
     'Native sheath must revalidate exact identity and observe both sides of the verified FO4VR state transition.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'for\s*\(const bool isLeft\s*:\s*\{\s*false,\s*true\s*\}\)[\s\S]*?ambidextrousHandoffEnabled[\s\S]*?PendingEquippedWeaponPrimaryOnlyGripStart[\s\S]*?\.isLeft\s*=\s*retrieveWithLeftHand' `
+    'roleNeutralFiringGripOwnership[\s\S]*?for\s*\(const bool isLeft\s*:\s*\{\s*false,\s*true\s*\}\)[\s\S]*?handAllowedByHandlingMode[\s\S]*?PendingEquippedWeaponPrimaryOnlyGripStart[\s\S]*?\.isLeft\s*=\s*retrieveWithLeftHand' `
     'Retrieval must evaluate both eligible physical hands and carry the selected hand into weapon ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'pendingPrimaryStartMatchesCurrentWeapon[\s\S]*?tryBuildCurrentLeftFiringGripCapture[\s\S]*?beginPrimaryOnlyGrip' `

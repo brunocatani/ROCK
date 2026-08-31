@@ -25,6 +25,69 @@ int main()
     static_assert(resolveAuthoredGenerationKey(11, 22) == 11);
     static_assert(resolveAuthoredGenerationKey(0, 22) == 22);
     static_assert(resolveAuthoredGenerationKey(0, 0) == 0);
+    constexpr LeftFiringTakeoverReadinessInput pendingLeftTakeover{
+        .targetFiringHandIsLeft = true,
+        .authoredOnlyModeEnabled = true,
+        .collisionGenerationKey = 0x11u,
+        .capabilityIdentityCurrent = true,
+        .capability = Capability::Pending,
+    };
+    static_assert(resolveLeftFiringTakeoverReadiness(
+                      pendingLeftTakeover) ==
+                  LeftFiringTakeoverReadiness::AwaitingCapability);
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.collisionGenerationKey = 0;
+        return resolveLeftFiringTakeoverReadiness(input) ==
+               LeftFiringTakeoverReadiness::AwaitingFinalGeneration;
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.capabilityIdentityCurrent = false;
+        return resolveLeftFiringTakeoverReadiness(input) ==
+               LeftFiringTakeoverReadiness::AwaitingCapability;
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.capability = Capability::Usable;
+        return resolveLeftFiringTakeoverReadiness(input) ==
+               LeftFiringTakeoverReadiness::AwaitingMirroredCandidate;
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.capability = Capability::Usable;
+        input.mirroredCandidateAvailable = true;
+        const auto readiness =
+            resolveLeftFiringTakeoverReadiness(input);
+        return readiness ==
+                   LeftFiringTakeoverReadiness::
+                       ReadyWithAuthoredCandidate &&
+               leftFiringTakeoverReady(readiness);
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.capability = Capability::Unavailable;
+        const auto readiness =
+            resolveLeftFiringTakeoverReadiness(input);
+        return readiness ==
+                   LeftFiringTakeoverReadiness::
+                       ReadyWithDynamicFallback &&
+               leftFiringTakeoverReady(readiness);
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.targetFiringHandIsLeft = false;
+        input.collisionGenerationKey = 0;
+        return leftFiringTakeoverReady(
+            resolveLeftFiringTakeoverReadiness(input));
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.authoredOnlyModeEnabled = false;
+        input.collisionGenerationKey = 0;
+        return leftFiringTakeoverReady(
+            resolveLeftFiringTakeoverReadiness(input));
+    }());
     static_assert(observeCapability(usableInput).capability ==
                   Capability::Usable);
     static_assert([] {

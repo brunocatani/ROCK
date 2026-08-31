@@ -285,8 +285,8 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'apiUnregisterConsumerV1[\s\S]{0,3500
     'Consumer teardown must release its exclusive collider focus override.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWorldRaycastsPerOwnerPerFrame\s*=\s*[\s\S]{0,100}ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1' `
     'Extended limits must publish the per-owner per-frame raycast budget.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestEquippedWeaponHandV1[\s\S]{0,500}onAnimationOwnerThread\(\)[\s\S]{0,1800}EquippedWeaponHandlingAuthority[\s\S]{0,1000}FiringGripOwnership[\s\S]{0,800}AmbidextrousHandoff[\s\S]{0,1000}requestProviderEquippedWeaponHandV1' `
-    'Exact-hand requests must remain game-thread-only and bound to the caller''s active handling authority.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestEquippedWeaponHandV1[\s\S]{0,500}onAnimationOwnerThread\(\)[\s\S]{0,1800}EquippedWeaponHandlingAuthority[\s\S]{0,1800}FiringGripOwnership[\s\S]{0,1800}requestProviderEquippedWeaponHandV1' `
+    'Exact-hand requests must remain game-thread-only and bind either physical hand to the caller''s active firing-grip authority.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'requestProviderEquippedWeaponHandV1[\s\S]{0,1800}currentEquippedWeaponForm\(\)[\s\S]{0,900}request\.weaponGenerationKey[\s\S]{0,1500}EquippedWeaponHandAssignmentSource::Provider' `
     'Exact-hand requests must bind value identity before arming the canonical equipped-weapon assignment path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'serviceEquippedWeaponHandAssignment\([\s\S]{0,16000}ownsEquippedWeaponHandlingAuthorityV1[\s\S]{0,12000}beginPersistentEquippedCarry' `

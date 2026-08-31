@@ -4090,15 +4090,10 @@ namespace
                 return RockProviderResultV1::OwnerConflict;
             }
 
-            std::uint32_t requiredFlags =
+            const std::uint32_t requiredFlags =
                 static_cast<std::uint32_t>(
                     RockProviderEquippedWeaponHandlingFlagV1::
                         FiringGripOwnership);
-            if (request->hand == RockProviderHand::Left) {
-                requiredFlags |= static_cast<std::uint32_t>(
-                    RockProviderEquippedWeaponHandlingFlagV1::
-                        AmbidextrousHandoff);
-            }
             if ((s_equippedWeaponHandlingAuthority.request.flags &
                     requiredFlags) != requiredFlags) {
                 return RockProviderResultV1::PermissionDenied;

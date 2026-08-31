@@ -64,6 +64,82 @@ namespace rock::authored_support_grab_policy
         CaptureUnavailableAfterQualification,
     };
 
+    enum class LeftFiringTakeoverReadiness : std::uint8_t
+    {
+        NotRequired,
+        AwaitingFinalGeneration,
+        AwaitingCapability,
+        AwaitingMirroredCandidate,
+        ReadyWithAuthoredCandidate,
+        ReadyWithDynamicFallback,
+    };
+
+    struct LeftFiringTakeoverReadinessInput
+    {
+        bool targetFiringHandIsLeft{ false };
+        bool authoredOnlyModeEnabled{ false };
+        std::uint64_t collisionGenerationKey{ 0 };
+        bool capabilityIdentityCurrent{ false };
+        Capability capability{ Capability::Pending };
+        bool mirroredCandidateAvailable{ false };
+    };
+
+    [[nodiscard]] constexpr LeftFiringTakeoverReadiness
+    resolveLeftFiringTakeoverReadiness(
+        const LeftFiringTakeoverReadinessInput& input) noexcept
+    {
+        if (!input.targetFiringHandIsLeft ||
+            !input.authoredOnlyModeEnabled) {
+            return LeftFiringTakeoverReadiness::NotRequired;
+        }
+        if (input.collisionGenerationKey == 0) {
+            return LeftFiringTakeoverReadiness::AwaitingFinalGeneration;
+        }
+        if (!input.capabilityIdentityCurrent) {
+            return LeftFiringTakeoverReadiness::AwaitingCapability;
+        }
+        if (input.capability == Capability::Unavailable) {
+            return LeftFiringTakeoverReadiness::ReadyWithDynamicFallback;
+        }
+        if (input.capability == Capability::Usable &&
+            input.mirroredCandidateAvailable) {
+            return LeftFiringTakeoverReadiness::ReadyWithAuthoredCandidate;
+        }
+        return input.capability == Capability::Usable ?
+            LeftFiringTakeoverReadiness::AwaitingMirroredCandidate :
+            LeftFiringTakeoverReadiness::AwaitingCapability;
+    }
+
+    [[nodiscard]] constexpr bool leftFiringTakeoverReady(
+        const LeftFiringTakeoverReadiness readiness) noexcept
+    {
+        return readiness == LeftFiringTakeoverReadiness::NotRequired ||
+               readiness ==
+                   LeftFiringTakeoverReadiness::ReadyWithAuthoredCandidate ||
+               readiness ==
+                   LeftFiringTakeoverReadiness::ReadyWithDynamicFallback;
+    }
+
+    [[nodiscard]] constexpr const char* leftFiringTakeoverReadinessName(
+        const LeftFiringTakeoverReadiness readiness) noexcept
+    {
+        switch (readiness) {
+        case LeftFiringTakeoverReadiness::NotRequired:
+            return "not-required";
+        case LeftFiringTakeoverReadiness::AwaitingFinalGeneration:
+            return "awaiting-final-generation";
+        case LeftFiringTakeoverReadiness::AwaitingCapability:
+            return "awaiting-capability";
+        case LeftFiringTakeoverReadiness::AwaitingMirroredCandidate:
+            return "awaiting-mirrored-candidate";
+        case LeftFiringTakeoverReadiness::ReadyWithAuthoredCandidate:
+            return "ready-authored";
+        case LeftFiringTakeoverReadiness::ReadyWithDynamicFallback:
+            return "ready-dynamic-fallback";
+        }
+        return "unknown";
+    }
+
     struct CapabilityObservationInput
     {
         bool modeEnabled{ false };

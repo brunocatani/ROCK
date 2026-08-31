@@ -105,14 +105,23 @@ namespace rock::authored_weapon_grip_capture_policy
         std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
 
-    struct LeftFiringTakeoverSupportCaptureInput
+    struct StableAuthoredSupportGripRebindInput
     {
-        bool pendingStartMatchesCurrentWeapon{ false };
-        bool primaryOnlyStartRequested{ false };
-        bool firingHandIsLeft{ false };
-        bool authoredOnlySupportGrabsEnabled{ false };
-        bool currentSupportCandidateAvailable{ false };
-        bool nativeRightCaptureFrameReserved{ false };
+        bool snapshotValid{ false };
+        bool weaponNodeValid{ false };
+        bool weaponNodeMatches{ false };
+        std::uint64_t currentWeaponOwnershipKey{ 0 };
+        std::uint64_t snapshotWeaponOwnershipKey{ 0 };
+        std::uint64_t currentWeaponGenerationKey{ 0 };
+        std::uint64_t snapshotWeaponGenerationKey{ 0 };
+        bool currentWeaponInstanceContentKnown{ false };
+        bool snapshotWeaponInstanceContentKnown{ false };
+        std::uint64_t currentWeaponInstanceContentKey{ 0 };
+        std::uint64_t snapshotWeaponInstanceContentKey{ 0 };
+        std::uint64_t currentPrimaryGripCaptureSequence{ 0 };
+        std::uint64_t snapshotPrimaryGripCaptureSequence{ 0 };
+        std::uint64_t snapshotSupportGripCaptureSequence{ 0 };
+        std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
 
     [[nodiscard]] constexpr AuthoredPrimaryDecision
@@ -305,23 +314,37 @@ namespace rock::authored_weapon_grip_capture_policy
     }
 
     /*
-     * A new equipped identity invalidates the stable support snapshot after
-     * Bethesda's native arm pass has already run. Reserve exactly one further
-     * right-primary frame before a pending physical-left takeover; that next
-     * arm pass can publish the generation-bound support relation while the
-     * topology is still valid. The one-frame reservation is bypassed when a
-     * current candidate already exists and is never repeated for an asset
-     * whose authored support capture is genuinely unavailable.
+     * A generated-collision rebuild does not change a support pose when the
+     * exact Weapon node, equipped owner, instance-content fingerprint and
+     * authored canonical all remain the same. Physical-left carry cannot ask
+     * Bethesda's native right-primary arm pass to recapture that relation, so
+     * it may rebind the validated value snapshot to the new nonzero generation
+     * only under all of those witnesses. Unknown or changed content fails
+     * closed and requires a fresh native-right capture.
      */
-    [[nodiscard]] constexpr bool shouldReserveNativeRightSupportCaptureFrame(
-        const LeftFiringTakeoverSupportCaptureInput& input) noexcept
+    [[nodiscard]] constexpr bool shouldRebindStableAuthoredSupportGrip(
+        const StableAuthoredSupportGripRebindInput& input) noexcept
     {
-        return input.pendingStartMatchesCurrentWeapon &&
-               input.primaryOnlyStartRequested &&
-               input.firingHandIsLeft &&
-               input.authoredOnlySupportGrabsEnabled &&
-               !input.currentSupportCandidateAvailable &&
-               !input.nativeRightCaptureFrameReserved;
+        return input.snapshotValid &&
+               input.weaponNodeValid &&
+               input.weaponNodeMatches &&
+               input.currentWeaponOwnershipKey != 0 &&
+               input.currentWeaponOwnershipKey ==
+                   input.snapshotWeaponOwnershipKey &&
+               input.currentWeaponGenerationKey != 0 &&
+               input.snapshotWeaponGenerationKey != 0 &&
+               input.currentWeaponGenerationKey !=
+                   input.snapshotWeaponGenerationKey &&
+               input.currentWeaponInstanceContentKnown &&
+               input.snapshotWeaponInstanceContentKnown &&
+               input.currentWeaponInstanceContentKey ==
+                   input.snapshotWeaponInstanceContentKey &&
+               input.currentPrimaryGripCaptureSequence != 0 &&
+               input.currentPrimaryGripCaptureSequence ==
+                   input.snapshotPrimaryGripCaptureSequence &&
+               input.snapshotSupportGripCaptureSequence != 0 &&
+               input.snapshotFingerLocalTransformMask ==
+                   kCompleteAuthoredSupportFingerLocalTransformMask;
     }
 
     template <class Transform, class Point, class LocalPointToWorld>

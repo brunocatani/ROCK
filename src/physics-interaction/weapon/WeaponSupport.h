@@ -295,11 +295,10 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     struct FiringGripModeAvailability
     {
-        // Provider PrimaryDetach applies to whichever physical hand currently
-        // owns the firing role. The integrated capability below remains
-        // explicitly physical-right-only.
+        // Both provider and integrated detach follow whichever physical hand
+        // currently owns the firing role.
         bool primaryDetachEnabled{ false };
-        bool physicalRightDetachEnabled{ false };
+        bool integratedDetachEnabled{ false };
         bool ambidextrousHandoffAvailable{ false };
     };
 
@@ -311,13 +310,10 @@ namespace rock::equipped_weapon_manual_ownership_policy
     };
 
     [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(
-        const FiringGripModeAvailability& modes,
-        const bool handIsLeft) noexcept
+        const FiringGripModeAvailability& modes) noexcept
     {
         return modes.primaryDetachEnabled ||
-               immersive_weapon_policy::appliesToPhysicalHand(
-                   modes.physicalRightDetachEnabled,
-                   handIsLeft) ||
+               modes.integratedDetachEnabled ||
                modes.ambidextrousHandoffAvailable;
     }
 
@@ -325,9 +321,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         return input.gripHeld &&
                (input.modes.primaryDetachEnabled ||
-                   immersive_weapon_policy::appliesToPhysicalHand(
-                       input.modes.physicalRightDetachEnabled,
-                       input.handIsLeft) ||
+                   input.modes.integratedDetachEnabled ||
                    (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
     }
 
@@ -352,8 +346,8 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         // Physical hold-to-release remains governed by detach authority. A
         // toggle latch is different: its second press is an explicit logical
-        // release and must never strand manual PrimaryOnly ownership merely
-        // because the integrated physical detach contract is right-only.
+        // release and must never strand manual PrimaryOnly ownership when a
+        // non-detach ownership source created the carry.
         return (!primaryDetachEnabled && !toggleGrabEnabled) ||
                primaryGripHeld;
     }

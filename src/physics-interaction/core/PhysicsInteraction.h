@@ -633,9 +633,16 @@ namespace rock
             std::uintptr_t previousWeaponInstanceData{ 0 };
             float remainingSeconds{ 0.0f };
             bool committedTransfer{ false };
-            // One right-primary arm pass seeds the generation-bound support
-            // snapshot before a pending left takeover reparents Weapon.
-            bool nativeRightSupportCaptureFrameReserved{ false };
+            // A toggle acquisition is a committed logical grab even after the
+            // physical button opens while left takeover waits for the final
+            // generation-bound authored-support verdict.
+            bool toggleAcquisitionCommitted{ false };
+            bool toggleAcquisitionReleased{ false };
+            authored_support_grab_policy::LeftFiringTakeoverReadiness
+                lastLeftTakeoverReadiness{
+                    authored_support_grab_policy::
+                        LeftFiringTakeoverReadiness::NotRequired
+                };
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};
             bool hasFiringGripWeaponLocal{ false };
@@ -791,6 +798,11 @@ namespace rock
             bool nativeOffsetReadinessLogged{ false };
             std::uint8_t matchingNativeOffsetFrames{ 0 };
             RE::NiTransform nativeOffsetSample{};
+            authored_support_grab_policy::LeftFiringTakeoverReadiness
+                lastLeftTakeoverReadiness{
+                    authored_support_grab_policy::
+                        LeftFiringTakeoverReadiness::NotRequired
+                };
         };
         EquippedWeaponHandAssignmentState _equippedWeaponHandAssignment{};
         std::uint64_t _lastPipboyWeaponSelectionSequence{ 0 };
@@ -803,6 +815,11 @@ namespace rock
             std::uint8_t matchingNativeOffsetFrames{ 0 };
             bool nativeOffsetSampleValid{ false };
             bool infrastructureWarningLogged{ false };
+            authored_support_grab_policy::LeftFiringTakeoverReadiness
+                lastLeftTakeoverReadiness{
+                    authored_support_grab_policy::
+                        LeftFiringTakeoverReadiness::NotRequired
+                };
         };
         FixedLeftCarryState _fixedLeftCarry{};
         bool _equippedWeaponMenuReconcilePending = false;
