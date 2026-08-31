@@ -72,13 +72,13 @@ namespace rock::loose_weapon_grip_zone
 
     /*
      * Stateless one-shot resolver of the loose weapon PLACEMENT hold. For an
-     * authored grip this is the physical-hand relation cached from ROCK's
-     * final position-only equipped solve, not the animation-authored wrist
-     * rotation. If that live cache is not ready, the same position-only hold
-     * is derived from the native/hFRIK carrier; full authored placement is the
-     * final aligned fallback. The other hand receives the matching mirrored
-     * hold. Weapon world = hand world o inverse(hold). Used by pull-catch and
-     * force-grab commit; frame-thread only.
+     * authored grip this always derives the position-only hold from the
+     * native/hFRIK carrier. It deliberately ignores the equipped-position
+     * cache so every loose grab uses the same path as the first loose grab.
+     * Full authored placement is the final aligned fallback. The other hand
+     * receives the matching mirrored hold. Weapon world = hand world o
+     * inverse(hold). Used by pull-catch and force-grab commit; frame-thread
+     * only.
      */
     bool tryResolveLooseWeaponFiringHandHold(
         bool isLeft,

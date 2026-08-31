@@ -214,17 +214,13 @@ Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'gripWeaponLocal\s*=\s*transform_math::worldPointToLocal\([\s\S]{0,120}attachedRootWorld,[\s\S]{0,120}canonicalPalmWorld\)[\s\S]{0,4500}localPointToWorld\(looseRoot->world,\s*state\.gripWeaponLocal\)' `
     'The hFRIK firing-grip point must be derived from the canonical primary attach pose and projected through the loose weapon, never derived from the tested hand.'
 
-Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
-    'weapon_grip_authority_policy::select\([\s\S]{0,1600}frikCustomFile[\s\S]{0,800}authoredAnimation[\s\S]{0,800}frikEmbeddedResource[\s\S]{0,3500}Source::AuthoredAnimation[\s\S]{0,1000}canonicalHandWeaponLocal\s*=\s*authoredLookup\.rightHandWeaponLocal[\s\S]{0,1000}hasRightPositionOnlyHandWeaponLocal[\s\S]{0,600}canonicalPlacementHandWeaponLocal\s*=[\s\S]{0,300}authoredLookup\.rightPositionOnlyHandWeaponLocal' `
-    'Loose weapons must retain the authored wrist separately while preferring the exact equipped position-only physical hold for placement.'
+Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
+    'hasRightPositionOnlyHandWeaponLocal|rightPositionOnlyHandWeaponLocal|positionOnlyFrikOffsetRevision|authoredEquippedPositionOnlyCache' `
+    'Loose weapon placement must never consume the equipped-created position-only cache.'
 
 Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
-    'authoredNativeCarrierPositionOnly[\s\S]{0,1400}authoredFullRigidFallback[\s\S]{0,6000}loosePlacementHandWeaponLocal[\s\S]{0,2500}tryBuildMirroredLeftFiringHandWeaponLocal\([\s\S]{0,600}canonicalPlacementHandWeaponLocal' `
-    'A missing live hold cache must derive the same position-only carrier when possible, retain an aligned fallback, and mirror placement independently for the left hand.'
-
-Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
-    'cachedPlacementGripError[\s\S]{0,700}positionOnlyFrikOffsetRevision[\s\S]{0,300}currentRevision\(\)[\s\S]{0,700}kMaximumCachedPlacementGripErrorGameUnits' `
-    'A cached equipped hold must be rejected after an hFRIK offset change or when its authored grip point no longer matches the current hand configuration.'
+    'Source::AuthoredAnimation[\s\S]{0,1200}canonicalHandWeaponLocal\s*=\s*authoredLookup\.rightHandWeaponLocal[\s\S]{0,1200}tryResolveAttachedRootWorld\([\s\S]{0,700}resolveAuthoredPrimaryWeaponWorldPositionOnly[\s\S]{0,1400}authoredNativeCarrierPositionOnly[\s\S]{0,1400}authoredFullRigidFallback[\s\S]{0,6000}loosePlacementHandWeaponLocal[\s\S]{0,2500}tryBuildMirroredLeftFiringHandWeaponLocal\([\s\S]{0,600}canonicalPlacementHandWeaponLocal' `
+    'Every authored loose grab must derive the first-grab native-carrier position-only hold, retain an aligned fallback, and mirror placement independently for the left hand.'
 
 Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'worldPointToLocal\(attachedRootWorld,\s*palmWorld\)' `

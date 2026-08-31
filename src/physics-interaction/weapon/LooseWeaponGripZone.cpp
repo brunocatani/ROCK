@@ -193,41 +193,10 @@ namespace rock::loose_weapon_grip_zone
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
                 state.reason = authoredLookup.reason;
                 const char* carrierFailureReason =
-                    "positionOnlyCacheUnavailable";
+                    "nativeCarrierUnavailable";
 
-                if (authoredLookup.hasRightPositionOnlyHandWeaponLocal) {
-                    canonicalPlacementHandWeaponLocal =
-                        authoredLookup.rightPositionOnlyHandWeaponLocal;
-                    const RE::NiPoint3 cachedPlacementGripWeaponLocal =
-                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                            canonicalPlacementHandWeaponLocal,
-                            false);
-                    constexpr float kMaximumCachedPlacementGripErrorGameUnits =
-                        0.01f;
-                    const float cachedPlacementGripError = pointDistance(
-                        cachedPlacementGripWeaponLocal,
-                        state.gripWeaponLocal);
-                    const bool offsetRevisionMatches =
-                        authoredLookup.positionOnlyFrikOffsetRevision != 0 &&
-                        authoredLookup.positionOnlyFrikOffsetRevision ==
-                            frik_weapon_offset_cache::currentRevision();
-                    canonicalPlacementResolved =
-                        offsetRevisionMatches &&
-                        isUsableWorldTransform(
-                            canonicalPlacementHandWeaponLocal) &&
-                        std::isfinite(cachedPlacementGripError) &&
-                        cachedPlacementGripError <=
-                            kMaximumCachedPlacementGripErrorGameUnits;
-                    if (canonicalPlacementResolved) {
-                        state.placementReason =
-                            "authoredEquippedPositionOnlyCache";
-                    } else {
-                        carrierFailureReason = !offsetRevisionMatches ?
-                            "positionOnlyCacheOffsetRevisionMismatch" :
-                            "positionOnlyCacheInvalid";
-                    }
-                }
-
+                // Loose authored grabs always use the native-carrier solve.
+                // The equipped-only cache must not change their rotation.
                 if (!canonicalPlacementResolved) {
                     RE::NiTransform attachedRootWorld{};
                     if (tryResolveAttachedRootWorld(
