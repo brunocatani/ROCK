@@ -80,8 +80,9 @@ namespace rock::loose_weapon_grip_zone
         }
 
         /*
-         * Resolve one fixed firing grip in WEAPON space. Explicit hFRIK JSON
-         * remains user correction authority. Otherwise ROCK consumes the
+         * Resolve the canonical right firing grip in WEAPON space and reflect
+         * its palm seat across weapon-local X for a left-hand probe. Explicit
+         * hFRIK JSON remains user correction authority. Otherwise ROCK consumes the
          * exact native-animation relation learned while this weapon/stock was
          * equipped. Embedded hFRIK data is a cold fallback only; the unrelated
          * live Weapon-node local is accepted solely when the authored feature
@@ -350,6 +351,17 @@ namespace rock::loose_weapon_grip_zone
                     if (outTestedHandWorld) {
                         *outTestedHandWorld = leftHandWorld;
                     }
+                }
+                state.gripWeaponLocal =
+                    left_firing_position_only_math::
+                        mirrorGripPointAcrossWeaponLateralPlane(
+                            state.gripWeaponLocal);
+                state.gripWorld = transform_math::localPointToWorld(
+                    looseRoot->world,
+                    state.gripWeaponLocal);
+                if (!isFinitePoint(state.gripWorld)) {
+                    state.reason = "nonFiniteMirroredGripPoint";
+                    return false;
                 }
             }
 

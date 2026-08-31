@@ -576,6 +576,42 @@ namespace rock::left_firing_position_only_math
     }
 
     /*
+     * A bilateral HAND frame is not an X-conjugated object frame. Its parent
+     * space changes side across lateral X, while authored handspace changes
+     * handedness across raw Z (authored X=fingers, Y=palm depth, signed Z=
+     * cross-palm). Applying those two different reflections produces a proper
+     * rotation and is an involution, so the same operation maps either hand to
+     * its opposite without sampling a weapon-authored rendered wrist.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform mirrorOppositeHandFrame(
+        const Transform& sourceHandInParent)
+    {
+        Transform parentLateralMirror =
+            transform_math::makeIdentityTransform<Transform>();
+        parentLateralMirror.rotate.entry[0][0] = -1.0f;
+
+        Transform handCrossPalmMirror =
+            transform_math::makeIdentityTransform<Transform>();
+        handCrossPalmMirror.rotate.entry[2][2] = -1.0f;
+
+        return transform_math::composeTransforms(
+            parentLateralMirror,
+            transform_math::composeTransforms(
+                sourceHandInParent,
+                handCrossPalmMirror));
+    }
+
+    template <class Point>
+    [[nodiscard]] inline Point mirrorGripPointAcrossWeaponLateralPlane(
+        const Point& sourceGripInWeapon)
+    {
+        Point mirroredGripInWeapon = sourceGripInWeapon;
+        mirroredGripInWeapon.x = -mirroredGripInWeapon.x;
+        return mirroredGripInWeapon;
+    }
+
+    /*
      * Weapon geometry uses +Y as muzzle-forward and +X as its lateral axis.
      * Conjugating the right weapon-in-wand orientation by the X reflection
      * mirrors the lateral component while retaining a proper rotation. The

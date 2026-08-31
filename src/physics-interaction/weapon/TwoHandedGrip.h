@@ -1258,6 +1258,10 @@ namespace rock
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey) const;
+        [[nodiscard]] bool hasStableNaturalHandBasis() const;
+        bool tryResolveStableNaturalHandWorldPair(
+            RE::NiTransform& outRightHandWorld,
+            RE::NiTransform& outLeftHandWorld) const;
         void refreshNaturalHandInWandFrames();
         void clearRightFiringHandCanonicalFrame();
         bool hasRightFiringHandCanonicalFrame(
@@ -1272,7 +1276,7 @@ namespace rock
 
         static bool tryBuildMirroredLeftFiringHandWeaponLocalImpl(
             const RE::NiTransform& canonicalRightHandWeaponLocal,
-            const RE::NiPoint3& firingGripWeaponLocal,
+            const RE::NiPoint3& rightFiringGripWeaponLocal,
             const RE::NiTransform& rightHandWorld,
             const RE::NiTransform& leftHandWorld,
             RE::NiTransform& outHandWeaponLocal,
@@ -1330,9 +1334,8 @@ namespace rock
         /*
          * Reattach validates the hand first and only then commits; a takeover
          * by the non-firing hand flips the firing-hand role inside the commit
-         * (setFiringHand), reusing the SAME captured weapon-relative grip
-         * frames - the hands only choose who fires, the grip stays
-         * weapon-relative.
+         * (setFiringHand). The authored firing seat is topology-specific: the
+         * left palm consumes the right seat reflected across weapon-local X.
          */
         bool tryReattachFiringGrip(
             bool handIsLeft,
@@ -1354,10 +1357,14 @@ namespace rock
 
         bool tryComputePalmToGripDistanceForHand(RE::NiNode* weaponNode, bool handIsLeft, float& outDistance) const;
 
+        bool tryResolveFiringGripWeaponLocalForHand(
+            bool handIsLeft,
+            RE::NiPoint3& outFiringGripWeaponLocal) const;
+
         /*
          * Firing-hand role transition. Clears role-tagged FRIK publications of
-         * the old hand and resets firing-hand transient state; callers own the
-         * grip-frame capture for the new hand.
+         * the old hand, selects the new hand's topology-specific firing point,
+         * and resets transient state; callers own the new hand transform.
          */
         void setFiringHand(bool isLeft, const char* reason);
 
@@ -1636,10 +1643,11 @@ namespace rock
         bool _rightHandHoldingObjectForPose{ false };
 
         /*
-         * Natural physical hand-bone relations in the raw wand and hFRIK's
-         * damped driver. They are refreshed only while ROCK has no visual
-         * authority for that hand and are deliberately not weapon-generation
-         * keyed so final alignment never consumes ROCK's previous output.
+         * Stable neutral hand/controller basis in the raw wand and damped
+         * driver. One genuinely unposed offhand seeds both sides through the
+         * explicit bilateral X/Z hand convention; the pair then remains frozen
+         * until reset so neither native weapon animation nor ROCK's own visual
+         * output can become controller intent.
          */
         RE::NiTransform _rightNaturalBoneInWand{};
         RE::NiTransform _leftNaturalBoneInWand{};

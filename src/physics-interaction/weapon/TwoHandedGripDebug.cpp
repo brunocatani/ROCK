@@ -655,7 +655,8 @@ namespace rock
         }
 
         ParityGripAxisComparison gripAxisComparison{};
-        if (canonicalRightHand.valid && candidateLeftSupport.valid &&
+        if (firingHandIsLeft && canonicalRightHand.valid &&
+            candidateLeftSupport.valid &&
             candidateRightSupport.valid &&
             std::isfinite(_primaryGripLocal.x) &&
             std::isfinite(_primaryGripLocal.y) &&

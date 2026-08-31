@@ -2175,11 +2175,10 @@ namespace rock
                 state.lastHandWorld = resolvedHandWorld;
                 state.hasLastHandWorld = true;
 
-                const bool preserveAuthoredPhysicalRelation =
-                    !isLeft &&
-                    _authoredPrimaryFiringHandWorldActive &&
+                const bool preserveStableNeutralRelation = isLeft ?
+                    _hasLeftNaturalBoneInDampedDriver :
                     _hasRightNaturalBoneInDampedDriver;
-                if (driverValid && !preserveAuthoredPhysicalRelation) {
+                if (driverValid && !preserveStableNeutralRelation) {
                     const RE::NiTransform driverToHandLocal =
                         scope_safe_hand_frame_math::captureDriverToHandLocal(driverFrame.world, resolvedHandWorld);
                     if (isUsableHandAuthorityTransform(driverToHandLocal)) {
@@ -7743,16 +7742,9 @@ namespace rock
 
         RE::NiTransform rightHandWorld{};
         RE::NiTransform leftHandWorld{};
-        RE::NiTransform rightDriverWorld{};
-        RE::NiTransform leftDriverWorld{};
-        if (!tryResolvePhysicalHandFrame(
-                false,
+        if (!tryResolveStableNaturalHandWorldPair(
                 rightHandWorld,
-                rightDriverWorld) ||
-            !tryResolvePhysicalHandFrame(
-                true,
-                leftHandWorld,
-                leftDriverWorld) ||
+                leftHandWorld) ||
             !tryBuildMirroredLeftFiringHandWeaponLocalImpl(
                 _rightFiringHandCanonicalWeaponLocal,
                 _rightFiringGripCanonicalWeaponLocal,
@@ -7764,7 +7756,10 @@ namespace rock
             return false;
         }
 
-        outFiringGripWeaponLocal = _rightFiringGripCanonicalWeaponLocal;
+        outFiringGripWeaponLocal =
+            left_firing_position_only_math::
+                mirrorGripPointAcrossWeaponLateralPlane(
+                    _rightFiringGripCanonicalWeaponLocal);
         return true;
     }
 
@@ -8495,8 +8490,15 @@ namespace rock
             return false;
         }
 
+        RE::NiPoint3 firingGripWeaponLocal{};
+        if (!tryResolveFiringGripWeaponLocalForHand(
+                handIsLeft,
+                firingGripWeaponLocal)) {
+            return false;
+        }
         const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiPoint3 firingGripWorld =
+            weaponLocalToWorld(firingGripWeaponLocal, weaponNode);
         const RE::NiPoint3 delta = sub(palm, firingGripWorld);
         const float distance = std::sqrt(dot(delta, delta));
         return std::isfinite(distance) &&
@@ -8512,8 +8514,15 @@ namespace rock
         if (!tryGetSolverHandTransform(handIsLeft, handTransform)) {
             return false;
         }
+        RE::NiPoint3 firingGripWeaponLocal{};
+        if (!tryResolveFiringGripWeaponLocalForHand(
+                handIsLeft,
+                firingGripWeaponLocal)) {
+            return false;
+        }
         const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiPoint3 firingGripWorld =
+            weaponLocalToWorld(firingGripWeaponLocal, weaponNode);
         const RE::NiPoint3 delta = sub(palm, firingGripWorld);
         const float distance = std::sqrt(dot(delta, delta));
         if (!std::isfinite(distance)) {
@@ -8521,6 +8530,40 @@ namespace rock
         }
         outDistance = distance;
         return true;
+    }
+
+    bool TwoHandedGrip::tryResolveFiringGripWeaponLocalForHand(
+        const bool handIsLeft,
+        RE::NiPoint3& outFiringGripWeaponLocal) const
+    {
+        outFiringGripWeaponLocal = {};
+        const auto finitePoint = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) && std::isfinite(point.y) &&
+                   std::isfinite(point.z);
+        };
+
+        if (hasRightFiringHandCanonicalFrame(
+                _activeWeaponNode,
+                _activeWeaponGenerationKey,
+                _activeEquippedWeaponOwnershipKey) &&
+            finitePoint(_rightFiringGripCanonicalWeaponLocal)) {
+            outFiringGripWeaponLocal = handIsLeft ?
+                left_firing_position_only_math::
+                    mirrorGripPointAcrossWeaponLateralPlane(
+                        _rightFiringGripCanonicalWeaponLocal) :
+                _rightFiringGripCanonicalWeaponLocal;
+            return true;
+        }
+
+        if (_primaryGripConfidence <= 0.0f ||
+            !finitePoint(_primaryGripLocal)) {
+            return false;
+        }
+        outFiringGripWeaponLocal = handIsLeft == _firingHandIsLeft ?
+            _primaryGripLocal :
+            left_firing_position_only_math::
+                mirrorGripPointAcrossWeaponLateralPlane(_primaryGripLocal);
+        return finitePoint(outFiringGripWeaponLocal);
     }
 
     bool TwoHandedGrip::tryResolveAuthoredFiringHandCanonicalForProbe(
@@ -8658,8 +8701,17 @@ namespace rock
             return false;
         }
         if (!usedCanonicalHold) {
+            RE::NiPoint3 targetFiringGripWeaponLocal{};
+            if (!tryResolveFiringGripWeaponLocalForHand(
+                    handIsLeft,
+                    targetFiringGripWeaponLocal)) {
+                return false;
+            }
             const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
-            const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+            const RE::NiPoint3 firingGripWorld =
+                weaponLocalToWorld(
+                    targetFiringGripWeaponLocal,
+                    weaponNode);
             const RE::NiTransform adjustedHandTransform =
                 weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
             _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
@@ -11079,74 +11131,163 @@ namespace rock
                isUsableHandAuthorityTransform(outPresentedHandWorld);
     }
 
+    bool TwoHandedGrip::hasStableNaturalHandBasis() const
+    {
+        return _hasRightNaturalBoneInWand &&
+               _hasLeftNaturalBoneInWand &&
+               _hasRightNaturalBoneInDampedDriver &&
+               _hasLeftNaturalBoneInDampedDriver;
+    }
+
+    bool TwoHandedGrip::tryResolveStableNaturalHandWorldPair(
+        RE::NiTransform& outRightHandWorld,
+        RE::NiTransform& outLeftHandWorld) const
+    {
+        outRightHandWorld = {};
+        outLeftHandWorld = {};
+        auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiNode* const rightWand =
+            playerNodes ? playerNodes->primaryWandNode : nullptr;
+        RE::NiNode* const leftWand =
+            playerNodes ? playerNodes->SecondaryWandNode : nullptr;
+        if (!hasStableNaturalHandBasis() || !rightWand || !leftWand ||
+            !isFiniteTransform(rightWand->world) ||
+            !isFiniteTransform(leftWand->world)) {
+            return false;
+        }
+
+        outRightHandWorld = transform_math::composeTransforms(
+            rightWand->world,
+            _rightNaturalBoneInWand);
+        outLeftHandWorld = transform_math::composeTransforms(
+            leftWand->world,
+            _leftNaturalBoneInWand);
+        return isUsableHandAuthorityTransform(outRightHandWorld) &&
+               isUsableHandAuthorityTransform(outLeftHandWorld);
+    }
+
     void TwoHandedGrip::refreshNaturalHandInWandFrames()
     {
-        auto* playerNodes = f4vr::getPlayerNodes();
-        if (!playerNodes) {
+        if (hasStableNaturalHandBasis()) {
             return;
         }
 
-        constexpr float kMaxBoneToDriverDistance = 30.0f;
-        const auto refreshHand = [&](const bool isLeft,
-                                     RE::NiNode* wandNode,
-                                     RE::NiNode* dampedDriverNode,
-                                     RE::NiTransform& outBoneInWand,
-                                     bool& outWandValid,
-                                     RE::NiTransform& outBoneInDampedDriver,
-                                     bool& outDampedDriverValid) {
-            if (hasVisualAuthorityForHand(isLeft)) {
-                return;
-            }
+        auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiNode* const rightWand =
+            playerNodes ? playerNodes->primaryWandNode : nullptr;
+        RE::NiNode* const leftWand =
+            playerNodes ? playerNodes->SecondaryWandNode : nullptr;
+        RE::NiNode* const rightDriver =
+            playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr;
+        RE::NiNode* const leftDriver =
+            playerNodes ? playerNodes->SecondaryMeleeWeaponOffsetNode2 :
+                          nullptr;
+        if (!rightWand || !leftWand || !rightDriver || !leftDriver ||
+            !isUsableHandAuthorityTransform(rightWand->world) ||
+            !isUsableHandAuthorityTransform(leftWand->world) ||
+            !isUsableHandAuthorityTransform(rightDriver->world) ||
+            !isUsableHandAuthorityTransform(leftDriver->world)) {
+            return;
+        }
 
-            RE::NiTransform handWorld{};
-            if (!tryGetSolverHandTransform(isLeft, handWorld)) {
-                return;
-            }
+        /*
+         * The firing hand may already contain a native weapon animation even
+         * when ROCK owns no visual tag. Seed from the opposite, genuinely free
+         * hand only, then synthesize its partner through the explicit handspace
+         * X/Z bilateral map. Never refresh the result from either rendered hand.
+         */
+        const bool sourceHandIsLeft = !_firingHandIsLeft;
+        const std::size_t sourceIndex = sourceHandIsLeft ? 0u : 1u;
+        const bool sourceHoldingObject = sourceHandIsLeft ?
+            _leftHandHoldingObjectForPose : _rightHandHoldingObjectForPose;
+        if (hasVisualAuthorityForHand(sourceHandIsLeft) ||
+            partGrip(sourceHandIsLeft).active || sourceHoldingObject ||
+            _weaponCollisionHandPresentationFromPreviousFrame[sourceIndex]) {
+            return;
+        }
 
-            const auto captureRelation = [&](RE::NiNode* sourceNode,
-                                             RE::NiTransform& outRelation,
-                                             bool& outValid) {
-                if (!sourceNode || !isFiniteTransform(sourceNode->world)) {
-                    return;
-                }
-                const RE::NiTransform relation =
-                    transform_math::composeTransforms(
-                        transform_math::invertTransform(sourceNode->world),
-                        handWorld);
-                if (!isFiniteTransform(relation) ||
-                    std::sqrt(dot(
-                        relation.translate,
-                        relation.translate)) >
-                        kMaxBoneToDriverDistance) {
-                    return;
-                }
-                outRelation = relation;
-                outValid = true;
-            };
+        RE::NiTransform sourceHandWorld{};
+        if (!tryGetSolverHandTransform(sourceHandIsLeft, sourceHandWorld) ||
+            !isUsableHandAuthorityTransform(sourceHandWorld)) {
+            return;
+        }
 
-            captureRelation(wandNode, outBoneInWand, outWandValid);
-            captureRelation(
-                dampedDriverNode,
-                outBoneInDampedDriver,
-                outDampedDriverValid);
+        RE::NiNode* const sourceWand =
+            sourceHandIsLeft ? leftWand : rightWand;
+        const RE::NiTransform sourceBoneInWand =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(sourceWand->world),
+                sourceHandWorld);
+        const RE::NiTransform oppositeBoneInWand =
+            left_firing_position_only_math::mirrorOppositeHandFrame(
+                sourceBoneInWand);
+
+        const RE::NiTransform leftBoneInWand = sourceHandIsLeft ?
+            sourceBoneInWand : oppositeBoneInWand;
+        const RE::NiTransform rightBoneInWand = sourceHandIsLeft ?
+            oppositeBoneInWand : sourceBoneInWand;
+        const RE::NiTransform leftHandWorld =
+            transform_math::composeTransforms(
+                leftWand->world,
+                leftBoneInWand);
+        const RE::NiTransform rightHandWorld =
+            transform_math::composeTransforms(
+                rightWand->world,
+                rightBoneInWand);
+        const RE::NiTransform leftBoneInDriver =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(leftDriver->world),
+                leftHandWorld);
+        const RE::NiTransform rightBoneInDriver =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(rightDriver->world),
+                rightHandWorld);
+
+        constexpr float kMaxBoneToCarrierDistance = 30.0f;
+        const auto relationDistance = [](const RE::NiTransform& relation) {
+            return std::sqrt(dot(relation.translate, relation.translate));
         };
+        const float leftWandDistance = relationDistance(leftBoneInWand);
+        const float rightWandDistance = relationDistance(rightBoneInWand);
+        const float leftDriverDistance = relationDistance(leftBoneInDriver);
+        const float rightDriverDistance = relationDistance(rightBoneInDriver);
+        if (!isFiniteTransform(leftBoneInWand) ||
+            !isFiniteTransform(rightBoneInWand) ||
+            !isFiniteTransform(leftBoneInDriver) ||
+            !isFiniteTransform(rightBoneInDriver) ||
+            !std::isfinite(leftWandDistance) ||
+            !std::isfinite(rightWandDistance) ||
+            !std::isfinite(leftDriverDistance) ||
+            !std::isfinite(rightDriverDistance) ||
+            leftWandDistance > kMaxBoneToCarrierDistance ||
+            rightWandDistance > kMaxBoneToCarrierDistance ||
+            leftDriverDistance > kMaxBoneToCarrierDistance ||
+            rightDriverDistance > kMaxBoneToCarrierDistance) {
+            return;
+        }
 
-        refreshHand(
-            false,
-            playerNodes->primaryWandNode,
-            playerNodes->primaryWeaponOffsetNOde,
-            _rightNaturalBoneInWand,
-            _hasRightNaturalBoneInWand,
-            _rightNaturalBoneInDampedDriver,
-            _hasRightNaturalBoneInDampedDriver);
-        refreshHand(
-            true,
-            playerNodes->SecondaryWandNode,
-            playerNodes->SecondaryMeleeWeaponOffsetNode2,
-            _leftNaturalBoneInWand,
-            _hasLeftNaturalBoneInWand,
-            _leftNaturalBoneInDampedDriver,
-            _hasLeftNaturalBoneInDampedDriver);
+        _leftNaturalBoneInWand = leftBoneInWand;
+        _rightNaturalBoneInWand = rightBoneInWand;
+        _leftNaturalBoneInDampedDriver = leftBoneInDriver;
+        _rightNaturalBoneInDampedDriver = rightBoneInDriver;
+        _hasLeftNaturalBoneInWand = true;
+        _hasRightNaturalBoneInWand = true;
+        _hasLeftNaturalBoneInDampedDriver = true;
+        _hasRightNaturalBoneInDampedDriver = true;
+
+        _scopeSafeHandFrames[0].driverToHandLocal = leftBoneInDriver;
+        _scopeSafeHandFrames[0].hasDriverToHandLocal = true;
+        _scopeSafeHandFrames[1].driverToHandLocal = rightBoneInDriver;
+        _scopeSafeHandFrames[1].hasDriverToHandLocal = true;
+
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: stable bilateral neutral hand basis seeded source={}-offhand wandDistance=(L:{:.2f},R:{:.2f}) driverDistance=(L:{:.2f},R:{:.2f})",
+            sourceHandIsLeft ? "left" : "right",
+            leftWandDistance,
+            rightWandDistance,
+            leftDriverDistance,
+            rightDriverDistance);
     }
 
     void TwoHandedGrip::refreshRightNativeCanonicalFrame(
@@ -11242,22 +11383,14 @@ namespace rock
             return false;
         }
 
-        // Both relations come from the damped physical drivers. A takeover is
-        // normally initiated while the left hand is still visually locked as
-        // the support grip, so either rendered bone would contaminate the
-        // authored seat with ROCK's own previous output.
+        // Consume the frozen bilateral neutral pair. Neither native weapon
+        // animation nor ROCK's currently locked support/firing hand may become
+        // the hand-convention basis for this authored mirror.
         RE::NiTransform leftHandWorld{};
         RE::NiTransform rightHandWorld{};
-        RE::NiTransform leftDriverWorld{};
-        RE::NiTransform rightDriverWorld{};
-        if (!tryResolvePhysicalHandFrame(
-                true,
-                leftHandWorld,
-                leftDriverWorld) ||
-            !tryResolvePhysicalHandFrame(
-                false,
+        if (!tryResolveStableNaturalHandWorldPair(
                 rightHandWorld,
-                rightDriverWorld)) {
+                leftHandWorld)) {
             return false;
         }
 
@@ -11418,7 +11551,7 @@ namespace rock
 
     bool TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocalImpl(
         const RE::NiTransform& canonicalRightHandWeaponLocal,
-        const RE::NiPoint3& firingGripWeaponLocal,
+        const RE::NiPoint3& rightFiringGripWeaponLocal,
         const RE::NiTransform& rightHandWorld,
         const RE::NiTransform& leftHandWorld,
         RE::NiTransform& outHandWeaponLocal,
@@ -11428,11 +11561,15 @@ namespace rock
         const auto& handlingSettings =
             equipped_weapon_handling_runtime::current();
         if (!isFiniteTransform(canonicalRightHandWeaponLocal) ||
-            !std::isfinite(firingGripWeaponLocal.x) ||
-            !std::isfinite(firingGripWeaponLocal.y) ||
-            !std::isfinite(firingGripWeaponLocal.z)) {
+            !std::isfinite(rightFiringGripWeaponLocal.x) ||
+            !std::isfinite(rightFiringGripWeaponLocal.y) ||
+            !std::isfinite(rightFiringGripWeaponLocal.z)) {
             return false;
         }
+        const RE::NiPoint3 leftFiringGripWeaponLocal =
+            left_firing_position_only_math::
+                mirrorGripPointAcrossWeaponLateralPlane(
+                rightFiringGripWeaponLocal);
 
         /*
          * WAND-CONJUGATION MIRROR. The aim requirement is controller-
@@ -11445,7 +11582,7 @@ namespace rock
          * mirrors (previous semantic-palm and bone-anchor mirrors both left
          * a residual yaw/side bias in-game). Conjugating the canonical hold
          * through the wand pair cancels every per-hand bone convention
-         * inside the live-sampled bone-in-wand transforms:
+         * inside the frozen bilateral bone-in-wand transforms:
          *
          *   weaponInLeftWand = Msag o weaponInRightWand o Mside
          *
@@ -11457,9 +11594,9 @@ namespace rock
          * Effect on the tuned offsets: yaw and roll negate, pitch and
          * fore/aft/vertical placement are preserved.
          *
-         * The native first-person arm sync drags each hand bone to its wand
-         * with a fixed per-hand map, so bone-in-wand is constant and
-         * sampling it at takeover time is exact.
+         * The caller supplies ROCK's frozen bilateral neutral hand pair, so
+         * neither the native weapon animation nor a previous ROCK publication
+         * can change this convention at takeover time.
          */
         auto* playerNodes = f4vr::getPlayerNodes();
         if (!playerNodes) {
@@ -11530,8 +11667,9 @@ namespace rock
          * FRIK rotations/offsets each landed differently, because any
          * residual rotation-convention error displaces a hold by an amount
          * proportional to that weapon's own offsets). Instead the FIRING
-         * GRIP POINT is pinned per weapon: it must sit at the same place in
-         * the left palm as it does in the right palm. ROCK's hand bases
+         * GRIP POINT is pinned per weapon: the right authored palm seat is
+         * reflected across weapon-local X, then placed at the same anatomical
+         * location in the left palm. ROCK's hand bases
          * correspond anatomically with only Z flipped - empirical, from the
          * user-tuned palm pivots R(6.0,-2.0,+0.2) / L(6.0,-2.0,-0.2) - so
          * the target is simply (x, y, -z) of the grip's right-hand-local
@@ -11539,7 +11677,8 @@ namespace rock
          * Per-weapon exact by construction; residuals are global-only.
          */
         const RE::NiPoint3 gripInRightHand = transform_math::localPointToWorld(
-            transform_math::invertTransform(canonicalRightHandWeaponLocal), firingGripWeaponLocal);
+            transform_math::invertTransform(canonicalRightHandWeaponLocal),
+            rightFiringGripWeaponLocal);
         const float offsetX = applyHandlingTrim ?
             handlingSettings.leftFiringAimOffsetXGameUnits : 0.0f;
         const float offsetY = applyHandlingTrim ?
@@ -11551,17 +11690,41 @@ namespace rock
             gripInRightHand.y + offsetY,
             -gripInRightHand.z + offsetZ
         };
-        if (std::isfinite(gripTargetInLeftHand.x) && std::isfinite(gripTargetInLeftHand.y) && std::isfinite(gripTargetInLeftHand.z)) {
-            RE::NiTransform anchoredWeaponInLeftHand = transform_math::invertTransform(mirroredHandWeaponLocal);
-            const RE::NiPoint3 gripRotatedOnly = sub(
-                transform_math::localPointToWorld(anchoredWeaponInLeftHand, firingGripWeaponLocal),
-                anchoredWeaponInLeftHand.translate);
-            anchoredWeaponInLeftHand.translate = sub(gripTargetInLeftHand, gripRotatedOnly);
-            const RE::NiTransform anchoredHold = transform_math::invertTransform(anchoredWeaponInLeftHand);
-            if (isFiniteTransform(anchoredHold)) {
-                mirroredHandWeaponLocal = anchoredHold;
-            }
+        if (!std::isfinite(gripTargetInLeftHand.x) ||
+            !std::isfinite(gripTargetInLeftHand.y) ||
+            !std::isfinite(gripTargetInLeftHand.z)) {
+            return false;
         }
+        RE::NiTransform anchoredWeaponInLeftHand =
+            transform_math::invertTransform(mirroredHandWeaponLocal);
+        const RE::NiPoint3 gripRotatedOnly = sub(
+            transform_math::localPointToWorld(
+                anchoredWeaponInLeftHand,
+                leftFiringGripWeaponLocal),
+            anchoredWeaponInLeftHand.translate);
+        anchoredWeaponInLeftHand.translate =
+            sub(gripTargetInLeftHand, gripRotatedOnly);
+        const RE::NiTransform anchoredHold =
+            transform_math::invertTransform(anchoredWeaponInLeftHand);
+        if (!isFiniteTransform(anchoredHold)) {
+            return false;
+        }
+        const RE::NiPoint3 anchoredLeftPalm =
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                anchoredHold,
+                true);
+        const RE::NiPoint3 palmSeatError =
+            sub(anchoredLeftPalm, leftFiringGripWeaponLocal);
+        constexpr float kMaximumPalmSeatErrorGameUnits = 0.01f;
+        if (!applyHandlingTrim &&
+            (!std::isfinite(palmSeatError.x) ||
+                !std::isfinite(palmSeatError.y) ||
+                !std::isfinite(palmSeatError.z) ||
+                std::sqrt(dot(palmSeatError, palmSeatError)) >
+                    kMaximumPalmSeatErrorGameUnits)) {
+            return false;
+        }
+        mirroredHandWeaponLocal = anchoredHold;
 
         // Takeover-event diagnostic: barrel (+Y weapon) direction in each
         // wand frame. A correct mirror negates x and preserves y/z; a wand
@@ -11595,8 +11758,15 @@ namespace rock
             return;
         }
 
-        // Drop the old hand's role-tagged FRIK publications; the new hand's
-        // grip-frame capture and pose publication are owned by the caller.
+        RE::NiPoint3 nextFiringGripWeaponLocal{};
+        const bool nextFiringGripValid =
+            tryResolveFiringGripWeaponLocalForHand(
+                isLeft,
+                nextFiringGripWeaponLocal);
+
+        // Drop the old hand's role-tagged FRIK publications. This transition
+        // selects the new topology's firing point; the caller owns its hand
+        // transform and pose publication.
         clearPrimaryGripFingerPose(_firingHandIsLeft);
         clearPrimaryGripWorldAuthority(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
@@ -11607,6 +11777,9 @@ namespace rock
         }
         _leftFiringDampedFollowFrame = {};
         _firingHandIsLeft = isLeft;
+        if (nextFiringGripValid) {
+            _primaryGripLocal = nextFiringGripWeaponLocal;
+        }
         // The authored support mirror and activation cone are role-specific.
         // Never carry a capability verdict across a firing/support hand swap.
         resetAuthoredSupportCapability("firing-hand-changed");
@@ -11640,8 +11813,17 @@ namespace rock
          * reattach radius silently declined every takeover. The dedicated
          * promotion radius keeps handguard/foregrip support grips out.
          */
+        RE::NiPoint3 promotedFiringGripWeaponLocal{};
+        if (!tryResolveFiringGripWeaponLocalForHand(
+                supportHandIsLeft,
+                promotedFiringGripWeaponLocal)) {
+            return false;
+        }
         const RE::NiPoint3 supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiPoint3 firingGripWorld =
+            weaponLocalToWorld(
+                promotedFiringGripWeaponLocal,
+                weaponNode);
         const RE::NiPoint3 gripDelta = sub(supportGripWorld, firingGripWorld);
         const float supportGripToFiringGripDistance = std::sqrt(dot(gripDelta, gripDelta));
         if (!std::isfinite(supportGripToFiringGripDistance) ||
@@ -11662,8 +11844,8 @@ namespace rock
         }
 
         /*
-         * Commit: the support hand takes over the SAME weapon-relative firing
-         * grip in place, forcing the CANONICAL per-hand hold: a LEFT takeover
+         * Commit: the support hand takes over its topology-specific authored
+         * firing seat, forcing the CANONICAL per-hand hold: a LEFT takeover
          * applies the canonical right-hand hold mirrored (authored offsets
          * adapted to the left bone basis), a RIGHT takeover re-takes its
          * canonical native hold directly - the promoted hand's live bone is
