@@ -195,8 +195,12 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'PartCarry must retain its detach origin, try the authored firing grip first, and gate only the former firing hand before generic part capture.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'updatePrimaryOnlyGrip[\s\S]{0,1000}primaryGripRetained\s*=\s*equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership\(\s*primaryDetachEnabled,\s*primaryGripInput\.held\)' `
-    'Non-detaching fixed or addon ownership must ignore grip release while still running equipped-weapon identity cleanup.'
+    'updatePrimaryOnlyGrip[\s\S]{0,1000}primaryGripRetained\s*=\s*equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership\(\s*primaryDetachEnabled,\s*_handlingSettings\.toggleGrabEnabled,\s*primaryGripInput\.held\)' `
+    'Primary-only ownership must preserve non-detaching holds while allowing an explicit toggle-open command to release either firing hand.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'pendingToggleGripRetained\s*=[\s\S]{0,260}toggleGrabEnabled[\s\S]{0,220}nativeRightSupportCaptureFrameReserved[\s\S]{0,7000}currentAuthoredSupportCandidateAvailable\s*=\s*_twoHandedGrip\.hasCurrentAuthoredSupportGripCandidate\([\s\S]{0,500}shouldReserveNativeRightSupportCaptureFrame\([\s\S]{0,1600}nativeRightSupportCaptureFrameReserved\s*=\s*true[\s\S]{0,600}else\s+if\s*\(primaryOnlyStartRequested[\s\S]{0,150}beginPrimaryOnlyGrip[\s\S]{0,500}retainUntilPhysicalGrip' `
+    'A pending physical-left equip must reserve one native-right arm frame for the new identity support snapshot and retain a consumed toggle acquisition through takeover.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'std::array<std::atomic<bool>,\s*2>\s+s_handHeldWeapon' `

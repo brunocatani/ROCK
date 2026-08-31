@@ -298,6 +298,35 @@ int main()
         return !shouldReuseStableAuthoredSupportGrip(input);
     }());
 
+    constexpr LeftFiringTakeoverSupportCaptureInput pendingLeftTakeover{
+        .pendingStartMatchesCurrentWeapon = true,
+        .primaryOnlyStartRequested = true,
+        .firingHandIsLeft = true,
+        .authoredOnlySupportGrabsEnabled = true,
+    };
+    static_assert(shouldReserveNativeRightSupportCaptureFrame(
+        pendingLeftTakeover));
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.currentSupportCandidateAvailable = true;
+        return !shouldReserveNativeRightSupportCaptureFrame(input);
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.nativeRightCaptureFrameReserved = true;
+        return !shouldReserveNativeRightSupportCaptureFrame(input);
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.firingHandIsLeft = false;
+        return !shouldReserveNativeRightSupportCaptureFrame(input);
+    }());
+    static_assert([=] {
+        auto input = pendingLeftTakeover;
+        input.authoredOnlySupportGrabsEnabled = false;
+        return !shouldReserveNativeRightSupportCaptureFrame(input);
+    }());
+
     static_assert(kArms == (1u << 0));
     static_assert(kHands == (1u << 1));
     static_assert(kWeapon == (1u << 2));

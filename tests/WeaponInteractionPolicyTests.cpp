@@ -2735,11 +2735,29 @@ int main()
     ok &= expectFalse("held weapon skips grip-frame work when no consumer is active",
         shouldTrackHeldWeaponGripFrame(true, false, false));
     ok &= expectTrue("non-detaching ownership ignores an open firing grip",
-        shouldRetainPrimaryOnlyOwnership(false, false));
+        shouldRetainPrimaryOnlyOwnership(false, false, false));
+    ok &= expectTrue("toggle ownership remains while its logical firing grip is closed",
+        shouldRetainPrimaryOnlyOwnership(false, true, true));
+    ok &= expectFalse("toggle ownership releases on an explicit logical open without physical detach authority",
+        shouldRetainPrimaryOnlyOwnership(false, true, false));
+    RuntimeState togglePrimaryOnlyState{
+        .active = true,
+        .ownershipKey = 0x20u,
+    };
+    const auto togglePrimaryOnlyRelease = update(
+        togglePrimaryOnlyState,
+        Input{
+            .weaponEquipped = true,
+            .ownershipKey = 0x20u,
+            .primaryGripRetained =
+                shouldRetainPrimaryOnlyOwnership(false, true, false),
+        });
+    ok &= expectTrue("toggle-open primary-only ownership requests the equipped weapon drop",
+        togglePrimaryOnlyRelease.dropRequested);
     ok &= expectTrue("detaching ownership remains while the firing grip is held",
-        shouldRetainPrimaryOnlyOwnership(true, true));
+        shouldRetainPrimaryOnlyOwnership(true, false, true));
     ok &= expectFalse("detaching ownership releases when the firing grip opens",
-        shouldRetainPrimaryOnlyOwnership(true, false));
+        shouldRetainPrimaryOnlyOwnership(true, false, false));
     RuntimeState ambidextrousLifecycleState{
         .active = true,
         .ownershipKey = 0x21u,
@@ -2748,7 +2766,7 @@ int main()
         Input{
             .weaponEquipped = true,
             .ownershipKey = 0x22u,
-            .primaryGripRetained = shouldRetainPrimaryOnlyOwnership(false, false),
+            .primaryGripRetained = shouldRetainPrimaryOnlyOwnership(false, false, false),
         });
     ok &= expectTrue("ambidextrous-only ownership still clears when equipped identity changes",
         ambidextrousWeaponChanged.cleared);

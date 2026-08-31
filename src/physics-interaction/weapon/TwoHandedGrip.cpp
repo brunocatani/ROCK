@@ -8161,6 +8161,7 @@ namespace rock
                 .startRequested = false,
                 .primaryGripRetained = equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership(
                     primaryDetachEnabled,
+                    _handlingSettings.toggleGrabEnabled,
                     primaryGripInput.held),
                 .supportGripRetained = false,
             });
@@ -9510,6 +9511,18 @@ namespace rock
     void TwoHandedGrip::clearAuthoredSupportGripCandidate()
     {
         _authoredSupportGripCandidate = {};
+    }
+
+    bool TwoHandedGrip::hasCurrentAuthoredSupportGripCandidate(
+        RE::NiNode* weaponNode,
+        const std::uint64_t weaponGenerationKey) const noexcept
+    {
+        const auto& candidate = _authoredSupportGripCandidate;
+        return candidate.valid &&
+               candidate.weaponNode == weaponNode &&
+               weaponGenerationKey != 0 &&
+               candidate.weaponGenerationKey == weaponGenerationKey &&
+               candidate.captureSequence != 0;
     }
 
     bool TwoHandedGrip::setAuthoredSupportGripCandidate(

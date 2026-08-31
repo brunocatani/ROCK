@@ -105,6 +105,16 @@ namespace rock::authored_weapon_grip_capture_policy
         std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
 
+    struct LeftFiringTakeoverSupportCaptureInput
+    {
+        bool pendingStartMatchesCurrentWeapon{ false };
+        bool primaryOnlyStartRequested{ false };
+        bool firingHandIsLeft{ false };
+        bool authoredOnlySupportGrabsEnabled{ false };
+        bool currentSupportCandidateAvailable{ false };
+        bool nativeRightCaptureFrameReserved{ false };
+    };
+
     [[nodiscard]] constexpr AuthoredPrimaryDecision
         evaluateAuthoredPrimaryFiringGrip(
             const AuthoredPrimaryFiringGripEligibility& input)
@@ -292,6 +302,26 @@ namespace rock::authored_weapon_grip_capture_policy
                input.snapshotSupportGripCaptureSequence != 0 &&
                input.snapshotFingerLocalTransformMask ==
                    kCompleteAuthoredSupportFingerLocalTransformMask;
+    }
+
+    /*
+     * A new equipped identity invalidates the stable support snapshot after
+     * Bethesda's native arm pass has already run. Reserve exactly one further
+     * right-primary frame before a pending physical-left takeover; that next
+     * arm pass can publish the generation-bound support relation while the
+     * topology is still valid. The one-frame reservation is bypassed when a
+     * current candidate already exists and is never repeated for an asset
+     * whose authored support capture is genuinely unavailable.
+     */
+    [[nodiscard]] constexpr bool shouldReserveNativeRightSupportCaptureFrame(
+        const LeftFiringTakeoverSupportCaptureInput& input) noexcept
+    {
+        return input.pendingStartMatchesCurrentWeapon &&
+               input.primaryOnlyStartRequested &&
+               input.firingHandIsLeft &&
+               input.authoredOnlySupportGrabsEnabled &&
+               !input.currentSupportCandidateAvailable &&
+               !input.nativeRightCaptureFrameReserved;
     }
 
     template <class Transform, class Point, class LocalPointToWorld>

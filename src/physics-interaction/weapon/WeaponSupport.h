@@ -347,9 +347,15 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(
         bool primaryDetachEnabled,
+        bool toggleGrabEnabled,
         bool primaryGripHeld) noexcept
     {
-        return !primaryDetachEnabled || primaryGripHeld;
+        // Physical hold-to-release remains governed by detach authority. A
+        // toggle latch is different: its second press is an explicit logical
+        // release and must never strand manual PrimaryOnly ownership merely
+        // because the integrated physical detach contract is right-only.
+        return (!primaryDetachEnabled && !toggleGrabEnabled) ||
+               primaryGripHeld;
     }
 
     [[nodiscard]] inline constexpr bool featureAvailable(

@@ -633,6 +633,9 @@ namespace rock
             std::uintptr_t previousWeaponInstanceData{ 0 };
             float remainingSeconds{ 0.0f };
             bool committedTransfer{ false };
+            // One right-primary arm pass seeds the generation-bound support
+            // snapshot before a pending left takeover reparents Weapon.
+            bool nativeRightSupportCaptureFrameReserved{ false };
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};
             bool hasFiringGripWeaponLocal{ false };

@@ -539,6 +539,9 @@ namespace rock
          * changes an already-active grip.
          */
         void clearAuthoredSupportGripCandidate();
+        [[nodiscard]] bool hasCurrentAuthoredSupportGripCandidate(
+            RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey) const noexcept;
         bool setAuthoredSupportGripCandidate(
             RE::NiNode* weaponNode,
             const RE::NiTransform& handWeaponLocal,
