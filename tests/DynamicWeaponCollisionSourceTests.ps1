@@ -262,7 +262,7 @@ Require-Pattern $runtimeSource `
     '_frameHasIntent\s*=[\s\S]*_frameAcceptingIntent\s*&&[\s\S]*!suppressDefaultNativeIntent\s*&&[\s\S]*isFiniteTransform\(weaponNode->world\)' `
     'Dynamic collision must accept the native weapon pose by default only when no prior collision presentation can contaminate it.'
 Require-Pattern $weaponAuthority `
-    'publishCollisionIsolatedRightNativeWeaponIntent\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*_firingHandIsLeft[\s\S]*ownsWeaponTransform\(\)[\s\S]*weaponNode->parent\s*!=\s*rightHand[\s\S]*tryResolvePhysicalHandInputFrame\(false, rightInput\)[\s\S]*composeTransforms\([\s\S]*rightInput\.handWorld,[\s\S]*weaponNode->local[\s\S]*_weaponVisualIntentObserver\(' `
+    'publishCollisionIsolatedRightNativeWeaponIntent\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*_firingHandIsLeft[\s\S]*ownsWeaponTransform\(\)[\s\S]*weaponNode->parent\s*!=\s*rightHand[\s\S]*tryGetSolverHandTransform\(false,[\s\S]*composeTransforms\([\s\S]*physicalRightHandWorld,[\s\S]*weaponNode->local[\s\S]*_weaponVisualIntentObserver\(' `
     'Native right-hand carry must preserve the current weapon-local animation on a collision-isolated physical hand basis.'
 Require-Pattern $weaponAuthority `
     'refreshRightNativeCanonicalFrame\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*isManualOwnershipActive\(\)' `

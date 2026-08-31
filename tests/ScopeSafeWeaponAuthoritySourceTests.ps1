@@ -35,7 +35,7 @@ function Reject-Text {
 
 Require-Text 'src/physics-interaction/core/RockRuntimeState.cpp' 'scopeMenuOpen\s*=\s*s_menuHandlerInitialized\s*&&\s*s_gameMenus\.isInScopeMenu\(\)' `
     'Runtime state must sample FO4VR ScopeMenu explicitly instead of treating it as a generic blocking menu.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'handDriverNode\s*=\s*\[playerNodes\]\(bool isLeft\)[\s\S]*return isLeft\s*\?[\s\S]*SecondaryMeleeWeaponOffsetNode2\s*:[\s\S]*primaryWeaponOffsetNOde[\s\S]*scopeMenuOpen\s*=\s*runtime\.localScopeMenuOpen[\s\S]*leftHandDriverFrame\s*=\s*leftHandDriverFrame[\s\S]*rightHandDriverFrame\s*=\s*rightHandDriverFrame' `
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'scopeHandDriverNode\s*=\s*\[playerNodes\]\(bool isLeft\)[\s\S]*return isLeft\s*\?[\s\S]*SecondaryMeleeWeaponOffsetNode2\s*:[\s\S]*primaryWeaponOffsetNOde[\s\S]*scopeMenuOpen\s*=\s*runtime\.localScopeMenuOpen[\s\S]*leftHandDriverFrame\s*=\s*leftHandDriverFrame[\s\S]*rightHandDriverFrame\s*=\s*rightHandDriverFrame' `
     'Two-hand authority must receive fixed physical-left secondary and physical-right primary hFRIK driver frames together with explicit ScopeMenu state.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'nativeScopeRequestStateValid\s*=\s*tryReadNativeScopeRequestState\(nativeScopeRequestActive\)[\s\S]*manualScopeActivationRequested\s*=\s*input_remap_runtime::isManualScopeActivationRequested\(\)[\s\S]*manualScopeActivationRequested\s*=\s*manualScopeActivationRequested[\s\S]*nativeScopeRequestStateValid\s*=\s*nativeScopeRequestStateValid[\s\S]*nativeScopeRequestActive\s*=\s*nativeScopeRequestActive' `
     'The physical button request and verified native renderer state must be sampled beside the UI signal for scope-transition diagnosis.'
@@ -75,8 +75,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s
     'The weapon solver must combine latched scope authority with previous-frame collision-presentation isolation.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldStartRootRebase\([\s\S]*_manualScopeActivationRequested[\s\S]*driverFrameAuthorityStoppedThisFrame[\s\S]*reconstructedHandValid[\s\S]*recentScopedHandAvailable[\s\S]*continuityHandWorld[\s\S]*rootRebaseLocalStart[\s\S]*interpolateRebaseTransform' `
     'A real button release must select the restored hFRIK root immediately instead of rebasing from a stale hidden-scope hand.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'activationStateChanged[\s\S]*SCOPE_TRANSITION_TRACE_FRAMES[\s\S]*SCOPE-TRANSITION[\s\S]*buttonRequested=[\s\S]*rendererActive=[\s\S]*rootToReconstructed=[\s\S]*rootToReadback=' `
-    'A bounded button/renderer edge trace must distinguish UI state from root, driver, reconstructed, and presentation-readback divergence.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'activationStateChanged[\s\S]*SCOPE_TRANSITION_TRACE_FRAMES[\s\S]*SCOPE-TRANSITION[\s\S]*buttonRequested=[\s\S]*rendererActive=[\s\S]*rootToReconstructed=[\s\S]*rootToSolver=' `
+    'A bounded button/renderer edge trace must distinguish UI state from root, driver, reconstructed, and solver hand-frame divergence.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'SCOPE-VIEW-FINAL[\s\S]*hmdWorld=[\s\S]*weaponHmd=[\s\S]*leftRootHmd=[\s\S]*rightRootHmd=[\s\S]*scopeCameraHmd=[\s\S]*scopeParentHmd=[\s\S]*cameraRootHmd=[\s\S]*roomHmd=[\s\S]*uprightHmd=[\s\S]*skeletonRootHmd=[\s\S]*zoomInput=[\s\S]*worldFov=[\s\S]*firstPersonFov=[\s\S]*fovAdjust=' `
     'The bounded final-publication trace must distinguish view motion from weapon and skeleton motion in the HMD frame.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'updateHandVisualReturns\(dt\);[\s\S]*reconcileDeferredScopeHandAuthority\(weaponNode\);[\s\S]*traceNativeScopeTransitionFinalState\(weaponNode\);' `

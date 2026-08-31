@@ -2245,37 +2245,6 @@ namespace rock
     {
         const auto& runtime = runtime_state::currentFrame();
 
-        const auto captureHandDriverFrame = [](RE::NiNode* driverNode) {
-            EquippedWeaponHandDriverFrame result{};
-            result.nodeAvailable = driverNode != nullptr;
-            result.nodeIdentity = driverNode;
-            if (driverNode) {
-                result.world = driverNode->world;
-                result.worldFinite = finiteNiTransform(driverNode->world);
-                result.valid = result.worldFinite;
-            }
-            return result;
-        };
-        auto* playerNodes = f4vr::getPlayerNodes();
-        const auto handDriverNode = [playerNodes](
-                                        const bool isLeft) -> RE::NiNode* {
-            if (!playerNodes) {
-                return nullptr;
-            }
-            return isLeft ?
-                playerNodes->SecondaryMeleeWeaponOffsetNode2 :
-                playerNodes->primaryWeaponOffsetNOde;
-        };
-        // Establish one immutable physical-input boundary before any carry,
-        // assignment, candidate, weapon, or hand publication this frame.
-        const EquippedWeaponHandDriverFrame leftHandDriverFrame =
-            captureHandDriverFrame(handDriverNode(true));
-        const EquippedWeaponHandDriverFrame rightHandDriverFrame =
-            captureHandDriverFrame(handDriverNode(false));
-        _twoHandedGrip.beginPhysicalHandDriverFrame(
-            leftHandDriverFrame,
-            rightHandDriverFrame);
-
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
         /*
          * FRIK re-attaches the weapon node to the firing hand every frame
@@ -2731,9 +2700,7 @@ namespace rock
             const bool primaryPoseBlockerAvailable = frik_visual_authority::canBlockPrimaryHandWeaponPose();
             const bool ambidextrousHandoffAvailable =
                 _equippedWeaponHandlingSettings.ambidextrousHandoffEnabled &&
-                TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true) &&
-                _twoHandedGrip.
-                    isBilateralHandDriverCalibrationReady();
+                TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
             const bool firingGripOwnershipFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
                 !_equippedWeaponShoulderSheath.active &&
                     firingGripDecision.firingGripOwnershipEnabled,
@@ -2947,6 +2914,27 @@ namespace rock
                     toggleGrabDecision.rightReleasePressConsumed;
             }
 
+            const auto captureScopeHandDriverFrame = [](RE::NiNode* driverNode) {
+                EquippedWeaponScopeHandDriverFrame result{};
+                result.nodeAvailable = driverNode != nullptr;
+                if (driverNode) {
+                    result.world = driverNode->world;
+                    result.worldFinite = finiteNiTransform(driverNode->world);
+                    result.valid = result.worldFinite;
+                }
+                return result;
+            };
+            auto* playerNodes = f4vr::getPlayerNodes();
+            const auto scopeHandDriverNode = [playerNodes](bool isLeft) -> RE::NiNode* {
+                if (!playerNodes) {
+                    return nullptr;
+                }
+                return isLeft ?
+                    playerNodes->SecondaryMeleeWeaponOffsetNode2 :
+                    playerNodes->primaryWeaponOffsetNOde;
+            };
+            const EquippedWeaponScopeHandDriverFrame leftHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(true));
+            const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(false));
             bool nativeScopeRequestActive = false;
             const bool nativeScopeRequestStateValid =
                 tryReadNativeScopeRequestState(nativeScopeRequestActive);
@@ -2959,9 +2947,6 @@ namespace rock
                 .rightHandHoldingObject = _rightHand.isHolding(),
                 .leftReattachEligible = leftReattachEligible,
                 .rightReattachEligible = rightReattachEligible,
-                .weaponDrawn = runtime.weaponDrawn,
-                .handCalibrationBlocked =
-                    inputBlockingMenuActive || frame.menuBlocked,
                 .scopeMenuOpen = runtime.localScopeMenuOpen,
                 .manualScopeActivationRequested = manualScopeActivationRequested,
                 .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
@@ -3959,8 +3944,6 @@ namespace rock
             restoreHandCollisionAfterWeaponSupport(hknp, false, true);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
-            _twoHandedGrip.invalidateNaturalHandDriverCalibration(
-                "physics-scale-changed");
             _twoHandedGrip.reset();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
@@ -5238,9 +5221,7 @@ namespace rock
                     isLeft == _fixedFiringHandIsLeft;
                 const bool handCanOwnFiringGrip =
                     handAllowedByHandlingMode &&
-                    TwoHandedGrip::canBeginPrimaryOnlyGripForHand(isLeft) &&
-                    (!isLeft || _twoHandedGrip.
-                        isBilateralHandDriverCalibrationReady());
+                    TwoHandedGrip::canBeginPrimaryOnlyGripForHand(isLeft);
                 auto& policyHand = isLeft ?
                     coordinatorInput.left : coordinatorInput.right;
                 policyHand.disabled = handInput.disabled;
@@ -5601,13 +5582,6 @@ namespace rock
             }
             return;
         }
-        if (!_twoHandedGrip.isBilateralHandDriverCalibrationReady()) {
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Fixed left weapon hand is waiting for independent bilateral hand-driver calibration; holster the weapon briefly");
-            return;
-        }
         if (menuInputActive || !f4vr::isNodeVisible(weaponNode)) {
             return;
         }
@@ -5700,9 +5674,7 @@ namespace rock
 
         const bool requestedLeft = request.hand == Hand::Left;
         if (requestedLeft &&
-            (!TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true) ||
-                !_twoHandedGrip.
-                    isBilateralHandDriverCalibrationReady())) {
+            !TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true)) {
             return Result::HandUnavailable;
         }
 
@@ -5795,8 +5767,7 @@ namespace rock
         const bool pipboyAssignmentManaged =
             pipboy_equip_policy::managesHandAssignment(equipMode);
         const bool leftCarryAvailable =
-            TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true) &&
-            _twoHandedGrip.isBilateralHandDriverCalibrationReady();
+            TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
         pipboy_equip_runtime::setLeftHandEquipAvailable(
             pipboyAssignmentManaged && leftCarryAvailable);
 
@@ -11983,8 +11954,7 @@ namespace rock
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
         const bool ambidextrousHandoffAvailable =
             _equippedWeaponHandlingSettings.ambidextrousHandoffEnabled &&
-            TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true) &&
-            _twoHandedGrip.isBilateralHandDriverCalibrationReady();
+            TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
         const equipped_weapon_manual_ownership_policy::FiringGripModeAvailability firingGripModes{
             .primaryDetachEnabled = _equippedWeaponHandlingSettings.primaryDetachEnabled,
             .physicalRightDetachEnabled = _equippedWeaponHandlingSettings.

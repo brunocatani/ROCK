@@ -91,35 +91,26 @@ Require-Text $Root 'src/physics-interaction/weapon/WeaponAuthority.h' `
     'kVisualOnlySupportTranslationFraction\s*=\s*0\.45f[\s\S]{0,160}kVisualOnlySupportRotationFraction\s*=\s*0\.30f[\s\S]*tryBuildVisualOnlySupportKick[\s\S]*controlledHalfAngle[\s\S]*kVisualOnlySupportTranslationFraction' `
     'Close support recoil must use explicit bounded linear and angular fractions.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'hasVisualOnlySupportRecoilAssist[\s\S]{0,1800}TwoHandedState::Gripping[\s\S]{0,1800}shouldApplyVisualOnlySupportRecoilAssist[\s\S]*controlWeaponHandRecoil[\s\S]{0,1200}tryBuildVisualOnlySupportKick[\s\S]{0,1300}leftFiringCarryAuthority[\s\S]{0,900}leftFiringCarryAuthority\s*\?[\s\S]{0,120}RecoilHandMask::None[\s\S]{0,120}RecoilHandMask::Primary[\s\S]{0,250}RecoilDelivery::Direct[\s\S]{0,250}controlledKickLocal' `
-    'ROCK must suppress hFRIK hand recoil only while ROCK owns physical-left carry and retain the physical-right visual-only assist.'
+    'hasVisualOnlySupportRecoilAssist[\s\S]{0,1800}TwoHandedState::Gripping[\s\S]{0,1800}shouldApplyVisualOnlySupportRecoilAssist[\s\S]*controlWeaponHandRecoil[\s\S]{0,1200}tryBuildVisualOnlySupportKick[\s\S]{0,1300}leftFiringCarryAuthority[\s\S]{0,800}RecoilHandMask::Primary[\s\S]{0,250}RecoilDelivery::Direct[\s\S]{0,250}controlledKickLocal' `
+    'ROCK must add bounded close-support recoil without changing its existing physical-left carry route.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'void TwoHandedGrip::captureLeftFiringWeaponRecoil\([\s\S]{0,2600}tryResolveKickFrame\([\s\S]{0,900}_leftFiringWeaponRecoilParentWorld\s*=\s*recoilParentWorld[\s\S]{0,160}_leftFiringWeaponRecoilLocal\s*=\s*recoilLocal[\s\S]{0,160}_leftFiringWeaponRecoilSampleValid\s*=\s*true' `
-    'ROCK must retain one compact parent/local recoil frame without callback scene writes.'
+    'captureLeftFiringWeaponRecoil\(controlledKickLocal\)[\s\S]*captureLeftFiringWeaponRecoil\([\s\S]{0,220}controlledKickLocal[\s\S]*weapon_recoil_authority_math::resolveWorldDelta\([\s\S]{0,120}controlledKickLocal[\s\S]*_leftFiringWeaponRecoilSampleValid\s*=\s*true' `
+    'ROCK must feed the exact accepted native-or-assisted kick into physical-left weapon publication without callback scene writes.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    '_leftFiringWeaponRecoilReadyThisUpdate[\s\S]{0,700}_firingHandIsLeft[\s\S]{0,300}TwoHandedState::Gripping[\s\S]{0,350}FullTwoHandedSolver[\s\S]{0,1800}tryApplyKickToWorldTarget\([\s\S]{0,240}_leftFiringWeaponRecoilParentWorld[\s\S]{0,160}_leftFiringWeaponRecoilLocal[\s\S]{0,500}_leftFiringWeaponRecoilSupportConstrainedThisUpdate\s*=\s*true' `
+    '_leftFiringWeaponRecoilReadyThisUpdate[\s\S]{0,700}_firingHandIsLeft[\s\S]{0,300}TwoHandedState::Gripping[\s\S]{0,350}FullTwoHandedSolver[\s\S]{0,1800}composeTransforms\(\s*_leftFiringWeaponRecoilWorldDelta,\s*calibratedPrimaryTransform\)[\s\S]{0,400}_leftFiringWeaponRecoilSupportConstrainedThisUpdate\s*=\s*true' `
     'ROCK must feed physical-left recoil into the full two-hand primary target so the support target constrains the kick.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'solveLeftFiringWeaponCarry[\s\S]{0,2600}handKickReady[\s\S]{0,400}tryApplyKickToWorldTarget\([\s\S]{0,240}_leftFiringWeaponRecoilParentWorld[\s\S]{0,180}_leftFiringWeaponRecoilLocal[\s\S]{0,2200}applyExternalHandWorldTransform\([\s\S]{0,300}firingHandTargetWorld' `
-    'ROCK must apply its resolved recoil frame to the one-hand firing target before FRIK publication.'
+    '_leftFiringWeaponRecoilSupportConstrainedThisUpdate[\s\S]{0,900}invertTransform\(\s*_leftFiringWeaponRecoilWorldDelta\)[\s\S]{0,500}applyExternalHandWorldTransform\([\s\S]{0,250}requestedFiringHandWorld' `
+    'ROCK must precompensate hFRIK external primary-hand recoil after the two-hand solver has consumed the same delta.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'solveLeftFiringWeaponCarry[\s\S]{0,3500}handKickReady[\s\S]{0,1200}weaponKickReady[\s\S]{0,1200}_leftFiringWeaponRecoilReadyThisUpdate\s*=\s*false' `
-    'ROCK must resolve and consume the one-hand firing-hand/weapon recoil pair before either final publication.'
+    'applyLeftFiringWeaponRecoil[\s\S]{0,700}if\s*\(_leftFiringWeaponRecoilSupportConstrainedThisUpdate\)[\s\S]{0,500}_leftFiringWeaponRecoilSupportConstrainedThisUpdate\s*=\s*false;[\s\S]{0,120}return true;' `
+    'ROCK must skip the terminal raw weapon kick after the full two-hand solver consumed it.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyExternalHandWorldTransform\([\s\S]{0,350}firingHandTargetWorld[\s\S]{0,2200}applyWeaponVisualAuthority\(weaponNode,\s*weaponTargetWorld\)' `
-    'ROCK must publish the recoiled firing hand before the matching recoiled weapon, allowing visual support to follow that weapon in the same update.'
+    'applyLeftFiringWeaponRecoil[\s\S]{0,2600}composeTransforms\(\s*_leftFiringWeaponRecoilWorldDelta,\s*weaponNode->world\)' `
+    'ROCK must preserve the direct weapon recoil route for physical-left one-hand and assisted visual-only carry.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'leftFiringCarryRequested[\s\S]{0,500}_leftFiringWeaponRecoilSampleValid[\s\S]{0,450}if\s*\(!responseAccepted\)[\s\S]{0,300}return false;' `
-    'A missing ROCK recoil frame must decline ownership and preserve regular FRIK fallback.'
-foreach ($rockRecoilPath in @(
-        'src/physics-interaction/weapon/TwoHandedGrip.cpp',
-        'src/physics-interaction/weapon/TwoHandedGrip.h',
-        'src/physics-interaction/weapon/TwoHandedGripDebug.cpp',
-        'src/physics-interaction/weapon/WeaponAuthority.h')) {
-    Reject-Text $Root $rockRecoilPath `
-        '_leftFiringWeaponRecoilWorldDelta|resolveWorldDelta|left supported recoil hand precompensation|requestedFiringHandWorld|applyLeftFiringWeaponRecoil' `
-        'ROCK must not reconstruct, cache, precompensate, or terminally reapply recoil outside its owning solve.'
-}
+    'reconcileDeferredScopeHandAuthority\(weaponNode\);[\s\S]*applyLeftFiringWeaponRecoil\(weaponNode\)[\s\S]*traceNativeScopeTransitionFinalState' `
+    'ROCK must finalize left-firing recoil after neutral grip and hand publication but before later presentation passes.'
 Require-Text $Root 'src/ROCKMain.cpp' `
     'registerWeaponHandRecoilController\s*!=\s*nullptr[\s\S]*unregisterWeaponHandRecoilController\s*!=\s*nullptr' `
     'ROCK startup must fail closed when the matching V5 recoil-controller table is absent.'

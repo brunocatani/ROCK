@@ -28,7 +28,6 @@
 
 namespace rock
 {
-    class DirectSkeletonBoneReader;
     class WeaponCollision;
 
     namespace authored_weapon_grip_library
@@ -66,18 +65,10 @@ namespace rock
         bool released{ false };
     };
 
-    /*
-     * Frame-scoped controller/arm-driver snapshot captured before ROCK
-     * publishes weapon or hand presentation. Scope continuity and every grip
-     * solver consume this same immutable input boundary.
-     */
-    struct EquippedWeaponHandDriverFrame
+    struct EquippedWeaponScopeHandDriverFrame
     {
         bool valid{ false };
         RE::NiTransform world{};
-        // Frame-scoped identity witness. Stored calibration may compare this
-        // pointer but never dereference it outside the captured frame.
-        RE::NiNode* nodeIdentity{ nullptr };
         // Diagnostic witnesses preserve why capture failed without changing
         // the existing validity contract consumed by the solver.
         bool nodeAvailable{ false };
@@ -92,13 +83,6 @@ namespace rock
         bool rightHandHoldingObject{ false };
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
-        // Calibration may observe both hands only while the native equipped
-        // weapon is holstered. With a drawn weapon, only the true offhand is
-        // eligible because the firing root contains authored weapon pose.
-        bool weaponDrawn{ false };
-        // Native menus and special presentation modes may pose an otherwise
-        // unowned hand; never treat those roots as neutral calibration.
-        bool handCalibrationBlocked{ false };
         // Menu-open state and renderer-request state are deliberately separate.
         // FO4VR may keep WSScope presentation alive outside an active sight;
         // the renderer request is the authority for actual scope entry/exit.
@@ -106,8 +90,8 @@ namespace rock
         bool manualScopeActivationRequested{ false };
         bool nativeScopeRequestStateValid{ false };
         bool nativeScopeRequestActive{ false };
-        EquippedWeaponHandDriverFrame leftHandDriverFrame{};
-        EquippedWeaponHandDriverFrame rightHandDriverFrame{};
+        EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
+        EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
         // the caller from whichever physical hand isFiringHandLeft() reports.
         EquippedWeaponPrimaryGripInput primaryGripInput{};
@@ -564,11 +548,6 @@ namespace rock
             std::uint64_t captureSequence);
 
         void reset();
-        void invalidateNaturalHandDriverCalibration(const char* reason);
-        [[nodiscard]] bool isBilateralHandDriverCalibrationReady() const;
-        void beginPhysicalHandDriverFrame(
-            const EquippedWeaponHandDriverFrame& left,
-            const EquippedWeaponHandDriverFrame& right);
 
         void setWeaponVisualIntentObserver(
             void* context,
@@ -828,6 +807,7 @@ namespace rock
 
         void captureLeftFiringWeaponRecoil(
             const RE::NiTransform& controlledKickLocal) noexcept;
+        bool applyLeftFiringWeaponRecoil(RE::NiNode* weaponNode);
 
         struct LockedHandVisualLerpState
         {
@@ -888,11 +868,6 @@ namespace rock
             bool followsAuthoredPrimaryGrip{ false };
         };
 
-        /*
-         * Scope/root presentation continuity and diagnostics only. These
-         * frames may describe native authored or ROCK-rendered hands and are
-         * therefore excluded from every solver/acquisition input path.
-         */
         struct ScopeSafeHandFrameDiagnostic
         {
             RE::NiTransform rootHandWorld{};
@@ -944,13 +919,13 @@ namespace rock
         struct LockedHandAuthorityAttemptDiagnostic
         {
             RE::NiTransform targetWorld{};
-            RE::NiTransform physicalInputWorld{};
+            RE::NiTransform liveWorld{};
             LockedHandAuthorityRole role{ LockedHandAuthorityRole::None };
             bool requested{ false };
             bool bridgeAvailable{ false };
             bool targetUsable{ false };
-            bool physicalInputAvailable{ false };
-            bool physicalInputUsable{ false };
+            bool liveWorldAvailable{ false };
+            bool liveWorldUsable{ false };
             bool applied{ false };
         };
 
@@ -1173,7 +1148,7 @@ namespace rock
             bool isLeft,
             LockedHandAuthorityRole role,
             const RE::NiTransform& targetWorld,
-            const RE::NiTransform* physicalInputWorld,
+            const RE::NiTransform* liveWorld,
             bool bridgeAvailable,
             bool applied);
         void logGripFailureIncident(const char* reason);
@@ -1283,13 +1258,7 @@ namespace rock
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey) const;
-        [[nodiscard]] bool hasIndependentNaturalHandDriverPair() const;
-        [[nodiscard]] bool hasCurrentNaturalHandDriverCalibration(
-            bool isLeft) const;
-        void prepareIndependentNaturalHandDriverCalibrationFrame();
-        void refreshIndependentNaturalHandDriverCalibration(
-            RE::NiNode* weaponNode,
-            const EquippedWeaponGripFrameInput& frameInput);
+        void refreshNaturalHandInWandFrames();
         void clearRightFiringHandCanonicalFrame();
         bool hasRightFiringHandCanonicalFrame(
             const RE::NiNode* weaponNode,
@@ -1303,7 +1272,7 @@ namespace rock
 
         static bool tryBuildMirroredLeftFiringHandWeaponLocalImpl(
             const RE::NiTransform& canonicalRightHandWeaponLocal,
-            const RE::NiPoint3& rightFiringGripWeaponLocal,
+            const RE::NiPoint3& firingGripWeaponLocal,
             const RE::NiTransform& rightHandWorld,
             const RE::NiTransform& leftHandWorld,
             RE::NiTransform& outHandWeaponLocal,
@@ -1313,10 +1282,6 @@ namespace rock
         bool tryBuildMirroredRightSupportHandWeaponLocal(
             const RE::NiTransform& leftHandWeaponLocal,
             RE::NiTransform& outRightHandWeaponLocal) const;
-
-        static bool tryBuildMirroredRightSupportHandWeaponLocalImpl(
-            const RE::NiTransform& leftHandWeaponLocal,
-            RE::NiTransform& outRightHandWeaponLocal);
 
         void refreshAuthoredSupportRightMirror();
 
@@ -1365,8 +1330,9 @@ namespace rock
         /*
          * Reattach validates the hand first and only then commits; a takeover
          * by the non-firing hand flips the firing-hand role inside the commit
-         * (setFiringHand). The authored firing seat is topology-specific: the
-         * left palm consumes the right seat reflected across weapon-local X.
+         * (setFiringHand), reusing the SAME captured weapon-relative grip
+         * frames - the hands only choose who fires, the grip stays
+         * weapon-relative.
          */
         bool tryReattachFiringGrip(
             bool handIsLeft,
@@ -1388,14 +1354,10 @@ namespace rock
 
         bool tryComputePalmToGripDistanceForHand(RE::NiNode* weaponNode, bool handIsLeft, float& outDistance) const;
 
-        bool tryResolveFiringGripWeaponLocalForHand(
-            bool handIsLeft,
-            RE::NiPoint3& outFiringGripWeaponLocal) const;
-
         /*
          * Firing-hand role transition. Clears role-tagged FRIK publications of
-         * the old hand, selects the new hand's topology-specific firing point,
-         * and resets transient state; callers own the new hand transform.
+         * the old hand and resets firing-hand transient state; callers own the
+         * grip-frame capture for the new hand.
          */
         void setFiringHand(bool isLeft, const char* reason);
 
@@ -1472,39 +1434,22 @@ namespace rock
             bool supportHandIsLeft,
             const char* reason);
         void clearSupportInputBaselines();
-
-        /*
-         * Solver/acquisition input boundary. Both hands are reconstructed from
-         * the same frame-scoped pre-publication driver snapshot and the frozen
-         * neutral hand relation. Authored or rendered hand frames never enter
-         * this contract.
-         */
-        struct PhysicalHandInputFrame
-        {
-            RE::NiTransform handWorld{};
-        };
-        struct PhysicalHandInputPair
-        {
-            PhysicalHandInputFrame left{};
-            PhysicalHandInputFrame right{};
-        };
-        bool tryResolvePhysicalHandInputFrame(
+        bool tryResolvePhysicalHandFrame(
             bool isLeft,
-            PhysicalHandInputFrame& outFrame) const;
-        bool tryResolvePhysicalHandInputPair(
-            PhysicalHandInputPair& outPair) const;
+            RE::NiTransform& outHandWorld,
+            RE::NiTransform& outDriverWorld) const;
 
-        bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* physicalInputWorld);
+        bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
 
-        bool applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* physicalInputWorld);
+        bool applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
 
         bool applyLockedHandVisualAuthority(
             RE::NiNode* weaponNode,
             bool applyPrimaryHand,
             bool applySupportHand,
             float dt,
-            const RE::NiTransform* physicalPrimaryInputWorld = nullptr,
-            const RE::NiTransform* physicalSupportInputWorld = nullptr);
+            const RE::NiTransform* livePrimaryHandWorld = nullptr,
+            const RE::NiTransform* liveSupportHandWorld = nullptr);
 
         void publishGripHandPoses(bool isLeft);
 
@@ -1588,41 +1533,10 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
         void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);
-        void traceAmbidextrousWeaponParity(
-            RE::NiNode* weaponNode,
-            const char* phase,
-            const RE::NiTransform* leftAimCarrierWorld = nullptr);
-        void traceAmbidextrousSupportParity(
-            RE::NiNode* weaponNode,
-            bool settled);
-        void updateBilateralHandCalibrationTrace(
-            RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
-        void traceAmbidextrousPoseHierarchy(
-            RE::NiNode* weaponNode,
-            const char* phase,
-            bool supportedTopology);
-        void traceWeaponRecoilSample(
-            const RE::NiTransform& nativeKickLocal,
-            const RE::NiTransform& controlledKickLocal,
-            bool responseAccepted,
-            bool visualOnlySupportRecoilAssist) noexcept;
-        void traceWeaponRecoilConsumer(
-            const char* consumer,
-            const RE::NiTransform* inputWorld,
-            const RE::NiTransform* outputWorld) noexcept;
-        /*
-         * Unowned root/scope readback. This exists only to bootstrap the frozen
-         * physical relation and to observe native authored presentation while
-         * ROCK owns no hand output. Never use it as weapon-solver input.
-         */
-        bool tryGetUnownedTrackedHandReadbackFrame(
-            bool isLeft,
-            RE::NiTransform& outTransform) const;
+        bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
-            const RE::NiTransform* physicalInputWorld,
+            const RE::NiTransform* liveHandWorld,
             float dt,
             LockedHandVisualLerpState& state);
 
@@ -1715,32 +1629,24 @@ namespace rock
         bool _rightHandHoldingObjectForPose{ false };
 
         /*
-         * Independently observed neutral hand relations in hFRIK's immutable
-         * pre-publication driver frames. Each hand owns its own calibration;
-         * neither side is synthesized from the other. The current driver
-         * snapshots reconstruct the bilateral world pair consumed by every
-         * solver and pose path, so a time-varying raw-wand relation is never
-         * cached as a long-lived invariant.
+         * Natural physical hand-bone relations in the raw wand and hFRIK's
+         * damped driver. They are refreshed only while ROCK has no visual
+         * authority for that hand and are deliberately not weapon-generation
+         * keyed so final alignment never consumes ROCK's previous output.
          */
+        RE::NiTransform _rightNaturalBoneInWand{};
+        RE::NiTransform _leftNaturalBoneInWand{};
         RE::NiTransform _rightNaturalBoneInDampedDriver{};
         RE::NiTransform _leftNaturalBoneInDampedDriver{};
+        bool _hasRightNaturalBoneInWand{ false };
+        bool _hasLeftNaturalBoneInWand{ false };
         bool _hasRightNaturalBoneInDampedDriver{ false };
         bool _hasLeftNaturalBoneInDampedDriver{ false };
-        std::array<RE::NiNode*, 2> _naturalHandDriverNodeIdentities{};
-        struct NaturalHandDriverCalibrationCaptureState
-        {
-            RE::NiTransform candidate{};
-            std::uint16_t stableFrames{ 0 };
-            bool candidateValid{ false };
-        };
-        std::array<NaturalHandDriverCalibrationCaptureState, 2>
-            _naturalHandDriverCalibrationCapture{};
-        bool _naturalHandDriverPairReadyLogged{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         // Frame-scoped hFRIK/controller drivers captured by
         // PhysicsInteraction before ROCK publishes any hand visuals.
-        std::array<EquippedWeaponHandDriverFrame, 2>
+        std::array<EquippedWeaponScopeHandDriverFrame, 2>
             _currentHandDriverFrames{};
         bool _scopeMenuOpenThisFrame{ false };
         // True only for the first visible frame after ScopeMenu. Role clears
@@ -1888,13 +1794,13 @@ namespace rock
          * hFRIK calls the recoil controller before ROCK's update on the same
          * game thread. The sequence makes a sample valid for one ROCK update
          * only. It prevents a skipped callback from reusing an old gun kick.
-         * For physical-left carry ROCK returns an accepted zero hFRIK hand
-         * mask, then applies this one resolved parent/local frame to its hand,
-         * weapon, or constrained solver route. The routes remain mutually
-         * exclusive and never construct an absolute world delta.
+         * Full two-hand left carry consumes that sample in the primary-hand
+         * solver target; one-hand carry consumes the native sample in the final
+         * direct weapon publication; close visual support consumes the
+         * attenuated sample there. These routes must remain mutually exclusive
+         * or supported left firing regresses to one-hand recoil.
          */
-        RE::NiTransform _leftFiringWeaponRecoilParentWorld{};
-        RE::NiTransform _leftFiringWeaponRecoilLocal{};
+        RE::NiTransform _leftFiringWeaponRecoilWorldDelta{};
         std::uint64_t _weaponRecoilSampleSequence{ 0 };
         std::uint64_t _observedWeaponRecoilSampleSequence{ 0 };
         bool _leftFiringWeaponRecoilSampleValid{ false };
@@ -1935,128 +1841,6 @@ namespace rock
         // Rate limiter for the left-firing carry aim diagnostic.
         int _leftFiringAimLogCounter{ 0 };
         bool _leftFiringPositionOnlyTracePending{ false };
-
-        // One acquisition and one settled sample per support-grip identity;
-        // visual-only support emits one combined sample.
-        struct AmbidextrousParitySupportTraceState
-        {
-            std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t equippedWeaponOwnershipKey{ 0 };
-            std::uint64_t supportGripSequence{ 0 };
-            bool firingHandIsLeft{ false };
-            bool attachLogged{ false };
-            bool settledLogged{ false };
-        };
-        AmbidextrousParitySupportTraceState
-            _ambidextrousParitySupportTrace{};
-        std::uint64_t _ambidextrousParityTraceSequence{ 0 };
-
-        /*
-         * Diagnostic-only observations of each genuinely unowned hand. The
-         * trace re-observes both physical sides across a firing-hand handoff,
-         * verifies the independent driver calibration, and retains the direct
-         * mirror residual that originally exposed the asymmetric hand bases.
-         */
-        struct BilateralHandCalibrationTraceState
-        {
-            RE::NiNode* weaponNodeIdentity{ nullptr };
-            std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t equippedWeaponOwnershipKey{ 0 };
-            std::uint64_t traceSequence{ 0 };
-            std::array<RE::NiTransform, 2> observedBoneInWand{};
-            std::array<std::uint16_t, 2> unownedStableFrames{};
-            std::array<bool, 2> observedValid{};
-            std::uint16_t rightHoldStableFrames{ 0 };
-            bool rightHoldValid{ false };
-            bool bilateralLogged{ false };
-            bool leftFiringCandidateLogged{ false };
-            bool rightSupportCandidateLogged{ false };
-        };
-        BilateralHandCalibrationTraceState
-            _bilateralHandCalibrationTrace{};
-        std::uint64_t _bilateralHandCalibrationTraceSequence{ 0 };
-
-        /*
-         * Diagnostic-only, one-shot snapshots of the complete rendered arm,
-         * wrist, and finger hierarchy in weapon space.  Each topology keeps
-         * a native right-firing control and a ROCK left-firing sample so the
-         * comparison cannot validate only transforms derived from ROCK's own
-         * mirror.  Hand indices are [left, right], mode indices are
-         * [right-firing, left-firing], and topology indices are
-         * [one-hand, supported].
-         */
-        struct PoseHierarchyBoneTrace
-        {
-            RE::NiTransform weaponLocal{};
-            RE::NiTransform parentLocal{};
-            bool weaponLocalValid{ false };
-            bool parentLocalValid{ false };
-        };
-        struct PoseHierarchyHandTrace
-        {
-            std::array<PoseHierarchyBoneTrace, 23> bones{};
-            std::array<RE::NiTransform, 15> publishedFingerLocals{};
-            std::uint16_t publishedFingerMask{ 0 };
-            bool valid{ false };
-        };
-        struct PoseHierarchyModeTrace
-        {
-            std::array<PoseHierarchyHandTrace, 2> hands{};
-            std::uint64_t equippedWeaponOwnershipKey{ 0 };
-            std::uint64_t captureSequence{ 0 };
-            bool valid{ false };
-        };
-        struct PoseHierarchyTopologyTrace
-        {
-            std::array<PoseHierarchyModeTrace, 2> modes{};
-            bool comparisonLogged{ false };
-        };
-        struct AmbidextrousPoseHierarchyTraceState
-        {
-            RE::NiNode* weaponNodeIdentity{ nullptr };
-            std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t canonicalCaptureSequence{ 0 };
-            std::uint64_t traceSequence{ 0 };
-            std::array<PoseHierarchyTopologyTrace, 2> topologies{};
-        };
-        std::unique_ptr<DirectSkeletonBoneReader>
-            _ambidextrousPoseHierarchyReader;
-        AmbidextrousPoseHierarchyTraceState
-            _ambidextrousPoseHierarchyTrace{};
-        std::uint64_t _ambidextrousPoseHierarchyTraceSequence{ 0 };
-
-        /*
-         * Recoil diagnostics retain only the strongest weapon-local sample
-         * from each firing side and a bounded number of significant frames.
-         * The live sample is then followed through every ROCK consumer so a
-         * frame-conversion error is distinguishable from duplicate delivery.
-         */
-        struct WeaponRecoilPeakTrace
-        {
-            RE::NiTransform weaponLocalDelta{};
-            float strength{ 0.0f };
-            bool valid{ false };
-        };
-        struct WeaponRecoilDiagnosticTraceState
-        {
-            RE::NiNode* weaponNodeIdentity{ nullptr };
-            std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t traceSequence{ 0 };
-            std::uint64_t currentSampleSequence{ 0 };
-            RE::NiTransform currentKickParentWorld{};
-            RE::NiTransform currentKickLocal{};
-            RE::NiTransform currentWeaponLocalDelta{};
-            std::array<WeaponRecoilPeakTrace, 2> peaks{};
-            std::array<RE::NiTransform, 2> lastControlledKickLocals{};
-            std::array<std::uint16_t, 2> emittedSamples{};
-            std::array<bool, 2> lastControlledKickValid{};
-            std::uint64_t peakRevision{ 0 };
-            std::uint64_t comparedPeakRevision{ 0 };
-            bool currentSampleLogged{ false };
-        };
-        WeaponRecoilDiagnosticTraceState
-            _weaponRecoilDiagnosticTrace{};
-        std::uint64_t _weaponRecoilDiagnosticTraceSequence{ 0 };
     };
 
 }

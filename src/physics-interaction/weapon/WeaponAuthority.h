@@ -312,126 +312,31 @@ namespace rock::weapon_recoil_authority_math
     }
 
     template <class Transform>
-    [[nodiscard]] inline bool isFiniteRecoilTransform(
-        const Transform& transform)
-    {
-        if (!std::isfinite(transform.translate.x) ||
-            !std::isfinite(transform.translate.y) ||
-            !std::isfinite(transform.translate.z) ||
-            !std::isfinite(transform.scale) ||
-            std::abs(transform.scale) <= 0.000001f) {
-            return false;
-        }
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(
-                        transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    template <class Transform>
-    [[nodiscard]] inline bool tryResolveFrameLocalTransform(
-        const Transform& frameWorld,
-        const Transform& targetWorld,
-        Transform& outTargetLocal)
-    {
-        outTargetLocal =
-            transform_math::makeIdentityTransform<Transform>();
-        if (!isFiniteRecoilTransform(frameWorld) ||
-            !isFiniteRecoilTransform(targetWorld)) {
-            return false;
-        }
-
-        /*
-         * Compute the relative transform directly. Building inverse(frame)
-         * first stores an origin-sized inverse translation in float; a later
-         * composition then loses millimetre-scale recoil when those large
-         * values cancel. worldPointToLocal subtracts the two world origins in
-         * double precision before narrowing the already-small result.
-         */
-        outTargetLocal.rotate =
-            transform_math::multiplyStoredRotations(
-                targetWorld.rotate,
-                transform_math::transposeRotation(
-                    frameWorld.rotate));
-        outTargetLocal.translate =
-            transform_math::worldPointToLocal(
-                frameWorld,
-                targetWorld.translate);
-        outTargetLocal.scale =
-            static_cast<decltype(outTargetLocal.scale)>(
-                static_cast<double>(targetWorld.scale) /
-                static_cast<double>(frameWorld.scale));
-        return isFiniteRecoilTransform(outTargetLocal);
-    }
-
-    template <class Transform>
-    [[nodiscard]] inline bool tryResolveKickFrame(
+    [[nodiscard]] inline Transform resolveWorldDelta(
         const Transform& nativeKickLocal,
         const Transform& nativeKickParentWorld,
         const Transform& nativePrimaryWandWorld,
         const Transform& nativeOffhandWandWorld,
-        const bool targetIsNativeOffhand,
-        Transform& outKickParentWorld,
-        Transform& outKickLocal)
+        const bool targetIsNativeOffhand)
     {
-        outKickParentWorld =
-            transform_math::makeIdentityTransform<Transform>();
-        outKickLocal =
-            transform_math::makeIdentityTransform<Transform>();
-        if (!isFiniteRecoilTransform(nativeKickLocal) ||
-            !isFiniteRecoilTransform(nativeKickParentWorld)) {
-            return false;
-        }
-
-        outKickParentWorld = nativeKickParentWorld;
-        outKickLocal = nativeKickLocal;
+        Transform kickParentWorld = nativeKickParentWorld;
+        Transform kickLocal = nativeKickLocal;
         if (targetIsNativeOffhand) {
-            Transform kickParentInPrimaryWand{};
-            if (!tryResolveFrameLocalTransform(
-                    nativePrimaryWandWorld,
-                    nativeKickParentWorld,
-                    kickParentInPrimaryWand)) {
-                return false;
-            }
-            outKickParentWorld = transform_math::composeTransforms(
+            const Transform kickParentInPrimaryWand =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(nativePrimaryWandWorld),
+                    nativeKickParentWorld);
+            kickParentWorld = transform_math::composeTransforms(
                 nativeOffhandWandWorld,
                 mirrorLocalAcrossSagittal(kickParentInPrimaryWand));
-            outKickLocal = mirrorLocalAcrossSagittal(nativeKickLocal);
-        }
-        return isFiniteRecoilTransform(outKickParentWorld) &&
-               isFiniteRecoilTransform(outKickLocal);
-    }
-
-    template <class Transform>
-    [[nodiscard]] inline bool tryApplyKickToWorldTarget(
-        const Transform& kickParentWorld,
-        const Transform& kickLocal,
-        const Transform& targetWorld,
-        Transform& outTargetWorld)
-    {
-        outTargetWorld = targetWorld;
-        Transform targetInKickParent{};
-        if (!isFiniteRecoilTransform(kickLocal) ||
-            !tryResolveFrameLocalTransform(
-                kickParentWorld,
-                targetWorld,
-                targetInKickParent)) {
-            return false;
+            kickLocal = mirrorLocalAcrossSagittal(nativeKickLocal);
         }
 
-        const Transform kickedTargetInParent =
+        return transform_math::composeTransforms(
+            kickParentWorld,
             transform_math::composeTransforms(
                 kickLocal,
-                targetInKickParent);
-        outTargetWorld = transform_math::composeTransforms(
-            kickParentWorld,
-            kickedTargetInParent);
-        return isFiniteRecoilTransform(outTargetWorld);
+                transform_math::invertTransform(kickParentWorld)));
     }
 }
 
@@ -668,42 +573,6 @@ namespace rock::left_firing_position_only_math
         result.translate = {};
         result.scale = 1.0f;
         return result;
-    }
-
-    /*
-     * A bilateral HAND frame is not an X-conjugated object frame. Its parent
-     * space changes side across lateral X, while authored handspace changes
-     * handedness across raw Z (authored X=fingers, Y=palm depth, signed Z=
-     * cross-palm). Applying those two different reflections produces a proper
-     * rotation and is an involution, so the same operation maps either hand to
-     * its opposite without sampling a weapon-authored rendered wrist.
-     */
-    template <class Transform>
-    [[nodiscard]] inline Transform mirrorOppositeHandFrame(
-        const Transform& sourceHandInParent)
-    {
-        Transform parentLateralMirror =
-            transform_math::makeIdentityTransform<Transform>();
-        parentLateralMirror.rotate.entry[0][0] = -1.0f;
-
-        Transform handCrossPalmMirror =
-            transform_math::makeIdentityTransform<Transform>();
-        handCrossPalmMirror.rotate.entry[2][2] = -1.0f;
-
-        return transform_math::composeTransforms(
-            parentLateralMirror,
-            transform_math::composeTransforms(
-                sourceHandInParent,
-                handCrossPalmMirror));
-    }
-
-    template <class Point>
-    [[nodiscard]] inline Point mirrorGripPointAcrossWeaponLateralPlane(
-        const Point& sourceGripInWeapon)
-    {
-        Point mirroredGripInWeapon = sourceGripInWeapon;
-        mirroredGripInWeapon.x = -mirroredGripInWeapon.x;
-        return mirroredGripInWeapon;
     }
 
     /*
