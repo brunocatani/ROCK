@@ -63,6 +63,26 @@ int main()
     static_assert(positionOnlyWeaponWorld.translate.y == 230.0f);
     static_assert(positionOnlyWeaponWorld.translate.z == 340.0f);
 
+    constexpr RigidTransform nativeCarrierHandLocal{
+        17.0f,
+        { 1.0f, 2.0f, 3.0f },
+        2.0f,
+    };
+    constexpr RigidTransform authoredHandLocal{
+        91.0f,
+        { 9.0f, 8.0f, 7.0f },
+        4.0f,
+    };
+    constexpr auto hybridHandLocal =
+        buildNativeRotationAuthoredPositionHandLocal(
+            nativeCarrierHandLocal,
+            authoredHandLocal);
+    static_assert(hybridHandLocal.rotation == nativeCarrierHandLocal.rotation);
+    static_assert(hybridHandLocal.translate.x == authoredHandLocal.translate.x);
+    static_assert(hybridHandLocal.translate.y == authoredHandLocal.translate.y);
+    static_assert(hybridHandLocal.translate.z == authoredHandLocal.translate.z);
+    static_assert(hybridHandLocal.scale == nativeCarrierHandLocal.scale);
+
     constexpr AffineTransform primaryHandModel{ 2.0f, 20.0f };
     constexpr AffineTransform supportHandModel{ 6.0f, 80.0f };
     constexpr auto supportInPrimary =

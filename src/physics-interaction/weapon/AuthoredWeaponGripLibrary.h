@@ -45,16 +45,15 @@ namespace rock::authored_weapon_grip_library
         // Exact animation-authored wrist relation retained for hand and
         // finger presentation.
         RE::NiTransform rightHandWeaponLocal{};
-        // Physical right-hand relation measured from ROCK's final
-        // position-only equipped pose. Loose weapon placement consumes this
-        // when available so it keeps the native weapon aim while reproducing
-        // the same authored grip translation.
-        RE::NiTransform rightPositionOnlyHandWeaponLocal{};
+        // Hybrid right hand relation learned from a loose native carrier:
+        // native/physical wrist rotation plus animation-authored wrist
+        // position. Exact finger locals remain separate below.
+        RE::NiTransform rightHybridHandWeaponLocal{};
         FiringFingerPose rightFiringFingerPose{};
         std::uint64_t captureSequence{ 0 };
-        std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
+        std::uint64_t hybridFrikOffsetRevision{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
-        bool hasRightPositionOnlyHandWeaponLocal{ false };
+        bool hasRightHybridHandWeaponLocal{ false };
         bool usedVariantFallback{ false };
         const char* reason{ "notEvaluated" };
     };
@@ -79,8 +78,8 @@ namespace rock::authored_weapon_grip_library
 
     /*
      * Main-thread, process-local library of Bethesda's exact
-     * RArm_Hand-in-Weapon relation plus ROCK's separately measured physical
-     * position-only hold. Entries are keyed by runtime weapon form,
+     * RArm_Hand-in-Weapon relation plus ROCK's separately learned
+     * native-rotation/authored-position hybrid hold. Entries are keyed by runtime weapon form,
      * deterministic equipped-instance content when available, power-armor
      * topology, and the P-Grip child used by hFRIK to distinguish stock
      * variants. Storage is fixed and bounded: publication and lookup do not
@@ -94,16 +93,16 @@ namespace rock::authored_weapon_grip_library
         const FiringFingerPose* rightFiringFingerPose = nullptr);
 
     /*
-     * Attach the physical-hand relation measured from the final
-     * position-only equipped solve to the exact authored capture that
-     * produced it. This never replaces the animation-authored wrist relation.
+     * Attach the native-rotation/authored-position relation derived from an
+     * actual loose native carrier. Equipped presentation may consume it but
+     * must never manufacture or overwrite its rotation.
      */
-    [[nodiscard]] bool publishPositionOnlyHold(
+    [[nodiscard]] bool publishHybridHold(
         const RE::TESObjectWEAP* weapon,
         bool inPowerArmor,
         std::uint64_t authoredCaptureSequence,
         std::uint64_t frikOffsetRevision,
-        const RE::NiTransform& rightPositionOnlyHandWeaponLocal);
+        const RE::NiTransform& rightHybridHandWeaponLocal);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
     [[nodiscard]] LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor);

@@ -1046,9 +1046,9 @@ namespace rock
                  * It enforces custom hFRIK > learned authored > embedded hFRIK and
                  * performs no filesystem work on this grab path. Explicit hFRIK
                  * keeps its complete correction. Authored placement receives the
-                 * separate physical-hand relation learned from ROCK's final
-                 * position-only equipped pose, so it rotates into native aim without
-                 * replaying the animation-authored wrist correction.
+                 * loose-carrier hybrid: native/physical wrist rotation plus the
+                 * animation-authored wrist position, with finger locals published
+                 * separately below.
                  */
                 RE::NiTransform handWorld{};
                 RE::NiTransform handWeaponLocal{};

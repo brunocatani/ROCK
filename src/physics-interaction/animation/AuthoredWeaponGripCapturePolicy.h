@@ -319,6 +319,22 @@ namespace rock::authored_weapon_grip_capture_policy
         return solvedWeaponWorld;
     }
 
+    /*
+     * A position-only authored hand uses the native/physical wrist rotation
+     * while retaining the animation-authored wrist position in Weapon space.
+     * Finger locals remain a separate authored payload.
+     */
+    template <class Transform>
+    [[nodiscard]] constexpr Transform
+        buildNativeRotationAuthoredPositionHandLocal(
+            const Transform& nativeCarrierHandLocal,
+            const Transform& authoredHandLocal)
+    {
+        Transform hybrid = nativeCarrierHandLocal;
+        hybrid.translate = authoredHandLocal.translate;
+        return hybrid;
+    }
+
     template <class Transform, class Compose, class Invert>
     [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInPrimaryHand(
         const Transform& authoredPrimaryHandModel,

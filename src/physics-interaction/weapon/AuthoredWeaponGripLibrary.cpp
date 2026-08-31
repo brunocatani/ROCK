@@ -27,15 +27,15 @@ namespace rock::authored_weapon_grip_library
             std::uint64_t variantKey{ 0 };
             std::uint64_t instanceContentKey{ 0 };
             RE::NiTransform rightHandWeaponLocal{};
-            RE::NiTransform rightPositionOnlyHandWeaponLocal{};
+            RE::NiTransform rightHybridHandWeaponLocal{};
             FiringFingerPose rightFiringFingerPose{};
             std::uint64_t captureSequence{ 0 };
-            std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
+            std::uint64_t hybridFrikOffsetRevision{ 0 };
             std::uint64_t publicationOrdinal{ 0 };
             CaptureSource source{ CaptureSource::Unknown };
             bool inPowerArmor{ false };
             bool instanceContentKnown{ false };
-            bool hasRightPositionOnlyHandWeaponLocal{ false };
+            bool hasRightHybridHandWeaponLocal{ false };
             bool occupied{ false };
         };
 
@@ -132,15 +132,15 @@ namespace rock::authored_weapon_grip_library
             return LookupResult{
                 .found = true,
                 .rightHandWeaponLocal = entry.rightHandWeaponLocal,
-                .rightPositionOnlyHandWeaponLocal =
-                    entry.rightPositionOnlyHandWeaponLocal,
+                .rightHybridHandWeaponLocal =
+                    entry.rightHybridHandWeaponLocal,
                 .rightFiringFingerPose = entry.rightFiringFingerPose,
                 .captureSequence = entry.captureSequence,
-                .positionOnlyFrikOffsetRevision =
-                    entry.positionOnlyFrikOffsetRevision,
+                .hybridFrikOffsetRevision =
+                    entry.hybridFrikOffsetRevision,
                 .source = entry.source,
-                .hasRightPositionOnlyHandWeaponLocal =
-                    entry.hasRightPositionOnlyHandWeaponLocal,
+                .hasRightHybridHandWeaponLocal =
+                    entry.hasRightHybridHandWeaponLocal,
                 .usedVariantFallback = usedVariantFallback,
                 .reason = usedVariantFallback ? "authoredAnimationFormFallback" : "authoredAnimationExactVariant",
             };
@@ -236,10 +236,17 @@ namespace rock::authored_weapon_grip_library
             return true;
         }
 
-        if (destination->captureSequence != captureSequence) {
-            destination->rightPositionOnlyHandWeaponLocal = {};
-            destination->positionOnlyFrikOffsetRevision = 0;
-            destination->hasRightPositionOnlyHandWeaponLocal = false;
+        if (destination->captureSequence != captureSequence &&
+            destination->hasRightHybridHandWeaponLocal) {
+            /*
+             * A fresh equivalent authored capture may replace the sequence
+             * after equip. Preserve the only verified native-carrier rotation
+             * and refresh just the authored wrist position it intentionally
+             * owns. hFRIK revision validation still invalidates a changed
+             * carrier before lookup.
+             */
+            destination->rightHybridHandWeaponLocal.translate =
+                rightHandWeaponLocal.translate;
         }
         destination->rightHandWeaponLocal = rightHandWeaponLocal;
         destination->rightFiringFingerPose = rightFiringFingerPose ? *rightFiringFingerPose : FiringFingerPose{};
@@ -262,17 +269,17 @@ namespace rock::authored_weapon_grip_library
         return true;
     }
 
-    bool publishPositionOnlyHold(
+    bool publishHybridHold(
         const RE::TESObjectWEAP* weapon,
         const bool inPowerArmor,
         const std::uint64_t authoredCaptureSequence,
         const std::uint64_t frikOffsetRevision,
-        const RE::NiTransform& rightPositionOnlyHandWeaponLocal)
+        const RE::NiTransform& rightHybridHandWeaponLocal)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         if (weaponFormId == 0 || authoredCaptureSequence == 0 ||
             frikOffsetRevision == 0 ||
-            !finiteTransform(rightPositionOnlyHandWeaponLocal)) {
+            !finiteTransform(rightHybridHandWeaponLocal)) {
             return false;
         }
 
@@ -284,10 +291,20 @@ namespace rock::authored_weapon_grip_library
                 continue;
             }
 
-            entry.rightPositionOnlyHandWeaponLocal =
-                rightPositionOnlyHandWeaponLocal;
-            entry.positionOnlyFrikOffsetRevision = frikOffsetRevision;
-            entry.hasRightPositionOnlyHandWeaponLocal = true;
+            const bool hybridBoundary =
+                !entry.hasRightHybridHandWeaponLocal ||
+                entry.hybridFrikOffsetRevision != frikOffsetRevision;
+            entry.rightHybridHandWeaponLocal =
+                rightHybridHandWeaponLocal;
+            entry.hybridFrikOffsetRevision = frikOffsetRevision;
+            entry.hasRightHybridHandWeaponLocal = true;
+            if (hybridBoundary) {
+                ROCK_LOG_INFO(Animation,
+                    "Learned authored loose hybrid hold formID={:08X} capture={} frikRevision={} rotation=native-carrier position=authored",
+                    weaponFormId,
+                    authoredCaptureSequence,
+                    frikOffsetRevision);
+            }
             return true;
         }
         return false;

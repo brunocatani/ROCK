@@ -178,7 +178,6 @@ namespace rock
         _applyFailureLogged = false;
         _canonicalPublishFailureLogged = false;
         _libraryPublishFailureLogged = false;
-        _positionOnlyHoldPublishFailureLogged = false;
         _customFrikOffsetOverrideActive = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
@@ -244,7 +243,6 @@ namespace rock
             _applyFailureLogged = false;
             _canonicalPublishFailureLogged = false;
             _libraryPublishFailureLogged = false;
-            _positionOnlyHoldPublishFailureLogged = false;
             _supportCaptureFailureLogged = false;
             _mirroredLeftFingerPose = {};
             _mirroredFingerPoseCaptureSequence = 0;
@@ -643,9 +641,41 @@ namespace rock
             return;
         }
 
+        const RE::NiTransform nativeCarrierHandInWeapon =
+            transform_math::composeTransforms(
+                transform_math::invertTransform(liveWeaponWorld),
+                trackedHandWorld);
+        const bool cachedLooseHybridAvailable =
+            !compiledMinigunFiringSeat &&
+            authoredLookup.hasRightHybridHandWeaponLocal &&
+            authoredLookup.hybridFrikOffsetRevision != 0 &&
+            authoredLookup.hybridFrikOffsetRevision ==
+                frik_weapon_offset_cache::currentRevision() &&
+            finiteTransform(authoredLookup.rightHybridHandWeaponLocal) &&
+            translationDistance(
+                authoredLookup.rightHybridHandWeaponLocal,
+                authoredPrimaryHandInWeapon) <= 0.01f;
+        const RE::NiTransform& nativeRotationSource =
+            cachedLooseHybridAvailable ?
+                authoredLookup.rightHybridHandWeaponLocal :
+                nativeCarrierHandInWeapon;
+        const RE::NiTransform presentedHandInWeapon =
+            compiledMinigunFiringSeat ?
+                authoredPrimaryHandInWeapon :
+                authored_weapon_grip_capture_policy::
+                    buildNativeRotationAuthoredPositionHandLocal(
+                        nativeRotationSource,
+                        authoredPrimaryHandInWeapon);
+        if (!finiteTransform(nativeCarrierHandInWeapon) ||
+            !finiteTransform(presentedHandInWeapon)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            endSession("hybrid-hand-relation-invalid");
+            return;
+        }
+
         const RE::NiPoint3 authoredGripWeaponLocal =
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                authoredPrimaryHandInWeapon,
+                presentedHandInWeapon,
                 false);
         const RE::NiPoint3 trackedPalmWorld =
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
@@ -669,13 +699,12 @@ namespace rock
             return;
         }
 
-        // The authored wrist correction belongs to the presented hand: the
-        // weapon keeps its native rotation while the right hand seats at the
-        // authored grip on that weapon frame.
+        // Weapon and wrist rotation remain native/physical. Only the wrist
+        // position and exact finger locals come from the authored pose.
         const RE::NiTransform solvedFiringHandWorld =
             transform_math::composeTransforms(
                 solvedWeaponWorld,
-                authoredPrimaryHandInWeapon);
+                presentedHandInWeapon);
         if (!finiteTransform(solvedFiringHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("position-only-hand-target-invalid");
@@ -701,7 +730,7 @@ namespace rock
 
         if (!weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
                 input.weaponNode,
-                authoredPrimaryHandInWeapon,
+                presentedHandInWeapon,
                 input.weaponGenerationKey,
                 currentWeaponKey,
                 resolvedCaptureSequence,
@@ -750,63 +779,6 @@ namespace rock
             _libraryPublishFailureLogged = false;
         }
 
-        /*
-         * The authored relation above remains the presented wrist/finger
-         * authority. Loose weapon placement needs a different relation: the
-         * physical hand measured against the final position-only equipped
-         * weapon. Miniguns retain hFRIK's independent loose-weapon authority
-         * instead of contaminating the native-idle library with this compiled
-         * equipped-only firing seat.
-         */
-        const RE::NiTransform rightPositionOnlyHandWeaponLocal =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(solvedWeaponWorld),
-                trackedHandWorld);
-        const RE::NiPoint3 cachedPositionOnlyGripWeaponLocal =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                rightPositionOnlyHandWeaponLocal,
-                false);
-        constexpr float kMaximumPositionOnlyHoldGripErrorGameUnits = 0.01f;
-        const float positionOnlyHoldGripError = pointDistance(
-            cachedPositionOnlyGripWeaponLocal,
-            authoredGripWeaponLocal);
-        const bool positionOnlyHoldValid =
-            finiteTransform(rightPositionOnlyHandWeaponLocal) &&
-            std::isfinite(positionOnlyHoldGripError) &&
-            positionOnlyHoldGripError <=
-                kMaximumPositionOnlyHoldGripErrorGameUnits;
-        const bool positionOnlyHoldPublished =
-            compiledMinigunFiringSeat ||
-            (authoredLibraryEntryAvailable &&
-                positionOnlyHoldValid &&
-                authored_weapon_grip_library::publishPositionOnlyHold(
-                    input.weapon,
-                    input.inPowerArmor,
-                    resolvedCaptureSequence,
-                    frik_weapon_offset_cache::currentRevision(),
-                    rightPositionOnlyHandWeaponLocal));
-        if (!positionOnlyHoldPublished) {
-            if (!_positionOnlyHoldPublishFailureLogged) {
-                ROCK_LOG_WARN(Animation,
-                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu",
-                    currentWeaponKey,
-                    resolvedCaptureSequence,
-                    authoredLibraryEntryAvailable ? "yes" : "no",
-                    positionOnlyHoldValid ? "yes" : "no",
-                    positionOnlyHoldGripError);
-                _positionOnlyHoldPublishFailureLogged = true;
-            }
-        } else {
-            _positionOnlyHoldPublishFailureLogged = false;
-            if (!compiledMinigunFiringSeat) {
-                ROCK_LOG_SAMPLE_DEBUG(Animation, 1000,
-                    "Authored position-only loose hold cached weaponKey=0x{:X} capture={} gripError={:.4f}gu",
-                    currentWeaponKey,
-                    resolvedCaptureSequence,
-                    positionOnlyHoldGripError);
-            }
-        }
-
         _active = true;
         _applyFailureLogged = false;
 
@@ -841,7 +813,7 @@ namespace rock
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
                 "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) "
-                "mode=position-only primaryHand=weapon-relative-authored physicalLeftSource=authored-seat-plus-native-weapon-aim",
+                "mode=native-rotation-authored-position primaryHand=weapon-relative-hybrid rotationSource={} physicalLeftSource=authored-seat-plus-native-weapon-aim",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence,
@@ -861,7 +833,12 @@ namespace rock
                 input.weaponNode->world.translate.z,
                 input.weaponNode->local.translate.x,
                 input.weaponNode->local.translate.y,
-                input.weaponNode->local.translate.z);
+                input.weaponNode->local.translate.z,
+                compiledMinigunFiringSeat ?
+                    "compiled-minigun" :
+                    cachedLooseHybridAvailable ?
+                        "loose-native-cache" :
+                        "live-physical");
             _sessionLogged = true;
         }
     }

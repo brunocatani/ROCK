@@ -93,7 +93,6 @@ namespace rock
         bool _applyFailureLogged{ false };
         bool _canonicalPublishFailureLogged{ false };
         bool _libraryPublishFailureLogged{ false };
-        bool _positionOnlyHoldPublishFailureLogged{ false };
         bool _customFrikOffsetOverrideActive{ false };
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };

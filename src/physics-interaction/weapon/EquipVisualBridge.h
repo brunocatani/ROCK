@@ -41,12 +41,12 @@ namespace rock
      *
      * Blend target. begin() re-runs the shared loose-grip identity resolver
      * to recover the authored firing point and hand-pose payload. The retained
-     * loose model already carries the separate position-only placement hold;
+     * loose model already carries the native-rotation/authored-position hybrid;
      * once the exact native Weapon frame exists, update() uses that frame as
      * the rotational carrier and translates only the authored firing point.
      * Custom JSON remains first authority, followed by ROCK-authored data and
      * embedded hFRIK fallback. A first-ever weapon never borrows another
-     * weapon's cached position-only hold.
+     * weapon's cached hybrid hold.
      *
      * Lifetime/threading: main-thread only, driven by PhysicsInteraction's
      * per-frame update. The bridge owns exactly one NiPointer; the scene
