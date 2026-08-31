@@ -1295,7 +1295,9 @@ namespace rock
 
         bool tryBuildMirroredRightSupportHandWeaponLocal(
             const RE::NiTransform& leftHandWeaponLocal,
-            RE::NiTransform& outRightHandWeaponLocal) const;
+            RE::NiTransform& outRightHandWeaponLocal,
+            const RE::NiTransform* leftBoneInWandOverride = nullptr,
+            const RE::NiTransform* rightBoneInWandOverride = nullptr) const;
 
         void refreshAuthoredSupportRightMirror();
 
@@ -1574,6 +1576,10 @@ namespace rock
         void traceAmbidextrousSupportParity(
             RE::NiNode* weaponNode,
             bool settled);
+        void updateBilateralHandCalibrationTrace(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey);
         /*
          * Unowned root/scope readback. This exists only to bootstrap the frozen
          * physical relation and to observe native authored presentation while
@@ -1905,6 +1911,31 @@ namespace rock
         AmbidextrousParitySupportTraceState
             _ambidextrousParitySupportTrace{};
         std::uint64_t _ambidextrousParityTraceSequence{ 0 };
+
+        /*
+         * Diagnostic-only observations of each genuinely unowned hand. The
+         * production bilateral basis is intentionally frozen; this trace
+         * independently samples both physical sides across a firing-hand
+         * handoff so a synthetic mirror cannot validate itself.
+         */
+        struct BilateralHandCalibrationTraceState
+        {
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
+            std::uint64_t traceSequence{ 0 };
+            std::array<RE::NiTransform, 2> observedBoneInWand{};
+            std::array<std::uint16_t, 2> unownedStableFrames{};
+            std::array<bool, 2> observedValid{};
+            std::uint16_t rightHoldStableFrames{ 0 };
+            bool rightHoldValid{ false };
+            bool bilateralLogged{ false };
+            bool leftFiringCandidateLogged{ false };
+            bool rightSupportCandidateLogged{ false };
+        };
+        BilateralHandCalibrationTraceState
+            _bilateralHandCalibrationTrace{};
+        std::uint64_t _bilateralHandCalibrationTraceSequence{ 0 };
     };
 
 }

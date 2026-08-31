@@ -3067,6 +3067,10 @@ namespace rock
         // watchdog for engine-side re-attach).
         syncFiringHandWeaponNodeOwnership(weaponNode);
         updateHandVisualReturns(dt);
+        updateBilateralHandCalibrationTrace(
+            weaponNode,
+            currentWeaponGenerationKey,
+            currentEquippedWeaponOwnershipKey);
         // State transitions and their replacement publications must finish
         // before stale scoped roles are removed. This keeps hFRIK under one
         // continuous ROCK authority selection across scope and role edges.
@@ -3531,6 +3535,7 @@ namespace rock
         _nativeScopeTransitionFinalTraceSequence = 0;
         _nativeScopeTransitionFinalTraceSample = 0;
         _nativeScopeTransitionFinalTracePending = false;
+        _bilateralHandCalibrationTrace = {};
         _scopeHandAuthorityPublishedThisFrame = {};
         if (_authoredPrimaryFiringHandWorldActive) {
             clearAuthoredPrimaryFiringHandWorldAuthority();
@@ -11478,13 +11483,36 @@ namespace rock
 
     bool TwoHandedGrip::tryBuildMirroredRightSupportHandWeaponLocal(
         const RE::NiTransform& leftHandWeaponLocal,
-        RE::NiTransform& outRightHandWeaponLocal) const
+        RE::NiTransform& outRightHandWeaponLocal,
+        const RE::NiTransform* leftBoneInWandOverride,
+        const RE::NiTransform* rightBoneInWandOverride) const
     {
         outRightHandWeaponLocal = {};
-        if (!_hasLeftNaturalBoneInWand || !_hasRightNaturalBoneInWand ||
+        const bool hasCompleteOverridePair =
+            leftBoneInWandOverride && rightBoneInWandOverride;
+        if ((leftBoneInWandOverride || rightBoneInWandOverride) &&
+            !hasCompleteOverridePair) {
+            return false;
+        }
+        if ((!hasCompleteOverridePair &&
+                (!_hasLeftNaturalBoneInWand ||
+                    !_hasRightNaturalBoneInWand)) ||
             !isFiniteTransform(leftHandWeaponLocal) ||
-            !isFiniteTransform(_leftNaturalBoneInWand) ||
-            !isFiniteTransform(_rightNaturalBoneInWand)) {
+            (hasCompleteOverridePair &&
+                (!isFiniteTransform(*leftBoneInWandOverride) ||
+                    !isFiniteTransform(*rightBoneInWandOverride)))) {
+            return false;
+        }
+        const RE::NiTransform& leftBoneInWand =
+            hasCompleteOverridePair ?
+                *leftBoneInWandOverride :
+                _leftNaturalBoneInWand;
+        const RE::NiTransform& rightBoneInWand =
+            hasCompleteOverridePair ?
+                *rightBoneInWandOverride :
+                _rightNaturalBoneInWand;
+        if (!isFiniteTransform(leftBoneInWand) ||
+            !isFiniteTransform(rightBoneInWand)) {
             return false;
         }
 
@@ -11505,9 +11533,9 @@ namespace rock
             return result;
         };
         const RE::NiTransform leftBoneInWandOrientation =
-            orientationFrame(_leftNaturalBoneInWand);
+            orientationFrame(leftBoneInWand);
         const RE::NiTransform rightBoneInWandOrientation =
-            orientationFrame(_rightNaturalBoneInWand);
+            orientationFrame(rightBoneInWand);
         const RE::NiTransform leftHandWeaponOrientation =
             orientationFrame(leftHandWeaponLocal);
 

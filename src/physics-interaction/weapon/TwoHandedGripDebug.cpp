@@ -73,6 +73,15 @@ namespace rock
             bool valid{ false };
         };
 
+        struct ParityRotationResidual
+        {
+            float totalDegrees{ -1.0f };
+            // Components are expressed about the authored anatomical axes:
+            // finger +X, palm normal -Y, and cross-palm +Z/raw -Z.
+            RE::NiPoint3 semanticComponentsDegrees{};
+            bool valid{ false };
+        };
+
         [[nodiscard]] bool finitePoint(const RE::NiPoint3& point)
         {
             return std::isfinite(point.x) && std::isfinite(point.y) &&
@@ -166,6 +175,88 @@ namespace rock
                        left.rotate,
                        right.rotate) *
                    RADIANS_TO_DEGREES;
+        }
+
+        [[nodiscard]] ParityRotationResidual compareRotationResidual(
+            const RE::NiTransform& expected,
+            const RE::NiTransform& observed)
+        {
+            ParityRotationResidual result{};
+            if (!isFiniteTransform(expected) ||
+                !isFiniteTransform(observed)) {
+                return result;
+            }
+
+            const RE::NiTransform expectedOrientation =
+                left_firing_position_only_math::orientationOnly(expected);
+            const RE::NiTransform observedOrientation =
+                left_firing_position_only_math::orientationOnly(observed);
+            const RE::NiTransform expectedToObserved =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(expectedOrientation),
+                    observedOrientation);
+            if (!isFiniteTransform(expectedToObserved)) {
+                return result;
+            }
+
+            float quaternion[4]{};
+            // NiTransform stores the engine basis by rows while ROCK applies
+            // it as Transpose()*v. Convert that physical expected-local
+            // rotation so the signed anatomical components describe the
+            // correction from expected to observed, not its inverse.
+            const auto physicalExpectedToObserved =
+                transform_math::transposeRotation(
+                    expectedToObserved.rotate);
+            transform_math::niRowsToHavokQuaternion(
+                physicalExpectedToObserved,
+                quaternion);
+            if (!std::isfinite(quaternion[0]) ||
+                !std::isfinite(quaternion[1]) ||
+                !std::isfinite(quaternion[2]) ||
+                !std::isfinite(quaternion[3])) {
+                return result;
+            }
+            if (quaternion[3] < 0.0f) {
+                for (float& component : quaternion) {
+                    component = -component;
+                }
+            }
+
+            const float vectorLength = std::sqrt(
+                quaternion[0] * quaternion[0] +
+                quaternion[1] * quaternion[1] +
+                quaternion[2] * quaternion[2]);
+            const float angleDegrees =
+                2.0f *
+                std::atan2(
+                    vectorLength,
+                    std::clamp(quaternion[3], 0.0f, 1.0f)) *
+                RADIANS_TO_DEGREES;
+            if (!std::isfinite(vectorLength) ||
+                !std::isfinite(angleDegrees)) {
+                return result;
+            }
+
+            RE::NiPoint3 rawComponentsDegrees{};
+            if (vectorLength > 0.000001f) {
+                const float degreesPerAxisUnit =
+                    angleDegrees / vectorLength;
+                rawComponentsDegrees = RE::NiPoint3{
+                    quaternion[0] * degreesPerAxisUnit,
+                    quaternion[1] * degreesPerAxisUnit,
+                    quaternion[2] * degreesPerAxisUnit,
+                };
+            }
+            result.totalDegrees = angleDegrees;
+            result.semanticComponentsDegrees = RE::NiPoint3{
+                rawComponentsDegrees.x,
+                -rawComponentsDegrees.y,
+                -rawComponentsDegrees.z,
+            };
+            result.valid =
+                finitePoint(result.semanticComponentsDegrees) &&
+                std::isfinite(result.totalDegrees);
+            return result;
         }
 
         [[nodiscard]] ParityAxes captureTransformAxes(
@@ -284,6 +375,394 @@ namespace rock
                 formatParityPoint(hand.fingerAxisWeaponLocal),
                 formatParityPoint(hand.palmAxisWeaponLocal),
                 formatParityPoint(hand.crossAxisWeaponLocal));
+        }
+
+        [[nodiscard]] std::string formatParityRotationResidual(
+            const ParityRotationResidual& residual)
+        {
+            if (!residual.valid) {
+                return "missing";
+            }
+            return fmt::format(
+                "total:{:.4f},finger:{:.4f},palm:{:.4f},cross:{:.4f}",
+                residual.totalDegrees,
+                residual.semanticComponentsDegrees.x,
+                residual.semanticComponentsDegrees.y,
+                residual.semanticComponentsDegrees.z);
+        }
+    }
+
+    void TwoHandedGrip::updateBilateralHandCalibrationTrace(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey)
+    {
+        auto& trace = _bilateralHandCalibrationTrace;
+        if (!weaponNode || weaponNode != _activeWeaponNode ||
+            currentWeaponGenerationKey == 0 ||
+            currentEquippedWeaponOwnershipKey == 0) {
+            trace = {};
+            return;
+        }
+
+        const bool identityChanged =
+            trace.weaponNodeIdentity != weaponNode ||
+            trace.weaponGenerationKey != currentWeaponGenerationKey ||
+            trace.equippedWeaponOwnershipKey !=
+                currentEquippedWeaponOwnershipKey;
+        if (identityChanged) {
+            trace = BilateralHandCalibrationTraceState{
+                .weaponNodeIdentity = weaponNode,
+                .weaponGenerationKey = currentWeaponGenerationKey,
+                .equippedWeaponOwnershipKey =
+                    currentEquippedWeaponOwnershipKey,
+                .traceSequence =
+                    ++_bilateralHandCalibrationTraceSequence,
+            };
+        }
+
+        const auto resetPendingStability = [&trace]() {
+            trace.unownedStableFrames = {};
+            trace.rightHoldStableFrames = 0;
+        };
+        if (_scopeMenuOpenThisFrame ||
+            _scopeDriverFrameAuthorityActive ||
+            !hasStableNaturalHandBasis() ||
+            !isFiniteTransform(weaponNode->world) ||
+            std::abs(weaponNode->world.scale) <= 0.0001f) {
+            resetPendingStability();
+            return;
+        }
+
+        const auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiNode* const leftWand =
+            playerNodes ? playerNodes->SecondaryWandNode : nullptr;
+        RE::NiNode* const rightWand =
+            playerNodes ? playerNodes->primaryWandNode : nullptr;
+        const auto& leftDriver = _currentHandDriverFrames[0];
+        const auto& rightDriver = _currentHandDriverFrames[1];
+        if (!leftWand || !rightWand ||
+            !leftDriver.valid || !rightDriver.valid ||
+            !isFiniteTransform(leftWand->world) ||
+            !isFiniteTransform(rightWand->world) ||
+            !isFiniteTransform(leftDriver.world) ||
+            !isFiniteTransform(rightDriver.world) ||
+            std::abs(leftWand->world.scale) <= 0.0001f ||
+            std::abs(rightWand->world.scale) <= 0.0001f ||
+            std::abs(leftDriver.world.scale) <= 0.0001f ||
+            std::abs(rightDriver.world.scale) <= 0.0001f) {
+            resetPendingStability();
+            return;
+        }
+
+        constexpr std::uint16_t kStableAuthorityFrames = 8;
+        constexpr float kMaximumBoneToCarrierDistance = 30.0f;
+        constexpr float kMaximumWeaponToHandDistance = 100.0f;
+        const auto relationUsable = [](
+                                        const RE::NiTransform& relation,
+                                        const float maximumDistance) {
+            if (!isFiniteTransform(relation) ||
+                std::abs(relation.scale) <= 0.0001f) {
+                return false;
+            }
+            const float distance = std::sqrt(
+                relation.translate.x * relation.translate.x +
+                relation.translate.y * relation.translate.y +
+                relation.translate.z * relation.translate.z);
+            return std::isfinite(distance) &&
+                   distance <= maximumDistance;
+        };
+        const auto captureRelation = [&relationUsable](
+                                         const RE::NiTransform& carrierWorld,
+                                         const RE::NiTransform& handWorld,
+                                         const float maximumDistance,
+                                         RE::NiTransform& outRelation) {
+            outRelation = transform_math::composeTransforms(
+                transform_math::invertTransform(carrierWorld),
+                handWorld);
+            return relationUsable(outRelation, maximumDistance);
+        };
+        const auto advanceStableFrame = [kStableAuthorityFrames](
+                                            std::uint16_t& frames) {
+            if (frames < kStableAuthorityFrames) {
+                ++frames;
+            }
+            return frames >= kStableAuthorityFrames;
+        };
+
+        /*
+         * Preserve one native right-hand control sample before takeover. This
+         * is not a new calibration authority: it only proves which rendered
+         * right-hand hold the later candidate is being compared against.
+         */
+        const bool rightHoldEligible =
+            !_firingHandIsLeft &&
+            !hasVisualAuthorityForHand(false) &&
+            !partGrip(true).active && !partGrip(false).active &&
+            !_rightHandHoldingObjectForPose &&
+            !_weaponCollisionHandPresentationFromPreviousFrame[1] &&
+            hasRightFiringHandCanonicalFrame(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey) &&
+            hasRightNativeWeaponAimFrame(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey);
+        RE::NiTransform rightHoldWorld{};
+        RE::NiTransform rightHoldInWand{};
+        RE::NiTransform rightHoldInWeapon{};
+        const bool rightHoldSampleValid =
+            rightHoldEligible &&
+            tryGetRootFlattenedHandBoneTransform(false, rightHoldWorld) &&
+            isFiniteTransform(rightHoldWorld) &&
+            captureRelation(
+                rightWand->world,
+                rightHoldWorld,
+                kMaximumBoneToCarrierDistance,
+                rightHoldInWand) &&
+            captureRelation(
+                weaponNode->world,
+                rightHoldWorld,
+                kMaximumWeaponToHandDistance,
+                rightHoldInWeapon);
+        if (!trace.rightHoldValid && rightHoldSampleValid) {
+            if (advanceStableFrame(trace.rightHoldStableFrames)) {
+                trace.rightHoldValid = true;
+                const ParityRotationResidual canonicalResidual =
+                    compareRotationResidual(
+                        _rightFiringHandCanonicalWeaponLocal,
+                        rightHoldInWeapon);
+                const char* canonicalSource =
+                    _rightFiringHandCanonicalSource ==
+                            RightFiringCanonicalSource::AuthoredAnimation ?
+                        "authored-animation" :
+                        "native-carry";
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "AMBICALIBRATION RIGHT_HOLD seq={} generation={:016X} ownership={:016X} source={} canonicalToObservedRotation=({}) canonicalToObservedTranslation={:.4f}gu handInWandT=({})",
+                    trace.traceSequence,
+                    currentWeaponGenerationKey,
+                    currentEquippedWeaponOwnershipKey,
+                    canonicalSource,
+                    formatParityRotationResidual(canonicalResidual),
+                    pointDistance(
+                        _rightFiringHandCanonicalWeaponLocal.translate,
+                        rightHoldInWeapon.translate),
+                    formatParityPoint(rightHoldInWand.translate));
+            }
+        } else if (!trace.rightHoldValid) {
+            trace.rightHoldStableFrames = 0;
+        }
+
+        /*
+         * Sample only the current offhand, after several frames with no ROCK
+         * visual, collision, object, return, or grip authority. The two sides
+         * are therefore learned in separate topology phases and neither one
+         * is synthesized from the other.
+         */
+        for (const bool isLeft : { true, false }) {
+            const std::size_t handIndex = isLeft ? 0u : 1u;
+            if (trace.observedValid[handIndex]) {
+                continue;
+            }
+            const bool holdingObject = isLeft ?
+                _leftHandHoldingObjectForPose :
+                _rightHandHoldingObjectForPose;
+            const bool unownedEligible =
+                isLeft != _firingHandIsLeft &&
+                !hasVisualAuthorityForHand(isLeft) &&
+                !partGrip(isLeft).active && !holdingObject &&
+                !_weaponCollisionHandPresentationFromPreviousFrame[handIndex];
+            RE::NiTransform handWorld{};
+            RE::NiTransform boneInWand{};
+            RE::NiTransform boneInDriver{};
+            RE::NiNode* const wand = isLeft ? leftWand : rightWand;
+            const auto& driver = isLeft ? leftDriver : rightDriver;
+            const bool sampleValid =
+                unownedEligible &&
+                tryGetRootFlattenedHandBoneTransform(isLeft, handWorld) &&
+                isFiniteTransform(handWorld) &&
+                captureRelation(
+                    wand->world,
+                    handWorld,
+                    kMaximumBoneToCarrierDistance,
+                    boneInWand) &&
+                captureRelation(
+                    driver.world,
+                    handWorld,
+                    kMaximumBoneToCarrierDistance,
+                    boneInDriver);
+            if (!sampleValid) {
+                trace.unownedStableFrames[handIndex] = 0;
+                continue;
+            }
+            if (!advanceStableFrame(
+                    trace.unownedStableFrames[handIndex])) {
+                continue;
+            }
+
+            trace.observedBoneInWand[handIndex] = boneInWand;
+            trace.observedValid[handIndex] = true;
+            const RE::NiTransform& syntheticWand = isLeft ?
+                _leftNaturalBoneInWand :
+                _rightNaturalBoneInWand;
+            const RE::NiTransform& syntheticDriver = isLeft ?
+                _leftNaturalBoneInDampedDriver :
+                _rightNaturalBoneInDampedDriver;
+            const ParityRotationResidual wandResidual =
+                compareRotationResidual(syntheticWand, boneInWand);
+            const ParityRotationResidual driverResidual =
+                compareRotationResidual(syntheticDriver, boneInDriver);
+            ROCK_LOG_INFO(
+                Weapon,
+                "AMBICALIBRATION UNOWNED seq={} hand={} syntheticWandToObservedRotation=({}) syntheticWandToObservedTranslation={:.4f}gu syntheticDriverToObservedRotation=({}) syntheticDriverToObservedTranslation={:.4f}gu observedWandT=({}) observedDriverT=({})",
+                trace.traceSequence,
+                isLeft ? "left" : "right",
+                formatParityRotationResidual(wandResidual),
+                pointDistance(
+                    syntheticWand.translate,
+                    boneInWand.translate),
+                formatParityRotationResidual(driverResidual),
+                pointDistance(
+                    syntheticDriver.translate,
+                    boneInDriver.translate),
+                formatParityPoint(boneInWand.translate),
+                formatParityPoint(boneInDriver.translate));
+        }
+
+        const bool bilateralObserved =
+            trace.observedValid[0] && trace.observedValid[1];
+        if (!bilateralObserved) {
+            return;
+        }
+
+        if (!trace.bilateralLogged) {
+            const RE::NiTransform predictedRightFromLeft =
+                left_firing_position_only_math::mirrorOppositeHandFrame(
+                    trace.observedBoneInWand[0]);
+            const RE::NiTransform predictedLeftFromRight =
+                left_firing_position_only_math::mirrorOppositeHandFrame(
+                    trace.observedBoneInWand[1]);
+            const ParityRotationResidual leftToRightResidual =
+                compareRotationResidual(
+                    predictedRightFromLeft,
+                    trace.observedBoneInWand[1]);
+            const ParityRotationResidual rightToLeftResidual =
+                compareRotationResidual(
+                    predictedLeftFromRight,
+                    trace.observedBoneInWand[0]);
+            ROCK_LOG_INFO(
+                Weapon,
+                "AMBICALIBRATION BILATERAL seq={} syntheticMirrorToPhysicalRotation=(rightFromLeft:({}),leftFromRight:({})) syntheticMirrorToPhysicalTranslation=(rightFromLeft:{:.4f}gu,leftFromRight:{:.4f}gu) convention=(finger:+X,palm:-Y,cross:authored+Z/raw-Z)",
+                trace.traceSequence,
+                formatParityRotationResidual(leftToRightResidual),
+                formatParityRotationResidual(rightToLeftResidual),
+                pointDistance(
+                    predictedRightFromLeft.translate,
+                    trace.observedBoneInWand[1].translate),
+                pointDistance(
+                    predictedLeftFromRight.translate,
+                    trace.observedBoneInWand[0].translate));
+            trace.bilateralLogged = true;
+        }
+
+        if (_firingHandIsLeft &&
+            !trace.leftFiringCandidateLogged &&
+            _hasFiringHandWeaponLocal &&
+            hasRightFiringHandCanonicalFrame(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey)) {
+            const RE::NiTransform observedLeftWorld =
+                transform_math::composeTransforms(
+                    leftWand->world,
+                    trace.observedBoneInWand[0]);
+            const RE::NiTransform observedRightWorld =
+                transform_math::composeTransforms(
+                    rightWand->world,
+                    trace.observedBoneInWand[1]);
+            RE::NiTransform observedBasisCandidate{};
+            if (tryBuildMirroredLeftFiringHandWeaponLocalImpl(
+                    _rightFiringHandCanonicalWeaponLocal,
+                    _rightFiringGripCanonicalWeaponLocal,
+                    observedRightWorld,
+                    observedLeftWorld,
+                    observedBasisCandidate,
+                    false,
+                    false)) {
+                const ParityRotationResidual candidateResidual =
+                    compareRotationResidual(
+                        _primaryHandWeaponLocal,
+                        observedBasisCandidate);
+                const RE::NiPoint3 currentPalm =
+                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        _primaryHandWeaponLocal,
+                        true);
+                const RE::NiPoint3 observedBasisPalm =
+                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        observedBasisCandidate,
+                        true);
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "AMBICALIBRATION LEFT_FIRING_CANDIDATE seq={} syntheticBasisToObservedBasisRotation=({}) syntheticBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu rightControl={} currentT=({}) observedBasisT=({})",
+                    trace.traceSequence,
+                    formatParityRotationResidual(candidateResidual),
+                    pointDistance(
+                        _primaryHandWeaponLocal.translate,
+                        observedBasisCandidate.translate),
+                    pointDistance(currentPalm, observedBasisPalm),
+                    trace.rightHoldValid ? "ready" : "missing",
+                    formatParityPoint(
+                        _primaryHandWeaponLocal.translate),
+                    formatParityPoint(
+                        observedBasisCandidate.translate));
+                trace.leftFiringCandidateLogged = true;
+            }
+        }
+
+        const auto& supportCandidate = _authoredSupportGripCandidate;
+        if (_firingHandIsLeft &&
+            !trace.rightSupportCandidateLogged &&
+            supportCandidate.valid &&
+            supportCandidate.rightMirrorValid &&
+            supportCandidate.weaponNode == weaponNode &&
+            supportCandidate.weaponGenerationKey ==
+                currentWeaponGenerationKey) {
+            RE::NiTransform observedBasisRightSupport{};
+            if (tryBuildMirroredRightSupportHandWeaponLocal(
+                    supportCandidate.leftHandWeaponLocal,
+                    observedBasisRightSupport,
+                    &trace.observedBoneInWand[0],
+                    &trace.observedBoneInWand[1])) {
+                const ParityRotationResidual candidateResidual =
+                    compareRotationResidual(
+                        supportCandidate.rightHandWeaponLocal,
+                        observedBasisRightSupport);
+                const RE::NiPoint3 currentPalm =
+                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        supportCandidate.rightHandWeaponLocal,
+                        false);
+                const RE::NiPoint3 observedBasisPalm =
+                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        observedBasisRightSupport,
+                        false);
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "AMBICALIBRATION RIGHT_SUPPORT_CANDIDATE seq={} capture={} syntheticBasisToObservedBasisRotation=({}) syntheticBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu currentT=({}) observedBasisT=({})",
+                    trace.traceSequence,
+                    supportCandidate.captureSequence,
+                    formatParityRotationResidual(candidateResidual),
+                    pointDistance(
+                        supportCandidate.rightHandWeaponLocal.translate,
+                        observedBasisRightSupport.translate),
+                    pointDistance(currentPalm, observedBasisPalm),
+                    formatParityPoint(
+                        supportCandidate.rightHandWeaponLocal.translate),
+                    formatParityPoint(
+                        observedBasisRightSupport.translate));
+                trace.rightSupportCandidateLogged = true;
+            }
         }
     }
 
