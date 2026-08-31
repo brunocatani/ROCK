@@ -514,8 +514,11 @@ namespace rock::grab_three_phase
     {
         bool hasGrabBody = false;
         bool heldBodyColliding = false;
+        bool requireAngularConvergence = false;
         float gripErrorGameUnits = std::numeric_limits<float>::max();
         float previousGripErrorGameUnits = std::numeric_limits<float>::max();
+        float rotationErrorDegrees = std::numeric_limits<float>::max();
+        float maxRotationErrorDegrees = 5.0f;
         float deltaSeconds = 0.0f;
         float elapsedSeconds = 0.0f;
         float maxTimeSeconds = 0.0f;
@@ -532,6 +535,7 @@ namespace rock::grab_three_phase
     {
         bool reachedTouchRange = false;
         bool insidePocket = false;
+        bool angularlyConverged = true;
         bool stableThisFrame = false;
         bool timedOutInsidePocket = false;
         float nextStableInsidePocketSeconds = 0.0f;
@@ -546,8 +550,20 @@ namespace rock::grab_three_phase
         const float pocketRadius = (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
         const float gripError =
             std::isfinite(input.gripErrorGameUnits) ? input.gripErrorGameUnits : std::numeric_limits<float>::max();
+        const float maxRotationError =
+            (std::max)(0.0f,
+                std::isfinite(input.maxRotationErrorDegrees) ?
+                    input.maxRotationErrorDegrees :
+                    5.0f);
+        decision.angularlyConverged =
+            !input.requireAngularConvergence ||
+            (std::isfinite(input.rotationErrorDegrees) &&
+                input.rotationErrorDegrees <= maxRotationError);
 
-        decision.reachedTouchRange = input.hasGrabBody && gripError <= touchDistance;
+        decision.reachedTouchRange =
+            input.hasGrabBody &&
+            gripError <= touchDistance &&
+            decision.angularlyConverged;
         decision.insidePocket = input.hasGrabBody && gripError <= pocketRadius;
 
         const float deltaSeconds = (std::max)(0.0001f, std::isfinite(input.deltaSeconds) ? input.deltaSeconds : 0.0001f);
@@ -559,6 +575,7 @@ namespace rock::grab_three_phase
             (std::max)(0.0f, std::isfinite(input.maxSeparatingSpeedGameUnitsPerSecond) ? input.maxSeparatingSpeedGameUnitsPerSecond : 40.0f);
         decision.stableThisFrame =
             decision.insidePocket &&
+            decision.angularlyConverged &&
             (input.heldBodyColliding ||
                 decision.reachedTouchRange ||
                 !std::isfinite(input.previousGripErrorGameUnits) ||
@@ -587,6 +604,8 @@ namespace rock::grab_three_phase
             decision.timeoutBlockReason = "waitingForTimeout";
         } else if (!decision.insidePocket) {
             decision.timeoutBlockReason = "outsidePocket";
+        } else if (!decision.angularlyConverged) {
+            decision.timeoutBlockReason = "waitingForAngularConvergence";
         } else if (decision.nextStableInsidePocketSeconds < requiredStableSeconds) {
             decision.timeoutBlockReason = "waitingForStablePocket";
         } else {

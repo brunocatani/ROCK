@@ -169,16 +169,16 @@ Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'Visual handoff must release the phantom while keeping only its authored finger payload alive until the equipped owner acquires it or the absolute lease expires.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    '_hasFiringHandWeaponLocal[\s\S]{0,500}_hasPhysicalHandInWandLocal[\s\S]{0,1500}resolveAuthoredPrimaryWeaponWorldPositionOnly' `
-    'The equip bridge must converge an authored hold only by translating the native-rotation weapon toward the physical palm.'
+    'tryResolveGripAnchorRootLocal[\s\S]{0,300}findNode\(root, "P-Grip"\)[\s\S]*resolveRootWorldFromSharedGripAnchor' `
+    'The equip bridge must align the loose model through the P-Grip frame shared with the exact equipped instance.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    'positionOnlyCarrierWorld\s*=[\s\S]{0,300}input\.nativeVisual->weaponRoot->world[\s\S]{0,160}desiredWorld[\s\S]{0,300}resolveAuthoredPrimaryWeaponWorldPositionOnly\([\s\S]{0,180}positionOnlyCarrierWorld' `
-    'Once the equipped model exists, the phantom position-only solve must inherit that exact native weapon rotation before visual handoff.'
+    'nativeGripSearchRoot[\s\S]{0,300}input\.nativeVisual->exactInstance[\s\S]{0,600}nativeModelAnchorAvailable[\s\S]{0,1200}resolveRootWorldFromSharedGripAnchor' `
+    'Once the equipped model exists, the phantom must inherit the matching native model anchor rather than the Weapon wrapper frame.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    'nativePositionOnlyCarrierAvailable[\s\S]{0,1800}EquipVisualBridge native position-only convergence[\s\S]{0,160}gripCorrection[\s\S]{0,500}rotationDistanceDegrees' `
-    'The first native-carrier convergence frame must record the rotational and grip corrections needed to audit the phantom handoff.'
+    'nativeModelAnchorAvailable[\s\S]{0,1800}EquipVisualBridge native model-anchor convergence[\s\S]{0,160}anchorCorrection[\s\S]{0,500}rotationDistanceDegrees' `
+    'The first exact-model convergence frame must record the rotational and shared-anchor corrections needed to audit the phantom handoff.'
 
 Reject-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'applyExternalHandWorldTransform|_positionOnlyAlignmentActive|rockExperimentalAuthoredGripPositionOnlyAlignment|RockConfig\.h' `

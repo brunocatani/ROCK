@@ -12341,13 +12341,24 @@ namespace rock
             const RE::NiPoint3 gripError = targetGripWorld - liveGripWorld;
             const float gripErrorGameUnits = hasGrabBody ? std::sqrt(gripError.x * gripError.x + gripError.y * gripError.y + gripError.z * gripError.z) :
                                                            std::numeric_limits<float>::max();
+            const float rotationErrorDegrees = hasGrabBody ?
+                rotationDeltaDegrees(
+                    grabBodyWorld.rotate,
+                    driveUpdate.desiredBodyWorld.rotate) :
+                std::numeric_limits<float>::max();
             const float touchDistance = (std::max)(0.1f, g_rockConfig.rockGrabTouchAcquireDistanceGameUnits);
+            constexpr float kLooseWeaponAngularSettleDegrees = 3.0f;
             const auto convergenceDecision =
                 grab_three_phase::evaluateConvergencePromotion(grab_three_phase::ConvergencePromotionInput{
                     .hasGrabBody = hasGrabBody,
                     .heldBodyColliding = heldBodyColliding,
+                    .requireAngularConvergence =
+                        _grabFrame.syntheticLooseWeaponPrimaryAttach,
                     .gripErrorGameUnits = gripErrorGameUnits,
                     .previousGripErrorGameUnits = _grabConvergePreviousGripErrorGameUnits,
+                    .rotationErrorDegrees = rotationErrorDegrees,
+                    .maxRotationErrorDegrees =
+                        kLooseWeaponAngularSettleDegrees,
                     .deltaSeconds = deltaTime,
                     .elapsedSeconds = _grabStartTime,
                     .maxTimeSeconds = g_rockConfig.rockGrabConvergeMaxTimeSeconds,
@@ -12361,13 +12372,26 @@ namespace rock
             _grabConvergePreviousGripErrorGameUnits = gripErrorGameUnits;
             const bool reachedTouchRange = convergenceDecision.reachedTouchRange;
             const bool convergenceTimedOutInsidePocket = convergenceDecision.timedOutInsidePocket;
+            if (_grabFrame.syntheticLooseWeaponPrimaryAttach &&
+                convergenceDecision.insidePocket &&
+                !convergenceDecision.angularlyConverged) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} LOOSE WEAPON ANGULAR SETTLE HELD: gripErr={:.2f}gu rotationErr={:.2f}deg required<={:.2f}deg elapsed={:.3f}s",
+                    handName(),
+                    gripErrorGameUnits,
+                    rotationErrorDegrees,
+                    kLooseWeaponAngularSettleDegrees,
+                    _grabStartTime);
+            }
             if (convergenceTimedOutInsidePocket) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} THREE-PHASE GRAB CONVERGE PROMOTION READY: phase={} gripErr={:.2f}gu touch={:.2f}gu pocket={:.2f}gu elapsed={:.3f}s colliding={} stableDwell={:.3f}s sepSpeed={:.2f}gu/s",
+                    "{} THREE-PHASE GRAB CONVERGE PROMOTION READY: phase={} gripErr={:.2f}gu rotationErr={:.2f}deg touch={:.2f}gu pocket={:.2f}gu elapsed={:.3f}s colliding={} stableDwell={:.3f}s sepSpeed={:.2f}gu/s",
                     handName(),
                     grab_three_phase::phaseName(previousAcquisitionPhase),
                     gripErrorGameUnits,
+                    rotationErrorDegrees,
                     touchDistance,
                     g_rockConfig.rockGrabPocketRadiusGameUnits,
                     _grabStartTime,
@@ -12733,11 +12757,12 @@ namespace rock
                 _grabFrame.fadeInGrabConstraint = false;
                 _grabFrame.motorFadeReason = promotionReason;
                 ROCK_LOG_DEBUG(Hand,
-                    "{} THREE-PHASE GRAB TRANSITION: {} -> TouchHeld relation=frozenRockPointToPalm reason={} gripErr={:.2f}gu elapsed={:.3f}s colliding={} posePublished={}",
+                    "{} THREE-PHASE GRAB TRANSITION: {} -> TouchHeld relation=frozenRockPointToPalm reason={} gripErr={:.2f}gu rotationErr={:.2f}deg elapsed={:.3f}s colliding={} posePublished={}",
                     handName(),
                     grab_three_phase::phaseName(previousAcquisitionPhase),
                     promotionReason,
                     gripErrorGameUnits,
+                    rotationErrorDegrees,
                     _grabStartTime,
                     heldBodyColliding ? "yes" : "no",
                     _grabFingerPosePublished ? "yes" : "no");

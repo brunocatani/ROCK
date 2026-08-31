@@ -79,6 +79,71 @@ namespace rock::loose_weapon_grip_zone
             return std::sqrt(dx * dx + dy * dy + dz * dz);
         }
 
+        bool tryRebaseAuthoredRelationsToLooseRoot(
+            RE::NiAVObject* looseRoot,
+            const authored_weapon_grip_library::LookupResult& authoredLookup,
+            RE::NiTransform& outFiringHandLooseRootLocal,
+            RE::NiTransform& outPlacementHandLooseRootLocal)
+        {
+            outFiringHandLooseRootLocal = {};
+            outPlacementHandLooseRootLocal = {};
+            if (!looseRoot ||
+                !authoredLookup.hasRightPositionOnlyHandWeaponLocal ||
+                !authoredLookup.hasPositionOnlyGripAnchorWeaponLocal ||
+                !isUsableWorldTransform(looseRoot->world) ||
+                !isUsableWorldTransform(
+                    authoredLookup.positionOnlyGripAnchorWeaponLocal)) {
+                return false;
+            }
+
+            auto* looseGripAnchor = f4vr::findNode(looseRoot, "P-Grip");
+            if (!looseGripAnchor ||
+                !isUsableWorldTransform(looseGripAnchor->world)) {
+                return false;
+            }
+
+            const RE::NiTransform looseGripAnchorRootLocal =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(looseRoot->world),
+                    looseGripAnchor->world);
+            if (!isUsableWorldTransform(looseGripAnchorRootLocal)) {
+                return false;
+            }
+
+            const auto compose = [](
+                                     const RE::NiTransform& parent,
+                                     const RE::NiTransform& child) {
+                return transform_math::composeTransforms(parent, child);
+            };
+            const auto invert = [](const RE::NiTransform& transform) {
+                return transform_math::invertTransform(transform);
+            };
+            const RE::NiTransform firingHandLooseRootLocal =
+                authored_weapon_grip_capture_policy::
+                    rebaseRelationThroughSharedGripAnchor(
+                        authoredLookup.positionOnlyGripAnchorWeaponLocal,
+                        looseGripAnchorRootLocal,
+                        authoredLookup.rightHandWeaponLocal,
+                        compose,
+                        invert);
+            const RE::NiTransform placementHandLooseRootLocal =
+                authored_weapon_grip_capture_policy::
+                    rebaseRelationThroughSharedGripAnchor(
+                        authoredLookup.positionOnlyGripAnchorWeaponLocal,
+                        looseGripAnchorRootLocal,
+                        authoredLookup.rightPositionOnlyHandWeaponLocal,
+                        compose,
+                        invert);
+            if (!isUsableWorldTransform(firingHandLooseRootLocal) ||
+                !isUsableWorldTransform(placementHandLooseRootLocal)) {
+                return false;
+            }
+
+            outFiringHandLooseRootLocal = firingHandLooseRootLocal;
+            outPlacementHandLooseRootLocal = placementHandLooseRootLocal;
+            return true;
+        }
+
         /*
          * Resolve one fixed firing grip in WEAPON space. Explicit hFRIK JSON
          * remains user correction authority. Otherwise ROCK consumes the
@@ -196,35 +261,58 @@ namespace rock::loose_weapon_grip_zone
                     "positionOnlyCacheUnavailable";
 
                 if (authoredLookup.hasRightPositionOnlyHandWeaponLocal) {
-                    canonicalPlacementHandWeaponLocal =
-                        authoredLookup.rightPositionOnlyHandWeaponLocal;
+                    RE::NiTransform rebasedFiringHandLooseRootLocal{};
+                    RE::NiTransform rebasedPlacementHandLooseRootLocal{};
+                    const bool rootFrameRebased =
+                        tryRebaseAuthoredRelationsToLooseRoot(
+                            looseRoot,
+                            authoredLookup,
+                            rebasedFiringHandLooseRootLocal,
+                            rebasedPlacementHandLooseRootLocal);
+                    const RE::NiPoint3 rebasedGripWeaponLocal =
+                        rootFrameRebased ?
+                            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                                rebasedFiringHandLooseRootLocal,
+                                false) :
+                            RE::NiPoint3{};
                     const RE::NiPoint3 cachedPlacementGripWeaponLocal =
-                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                            canonicalPlacementHandWeaponLocal,
-                            false);
+                        rootFrameRebased ?
+                            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                                rebasedPlacementHandLooseRootLocal,
+                                false) :
+                            RE::NiPoint3{};
                     constexpr float kMaximumCachedPlacementGripErrorGameUnits =
                         0.01f;
                     const float cachedPlacementGripError = pointDistance(
                         cachedPlacementGripWeaponLocal,
-                        state.gripWeaponLocal);
+                        rebasedGripWeaponLocal);
                     const bool offsetRevisionMatches =
                         authoredLookup.positionOnlyFrikOffsetRevision != 0 &&
                         authoredLookup.positionOnlyFrikOffsetRevision ==
                             frik_weapon_offset_cache::currentRevision();
                     canonicalPlacementResolved =
                         offsetRevisionMatches &&
-                        isUsableWorldTransform(
-                            canonicalPlacementHandWeaponLocal) &&
+                        rootFrameRebased &&
                         std::isfinite(cachedPlacementGripError) &&
                         cachedPlacementGripError <=
                             kMaximumCachedPlacementGripErrorGameUnits;
                     if (canonicalPlacementResolved) {
+                        canonicalHandWeaponLocal =
+                            rebasedFiringHandLooseRootLocal;
+                        canonicalPlacementHandWeaponLocal =
+                            rebasedPlacementHandLooseRootLocal;
+                        state.gripWeaponLocal = rebasedGripWeaponLocal;
                         state.placementReason =
-                            "authoredEquippedPositionOnlyCache";
+                            "authoredEquippedPositionOnlyAnchorCache";
                     } else {
                         carrierFailureReason = !offsetRevisionMatches ?
                             "positionOnlyCacheOffsetRevisionMismatch" :
-                            "positionOnlyCacheInvalid";
+                            (!authoredLookup.
+                                    hasPositionOnlyGripAnchorWeaponLocal ?
+                                    "positionOnlyCacheAnchorUnavailable" :
+                                    (rootFrameRebased ?
+                                            "positionOnlyCacheInvalid" :
+                                            "positionOnlyCacheAnchorMismatch"));
                     }
                 }
 
