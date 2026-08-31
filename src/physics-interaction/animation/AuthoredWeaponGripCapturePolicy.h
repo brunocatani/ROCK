@@ -74,13 +74,11 @@ namespace rock::authored_weapon_grip_capture_policy
     {
         bool interactionAcquisitionValid{ false };
         bool activationZoneValid{ false };
-        bool authoredPoseSurfaceEvidenceValid{ false };
         bool providerAuthorityActive{ false };
         bool attachOnly{ false };
         bool captureValid{ false };
         bool weaponIdentityMatches{ false };
         bool generationMatches{ false };
-        bool authoredSeatWeaponSurfaceValid{ false };
         bool completeFingerPose{ false };
     };
 
@@ -253,13 +251,11 @@ namespace rock::authored_weapon_grip_capture_policy
     {
         return input.interactionAcquisitionValid &&
                input.activationZoneValid &&
-               input.authoredPoseSurfaceEvidenceValid &&
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.captureValid &&
                input.weaponIdentityMatches &&
                input.generationMatches &&
-               input.authoredSeatWeaponSurfaceValid &&
                input.completeFingerPose;
     }
 

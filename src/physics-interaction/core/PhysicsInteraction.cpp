@@ -2355,6 +2355,10 @@ namespace rock
 
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
         const std::uint64_t currentEquippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
+        const std::uint64_t currentAuthoredGripGenerationKey =
+            authored_support_grab_policy::resolveAuthoredGenerationKey(
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey);
         const bool suppressDefaultNativeWeaponIntent =
             _twoHandedGrip.previousWeaponCollisionPresentationWasLive();
         _dynamicWeaponCollision.beginFrame(
@@ -2371,13 +2375,13 @@ namespace rock
         reconcileEquippedWeaponHandlingMode();
         serviceEquippedWeaponHandAssignment(
             weaponNode,
-            currentWeaponGenerationKey,
+            currentAuthoredGripGenerationKey,
             currentEquippedWeaponOwnershipKey,
             input_remap_runtime::isMenuInputActive(),
             _equippedWeaponHandlingSettings);
         serviceFixedWeaponHand(
             weaponNode,
-            currentWeaponGenerationKey,
+            currentAuthoredGripGenerationKey,
             currentEquippedWeaponOwnershipKey,
             input_remap_runtime::isMenuInputActive());
 
@@ -2999,7 +3003,7 @@ namespace rock
                     rightWeaponContact,
                     gripFrameInput,
                     frame.deltaSeconds,
-                    currentWeaponGenerationKey,
+                    currentAuthoredGripGenerationKey,
                     currentEquippedWeaponOwnershipKey,
                     _weaponCollision,
                     providerInteractionState,
@@ -4193,8 +4197,6 @@ namespace rock
                 weaponClassification.formID == equippedWeapon->formID ?
             weaponClassification.keywordFlags :
             0;
-        const std::uint64_t weaponGenerationKey =
-            weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0;
         std::uint64_t weaponOwnershipKey =
             weaponNode ? _weaponCollision.getCurrentEquippedWeaponOwnershipKey() : 0;
         if (weaponNode && weaponOwnershipKey == 0) {
@@ -4204,6 +4206,12 @@ namespace rock
             // form remains a stable freshness boundary when collision is off.
             weaponOwnershipKey = currentEquippedWeaponFormId();
         }
+        const std::uint64_t collisionGenerationKey =
+            weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0;
+        const std::uint64_t weaponGenerationKey =
+            authored_support_grab_policy::resolveAuthoredGenerationKey(
+                collisionGenerationKey,
+                weaponOwnershipKey);
 
         const bool equippedGenerationMatchesForm =
             weaponNode &&

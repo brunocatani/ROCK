@@ -1094,7 +1094,7 @@ namespace rock
          * Authored-only support acquisition cannot use the frame-scoped
          * candidate as capability authority: the native graph intentionally
          * invalidates and republishes that candidate around its arm passes.
-         * This identity-bound state latches positive evidence and qualifies
+         * This identity-bound state latches positive capture and qualifies
          * persistent absence in measured ready-state time. weaponNodeIdentity
          * is a non-owning witness and is never dereferenced from the cache.
          */
@@ -1113,8 +1113,7 @@ namespace rock
                 authored_support_grab_policy::CapabilityReason::AwaitingIdentity
             };
             float readySeconds{ 0.0f };
-            float usableEvidenceMissingSeconds{ 0.0f };
-            float unavailableRecheckSeconds{ 0.0f };
+            float usableCandidateMissingSeconds{ 0.0f };
             bool initialized{ false };
         };
 
@@ -1302,8 +1301,7 @@ namespace rock
         void refreshAuthoredSupportGripActivationState(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            const WeaponCollision& weaponCollision,
-            bool requirePoseEvidence);
+            const WeaponCollision& weaponCollision);
         void resetAuthoredSupportCapability(const char* reason);
         void synchronizeAuthoredSupportCapabilityIdentity(
             RE::NiNode* weaponNode,
@@ -1313,12 +1311,9 @@ namespace rock
         void advanceAuthoredSupportCapabilityQualification(
             bool ready,
             float deltaSeconds);
-        [[nodiscard]] bool
-            shouldCollectAuthoredSupportCapabilityEvidence() const noexcept;
         void observeAuthoredSupportCapability(
             RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            const WeaponCollision& weaponCollision);
+            std::uint64_t currentWeaponGenerationKey);
         void setAuthoredSupportCapability(
             authored_support_grab_policy::Capability capability,
             authored_support_grab_policy::CapabilityReason reason);

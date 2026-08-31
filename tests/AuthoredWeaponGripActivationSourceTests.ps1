@@ -54,12 +54,12 @@ Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.
     'The gameplay indicator must use a three-unit topology-side anchor for one-hand weapons and the normalized side/DOWN diagonal for two-hand weapons.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'authoredIndicatorSupportHandIsLeft\s*=\s*supportHandIsLeft[\s\S]{0,700}\.supportSideAxisWorld\s*=\s*toIndicatorVector\([\s\S]{0,120}authoredActivation\.supportSideAxisWorld' `
+    'authoredIndicatorSupportHandIsLeft\s*=\s*supportHandIsLeft[\s\S]{0,1800}\.supportSideAxisWorld\s*=\s*toIndicatorVector\([\s\S]{0,120}authoredActivation\.supportSideAxisWorld' `
     'Indicator placement and ownership must follow the current mirrored support-hand topology for both firing hands.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshAuthoredSupportGripActivationState\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
-    'The activation state must consume the shared policy and bounded captured-pose surface witnesses.'
+    'The activation state must consume the shared policy and retain optional collider visualization witnesses.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'tryResolveAuthoredSupportActivationAxes[\s\S]*worldVectorToLocal\([\s\S]*orientRightFiringAxisForTopology[\s\S]*localVectorToWorld\(' `
@@ -79,8 +79,8 @@ foreach ($activationPath in @(
 }
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'refreshAuthoredSupportGripActivationState\([\s\S]*true\);[\s\S]*\.activationZoneValid\s*=\s*authoredActivationZoneValid[\s\S]*\.authoredPoseSurfaceEvidenceValid\s*=[\s\S]*authoredPoseSurfaceEvidenceValid' `
-    'Authored capture must force a current activation-zone and captured-pose evaluation.'
+    'refreshAuthoredSupportGripActivationState\([\s\S]*\.activationZoneValid\s*=\s*authoredActivationZoneValid[\s\S]*\.captureValid\s*=' `
+    'Authored capture must require the current activation zone and captured-pose relation without forcing collision evidence.'
 
 Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
     'semanticTargetEligible|semanticPass' `
@@ -95,8 +95,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Indicator visibility must be finalized from post-transition hand occupancy on the common update exit.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'authoredInteractionCandidateValid[\s\S]{0,1800}supportGripAllowed[\s\S]{0,800}providerPartAuthorityActive[\s\S]{0,800}supportHandHoldingObject' `
-    'The gameplay cue must require a routed, unreserved, provider-free candidate and an available support hand.'
+    'authoredSeatAcquisitionAvailable[\s\S]{0,900}activationSpatialPass[\s\S]{0,900}supportGripAllowed[\s\S]{0,900}providerPartAuthorityActive[\s\S]{0,1800}supportHandHoldingObject' `
+    'The gameplay cue and authored acquisition must use the authored activation region directly, without a routed collider candidate.'
 
 Require-Path 'data/mod/Meshes/ROCK/authored_support_grip_indicator_bright.nif' `
     'The high-visibility authored support-grip sphere must be packaged as a ROCK-owned asset.'
@@ -126,8 +126,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Physics shutdown must preserve the cue scene-node valid/stale world distinction.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawAuthoredGripActivationZones[\s\S]*topology=%s[\s\S]*supportSideAxisWorld[\s\S]*drawWireCone[\s\S]*drawWireSweptActivationRegion[\s\S]*ENFORCED AUTHORED ACTIVATION' `
-    'The pre-grab overlay must draw and identify the enforced topology-specific cone rather than labeling every lateral axis LEFT.'
+    'rockDebugDrawAuthoredGripActivationZones[\s\S]*topology=%s[\s\S]*supportSideAxisWorld[\s\S]*drawWireCone[\s\S]*drawWireSweptActivationRegion[\s\S]*AUTHORED ACTIVATION[\s\S]*collision diagnostic witnesses' `
+    'The pre-grab overlay must draw the topology-specific cone and label collision witnesses as diagnostics.'
 
 foreach ($configPath in @('data/config/ROCK_example.ini')) {
     Require-Text $configPath `

@@ -350,7 +350,6 @@ namespace rock::authored_weapon_grip_activation_policy
         Vec3 downAxisWorld{};
         bool activationStateValid{ false };
         bool activationSpatialPass{ false };
-        bool interactionCandidateValid{ false };
         bool supportGripAllowed{ false };
         bool providerPartAuthorityActive{ false };
         bool supportHandHoldingObject{ false };
@@ -368,7 +367,6 @@ namespace rock::authored_weapon_grip_activation_policy
     {
         if (!input.activationStateValid ||
             !input.activationSpatialPass ||
-            !input.interactionCandidateValid ||
             !input.supportGripAllowed ||
             input.providerPartAuthorityActive ||
             input.supportHandHoldingObject ||

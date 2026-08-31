@@ -2593,8 +2593,7 @@
                     constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
                     constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
                     const bool authoredActivationPass =
-                        snapshot.activationSpatialPass &&
-                        snapshot.poseEvidencePass;
+                        snapshot.activationSpatialPass;
                     const float* verdictColor =
                         authoredActivationPass ?
                         kPassColor : kFailColor;
@@ -2602,7 +2601,7 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -6.4f },
                         1.75f,
                         verdictColor,
-                        "ENFORCED AUTHORED ACTIVATION family=%s slot=%08X (%s) base=%08X",
+                        "AUTHORED ACTIVATION family=%s slot=%08X (%s) base=%08X",
                         authored_weapon_grip_activation_policy::weaponFamilyName(
                             snapshot.weaponFamily),
                         snapshot.effectiveEquipSlotFormID,
@@ -2637,7 +2636,7 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -12.4f },
                         1.65f,
                         kCoordinateColor,
-                        "pose witnesses=%u/6 mask=%02X evidence=%s overall=%s current=%s",
+                        "collision diagnostic witnesses=%u/6 mask=%02X evidence=%s authored=%s current=%s",
                         static_cast<unsigned>(snapshot.poseSurfaceWitnessCount),
                         static_cast<unsigned>(snapshot.poseSurfaceWitnessMask),
                         snapshot.poseEvidencePass ? "PASS" : "FAIL",

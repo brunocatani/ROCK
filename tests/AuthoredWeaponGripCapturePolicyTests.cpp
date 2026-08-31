@@ -204,11 +204,9 @@ int main()
     constexpr AuthoredSupportGripCandidateInput supportEligible{
         .interactionAcquisitionValid = true,
         .activationZoneValid = true,
-        .authoredPoseSurfaceEvidenceValid = true,
         .captureValid = true,
         .weaponIdentityMatches = true,
         .generationMatches = true,
-        .authoredSeatWeaponSurfaceValid = true,
         .completeFingerPose = true,
     };
     static_assert(shouldUseAuthoredSupportGrip(supportEligible));
@@ -224,11 +222,6 @@ int main()
     }());
     static_assert([=] {
         auto input = supportEligible;
-        input.authoredPoseSurfaceEvidenceValid = false;
-        return !shouldUseAuthoredSupportGrip(input);
-    }());
-    static_assert([=] {
-        auto input = supportEligible;
         input.providerAuthorityActive = true;
         return !shouldUseAuthoredSupportGrip(input);
     }());
@@ -240,11 +233,6 @@ int main()
     static_assert([=] {
         auto input = supportEligible;
         input.completeFingerPose = false;
-        return !shouldUseAuthoredSupportGrip(input);
-    }());
-    static_assert([=] {
-        auto input = supportEligible;
-        input.authoredSeatWeaponSurfaceValid = false;
         return !shouldUseAuthoredSupportGrip(input);
     }());
     constexpr AuthoredFiringGripProbeInput firingProbeEligible{

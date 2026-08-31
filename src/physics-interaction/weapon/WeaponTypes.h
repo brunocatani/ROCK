@@ -209,6 +209,7 @@ namespace rock
         None,
         PhysicalContact,
         ProximityProbe,
+        AuthoredSeat,
     };
 
     /*

@@ -341,7 +341,6 @@ int main()
         .downAxisWorld = Vec3{ 0.0f, 0.0f, -4.0f },
         .activationStateValid = true,
         .activationSpatialPass = true,
-        .interactionCandidateValid = true,
         .supportGripAllowed = true,
     };
     auto indicator = evaluateIndicator(indicatorInput);
@@ -422,11 +421,6 @@ int main()
     {
         auto input = indicatorInput;
         input.activationSpatialPass = false;
-        indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
-    }
-    {
-        auto input = indicatorInput;
-        input.interactionCandidateValid = false;
         indicatorChecksPassed = indicatorChecksPassed && indicatorHidden(input);
     }
     {

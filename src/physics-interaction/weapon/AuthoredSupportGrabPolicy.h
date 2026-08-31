@@ -6,14 +6,21 @@
 
 namespace rock::authored_support_grab_policy
 {
+    [[nodiscard]] constexpr std::uint64_t resolveAuthoredGenerationKey(
+        const std::uint64_t collisionGenerationKey,
+        const std::uint64_t weaponOwnershipKey) noexcept
+    {
+        return collisionGenerationKey != 0 ?
+            collisionGenerationKey :
+            weaponOwnershipKey;
+    }
+
     // Qualification is measured in elapsed ready-state time, never frame
     // count. It gives a new weapon/topology a bounded opportunity to publish
     // its authored support relation before absence becomes dynamic fallback
-    // authority. An unavailable result is rechecked slowly so a later valid
-    // animation sample can recover without a re-equip.
+    // authority. Positive authored data always recovers immediately.
     inline constexpr float kQualificationSeconds = 0.20f;
-    inline constexpr float kUsableEvidenceLossSeconds = 0.20f;
-    inline constexpr float kUnavailableRecheckSeconds = 1.0f;
+    inline constexpr float kUsableCandidateLossSeconds = 0.20f;
 
     [[nodiscard]] inline float advanceContinuousEvidenceSeconds(
         const float currentSeconds,
@@ -46,7 +53,6 @@ namespace rock::authored_support_grab_policy
     {
         ModeDisabled,
         AwaitingIdentity,
-        AwaitingGeometry,
         AwaitingCandidate,
         AwaitingQualification,
         AuthoredPoseUsable,
@@ -55,8 +61,6 @@ namespace rock::authored_support_grab_policy
         SupportTopologyUnavailable,
         CanonicalAxesUnavailable,
         CompleteFingerPoseUnavailable,
-        PoseEvidenceUnavailable,
-        PoseOffCurrentWeaponGeometry,
         CaptureUnavailableAfterQualification,
     };
 
@@ -64,7 +68,6 @@ namespace rock::authored_support_grab_policy
     {
         bool modeEnabled{ false };
         bool identityCurrent{ false };
-        bool geometryReady{ false };
         bool qualificationExpired{ false };
         bool candidatePublished{ false };
         bool candidateResolvedForSupportHand{ false };
@@ -72,8 +75,6 @@ namespace rock::authored_support_grab_policy
         bool weaponFamilySupported{ false };
         bool canonicalAxesValid{ false };
         bool completeFingerPose{ false };
-        bool poseEvidenceEvaluated{ false };
-        bool poseEvidencePass{ false };
     };
 
     struct CapabilityObservation
@@ -97,21 +98,12 @@ namespace rock::authored_support_grab_policy
                 .reason = CapabilityReason::AwaitingIdentity,
             };
         }
-        if (!input.geometryReady) {
-            return {
-                .capability = Capability::Pending,
-                .reason = CapabilityReason::AwaitingGeometry,
-            };
-        }
-
-        // Positive evidence is authoritative immediately. The timer exists to
-        // qualify absence or broken authored data, not to delay a valid seat.
+        // Captured authored data is authoritative immediately. Generated
+        // collision never qualifies or rejects the canonical pose or mirror.
         if (input.candidateResolvedForSupportHand &&
             input.weaponFamilySupported &&
             input.canonicalAxesValid &&
-            input.completeFingerPose &&
-            input.poseEvidenceEvaluated &&
-            input.poseEvidencePass) {
+            input.completeFingerPose) {
             return {
                 .capability = Capability::Usable,
                 .reason = CapabilityReason::AuthoredPoseUsable,
@@ -162,15 +154,9 @@ namespace rock::authored_support_grab_policy
                 .reason = CapabilityReason::CompleteFingerPoseUnavailable,
             };
         }
-        if (!input.poseEvidenceEvaluated) {
-            return {
-                .capability = Capability::Unavailable,
-                .reason = CapabilityReason::PoseEvidenceUnavailable,
-            };
-        }
         return {
-            .capability = Capability::Unavailable,
-            .reason = CapabilityReason::PoseOffCurrentWeaponGeometry,
+            .capability = Capability::Usable,
+            .reason = CapabilityReason::AuthoredPoseUsable,
         };
     }
 
@@ -291,8 +277,6 @@ namespace rock::authored_support_grab_policy
             return "mode-disabled";
         case CapabilityReason::AwaitingIdentity:
             return "awaiting-identity";
-        case CapabilityReason::AwaitingGeometry:
-            return "awaiting-geometry";
         case CapabilityReason::AwaitingCandidate:
             return "awaiting-candidate";
         case CapabilityReason::AwaitingQualification:
@@ -309,10 +293,6 @@ namespace rock::authored_support_grab_policy
             return "canonical-axes-unavailable";
         case CapabilityReason::CompleteFingerPoseUnavailable:
             return "complete-finger-pose-unavailable";
-        case CapabilityReason::PoseEvidenceUnavailable:
-            return "pose-evidence-unavailable";
-        case CapabilityReason::PoseOffCurrentWeaponGeometry:
-            return "pose-off-current-weapon-geometry";
         case CapabilityReason::CaptureUnavailableAfterQualification:
             return "capture-unavailable-after-qualification";
         }
