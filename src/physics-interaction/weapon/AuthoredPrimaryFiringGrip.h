@@ -22,6 +22,7 @@ namespace rock
         std::uint64_t weaponOwnershipKey{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint64_t weaponInstanceContentKey{ 0 };
+        std::uint64_t weaponKeywordFlags{ 0 };
         bool weaponInstanceContentKnown{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };

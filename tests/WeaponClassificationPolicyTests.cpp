@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponClassificationPolicy.h"
+#include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 
 using namespace rock;
 using namespace rock::weapon_classification_policy;
@@ -88,6 +89,33 @@ int main()
     }).resolved);
     static_assert(!classify({}).resolved);
     static_assert(classify({}).source == WeaponClassificationSource::None);
+
+    using namespace rock::minigun_firing_grip_policy;
+    static_assert(usesCompiledFiringSeat(
+        flags(WeaponKeywordFlag::Minigun)));
+    static_assert(usesCompiledFiringSeat(
+        flags(
+            WeaponKeywordFlag::Minigun,
+            WeaponKeywordFlag::HeavyGun)));
+    static_assert(!usesCompiledFiringSeat(
+        flags(WeaponKeywordFlag::HeavyGun)));
+    static_assert(!usesCompiledFiringSeat(
+        flags(WeaponKeywordFlag::GatlingLaser)));
+
+    constexpr auto regularMinigunSeat = weaponInFiringHand(false);
+    constexpr auto powerArmorMinigunSeat = weaponInFiringHand(true);
+    static_assert(regularMinigunSeat.rotation ==
+                  powerArmorMinigunSeat.rotation);
+    static_assert(regularMinigunSeat.translation ==
+                  powerArmorMinigunSeat.translation);
+    static_assert(regularMinigunSeat.scale ==
+                  powerArmorMinigunSeat.scale);
+    static_assert(regularMinigunSeat.translation[0] ==
+                  6.887054443359375f);
+    static_assert(regularMinigunSeat.translation[1] ==
+                  5.837783336639404f);
+    static_assert(regularMinigunSeat.translation[2] ==
+                  8.01791000366211f);
 
     return 0;
 }

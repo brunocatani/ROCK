@@ -4185,6 +4185,14 @@ namespace rock
         const auto nativeAuthorityFlags =
             provider::currentNativeAnimationAuthorityFlagsV1();
         auto* equippedWeapon = currentEquippedWeaponForm();
+        const auto weaponClassification =
+            _weaponCollision.getEquippedWeaponClassification();
+        const std::uint64_t weaponKeywordFlags =
+            equippedWeapon &&
+                weaponClassification.hasEquippedWeapon &&
+                weaponClassification.formID == equippedWeapon->formID ?
+            weaponClassification.keywordFlags :
+            0;
         const std::uint64_t weaponGenerationKey =
             weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0;
         std::uint64_t weaponOwnershipKey =
@@ -4219,6 +4227,7 @@ namespace rock
             .weaponOwnershipKey = weaponOwnershipKey,
             .weaponGenerationKey = weaponGenerationKey,
             .weaponInstanceContentKey = equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0,
+            .weaponKeywordFlags = weaponKeywordFlags,
             .weaponInstanceContentKnown = equippedGenerationMatchesForm,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,

@@ -8,6 +8,7 @@
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
 #include "RE/NetImmerse/NiNode.h"
@@ -72,6 +73,39 @@ namespace rock
                    std::isfinite(transform.translate.z) &&
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.000001f;
+        }
+
+        [[nodiscard]] bool tryResolveCompiledMinigunFiringHandInWeapon(
+            const bool inPowerArmor,
+            RE::NiTransform& outHandInWeapon)
+        {
+            const auto& source =
+                minigun_firing_grip_policy::weaponInFiringHand(
+                    inPowerArmor);
+            RE::NiTransform weaponInHand{};
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    weaponInHand.rotate.entry[row][column] =
+                        source.rotation[static_cast<std::size_t>(
+                            row * 3 + column)];
+                }
+            }
+            weaponInHand.translate = {
+                source.translation[0],
+                source.translation[1],
+                source.translation[2],
+            };
+            weaponInHand.scale = source.scale;
+            if (!finiteTransform(weaponInHand)) {
+                outHandInWeapon = {};
+                return false;
+            }
+
+            // hFRIK authored Weapon-in-Hand. ROCK's firing canonical stores
+            // the inverse Hand-in-Weapon relation.
+            outHandInWeapon =
+                transform_math::invertTransform(weaponInHand);
+            return finiteTransform(outHandInWeapon);
         }
 
         [[nodiscard]] bool buildMirroredLeftFingerPose(const authored_weapon_grip_library::FiringFingerPose& rightPose, authored_weapon_grip_library::FiringFingerPose& outLeftPose)
@@ -189,6 +223,13 @@ namespace rock
 
         const std::uint64_t currentWeaponKey =
             input.weaponNode ? input.weaponOwnershipKey : 0;
+        RE::NiTransform compiledMinigunFiringHandInWeapon{};
+        const bool compiledMinigunFiringSeat =
+            minigun_firing_grip_policy::usesCompiledFiringSeat(
+                input.weaponKeywordFlags) &&
+            tryResolveCompiledMinigunFiringHandInWeapon(
+                input.inPowerArmor,
+                compiledMinigunFiringHandInWeapon);
         if (input.weaponNode != _weaponNodeIdentity ||
             currentWeaponKey != _weaponOwnershipKey) {
             weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
@@ -215,12 +256,21 @@ namespace rock
             if (input.weapon && input.weaponNode) {
                 const auto customFrikOffset =
                     frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
-                _customFrikOffsetOverrideActive = customFrikOffset.found;
-                if (_customFrikOffsetOverrideActive) {
-                    ROCK_LOG_INFO(Animation,
-                        "Authored primary firing grip yielded to custom hFRIK weapon offset weaponKey=0x{:X} source={}",
-                        currentWeaponKey,
-                        customFrikOffset.reason);
+                _customFrikOffsetOverrideActive =
+                    customFrikOffset.found &&
+                    !compiledMinigunFiringSeat;
+                if (customFrikOffset.found) {
+                    if (compiledMinigunFiringSeat) {
+                        ROCK_LOG_INFO(Animation,
+                            "Minigun custom hFRIK weapon offset promoted to compiled authored firing seat weaponKey=0x{:X} source={}",
+                            currentWeaponKey,
+                            customFrikOffset.reason);
+                    } else {
+                        ROCK_LOG_INFO(Animation,
+                            "Authored primary firing grip yielded to custom hFRIK weapon offset weaponKey=0x{:X} source={}",
+                            currentWeaponKey,
+                            customFrikOffset.reason);
+                    }
                 }
             }
             /*
@@ -240,7 +290,9 @@ namespace rock
 
             const auto customFrikOffset =
                 frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
-            _customFrikOffsetOverrideActive = customFrikOffset.found;
+            _customFrikOffsetOverrideActive =
+                customFrikOffset.found &&
+                !compiledMinigunFiringSeat;
             if (_customFrikOffsetOverrideActive != previousCustomOverride) {
                 ROCK_LOG_INFO(Animation,
                     "Authored primary firing grip custom hFRIK override {} weaponKey=0x{:X} cacheRevision={} source={}",
@@ -273,6 +325,10 @@ namespace rock
             input.weaponInstanceContentKnown);
         const auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
         const bool harvestedRelationAvailable = authoredLookup.found && authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source);
+        const RE::NiTransform& selectedRightHandInWeapon =
+            compiledMinigunFiringSeat ?
+                compiledMinigunFiringHandInWeapon :
+                authoredLookup.rightHandWeaponLocal;
         const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
         if (rightFingerPose && _mirroredFingerPoseCaptureSequence != authoredLookup.captureSequence) {
             _mirroredLeftFingerPose = {};
@@ -395,9 +451,9 @@ namespace rock
          * Physical-left firing already owns the weapon transform through
          * TwoHandedGrip, so the right-controller inverse alignment below must
          * stay disabled. The harvested right canonical remains the exact
-         * authored wrist/finger source; bind it to the stable equipped
-         * identity so TwoHandedGrip can publish the normalized left weapon
-         * and authored left hand as separate authorities.
+         * finger source; bind either its normal wrist or the compiled minigun
+         * firing seat to the stable equipped identity. The authored support
+         * relation remains independent and unchanged.
          */
         if (input.rockFiringHandIsLeft) {
             const bool canonicalReady =
@@ -416,7 +472,7 @@ namespace rock
             if (canonicalReady) {
                 if (weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
                         input.weaponNode,
-                        authoredLookup.rightHandWeaponLocal,
+                        selectedRightHandInWeapon,
                         input.weaponGenerationKey,
                         currentWeaponKey,
                         authoredLookup.captureSequence,
@@ -549,6 +605,16 @@ namespace rock
                     finiteTransform(currentAuthoredHandWorld);
             }
         }
+        if (alignmentResolved && compiledMinigunFiringSeat) {
+            authoredPrimaryHandInWeapon =
+                compiledMinigunFiringHandInWeapon;
+            currentAuthoredHandWorld =
+                transform_math::composeTransforms(
+                    liveWeaponWorld,
+                    authoredPrimaryHandInWeapon);
+            alignmentResolved =
+                finiteTransform(currentAuthoredHandWorld);
+        }
         if (!alignmentResolved) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("capture-resolution-failed");
@@ -659,8 +725,9 @@ namespace rock
             }
         }
 
-        bool authoredLibraryEntryAvailable = harvestedRelationAvailable;
-        if (!harvestedRelationAvailable) {
+        bool authoredLibraryEntryAvailable =
+            !compiledMinigunFiringSeat && harvestedRelationAvailable;
+        if (!compiledMinigunFiringSeat && !harvestedRelationAvailable) {
             authoredLibraryEntryAvailable =
                 authored_weapon_grip_library::publishResolvedVariant(
                     input.weapon,
@@ -670,7 +737,8 @@ namespace rock
                     resolvedCaptureSequence,
                     authored_weapon_grip_library::CaptureSource::LiveEquippedGraph);
         }
-        if (!authoredLibraryEntryAvailable) {
+        if (!compiledMinigunFiringSeat &&
+            !authoredLibraryEntryAvailable) {
             if (!_libraryPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
                     "Authored primary firing grip could not publish loose-weapon relation weaponKey=0x{:X} capture={}",
@@ -686,8 +754,9 @@ namespace rock
          * The authored relation above remains the presented wrist/finger
          * authority. Loose weapon placement needs a different relation: the
          * physical hand measured against the final position-only equipped
-         * weapon. Replaying this value later preserves the native weapon aim
-         * while reproducing the same authored grip translation.
+         * weapon. Miniguns retain hFRIK's independent loose-weapon authority
+         * instead of contaminating the native-idle library with this compiled
+         * equipped-only firing seat.
          */
         const RE::NiTransform rightPositionOnlyHandWeaponLocal =
             transform_math::composeTransforms(
@@ -707,14 +776,15 @@ namespace rock
             positionOnlyHoldGripError <=
                 kMaximumPositionOnlyHoldGripErrorGameUnits;
         const bool positionOnlyHoldPublished =
-            authoredLibraryEntryAvailable &&
-            positionOnlyHoldValid &&
-            authored_weapon_grip_library::publishPositionOnlyHold(
-                input.weapon,
-                input.inPowerArmor,
-                resolvedCaptureSequence,
-                frik_weapon_offset_cache::currentRevision(),
-                rightPositionOnlyHandWeaponLocal);
+            compiledMinigunFiringSeat ||
+            (authoredLibraryEntryAvailable &&
+                positionOnlyHoldValid &&
+                authored_weapon_grip_library::publishPositionOnlyHold(
+                    input.weapon,
+                    input.inPowerArmor,
+                    resolvedCaptureSequence,
+                    frik_weapon_offset_cache::currentRevision(),
+                    rightPositionOnlyHandWeaponLocal));
         if (!positionOnlyHoldPublished) {
             if (!_positionOnlyHoldPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
@@ -728,11 +798,13 @@ namespace rock
             }
         } else {
             _positionOnlyHoldPublishFailureLogged = false;
-            ROCK_LOG_SAMPLE_DEBUG(Animation, 1000,
-                "Authored position-only loose hold cached weaponKey=0x{:X} capture={} gripError={:.4f}gu",
-                currentWeaponKey,
-                resolvedCaptureSequence,
-                positionOnlyHoldGripError);
+            if (!compiledMinigunFiringSeat) {
+                ROCK_LOG_SAMPLE_DEBUG(Animation, 1000,
+                    "Authored position-only loose hold cached weaponKey=0x{:X} capture={} gripError={:.4f}gu",
+                    currentWeaponKey,
+                    resolvedCaptureSequence,
+                    positionOnlyHoldGripError);
+            }
         }
 
         _active = true;
@@ -772,7 +844,12 @@ namespace rock
                 "mode=position-only primaryHand=weapon-relative-authored physicalLeftSource=authored-seat-plus-native-weapon-aim",
                 currentWeaponKey,
                 input.weaponGenerationKey,
-                resolvedCaptureSequence, harvestedRelationAvailable ? "native-idle-preharvest" : "live-equipped-fallback",
+                resolvedCaptureSequence,
+                compiledMinigunFiringSeat ?
+                    "compiled-minigun-frik-seat" :
+                    harvestedRelationAvailable ?
+                        "native-idle-preharvest" :
+                        "live-equipped-fallback",
                 rightFingerPose ? (leftFingerPose ? "right-and-left" : "right-only") : "fallback",
                 translationDistance(trackedHandWorld, currentAuthoredHandWorld),
                 translationDistance(liveWeaponWorld, solvedWeaponWorld),
