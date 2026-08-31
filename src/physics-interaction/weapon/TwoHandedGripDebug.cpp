@@ -471,17 +471,6 @@ namespace rock
             return translation + rotation.totalDegrees * 0.1f;
         }
 
-        [[nodiscard]] RE::NiTransform expressWorldDeltaInFrame(
-            const RE::NiTransform& worldDelta,
-            const RE::NiTransform& frameWorld)
-        {
-            return transform_math::composeTransforms(
-                transform_math::invertTransform(frameWorld),
-                transform_math::composeTransforms(
-                    worldDelta,
-                    frameWorld));
-        }
-
         [[nodiscard]] std::string formatRecoilDelta(
             const RE::NiTransform& delta)
         {
@@ -792,49 +781,43 @@ namespace rock
                 weaponNode,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey)) {
-            const RE::NiTransform observedLeftWorld =
-                transform_math::composeTransforms(
-                    leftWand->world,
-                    trace.observedBoneInWand[0]);
-            const RE::NiTransform observedRightWorld =
-                transform_math::composeTransforms(
-                    rightWand->world,
-                    trace.observedBoneInWand[1]);
-            RE::NiTransform observedBasisCandidate{};
+            const RE::NiTransform identity =
+                transform_math::makeIdentityTransform<RE::NiTransform>();
+            RE::NiTransform authoredMirrorCandidate{};
             if (tryBuildMirroredLeftFiringHandWeaponLocalImpl(
                     _rightFiringHandCanonicalWeaponLocal,
                     _rightFiringGripCanonicalWeaponLocal,
-                    observedRightWorld,
-                    observedLeftWorld,
-                    observedBasisCandidate,
+                    identity,
+                    identity,
+                    authoredMirrorCandidate,
                     false,
                     false)) {
                 const ParityRotationResidual candidateResidual =
                     compareRotationResidual(
                         _primaryHandWeaponLocal,
-                        observedBasisCandidate);
+                        authoredMirrorCandidate);
                 const RE::NiPoint3 currentPalm =
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(
                         _primaryHandWeaponLocal,
                         true);
-                const RE::NiPoint3 observedBasisPalm =
+                const RE::NiPoint3 authoredMirrorPalm =
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                        observedBasisCandidate,
+                        authoredMirrorCandidate,
                         true);
                 ROCK_LOG_INFO(
                     Weapon,
-                    "AMBICALIBRATION LEFT_FIRING_CANDIDATE seq={} calibratedBasisToObservedBasisRotation=({}) calibratedBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu rightControl={} currentT=({}) observedBasisT=({})",
+                    "AMBICALIBRATION LEFT_FIRING_CANDIDATE seq={} authoredMirrorResidualRotation=({}) authoredMirrorResidualTranslation={:.4f}gu palmSeatDelta={:.4f}gu rightControl={} currentT=({}) authoredMirrorT=({})",
                     trace.traceSequence,
                     formatParityRotationResidual(candidateResidual),
                     pointDistance(
                         _primaryHandWeaponLocal.translate,
-                        observedBasisCandidate.translate),
-                    pointDistance(currentPalm, observedBasisPalm),
+                        authoredMirrorCandidate.translate),
+                    pointDistance(currentPalm, authoredMirrorPalm),
                     trace.rightHoldValid ? "ready" : "missing",
                     formatParityPoint(
                         _primaryHandWeaponLocal.translate),
                     formatParityPoint(
-                        observedBasisCandidate.translate));
+                        authoredMirrorCandidate.translate));
                 trace.leftFiringCandidateLogged = true;
             }
         }
@@ -847,38 +830,36 @@ namespace rock
             supportCandidate.weaponNode == weaponNode &&
             supportCandidate.weaponGenerationKey ==
                 currentWeaponGenerationKey) {
-            RE::NiTransform observedBasisRightSupport{};
+            RE::NiTransform authoredMirrorRightSupport{};
             if (tryBuildMirroredRightSupportHandWeaponLocalImpl(
                     supportCandidate.leftHandWeaponLocal,
-                    trace.observedBoneInWand[0],
-                    trace.observedBoneInWand[1],
-                    observedBasisRightSupport)) {
+                    authoredMirrorRightSupport)) {
                 const ParityRotationResidual candidateResidual =
                     compareRotationResidual(
                         supportCandidate.rightHandWeaponLocal,
-                        observedBasisRightSupport);
+                        authoredMirrorRightSupport);
                 const RE::NiPoint3 currentPalm =
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(
                         supportCandidate.rightHandWeaponLocal,
                         false);
-                const RE::NiPoint3 observedBasisPalm =
+                const RE::NiPoint3 authoredMirrorPalm =
                     computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                        observedBasisRightSupport,
+                        authoredMirrorRightSupport,
                         false);
                 ROCK_LOG_INFO(
                     Weapon,
-                    "AMBICALIBRATION RIGHT_SUPPORT_CANDIDATE seq={} capture={} calibratedBasisToObservedBasisRotation=({}) calibratedBasisToObservedBasisTranslation={:.4f}gu palmSeatDelta={:.4f}gu currentT=({}) observedBasisT=({})",
+                    "AMBICALIBRATION RIGHT_SUPPORT_CANDIDATE seq={} capture={} authoredMirrorResidualRotation=({}) authoredMirrorResidualTranslation={:.4f}gu palmSeatDelta={:.4f}gu currentT=({}) authoredMirrorT=({})",
                     trace.traceSequence,
                     supportCandidate.captureSequence,
                     formatParityRotationResidual(candidateResidual),
                     pointDistance(
                         supportCandidate.rightHandWeaponLocal.translate,
-                        observedBasisRightSupport.translate),
-                    pointDistance(currentPalm, observedBasisPalm),
+                        authoredMirrorRightSupport.translate),
+                    pointDistance(currentPalm, authoredMirrorPalm),
                     formatParityPoint(
                         supportCandidate.rightHandWeaponLocal.translate),
                     formatParityPoint(
-                        observedBasisRightSupport.translate));
+                        authoredMirrorRightSupport.translate));
                 trace.rightSupportCandidateLogged = true;
             }
         }
@@ -1372,47 +1353,60 @@ namespace rock
                 playerNodes->primaryWandNode->world;
             const RE::NiTransform& offhandWandWorld =
                 playerNodes->SecondaryWandNode->world;
-            const RE::NiTransform kickParentInPrimaryWand =
-                transform_math::composeTransforms(
-                    transform_math::invertTransform(
-                        primaryWandWorld),
-                    kickParent->world);
-            RE::NiTransform resolvedKickParentInTargetWand =
-                kickParentInPrimaryWand;
-            RE::NiTransform resolvedKickLocal =
-                controlledKickLocal;
-            if (targetIsNativeOffhand) {
-                resolvedKickParentInTargetWand =
-                    weapon_recoil_authority_math::
-                        mirrorLocalAcrossSagittal(
-                            kickParentInPrimaryWand);
-                resolvedKickLocal =
-                    weapon_recoil_authority_math::
-                        mirrorLocalAcrossSagittal(
-                            controlledKickLocal);
+            RE::NiTransform kickParentInPrimaryWand{};
+            if (!weapon_recoil_authority_math::
+                    tryResolveFrameLocalTransform(
+                        primaryWandWorld,
+                        kickParent->world,
+                        kickParentInPrimaryWand)) {
+                return;
             }
-
-            const RE::NiTransform worldDelta =
-                weapon_recoil_authority_math::resolveWorldDelta(
+            RE::NiTransform resolvedKickParentWorld{};
+            RE::NiTransform resolvedKickLocal{};
+            if (!weapon_recoil_authority_math::tryResolveKickFrame(
                     controlledKickLocal,
                     kickParent->world,
                     primaryWandWorld,
                     offhandWandWorld,
-                    targetIsNativeOffhand);
-            if (!isFiniteTransform(worldDelta)) {
+                    targetIsNativeOffhand,
+                    resolvedKickParentWorld,
+                    resolvedKickLocal)) {
                 return;
             }
-            const RE::NiTransform weaponLocalDelta =
-                expressWorldDeltaInFrame(
-                    worldDelta,
-                    _activeWeaponNode->world);
-            if (!isFiniteTransform(weaponLocalDelta)) {
+            const RE::NiTransform& targetWandWorld =
+                targetIsNativeOffhand ?
+                    offhandWandWorld :
+                    primaryWandWorld;
+            RE::NiTransform resolvedKickParentInTargetWand{};
+            if (!weapon_recoil_authority_math::
+                    tryResolveFrameLocalTransform(
+                        targetWandWorld,
+                        resolvedKickParentWorld,
+                        resolvedKickParentInTargetWand)) {
+                return;
+            }
+
+            RE::NiTransform kickedWeaponWorld{};
+            RE::NiTransform weaponLocalDelta{};
+            if (!weapon_recoil_authority_math::
+                    tryApplyKickToWorldTarget(
+                        resolvedKickParentWorld,
+                        resolvedKickLocal,
+                        _activeWeaponNode->world,
+                        kickedWeaponWorld) ||
+                !weapon_recoil_authority_math::
+                    tryResolveFrameLocalTransform(
+                        _activeWeaponNode->world,
+                        kickedWeaponWorld,
+                        weaponLocalDelta)) {
                 return;
             }
 
             trace.currentSampleSequence =
                 _weaponRecoilSampleSequence;
-            trace.currentWorldDelta = worldDelta;
+            trace.currentKickParentWorld =
+                resolvedKickParentWorld;
+            trace.currentKickLocal = resolvedKickLocal;
             trace.currentWeaponLocalDelta = weaponLocalDelta;
 
             constexpr std::uint16_t kMaximumSamplesPerSide = 64;
@@ -1420,6 +1414,19 @@ namespace rock
                 recoilDiagnosticStrength(weaponLocalDelta);
             const std::size_t sideIndex =
                 _firingHandIsLeft ? 1u : 0u;
+            if (trace.lastControlledKickValid[sideIndex]) {
+                const auto repeatedRotation = compareRotationResidual(
+                    trace.lastControlledKickLocals[sideIndex],
+                    controlledKickLocal);
+                if (pointDistance(
+                        trace.lastControlledKickLocals[sideIndex]
+                            .translate,
+                        controlledKickLocal.translate) <= 0.00001f &&
+                    repeatedRotation.valid &&
+                    repeatedRotation.totalDegrees <= 0.001f) {
+                    return;
+                }
+            }
             if (!std::isfinite(strength) ||
                 strength <= kMinimumSignificantStrength ||
                 trace.emittedSamples[sideIndex] >=
@@ -1427,6 +1434,9 @@ namespace rock
                 return;
             }
 
+            trace.lastControlledKickLocals[sideIndex] =
+                controlledKickLocal;
+            trace.lastControlledKickValid[sideIndex] = true;
             ++trace.emittedSamples[sideIndex];
             trace.currentSampleLogged = true;
             const auto& supportGrip = partGrip(!_firingHandIsLeft);
@@ -1441,11 +1451,11 @@ namespace rock
                                     WeaponSupportAuthorityMode::
                                         FullTwoHandedSolver ?
                         "primary-solver" :
-                        "terminal-weapon";
+                        "one-hand-pair";
             }
             ROCK_LOG_INFO(
                 Weapon,
-                "AMBIRECOIL SAMPLE seq={} sample={} firing={} state={} support=(active:{},authority:{}) response=(accepted:{},delivery:{},visualAssist:{}) targetNativeOffhand={} nativeLocal=({}) controlledLocal=({}) resolvedLocal=({}) kickParentInPrimaryWand=({}) kickParentInTargetWand=({}) worldDelta=({}) weaponLocalDelta=({}) rockRoute={}",
+                "AMBIRECOIL SAMPLE seq={} sample={} firing={} state={} support=(active:{},authority:{}) response=(accepted:{},delivery:{},visualAssist:{}) targetNativeOffhand={} nativeLocal=({}) controlledLocal=({}) resolvedLocal=({}) kickParentInPrimaryWand=({}) kickParentInTargetWand=({}) weaponLocalDelta=({}) rockRoute={}",
                 trace.traceSequence,
                 trace.currentSampleSequence,
                 _firingHandIsLeft ? "left" : "right",
@@ -1458,7 +1468,11 @@ namespace rock
                     "full" :
                     "visual-only",
                 responseAccepted ? "yes" : "no",
-                responseAccepted ? "primary-direct" : "native",
+                responseAccepted ?
+                    (_firingHandIsLeft ?
+                         "suppressed-rock-owned" :
+                         "primary-direct") :
+                    "native",
                 visualOnlySupportRecoilAssist ? "yes" : "no",
                 targetIsNativeOffhand ? "yes" : "no",
                 formatRecoilDelta(nativeKickLocal),
@@ -1468,7 +1482,6 @@ namespace rock
                     kickParentInPrimaryWand.translate),
                 formatParityPoint(
                     resolvedKickParentInTargetWand.translate),
-                formatRecoilDelta(worldDelta),
                 formatRecoilDelta(weaponLocalDelta),
                 rockRoute);
 
@@ -1570,14 +1583,27 @@ namespace rock
                 return;
             }
 
-            const RE::NiTransform expectedOutput =
-                transform_math::composeTransforms(
-                    trace.currentWorldDelta,
-                    *inputWorld);
-            const RE::NiTransform observedLocalDelta =
-                transform_math::composeTransforms(
-                    transform_math::invertTransform(*inputWorld),
-                    *outputWorld);
+            RE::NiTransform expectedOutput = *inputWorld;
+            const bool alreadyIntegratedSupportedHand =
+                std::strcmp(consumer, "frik-primary-hand") == 0 &&
+                _leftFiringWeaponRecoilSupportConstrainedThisUpdate;
+            if (!alreadyIntegratedSupportedHand &&
+                !weapon_recoil_authority_math::
+                    tryApplyKickToWorldTarget(
+                        trace.currentKickParentWorld,
+                        trace.currentKickLocal,
+                        *inputWorld,
+                        expectedOutput)) {
+                return;
+            }
+            RE::NiTransform observedLocalDelta{};
+            if (!weapon_recoil_authority_math::
+                    tryResolveFrameLocalTransform(
+                        *inputWorld,
+                        *outputWorld,
+                        observedLocalDelta)) {
+                return;
+            }
             const float expectedTranslationError = pointDistance(
                 expectedOutput.translate,
                 outputWorld->translate);
@@ -1587,16 +1613,17 @@ namespace rock
                     *outputWorld);
             ROCK_LOG_INFO(
                 Weapon,
-                "AMBIRECOIL CONSUMER seq={} sample={} consumer={} inputT=({}) outputT=({}) observedLocalDelta=({}) expectedWorldDelta=({}) expectedToObserved=(T:{:.6f}gu,R:({}))",
+                "AMBIRECOIL CONSUMER seq={} sample={} consumer={} inputT=({}) outputT=({}) observedLocalDelta=({}) resolvedKickLocal=({}) expectedToObserved=(T:{:.6f}gu,R:({})) alreadyIntegrated={}",
                 trace.traceSequence,
                 trace.currentSampleSequence,
                 consumer,
                 formatParityPoint(inputWorld->translate),
                 formatParityPoint(outputWorld->translate),
                 formatRecoilDelta(observedLocalDelta),
-                formatRecoilDelta(trace.currentWorldDelta),
+                formatRecoilDelta(trace.currentKickLocal),
                 expectedTranslationError,
-                formatParityRotationResidual(expectedRotationError));
+                formatParityRotationResidual(expectedRotationError),
+                alreadyIntegratedSupportedHand ? "yes" : "no");
         } catch (...) {
         }
     }

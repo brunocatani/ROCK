@@ -828,7 +828,6 @@ namespace rock
 
         void captureLeftFiringWeaponRecoil(
             const RE::NiTransform& controlledKickLocal) noexcept;
-        bool applyLeftFiringWeaponRecoil(RE::NiNode* weaponNode);
 
         struct LockedHandVisualLerpState
         {
@@ -1287,9 +1286,6 @@ namespace rock
         [[nodiscard]] bool hasIndependentNaturalHandDriverPair() const;
         [[nodiscard]] bool hasCurrentNaturalHandDriverCalibration(
             bool isLeft) const;
-        bool tryResolveCurrentNaturalHandWorldPair(
-            RE::NiTransform& outRightHandWorld,
-            RE::NiTransform& outLeftHandWorld) const;
         void prepareIndependentNaturalHandDriverCalibrationFrame();
         void refreshIndependentNaturalHandDriverCalibration(
             RE::NiNode* weaponNode,
@@ -1320,8 +1316,6 @@ namespace rock
 
         static bool tryBuildMirroredRightSupportHandWeaponLocalImpl(
             const RE::NiTransform& leftHandWeaponLocal,
-            const RE::NiTransform& leftBoneInWand,
-            const RE::NiTransform& rightBoneInWand,
             RE::NiTransform& outRightHandWeaponLocal);
 
         void refreshAuthoredSupportRightMirror();
@@ -1894,13 +1888,13 @@ namespace rock
          * hFRIK calls the recoil controller before ROCK's update on the same
          * game thread. The sequence makes a sample valid for one ROCK update
          * only. It prevents a skipped callback from reusing an old gun kick.
-         * Full two-hand left carry consumes that sample in the primary-hand
-         * solver target; one-hand carry consumes the native sample in the final
-         * direct weapon publication; close visual support consumes the
-         * attenuated sample there. These routes must remain mutually exclusive
-         * or supported left firing regresses to one-hand recoil.
+         * For physical-left carry ROCK returns an accepted zero hFRIK hand
+         * mask, then applies this one resolved parent/local frame to its hand,
+         * weapon, or constrained solver route. The routes remain mutually
+         * exclusive and never construct an absolute world delta.
          */
-        RE::NiTransform _leftFiringWeaponRecoilWorldDelta{};
+        RE::NiTransform _leftFiringWeaponRecoilParentWorld{};
+        RE::NiTransform _leftFiringWeaponRecoilLocal{};
         std::uint64_t _weaponRecoilSampleSequence{ 0 };
         std::uint64_t _observedWeaponRecoilSampleSequence{ 0 };
         bool _leftFiringWeaponRecoilSampleValid{ false };
@@ -2049,10 +2043,13 @@ namespace rock
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t traceSequence{ 0 };
             std::uint64_t currentSampleSequence{ 0 };
-            RE::NiTransform currentWorldDelta{};
+            RE::NiTransform currentKickParentWorld{};
+            RE::NiTransform currentKickLocal{};
             RE::NiTransform currentWeaponLocalDelta{};
             std::array<WeaponRecoilPeakTrace, 2> peaks{};
+            std::array<RE::NiTransform, 2> lastControlledKickLocals{};
             std::array<std::uint16_t, 2> emittedSamples{};
+            std::array<bool, 2> lastControlledKickValid{};
             std::uint64_t peakRevision{ 0 };
             std::uint64_t comparedPeakRevision{ 0 };
             bool currentSampleLogged{ false };

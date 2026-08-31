@@ -312,31 +312,126 @@ namespace rock::weapon_recoil_authority_math
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform resolveWorldDelta(
+    [[nodiscard]] inline bool isFiniteRecoilTransform(
+        const Transform& transform)
+    {
+        if (!std::isfinite(transform.translate.x) ||
+            !std::isfinite(transform.translate.y) ||
+            !std::isfinite(transform.translate.z) ||
+            !std::isfinite(transform.scale) ||
+            std::abs(transform.scale) <= 0.000001f) {
+            return false;
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (!std::isfinite(
+                        transform.rotate.entry[row][column])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline bool tryResolveFrameLocalTransform(
+        const Transform& frameWorld,
+        const Transform& targetWorld,
+        Transform& outTargetLocal)
+    {
+        outTargetLocal =
+            transform_math::makeIdentityTransform<Transform>();
+        if (!isFiniteRecoilTransform(frameWorld) ||
+            !isFiniteRecoilTransform(targetWorld)) {
+            return false;
+        }
+
+        /*
+         * Compute the relative transform directly. Building inverse(frame)
+         * first stores an origin-sized inverse translation in float; a later
+         * composition then loses millimetre-scale recoil when those large
+         * values cancel. worldPointToLocal subtracts the two world origins in
+         * double precision before narrowing the already-small result.
+         */
+        outTargetLocal.rotate =
+            transform_math::multiplyStoredRotations(
+                targetWorld.rotate,
+                transform_math::transposeRotation(
+                    frameWorld.rotate));
+        outTargetLocal.translate =
+            transform_math::worldPointToLocal(
+                frameWorld,
+                targetWorld.translate);
+        outTargetLocal.scale =
+            static_cast<decltype(outTargetLocal.scale)>(
+                static_cast<double>(targetWorld.scale) /
+                static_cast<double>(frameWorld.scale));
+        return isFiniteRecoilTransform(outTargetLocal);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline bool tryResolveKickFrame(
         const Transform& nativeKickLocal,
         const Transform& nativeKickParentWorld,
         const Transform& nativePrimaryWandWorld,
         const Transform& nativeOffhandWandWorld,
-        const bool targetIsNativeOffhand)
+        const bool targetIsNativeOffhand,
+        Transform& outKickParentWorld,
+        Transform& outKickLocal)
     {
-        Transform kickParentWorld = nativeKickParentWorld;
-        Transform kickLocal = nativeKickLocal;
-        if (targetIsNativeOffhand) {
-            const Transform kickParentInPrimaryWand =
-                transform_math::composeTransforms(
-                    transform_math::invertTransform(nativePrimaryWandWorld),
-                    nativeKickParentWorld);
-            kickParentWorld = transform_math::composeTransforms(
-                nativeOffhandWandWorld,
-                mirrorLocalAcrossSagittal(kickParentInPrimaryWand));
-            kickLocal = mirrorLocalAcrossSagittal(nativeKickLocal);
+        outKickParentWorld =
+            transform_math::makeIdentityTransform<Transform>();
+        outKickLocal =
+            transform_math::makeIdentityTransform<Transform>();
+        if (!isFiniteRecoilTransform(nativeKickLocal) ||
+            !isFiniteRecoilTransform(nativeKickParentWorld)) {
+            return false;
         }
 
-        return transform_math::composeTransforms(
-            kickParentWorld,
+        outKickParentWorld = nativeKickParentWorld;
+        outKickLocal = nativeKickLocal;
+        if (targetIsNativeOffhand) {
+            Transform kickParentInPrimaryWand{};
+            if (!tryResolveFrameLocalTransform(
+                    nativePrimaryWandWorld,
+                    nativeKickParentWorld,
+                    kickParentInPrimaryWand)) {
+                return false;
+            }
+            outKickParentWorld = transform_math::composeTransforms(
+                nativeOffhandWandWorld,
+                mirrorLocalAcrossSagittal(kickParentInPrimaryWand));
+            outKickLocal = mirrorLocalAcrossSagittal(nativeKickLocal);
+        }
+        return isFiniteRecoilTransform(outKickParentWorld) &&
+               isFiniteRecoilTransform(outKickLocal);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline bool tryApplyKickToWorldTarget(
+        const Transform& kickParentWorld,
+        const Transform& kickLocal,
+        const Transform& targetWorld,
+        Transform& outTargetWorld)
+    {
+        outTargetWorld = targetWorld;
+        Transform targetInKickParent{};
+        if (!isFiniteRecoilTransform(kickLocal) ||
+            !tryResolveFrameLocalTransform(
+                kickParentWorld,
+                targetWorld,
+                targetInKickParent)) {
+            return false;
+        }
+
+        const Transform kickedTargetInParent =
             transform_math::composeTransforms(
                 kickLocal,
-                transform_math::invertTransform(kickParentWorld)));
+                targetInKickParent);
+        outTargetWorld = transform_math::composeTransforms(
+            kickParentWorld,
+            kickedTargetInParent);
+        return isFiniteRecoilTransform(outTargetWorld);
     }
 }
 
