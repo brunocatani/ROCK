@@ -531,6 +531,8 @@ namespace rock::provider
         // shoulder sheath/retrieval is configured and owned by ROCK; this
         // request bit is accepted for older consumers but has no behavior.
         EquippedWeaponShoulderStash = 1u << 6,
+        // Retained in V1 for source/ABI compatibility. The Pip-Boy hand-equip
+        // mode was removed; the flag is accepted and has no behavior.
         PipboyTriggerHandEquip = 1u << 7,
         // Retained in V1 for source/ABI compatibility. The visual bridge and
         // native attach recovery are now unconditional ROCK correctness

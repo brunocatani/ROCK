@@ -127,8 +127,9 @@ namespace rock
             provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneHoverHaptics);
         // RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip
         // remains an accepted ABI flag but no longer maps to any behavior:
-        // the Pip-Boy hand-equip mode was removed. Physical handoff and the
-        // provider hand request are the supported left-hand entry points.
+        // the Pip-Boy hand-equip mode was removed. Physical handoff,
+        // trigger/grip-zone equip, and shoulder retrieval are the supported
+        // left-hand entry points.
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
         settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
         settings.firingGripReattachRadiusGameUnits = request->firingGripReattachRadiusGameUnits;
