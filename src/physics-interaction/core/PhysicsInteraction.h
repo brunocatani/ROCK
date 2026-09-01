@@ -40,7 +40,6 @@
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
-#include "physics-interaction/weapon/grip/WeaponTransformArbiter.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -178,9 +177,6 @@ namespace rock
             ::rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const;
         bool queryProviderEquippedWeaponHandlingStateV1(
             ::rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const;
-        ::rock::provider::RockProviderResultV1 requestProviderEquippedWeaponHandV1(
-            std::uint64_t ownerToken,
-            const ::rock::provider::RockProviderEquippedWeaponHandRequestV1& request);
         void fillProviderWeaponPartGripStates(
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
         void fillProviderHandInteractionStates(
@@ -408,15 +404,6 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool firingHandIsLeft);
-        void serviceEquippedWeaponHandAssignment(
-            RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey,
-            bool menuInputActive,
-            const EquippedWeaponHandlingSettings& handlingSettings);
-        void reconcileEquippedWeaponHandAssignmentAfterGrip();
-        void clearEquippedWeaponHandAssignment(const char* reason);
-
         void suppressRightHandCollisionForDominantWeapon(RE::hknpWorld* world);
 
         void restoreRightHandCollisionAfterDominantWeapon(RE::hknpWorld* world);
@@ -511,7 +498,6 @@ namespace rock
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
-        WeaponTransformArbiter _weaponTransformArbiter{ _twoHandedGrip };
         AuthoredSupportGripIndicatorEffect
             _authoredSupportGripIndicator;
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
@@ -763,31 +749,6 @@ namespace rock
                 collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand };
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         PendingEquippedWeaponPrimaryOnlyGripStart _pendingEquippedWeaponPrimaryOnlyGripStart{};
-        enum class EquippedWeaponHandAssignmentSource : std::uint8_t
-        {
-            None = 0,
-            Provider = 1,
-        };
-        struct EquippedWeaponHandAssignmentState
-        {
-            EquippedWeaponHandAssignmentSource source{
-                EquippedWeaponHandAssignmentSource::None
-            };
-            bool pending{ false };
-            bool active{ false };
-            bool assignedLeft{ false };
-            bool effectiveLeft{ false };
-            std::uint16_t remainingResolveFrames{ 0 };
-            std::uint32_t formId{ 0 };
-            std::uint64_t ownerToken{ 0 };
-            std::uint64_t requestedWeaponGenerationKey{ 0 };
-            std::uint64_t ownershipKey{ 0 };
-            std::uint64_t nativeOffsetGenerationKey{ 0 };
-            bool nativeOffsetReadinessLogged{ false };
-            left_carry_readiness::NativeOffsetWitness nativeOffset{};
-            left_carry_readiness::TakeoverWitness takeoverWitness{};
-        };
-        EquippedWeaponHandAssignmentState _equippedWeaponHandAssignment{};
         bool _equippedWeaponMenuReconcilePending = false;
         /*
          * Single-consumption snapshot of the firing hand's grab button. The

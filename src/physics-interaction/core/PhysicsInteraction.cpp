@@ -120,8 +120,6 @@ namespace rock
         constexpr float kRawParityFailRotationDegrees = 2.0f;
         constexpr int kRawParityWarnFrames = 2;
         constexpr int kRawParityFailFrames = 10;
-        constexpr std::uint16_t
-            kEquippedWeaponHandAssignmentMaximumResolveFrames = 180;
         constexpr std::array<std::string_view, 5> kWeaponCollisionWorkbenchExitMenuNames{
             "ExamineMenu",
             "PowerArmorModMenu",
@@ -2052,7 +2050,6 @@ namespace rock
         _equippedWeaponDropMomentumHandoffs = {};
         clearLooseGrenadeRuntimeState();
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-        _equippedWeaponHandAssignment = {};
         _equippedWeaponHandlingSettings = {};
         _equippedWeaponHandlingModeInitialized = false;
         _equippedWeaponHandlingModeReconcilePending = false;
@@ -2328,12 +2325,6 @@ namespace rock
                 physicsWritesAllowedForWorld(frame.hknpWorld),
             suppressDefaultNativeWeaponIntent);
         reconcileEquippedWeaponHandlingMode();
-        serviceEquippedWeaponHandAssignment(
-            weaponNode,
-            currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey,
-            input_remap_runtime::isMenuInputActive(),
-            _equippedWeaponHandlingSettings);
 
         {
             WeaponInteractionContact leftWeaponContact{};
@@ -3105,7 +3096,6 @@ namespace rock
             consumeToggleAcquisitionPress(
                 false,
                 toggleReconcileDecision.rightGripAcquired);
-            reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
             }
@@ -4927,15 +4917,8 @@ namespace rock
             return;
         }
 
-        if (_equippedWeaponHandAssignment.pending ||
-            _equippedWeaponHandAssignment.active) {
-            clearEquippedWeaponHandAssignment(
-                "equipped-weapon-handling-mode-changed");
-        } else {
-            _weaponTransformArbiter.restoreNativeRight(
-                WeaponTransformArbiter::CarrySource::HandlingModeReconcile,
-                "equipped-weapon-handling-mode-changed");
-        }
+        _twoHandedGrip.restoreNativeRightEquippedCarry(
+            "equipped-weapon-handling-mode-changed");
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
         _equippedWeaponHandlingModeReconcilePending = false;
     }
@@ -4990,7 +4973,7 @@ namespace rock
         if (sheathAccepted) {
             equipped_weapon_toggle_grab_policy::reset(
                 _equippedWeaponToggleGrabState);
-            clearEquippedWeaponHandAssignment(
+            _twoHandedGrip.restoreNativeRightEquippedCarry(
                 "shoulder-weapon-sheathed");
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             _equippedWeaponShoulderSheath =
@@ -5581,315 +5564,6 @@ namespace rock
         return result;
     }
 
-
-    ::rock::provider::RockProviderResultV1
-    PhysicsInteraction::requestProviderEquippedWeaponHandV1(
-        const std::uint64_t ownerToken,
-        const ::rock::provider::RockProviderEquippedWeaponHandRequestV1& request)
-    {
-        using Result = ::rock::provider::RockProviderResultV1;
-        using Hand = ::rock::provider::RockProviderHand;
-
-        if (!_initialized) {
-            return Result::NotReady;
-        }
-        if (request.hand != Hand::Right && request.hand != Hand::Left) {
-            return Result::HandUnavailable;
-        }
-
-        const auto* equippedWeapon = currentEquippedWeaponForm();
-        if (!equippedWeapon) {
-            return Result::TargetUnavailable;
-        }
-        if (request.weaponFormId != 0 &&
-            request.weaponFormId != equippedWeapon->formID) {
-            return Result::TargetUnavailable;
-        }
-
-        const auto currentWeaponGenerationKey =
-            _weaponCollision.getCurrentWeaponGenerationKey();
-        if (request.weaponGenerationKey != 0 &&
-            request.weaponGenerationKey != currentWeaponGenerationKey) {
-            return Result::TargetUnavailable;
-        }
-
-        const bool requestedLeft = request.hand == Hand::Left;
-        if (requestedLeft &&
-            !TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true)) {
-            return Result::HandUnavailable;
-        }
-
-        auto& existing = _equippedWeaponHandAssignment;
-        if (existing.source ==
-                EquippedWeaponHandAssignmentSource::Provider &&
-            existing.ownerToken == ownerToken &&
-            existing.formId == equippedWeapon->formID &&
-            existing.assignedLeft == requestedLeft &&
-            existing.requestedWeaponGenerationKey ==
-                request.weaponGenerationKey) {
-            return existing.active &&
-                           existing.effectiveLeft == requestedLeft ?
-                Result::Ok :
-                Result::RequestQueued;
-        }
-
-        clearEquippedWeaponHandAssignment(
-            "provider-hand-request-replaced");
-        _equippedWeaponHandAssignment =
-            EquippedWeaponHandAssignmentState{
-                .source =
-                    EquippedWeaponHandAssignmentSource::Provider,
-                .pending = true,
-                .active = false,
-                .assignedLeft = requestedLeft,
-                .effectiveLeft = false,
-                .remainingResolveFrames =
-                    kEquippedWeaponHandAssignmentMaximumResolveFrames,
-                .formId = equippedWeapon->formID,
-                .ownerToken = ownerToken,
-                .requestedWeaponGenerationKey =
-                    request.weaponGenerationKey,
-            };
-        ROCK_LOG_INFO(
-            Weapon,
-            "Provider requested equipped weapon hand={} owner={:016X} form={:08X} generation={:016X}",
-            requestedLeft ? "left" : "right",
-            ownerToken,
-            equippedWeapon->formID,
-            request.weaponGenerationKey);
-        return Result::RequestQueued;
-    }
-
-    void PhysicsInteraction::clearEquippedWeaponHandAssignment(
-        const char* reason)
-    {
-        const auto& assignment = _equippedWeaponHandAssignment;
-        if (assignment.pending || assignment.active) {
-            ROCK_LOG_INFO(
-                Weapon,
-                "Provider weapon hand assignment cleared reason={} form={:08X} owner={:016X}",
-                reason ? reason : "unknown",
-                assignment.formId,
-                assignment.ownerToken);
-        }
-        _weaponTransformArbiter.restoreNativeRight(
-            WeaponTransformArbiter::CarrySource::HandAssignment,
-            reason);
-        _equippedWeaponHandAssignment = {};
-    }
-
-    void PhysicsInteraction::serviceEquippedWeaponHandAssignment(
-        RE::NiNode* weaponNode,
-        const std::uint64_t currentWeaponGenerationKey,
-        const std::uint64_t currentEquippedWeaponOwnershipKey,
-        const bool menuInputActive,
-        const EquippedWeaponHandlingSettings& handlingSettings)
-    {
-        if (_equippedWeaponShoulderSheath.active) {
-            return;
-        }
-        const bool leftCarryAvailable =
-            TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
-
-        auto& assignment = _equippedWeaponHandAssignment;
-        if (!assignment.pending && !assignment.active) {
-            return;
-        }
-
-        _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-        if (assignment.source !=
-            EquippedWeaponHandAssignmentSource::Provider) {
-            clearEquippedWeaponHandAssignment(
-                "invalid-hand-assignment-source");
-            return;
-        }
-        const std::uint32_t requiredFlags =
-            static_cast<std::uint32_t>(
-                ::rock::provider::
-                    RockProviderEquippedWeaponHandlingFlagV1::
-                        FiringGripOwnership);
-        if (!::rock::provider::
-                ownsEquippedWeaponHandlingAuthorityV1(
-                    assignment.ownerToken,
-                    requiredFlags)) {
-            clearEquippedWeaponHandAssignment(
-                "provider-hand-authority-lost");
-            return;
-        }
-        {
-            const auto* equippedWeapon = currentEquippedWeaponForm();
-            if (!equippedWeapon ||
-                equippedWeapon->formID != assignment.formId ||
-                (assignment.requestedWeaponGenerationKey != 0 &&
-                    currentWeaponGenerationKey != 0 &&
-                    currentWeaponGenerationKey !=
-                        assignment.requestedWeaponGenerationKey)) {
-                clearEquippedWeaponHandAssignment(
-                    "provider-hand-target-changed");
-                return;
-            }
-        }
-
-        if (left_carry_readiness::shouldReacquirePersistentLeftCarry(
-                assignment.active,
-                assignment.assignedLeft,
-                assignment.effectiveLeft,
-                _twoHandedGrip.isPersistentEquippedCarryActive(),
-                _twoHandedGrip.isManualOwnershipActive())) {
-            // Menu/lifecycle gates intentionally reset TwoHandedGrip. Preserve
-            // the exact hand assignment and reacquire after native right carry
-            // has produced a fresh canonical frame.
-            assignment.active = false;
-            assignment.pending = true;
-            assignment.ownershipKey = 0;
-            assignment.remainingResolveFrames =
-                kEquippedWeaponHandAssignmentMaximumResolveFrames;
-            assignment.nativeOffsetGenerationKey = 0;
-            assignment.nativeOffsetReadinessLogged = false;
-            assignment.nativeOffset = {};
-        }
-
-        if (!assignment.pending) {
-            if (!assignment.effectiveLeft) {
-                _weaponTransformArbiter.clearPersistentCarry(
-                    WeaponTransformArbiter::CarrySource::HandAssignment,
-                    "right-hand-assignment");
-            }
-            return;
-        }
-
-        if (!assignment.assignedLeft || !leftCarryAvailable) {
-            if (assignment.assignedLeft) {
-                clearEquippedWeaponHandAssignment(
-                    "provider-left-carry-unavailable");
-                return;
-            }
-            _weaponTransformArbiter.restoreNativeRight(
-                WeaponTransformArbiter::CarrySource::HandAssignment,
-                "right-hand-assignment");
-            assignment.pending = false;
-            assignment.active = true;
-            assignment.effectiveLeft = false;
-            assignment.ownershipKey = currentEquippedWeaponOwnershipKey;
-            ROCK_LOG_INFO(
-                Weapon,
-                "Provider weapon assigned to native right hand form={:08X}",
-                assignment.formId);
-            return;
-        }
-        if (menuInputActive) {
-            return;
-        }
-
-        const auto* equippedWeapon = currentEquippedWeaponForm();
-        const bool identityReady =
-            weaponNode &&
-            f4vr::isNodeVisible(weaponNode) &&
-            currentWeaponGenerationKey != 0 &&
-            currentEquippedWeaponOwnershipKey != 0 &&
-            equippedWeapon &&
-            equippedWeapon->formID == assignment.formId;
-
-        bool nativeOffsetReady = false;
-        if (identityReady) {
-            if (assignment.nativeOffsetGenerationKey != currentWeaponGenerationKey) {
-                assignment.nativeOffsetGenerationKey = currentWeaponGenerationKey;
-                assignment.nativeOffsetReadinessLogged = false;
-                assignment.nativeOffset = {};
-            }
-
-            const auto previousMatchingFrames = assignment.nativeOffset.matchingFrames;
-            nativeOffsetReady = left_carry_readiness::advanceNativeOffset(
-                assignment.nativeOffset,
-                weaponNode->local);
-            if (!assignment.nativeOffsetReadinessLogged &&
-                previousMatchingFrames == 0 && assignment.nativeOffset.matchingFrames == 1) {
-                assignment.nativeOffsetReadinessLogged = true;
-                ROCK_LOG_INFO(
-                    Weapon,
-                    "Provider left-hand assignment observed visible native-right offset; reserving canonical refresh form={:08X}",
-                    assignment.formId);
-            }
-        } else {
-            assignment.nativeOffset.matchingFrames = 0;
-        }
-
-        const auto leftTakeoverReadiness =
-            _twoHandedGrip.getLeftFiringTakeoverReadiness(
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey,
-                handlingSettings.authoredOnlySupportGrabsEnabled);
-        const bool leftTakeoverReady =
-            authored_support_grab_policy::leftFiringTakeoverReady(
-                leftTakeoverReadiness);
-        if (assignment.takeoverWitness.observe(leftTakeoverReadiness)) {
-            ROCK_LOG_DEBUG(
-                Weapon,
-                "Provider left-hand assignment readiness={} form={:08X} generation={:016X} ownership={:016X}",
-                authored_support_grab_policy::
-                    leftFiringTakeoverReadinessName(
-                        leftTakeoverReadiness),
-                assignment.formId,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey);
-        }
-
-        if (identityReady && nativeOffsetReady && leftTakeoverReady &&
-            _weaponTransformArbiter.requestLeftCarry(
-                WeaponTransformArbiter::CarrySource::HandAssignment,
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey)) {
-            assignment.pending = false;
-            assignment.active = true;
-            assignment.effectiveLeft = true;
-            assignment.ownershipKey = currentEquippedWeaponOwnershipKey;
-            ROCK_LOG_INFO(
-                Weapon,
-                "Provider weapon assigned to left hand form={:08X}",
-                assignment.formId);
-            return;
-        }
-
-        if (assignment.remainingResolveFrames > 0) {
-            --assignment.remainingResolveFrames;
-        }
-        if (assignment.remainingResolveFrames == 0) {
-            ROCK_LOG_WARN(
-                Weapon,
-                "Provider left-hand assignment timed out waiting for generation-bound carry readiness={} form={:08X}",
-                authored_support_grab_policy::
-                    leftFiringTakeoverReadinessName(
-                        leftTakeoverReadiness),
-                assignment.formId);
-            clearEquippedWeaponHandAssignment(
-                "provider-left-carry-resolve-timeout");
-        }
-    }
-
-    void PhysicsInteraction::reconcileEquippedWeaponHandAssignmentAfterGrip()
-    {
-        auto& assignment = _equippedWeaponHandAssignment;
-        if (!assignment.active) {
-            return;
-        }
-        const bool currentLeft = _twoHandedGrip.isFiringGripOccupied() && _twoHandedGrip.isFiringHandLeft();
-        if (currentLeft == assignment.effectiveLeft) {
-            return;
-        }
-        // A deliberate physical handover becomes the durable assignment.
-        // Lifecycle reacquisition must restore the current side, not the side
-        // originally requested by an older provider transaction.
-        assignment.assignedLeft = currentLeft;
-        assignment.effectiveLeft = currentLeft;
-        ROCK_LOG_INFO(
-            Weapon,
-            "Provider weapon hand assignment followed firing-grip handoff hand={} form={:08X}",
-            currentLeft ? "left" : "right",
-            assignment.formId);
-    }
-
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
@@ -5993,7 +5667,6 @@ namespace rock
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
-        clearEquippedWeaponHandAssignment("physics-shutdown");
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _twoHandedGrip.reset();
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};

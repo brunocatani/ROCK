@@ -7868,58 +7868,6 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::beginPersistentEquippedCarry(
-        RE::NiNode* weaponNode,
-        const std::uint64_t currentWeaponGenerationKey,
-        const std::uint64_t currentEquippedWeaponOwnershipKey)
-    {
-        if (!weaponNode || currentWeaponGenerationKey == 0 || currentEquippedWeaponOwnershipKey == 0 ||
-            _state != TwoHandedState::Inactive || !canBeginPrimaryOnlyGripForHand(true) ||
-            !hasRightFiringHandCanonicalFrame(
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey)) {
-            return false;
-        }
-
-        RE::NiTransform mirroredLeftHold{};
-        RE::NiPoint3 firingGripWeaponLocal{};
-        if (!tryBuildCurrentLeftFiringGripCapture(
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey,
-                mirroredLeftHold,
-                firingGripWeaponLocal)) {
-            return false;
-        }
-
-        if (!beginPrimaryOnlyGrip(
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey,
-                true,
-                &mirroredLeftHold,
-                &firingGripWeaponLocal,
-                false,
-                false)) {
-            return false;
-        }
-
-        _persistentEquippedCarryActive = true;
-        _persistentEquippedCarryDetachArmed = false;
-        _persistentEquippedCarryInputAcquisitionPending = true;
-        const bool usedAuthoredCanonical =
-            _rightFiringHandCanonicalSource ==
-            RightFiringCanonicalSource::AuthoredAnimation;
-        ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: persistent left-hand carry active generation={:016X} ownership={:016X} source={} capture={}",
-            currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey,
-            usedAuthoredCanonical ? "authored-animation" : "native-carry",
-            _rightFiringHandCanonicalCaptureSequence);
-        return true;
-    }
-
     bool TwoHandedGrip::commitPersistentEquippedCarryInputAcquisition(
         const bool handIsLeft) noexcept
     {

@@ -240,7 +240,10 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponHandlingAuthority) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::DebugOverlayPublication) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::PresentedHandFrames) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponHandRequest) |
+        // EquippedWeaponHandRequest is no longer advertised: the programmatic
+        // hand-assignment feature was removed (physical handoff is the only
+        // way to change the carrying hand). The entry point remains for ABI
+        // and declines every request.
         static_cast<std::uint32_t>(
             RockProviderFeatureBitV1::ColliderVisualizationOverride);
     constexpr std::uint32_t kProviderFeatureBits2V1 =
@@ -4049,64 +4052,11 @@ namespace
             request->version > ROCK_PROVIDER_API_VERSION) {
             return RockProviderResultV1::UnsupportedVersion;
         }
-        if (request->hand != RockProviderHand::Right &&
-            request->hand != RockProviderHand::Left) {
-            return RockProviderResultV1::HandUnavailable;
-        }
-        if (request->flags != 0) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        const auto generationResult = validateGenerationGuards(
-            request->worldGeneration,
-            request->skeletonGeneration,
-            request->providerGeneration);
-        if (generationResult != RockProviderResultV1::Ok) {
-            return generationResult;
-        }
-        if (!apiIsProviderReady()) {
-            return RockProviderResultV1::NotReady;
-        }
-
-        {
-            const auto frameIndex = currentProviderFrameIndex();
-            std::scoped_lock lock(
-                s_consumerMutex,
-                s_equippedWeaponHandlingAuthorityMutex);
-            const auto ownerResult =
-                validateRegisteredOwnerCapabilityLocked(
-                    ownerToken,
-                    RockProviderConsumerCapabilityV1::
-                        EquippedWeaponHandlingAuthority);
-            if (ownerResult != RockProviderResultV1::Ok) {
-                return ownerResult;
-            }
-            pruneExpiredEquippedWeaponHandlingAuthorityLocked(
-                frameIndex);
-            if (!s_equippedWeaponHandlingAuthority.active) {
-                return RockProviderResultV1::PermissionDenied;
-            }
-            if (s_equippedWeaponHandlingAuthority.ownerToken !=
-                ownerToken) {
-                return RockProviderResultV1::OwnerConflict;
-            }
-
-            const std::uint32_t requiredFlags =
-                static_cast<std::uint32_t>(
-                    RockProviderEquippedWeaponHandlingFlagV1::
-                        FiringGripOwnership);
-            if ((s_equippedWeaponHandlingAuthority.request.flags &
-                    requiredFlags) != requiredFlags) {
-                return RockProviderResultV1::PermissionDenied;
-            }
-        }
-
-        auto* pi =
-            s_physicsInteraction.load(std::memory_order_acquire);
-        return pi && pi->isInitialized() ?
-            pi->requestProviderEquippedWeaponHandV1(
-                ownerToken,
-                *request) :
-            RockProviderResultV1::NotReady;
+        // The programmatic equipped-weapon hand assignment was removed;
+        // physical handoff is the only way to change the carrying hand. The
+        // capability feature bit is no longer advertised, and this ABI slot
+        // declines every well-formed request.
+        return RockProviderResultV1::HandUnavailable;
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(

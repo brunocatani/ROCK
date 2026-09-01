@@ -703,28 +703,17 @@ namespace rock
             bool emitAttachHaptic = true);
 
         /*
-         * Programmatic provider left-hand assignments
-         * start without a physical grab hold. This entry point reuses the
-         * generation-bound authored left hand seat together with the
-         * separately captured native right weapon-in-wand orientation, then
-         * marks the resulting PrimaryOnly session as persistent until the
-         * selected inventory stack is unequipped or the player deliberately
-         * acquires and releases the firing-hand grab.
-         *
-         * Ownership contract: only WeaponTransformArbiter may call the
-         * persistent-carry entry points below (begin/clear/restore); every
-         * carrier driver routes its claim through the arbiter.
+         * A persistent carry is a PrimaryOnly session that survives without
+         * a physical grab hold (started by beginPrimaryOnlyGrip with
+         * retainUntilPhysicalGrip, e.g. after a committed equip transfer or
+         * shoulder retrieval) until the selected stack is unequipped or the
+         * player deliberately acquires and releases the firing-hand grab.
          */
-        bool beginPersistentEquippedCarry(
-            RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
         bool commitPersistentEquippedCarryInputAcquisition(
             bool handIsLeft) noexcept;
 
         void clearPersistentEquippedCarry(const char* reason);
         void restoreNativeRightEquippedCarry(const char* reason);
-        bool isPersistentEquippedCarryActive() const { return _persistentEquippedCarryActive; }
         bool isPersistentEquippedCarryInputAcquisitionPending() const
         {
             return _persistentEquippedCarryInputAcquisitionPending;
