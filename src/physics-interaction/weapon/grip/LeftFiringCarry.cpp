@@ -204,13 +204,26 @@ namespace rock
                 weaponNode,
                 physicalHandWorld,
                 presentedHandWorld,
-                feedForwardWeaponWorld)) {
+                feedForwardWeaponWorld,
+                0.0f)) {
             return false;
         }
-        return applyWeaponVisualAuthority(weaponNode, feedForwardWeaponWorld);
+        /*
+         * Basis pre-write, not a rendered frame: the state handler publishes
+         * the final pose later this frame (the two-hand solve while both
+         * hands hold). Recording it as rendered handed the part-carry
+         * baseline the wand-aimed pose instead of the pose on screen, so the
+         * weapon jumped to it when the firing hand let go.
+         */
+        return applyWeaponVisualAuthority(
+            weaponNode,
+            feedForwardWeaponWorld,
+            0,
+            true,
+            false);
     }
 
-    bool TwoHandedGrip::solveLeftFiringWeaponCarry(RE::NiNode* weaponNode)
+    bool TwoHandedGrip::solveLeftFiringWeaponCarry(RE::NiNode* weaponNode, const float dt)
     {
         if (!weaponNode || !_firing.hasPrimaryHandWeaponLocal) {
             _hasSolvedWeaponTransform = false;
@@ -228,6 +241,7 @@ namespace rock
                 physicalHandWorld,
                 presentedHandWorld,
                 solvedWeaponWorld,
+                dt,
                 &dampedAimCarrierWorld)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(
@@ -370,6 +384,7 @@ namespace rock
         RE::NiTransform& outPhysicalHandWorld,
         RE::NiTransform& outPresentedHandWorld,
         RE::NiTransform& outWeaponWorld,
+        const float supportReleaseReturnAdvanceSeconds,
         RE::NiTransform* const outDampedAimCarrierWorld)
     {
         outPhysicalHandWorld = {};
@@ -473,12 +488,130 @@ namespace rock
                     weaponNode->world,
                     _firing.primaryGripLocal,
                     physicalGripTargetWorld);
+        // The support-release return eases the rendered two-hand pose into
+        // this wand-aimed pose; the authored hand rides the eased weapon.
+        outWeaponWorld = resolveLeftFiringSupportReleaseReturn(
+            outPhysicalHandWorld,
+            outWeaponWorld,
+            supportReleaseReturnAdvanceSeconds);
         outPresentedHandWorld = transform_math::composeTransforms(
             outWeaponWorld,
             _firing.primaryHandWeaponLocal);
         return isFiniteTransform(outWeaponWorld) &&
                isUsableHandAuthorityTransform(outPhysicalHandWorld) &&
                isUsableHandAuthorityTransform(outPresentedHandWorld);
+    }
+
+    void TwoHandedGrip::beginLeftFiringSupportReleaseReturn(const char* reason)
+    {
+        auto& state = _leftCarry.supportReleaseReturn;
+        state.clear();
+        if (!hand_visual_lerp_math::kEquippedWeaponReturnEnabled ||
+            !usesLeftFiringCarry() ||
+            !_visuals.hasLastRenderedWeaponWorld ||
+            !isFiniteTransform(_visuals.lastRenderedWeaponWorld)) {
+            return;
+        }
+
+        RE::NiTransform physicalHandWorld{};
+        RE::NiTransform physicalDriverWorld{};
+        if (!tryResolvePhysicalHandFrame(
+                true,
+                physicalHandWorld,
+                physicalDriverWorld) ||
+            !isInvertibleTransform(physicalHandWorld)) {
+            return;
+        }
+
+        // The rendered record is the previous frame's two-hand pose; the node
+        // itself already holds this frame's wand-aimed basis pre-write.
+        const RE::NiTransform startHandLocal =
+            left_firing_position_only_math::weaponWorldToPhysicalHandLocal(
+                physicalHandWorld,
+                _visuals.lastRenderedWeaponWorld);
+        if (!isFiniteTransform(startHandLocal)) {
+            return;
+        }
+        state.begin(startHandLocal);
+        ROCK_LOG_DEBUG(
+            Weapon,
+            "TwoHandedGrip: left carry weapon return started reason={}",
+            reason ? reason : "unknown");
+    }
+
+    void TwoHandedGrip::clearLeftFiringSupportReleaseReturn(const char* reason)
+    {
+        auto& state = _leftCarry.supportReleaseReturn;
+        if (!state.active) {
+            return;
+        }
+        state.clear();
+        ROCK_LOG_DEBUG(
+            Weapon,
+            "TwoHandedGrip: left carry weapon return cancelled reason={}",
+            reason ? reason : "unknown");
+    }
+
+    RE::NiTransform TwoHandedGrip::resolveLeftFiringSupportReleaseReturn(
+        const RE::NiTransform& physicalHandWorld,
+        const RE::NiTransform& positionOnlyWeaponWorld,
+        const float advanceSeconds)
+    {
+        auto& state = _leftCarry.supportReleaseReturn;
+        if (!state.active) {
+            return positionOnlyWeaponWorld;
+        }
+        if (!isInvertibleTransform(physicalHandWorld)) {
+            clearLeftFiringSupportReleaseReturn("physical-hand-unavailable");
+            return positionOnlyWeaponWorld;
+        }
+
+        const RE::NiTransform targetHandLocal =
+            left_firing_position_only_math::weaponWorldToPhysicalHandLocal(
+                physicalHandWorld,
+                positionOnlyWeaponWorld);
+        RE::NiTransform blendedHandLocal{};
+        bool completed = false;
+        if (advanceSeconds > 0.0f) {
+            const auto advanced = hand_visual_lerp_math::advanceVisualReturn(
+                state,
+                targetHandLocal,
+                advanceSeconds,
+                hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+            blendedHandLocal = advanced.transform;
+            completed = advanced.reachedTarget;
+        } else if (state.durationInitialized) {
+            // Basis pre-write: show this frame's blend without advancing it.
+            blendedHandLocal =
+                hand_visual_lerp_math::blendTransformOverDuration(
+                    state.start,
+                    targetHandLocal,
+                    state.elapsedSeconds,
+                    state.durationSeconds)
+                    .transform;
+        } else {
+            blendedHandLocal = state.start;
+        }
+
+        const RE::NiTransform blendedWeaponWorld =
+            left_firing_position_only_math::physicalHandLocalToWeaponWorld(
+                physicalHandWorld,
+                blendedHandLocal,
+                positionOnlyWeaponWorld.scale);
+        if (!isFiniteTransform(blendedWeaponWorld)) {
+            clearLeftFiringSupportReleaseReturn("non-finite-return-transform");
+            return positionOnlyWeaponWorld;
+        }
+        if (completed) {
+            const float durationSeconds = state.durationSeconds;
+            state.clear();
+            ROCK_LOG_DEBUG(
+                Weapon,
+                "TwoHandedGrip: left carry weapon return completed duration={:.3f}s",
+                durationSeconds);
+            return positionOnlyWeaponWorld;
+        }
+        return blendedWeaponWorld;
     }
 
     RE::NiNode* TwoHandedGrip::resolveFirstPersonHandNode(const bool isLeft)

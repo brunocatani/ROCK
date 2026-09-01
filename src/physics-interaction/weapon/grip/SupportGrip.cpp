@@ -14,6 +14,7 @@ namespace rock
 {
     bool TwoHandedGrip::tryResolveAuthoredSupportActivationAxes(
         RE::NiNode* weaponNode,
+        const RE::NiTransform& weaponWorld,
         const std::uint64_t currentWeaponGenerationKey,
         const authored_weapon_grip_activation_policy::HandTopology
             handTopology,
@@ -28,7 +29,7 @@ namespace rock
         using authored_weapon_grip_activation_policy::HandTopology;
         if (handTopology == HandTopology::Invalid ||
             !weaponNode || currentWeaponGenerationKey == 0 ||
-            !isInvertibleTransform(weaponNode->world) ||
+            !isInvertibleTransform(weaponWorld) ||
             !_firing.hasRightCanonicalHandWeaponLocal ||
             _firing.rightCanonicalSource !=
                 RightFiringCanonicalSource::AuthoredAnimation ||
@@ -71,7 +72,7 @@ namespace rock
          */
         const RE::NiTransform rightFiringHandWorld =
             transform_math::composeTransforms(
-                weaponNode->world,
+                weaponWorld,
                 _firing.rightCanonicalHandWeaponLocal);
         if (!isFiniteTransform(rightFiringHandWorld)) {
             return false;
@@ -118,7 +119,7 @@ namespace rock
                                                RE::NiPoint3& outAxisWorld) {
             const RE::NiPoint3 rightTopologyAxisWeaponLocal =
                 transform_math::worldVectorToLocal(
-                    weaponNode->world,
+                    weaponWorld,
                     rightTopologyAxisWorld);
             const auto orientedAxisWeaponLocal =
                 authored_weapon_grip_activation_policy::
@@ -131,7 +132,7 @@ namespace rock
                         handTopology);
             return normalizeVector(
                 transform_math::localVectorToWorld(
-                    weaponNode->world,
+                    weaponWorld,
                     RE::NiPoint3{
                         orientedAxisWeaponLocal.x,
                         orientedAxisWeaponLocal.y,
@@ -217,7 +218,23 @@ namespace rock
             return;
         }
 
-        const RE::NiTransform activationWeaponWorld = weaponNode->world;
+        /*
+         * While both hands hold a left-fired weapon under full authority,
+         * weaponNode->world is the wand-aimed basis pre-write that the
+         * two-hand solve overrides later this frame. The seat, its cone, and
+         * the touch gate belong on the weapon the player sees, so use the
+         * rendered record there; every other state renders the node pose.
+         */
+        const bool nodeHoldsBasisPreWrite =
+            _session.state == TwoHandedState::Gripping &&
+            usesLeftFiringCarry() &&
+            ownsWeaponTransform() &&
+            _visuals.hasLastRenderedWeaponWorld &&
+            isFiniteTransform(_visuals.lastRenderedWeaponWorld);
+        const RE::NiTransform activationWeaponWorld =
+            nodeHoldsBasisPreWrite ?
+            _visuals.lastRenderedWeaponWorld :
+            weaponNode->world;
 
         AuthoredSupportPalmSeatProximity proximity{};
         if (!resolveAuthoredSupportPalmSeatProximity(
@@ -276,6 +293,7 @@ namespace rock
         snapshot.canonicalAxesValid =
             tryResolveAuthoredSupportActivationAxes(
                 weaponNode,
+                activationWeaponWorld,
                 currentWeaponGenerationKey,
                 handTopology,
                 snapshot.supportSideAxisWorld,
@@ -1160,6 +1178,7 @@ namespace rock
             rememberRightFiringHandCanonicalFrame();
         }
 
+        clearLeftFiringSupportReleaseReturn("support-grip-started");
         _session.state = TwoHandedState::Gripping;
         _partCarry.detachAuthority =
             immersive_weapon_policy::DetachAuthority::None;
@@ -2130,7 +2149,7 @@ namespace rock
             // Visual-only support never steers aim, but with a LEFT firing
             // hand the weapon itself must still be ROCK-carried (FRIK's glue
             // is blocked); the shooting-cup right hand stays visual-only.
-            if (!solveLeftFiringWeaponCarry(weaponNode)) {
+            if (!solveLeftFiringWeaponCarry(weaponNode, dt)) {
                 return;
             }
         }

@@ -661,6 +661,39 @@ namespace rock::left_firing_position_only_math
             physicalGripTargetWorld.z - currentGripWorld.z;
         return solvedWeaponWorld;
     }
+
+    /*
+     * Support release on a left-fired weapon. The two-hand solve aimed the
+     * weapon at the support hand, so the wand aim can sit tens of degrees
+     * away when that hand lets go. The right carry eases the difference out
+     * through its parent-local weapon return; the left carry has no native
+     * parent, so it eases in the physical firing-hand frame: the last
+     * rendered two-hand pose rides the hand while it blends into the
+     * wand-aimed position-only pose. Both locals share the firing hand, so
+     * the grip never leaves the controller during the blend.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform weaponWorldToPhysicalHandLocal(
+        const Transform& physicalHandWorld,
+        const Transform& weaponWorld)
+    {
+        return transform_math::composeTransforms(
+            transform_math::invertTransform(physicalHandWorld),
+            weaponWorld);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform physicalHandLocalToWeaponWorld(
+        const Transform& physicalHandWorld,
+        const Transform& weaponHandLocal,
+        const float liveWeaponScale)
+    {
+        Transform weaponWorld = transform_math::composeTransforms(
+            physicalHandWorld,
+            weaponHandLocal);
+        weaponWorld.scale = liveWeaponScale;
+        return weaponWorld;
+    }
 }
 
 // ---- ScopeSafeHandFrameMath.h ----

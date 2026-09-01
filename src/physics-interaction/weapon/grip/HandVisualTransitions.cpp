@@ -578,7 +578,8 @@ namespace rock
         RE::NiNode* weaponNode,
         const RE::NiTransform& solvedWeaponWorld,
         const std::uint64_t authorityGenerationKey,
-        const bool notifyVisualIntentObserver)
+        const bool notifyVisualIntentObserver,
+        const bool recordRenderedWeaponWorld)
     {
         if (!weaponNode) {
             return false;
@@ -655,8 +656,10 @@ namespace rock
                 rigidRotationError,
                 effectiveGenerationKey);
         }
-        _visuals.lastRenderedWeaponWorld = weaponNode->world;
-        _visuals.hasLastRenderedWeaponWorld = isFiniteTransform(_visuals.lastRenderedWeaponWorld);
+        if (recordRenderedWeaponWorld) {
+            _visuals.lastRenderedWeaponWorld = weaponNode->world;
+            _visuals.hasLastRenderedWeaponWorld = isFiniteTransform(_visuals.lastRenderedWeaponWorld);
+        }
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
             _scope.cameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(_scope.cameraDebugSnapshot, effectiveGenerationKey,
                 NativeScopeCameraWriteSource::WeaponVisualAuthority, scopeCameraFollow, scopeCameraResult,

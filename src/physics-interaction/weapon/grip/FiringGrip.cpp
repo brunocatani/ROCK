@@ -383,7 +383,8 @@ namespace rock
         RE::NiNode* weaponNode,
         std::uint64_t currentEquippedWeaponOwnershipKey,
         const EquippedWeaponPrimaryGripInput& primaryGripInput,
-        const bool primaryDetachEnabled)
+        const bool primaryDetachEnabled,
+        const float dt)
     {
         equipped_weapon_manual_ownership_policy::RuntimeState manualState{
             .active = true,
@@ -431,7 +432,7 @@ namespace rock
         // Left firing hand: mirror the native right weapon aim into the left
         // wand, translate its authored grip point onto the physical palm, and
         // publish the authored left wrist/fingers as separate presentation.
-        (void)solveLeftFiringWeaponCarry(weaponNode);
+        (void)solveLeftFiringWeaponCarry(weaponNode, dt);
     }
 
     bool TwoHandedGrip::firingGripContactMatchesCapturedGrip(
@@ -1591,7 +1592,7 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode)
+    bool TwoHandedGrip::tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, const float dt)
     {
         const bool supportHandIsLeft = isSupportHandLeft();
         if (!weaponNode || !_handlingSettings.ambidextrousHandoffEnabled ||
@@ -1701,7 +1702,7 @@ namespace rock
         _firing.hasPrimaryHandWeaponLocal = true;
         rememberRightFiringHandCanonicalFrame();
         if (usesLeftFiringCarry() &&
-            !solveLeftFiringWeaponCarry(weaponNode)) {
+            !solveLeftFiringWeaponCarry(weaponNode, dt)) {
             return true;
         }
         _session.firingGripSequence = ++_session.gripCaptureSequence;

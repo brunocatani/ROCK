@@ -1267,13 +1267,30 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            bool primaryDetachEnabled);
+            bool primaryDetachEnabled,
+            float dt);
 
         // Position-only left-firing carry. The actual native right
         // weapon-in-wand orientation is mirrored to the left wand, translated
         // to the physical left firing point, and then the authored left wrist
         // is published separately. Used by PrimaryOnly and VisualOnlySupport.
-        bool solveLeftFiringWeaponCarry(RE::NiNode* weaponNode);
+        bool solveLeftFiringWeaponCarry(RE::NiNode* weaponNode, float dt);
+
+        /*
+         * Support-release weapon return for the left carry: eases the last
+         * rendered two-hand pose into the wand-aimed pose in the physical
+         * firing-hand frame (see left_firing_position_only_math). Begun on
+         * "support released, primary held" under full weapon authority; a
+         * new support grip, part carry, hand switch, or inactive session
+         * cancels it. advanceSeconds=0 evaluates the current blend without
+         * advancing it (basis pre-writes).
+         */
+        void beginLeftFiringSupportReleaseReturn(const char* reason);
+        void clearLeftFiringSupportReleaseReturn(const char* reason);
+        RE::NiTransform resolveLeftFiringSupportReleaseReturn(
+            const RE::NiTransform& physicalHandWorld,
+            const RE::NiTransform& positionOnlyWeaponWorld,
+            float advanceSeconds);
 
         /*
          * Left-carry owner for weapon identity changes: validates the
@@ -1288,7 +1305,7 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool logMissingAimFrame);
 
-        bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode);
+        bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, float dt);
 
         void releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
 
@@ -1317,6 +1334,7 @@ namespace rock
             RE::NiTransform& outPhysicalHandWorld,
             RE::NiTransform& outPresentedHandWorld,
             RE::NiTransform& outWeaponWorld,
+            float supportReleaseReturnAdvanceSeconds,
             RE::NiTransform* outDampedAimCarrierWorld = nullptr);
         bool captureLeftFiringDampedFollowFrame(
             RE::NiNode* weaponNode,
@@ -1370,6 +1388,7 @@ namespace rock
             std::uint16_t& outFingerLocalTransformMask) const;
         bool tryResolveAuthoredSupportActivationAxes(
             RE::NiNode* weaponNode,
+            const RE::NiTransform& weaponWorld,
             std::uint64_t currentWeaponGenerationKey,
             authored_weapon_grip_activation_policy::HandTopology handTopology,
             RE::NiPoint3& outSupportSideAxisWorld,
@@ -1501,11 +1520,20 @@ namespace rock
 
         void reconcileDeferredScopeHandAuthority(RE::NiNode* weaponNode);
 
+        /*
+         * recordRenderedWeaponWorld=false marks a basis pre-write: the
+         * left-firing feed-forward pose published so in-frame math has a
+         * real-space weapon frame. The state handler republishes the final
+         * pose afterwards, so a pre-write never counts as the rendered
+         * weapon that visual returns, the part-carry handoff, and the seat
+         * overlay start from.
+         */
         bool applyWeaponVisualAuthority(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
             std::uint64_t authorityGenerationKey = 0,
-            bool notifyVisualIntentObserver = true);
+            bool notifyVisualIntentObserver = true,
+            bool recordRenderedWeaponWorld = true);
 
         [[nodiscard]] bool isDynamicSupportBaselineActive(
             bool supportHandIsLeft,
@@ -1875,6 +1903,12 @@ namespace rock
             // left-firing carry; see syncFiringHandWeaponNodeOwnership().
             bool weaponNodeOwnershipBlockEngaged{ false };
             bool weaponNodeReparented{ false };
+
+            // Support-release weapon return: the last rendered two-hand pose
+            // in the physical firing-hand frame, eased into the wand-aimed
+            // pose over the shared equipped-weapon return timing.
+            hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform>
+                supportReleaseReturn{};
 
             /*
              * hFRIK calls the recoil controller before ROCK's update on the

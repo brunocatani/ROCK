@@ -276,7 +276,10 @@ namespace rock
          * handlers below re-publish their final solved pose as before.
          * Right-firing reads FRIK's authored carry and is untouched.
          * (PhysicsInteraction additionally publishes this before the frame's
-         * weapon interaction probes - see the header note.)
+         * weapon interaction probes - see the header note.) The pre-write is
+         * a basis, not the rendered frame: it never updates the rendered
+         * weapon record that visual returns, the part-carry handoff, and the
+         * seat overlay read.
          */
         (void)publishLeftFiringFeedForwardWeaponPose(weaponNode);
 
@@ -491,6 +494,13 @@ namespace rock
                             beginWeaponVisualReturn("support-released-primary-held");
                         }
                     }
+                    if (usesLeftFiringCarry() && ownsWeaponTransform()) {
+                        // Left-carry counterpart of beginWeaponVisualReturn:
+                        // ease from the two-hand pose to the wand aim instead
+                        // of jumping there this frame.
+                        beginLeftFiringSupportReleaseReturn(
+                            "support-released-primary-held");
+                    }
                     const bool primaryOnlyActive = transitionToPrimaryOnly(
                         _session.weaponNode,
                         currentWeaponGenerationKey,
@@ -498,7 +508,8 @@ namespace rock
                         "support-released-primary-held");
                     if (primaryOnlyActive && usesLeftFiringCarry()) {
                         (void)solveLeftFiringWeaponCarry(
-                            _session.weaponNode);
+                            _session.weaponNode,
+                            dt);
                     }
                 } else if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::DropEquippedWeapon) {
                     beginHandVisualReturn(supportHandIsLeft, "support-released-drop");
@@ -543,7 +554,7 @@ namespace rock
                         stableFrameInput.rightGripHeld ? "yes" : "no");
                 }
                 updateGripping(_session.weaponNode, dt);
-            } else if (handlingSettings.ambidextrousHandoffEnabled && !primaryGripInput.held && tryPromoteSupportGripToFiringGrip(_session.weaponNode)) {
+            } else if (handlingSettings.ambidextrousHandoffEnabled && !primaryGripInput.held && tryPromoteSupportGripToFiringGrip(_session.weaponNode, dt)) {
                 // The support hand was wrapped over the firing grip when the
                 // firing hand opened: it takes over the SAME weapon-relative
                 // grip in place (seamless hand switch, pistol shooting-cup
@@ -631,7 +642,8 @@ namespace rock
                     _session.weaponNode,
                     currentEquippedWeaponOwnershipKey,
                     primaryGripInput,
-                    handlingSettings.primaryDetachEnabled);
+                    handlingSettings.primaryDetachEnabled,
+                    dt);
             }
             break;
         }
@@ -717,6 +729,7 @@ namespace rock
         clearRightFiringHandCanonicalFrame();
         _firing.rightNativeWeaponAimFrame = {};
         _firing.leftDampedFollowFrame = {};
+        _leftCarry.supportReleaseReturn = {};
         _firing.rightNaturalBoneInWand = {};
         _firing.leftNaturalBoneInWand = {};
         _firing.rightNaturalBoneInDampedDriver = {};
@@ -950,6 +963,7 @@ namespace rock
         // ownership the weapon is FRIK/native-carried by the right hand.
         _session.firingHandIsLeft = false;
         _firing.leftDampedFollowFrame = {};
+        clearLeftFiringSupportReleaseReturn("grip-released");
 
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: grip released");
     }
@@ -981,6 +995,7 @@ namespace rock
             _firing.persistentCarryDetachArmed = false;
         }
         _firing.leftDampedFollowFrame = {};
+        clearLeftFiringSupportReleaseReturn("firing-hand-changed");
         _session.firingHandIsLeft = isLeft;
         // The authored support mirror and activation cone are role-specific.
         // Never carry a capability verdict across a firing/support hand swap.

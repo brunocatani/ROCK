@@ -1,6 +1,7 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
+#include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
@@ -396,6 +397,125 @@ int main()
                 presentedAxisDelta.y * presentedAxisDelta.y +
                 presentedAxisDelta.z * presentedAxisDelta.z) >
                 0.1f);
+    }
+
+    {
+        /*
+         * Support release on the left carry: the last rendered two-hand pose
+         * rides the physical firing hand and eases into the wand-aimed
+         * position-only pose while the firing grip stays on the hand.
+         */
+        const TestVector3 firingGripWeaponLocal{ 2.0f, -4.0f, -4.0f };
+        const TestVector3 gripHandLocal{ 1.0f, 4.0f, 0.5f };
+        const auto seatGripOnHand = [&](TestTransform weaponInHand) {
+            const TestVector3 gripWithoutTranslation =
+                rock::transform_math::localPointToWorld(
+                    rock::left_firing_position_only_math::orientationOnly(
+                        weaponInHand),
+                    TestVector3{
+                        firingGripWeaponLocal.x * weaponInHand.scale,
+                        firingGripWeaponLocal.y * weaponInHand.scale,
+                        firingGripWeaponLocal.z * weaponInHand.scale });
+            weaponInHand.translate = {
+                gripHandLocal.x - gripWithoutTranslation.x,
+                gripHandLocal.y - gripWithoutTranslation.y,
+                gripHandLocal.z - gripWithoutTranslation.z,
+            };
+            return weaponInHand;
+        };
+
+        TestTransform twoHandWeaponInHand =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        twoHandWeaponInHand.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            40.0f);
+        twoHandWeaponInHand.scale = 1.25f;
+        twoHandWeaponInHand = seatGripOnHand(twoHandWeaponInHand);
+        TestTransform wandAimedWeaponInHand =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        wandAimedWeaponInHand.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            -5.0f);
+        wandAimedWeaponInHand.scale = 1.25f;
+        wandAimedWeaponInHand = seatGripOnHand(wandAimedWeaponInHand);
+
+        TestTransform handAtRelease =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        handAtRelease.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(TestVector3{ 0.2f, -0.6f, 0.4f }),
+            35.0f);
+        handAtRelease.translate = { 12.0f, -4.0f, 30.0f };
+        const TestTransform renderedTwoHandWeapon =
+            rock::transform_math::composeTransforms(
+                handAtRelease,
+                twoHandWeaponInHand);
+        const TestTransform startHandLocal =
+            rock::left_firing_position_only_math::
+                weaponWorldToPhysicalHandLocal(
+                    handAtRelease,
+                    renderedTwoHandWeapon);
+        ok &= expectTransformNear(
+            "left carry return start captures the rendered pose in the hand frame",
+            startHandLocal,
+            twoHandWeaponInHand);
+
+        TestTransform handLater =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        handLater.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(TestVector3{ -0.3f, 0.5f, 0.8f }),
+            -22.0f);
+        handLater.translate = { 20.0f, 3.0f, 26.0f };
+        const TestTransform positionOnlyWeapon =
+            rock::transform_math::composeTransforms(
+                handLater,
+                wandAimedWeaponInHand);
+        const TestTransform targetHandLocal =
+            rock::left_firing_position_only_math::
+                weaponWorldToPhysicalHandLocal(
+                    handLater,
+                    positionOnlyWeapon);
+        const auto blendedWeaponAt = [&](const float alpha) {
+            return rock::left_firing_position_only_math::
+                physicalHandLocalToWeaponWorld(
+                    handLater,
+                    rock::hand_visual_lerp_math::interpolateTransform(
+                        startHandLocal,
+                        targetHandLocal,
+                        alpha),
+                    positionOnlyWeapon.scale);
+        };
+        ok &= expectTransformNear(
+            "left carry return start rides the moved firing hand",
+            blendedWeaponAt(0.0f),
+            rock::transform_math::composeTransforms(
+                handLater,
+                twoHandWeaponInHand));
+        ok &= expectTransformNear(
+            "left carry return ends on the wand-aimed pose",
+            blendedWeaponAt(1.0f),
+            positionOnlyWeapon);
+
+        const TestVector3 physicalGripWorld =
+            rock::transform_math::localPointToWorld(
+                handLater,
+                gripHandLocal);
+        for (const float alpha : { 0.25f, 0.5f, 0.75f }) {
+            const TestVector3 blendedGripWorld =
+                rock::transform_math::localPointToWorld(
+                    blendedWeaponAt(alpha),
+                    firingGripWeaponLocal);
+            const TestVector3 gripDrift{
+                blendedGripWorld.x - physicalGripWorld.x,
+                blendedGripWorld.y - physicalGripWorld.y,
+                blendedGripWorld.z - physicalGripWorld.z,
+            };
+            ok &= expectTrue(
+                "left carry return keeps the firing grip on the hand",
+                std::sqrt(
+                    gripDrift.x * gripDrift.x +
+                    gripDrift.y * gripDrift.y +
+                    gripDrift.z * gripDrift.z) < 1.0f);
+        }
     }
 
     {

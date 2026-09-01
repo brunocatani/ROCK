@@ -141,6 +141,7 @@ namespace rock
         clearPrimaryGripWorldAuthority(isFiringHandLeft());
         if (usesLeftFiringCarry()) {
             _firing.leftDampedFollowFrame = {};
+            clearLeftFiringSupportReleaseReturn("primary-detach-part-carry");
         }
         _visuals.primaryHandLerp = {};
         WeaponPartGrip& carryGrip = partGrip(carryHandIsLeft);
@@ -337,7 +338,7 @@ namespace rock
                         currentEquippedWeaponOwnershipKey,
                         "part-carry-reattached-firing-grip");
                     if (primaryOnlyActive && usesLeftFiringCarry()) {
-                        (void)solveLeftFiringWeaponCarry(weaponNode);
+                        (void)solveLeftFiringWeaponCarry(weaponNode, dt);
                     }
                 }
                 return;
