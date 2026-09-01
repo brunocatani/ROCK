@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <vector>
 
@@ -273,7 +274,9 @@ int main()
         rock::grab_finger_local_transform_runtime::State poisonedState{};
         poisonedState.currentMask = kFullFingerLocalTransformMask;
         poisonedState.hasCurrentTransforms = true;
-        poisonedState.currentTransforms = target.localTransforms;
+        for (std::size_t index = 0; index < poisonedState.currentTransforms.size(); ++index) {
+            poisonedState.currentTransforms[index] = target.localTransforms[index];
+        }
         poisonedState.currentTransforms[0].rotate.entry[0][0] = 1000.0f;
         const auto recovered = rock::grab_finger_local_transform_runtime::smoothLocalTransforms(
             target,

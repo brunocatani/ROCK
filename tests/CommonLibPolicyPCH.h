@@ -15,6 +15,13 @@
 
 #include "F4SE/Impl/PCH.h"
 
+// RockConfig.h drags in <windows.h> through SimpleIni and FileWatch. It must
+// be compiled here, before the macro scrub below, so a policy-test TU that
+// reaches RockConfig.h through production headers cannot re-introduce Windows
+// macros (MEM_RELEASE et al.) ahead of CommonLib declarations such as
+// RE::Bethesda::MemoryManager's REX::W32::MEM_RELEASE.
+#include "RockConfig.h"
+
 #ifdef near
 #undef near
 #endif

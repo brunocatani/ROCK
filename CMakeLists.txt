@@ -260,9 +260,16 @@ if(BUILD_ROCK_TESTS)
     "${BUILD_DIR}/sdk-examples"
   )
 
+  # Aggregate build target for every registered policy test. add_rock_test
+  # attaches each test executable as a dependency, so the full-suite runner
+  # (tools/Invoke-RockTests.ps1) cannot run a test whose binary was never
+  # built. Do not list test targets here manually.
+  add_custom_target(ROCKPolicyTestBinaries)
+
   function(add_rock_test TARGET_NAME)
     add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
     set_tests_properties(${TARGET_NAME} PROPERTIES LABELS "policy")
+    add_dependencies(ROCKPolicyTestBinaries ${TARGET_NAME})
   endfunction()
 
   add_executable(ROCKGrabInputIntentPolicyTests
@@ -745,6 +752,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGeneratedBodyContactRegistryPolicyTests
     ROCKHavokTimingFixPolicyTests
     ROCKHeldObjectStutterGuardPolicyTests
+    ROCKHeldScenePresentationPolicyTests
     ROCKEquippedWeaponDropMomentumPolicyTests
     ROCKHeldBodySetDrivePolicyTests
     ROCKSkinnedBodyResolverPolicyTests
@@ -813,7 +821,6 @@ if(BUILD_ROCK_TESTS)
     target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} REUSE_FROM ROCKPolicyTestSupport)
     target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE ROCKPolicyTestSupport)
   endforeach()
-  add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
 
   add_executable(ROCKDebugOverlayFrameAdmissionTests
     "${ROOT_DIR}/tests/DebugOverlayFrameAdmissionTests.cpp"

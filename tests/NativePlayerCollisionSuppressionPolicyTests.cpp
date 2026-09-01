@@ -79,7 +79,7 @@ int main()
     ok &= expectPreserved("ordinary weapon is not a native player body layer", FO4_LAYER_WEAPON);
 
     ok &= expectControllerObjectSuppressed("character controller suppresses ordinary clutter", FO4_LAYER_CLUTTER);
-    ok &= expectControllerObjectSuppressed("character controller suppresses weapon objects", FO4_LAYER_WEAPON);
+    ok &= expectControllerObjectPreserved("character controller keeps weapon objects for native melee hits", FO4_LAYER_WEAPON);
     ok &= expectControllerObjectSuppressed("character controller suppresses small debris", FO4_LAYER_DEBRIS_SMALL);
     ok &= expectControllerObjectSuppressed("character controller suppresses large debris", FO4_LAYER_DEBRIS_LARGE);
     ok &= expectControllerObjectSuppressed("character controller suppresses shell casings", FO4_LAYER_SHELLCASING);
