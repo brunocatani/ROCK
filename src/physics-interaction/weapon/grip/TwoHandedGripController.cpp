@@ -170,7 +170,7 @@ namespace rock
         _hasSolvedWeaponTransform = false;
         _support.authoredDebugSnapshot = {};
         _scope.handAuthorityPublishedThisFrame = {};
-        _firing.reattachHoverInsideRadius = false;
+        _firing.reattachHoverInsideZone = false;
         _firing.reattachHoverHandIsLeft = isFiringHandLeft();
         if (g_rockConfig.rockDebugDrawNativeScopeActivation &&
             _scope.cameraDebugSnapshot.framesSinceApply != (std::numeric_limits<std::uint32_t>::max)()) {
@@ -692,7 +692,8 @@ namespace rock
         clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
         _hapticEvents = {};
-        _firing.reattachHoverInsideRadius = false;
+        _firing.reattachHoverInsideZone = false;
+        _firing.reattachApproach = {};
         _scope.anchorWeaponNode = nullptr;
         _scope.anchorGenerationKey = 0;
         _scope.anchorOwnershipKey = 0;

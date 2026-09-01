@@ -793,7 +793,8 @@ namespace rock
 
             /*
              * Firing-grip reattach is the squeeze gesture (grab held with the
-             * palm on the grip); distance is evaluated by TwoHandedGrip. This
+             * palm on the grip); the reattach zone is evaluated by
+             * TwoHandedGrip. This
              * only gates whether each free hand may be captured at all -
              * either hand can take the firing grip when ambidextrous takeover
              * is available.
@@ -1099,13 +1100,14 @@ namespace rock
                 }
             }
             /*
-             * Continuous hover feedback while the open firing palm sits inside
-             * the reattach radius during part carry: re-queued every frame so
-             * the vibration holds until the squeeze reattaches (which flips
-             * the state and hands off to the firingGripAttached pulse above).
+             * Continuous hover feedback while an open free palm sits inside
+             * the firing-grip reattach zone during part carry: re-queued
+             * every frame so the vibration holds until the squeeze reattaches
+             * (which flips the state and hands off to the firingGripAttached
+             * pulse above).
              */
             if (_equipped.handlingSettings.gripZoneHoverHapticsEnabled &&
-                _twoHandedGrip.isFiringGripReattachHoverInsideRadius()) {
+                _twoHandedGrip.isFiringGripReattachHoverInsideZone()) {
                 (void)_feedbackHaptics.queue(
                     _twoHandedGrip.isFiringGripReattachHoverHandLeft() ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
                     grip_zone_hover_haptic_policy::kContinuousQueueSeconds,

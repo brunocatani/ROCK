@@ -636,26 +636,27 @@ namespace rock::weapon_two_handed_grip_math
 
     /*
      * Firing-grip reattach contract: the grab button is the hand. A held grab
-     * with the free firing palm inside the reattach radius re-takes the grip;
-     * nothing ever attaches to an open hand. The gesture cannot re-capture a
-     * fresh detach because the detach itself requires the grab to be open,
-     * and the same squeeze outside the radius stays available for weapon part
-     * grips and world grabs.
+     * with the free palm inside the reattach zone (the lateral cones of
+     * firing_grip_reattach_zone_policy clipped by the reattach radius)
+     * re-takes the grip; nothing ever attaches to an open hand. The gesture
+     * cannot re-capture a fresh detach because the detach itself requires the
+     * grab to be open, and the same squeeze outside the zone stays available
+     * for weapon part grips and world grabs.
      */
-    inline constexpr bool shouldReattachFiringGripOnGrab(bool gripHeld, float palmToGripDistance, float reattachRadius)
+    inline constexpr bool shouldReattachFiringGripOnGrab(bool gripHeld, bool palmInsideReattachZone)
     {
-        return gripHeld && palmToGripDistance <= reattachRadius;
+        return gripHeld && palmInsideReattachZone;
     }
 
     /*
-     * Hover twin of the reattach gate: an OPEN firing palm inside the radius
-     * means a squeeze right now would re-take the firing grip, so the runtime
-     * owner drives continuous haptic feedback while this holds. A held grab
-     * is never a hover -- it is the reattach itself.
+     * Hover twin of the reattach gate: an OPEN palm inside the zone means a
+     * squeeze right now would re-take the firing grip, so the runtime owner
+     * drives continuous haptic feedback while this holds. A held grab is
+     * never a hover -- it is the reattach itself.
      */
-    inline constexpr bool isFiringGripReattachHoverCandidate(bool gripHeld, float palmToGripDistance, float reattachRadius)
+    inline constexpr bool isFiringGripReattachHoverCandidate(bool gripHeld, bool palmInsideReattachZone)
     {
-        return !gripHeld && palmToGripDistance <= reattachRadius;
+        return !gripHeld && palmInsideReattachZone;
     }
 
     inline constexpr bool canStartFreeHandPartGrip(

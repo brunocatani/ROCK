@@ -457,23 +457,77 @@ namespace rock
                distance <= _handlingSettings.firingGripReattachRadiusGameUnits;
     }
 
-    bool TwoHandedGrip::tryComputePalmToGripDistanceForHand(RE::NiNode* weaponNode, const bool handIsLeft, float& outDistance) const
+    bool TwoHandedGrip::tryEvaluateFiringGripReattachZoneForHand(
+        RE::NiNode* weaponNode,
+        const bool handIsLeft,
+        firing_grip_reattach_zone_policy::ZoneResult& outZone)
     {
-        if (!weaponNode) {
-            return false;
-        }
+        outZone = {};
+        auto& approach = _firing.reattachApproach[handIsLeft ? 0u : 1u];
         RE::NiTransform handTransform{};
-        if (!tryGetSolverHandTransform(handIsLeft, handTransform)) {
+        if (!weaponNode ||
+            !isFiniteTransform(weaponNode->world) ||
+            !tryGetSolverHandTransform(handIsLeft, handTransform)) {
+            approach = {};
             return false;
         }
-        const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
-        const RE::NiPoint3 delta = sub(palm, firingGripWorld);
-        const float distance = std::sqrt(dot(delta, delta));
-        if (!std::isfinite(distance)) {
+        /*
+         * The lateral axis is the seated canonical RIGHT palm normal on this
+         * weapon (weapon LEFT), the same axis the authored support activation
+         * cone is built from. The zone is symmetric in its sign, so one axis
+         * serves both hands and both sides. Part carry always follows a
+         * captured firing grip, so the canonical hold is expected; without it
+         * the zone fails closed instead of guessing a weapon axis.
+         */
+        if (!hasRightFiringHandCanonicalFrame(
+                weaponNode,
+                _session.weaponGenerationKey,
+                _session.equippedWeaponOwnershipKey)) {
+            approach = {};
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "TwoHandedGrip: firing-grip reattach zone unavailable hand={} reason=noCanonicalRightHold",
+                handIsLeft ? "left" : "right");
             return false;
         }
-        outDistance = distance;
+        const RE::NiTransform seatedRightHandWorld =
+            transform_math::composeTransforms(
+                weaponNode->world,
+                _firing.rightCanonicalHandWeaponLocal);
+        if (!isFiniteTransform(seatedRightHandWorld)) {
+            approach = {};
+            return false;
+        }
+
+        using firing_grip_reattach_zone_policy::Vec3;
+        const auto toZoneVector = [](const RE::NiPoint3& value) {
+            return Vec3{ value.x, value.y, value.z };
+        };
+        outZone = firing_grip_reattach_zone_policy::evaluateZone(
+            firing_grip_reattach_zone_policy::ZoneInput{
+                .gripWorld = toZoneVector(
+                    weaponLocalToWorld(_firing.primaryGripLocal, weaponNode)),
+                .palmWorld = toZoneVector(
+                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        handTransform,
+                        handIsLeft)),
+                .weaponLeftAxisWorld = toZoneVector(
+                    computePalmNormalFromHandBasis(seatedRightHandWorld, false)),
+                .lastStableDirectionWorld = toZoneVector(
+                    approach.lastStableDirectionWorld),
+                .radialCapGameUnits =
+                    _handlingSettings.firingGripReattachRadiusGameUnits,
+                .lastStableDirectionValid = approach.valid,
+            });
+        if (outZone.directionValid && !outZone.usedLastStableDirection) {
+            approach.lastStableDirectionWorld = RE::NiPoint3{
+                outZone.approachDirectionWorld.x,
+                outZone.approachDirectionWorld.y,
+                outZone.approachDirectionWorld.z,
+            };
+            approach.valid = true;
+        }
         return true;
     }
 

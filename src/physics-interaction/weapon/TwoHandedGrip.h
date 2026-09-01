@@ -16,6 +16,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
+#include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -625,12 +626,13 @@ namespace rock
         bool isFiringGripOccupied() const { return _session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PrimaryOnly; }
 
         /*
-         * True while the OPEN firing palm hovers inside the reattach radius
-         * during part carry: squeezing the grab right now would re-take the
-         * firing grip. Recomputed every update(); PhysicsInteraction consumes
-         * it each frame to drive continuous hover haptics on the firing hand.
+         * True while an OPEN free palm hovers inside the firing-grip reattach
+         * zone during part carry: squeezing the grab right now would re-take
+         * the firing grip. Recomputed every update(); PhysicsInteraction
+         * consumes it each frame to drive continuous hover haptics on that
+         * hand.
          */
-        bool isFiringGripReattachHoverInsideRadius() const { return _firing.reattachHoverInsideRadius; }
+        bool isFiringGripReattachHoverInsideZone() const { return _firing.reattachHoverInsideZone; }
 
         // Which physical hand the hover above refers to (either free hand can
         // hover the firing grip when ambidextrous takeover is available).
@@ -1455,7 +1457,19 @@ namespace rock
             const RE::NiTransform& handTransform,
             bool handIsLeft) const;
 
-        bool tryComputePalmToGripDistanceForHand(RE::NiNode* weaponNode, bool handIsLeft, float& outDistance) const;
+        /*
+         * Evaluates the firing-grip reattach zone for one free hand: its palm
+         * pivot against the captured grip point through the lateral cones and
+         * the reattach radius. The lateral axis is the seated canonical right
+         * palm normal on the current weapon; without that canonical hold the
+         * zone fails closed. Updates that hand's last stable approach
+         * direction, so it is only called while part carry evaluates the
+         * hand.
+         */
+        bool tryEvaluateFiringGripReattachZoneForHand(
+            RE::NiNode* weaponNode,
+            bool handIsLeft,
+            firing_grip_reattach_zone_policy::ZoneResult& outZone);
 
         /*
          * Firing-hand role transition. Clears role-tagged FRIK publications of
@@ -1839,8 +1853,21 @@ namespace rock
             bool persistentCarryInputAcquisitionPending{ false };
 
             // Per-frame hover state; only ever true in PartCarry (see getter).
-            bool reattachHoverInsideRadius{ false };
+            bool reattachHoverInsideZone{ false };
             bool reattachHoverHandIsLeft{ false };
+
+            /*
+             * Last stable palm approach direction toward the firing grip per
+             * physical hand (index 0 left, 1 right), kept only during part
+             * carry so the reattach cones stay decidable once the palm is
+             * closer than the zone's minimum direction distance.
+             */
+            struct ReattachApproachState
+            {
+                RE::NiPoint3 lastStableDirectionWorld{};
+                bool valid{ false };
+            };
+            std::array<ReattachApproachState, 2> reattachApproach{};
         };
 
         // State owned by the SupportGrip module: the per-hand part grips,

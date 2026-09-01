@@ -138,6 +138,7 @@ namespace rock
         clearSupportInputBaselines();
         beginHandVisualReturn(isFiringHandLeft(), "primary-detach-part-carry");
         clearPrimaryGripFingerPose(isFiringHandLeft());
+        _firing.reattachApproach = {};
         clearPrimaryGripWorldAuthority(isFiringHandLeft());
         if (usesLeftFiringCarry()) {
             _firing.leftDampedFollowFrame = {};
@@ -224,9 +225,10 @@ namespace rock
 
         /*
          * Firing-grip reattach is the squeeze gesture: a held grab with a
-         * free palm inside the reattach radius re-takes the grip. Nothing
-         * attaches to an open hand, and the gesture cannot re-capture a fresh
-         * detach because the detach requires the grab to be open. A hand
+         * free palm inside the reattach zone (the lateral cones within the
+         * reattach radius) re-takes the grip. Nothing attaches to an open
+         * hand, and the gesture cannot re-capture a fresh detach because the
+         * detach requires the grab to be open. A hand
          * already part-gripping is never converted; open it first, then
          * squeeze the grip. With ambidextrous takeover available, EITHER free
          * hand can squeeze the firing grip - whichever hand takes it becomes
@@ -251,34 +253,40 @@ namespace rock
                 supportGripHeld,
                 &supportHandContact },
         };
+        const auto clearReattachApproach = [&](const bool isLeft) {
+            _firing.reattachApproach[isLeft ? 0u : 1u] = {};
+        };
         for (const FiringGripReattachCandidate& candidate : reattachCandidates) {
             if (candidate.isLeft != firingHandIsLeft &&
                 (!_handlingSettings.ambidextrousHandoffEnabled ||
                     !canBeginPrimaryOnlyGripForHand(candidate.isLeft))) {
+                clearReattachApproach(candidate.isLeft);
                 continue;
             }
             if (!candidate.eligible || partGrip(candidate.isLeft).active) {
+                clearReattachApproach(candidate.isLeft);
                 continue;
             }
-            float palmToGripDistance = 0.0f;
-            if (!tryComputePalmToGripDistanceForHand(weaponNode, candidate.isLeft, palmToGripDistance)) {
+            firing_grip_reattach_zone_policy::ZoneResult reattachZone{};
+            if (!tryEvaluateFiringGripReattachZoneForHand(
+                    weaponNode,
+                    candidate.isLeft,
+                    reattachZone)) {
                 continue;
             }
             const bool reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                 candidate.gripHeld,
-                palmToGripDistance,
-                _handlingSettings.firingGripReattachRadiusGameUnits) ||
+                reattachZone.inside) ||
                 (candidate.gripHeld &&
                     candidate.contact->acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe &&
                     !authoredProviderAuthorityActive &&
                     !authoredAttachOnlyAuthorityActive);
-            if (!_firing.reattachHoverInsideRadius &&
+            if (!_firing.reattachHoverInsideZone &&
                 weapon_two_handed_grip_math::isFiringGripReattachHoverCandidate(
                     candidate.gripHeld,
-                    palmToGripDistance,
-                    _handlingSettings.firingGripReattachRadiusGameUnits)) {
-                _firing.reattachHoverInsideRadius = true;
+                    reattachZone.inside)) {
+                _firing.reattachHoverInsideZone = true;
                 _firing.reattachHoverHandIsLeft = candidate.isLeft;
             }
             if (reattachRequested &&
@@ -288,6 +296,15 @@ namespace rock
                     *candidate.contact,
                     authoredProviderAuthorityActive,
                     authoredAttachOnlyAuthorityActive)) {
+                ROCK_LOG_INFO(Weapon,
+                    "TwoHandedGrip: firing-grip reattach zone hand={} inside={} side={} dist={:.2f} lateralDot={:.3f} lastStable={} radius={:.2f}",
+                    candidate.isLeft ? "left" : "right",
+                    reattachZone.inside ? "yes" : "no",
+                    firing_grip_reattach_zone_policy::sideName(reattachZone.side),
+                    reattachZone.radialDistanceGameUnits,
+                    reattachZone.lateralDot,
+                    reattachZone.usedLastStableDirection ? "yes" : "no",
+                    _handlingSettings.firingGripReattachRadiusGameUnits);
                 const bool newSupportHandIsLeft = isSupportHandLeft();
                 if (partGrip(newSupportHandIsLeft).active) {
                     // Re-lock the two-hand separation against the (possibly

@@ -5,6 +5,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
+#include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
@@ -2760,20 +2761,141 @@ int main()
             .handHoldingObject = true,
         }));
 
-    ok &= expectTrue("held grab with the palm on the grip re-takes the firing grip",
-        shouldReattachFiringGripOnGrab(true, 2.9f, 3.0f));
-    ok &= expectFalse("grab reattach requires the palm inside the radius",
-        shouldReattachFiringGripOnGrab(true, 3.5f, 3.0f));
+    ok &= expectTrue("held grab with the palm inside the reattach zone re-takes the firing grip",
+        shouldReattachFiringGripOnGrab(true, true));
+    ok &= expectFalse("grab reattach requires the palm inside the zone",
+        shouldReattachFiringGripOnGrab(true, false));
     ok &= expectFalse("an open hand never re-takes the firing grip",
-        shouldReattachFiringGripOnGrab(false, 0.1f, 3.0f));
+        shouldReattachFiringGripOnGrab(false, true));
 
     using rock::weapon_two_handed_grip_math::isFiringGripReattachHoverCandidate;
-    ok &= expectTrue("open palm inside the reattach radius is a hover candidate",
-        isFiringGripReattachHoverCandidate(false, 2.9f, 3.0f));
-    ok &= expectFalse("hover candidate requires the palm inside the radius",
-        isFiringGripReattachHoverCandidate(false, 3.5f, 3.0f));
+    ok &= expectTrue("open palm inside the reattach zone is a hover candidate",
+        isFiringGripReattachHoverCandidate(false, true));
+    ok &= expectFalse("hover candidate requires the palm inside the zone",
+        isFiringGripReattachHoverCandidate(false, false));
     ok &= expectFalse("a held grab is the reattach itself, never a hover",
-        isFiringGripReattachHoverCandidate(true, 2.9f, 3.0f));
+        isFiringGripReattachHoverCandidate(true, true));
+
+    {
+        namespace zone = rock::firing_grip_reattach_zone_policy;
+        using zone::Side;
+        using zone::Vec3;
+        constexpr float kPi = 3.14159265358979323846f;
+        constexpr float kRadius = 4.0f;
+
+        ok &= expectNear("reattach cone aperture is 20 degrees",
+            zone::kConeApertureDegrees, 20.0f);
+        ok &= expectNear("reattach cone minimum dot is cos(half aperture)",
+            zone::kConeMinimumDot,
+            std::cos(zone::kConeHalfAngleDegrees * kPi / 180.0f),
+            0.000001f);
+
+        const Vec3 grip{ 10.0f, -4.0f, 55.0f };
+        // Unit lateral axis with a deliberately non-axis-aligned direction.
+        const Vec3 weaponLeft{ 0.6f, 0.8f, 0.0f };
+        const Vec3 across{ -0.8f, 0.6f, 0.0f };
+        const auto palmAt = [&](const float distance,
+                                const float degreesOffAxis,
+                                const float lateralSign) {
+            const float radians = degreesOffAxis * kPi / 180.0f;
+            const float along = std::cos(radians) * lateralSign * distance;
+            const float sideways = std::sin(radians) * distance;
+            return Vec3{
+                grip.x + weaponLeft.x * along + across.x * sideways,
+                grip.y + weaponLeft.y * along + across.y * sideways,
+                grip.z + weaponLeft.z * along + across.z * sideways,
+            };
+        };
+        const auto evaluate = [&](const Vec3& palm,
+                                  const float radius,
+                                  const bool lastStableValid = false,
+                                  const Vec3& lastStable = Vec3{}) {
+            return zone::evaluateZone(zone::ZoneInput{
+                .gripWorld = grip,
+                .palmWorld = palm,
+                .weaponLeftAxisWorld = weaponLeft,
+                .lastStableDirectionWorld = lastStable,
+                .radialCapGameUnits = radius,
+                .lastStableDirectionValid = lastStableValid,
+            });
+        };
+
+        const auto leftOnAxis = evaluate(palmAt(2.0f, 0.0f, 1.0f), kRadius);
+        ok &= expectTrue("palm approaching on the weapon-left axis is inside the zone",
+            leftOnAxis.inside);
+        ok &= expectTrue("left-side approach reports the LEFT side",
+            leftOnAxis.side == Side::Left);
+        ok &= expectTrue("left-side approach used the live radial direction",
+            leftOnAxis.directionValid && !leftOnAxis.usedLastStableDirection);
+        ok &= expectNear("left-side approach reports the radial distance",
+            leftOnAxis.radialDistanceGameUnits, 2.0f, 0.001f);
+
+        const auto rightNearEdge = evaluate(palmAt(3.9f, 5.0f, -1.0f), kRadius);
+        ok &= expectTrue("palm 5 degrees off the weapon-right axis is inside the zone",
+            rightNearEdge.inside);
+        ok &= expectTrue("right-side approach reports the RIGHT side",
+            rightNearEdge.side == Side::Right);
+
+        const auto outsideCone = evaluate(palmAt(2.0f, 15.0f, 1.0f), kRadius);
+        ok &= expectTrue("palm 15 degrees off the lateral axis is inside the radius",
+            outsideCone.radialPass);
+        ok &= expectFalse("palm 15 degrees off the lateral axis fails the cone",
+            outsideCone.directionPass);
+        ok &= expectFalse("palm outside the cone is outside the zone",
+            outsideCone.inside);
+        ok &= expectTrue("palm outside the cone reports no side",
+            outsideCone.side == Side::None);
+
+        const auto fromAbove = evaluate(palmAt(1.0f, 90.0f, 1.0f), kRadius);
+        ok &= expectFalse("palm approaching across the lateral axis is outside the zone",
+            fromAbove.inside);
+
+        const auto beyondRadius = evaluate(palmAt(4.5f, 0.0f, 1.0f), kRadius);
+        ok &= expectTrue("palm beyond the radius still passes the cone",
+            beyondRadius.directionPass);
+        ok &= expectFalse("palm beyond the radius fails the radial cap",
+            beyondRadius.radialPass);
+        ok &= expectFalse("palm beyond the radius is outside the zone",
+            beyondRadius.inside);
+
+        const auto seatedNoHistory = evaluate(palmAt(0.1f, 0.0f, 1.0f), kRadius);
+        ok &= expectTrue("palm on the grip is inside the radius",
+            seatedNoHistory.radialPass);
+        ok &= expectFalse("palm on the grip without an approach history has no direction",
+            seatedNoHistory.directionValid);
+        ok &= expectFalse("palm on the grip without an approach history fails closed",
+            seatedNoHistory.inside);
+
+        const auto seatedFromSide = evaluate(
+            palmAt(0.1f, 0.0f, 1.0f), kRadius, true, weaponLeft);
+        ok &= expectTrue("palm on the grip reuses the last stable side approach",
+            seatedFromSide.inside && seatedFromSide.usedLastStableDirection);
+        ok &= expectTrue("last stable side approach keeps its side",
+            seatedFromSide.side == Side::Left);
+
+        const auto seatedFromAbove = evaluate(
+            palmAt(0.1f, 0.0f, 1.0f), kRadius, true, across);
+        ok &= expectFalse("palm on the grip after an across approach stays outside the zone",
+            seatedFromAbove.inside);
+
+        const auto zeroAxis = zone::evaluateZone(zone::ZoneInput{
+            .gripWorld = grip,
+            .palmWorld = palmAt(2.0f, 0.0f, 1.0f),
+            .weaponLeftAxisWorld = Vec3{},
+            .radialCapGameUnits = kRadius,
+        });
+        ok &= expectFalse("zone without a lateral axis fails closed",
+            zeroAxis.inside);
+
+        const auto negativeRadius = evaluate(palmAt(1.0f, 0.0f, 1.0f), -1.0f);
+        ok &= expectFalse("negative radial cap fails the radial gate",
+            negativeRadius.radialPass);
+
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        const auto nonFinite = evaluate(Vec3{ nan, 0.0f, 0.0f }, kRadius);
+        ok &= expectFalse("non-finite palm fails every zone gate",
+            nonFinite.inside || nonFinite.radialPass || nonFinite.directionValid);
+    }
 
     ok &= expectTrue("free hand part grip starts on grab press over a routed support part",
         canStartFreeHandPartGrip(true, true, false, false));
