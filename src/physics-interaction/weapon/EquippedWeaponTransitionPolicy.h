@@ -70,12 +70,18 @@ namespace rock::equipped_weapon_transition_policy
         bool nativeAncestorPathVisible{ false };
         bool nativeInstanceLocallyVisible{ false };
         bool bridgeOwnsNativeInstanceCull{ false };
+        // True while the equip's final weapon carrier (the LEFT firing-hand
+        // carry) has not yet published a solved weapon pose. The native
+        // attach point is the right hand, so handing off before the carry
+        // owns the transform renders the weapon right-handed.
+        bool finalCarrierPending{ false };
     };
 
     struct Decision
     {
         bool presentBridgeModel{ false };
         bool handoffBridgeToNative{ false };
+        bool handoffDeferredForFinalCarrier{ false };
         RepairAction repair{ RepairAction::None };
     };
 
@@ -300,8 +306,21 @@ namespace rock::equipped_weapon_transition_policy
 
             if (state.stableFrames >= kStableFramesBeforeNativeHandoff) {
                 if (!state.nativeHandoffObserved) {
-                    state.nativeHandoffObserved = true;
-                    decision.handoffBridgeToNative = input.bridgeModelAvailable;
+                    /*
+                     * Renderable-and-stable is the FINAL pose only for the
+                     * native right-hand carry. While the left firing carry is
+                     * still acquiring the weapon transform, keep presenting
+                     * the bridge instead of revealing the right-hand attach.
+                     * The bridge's wall-clock presentation lease bounds this
+                     * hold: an expired or absent model hands off immediately.
+                     */
+                    if (input.finalCarrierPending && input.bridgeModelAvailable) {
+                        decision.presentBridgeModel = true;
+                        decision.handoffDeferredForFinalCarrier = true;
+                    } else {
+                        state.nativeHandoffObserved = true;
+                        decision.handoffBridgeToNative = input.bridgeModelAvailable;
+                    }
                 }
             } else {
                 decision.presentBridgeModel =
