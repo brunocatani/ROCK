@@ -212,6 +212,16 @@ namespace rock::authored_weapon_grip_cache
             mixValue(hash, finger.scale);
         }
         mixValue(hash, record.rightFiringFingerMask);
+        mixBytes(hash, record.supportHandWeaponLocal.rotate.data(), sizeof(record.supportHandWeaponLocal.rotate));
+        mixBytes(hash, record.supportHandWeaponLocal.translate.data(), sizeof(record.supportHandWeaponLocal.translate));
+        mixValue(hash, record.supportHandWeaponLocal.scale);
+        for (const auto& finger : record.supportFingerLocals) {
+            mixBytes(hash, finger.rotate.data(), sizeof(finger.rotate));
+            mixBytes(hash, finger.translate.data(), sizeof(finger.translate));
+            mixValue(hash, finger.scale);
+        }
+        mixValue(hash, record.supportFingerMask);
+        mixValue(hash, record.supportValid);
         mixString(hash, record.idleClipPath);
         mixValue(hash, record.requestedSubgraphIdentifier);
         mixValue(hash, record.bindingSubgraphIdentifier);
@@ -247,6 +257,19 @@ namespace rock::authored_weapon_grip_cache
                 return false;
             }
         }
+        if (record.supportValid) {
+            if (record.supportFingerMask != kCompleteFiringFingerMask ||
+                !validTransform(record.supportHandWeaponLocal)) {
+                return false;
+            }
+            for (const auto& finger : record.supportFingerLocals) {
+                if (!validTransform(finger)) {
+                    return false;
+                }
+            }
+        } else if (record.supportFingerMask != 0) {
+            return false;
+        }
         return record.checksum != 0 && record.checksum == calculateChecksum(record);
     }
 
@@ -261,6 +284,10 @@ namespace rock::authored_weapon_grip_cache
         json fingers = json::array();
         for (const auto& finger : normalized.rightFiringFingerLocals) {
             fingers.push_back(transformToJson(finger));
+        }
+        json supportFingers = json::array();
+        for (const auto& finger : normalized.supportFingerLocals) {
+            supportFingers.push_back(transformToJson(finger));
         }
 
         const json root{
@@ -295,6 +322,12 @@ namespace rock::authored_weapon_grip_cache
             { "rightHandWeaponLocal", transformToJson(normalized.rightHandWeaponLocal) },
             { "rightFiringFingerMask", normalized.rightFiringFingerMask },
             { "rightFiringFingerLocals", std::move(fingers) },
+            { "support", {
+                { "valid", normalized.supportValid },
+                { "handWeaponLocal", transformToJson(normalized.supportHandWeaponLocal) },
+                { "fingerMask", normalized.supportFingerMask },
+                { "fingerLocals", std::move(supportFingers) },
+            } },
             { "checksum", hex64(normalized.checksum) },
         };
         return root.dump(2);
@@ -315,7 +348,8 @@ namespace rock::authored_weapon_grip_cache
             const json root = json::parse(jsonText);
             if (!root.is_object() || !root.contains("formatVersion") || !root.contains("poseAlgorithmVersion") || !root.contains("weapon") ||
                 !root.contains("identity") || !root.contains("provenance") || !root.contains("quality") || !root.contains("rightHandWeaponLocal") ||
-                !root.contains("rightFiringFingerMask") || !root.contains("rightFiringFingerLocals") || !root.contains("checksum")) {
+                !root.contains("rightFiringFingerMask") || !root.contains("rightFiringFingerLocals") || !root.contains("support") ||
+                !root.contains("checksum")) {
                 setError(outError, "recordFieldsMissing");
                 return false;
             }
@@ -369,6 +403,30 @@ namespace rock::authored_weapon_grip_cache
             for (std::size_t index = 0; index < parsed.rightFiringFingerLocals.size(); ++index) {
                 if (!transformFromJson(fingers[index], parsed.rightFiringFingerLocals[index])) {
                     setError(outError, "recordFingerTransformInvalid");
+                    return false;
+                }
+            }
+
+            const auto& support = root.at("support");
+            if (!support.is_object() || !support.contains("valid") || !support.contains("handWeaponLocal") ||
+                !support.contains("fingerMask") || !support.contains("fingerLocals")) {
+                setError(outError, "recordSupportFieldsMissing");
+                return false;
+            }
+            parsed.supportValid = support.at("valid").get<bool>();
+            parsed.supportFingerMask = support.at("fingerMask").get<std::uint16_t>();
+            if (!transformFromJson(support.at("handWeaponLocal"), parsed.supportHandWeaponLocal)) {
+                setError(outError, "recordSupportTransformInvalid");
+                return false;
+            }
+            const auto& supportFingers = support.at("fingerLocals");
+            if (!supportFingers.is_array() || supportFingers.size() != parsed.supportFingerLocals.size()) {
+                setError(outError, "recordSupportFingerCountInvalid");
+                return false;
+            }
+            for (std::size_t index = 0; index < parsed.supportFingerLocals.size(); ++index) {
+                if (!transformFromJson(supportFingers[index], parsed.supportFingerLocals[index])) {
+                    setError(outError, "recordSupportFingerTransformInvalid");
                     return false;
                 }
             }

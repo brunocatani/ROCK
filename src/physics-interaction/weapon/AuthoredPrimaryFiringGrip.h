@@ -72,6 +72,12 @@ namespace rock
             std::uint64_t weaponInstanceContentKey{ 0 };
             std::uint64_t primaryGripCaptureSequence{ 0 };
             std::uint64_t supportCaptureSequence{ 0 };
+            // Value witness of the authored canonical this relation was
+            // captured against; sequences alone are not identity because the
+            // same authored pose is republished under new sequences when its
+            // source changes.
+            RE::NiTransform canonicalHandWeaponLocal{};
+            bool inPowerArmor{ false };
             bool weaponInstanceContentKnown{ false };
             bool valid{ false };
         };

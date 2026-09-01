@@ -90,5 +90,32 @@ int main()
     invalidRotation.checksum = calculateChecksum(invalidRotation);
     ok &= expect(!validRecord(invalidRotation), "non-orthonormal transform accepted");
 
+    auto withSupport = source;
+    withSupport.supportHandWeaponLocal.translate = { 4.0f, 5.0f, 6.0f };
+    for (std::size_t index = 0; index < withSupport.supportFingerLocals.size(); ++index) {
+        withSupport.supportFingerLocals[index].translate = { 0.0f, static_cast<float>(index) * 0.01f, 0.0f };
+    }
+    withSupport.supportFingerMask = kCompleteFiringFingerMask;
+    withSupport.supportValid = true;
+    withSupport.checksum = calculateChecksum(withSupport);
+    ok &= expect(validRecord(withSupport), "support-carrying cache record rejected");
+    const std::string supportText = serialize(withSupport);
+    CacheRecord supportParsed{};
+    ok &= expect(parse(supportText, supportParsed, &error), "support-carrying record did not parse");
+    ok &= expect(supportParsed.supportValid, "support flag lost during round trip");
+    ok &= expect(supportParsed.supportFingerMask == kCompleteFiringFingerMask, "support finger mask changed during round trip");
+    ok &= expect(supportParsed.supportHandWeaponLocal.translate == withSupport.supportHandWeaponLocal.translate,
+        "support transform changed during round trip");
+
+    auto supportIncomplete = withSupport;
+    supportIncomplete.supportFingerMask = 0x3FFF;
+    supportIncomplete.checksum = calculateChecksum(supportIncomplete);
+    ok &= expect(!validRecord(supportIncomplete), "incomplete support finger pose accepted");
+
+    auto supportGhostMask = source;
+    supportGhostMask.supportFingerMask = kCompleteFiringFingerMask;
+    supportGhostMask.checksum = calculateChecksum(supportGhostMask);
+    ok &= expect(!validRecord(supportGhostMask), "support finger mask without support flag accepted");
+
     return ok ? 0 : 1;
 }

@@ -8,7 +8,7 @@
 
 namespace rock::authored_weapon_grip_cache
 {
-    inline constexpr std::uint32_t kFormatVersion = 1;
+    inline constexpr std::uint32_t kFormatVersion = 2;
     inline constexpr std::uint32_t kPoseAlgorithmVersion = 1;
     inline constexpr std::size_t kFiringFingerCount = 15;
     inline constexpr std::uint32_t kRequiredPersistenceSamples = 5;
@@ -65,6 +65,14 @@ namespace rock::authored_weapon_grip_cache
         PersistedTransform rightHandWeaponLocal{};
         std::array<PersistedTransform, kFiringFingerCount> rightFiringFingerLocals{};
         std::uint16_t rightFiringFingerMask{ 0 };
+        // Paired support-arm relation mirrored from a validated live capture
+        // of Bethesda's native right-primary topology. Optional: records
+        // persisted before that capture carry supportValid=false and gain
+        // the relation on a later save.
+        PersistedTransform supportHandWeaponLocal{};
+        std::array<PersistedTransform, kFiringFingerCount> supportFingerLocals{};
+        std::uint16_t supportFingerMask{ 0 };
+        bool supportValid{ false };
         std::string idleClipPath;
         std::uint64_t requestedSubgraphIdentifier{ 0 };
         std::uint64_t bindingSubgraphIdentifier{ 0 };

@@ -51,9 +51,17 @@ namespace rock::authored_weapon_grip_library
         // the same authored grip translation.
         RE::NiTransform rightPositionOnlyHandWeaponLocal{};
         FiringFingerPose rightFiringFingerPose{};
+        // Paired support-arm relation captured while Bethesda's native
+        // right-primary topology carried this exact authored canonical. It
+        // lets a direct physical-left equip seat authored support grabs
+        // without ever seeing a native-right frame.
+        RE::NiTransform supportHandWeaponLocal{};
+        FiringFingerPose supportFingerPose{};
+        std::uint64_t supportCaptureSequence{ 0 };
         std::uint64_t captureSequence{ 0 };
         std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
+        bool hasSupportRelation{ false };
         bool hasRightPositionOnlyHandWeaponLocal{ false };
         bool usedVariantFallback{ false };
         const char* reason{ "notEvaluated" };
@@ -104,6 +112,21 @@ namespace rock::authored_weapon_grip_library
         std::uint64_t authoredCaptureSequence,
         std::uint64_t frikOffsetRevision,
         const RE::NiTransform& rightPositionOnlyHandWeaponLocal);
+
+    /*
+     * Attach the live-captured paired support-arm relation to the entry for
+     * this exact variant. A value-equivalent republication keeps the stored
+     * sequence so downstream persistence stays quiet; a materially different
+     * relation replaces it. The entry's authored canonical must already
+     * exist.
+     */
+    [[nodiscard]] bool publishSupportRelation(
+        const RE::TESObjectWEAP* weapon,
+        WeaponVariantIdentity variant,
+        bool inPowerArmor,
+        const RE::NiTransform& supportHandWeaponLocal,
+        const FiringFingerPose& supportFingerPose,
+        std::uint64_t supportCaptureSequence);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
     [[nodiscard]] LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor);

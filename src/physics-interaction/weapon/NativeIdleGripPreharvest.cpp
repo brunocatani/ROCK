@@ -340,6 +340,16 @@ namespace rock::native_idle_grip_preharvest
             Job job{};
             std::array<FailureEntry, kFailureCapacity> failures{};
             std::uint64_t nextCaptureSequence{ 0 };
+            // Disk mirror bookkeeping for the live-captured authored support
+            // relation of the currently equipped identity: skip repeat work
+            // until the library publishes a materially new relation.
+            std::uint64_t supportPersistVariantKey{ 0 };
+            std::uint64_t supportPersistContentKey{ 0 };
+            std::uint64_t supportPersistSequence{ 0 };
+            ULONGLONG supportPersistNextPollMilliseconds{ 0 };
+            ULONGLONG supportPersistRetryAfterMilliseconds{ 0 };
+            std::uint32_t supportPersistWeaponFormId{ 0 };
+            bool supportPersistInPowerArmor{ false };
             DWORD ownerThreadId{ 0 };
             bool nativeValidationAttempted{ false };
             bool nativeValidated{ false };
@@ -840,6 +850,30 @@ namespace rock::native_idle_grip_preharvest
                     authored_weapon_grip_library::CaptureSource::PersistedNativeIdle,
                     &fingers)) {
                 return false;
+            }
+
+            if (record.supportValid) {
+                RE::NiTransform supportHandInWeapon{};
+                authored_weapon_grip_library::FiringFingerPose supportFingers{};
+                bool supportRestored = restoreTransform(record.supportHandWeaponLocal, supportHandInWeapon);
+                for (std::size_t index = 0; supportRestored && index < supportFingers.localTransforms.size(); ++index) {
+                    supportRestored = restoreTransform(record.supportFingerLocals[index], supportFingers.localTransforms[index]);
+                }
+                supportFingers.enabledMask = record.supportFingerMask;
+                const std::uint64_t supportCaptureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
+                if (!supportRestored ||
+                    !supportFingers.complete() ||
+                    !authored_weapon_grip_library::publishSupportRelation(
+                        job.weapon,
+                        job.variant,
+                        job.inPowerArmor,
+                        supportHandInWeapon,
+                        supportFingers,
+                        supportCaptureSequence)) {
+                    ROCK_LOG_WARN(Animation,
+                        "Authored weapon grip disk-cache support restore failed formID={:08X}",
+                        job.weaponFormId);
+                }
             }
 
             ROCK_LOG_INFO(Animation,
@@ -1850,6 +1884,107 @@ namespace rock::native_idle_grip_preharvest
                 graphProjects.size(),
                 baseGraph ? baseGraph : "<null>", firstPersonGraph ? firstPersonGraph : "<null>");
         }
+
+        /*
+         * Mirror the library's live-captured authored support relation onto
+         * the persisted primary record for the equipped identity. The library
+         * only advances its support sequence on a materially new relation,
+         * so this is a single uint64 compare on ordinary frames; the record
+         * lookup, graph-profile hash, and atomic save run only when there is
+         * something new to write. A record must already exist - the support
+         * relation rides the off-screen harvest's primary pose, never the
+         * other way around.
+         */
+        void maybePersistEquippedSupportRelation(
+            Runtime& state,
+            RE::TESObjectWEAP* weapon,
+            RE::NiAVObject* weaponRoot,
+            const std::uint64_t instanceContentKey)
+        {
+            if (!weapon || !weaponRoot || instanceContentKey == 0) {
+                return;
+            }
+            // Once-per-second poll: the variant walk and library scan below
+            // must not run on every frame of an ordinary carry.
+            const ULONGLONG pollNow = GetTickCount64();
+            if (pollNow < state.supportPersistNextPollMilliseconds) {
+                return;
+            }
+            state.supportPersistNextPollMilliseconds = pollNow + 1000;
+            const auto variant = authored_weapon_grip_library::identifyWeaponVariant(weaponRoot, instanceContentKey, true);
+            const bool inPowerArmor = f4vr::isInPowerArmor();
+            const auto lookup = authored_weapon_grip_library::findResolvedVariant(weapon, variant, inPowerArmor);
+            if (!lookup.found || !lookup.hasSupportRelation || lookup.usedVariantFallback ||
+                lookup.supportCaptureSequence == 0 || !lookup.supportFingerPose.complete()) {
+                return;
+            }
+
+            const std::uint32_t weaponFormId = weapon->GetFormID();
+            const bool sameIdentity =
+                state.supportPersistWeaponFormId == weaponFormId &&
+                state.supportPersistVariantKey == variant.key &&
+                state.supportPersistContentKey == instanceContentKey &&
+                state.supportPersistInPowerArmor == inPowerArmor;
+            if (sameIdentity && state.supportPersistSequence == lookup.supportCaptureSequence) {
+                return;
+            }
+            const ULONGLONG now = GetTickCount64();
+            if (sameIdentity && now < state.supportPersistRetryAfterMilliseconds) {
+                return;
+            }
+            if (!sameIdentity) {
+                state.supportPersistWeaponFormId = weaponFormId;
+                state.supportPersistVariantKey = variant.key;
+                state.supportPersistContentKey = instanceContentKey;
+                state.supportPersistInPowerArmor = inPowerArmor;
+                state.supportPersistSequence = 0;
+            }
+            state.supportPersistRetryAfterMilliseconds = now + 5000;
+
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* playerRoot = player ? player->Get3D() : nullptr;
+            RE::BSScrapArray<RE::BSStaticStringT<260>> graphProjects{};
+            if (!playerRoot || !player->PopulateGraphProjectsToLoad(playerRoot, graphProjects) || graphProjects.size() < 2) {
+                return;
+            }
+            const std::uint64_t profileKey = graphProfileKey(graphProjects, inPowerArmor);
+
+            authored_weapon_grip_cache::CacheKey key{};
+            authored_weapon_grip_cache::CacheRecord record{};
+            if (profileKey == 0 ||
+                !authored_weapon_grip_cache::makeCacheKey(weaponFormId, variant.key, instanceContentKey, profileKey, inPowerArmor, key) ||
+                !authored_weapon_grip_cache::find(key, record)) {
+                return;
+            }
+
+            if (record.supportValid) {
+                RE::NiTransform storedSupport{};
+                if (restoreTransform(record.supportHandWeaponLocal, storedSupport) &&
+                    authored_weapon_grip_authority_policy::handRelationValueMatches(
+                        storedSupport,
+                        lookup.supportHandWeaponLocal)) {
+                    state.supportPersistSequence = lookup.supportCaptureSequence;
+                    return;
+                }
+            }
+
+            record.supportHandWeaponLocal = persistTransform(lookup.supportHandWeaponLocal);
+            for (std::size_t index = 0; index < record.supportFingerLocals.size(); ++index) {
+                record.supportFingerLocals[index] = persistTransform(lookup.supportFingerPose.localTransforms[index]);
+            }
+            record.supportFingerMask = lookup.supportFingerPose.enabledMask;
+            record.supportValid = true;
+            authored_weapon_grip_cache::save(std::move(record));
+            state.supportPersistSequence = lookup.supportCaptureSequence;
+            ROCK_LOG_INFO(Animation,
+                "Authored support relation persisted to disk cache formID={:08X} variant={:016X} instance={:016X} graph={:016X} powerArmor={} capture={}",
+                weaponFormId,
+                variant.key,
+                instanceContentKey,
+                profileKey,
+                inPowerArmor ? "yes" : "no",
+                lookup.supportCaptureSequence);
+        }
     }
 
     void observeCandidate(RE::NiPointer<RE::TESObjectREFR> candidate) noexcept
@@ -1883,6 +2018,8 @@ namespace rock::native_idle_grip_preharvest
         if (!claimOrValidateThread(state)) {
             return;
         }
+
+        maybePersistEquippedSupportRelation(state, weapon, weaponRoot, instanceContentKey);
 
         if (!advanceAndCanStart(state) || !weapon || !weaponRoot) {
             return;

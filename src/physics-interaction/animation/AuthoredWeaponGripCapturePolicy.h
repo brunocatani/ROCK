@@ -99,8 +99,14 @@ namespace rock::authored_weapon_grip_capture_policy
         std::uint64_t snapshotWeaponOwnershipKey{ 0 };
         std::uint64_t currentWeaponGenerationKey{ 0 };
         std::uint64_t snapshotWeaponGenerationKey{ 0 };
-        std::uint64_t currentPrimaryGripCaptureSequence{ 0 };
-        std::uint64_t snapshotPrimaryGripCaptureSequence{ 0 };
+        // True when the current authored canonical is the same authored pose
+        // the snapshot was captured against: equal capture sequence, or the
+        // hand-in-weapon relation matches by value. A sequence alone is not
+        // identity - the same authored idle is republished under new
+        // sequences when its source changes (live capture superseded by the
+        // preharvest library or the disk cache).
+        bool canonicalRelationMatches{ false };
+        bool powerArmorMatches{ false };
         std::uint64_t snapshotSupportGripCaptureSequence{ 0 };
         std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
@@ -118,11 +124,54 @@ namespace rock::authored_weapon_grip_capture_policy
         bool snapshotWeaponInstanceContentKnown{ false };
         std::uint64_t currentWeaponInstanceContentKey{ 0 };
         std::uint64_t snapshotWeaponInstanceContentKey{ 0 };
-        std::uint64_t currentPrimaryGripCaptureSequence{ 0 };
-        std::uint64_t snapshotPrimaryGripCaptureSequence{ 0 };
+        // See StableAuthoredSupportGripReuseInput.
+        bool canonicalRelationMatches{ false };
+        bool powerArmorMatches{ false };
         std::uint64_t snapshotSupportGripCaptureSequence{ 0 };
         std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
+
+    /*
+     * A sheath/retrieve or re-equip replaces the Weapon node and equipped
+     * ownership while the authored support relation - a weapon-local value -
+     * stays valid for the identical instance content. Adoption rebinds the
+     * snapshot's scene witnesses to the new identity; anything unknown or
+     * changed (content, power-armor topology, authored canonical) fails
+     * closed and requires a fresh native-right capture.
+     */
+    struct StableAuthoredSupportGripAdoptInput
+    {
+        bool snapshotValid{ false };
+        bool weaponNodeValid{ false };
+        std::uint64_t currentWeaponOwnershipKey{ 0 };
+        std::uint64_t currentWeaponGenerationKey{ 0 };
+        bool currentWeaponInstanceContentKnown{ false };
+        bool snapshotWeaponInstanceContentKnown{ false };
+        std::uint64_t currentWeaponInstanceContentKey{ 0 };
+        std::uint64_t snapshotWeaponInstanceContentKey{ 0 };
+        bool canonicalRelationMatches{ false };
+        bool powerArmorMatches{ false };
+        std::uint64_t snapshotSupportGripCaptureSequence{ 0 };
+        std::uint16_t snapshotFingerLocalTransformMask{ 0 };
+    };
+
+    [[nodiscard]] constexpr bool shouldAdoptStableAuthoredSupportGrip(
+        const StableAuthoredSupportGripAdoptInput& input) noexcept
+    {
+        return input.snapshotValid &&
+               input.weaponNodeValid &&
+               input.currentWeaponOwnershipKey != 0 &&
+               input.currentWeaponGenerationKey != 0 &&
+               input.currentWeaponInstanceContentKnown &&
+               input.snapshotWeaponInstanceContentKnown &&
+               input.currentWeaponInstanceContentKey ==
+                   input.snapshotWeaponInstanceContentKey &&
+               input.canonicalRelationMatches &&
+               input.powerArmorMatches &&
+               input.snapshotSupportGripCaptureSequence != 0 &&
+               input.snapshotFingerLocalTransformMask ==
+                   kCompleteAuthoredSupportFingerLocalTransformMask;
+    }
 
     [[nodiscard]] constexpr AuthoredPrimaryDecision
         evaluateAuthoredPrimaryFiringGrip(
@@ -305,9 +354,8 @@ namespace rock::authored_weapon_grip_capture_policy
                input.currentWeaponGenerationKey != 0 &&
                input.currentWeaponGenerationKey ==
                    input.snapshotWeaponGenerationKey &&
-               input.currentPrimaryGripCaptureSequence != 0 &&
-               input.currentPrimaryGripCaptureSequence ==
-                   input.snapshotPrimaryGripCaptureSequence &&
+               input.canonicalRelationMatches &&
+               input.powerArmorMatches &&
                input.snapshotSupportGripCaptureSequence != 0 &&
                input.snapshotFingerLocalTransformMask ==
                    kCompleteAuthoredSupportFingerLocalTransformMask;
@@ -339,9 +387,8 @@ namespace rock::authored_weapon_grip_capture_policy
                input.snapshotWeaponInstanceContentKnown &&
                input.currentWeaponInstanceContentKey ==
                    input.snapshotWeaponInstanceContentKey &&
-               input.currentPrimaryGripCaptureSequence != 0 &&
-               input.currentPrimaryGripCaptureSequence ==
-                   input.snapshotPrimaryGripCaptureSequence &&
+               input.canonicalRelationMatches &&
+               input.powerArmorMatches &&
                input.snapshotSupportGripCaptureSequence != 0 &&
                input.snapshotFingerLocalTransformMask ==
                    kCompleteAuthoredSupportFingerLocalTransformMask;

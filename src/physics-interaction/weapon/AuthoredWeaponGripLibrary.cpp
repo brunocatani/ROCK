@@ -29,12 +29,16 @@ namespace rock::authored_weapon_grip_library
             RE::NiTransform rightHandWeaponLocal{};
             RE::NiTransform rightPositionOnlyHandWeaponLocal{};
             FiringFingerPose rightFiringFingerPose{};
+            RE::NiTransform supportHandWeaponLocal{};
+            FiringFingerPose supportFingerPose{};
+            std::uint64_t supportCaptureSequence{ 0 };
             std::uint64_t captureSequence{ 0 };
             std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
             std::uint64_t publicationOrdinal{ 0 };
             CaptureSource source{ CaptureSource::Unknown };
             bool inPowerArmor{ false };
             bool instanceContentKnown{ false };
+            bool hasSupportRelation{ false };
             bool hasRightPositionOnlyHandWeaponLocal{ false };
             bool occupied{ false };
         };
@@ -135,10 +139,14 @@ namespace rock::authored_weapon_grip_library
                 .rightPositionOnlyHandWeaponLocal =
                     entry.rightPositionOnlyHandWeaponLocal,
                 .rightFiringFingerPose = entry.rightFiringFingerPose,
+                .supportHandWeaponLocal = entry.supportHandWeaponLocal,
+                .supportFingerPose = entry.supportFingerPose,
+                .supportCaptureSequence = entry.supportCaptureSequence,
                 .captureSequence = entry.captureSequence,
                 .positionOnlyFrikOffsetRevision =
                     entry.positionOnlyFrikOffsetRevision,
                 .source = entry.source,
+                .hasSupportRelation = entry.hasSupportRelation,
                 .hasRightPositionOnlyHandWeaponLocal =
                     entry.hasRightPositionOnlyHandWeaponLocal,
                 .usedVariantFallback = usedVariantFallback,
@@ -240,6 +248,20 @@ namespace rock::authored_weapon_grip_library
             destination->rightPositionOnlyHandWeaponLocal = {};
             destination->positionOnlyFrikOffsetRevision = 0;
             destination->hasRightPositionOnlyHandWeaponLocal = false;
+            // The paired support relation belongs to the authored pose, not
+            // to one capture instance: the same idle republished from a new
+            // source (live -> preharvest -> disk cache) keeps it. A
+            // materially different canonical invalidates it.
+            if (destination->hasSupportRelation &&
+                !authored_weapon_grip_authority_policy::
+                    handRelationValueMatches(
+                        destination->rightHandWeaponLocal,
+                        rightHandWeaponLocal)) {
+                destination->supportHandWeaponLocal = {};
+                destination->supportFingerPose = {};
+                destination->supportCaptureSequence = 0;
+                destination->hasSupportRelation = false;
+            }
         }
         destination->rightHandWeaponLocal = rightHandWeaponLocal;
         destination->rightFiringFingerPose = rightFiringFingerPose ? *rightFiringFingerPose : FiringFingerPose{};
@@ -288,6 +310,58 @@ namespace rock::authored_weapon_grip_library
                 rightPositionOnlyHandWeaponLocal;
             entry.positionOnlyFrikOffsetRevision = frikOffsetRevision;
             entry.hasRightPositionOnlyHandWeaponLocal = true;
+            return true;
+        }
+        return false;
+    }
+
+    bool publishSupportRelation(
+        const RE::TESObjectWEAP* weapon,
+        const WeaponVariantIdentity variant,
+        const bool inPowerArmor,
+        const RE::NiTransform& supportHandWeaponLocal,
+        const FiringFingerPose& supportFingerPose,
+        const std::uint64_t supportCaptureSequence)
+    {
+        const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
+        if (weaponFormId == 0 || supportCaptureSequence == 0 ||
+            !finiteTransform(supportHandWeaponLocal) ||
+            !validCompleteFingerPose(supportFingerPose)) {
+            return false;
+        }
+
+        for (auto& entry : s_entries) {
+            if (!sameIdentity(entry, weaponFormId, variant, inPowerArmor)) {
+                continue;
+            }
+            if (entry.captureSequence == 0) {
+                return false;
+            }
+            if (entry.hasSupportRelation &&
+                authored_weapon_grip_authority_policy::
+                    handRelationValueMatches(
+                        entry.supportHandWeaponLocal,
+                        supportHandWeaponLocal)) {
+                // Same authored pose within idle-sway tolerance: keep the
+                // stored value and sequence so disk persistence stays quiet.
+                return true;
+            }
+            const bool firstRelation = !entry.hasSupportRelation;
+            entry.supportHandWeaponLocal = supportHandWeaponLocal;
+            entry.supportFingerPose = supportFingerPose;
+            entry.supportCaptureSequence = supportCaptureSequence;
+            entry.hasSupportRelation = true;
+            ROCK_LOG_INFO(Animation,
+                "{} authored support relation formID={:08X} pGripVariant={:016X} instanceContent={:016X} powerArmor={} capture={} supportHandT=({:.3f},{:.3f},{:.3f})",
+                firstRelation ? "Learned" : "Updated",
+                weaponFormId,
+                variant.key,
+                variant.instanceContentKey,
+                inPowerArmor ? "yes" : "no",
+                supportCaptureSequence,
+                supportHandWeaponLocal.translate.x,
+                supportHandWeaponLocal.translate.y,
+                supportHandWeaponLocal.translate.z);
             return true;
         }
         return false;

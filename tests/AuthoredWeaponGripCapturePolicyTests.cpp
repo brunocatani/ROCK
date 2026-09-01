@@ -259,8 +259,8 @@ int main()
         .snapshotWeaponOwnershipKey = 11,
         .currentWeaponGenerationKey = 22,
         .snapshotWeaponGenerationKey = 22,
-        .currentPrimaryGripCaptureSequence = 33,
-        .snapshotPrimaryGripCaptureSequence = 33,
+        .canonicalRelationMatches = true,
+        .powerArmorMatches = true,
         .snapshotSupportGripCaptureSequence = 44,
         .snapshotFingerLocalTransformMask =
             kCompleteAuthoredSupportFingerLocalTransformMask,
@@ -284,7 +284,12 @@ int main()
     }());
     static_assert([=] {
         auto input = stableSupportReusable;
-        input.snapshotPrimaryGripCaptureSequence = 34;
+        input.canonicalRelationMatches = false;
+        return !shouldReuseStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportReusable;
+        input.powerArmorMatches = false;
         return !shouldReuseStableAuthoredSupportGrip(input);
     }());
     static_assert([=] {
@@ -310,8 +315,8 @@ int main()
         .snapshotWeaponInstanceContentKnown = true,
         .currentWeaponInstanceContentKey = 55,
         .snapshotWeaponInstanceContentKey = 55,
-        .currentPrimaryGripCaptureSequence = 33,
-        .snapshotPrimaryGripCaptureSequence = 33,
+        .canonicalRelationMatches = true,
+        .powerArmorMatches = true,
         .snapshotSupportGripCaptureSequence = 44,
         .snapshotFingerLocalTransformMask =
             kCompleteAuthoredSupportFingerLocalTransformMask,
@@ -351,7 +356,12 @@ int main()
     }());
     static_assert([=] {
         auto input = stableSupportRebindable;
-        input.snapshotPrimaryGripCaptureSequence = 34;
+        input.canonicalRelationMatches = false;
+        return !shouldRebindStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportRebindable;
+        input.powerArmorMatches = false;
         return !shouldRebindStableAuthoredSupportGrip(input);
     }());
     static_assert([=] {
@@ -363,6 +373,69 @@ int main()
         auto input = stableSupportRebindable;
         input.snapshotFingerLocalTransformMask = 0x3FFFu;
         return !shouldRebindStableAuthoredSupportGrip(input);
+    }());
+
+    constexpr StableAuthoredSupportGripAdoptInput stableSupportAdoptable{
+        .snapshotValid = true,
+        .weaponNodeValid = true,
+        .currentWeaponOwnershipKey = 12,
+        .currentWeaponGenerationKey = 24,
+        .currentWeaponInstanceContentKnown = true,
+        .snapshotWeaponInstanceContentKnown = true,
+        .currentWeaponInstanceContentKey = 55,
+        .snapshotWeaponInstanceContentKey = 55,
+        .canonicalRelationMatches = true,
+        .powerArmorMatches = true,
+        .snapshotSupportGripCaptureSequence = 44,
+        .snapshotFingerLocalTransformMask =
+            kCompleteAuthoredSupportFingerLocalTransformMask,
+    };
+    static_assert(shouldAdoptStableAuthoredSupportGrip(
+        stableSupportAdoptable));
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.snapshotValid = false;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.currentWeaponOwnershipKey = 0;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.currentWeaponGenerationKey = 0;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.currentWeaponInstanceContentKnown = false;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.snapshotWeaponInstanceContentKey = 56;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.canonicalRelationMatches = false;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.powerArmorMatches = false;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.snapshotSupportGripCaptureSequence = 0;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportAdoptable;
+        input.snapshotFingerLocalTransformMask = 0x3FFFu;
+        return !shouldAdoptStableAuthoredSupportGrip(input);
     }());
 
     static_assert(kArms == (1u << 0));

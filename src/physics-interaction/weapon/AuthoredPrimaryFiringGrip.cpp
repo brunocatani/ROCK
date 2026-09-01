@@ -253,7 +253,18 @@ namespace rock
             _weaponOwnershipKey = currentWeaponKey;
             _captureSequenceFloor = captureStatus.captureSequence;
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
-            clearStableAuthoredSupportGripSnapshot();
+            /*
+             * Keep a content-fingerprinted support snapshot across the
+             * boundary: a sheath/retrieve or re-equip replaces node and
+             * ownership while the weapon-local support relation stays valid
+             * for identical instance content. Its stale scene witnesses keep
+             * it unusable until adoption revalidates content, power-armor
+             * topology, and the authored canonical against the new identity.
+             * Content-unknown snapshots cannot be revalidated - clear them.
+             */
+            if (!_stableAuthoredSupportGrip.weaponInstanceContentKnown) {
+                clearStableAuthoredSupportGripSnapshot();
+            }
             _sessionLogged = false;
             _applyFailureLogged = false;
             _canonicalPublishFailureLogged = false;
@@ -381,7 +392,8 @@ namespace rock
         }
 
         const auto publishLiveAuthoredSupportCandidate =
-            [&](const std::uint64_t primaryGripCaptureSequence) {
+            [&](const std::uint64_t primaryGripCaptureSequence,
+                const RE::NiTransform& canonicalHandWeaponLocal) {
             RE::NiTransform authoredSupportHandInWeapon{};
             std::array<RE::NiTransform, 15> authoredSupportFingerLocals{};
             std::uint16_t authoredSupportFingerMask = 0;
@@ -419,15 +431,51 @@ namespace rock
                     input.weaponInstanceContentKey,
                 .primaryGripCaptureSequence = primaryGripCaptureSequence,
                 .supportCaptureSequence = authoredSupportCaptureSequence,
+                .canonicalHandWeaponLocal = canonicalHandWeaponLocal,
+                .inPowerArmor = input.inPowerArmor,
                 .weaponInstanceContentKnown =
                     input.weaponInstanceContentKnown,
                 .valid = true,
             };
+            // Mirror the validated relation into the authored library so a
+            // later direct physical-left equip of the same content can seat
+            // authored support grabs without a native-right frame. The
+            // library dedups value-equivalent republication, so per-frame
+            // captures only land when the relation materially changes.
+            if (input.weaponInstanceContentKnown) {
+                authored_weapon_grip_library::FiringFingerPose supportPose{};
+                supportPose.localTransforms = authoredSupportFingerLocals;
+                supportPose.enabledMask = authoredSupportFingerMask;
+                (void)authored_weapon_grip_library::publishSupportRelation(
+                    input.weapon,
+                    variant,
+                    input.inPowerArmor,
+                    authoredSupportHandInWeapon,
+                    supportPose,
+                    authoredSupportCaptureSequence);
+            }
             return true;
         };
 
+        const auto canonicalRelationMatchesSnapshot =
+            [&](const std::uint64_t primaryGripCaptureSequence,
+                const RE::NiTransform& currentCanonical) {
+            const auto& stable = _stableAuthoredSupportGrip;
+            if (primaryGripCaptureSequence == 0 ||
+                stable.primaryGripCaptureSequence == 0) {
+                return false;
+            }
+            return primaryGripCaptureSequence ==
+                       stable.primaryGripCaptureSequence ||
+                   authored_weapon_grip_authority_policy::
+                       handRelationValueMatches(
+                           stable.canonicalHandWeaponLocal,
+                           currentCanonical);
+        };
+
         const auto rebindStableAuthoredSupportCandidate =
-            [&](const std::uint64_t primaryGripCaptureSequence) {
+            [&](const std::uint64_t primaryGripCaptureSequence,
+                const RE::NiTransform& currentCanonical) {
             auto& stable = _stableAuthoredSupportGrip;
             if (!authored_weapon_grip_capture_policy::
                     shouldRebindStableAuthoredSupportGrip(
@@ -455,10 +503,13 @@ namespace rock
                                     input.weaponInstanceContentKey,
                                 .snapshotWeaponInstanceContentKey =
                                     stable.weaponInstanceContentKey,
-                                .currentPrimaryGripCaptureSequence =
-                                    primaryGripCaptureSequence,
-                                .snapshotPrimaryGripCaptureSequence =
-                                    stable.primaryGripCaptureSequence,
+                                .canonicalRelationMatches =
+                                    canonicalRelationMatchesSnapshot(
+                                        primaryGripCaptureSequence,
+                                        currentCanonical),
+                                .powerArmorMatches =
+                                    stable.inPowerArmor ==
+                                    input.inPowerArmor,
                                 .snapshotSupportGripCaptureSequence =
                                     stable.supportCaptureSequence,
                                 .snapshotFingerLocalTransformMask =
@@ -480,8 +531,120 @@ namespace rock
             return true;
         };
 
+        const auto adoptStableAuthoredSupportCandidate =
+            [&](const std::uint64_t primaryGripCaptureSequence,
+                const RE::NiTransform& currentCanonical) {
+            auto& stable = _stableAuthoredSupportGrip;
+            if (stable.weaponNodeIdentity == input.weaponNode &&
+                stable.weaponOwnershipKey == currentWeaponKey &&
+                stable.weaponGenerationKey == input.weaponGenerationKey) {
+                return false;
+            }
+            if (!authored_weapon_grip_capture_policy::
+                    shouldAdoptStableAuthoredSupportGrip(
+                        authored_weapon_grip_capture_policy::
+                            StableAuthoredSupportGripAdoptInput{
+                                .snapshotValid = stable.valid,
+                                .weaponNodeValid =
+                                    input.weaponNode != nullptr,
+                                .currentWeaponOwnershipKey =
+                                    currentWeaponKey,
+                                .currentWeaponGenerationKey =
+                                    input.weaponGenerationKey,
+                                .currentWeaponInstanceContentKnown =
+                                    input.weaponInstanceContentKnown,
+                                .snapshotWeaponInstanceContentKnown =
+                                    stable.weaponInstanceContentKnown,
+                                .currentWeaponInstanceContentKey =
+                                    input.weaponInstanceContentKey,
+                                .snapshotWeaponInstanceContentKey =
+                                    stable.weaponInstanceContentKey,
+                                .canonicalRelationMatches =
+                                    canonicalRelationMatchesSnapshot(
+                                        primaryGripCaptureSequence,
+                                        currentCanonical),
+                                .powerArmorMatches =
+                                    stable.inPowerArmor ==
+                                    input.inPowerArmor,
+                                .snapshotSupportGripCaptureSequence =
+                                    stable.supportCaptureSequence,
+                                .snapshotFingerLocalTransformMask =
+                                    stable.fingerLocalTransformMask,
+                            })) {
+                return false;
+            }
+
+            stable.weaponNodeIdentity = input.weaponNode;
+            stable.weaponOwnershipKey = currentWeaponKey;
+            stable.weaponGenerationKey = input.weaponGenerationKey;
+            stable.primaryGripCaptureSequence = primaryGripCaptureSequence;
+            stable.canonicalHandWeaponLocal = currentCanonical;
+            ROCK_LOG_INFO(
+                Animation,
+                "Authored support snapshot adopted across weapon boundary weaponKey=0x{:X} generation=0x{:X} content=0x{:X} canonical={}",
+                currentWeaponKey,
+                stable.weaponGenerationKey,
+                stable.weaponInstanceContentKey,
+                primaryGripCaptureSequence);
+            return true;
+        };
+
+        const auto seedStableAuthoredSupportFromLibrary =
+            [&](const std::uint64_t primaryGripCaptureSequence,
+                const RE::NiTransform& currentCanonical) {
+            const auto& stable = _stableAuthoredSupportGrip;
+            const bool snapshotOwnsCurrentContent =
+                stable.valid &&
+                stable.weaponInstanceContentKnown &&
+                input.weaponInstanceContentKnown &&
+                stable.weaponInstanceContentKey ==
+                    input.weaponInstanceContentKey;
+            if (snapshotOwnsCurrentContent ||
+                !authoredLookup.found ||
+                !authoredLookup.hasSupportRelation ||
+                !input.weaponNode ||
+                currentWeaponKey == 0 ||
+                input.weaponGenerationKey == 0 ||
+                primaryGripCaptureSequence == 0 ||
+                !input.weaponInstanceContentKnown ||
+                authoredLookup.supportCaptureSequence == 0 ||
+                !authoredLookup.supportFingerPose.complete()) {
+                return false;
+            }
+
+            _stableAuthoredSupportGrip = StableAuthoredSupportGripSnapshot{
+                .weaponNodeIdentity = input.weaponNode,
+                .handWeaponLocal =
+                    authoredLookup.supportHandWeaponLocal,
+                .fingerLocalTransforms =
+                    authoredLookup.supportFingerPose.localTransforms,
+                .fingerLocalTransformMask =
+                    authoredLookup.supportFingerPose.enabledMask,
+                .weaponOwnershipKey = currentWeaponKey,
+                .weaponGenerationKey = input.weaponGenerationKey,
+                .weaponInstanceContentKey =
+                    input.weaponInstanceContentKey,
+                .primaryGripCaptureSequence = primaryGripCaptureSequence,
+                .supportCaptureSequence =
+                    authoredLookup.supportCaptureSequence,
+                .canonicalHandWeaponLocal = currentCanonical,
+                .inPowerArmor = input.inPowerArmor,
+                .weaponInstanceContentKnown = true,
+                .valid = true,
+            };
+            ROCK_LOG_INFO(
+                Animation,
+                "Authored support snapshot seeded from library weaponKey=0x{:X} generation=0x{:X} content=0x{:X} supportCapture={}",
+                currentWeaponKey,
+                input.weaponGenerationKey,
+                input.weaponInstanceContentKey,
+                authoredLookup.supportCaptureSequence);
+            return true;
+        };
+
         const auto publishStableAuthoredSupportCandidate =
-            [&](const std::uint64_t primaryGripCaptureSequence) {
+            [&](const std::uint64_t primaryGripCaptureSequence,
+                const RE::NiTransform& currentCanonical) {
             const auto& stable = _stableAuthoredSupportGrip;
             if (!authored_weapon_grip_capture_policy::
                     shouldReuseStableAuthoredSupportGrip(
@@ -498,10 +661,13 @@ namespace rock
                                     input.weaponGenerationKey,
                                 .snapshotWeaponGenerationKey =
                                     stable.weaponGenerationKey,
-                                .currentPrimaryGripCaptureSequence =
-                                    primaryGripCaptureSequence,
-                                .snapshotPrimaryGripCaptureSequence =
-                                    stable.primaryGripCaptureSequence,
+                                .canonicalRelationMatches =
+                                    canonicalRelationMatchesSnapshot(
+                                        primaryGripCaptureSequence,
+                                        currentCanonical),
+                                .powerArmorMatches =
+                                    stable.inPowerArmor ==
+                                    input.inPowerArmor,
                                 .snapshotSupportGripCaptureSequence =
                                     stable.supportCaptureSequence,
                                 .snapshotFingerLocalTransformMask =
@@ -561,10 +727,34 @@ namespace rock
                     _canonicalPublishFailureLogged = true;
                 }
                 (void)rebindStableAuthoredSupportCandidate(
-                    authoredLookup.captureSequence);
-                const bool stableSupportPublished =
+                    authoredLookup.captureSequence,
+                    selectedRightHandInWeapon);
+                bool stableSupportPublished =
                     publishStableAuthoredSupportCandidate(
-                        authoredLookup.captureSequence);
+                        authoredLookup.captureSequence,
+                        selectedRightHandInWeapon);
+                // A replaced weapon identity (sheath/retrieve, re-equip)
+                // first tries to adopt the retained same-content snapshot,
+                // then falls back to the library relation mirrored from an
+                // earlier native-right carry or the disk cache.
+                if (!stableSupportPublished &&
+                    adoptStableAuthoredSupportCandidate(
+                        authoredLookup.captureSequence,
+                        selectedRightHandInWeapon)) {
+                    stableSupportPublished =
+                        publishStableAuthoredSupportCandidate(
+                            authoredLookup.captureSequence,
+                            selectedRightHandInWeapon);
+                }
+                if (!stableSupportPublished &&
+                    seedStableAuthoredSupportFromLibrary(
+                        authoredLookup.captureSequence,
+                        selectedRightHandInWeapon)) {
+                    stableSupportPublished =
+                        publishStableAuthoredSupportCandidate(
+                            authoredLookup.captureSequence,
+                            selectedRightHandInWeapon);
+                }
                 if (!stableSupportPublished) {
                     const auto& stable = _stableAuthoredSupportGrip;
                     ROCK_LOG_SAMPLE_WARN(Animation, 2000,
@@ -906,9 +1096,30 @@ namespace rock
         // Keep the candidate frame-fresh by republishing the last verified
         // same-weapon snapshot instead of treating that animation gap as the
         // permanent loss of authored support-grip capability.
-        if (!publishLiveAuthoredSupportCandidate(resolvedCaptureSequence)) {
-            (void)publishStableAuthoredSupportCandidate(
-                resolvedCaptureSequence);
+        if (!publishLiveAuthoredSupportCandidate(
+                resolvedCaptureSequence,
+                authoredPrimaryHandInWeapon)) {
+            bool stableSupportPublished =
+                publishStableAuthoredSupportCandidate(
+                    resolvedCaptureSequence,
+                    authoredPrimaryHandInWeapon);
+            if (!stableSupportPublished &&
+                adoptStableAuthoredSupportCandidate(
+                    resolvedCaptureSequence,
+                    authoredPrimaryHandInWeapon)) {
+                stableSupportPublished =
+                    publishStableAuthoredSupportCandidate(
+                        resolvedCaptureSequence,
+                        authoredPrimaryHandInWeapon);
+            }
+            if (!stableSupportPublished &&
+                seedStableAuthoredSupportFromLibrary(
+                    resolvedCaptureSequence,
+                    authoredPrimaryHandInWeapon)) {
+                (void)publishStableAuthoredSupportCandidate(
+                    resolvedCaptureSequence,
+                    authoredPrimaryHandInWeapon);
+            }
         }
 
         if (!_sessionLogged) {
