@@ -2624,6 +2624,18 @@ namespace rock
                isFiniteTransform(outDriverWorld);
     }
 
+    bool TwoHandedGrip::tryGetPhysicalHandWorld(
+        const bool isLeft,
+        RE::NiTransform& outHandWorld) const
+    {
+        RE::NiTransform driverWorld{};
+        if (!tryResolvePhysicalHandFrame(isLeft, outHandWorld, driverWorld)) {
+            outHandWorld = {};
+            return false;
+        }
+        return true;
+    }
+
     authored_support_grab_policy::Selection TwoHandedGrip::capturePartGrip(
         bool isLeft,
         RE::NiNode* weaponNode,

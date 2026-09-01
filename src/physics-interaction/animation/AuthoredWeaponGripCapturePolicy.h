@@ -333,15 +333,20 @@ namespace rock::authored_weapon_grip_capture_policy
     }
 
     /*
-     * A ROCK object grab owns the occupied physical hand's fingers. The
+     * The authored firing pose belongs to a hand that holds the firing grip.
+     * A ROCK object grab owns the occupied physical hand's fingers: the
      * equipped weapon may keep its independent transform/carry authority,
      * but its persistent authored firing pose must not compete with the
-     * ROCK_Grab pose for that same hand.
+     * ROCK_Grab pose for that same hand. A detached firing hand (part carry)
+     * holds nothing and returns to hFRIK's controller-driven fingers until a
+     * hand re-takes the grip; the physical-left canonical path republishes
+     * every frame and would otherwise keep the detached hand curled.
      */
     [[nodiscard]] constexpr bool shouldPublishAuthoredFiringFingerPose(
-        const bool targetHandHoldingObject) noexcept
+        const bool targetHandHoldingObject,
+        const bool firingHandDetached) noexcept
     {
-        return !targetHandHoldingObject;
+        return !targetHandHoldingObject && !firingHandDetached;
     }
 
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(

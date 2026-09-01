@@ -484,6 +484,18 @@ namespace rock
             RE::NiTransform& outHandWorld) const;
 
         /*
+         * Physical hand frame for consumers outside this session that must
+         * not read ROCK's presented hand back: hFRIK's damped driver composed
+         * with the natural bone relation cached while the hand was native.
+         * Unavailable until that relation exists; never falls back to the
+         * rendered bone, which is ROCK's own output while a support lock,
+         * part carry, or authored seat presents the hand.
+         */
+        bool tryGetPhysicalHandWorld(
+            bool isLeft,
+            RE::NiTransform& outHandWorld) const;
+
+        /*
          * Authored seat on the live weapon while a position-only carry will
          * resume; the right-hand visual return targets it so the hand lands
          * where the session re-seats it instead of flashing the physical

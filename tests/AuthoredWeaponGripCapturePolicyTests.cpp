@@ -159,8 +159,10 @@ int main()
                decision.reason ==
                    AuthoredPrimaryDecisionReason::CaptureNotFresh;
     }());
-    static_assert(shouldPublishAuthoredFiringFingerPose(false));
-    static_assert(!shouldPublishAuthoredFiringFingerPose(true));
+    static_assert(shouldPublishAuthoredFiringFingerPose(false, false));
+    static_assert(!shouldPublishAuthoredFiringFingerPose(true, false));
+    static_assert(!shouldPublishAuthoredFiringFingerPose(false, true));
+    static_assert(!shouldPublishAuthoredFiringFingerPose(true, true));
 
     constexpr auto returnHandoff = [=] {
         auto input = eligible;

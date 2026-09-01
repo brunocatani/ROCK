@@ -48,6 +48,9 @@ namespace rock::loose_weapon_grip_zone
         // stale hover result (and vice versa).
         std::array<HandZoneState, 2> s_hoverStates{};
 
+        // Per-frame publication from PhysicsInteraction; see the header.
+        CanonicalPrimaryHandFrame s_canonicalPrimaryHandFrame{};
+
         std::size_t handIndex(const bool isLeft) { return isLeft ? 0u : 1u; }
 
         bool isFinitePoint(const RE::NiPoint3& point)
@@ -118,17 +121,36 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            // ROCK's canonical authored weapon frame is always the physical
-            // right-hand/native weapon frame. Native game handedness is not a
-            // ROCK input and cannot change controller or offset identity.
+            /*
+             * ROCK's canonical authored weapon frame is always the physical
+             * right-hand/native weapon frame. Native game handedness is not a
+             * ROCK input and cannot change controller or offset identity.
+             * The published physical frame is the source: the rendered
+             * RArm_Hand bone is ROCK's own output while a support lock, part
+             * carry, or authored seat presents it, and mirroring a left hold
+             * through that seat rotated every loose grab taken while the
+             * right hand carried the equipped weapon.
+             */
             constexpr bool canonicalHandIsLeft = false;
             RE::NiPoint3 canonicalPalmWorld{};
             RE::NiTransform canonicalHandWorld{};
-            if (!TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(
-                    canonicalHandIsLeft,
-                    canonicalPalmWorld,
-                    canonicalHandWorld) ||
-                !isFinitePoint(canonicalPalmWorld) ||
+            const CanonicalPrimaryHandFrame& publishedFrame = s_canonicalPrimaryHandFrame;
+            if (publishedFrame.valid && isUsableWorldTransform(publishedFrame.handWorld)) {
+                canonicalHandWorld = publishedFrame.handWorld;
+                canonicalPalmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                    canonicalHandWorld,
+                    canonicalHandIsLeft);
+            } else if (publishedFrame.presentedByRock) {
+                state.reason = "canonicalPrimaryHandPresentedByRock";
+                return false;
+            } else if (!TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(
+                           canonicalHandIsLeft,
+                           canonicalPalmWorld,
+                           canonicalHandWorld)) {
+                state.reason = "missingCanonicalPrimaryPalm";
+                return false;
+            }
+            if (!isFinitePoint(canonicalPalmWorld) ||
                 !isUsableWorldTransform(canonicalHandWorld)) {
                 state.reason = "missingCanonicalPrimaryPalm";
                 return false;
@@ -156,6 +178,14 @@ namespace rock::loose_weapon_grip_zone
             RE::NiTransform canonicalHandWeaponLocal{};
             RE::NiTransform canonicalPlacementHandWeaponLocal{};
             bool canonicalPlacementResolved = false;
+            /*
+             * Native carrier: hFRIK's Weapon-node local is authored under
+             * RArm_Hand, so the canonical hand frame composed with that offset
+             * is where the native right hand would carry this weapon. The live
+             * Weapon node's parent is not consulted: ROCK re-parents it under
+             * LArm_Hand for the left carry and presents RArm_Hand itself while
+             * the right hand supports or part-carries the equipped weapon.
+             */
             const auto tryResolveAttachedRootWorld =
                 [&](RE::NiTransform& outAttachedRootWorld,
                     const char*& outFailureReason) {
@@ -164,20 +194,9 @@ namespace rock::loose_weapon_grip_zone
                         outFailureReason = frikLookup.reason;
                         return false;
                     }
-                    auto* weaponNode = f4vr::getWeaponNode();
-                    auto* attachParent = weaponNode ? weaponNode->parent : nullptr;
-                    if (!attachParent ||
-                        !isUsableWorldTransform(attachParent->world)) {
-                        outFailureReason =
-                            frikLookup.source ==
-                                    frik_weapon_offset_cache::OffsetSource::CustomFile ?
-                                "customFrikMissingPrimaryWeaponParent" :
-                                "missingPrimaryWeaponParent";
-                        return false;
-                    }
 
                     outAttachedRootWorld = transform_math::composeTransforms(
-                        attachParent->world,
+                        canonicalHandWorld,
                         frikLookup.offset);
                     outAttachedRootWorld.scale = looseRoot->world.scale;
                     if (!isUsableWorldTransform(outAttachedRootWorld)) {
@@ -343,6 +362,15 @@ namespace rock::loose_weapon_grip_zone
                 heldRef->Get3D(),
                 state,
                 outTestedHandWorld);
+        }
+    }
+
+    void publishCanonicalPrimaryHandFrame(const CanonicalPrimaryHandFrame& frame)
+    {
+        s_canonicalPrimaryHandFrame = frame;
+        if (s_canonicalPrimaryHandFrame.valid &&
+            !isUsableWorldTransform(s_canonicalPrimaryHandFrame.handWorld)) {
+            s_canonicalPrimaryHandFrame.valid = false;
         }
     }
 

@@ -2168,6 +2168,21 @@ namespace rock
     {
         _forceGrab.committedThisFrame = {};
 
+        /*
+         * Loose-hold solves mirror from the physical right hand. Publish the
+         * weapon-authority frame before any hand can commit a grab this frame
+         * so a support lock or part carry on RArm_Hand never leaks ROCK's
+         * presented bone into a loose weapon placement.
+         */
+        {
+            loose_weapon_grip_zone::CanonicalPrimaryHandFrame canonicalPrimaryHand{};
+            canonicalPrimaryHand.valid =
+                _twoHandedGrip.tryGetPhysicalHandWorld(false, canonicalPrimaryHand.handWorld);
+            canonicalPrimaryHand.presentedByRock =
+                _twoHandedGrip.hasVisualAuthorityForHand(false);
+            loose_weapon_grip_zone::publishCanonicalPrimaryHandFrame(canonicalPrimaryHand);
+        }
+
         if (!runtime_state::isLocalSkeletonReady()) {
             _touchGrabRuntime.releaseAll(
                 frame.bhkWorld,

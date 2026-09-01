@@ -39,6 +39,25 @@ namespace rock::loose_weapon_grip_zone
     };
 
     /*
+     * Canonical primary-hand frame for this frame's loose-hold solves. Every
+     * loose placement mirrors from the physical RIGHT hand; while ROCK
+     * presents that hand (support lock, part carry, authored seat) the
+     * rendered bone is ROCK's own output and must not feed the solve.
+     * PhysicsInteraction publishes the weapon-authority physical frame once
+     * per frame before any grab commit. A publication without a frame while
+     * ROCK presents the hand fails the authored placement closed; without
+     * ROCK presentation the rendered bone remains the legacy source.
+     */
+    struct CanonicalPrimaryHandFrame
+    {
+        RE::NiTransform handWorld{};
+        bool valid{ false };
+        bool presentedByRock{ false };
+    };
+
+    void publishCanonicalPrimaryHandFrame(const CanonicalPrimaryHandFrame& frame);
+
+    /*
      * Refresh one hand's grip-zone state. Call once per frame per hand.
      * heldSettled must be true only while the grab is in its settled held
      * state (HeldBody); the inside-radius settle timer only accumulates then.

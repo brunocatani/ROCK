@@ -754,9 +754,16 @@ namespace rock
     {
         const bool targetHandHoldingObject =
             isLeft ? _firing.leftHandHoldingObjectForPose : _firing.rightHandHoldingObjectForPose;
+        const bool firingHandDetached = _session.state == TwoHandedState::PartCarry;
+        if (firingHandDetached && _firing.authoredFingerPosePublished) {
+            // Fail closed: a detached firing hand never keeps a grip pose,
+            // whichever hand published it.
+            clearAuthoredPrimaryFiringGripFingerPose();
+        }
         if (_firing.authoredFingerPoseSuppressed ||
             !authored_weapon_grip_capture_policy::shouldPublishAuthoredFiringFingerPose(
-                targetHandHoldingObject) ||
+                targetHandHoldingObject,
+                firingHandDetached) ||
             _firing.rightCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation) {
             return false;
         }
