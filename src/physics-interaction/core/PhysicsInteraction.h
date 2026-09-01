@@ -39,6 +39,7 @@
 #include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
+#include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -638,11 +639,7 @@ namespace rock
             // generation-bound authored-support verdict.
             bool toggleAcquisitionCommitted{ false };
             bool toggleAcquisitionReleased{ false };
-            authored_support_grab_policy::LeftFiringTakeoverReadiness
-                lastLeftTakeoverReadiness{
-                    authored_support_grab_policy::
-                        LeftFiringTakeoverReadiness::NotRequired
-                };
+            left_carry_readiness::TakeoverWitness takeoverWitness{};
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};
             bool hasFiringGripWeaponLocal{ false };
@@ -794,15 +791,9 @@ namespace rock
             std::uint64_t requestedWeaponGenerationKey{ 0 };
             std::uint64_t ownershipKey{ 0 };
             std::uint64_t nativeOffsetGenerationKey{ 0 };
-            bool nativeOffsetSampleValid{ false };
             bool nativeOffsetReadinessLogged{ false };
-            std::uint8_t matchingNativeOffsetFrames{ 0 };
-            RE::NiTransform nativeOffsetSample{};
-            authored_support_grab_policy::LeftFiringTakeoverReadiness
-                lastLeftTakeoverReadiness{
-                    authored_support_grab_policy::
-                        LeftFiringTakeoverReadiness::NotRequired
-                };
+            left_carry_readiness::NativeOffsetWitness nativeOffset{};
+            left_carry_readiness::TakeoverWitness takeoverWitness{};
         };
         EquippedWeaponHandAssignmentState _equippedWeaponHandAssignment{};
         std::uint64_t _lastPipboyWeaponSelectionSequence{ 0 };
@@ -810,16 +801,10 @@ namespace rock
         {
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t weaponOwnershipKey{ 0 };
-            RE::NiTransform nativeOffsetSample{};
             std::uint16_t remainingResolveFrames{ 0 };
-            std::uint8_t matchingNativeOffsetFrames{ 0 };
-            bool nativeOffsetSampleValid{ false };
             bool infrastructureWarningLogged{ false };
-            authored_support_grab_policy::LeftFiringTakeoverReadiness
-                lastLeftTakeoverReadiness{
-                    authored_support_grab_policy::
-                        LeftFiringTakeoverReadiness::NotRequired
-                };
+            left_carry_readiness::NativeOffsetWitness nativeOffset{};
+            left_carry_readiness::TakeoverWitness takeoverWitness{};
         };
         FixedLeftCarryState _fixedLeftCarry{};
         bool _equippedWeaponMenuReconcilePending = false;

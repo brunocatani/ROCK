@@ -1049,48 +1049,7 @@ namespace rock
 
         bool finiteNiTransform(const RE::NiTransform& transform)
         {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) &&
-                   std::isfinite(transform.translate.y) &&
-                   std::isfinite(transform.translate.z) &&
-                   std::isfinite(transform.scale) &&
-                   std::abs(transform.scale) > 0.0001f;
-        }
-
-        bool approximatelySameWeaponLocalOffset(
-            const RE::NiTransform& live,
-            const RE::NiTransform& expected)
-        {
-            constexpr float kMaximumTranslationError = 0.05f;
-            constexpr float kMaximumRotationElementError = 0.001f;
-            constexpr float kMaximumScaleError = 0.001f;
-            if (!finiteNiTransform(live) || !finiteNiTransform(expected)) {
-                return false;
-            }
-
-            const float dx = live.translate.x - expected.translate.x;
-            const float dy = live.translate.y - expected.translate.y;
-            const float dz = live.translate.z - expected.translate.z;
-            if (dx * dx + dy * dy + dz * dz > kMaximumTranslationError * kMaximumTranslationError ||
-                std::abs(live.scale - expected.scale) > kMaximumScaleError) {
-                return false;
-            }
-
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (std::abs(live.rotate.entry[row][column] - expected.rotate.entry[row][column]) >
-                        kMaximumRotationElementError) {
-                        return false;
-                    }
-                }
-            }
-            return true;
+            return left_carry_readiness::finiteTransform(transform);
         }
 
         std::string_view providerFixedStringView(const char* value, std::size_t capacity)
@@ -2878,10 +2837,8 @@ namespace rock
                 if (leftTakeoverBlocked) {
                     auto& pendingStart =
                         _pendingEquippedWeaponPrimaryOnlyGripStart;
-                    if (pendingStart.lastLeftTakeoverReadiness !=
-                        leftTakeoverReadiness) {
-                        pendingStart.lastLeftTakeoverReadiness =
-                            leftTakeoverReadiness;
+                    if (pendingStart.takeoverWitness.observe(
+                            leftTakeoverReadiness)) {
                         ROCK_LOG_DEBUG(
                             Weapon,
                             "Left firing-grip start waiting for authored support readiness={} collisionGeneration={:016X} authoredGeneration={:016X} ownership={:016X}",
@@ -5726,23 +5683,10 @@ namespace rock
             };
         }
 
-        const bool liveOffsetFinite = finiteNiTransform(weaponNode->local);
-        bool liveOffsetMatches =
-            state.nativeOffsetSampleValid && liveOffsetFinite &&
-            approximatelySameWeaponLocalOffset(
-                weaponNode->local,
-                state.nativeOffsetSample);
-        if (liveOffsetFinite && !liveOffsetMatches) {
-            state.nativeOffsetSample = weaponNode->local;
-            state.nativeOffsetSampleValid = true;
-            state.matchingNativeOffsetFrames = 0;
-            liveOffsetMatches = true;
-        }
         const bool nativeOffsetReady =
-            pipboy_equip_policy::advanceNativeOffsetReadiness(
-                state.nativeOffsetSampleValid,
-                liveOffsetMatches,
-                state.matchingNativeOffsetFrames);
+            left_carry_readiness::advanceNativeOffset(
+                state.nativeOffset,
+                weaponNode->local);
         const auto leftTakeoverReadiness =
             _twoHandedGrip.getLeftFiringTakeoverReadiness(
                 weaponNode,
@@ -5753,9 +5697,7 @@ namespace rock
         const bool leftTakeoverReady =
             authored_support_grab_policy::leftFiringTakeoverReady(
                 leftTakeoverReadiness);
-        if (state.lastLeftTakeoverReadiness !=
-            leftTakeoverReadiness) {
-            state.lastLeftTakeoverReadiness = leftTakeoverReadiness;
+        if (state.takeoverWitness.observe(leftTakeoverReadiness)) {
             ROCK_LOG_DEBUG(
                 Weapon,
                 "Fixed left-hand carry readiness={} generation={:016X} ownership={:016X}",
@@ -6088,9 +6030,8 @@ namespace rock
             assignment.remainingResolveFrames =
                 kEquippedWeaponHandAssignmentMaximumResolveFrames;
             assignment.nativeOffsetGenerationKey = 0;
-            assignment.nativeOffsetSampleValid = false;
             assignment.nativeOffsetReadinessLogged = false;
-            assignment.matchingNativeOffsetFrames = 0;
+            assignment.nativeOffset = {};
         }
 
         if (!assignment.pending) {
@@ -6157,34 +6098,16 @@ namespace rock
         if (identityReady) {
             if (assignment.nativeOffsetGenerationKey != currentWeaponGenerationKey) {
                 assignment.nativeOffsetGenerationKey = currentWeaponGenerationKey;
-                assignment.nativeOffsetSampleValid = false;
                 assignment.nativeOffsetReadinessLogged = false;
-                assignment.matchingNativeOffsetFrames = 0;
+                assignment.nativeOffset = {};
             }
 
-            const bool liveOffsetFinite = finiteNiTransform(weaponNode->local);
-            bool liveOffsetMatches =
-                assignment.nativeOffsetSampleValid &&
-                liveOffsetFinite &&
-                approximatelySameWeaponLocalOffset(weaponNode->local, assignment.nativeOffsetSample);
-            if (liveOffsetFinite && !liveOffsetMatches) {
-                // hFRIK owns the native-right offset, including custom,
-                // no-custom, melee, PA, and in-session configuration values.
-                // Rebase until that live authority remains stable instead of
-                // duplicating or overriding its placement rules in ROCK.
-                assignment.nativeOffsetSample = weaponNode->local;
-                assignment.nativeOffsetSampleValid = true;
-                assignment.matchingNativeOffsetFrames = 0;
-                liveOffsetMatches = true;
-            }
-
-            const auto previousMatchingFrames = assignment.matchingNativeOffsetFrames;
-            nativeOffsetReady = pipboy_equip_policy::advanceNativeOffsetReadiness(
-                assignment.nativeOffsetSampleValid,
-                liveOffsetMatches,
-                assignment.matchingNativeOffsetFrames);
+            const auto previousMatchingFrames = assignment.nativeOffset.matchingFrames;
+            nativeOffsetReady = left_carry_readiness::advanceNativeOffset(
+                assignment.nativeOffset,
+                weaponNode->local);
             if (!assignment.nativeOffsetReadinessLogged &&
-                previousMatchingFrames == 0 && assignment.matchingNativeOffsetFrames == 1) {
+                previousMatchingFrames == 0 && assignment.nativeOffset.matchingFrames == 1) {
                 assignment.nativeOffsetReadinessLogged = true;
                 ROCK_LOG_INFO(
                     Weapon,
@@ -6196,7 +6119,7 @@ namespace rock
                     assignment.formId);
             }
         } else {
-            assignment.matchingNativeOffsetFrames = 0;
+            assignment.nativeOffset.matchingFrames = 0;
         }
 
         const auto leftTakeoverReadiness =
@@ -6208,10 +6131,7 @@ namespace rock
         const bool leftTakeoverReady =
             authored_support_grab_policy::leftFiringTakeoverReady(
                 leftTakeoverReadiness);
-        if (assignment.lastLeftTakeoverReadiness !=
-            leftTakeoverReadiness) {
-            assignment.lastLeftTakeoverReadiness =
-                leftTakeoverReadiness;
+        if (assignment.takeoverWitness.observe(leftTakeoverReadiness)) {
             ROCK_LOG_DEBUG(
                 Weapon,
                 "{} left-hand assignment readiness={} form={:08X} generation={:016X} ownership={:016X}",
