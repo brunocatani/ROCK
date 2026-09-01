@@ -51,14 +51,11 @@ int main()
         };
     };
     const auto drawnInput = [](
-                                const bool toggleGrabEnabled = true,
-                                const bool immersiveWeaponsEnabled = true) {
+                                const bool toggleGrabEnabled = true) {
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .sheathInputMode = resolveSheathInputMode(
-                immersiveWeaponsEnabled,
-                toggleGrabEnabled),
+            .toggleGrabEnabled = toggleGrabEnabled,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableDrawn,
         };
@@ -67,14 +64,11 @@ int main()
         return input;
     };
     const auto storedInput = [](
-                                 const bool toggleGrabEnabled = true,
-                                 const bool immersiveWeaponsEnabled = true) {
+                                 const bool toggleGrabEnabled = true) {
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .sheathInputMode = resolveSheathInputMode(
-                immersiveWeaponsEnabled,
-                toggleGrabEnabled),
+            .toggleGrabEnabled = toggleGrabEnabled,
             .storedActive = true,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableSheathed,
@@ -83,15 +77,6 @@ int main()
         input.right.eligible = true;
         return input;
     };
-
-    static_assert(resolveSheathInputMode(true, true) ==
-                  SheathInputMode::Tap);
-    static_assert(resolveSheathInputMode(true, false) ==
-                  SheathInputMode::HoldRelease);
-    static_assert(resolveSheathInputMode(false, true) ==
-                  SheathInputMode::Tap);
-    static_assert(resolveSheathInputMode(false, false) ==
-                  SheathInputMode::Tap);
 
     {
         RuntimeState state{};
@@ -118,9 +103,9 @@ int main()
         ok &= expectEqual("toggle down submits one sheath",
             decision.action,
             Action::SubmitSheath);
-        ok &= expectEqual("tap sheath uses explicit reason",
+        ok &= expectEqual("toggle sheath uses tap reason",
             decision.reason,
-            Reason::SheathTap);
+            Reason::ToggleTap);
         ok &= expectEqual("toggle sheath owns the gesture as a sheath",
             decision.gestureAction,
             Action::SubmitSheath);
@@ -343,28 +328,6 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(false, false);
-        input.right.detector = rightCandidate(true);
-        input.right.button = {
-            .held = true,
-            .pressed = true,
-        };
-        auto decision = advance(state, input);
-        ok &= expectEqual(
-            "immersive-off hold input sheaths on the tap",
-            decision.action,
-            Action::SubmitSheath);
-        ok &= expectEqual(
-            "immersive-off hold input uses tap reason",
-            decision.reason,
-            Reason::SheathTap);
-        ok &= expectFalse(
-            "immersive-off hold input never arms release sheathing",
-            state.phase == Phase::DrawnShoulderArmed);
-    }
-
-    {
-        RuntimeState state{};
         auto input = drawnInput(true);
         input.right.button = {
             .held = true,
@@ -404,35 +367,6 @@ int main()
         ok &= expectEqual("held grab retrieval has explicit reason",
             decision.reason,
             Reason::RetrievalHeld);
-    }
-
-    {
-        RuntimeState state{};
-        auto input = storedInput(false, false);
-        input.right.detector = rightCandidate(true);
-        input.right.button = { .held = true };
-        auto decision = advance(state, input);
-        ok &= expectEqual(
-            "immersive-off held input without a tap does not retrieve",
-            decision.action,
-            Action::None);
-
-        input.right.button = { .released = true };
-        decision = advance(state, input);
-        ok &= expectEqual(
-            "immersive-off held input release only rearms",
-            decision.action,
-            Action::None);
-
-        input.right.button = {
-            .held = true,
-            .pressed = true,
-        };
-        decision = advance(state, input);
-        ok &= expectEqual(
-            "immersive-off fresh tap retrieves",
-            decision.action,
-            Action::SubmitRetrieve);
     }
 
     {

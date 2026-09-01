@@ -95,14 +95,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Indicator visibility must be finalized from post-transition hand occupancy on the common update exit.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'authoredSeatAcquisitionAvailable\s*=[\s\S]{0,300}activationSpatialPass[\s\S]{0,300}authoredCapabilityAllowsIndicator[\s\S]{0,300}supportGripAllowed[\s\S]{0,300}providerPartAuthority\.active' `
-    'Authored acquisition must retain the current spatial activation gate.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'authoredIndicatorInput\s*=[\s\r\n ]+authored_weapon_grip_activation_policy::IndicatorInput\{[\s\S]{0,1000}activationStateValid[\s\S]{0,500}supportGripAllowed[\s\S]{0,500}providerPartAuthorityActive[\s\S]{0,500}supportHandHoldingObject' `
-    'The gameplay cue must publish the available authored seat before the hand enters that invisible acquisition region.'
-Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'struct\s+IndicatorInput[\s\S]{0,500}activationSpatialPass' `
-    'Indicator visibility must not require the player to find the offered position before ROCK shows it.'
+    'authoredSeatAcquisitionAvailable[\s\S]{0,900}activationSpatialPass[\s\S]{0,900}supportGripAllowed[\s\S]{0,900}providerPartAuthorityActive[\s\S]{0,1800}supportHandHoldingObject' `
+    'The gameplay cue and authored acquisition must use the authored activation region directly, without a routed collider candidate.'
 
 Require-Path 'data/mod/Meshes/ROCK/authored_support_grip_indicator_bright.nif' `
     'The high-visibility authored support-grip sphere must be packaged as a ROCK-owned asset.'

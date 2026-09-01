@@ -2589,28 +2589,18 @@ namespace rock
                     const bool consumed = isLeft ?
                         equippedWeaponShoulderFrame.decision.consumeLeftInput :
                         equippedWeaponShoulderFrame.decision.consumeRightInput;
-                    if (!consumed) {
+                    if (!consumed ||
+                        equippedWeaponShoulderFrame.decision.gestureAction !=
+                            equipped_weapon_shoulder::Action::SubmitRetrieve) {
                         return;
                     }
 
-                    if (equippedWeaponShoulderFrame.decision.gestureAction ==
-                        equipped_weapon_shoulder::Action::SubmitRetrieve) {
-                        // Retrieval starts a committed carry without
-                        // forwarding that same cycle into detach, toggle, or
-                        // ordinary grab handling.
-                        button = {};
-                    } else if (equippedWeaponShoulderFrame.decision.
-                                   gestureAction ==
-                               equipped_weapon_shoulder::Action::
-                                   SubmitSheath) {
-                        // Keep the current carry closed through the native
-                        // sheath transaction. The accepted transaction clears
-                        // TwoHandedGrip explicitly; entering its drop state
-                        // first loses the stored carry contract even though the
-                        // later physical-drop executor suppresses inventory
-                        // removal.
-                        button = GrabButtonState{ .held = true };
-                    }
+                    // Retrieval starts a committed carry without forwarding
+                    // that same button cycle into detach, toggle, or ordinary
+                    // grab handling. Sheathing keeps its release semantics so
+                    // TwoHandedGrip can finish the carry; its drop request is
+                    // consumed by the shoulder transaction below.
+                    button = {};
                 };
             maskShoulderGestureInput(true, leftPhysicalGripState);
             maskShoulderGestureInput(false, rightPhysicalGripState);
@@ -5246,15 +5236,11 @@ namespace rock
                 _equippedWeaponShoulderCoordinatorState.weaponOwnershipKey :
                 currentEquippedWeaponOwnershipKey;
 
-        const auto sheathInputMode =
-            equipped_weapon_shoulder::resolveSheathInputMode(
-                _equippedWeaponHandlingSettings.immersiveWeapon.
-                    firingGripDetachEnabled,
-                _equippedWeaponHandlingSettings.toggleGrabEnabled);
         equipped_weapon_shoulder::FrameInput coordinatorInput{
             .enabled = handlingEnabled,
             .inputAllowed = !menuInputActive,
-            .sheathInputMode = sheathInputMode,
+            .toggleGrabEnabled =
+                _equippedWeaponHandlingSettings.toggleGrabEnabled,
             .storedActive = _equippedWeaponShoulderSheath.active,
             .stashedByLeftHand =
                 _equippedWeaponShoulderSheath.stashedByLeftHand,
@@ -5486,7 +5472,7 @@ namespace rock
                     1u : 0u];
             ROCK_LOG_INFO(
                 Weapon,
-                "Equipped shoulder coordinator action={} reason={} phase={}->{} hand={} gesture={} zone={} candidate={} confirmed={} source={} confidence={:.2f} speed={:.1f} nativeState={}({}) sheathInput={} toggle={}",
+                "Equipped shoulder coordinator action={} reason={} phase={}->{} hand={} gesture={} zone={} candidate={} confirmed={} source={} confidence={:.2f} speed={:.1f} nativeState={}({}) toggle={}",
                 equipped_weapon_shoulder::actionName(
                     result.decision.action),
                 equipped_weapon_shoulder::reasonName(
@@ -5514,8 +5500,6 @@ namespace rock
                 nativeWeaponState,
                 held_weapon_equip_state_policy::nativeWeaponStateName(
                     nativeWeaponState),
-                equipped_weapon_shoulder::sheathInputModeName(
-                    sheathInputMode),
                 _equippedWeaponHandlingSettings.toggleGrabEnabled ?
                     "yes" : "no");
         } else if (previousPhase !=

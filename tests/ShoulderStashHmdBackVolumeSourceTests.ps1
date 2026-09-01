@@ -107,15 +107,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'if\s*\(nativeShoulderSheathRequested\)\s*\{[\s\S]*?submitEquippedWeaponShoulderSheath[\s\S]*?reportExecutionResult' `
     'Coordinator-selected sheath must execute once and report acceptance back into coordinator state.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h' `
-    'resolveSheathInputMode\([\s\S]{0,300}immersiveWeaponsEnabled\s*&&\s*!toggleGrabEnabled[\s\S]{0,180}SheathInputMode::HoldRelease[\s\S]{0,180}SheathInputMode::Tap' `
-    'Shoulder input mode must follow the requested matrix: only immersive-on hold-grab sheaths on release; every other combination sheaths on tap.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'resolveSheathInputMode\([\s\S]{0,300}immersiveWeapon\.[\s\r\n ]*firingGripDetachEnabled[\s\S]{0,180}toggleGrabEnabled[\s\S]{0,500}\.sheathInputMode\s*=\s*sheathInputMode' `
-    'The runtime coordinator adapter must resolve the sheath gesture from immersive-weapons and toggle-grab state.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'maskShoulderGestureInput[\s\S]{0,1200}SubmitRetrieve[\s\S]{0,300}button\s*=\s*\{\}[\s\S]{0,500}SubmitSheath[\s\S]{0,700}button\s*=\s*GrabButtonState\{\s*\.held\s*=\s*true\s*\}' `
-    'A selected sheath must retain the current carry through native submission instead of entering TwoHandedGrip drop state first.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'stashCommitSelected\s*=[\s\S]{0,220}suppressEquippedDrop[\s\S]{0,220}shouldAttemptPhysicalDrop\(stashCommitSelected\)' `
     'Provider drop routing must consume the coordinator''s fail-closed suppression decision.'
