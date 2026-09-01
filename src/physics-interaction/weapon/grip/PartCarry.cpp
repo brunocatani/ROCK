@@ -276,14 +276,15 @@ namespace rock
             }
             _firing.reattachDebugSnapshot.hands[candidate.isLeft ? 0u : 1u]
                 .gripHeld = candidate.gripHeld;
+            /*
+             * The zone is the only gate. A probe-acquired contact used to
+             * re-take the grip from anywhere inside the weapon probe; that
+             * acquisition now only selects the authored hold inside
+             * tryReattachFiringGrip and never bypasses the cones.
+             */
             const bool reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                 candidate.gripHeld,
-                reattachZone.inside) ||
-                (candidate.gripHeld &&
-                    candidate.contact->acquisitionSource ==
-                        WeaponInteractionAcquisitionSource::ProximityProbe &&
-                    !authoredProviderAuthorityActive &&
-                    !authoredAttachOnlyAuthorityActive);
+                reattachZone.inside);
             if (!_firing.reattachHoverInsideZone &&
                 weapon_two_handed_grip_math::isFiringGripReattachHoverCandidate(
                     candidate.gripHeld,

@@ -31,7 +31,7 @@ namespace rock::immersive_weapon_policy
         // compiled/production setting for the current frame.
         bool firingGripDetachEnabled{ false };
         bool firingGripDetachPosePreservationEnabled{ false };
-        float firingGripReattachRadiusGameUnits{ 3.0f };
+        float firingGripReattachRadiusGameUnits{ 12.0f };
         float firingGripHapticDurationSeconds{ 0.10f };
         float firingGripAttachHapticIntensity{ 0.85f };
         float firingGripDetachHapticIntensity{ 0.30f };
@@ -42,7 +42,7 @@ namespace rock::immersive_weapon_policy
         Config integrated{};
         bool firingGripOwnershipEnabled{ false };
         bool externalPrimaryDetachEnabled{ false };
-        float externalReattachRadiusGameUnits{ 3.0f };
+        float externalReattachRadiusGameUnits{ 12.0f };
         float externalGripHapticDurationSeconds{ 0.10f };
         float externalGripAttachHapticIntensity{ 0.85f };
         float externalGripDetachHapticIntensity{ 0.30f };
@@ -54,7 +54,7 @@ namespace rock::immersive_weapon_policy
         bool firingGripOwnershipEnabled{ false };
         bool primaryDetachEnabled{ false };
         bool preserveWeaponPoseOnDetach{ false };
-        float reattachRadiusGameUnits{ 3.0f };
+        float reattachRadiusGameUnits{ 12.0f };
         float gripHapticDurationSeconds{ 0.10f };
         float gripAttachHapticIntensity{ 0.85f };
         float gripDetachHapticIntensity{ 0.30f };

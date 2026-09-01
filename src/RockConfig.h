@@ -70,7 +70,7 @@ namespace rock
         // physical hand currently occupies the firing grip.
         bool rockFiringGripDetachEnabled = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
-        float rockFiringGripReattachRadiusGameUnits = 3.0f;
+        float rockFiringGripReattachRadiusGameUnits = 12.0f;
         float rockFiringGripHapticDurationSeconds = 0.10f;
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;

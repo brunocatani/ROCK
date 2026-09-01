@@ -40,7 +40,7 @@ namespace rock
 
         float gripZoneEquipRadiusGameUnits{ 3.0f };
         float gripZoneEquipSettleSeconds{ 0.15f };
-        float firingGripReattachRadiusGameUnits{ 3.0f };
+        float firingGripReattachRadiusGameUnits{ 12.0f };
         float gripZoneHoverHapticIntensity{ 0.75f };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
         float weaponGripHapticDurationSeconds{ 0.10f };

@@ -342,7 +342,7 @@ namespace rock
             IMMERSIVE_WEAPONS_SECTION,
             "fFiringGripReattachRadiusGameUnits",
             rockFiringGripReattachRadiusGameUnits,
-            3.0f,
+            12.0f,
             0.25f,
             30.0f);
         rockFiringGripHapticDurationSeconds = readClampedFloat(
