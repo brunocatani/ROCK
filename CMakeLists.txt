@@ -646,6 +646,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKAuthoredWeaponGripCapturePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKAuthoredWeaponGripCapturePolicyTests)
 
+  add_executable(ROCKHandFingerMirrorMathTests
+    "${ROOT_DIR}/tests/HandFingerMirrorMathTests.cpp"
+  )
+  target_compile_features(ROCKHandFingerMirrorMathTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHandFingerMirrorMathTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHandFingerMirrorMathTests)
+
   add_executable(ROCKAuthoredSupportGrabPolicyTests
     "${ROOT_DIR}/tests/AuthoredSupportGrabPolicyTests.cpp"
   )

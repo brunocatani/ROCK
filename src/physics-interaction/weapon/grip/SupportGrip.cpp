@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 // Support-hand grip: authored capability qualification and selection, dynamic
 // acquisition, the capture transaction (capturePartGrip, whose finger solve
@@ -2342,30 +2343,23 @@ namespace rock
 
         constexpr std::uint16_t kCompleteFingerLocalTransformMask = 0x7FFFu;
         RE::NiTransform mirroredRightHandWeaponLocal{};
-        frik_visual_authority::FingerLocalTransformOverride leftFingerLocals{};
-        leftFingerLocals.enabledMask = candidate.leftFingerLocalTransformMask;
-        for (std::size_t index = 0;
-             index < candidate.leftFingerLocalTransforms.size();
-             ++index) {
-            leftFingerLocals.localTransforms[index] =
-                candidate.leftFingerLocalTransforms[index];
-        }
-
-        frik_visual_authority::FingerLocalTransformOverride mirroredRightFingerLocals{};
         const bool rightHandTransformMirrored =
             tryBuildMirroredRightSupportHandWeaponLocal(
                 candidate.leftHandWeaponLocal,
                 mirroredRightHandWeaponLocal);
+
+        // Exact skeleton mirror of the authored left finger locals; the
+        // bone order and therefore the mask are identical on both hands.
+        std::array<RE::NiTransform, 15> mirroredRightFingerLocals{};
         const bool rightFingerPoseMirrored =
-            frik_visual_authority::mirrorFingerLocalTransforms(
-                frik_visual_authority::Hand::Left,
-                leftFingerLocals,
-                mirroredRightFingerLocals) &&
-            mirroredRightFingerLocals.enabledMask ==
-                kCompleteFingerLocalTransformMask;
+            candidate.leftFingerLocalTransformMask ==
+                kCompleteFingerLocalTransformMask &&
+            hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
+                std::span<const RE::NiTransform>(candidate.leftFingerLocalTransforms),
+                std::span<RE::NiTransform>(mirroredRightFingerLocals));
         bool rightFingerPoseFinite = rightFingerPoseMirrored;
         if (rightFingerPoseFinite) {
-            for (const auto& fingerLocal : mirroredRightFingerLocals.localTransforms) {
+            for (const auto& fingerLocal : mirroredRightFingerLocals) {
                 if (!isFiniteTransform(fingerLocal) ||
                     std::abs(fingerLocal.scale) <= 0.0001f) {
                     rightFingerPoseFinite = false;
@@ -2376,14 +2370,9 @@ namespace rock
 
         if (rightHandTransformMirrored && rightFingerPoseFinite) {
             candidate.rightHandWeaponLocal = mirroredRightHandWeaponLocal;
-            for (std::size_t index = 0;
-                 index < candidate.rightFingerLocalTransforms.size();
-                 ++index) {
-                candidate.rightFingerLocalTransforms[index] =
-                    mirroredRightFingerLocals.localTransforms[index];
-            }
+            candidate.rightFingerLocalTransforms = mirroredRightFingerLocals;
             candidate.rightFingerLocalTransformMask =
-                mirroredRightFingerLocals.enabledMask;
+                candidate.leftFingerLocalTransformMask;
             candidate.rightMirrorValid = true;
             return;
         }

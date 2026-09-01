@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
+#include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -84,24 +85,14 @@ namespace rock
 
             if (!isLeftHand) {
                 outTransforms = rightPose.localTransforms;
-                outMask = rightPose.enabledMask;
-            } else {
-                frik_visual_authority::FingerLocalTransformOverride right{};
-                right.enabledMask = rightPose.enabledMask;
-                for (std::size_t index = 0; index < rightPose.localTransforms.size(); ++index) {
-                    right.localTransforms[index] = rightPose.localTransforms[index];
-                }
-
-                frik_visual_authority::FingerLocalTransformOverride left{};
-                if (!frik_visual_authority::mirrorPrimaryWeaponFingerLocalTransforms(right, left) ||
-                    left.enabledMask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
-                    return false;
-                }
-                for (std::size_t index = 0; index < outTransforms.size(); ++index) {
-                    outTransforms[index] = left.localTransforms[index];
-                }
-                outMask = left.enabledMask;
+            } else if (!hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
+                           std::span<const RE::NiTransform>(rightPose.localTransforms),
+                           std::span<RE::NiTransform>(outTransforms))) {
+                // Exact skeleton mirror; bone order and mask are shared.
+                outTransforms = {};
+                return false;
             }
+            outMask = rightPose.enabledMask;
 
             return outMask == authored_weapon_grip_library::kCompleteFiringFingerMask &&
                    std::ranges::all_of(outTransforms, isFiniteTransform);

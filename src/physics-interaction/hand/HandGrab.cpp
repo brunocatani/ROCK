@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/Hand.h"
+#include "physics-interaction/hand/HandFingerMirrorMath.h"
 #include "physics-interaction/hand/HandGrabInternal.h"
 
 #include "physics-interaction/body/BodyBoneColliderSet.h"
@@ -861,7 +862,12 @@ namespace rock
                     }
 
                     frik_visual_authority::FingerLocalTransformOverride exactPose = exactRightPose;
-                    if (!isLeft || frik_visual_authority::mirrorPrimaryWeaponFingerLocalTransforms(exactRightPose, exactPose)) {
+                    const bool exactPoseReady =
+                        !isLeft ||
+                        hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
+                            std::span<const RE::NiTransform>(exactRightPose.localTransforms),
+                            std::span<RE::NiTransform>(exactPose.localTransforms));
+                    if (exactPoseReady) {
                         constexpr const char* tag = "ROCK_Grab";
                         constexpr int priority = 100;
                         const char* blockTag = isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight";

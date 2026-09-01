@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
+#include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
@@ -108,32 +109,19 @@ namespace rock
             return finiteTransform(outHandInWeapon);
         }
 
+        // Exact skeleton mirror of the authored right finger locals; the
+        // bone order and therefore the mask are identical on both hands.
         [[nodiscard]] bool buildMirroredLeftFingerPose(const authored_weapon_grip_library::FiringFingerPose& rightPose, authored_weapon_grip_library::FiringFingerPose& outLeftPose)
         {
             outLeftPose = {};
-            if (!rightPose.complete()) {
+            if (!rightPose.complete() ||
+                !hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
+                    std::span<const RE::NiTransform>(rightPose.localTransforms),
+                    std::span<RE::NiTransform>(outLeftPose.localTransforms))) {
+                outLeftPose = {};
                 return false;
             }
-
-            frik_visual_authority::FingerLocalTransformOverride right{};
-            right.enabledMask = rightPose.enabledMask;
-            for (std::size_t index = 0; index < rightPose.localTransforms.size(); ++index) {
-                right.localTransforms[index] = rightPose.localTransforms[index];
-            }
-
-            frik_visual_authority::FingerLocalTransformOverride left{};
-            if (!frik_visual_authority::mirrorPrimaryWeaponFingerLocalTransforms(right, left) || left.enabledMask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
-                return false;
-            }
-
-            outLeftPose.enabledMask = left.enabledMask;
-            for (std::size_t index = 0; index < outLeftPose.localTransforms.size(); ++index) {
-                if (!finiteTransform(left.localTransforms[index])) {
-                    outLeftPose = {};
-                    return false;
-                }
-                outLeftPose.localTransforms[index] = left.localTransforms[index];
-            }
+            outLeftPose.enabledMask = rightPose.enabledMask;
             return true;
         }
     }

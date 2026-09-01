@@ -63,26 +63,6 @@ namespace rock::frik_visual_authority
 
         inline PresentedHandNodeCache g_presentedHandNodeCache{};
 
-        using MirrorFingerLocalTransformsFn = bool(FRIK_CALL*)(Hand, const FingerLocalTransformOverride*, FingerLocalTransformOverride*);
-
-        [[nodiscard]] inline MirrorFingerLocalTransformsFn mirrorFingerLocalTransformsExport()
-        {
-            static MirrorFingerLocalTransformsFn fn = nullptr;
-            static bool attemptedWithLoadedFrik = false;
-            if (!fn) {
-                const auto frikDll = GetModuleHandleA("FRIK.dll");
-                if (!frikDll) {
-                    return nullptr;
-                }
-                if (attemptedWithLoadedFrik) {
-                    return nullptr;
-                }
-                attemptedWithLoadedFrik = true;
-                fn = reinterpret_cast<MirrorFingerLocalTransformsFn>(GetProcAddress(frikDll, "FRIKAPI_MirrorFingerLocalTransforms"));
-            }
-            return fn;
-        }
-
         [[nodiscard]] inline bool makeCacheableTagView(const char* tag, std::string_view& outTag)
         {
             if (!tag) {
@@ -514,26 +494,6 @@ namespace rock::frik_visual_authority
         auto* frikApi = api();
         return frikApi && frikApi->blockPrimaryHandWeaponPose != nullptr;
     }
-
-    [[nodiscard]] inline bool mirrorFingerLocalTransforms(Hand sourceHand, const FingerLocalTransformOverride& sourceTransforms, FingerLocalTransformOverride& outTargetTransforms)
-    {
-        if (const auto fn = detail::mirrorFingerLocalTransformsExport()) {
-            return fn(sourceHand, &sourceTransforms, &outTargetTransforms);
-        }
-        return false;
-    }
-
-    [[nodiscard]] inline bool mirrorPrimaryWeaponFingerLocalTransforms(const FingerLocalTransformOverride& rightTransforms, FingerLocalTransformOverride& outLeftTransforms)
-    {
-        return mirrorFingerLocalTransforms(Hand::Right, rightTransforms, outLeftTransforms);
-    }
-
-    [[nodiscard]] inline bool canMirrorPrimaryWeaponFingerLocalTransforms()
-    {
-        return detail::mirrorFingerLocalTransformsExport() != nullptr;
-    }
-
-    [[nodiscard]] inline bool canMirrorFingerLocalTransforms() { return detail::mirrorFingerLocalTransformsExport() != nullptr; }
 
     [[nodiscard]] inline bool blockPrimaryWeaponNodeOwnership(const char* tag, bool block)
     {
