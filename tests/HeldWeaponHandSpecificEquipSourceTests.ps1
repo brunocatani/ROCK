@@ -205,6 +205,9 @@ Require-Text 'src/physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h' 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'transitionToPartCarry\(\)[\s\S]*_partCarryDetachAuthority\s*=\s*_handlingSettings\.detachAuthority[\s\S]{0,180}_state\s*=\s*TwoHandedState::PartCarry[\s\S]*updatePartCarryGrip\([\s\S]*tryReattachFiringGrip\([\s\S]*resolveDetachedFiringHandPartGrab\([\s\S]{0,900}providerPartAuthority\.active[\s\S]{0,500}DetachedFiringHandPartGrabSelection::Reject[\s\S]*capturePartGrip\(' `
     'PartCarry must retain its detach origin, try the authored firing grip first, and gate only the former firing hand before generic part capture.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'PART-CARRY-PARITY[\s\S]{0,700}pivotIsLeft[\s\S]{0,500}driverTranslationDeltaGameUnits[\s\S]{0,500}weaponTranslationDeltaGameUnits[\s\S]{0,500}visualHandTranslationErrorGameUnits' `
+    'A bounded normalized trace must distinguish raw-driver, weapon-follow, and remaining-hand publication differences for both part-carry pivots.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'updatePrimaryOnlyGrip[\s\S]{0,1000}primaryGripRetained\s*=\s*equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership\(\s*primaryDetachEnabled,\s*_handlingSettings\.toggleGrabEnabled,\s*primaryGripInput\.held\)' `

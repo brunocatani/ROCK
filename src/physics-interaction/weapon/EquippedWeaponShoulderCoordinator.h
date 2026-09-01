@@ -44,6 +44,12 @@ namespace rock::equipped_weapon_shoulder
         SubmitRetrieve,
     };
 
+    enum class SheathInputMode : std::uint8_t
+    {
+        Tap = 0,
+        HoldRelease,
+    };
+
     enum class Reason : std::uint8_t
     {
         None = 0,
@@ -53,7 +59,7 @@ namespace rock::equipped_weapon_shoulder
         InvalidPresentation,
         NativeTransition,
         GestureConsumed,
-        ToggleTap,
+        SheathTap,
         HoldRelease,
         RetrievalTap,
         RetrievalHeld,
@@ -87,7 +93,7 @@ namespace rock::equipped_weapon_shoulder
     {
         bool enabled{ false };
         bool inputAllowed{ false };
-        bool toggleGrabEnabled{ false };
+        SheathInputMode sheathInputMode{ SheathInputMode::Tap };
         bool storedActive{ false };
         bool stashedByLeftHand{ false };
         std::uint64_t weaponOwnershipKey{ 0 };
@@ -197,6 +203,22 @@ namespace rock::equipped_weapon_shoulder
         return "none";
     }
 
+    [[nodiscard]] inline constexpr SheathInputMode resolveSheathInputMode(
+        const bool immersiveWeaponsEnabled,
+        const bool toggleGrabEnabled) noexcept
+    {
+        return immersiveWeaponsEnabled && !toggleGrabEnabled ?
+            SheathInputMode::HoldRelease :
+            SheathInputMode::Tap;
+    }
+
+    [[nodiscard]] inline constexpr const char* sheathInputModeName(
+        const SheathInputMode mode) noexcept
+    {
+        return mode == SheathInputMode::HoldRelease ?
+            "hold-release" : "tap";
+    }
+
     [[nodiscard]] inline constexpr const char* reasonName(const Reason reason) noexcept
     {
         switch (reason) {
@@ -212,8 +234,8 @@ namespace rock::equipped_weapon_shoulder
             return "native-transition";
         case Reason::GestureConsumed:
             return "gesture-consumed";
-        case Reason::ToggleTap:
-            return "toggle-tap";
+        case Reason::SheathTap:
+            return "sheath-tap";
         case Reason::HoldRelease:
             return "hold-release";
         case Reason::RetrievalTap:
@@ -367,9 +389,11 @@ namespace rock::equipped_weapon_shoulder
                     return false;
                 }
                 const bool tap = hand.button.pressed;
-                const bool heldPull = !input.toggleGrabEnabled &&
-                                      hand.button.held &&
-                                      hand.detector.confirmed;
+                const bool heldPull =
+                    input.sheathInputMode ==
+                        SheathInputMode::HoldRelease &&
+                    hand.button.held &&
+                    hand.detector.confirmed;
                 return tap || heldPull;
             };
 
@@ -635,18 +659,20 @@ namespace rock::equipped_weapon_shoulder
                     leftGesture : rightGesture;
                 if (!handInput.disabled && handInput.eligible &&
                     gesture.valid && !gesture.blocked) {
-                    if (input.toggleGrabEnabled &&
+                    if (input.sheathInputMode ==
+                            SheathInputMode::Tap &&
                         handInput.button.pressed &&
                         handInput.detector.candidate) {
                         detail::beginAction(
                             state,
                             decision,
                             Action::SubmitSheath,
-                            Reason::ToggleTap,
+                            Reason::SheathTap,
                             carryHand,
                             gesture,
                             handInput.detector);
-                    } else if (!input.toggleGrabEnabled &&
+                    } else if (input.sheathInputMode ==
+                                   SheathInputMode::HoldRelease &&
                                handInput.button.held &&
                                handInput.detector.confirmed) {
                         state.phase = Phase::DrawnShoulderArmed;
@@ -667,7 +693,8 @@ namespace rock::equipped_weapon_shoulder
                 gesture.serial == state.armedGestureSerial;
             if (!sameGesture || handInput.disabled ||
                 !handInput.eligible || !handInput.carriesWeapon ||
-                input.toggleGrabEnabled) {
+                input.sheathInputMode !=
+                    SheathInputMode::HoldRelease) {
                 state.phase = Phase::DrawnReady;
                 detail::clearArm(state);
             } else if (handInput.button.released) {

@@ -2855,8 +2855,6 @@ namespace rock
                 .activationStateValid =
                     authoredActivationStateMatches &&
                     authoredCapabilityAllowsIndicator,
-                .activationSpatialPass =
-                    authoredActivation.activationSpatialPass,
                 .supportGripAllowed = supportRuntimeState.supportGripAllowed,
                 .providerPartAuthorityActive =
                     supportRuntimeState.providerPartAuthority.active,
@@ -7568,6 +7566,9 @@ namespace rock
             .kind = SupportInputBaselineKind::PartCarry,
             .active = true,
             .firstPublicationPending = true,
+            .partCarryParityDiagnosticFramesRemaining =
+                SupportInputBaselineState::
+                    kPartCarryParityDiagnosticFrameCount,
         };
         outFailureReason = "driver-calibrated";
         return true;
@@ -9051,10 +9052,10 @@ namespace rock
 
         RE::NiTransform pivotHandTransform{};
         RE::NiTransform calibratedPartCarryWeaponWorld{};
+        RE::NiTransform calibratedPivotDriverWorld{};
         if (partCarryBaselineActive) {
             const auto& pivotDriver =
                 _currentHandDriverFrames[pivotIsLeft ? 0u : 1u];
-            RE::NiTransform calibratedPivotDriverWorld{};
             if (pivotDriver.valid) {
                 calibratedPivotDriverWorld = pivotDriver.world;
                 calibratedPivotDriverWorld.rotate =
@@ -9276,6 +9277,82 @@ namespace rock
                     handTargetRotationDeltaDegrees);
             }
             pivotGrip.supportInputBaseline.firstPublicationPending = false;
+        }
+
+        if (partCarryBaselineActive &&
+            pivotGrip.supportInputBaseline.
+                    partCarryParityDiagnosticFramesRemaining > 0) {
+            auto& baseline = pivotGrip.supportInputBaseline;
+            RE::NiTransform capturedDriverWorld{};
+            const bool capturedDriverValid =
+                isInvertibleTransform(baseline.inputToWeaponLocal);
+            if (capturedDriverValid) {
+                capturedDriverWorld = transform_math::composeTransforms(
+                    baseline.weaponWorldAtCapture,
+                    transform_math::invertTransform(
+                        baseline.inputToWeaponLocal));
+            }
+            const float driverTranslationDeltaGameUnits =
+                capturedDriverValid ?
+                hand_visual_lerp_math::distanceGameUnits(
+                    capturedDriverWorld.translate,
+                    calibratedPivotDriverWorld.translate) :
+                (std::numeric_limits<float>::infinity)();
+            const float driverRotationDeltaDegrees =
+                capturedDriverValid ?
+                hand_visual_lerp_math::rotationDistanceDegrees(
+                    capturedDriverWorld,
+                    calibratedPivotDriverWorld) :
+                (std::numeric_limits<float>::infinity)();
+            const float weaponTranslationDeltaGameUnits =
+                hand_visual_lerp_math::distanceGameUnits(
+                    baseline.weaponWorldAtCapture.translate,
+                    weaponNode->world.translate);
+            const float weaponRotationDeltaDegrees =
+                hand_visual_lerp_math::rotationDistanceDegrees(
+                    baseline.weaponWorldAtCapture,
+                    weaponNode->world);
+            const std::size_t pivotHandIndex = pivotIsLeft ? 0u : 1u;
+            const bool visualHandPublished =
+                _hasLastPublishedHandWorld[pivotHandIndex];
+            const float visualHandTranslationErrorGameUnits =
+                visualHandPublished ?
+                hand_visual_lerp_math::distanceGameUnits(
+                    pivotHandTransform.translate,
+                    _lastPublishedHandWorld[pivotHandIndex].translate) :
+                (std::numeric_limits<float>::infinity)();
+            const float visualHandRotationErrorDegrees =
+                visualHandPublished ?
+                hand_visual_lerp_math::rotationDistanceDegrees(
+                    pivotHandTransform,
+                    _lastPublishedHandWorld[pivotHandIndex]) :
+                (std::numeric_limits<float>::infinity)();
+            const std::uint8_t sample =
+                SupportInputBaselineState::
+                    kPartCarryParityDiagnosticFrameCount -
+                baseline.partCarryParityDiagnosticFramesRemaining + 1;
+            ROCK_LOG_INFO(
+                Weapon,
+                "PART-CARRY-PARITY sample={}/{} pivot={} capturedDriver={} driverDelta=({:.4f}gu,{:.3f}deg) weaponDelta=({:.4f}gu,{:.3f}deg) visualHandError=({:.4f}gu,{:.3f}deg) visualPublished={} driverT=({:.2f},{:.2f},{:.2f}) weaponT=({:.2f},{:.2f},{:.2f})",
+                static_cast<unsigned>(sample),
+                static_cast<unsigned>(SupportInputBaselineState::
+                    kPartCarryParityDiagnosticFrameCount),
+                pivotIsLeft ? "left" : "right",
+                capturedDriverValid ? "yes" : "no",
+                driverTranslationDeltaGameUnits,
+                driverRotationDeltaDegrees,
+                weaponTranslationDeltaGameUnits,
+                weaponRotationDeltaDegrees,
+                visualHandTranslationErrorGameUnits,
+                visualHandRotationErrorDegrees,
+                visualHandPublished ? "yes" : "no",
+                calibratedPivotDriverWorld.translate.x,
+                calibratedPivotDriverWorld.translate.y,
+                calibratedPivotDriverWorld.translate.z,
+                weaponNode->world.translate.x,
+                weaponNode->world.translate.y,
+                weaponNode->world.translate.z);
+            --baseline.partCarryParityDiagnosticFramesRemaining;
         }
 
         if (++_gripLogCounter >= 90) {

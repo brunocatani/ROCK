@@ -996,6 +996,9 @@ namespace rock
 
         struct SupportInputBaselineState
         {
+            static constexpr std::uint8_t
+                kPartCarryParityDiagnosticFrameCount = 6;
+
             RE::NiTransform inputToGripTargetLocal{};
             // PartCarry only: direct raw-driver-to-weapon relation avoids
             // inverting the authored wrist frame during the one-anchor solve.
@@ -1010,6 +1013,10 @@ namespace rock
             bool active{ false };
             bool pairedDynamicDrivers{ false };
             bool firstPublicationPending{ false };
+            // Bounded post-detach trace used to compare normalized left- and
+            // right-pivot follow behavior without per-frame steady-state log
+            // traffic.
+            std::uint8_t partCarryParityDiagnosticFramesRemaining{ 0 };
             /*
              * 0 -> 1 ramp that retargets the calibrated support solver input
              * from the captured tandem-delta target onto the true physical
