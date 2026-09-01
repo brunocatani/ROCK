@@ -635,20 +635,6 @@ namespace rock
 
         bool isFiringHandLeft() const { return _session.firingHandIsLeft; }
 
-        /*
-         * True while a manual left-firing carry is active but the carry
-         * program has not published a solved weapon pose in the latest grip
-         * update. The equipped-weapon transition holds its loose-model bridge
-         * on this: until the carry drives the node, the native instance still
-         * renders at the engine's right-hand attach.
-         */
-        [[nodiscard]] bool isLeftFiringCarryAwaitingSolvedPose() const noexcept
-        {
-            return _session.firingHandIsLeft &&
-                   isManualOwnershipActive() &&
-                   !_hasSolvedWeaponTransform;
-        }
-
         TwoHandedState getState() const { return _session.state; }
 
         weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _session.authorityMode; }

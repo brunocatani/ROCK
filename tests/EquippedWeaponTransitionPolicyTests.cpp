@@ -79,38 +79,6 @@ int main()
             stableThree.handoffBridgeToNative &&
             stableState.nativeHandoffObserved);
 
-    State leftCarryState{};
-    FrameInput leftCarryVisible = nativeVisible;
-    leftCarryVisible.finalCarrierPending = true;
-    (void)advance(leftCarryState, leftCarryVisible);
-    (void)advance(leftCarryState, leftCarryVisible);
-    const auto heldForCarry = advance(leftCarryState, leftCarryVisible);
-    const auto heldForCarryAgain = advance(leftCarryState, leftCarryVisible);
-    ok &= expect("a pending left final carrier must hold the bridge past native stability",
-        heldForCarry.presentBridgeModel &&
-            !heldForCarry.handoffBridgeToNative &&
-            heldForCarry.handoffDeferredForFinalCarrier &&
-            heldForCarryAgain.presentBridgeModel &&
-            !leftCarryState.nativeHandoffObserved);
-    auto leftCarryAcquired = leftCarryVisible;
-    leftCarryAcquired.finalCarrierPending = false;
-    const auto carryHandoff = advance(leftCarryState, leftCarryAcquired);
-    ok &= expect("the deferred handoff must fire once the left carry owns the weapon pose",
-        carryHandoff.handoffBridgeToNative &&
-            !carryHandoff.handoffDeferredForFinalCarrier &&
-            leftCarryState.nativeHandoffObserved);
-
-    State leftCarryNoBridge{};
-    auto leftCarryNoModel = leftCarryVisible;
-    leftCarryNoModel.bridgeModelAvailable = false;
-    (void)advance(leftCarryNoBridge, leftCarryNoModel);
-    (void)advance(leftCarryNoBridge, leftCarryNoModel);
-    const auto noModelHandoff = advance(leftCarryNoBridge, leftCarryNoModel);
-    ok &= expect("an expired or absent bridge model must hand off despite a pending carrier",
-        !noModelHandoff.presentBridgeModel &&
-            !noModelHandoff.handoffDeferredForFinalCarrier &&
-            leftCarryNoBridge.nativeHandoffObserved);
-
     const auto holsteredAfterHandoff = advance(stableState, FrameInput{
         .mutationAllowed = true,
         .identityMatches = true,

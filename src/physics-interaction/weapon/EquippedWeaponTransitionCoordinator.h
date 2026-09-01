@@ -70,11 +70,6 @@ namespace rock
             // this is set. Equip recovery must neither unhide nor reattach the
             // same graph during that authority window.
             bool nativeWeaponAnimationActive{ false };
-            // The equip's final carrier is the LEFT firing hand and that carry
-            // has not yet published a solved weapon pose. Defers the bridge
-            // handoff so the native right-hand attach is never presented; the
-            // bridge presentation lease remains the bounded fail-closed exit.
-            bool finalCarrierPending{ false };
         };
 
         struct ExpectedIdentity
@@ -171,7 +166,6 @@ namespace rock
         bool _lateRecoveryWindowGranted{ false };
         bool _drawExhaustionLogged{ false };
         bool _repairExhaustionLogged{ false };
-        bool _finalCarrierHoldLogged{ false };
         std::uint64_t _transitionSequence{ 0 };
         std::uint64_t _terminalSequence{ 0 };
         std::uint32_t _lastTerminalWeaponFormID{ 0 };

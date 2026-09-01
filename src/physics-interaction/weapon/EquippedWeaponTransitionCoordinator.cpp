@@ -60,7 +60,6 @@ namespace rock
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
-        _finalCarrierHoldLogged = false;
         ++_transitionSequence;
 
         const auto current = readCurrentIdentity();
@@ -346,17 +345,7 @@ namespace rock
                 .nativeAncestorPathVisible = visual.ancestorPathVisible,
                 .nativeInstanceLocallyVisible = visual.instanceLocallyVisible,
                 .bridgeOwnsNativeInstanceCull = bridgeOwnsCull,
-                .finalCarrierPending = input.finalCarrierPending,
             });
-        if (decision.handoffDeferredForFinalCarrier && !_finalCarrierHoldLogged) {
-            _finalCarrierHoldLogged = true;
-            ROCK_LOG_INFO(Weapon,
-                "Equipped weapon transition holding bridge for left carry source={} formID={:08X} instance={:#x} elapsed={:.3f}s",
-                sourceName(_source),
-                _boundIdentity.formID,
-                _boundIdentity.instanceData,
-                _activeSeconds);
-        }
 
         using NativeWeaponState =
             held_weapon_equip_state_policy::NativeWeaponState;
@@ -655,7 +644,6 @@ namespace rock
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
-        _finalCarrierHoldLogged = false;
     }
 
     void EquippedWeaponTransitionCoordinator::abandonSceneGraph()
@@ -687,7 +675,6 @@ namespace rock
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
-        _finalCarrierHoldLogged = false;
     }
 
     EquippedWeaponTransitionCoordinator::Identity
@@ -770,7 +757,6 @@ namespace rock
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
-        _finalCarrierHoldLogged = false;
         ROCK_LOG_INFO(Weapon,
             "Equipped weapon transition bound source={} reason={} formID={:08X} instance={:#x} equipIndex={} presentation=required",
             sourceName(source),
@@ -864,7 +850,6 @@ namespace rock
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
-        _finalCarrierHoldLogged = false;
         _lastTerminalWeaponFormID = terminalWeaponFormID;
         _lastTerminalSource = terminalSource;
         _lastTerminalResult = terminalResult;

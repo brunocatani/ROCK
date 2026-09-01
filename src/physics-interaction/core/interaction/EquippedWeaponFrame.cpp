@@ -79,30 +79,6 @@ namespace rock
             provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
             nativeGunState ==
                 static_cast<std::uint32_t>(RE::GUN_STATE::kReloading);
-        /*
-         * The engine attaches the equipped instance to the right-hand biped
-         * slot. When a held equip's final carrier is the LEFT firing hand,
-         * the visual bridge must keep covering that attach until the carry
-         * publishes its first solved weapon pose: while the pending grip
-         * start is still waiting on collision generation and authored
-         * capability, and for the deferred first solve after it begins.
-         */
-        const auto& pendingCarryStart = _equipped.pendingPrimaryOnlyGripStart;
-        const bool leftCarryStartPending =
-            pendingCarryStart.pending &&
-            pendingCarryStart.isLeft &&
-            (pendingCarryStart.targetWeaponFormID == 0 ||
-                (currentIdentityCaptured &&
-                    equipped_weapon_transition_policy::matchesExpectedIdentity(
-                        currentIdentity.formID,
-                        currentIdentity.instanceData,
-                        pendingCarryStart.targetWeaponFormID,
-                        pendingCarryStart.targetWeaponInstanceData,
-                        pendingCarryStart.previousWeaponFormID,
-                        pendingCarryStart.previousWeaponInstanceData)));
-        const bool finalCarrierPending =
-            leftCarryStartPending ||
-            _twoHandedGrip.isLeftFiringCarryAwaitingSolvedPose();
         _equipped.transition.update(
             EquippedWeaponTransitionCoordinator::FrameInput{
                 .deltaSeconds = runtime.deltaSeconds,
@@ -120,7 +96,6 @@ namespace rock
                 .shoulderSheathEquipIndex =
                     _equipped.shoulderSheath.equipIndex,
                 .nativeWeaponAnimationActive = nativeWeaponAnimationActive,
-                .finalCarrierPending = finalCarrierPending,
             });
     }
 
