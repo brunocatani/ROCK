@@ -99,6 +99,12 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'advanceEquippedWeaponShoulderCoordinator\([\s\S]*?makeEquippedWeaponStashDetectorConfig\(handlingEnabled\)[\s\S]*?publishDetectorDecision[\s\S]*?equipped_weapon_shoulder::advance\(' `
     'The coordinator adapter must consume the existing equipped HMD detector decisions unchanged.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'sheathInputMode\s*=\s*[\s\r\n]+\s*equipped_weapon_shoulder::resolveSheathInputMode\([\s\S]{0,260}_equippedWeaponHandlingSettings\.immersiveWeapon\.[\s\r\n ]*firingGripDetachEnabled[\s\S]{0,180}_equippedWeaponHandlingSettings\.toggleGrabEnabled[\s\S]{0,260}\.sheathInputMode\s*=\s*sheathInputMode' `
+    'The coordinator adapter must implement the immersive/toggle sheath graph as one explicit input mode.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'maskShoulderGestureInput[\s\S]{0,900}SubmitRetrieve[\s\S]{0,240}button\s*=\s*\{\s*\}[\s\S]{0,600}SubmitSheath[\s\S]{0,500}button\s*=\s*GrabButtonState\{\s*\.held\s*=\s*true\s*\}' `
+    'A coordinator-owned sheath gesture must retain carry through native submission instead of entering the drop state machine.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'manualStashCarryHand[\s\S]{0,900}manualCarryActive[\s\S]{0,500}attachedShoulderGestureHand' `
     'One current carry hand or attached firing hand must feed the coordinator across provider and ROCK-native modes.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `

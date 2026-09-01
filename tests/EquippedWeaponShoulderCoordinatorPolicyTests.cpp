@@ -50,12 +50,23 @@ int main()
             .confidence = confidence,
         };
     };
+    const auto leftCandidate = [](
+                                   const bool confirmed = true,
+                                   const float confidence = 0.8f) {
+        return DetectorDecision{
+            .candidate = true,
+            .confirmed = confirmed,
+            .zone = BodyZoneKind::LeftShoulder,
+            .confidence = confidence,
+        };
+    };
     const auto drawnInput = [](
-                                const bool toggleGrabEnabled = true) {
+                                const SheathInputMode sheathInputMode =
+                                    SheathInputMode::Tap) {
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .toggleGrabEnabled = toggleGrabEnabled,
+            .sheathInputMode = sheathInputMode,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableDrawn,
         };
@@ -64,11 +75,12 @@ int main()
         return input;
     };
     const auto storedInput = [](
-                                 const bool toggleGrabEnabled = true) {
+                                 const SheathInputMode sheathInputMode =
+                                     SheathInputMode::Tap) {
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .toggleGrabEnabled = toggleGrabEnabled,
+            .sheathInputMode = sheathInputMode,
             .storedActive = true,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableSheathed,
@@ -78,9 +90,22 @@ int main()
         return input;
     };
 
+    ok &= expectEqual("immersive toggle mode uses tap sheath input",
+        resolveSheathInputMode(true, true),
+        SheathInputMode::Tap);
+    ok &= expectEqual("immersive hold mode uses release sheath input",
+        resolveSheathInputMode(true, false),
+        SheathInputMode::HoldRelease);
+    ok &= expectEqual("non-immersive toggle mode uses tap sheath input",
+        resolveSheathInputMode(false, true),
+        SheathInputMode::Tap);
+    ok &= expectEqual("non-immersive hold setting still uses tap sheath input",
+        resolveSheathInputMode(false, false),
+        SheathInputMode::Tap);
+
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
         input.right.detector = rightCandidate(false);
         auto decision = advance(state, input);
         ok &= expectEqual("proximity alone emits no action",
@@ -93,7 +118,58 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
+        input.right.eligible = false;
+        input.right.carriesWeapon = false;
+        input.left.eligible = true;
+        input.left.carriesWeapon = true;
+        input.left.detector = leftCandidate(false);
+        input.left.button = { .held = true, .pressed = true };
+        const auto decision = advance(state, input);
+        ok &= expectEqual("left tap mode submits sheath",
+            decision.action,
+            Action::SubmitSheath);
+        ok &= expectEqual("left tap mode selects left carry hand",
+            decision.hand,
+            Hand::Left);
+        ok &= expectTrue("left tap mode consumes left input",
+            decision.consumeLeftInput);
+        ok &= expectFalse("left tap mode does not consume right input",
+            decision.consumeRightInput);
+    }
+
+    {
+        RuntimeState state{};
+        auto input = drawnInput(SheathInputMode::HoldRelease);
+        input.right.eligible = false;
+        input.right.carriesWeapon = false;
+        input.left.eligible = true;
+        input.left.carriesWeapon = true;
+        input.left.detector = leftCandidate(true);
+        input.left.button = { .held = true, .pressed = true };
+        auto decision = advance(state, input);
+        ok &= expectEqual("left hold mode arms in shoulder zone",
+            state.phase,
+            Phase::DrawnShoulderArmed);
+        ok &= expectEqual("left hold mode does not sheath before release",
+            decision.action,
+            Action::None);
+
+        input.left.button = { .released = true };
+        decision = advance(state, input);
+        ok &= expectEqual("left hold release submits sheath",
+            decision.action,
+            Action::SubmitSheath);
+        ok &= expectEqual("left hold release selects left carry hand",
+            decision.hand,
+            Hand::Left);
+        ok &= expectTrue("left hold release consumes left input",
+            decision.consumeLeftInput);
+    }
+
+    {
+        RuntimeState state{};
+        auto input = drawnInput(SheathInputMode::Tap);
         input.right.detector = rightCandidate(false);
         input.right.button = {
             .held = true,
@@ -105,7 +181,7 @@ int main()
             Action::SubmitSheath);
         ok &= expectEqual("toggle sheath uses tap reason",
             decision.reason,
-            Reason::ToggleTap);
+            Reason::SheathTap);
         ok &= expectEqual("toggle sheath owns the gesture as a sheath",
             decision.gestureAction,
             Action::SubmitSheath);
@@ -116,7 +192,7 @@ int main()
         const auto sheathGesture = decision.gestureSerial;
         reportExecutionResult(state, decision.action, true);
 
-        input = storedInput(true);
+        input = storedInput(SheathInputMode::Tap);
         input.right.detector = rightCandidate(true);
         input.right.button = { .held = true };
         decision = advance(state, input);
@@ -165,7 +241,7 @@ int main()
         const auto retrievalGesture = decision.gestureSerial;
         reportExecutionResult(state, decision.action, true);
 
-        input = drawnInput(true);
+        input = drawnInput(SheathInputMode::Tap);
         input.right.detector = rightCandidate(true);
         input.right.button = { .held = true };
         decision = advance(state, input);
@@ -199,7 +275,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
         input.right.detector = rightCandidate(false);
         input.right.button = {
             .held = true,
@@ -209,7 +285,7 @@ int main()
         const auto firstGesture = decision.gestureSerial;
         reportExecutionResult(state, decision.action, true);
 
-        input = storedInput(true);
+        input = storedInput(SheathInputMode::Tap);
         input.presentation = NativePresentation::WantSheathe;
         input.right.detector = rightCandidate(true);
         input.right.button = { .released = true };
@@ -257,7 +333,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = storedInput(true);
+        auto input = storedInput(SheathInputMode::Tap);
         input.right.button = {
             .held = true,
             .pressed = true,
@@ -292,7 +368,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(false);
+        auto input = drawnInput(SheathInputMode::HoldRelease);
         input.right.detector = rightCandidate(true);
         input.right.button = {
             .held = true,
@@ -328,7 +404,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
         input.right.button = {
             .held = true,
             .pressed = true,
@@ -348,7 +424,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = storedInput(false);
+        auto input = storedInput(SheathInputMode::HoldRelease);
         input.right.button = {
             .held = true,
             .pressed = true,
@@ -371,7 +447,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = storedInput(false);
+        auto input = storedInput(SheathInputMode::HoldRelease);
         input.right.detector = rightCandidate(false);
         input.right.button = { .pressed = true };
         auto decision = advance(state, input);
@@ -383,7 +459,7 @@ int main()
             Reason::RetrievalTap);
         reportExecutionResult(state, decision.action, true);
 
-        input = drawnInput(false);
+        input = drawnInput(SheathInputMode::HoldRelease);
         input.right.detector = rightCandidate(true);
         input.right.button = { .released = true };
         decision = advance(state, input);
@@ -399,7 +475,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = storedInput(true);
+        auto input = storedInput(SheathInputMode::Tap);
         input.stashedByLeftHand = false;
         input.right.eligible = true;
         input.left.eligible = true;
@@ -420,7 +496,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = storedInput(true);
+        auto input = storedInput(SheathInputMode::Tap);
         input.stashedByLeftHand = true;
         input.right.eligible = true;
         input.left.eligible = true;
@@ -441,7 +517,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
         input.right.detector = rightCandidate(true);
         input.right.button = { .held = true, .pressed = true };
         auto decision = advance(state, input);
@@ -477,7 +553,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
         input.presentation = NativePresentation::Sheathing;
         input.right.detector = rightCandidate(true);
         input.right.button = { .held = true, .pressed = true };
@@ -492,7 +568,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
         input.inputAllowed = false;
         input.right.detector = rightCandidate(true);
         input.right.button = { .held = true, .pressed = true };
@@ -507,7 +583,7 @@ int main()
 
     {
         RuntimeState state{};
-        auto input = drawnInput(true);
+        auto input = drawnInput(SheathInputMode::Tap);
         input.right.detector = rightCandidate(true);
         input.right.button = { .held = true, .pressed = true };
         auto decision = advance(state, input);
