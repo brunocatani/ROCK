@@ -1218,6 +1218,24 @@ namespace rock
             outTransform = handBone->world;
             return true;
         }
+
+        /*
+         * Conjugates a transform across the lateral mirror: M o X o M with
+         * M = diag(-1, 1, 1). Reflections are involutions with symmetric
+         * matrices, so the diagonal form is convention-proof and composed in
+         * pairs every final rotation stays proper. Shared by the left-firing
+         * and right-support mirrored-seat builders.
+         */
+        inline RE::NiTransform conjugateAcrossLateralMirror(
+            const RE::NiTransform& transform)
+        {
+            RE::NiTransform lateralMirror{};
+            lateralMirror.MakeIdentity();
+            lateralMirror.rotate.entry[0][0] = -1.0f;
+            return transform_math::composeTransforms(
+                lateralMirror,
+                transform_math::composeTransforms(transform, lateralMirror));
+        }
     }
 
     // Implementation TUs resolve the helper names unqualified, exactly as

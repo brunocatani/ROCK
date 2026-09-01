@@ -1305,16 +1305,11 @@ namespace rock
         const RE::NiTransform leftHandWeaponOrientation =
             orientationFrame(leftHandWeaponLocal);
 
-        RE::NiTransform lateralMirror{};
-        lateralMirror.MakeIdentity();
-        lateralMirror.rotate.entry[0][0] = -1.0f;
-
         const RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
             leftBoneInWandOrientation,
             transform_math::invertTransform(leftHandWeaponOrientation));
-        const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
-            lateralMirror,
-            transform_math::composeTransforms(weaponInLeftWand, lateralMirror));
+        const RE::NiTransform weaponInRightWand =
+            conjugateAcrossLateralMirror(weaponInLeftWand);
         const RE::NiTransform weaponInRightHand = transform_math::composeTransforms(
             transform_math::invertTransform(rightBoneInWandOrientation),
             weaponInRightWand);
@@ -1466,17 +1461,10 @@ namespace rock
             return false;
         }
 
-        // Reflections are involutions with symmetric matrices, so the
-        // diagonal form is convention-proof; composed in pairs they keep
-        // every final rotation proper.
-        RE::NiTransform lateralMirror{};
-        lateralMirror.MakeIdentity();
-        lateralMirror.rotate.entry[0][0] = -1.0f;
-
         const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
             boneInRightWand, transform_math::invertTransform(canonicalRightHandWeaponLocal));
-        RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
-            lateralMirror, transform_math::composeTransforms(weaponInRightWand, lateralMirror));
+        RE::NiTransform weaponInLeftWand =
+            conjugateAcrossLateralMirror(weaponInRightWand);
 
         /*
          * Loose-model callers have no equipped native weapon-in-wand frame,
