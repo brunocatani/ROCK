@@ -22,9 +22,8 @@ namespace rock
      * Carrier precedence, strongest first:
      *   shoulder sheath        weapon stashed; no carrier may claim
      *   pending primary-only   committed transfer awaiting manual grip start
-     *   hand assignment        Pip-Boy / provider deliberate side choice
+     *   hand assignment        provider (addon) deliberate side choice
      *   manual handoff         live ambidextrous firing-grip ownership
-     *   fixed hand             configured left-handed default, weakest
      *
      * Later phases move the per-frame weapon-node transform publication
      * (native / authored-align / two-hand solve / part-carry /
@@ -37,15 +36,6 @@ namespace rock
         {
             HandlingModeReconcile,
             HandAssignment,
-            FixedHand,
-        };
-
-        struct FrameContext
-        {
-            bool shoulderSheathActive{ false };
-            bool pendingPrimaryOnlyGripStart{ false };
-            bool handAssignmentEngaged{ false };
-            bool ambidextrousHandoffEnabled{ false };
         };
 
         explicit WeaponTransformArbiter(TwoHandedGrip& grip) noexcept :
@@ -54,17 +44,6 @@ namespace rock
 
         WeaponTransformArbiter(const WeaponTransformArbiter&) = delete;
         WeaponTransformArbiter& operator=(const WeaponTransformArbiter&) = delete;
-
-        // Published once per frame before the carrier drivers run.
-        void beginFrame(const FrameContext& context) noexcept
-        {
-            _context = context;
-        }
-
-        // The configured fixed left hand is the weakest claimant: any
-        // stash, committed transfer, deliberate assignment, or live
-        // manual handoff outranks it.
-        [[nodiscard]] bool fixedHandMayClaim() const;
 
         [[nodiscard]] bool requestLeftCarry(
             CarrySource source,
@@ -76,6 +55,5 @@ namespace rock
 
     private:
         TwoHandedGrip& _grip;
-        FrameContext _context{};
     };
 }

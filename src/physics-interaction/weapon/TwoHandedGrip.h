@@ -703,7 +703,7 @@ namespace rock
             bool emitAttachHaptic = true);
 
         /*
-         * Programmatic fixed, Pip-Boy, and provider left-hand assignments
+         * Programmatic provider left-hand assignments
          * start without a physical grab hold. This entry point reuses the
          * generation-bound authored left hand seat together with the
          * separately captured native right weapon-in-wand orientation, then

@@ -75,9 +75,6 @@ namespace rock
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
 
-        // ROCK-exclusive equipped-weapon hand preference. This never reads or
-        // mutates Fallout 4 VR's native handedness/controller mapping.
-        bool rockLeftHandedMode = false;
         // ROCK-native firing-grip handoff. This remains independent from the
         // role-neutral Immersive Weapons detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;

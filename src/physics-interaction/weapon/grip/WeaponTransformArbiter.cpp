@@ -4,27 +4,6 @@
 
 namespace rock
 {
-    bool WeaponTransformArbiter::fixedHandMayClaim() const
-    {
-        if (_context.shoulderSheathActive ||
-            _context.pendingPrimaryOnlyGripStart) {
-            return false;
-        }
-        // An addon-owned Pip-Boy selection is an explicit dynamic side
-        // choice. Likewise, a live manual handoff is preserved regardless
-        // of whether its effective ambidextrous policy comes from ROCK or
-        // the addon. The fixed hand remains the fallback/default rather
-        // than fighting the player's deliberate switch.
-        if (_context.handAssignmentEngaged) {
-            return false;
-        }
-        if (_context.ambidextrousHandoffEnabled &&
-            _grip.isManualOwnershipActive()) {
-            return false;
-        }
-        return true;
-    }
-
     bool WeaponTransformArbiter::requestLeftCarry(
         const CarrySource,
         RE::NiNode* weaponNode,

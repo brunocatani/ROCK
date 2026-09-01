@@ -597,13 +597,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativeGrabHapticSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeGrabHapticSuppressionPolicyTests)
 
-  add_executable(ROCKPipboyEquipPolicyTests
-    "${ROOT_DIR}/tests/PipboyEquipPolicyTests.cpp"
-  )
-  target_compile_features(ROCKPipboyEquipPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKPipboyEquipPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKPipboyEquipPolicyTests)
-
   add_executable(ROCKEquippedWeaponTransitionPolicyTests
     "${ROOT_DIR}/tests/EquippedWeaponTransitionPolicyTests.cpp"
   )
@@ -772,7 +765,6 @@ if(BUILD_ROCK_TESTS)
     ROCKNativePlayerCollisionSuppressionPolicyTests
     ROCKNativeMeleeSuppressionPolicyTests
     ROCKNativeGrabHapticSuppressionPolicyTests
-    ROCKPipboyEquipPolicyTests
     ROCKEquippedWeaponTransitionPolicyTests
     ROCKHeldWeaponInstantTransitionPolicyTests
     ROCKWeaponTransitionAnimationAccelerationPolicyTests

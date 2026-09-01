@@ -29,7 +29,6 @@
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/PipboyEquipRuntime.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 
@@ -255,7 +254,6 @@ namespace
         weapon_transition_animation_acceleration::cancel(
             "rock-runtime-unavailable");
         authored_weapon_grip_capture::setEnabled(false);
-        pipboy_equip_runtime::setLeftHandEquipAvailable(false);
         input_remap_runtime::setGameplayInputAllowed(false);
         input_remap_runtime::setWeaponDrawn(false);
         input_remap_runtime::setRealMeleeWeaponEquipped(false);
@@ -757,7 +755,6 @@ namespace
             resetPhysicsCreationGate();
             runtime_state::resetTransientState();
             authored_weapon_grip_capture::resetTransientState();
-            pipboy_equip_runtime::resetRuntimeState();
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
                     providerGeneration,
@@ -866,11 +863,6 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     logger::info("ROCK: Install scoped weapon transition animation acceleration...");
     if (!rock::weapon_transition_animation_acceleration::install()) {
         logger::warn("ROCK: Weapon draw/sheath animation acceleration unavailable; native timing remains unchanged.");
-    }
-
-    logger::info("ROCK: Install Pip-Boy trigger-hand equip hooks...");
-    if (!rock::pipboy_equip_runtime::installHooks()) {
-        return false;
     }
 
     logger::info("ROCK: Install main loop hook...");

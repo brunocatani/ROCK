@@ -2240,15 +2240,13 @@ int main()
     ok &= expectFalse("compatible addon activation does not tear down ROCK handoff",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
-            externalHandling,
-            false));
+            externalHandling));
     auto authoredOnlyDisabledHandling = coreWeaponHandling;
     authoredOnlyDisabledHandling.authoredOnlySupportGrabsEnabled = false;
     ok &= expectFalse("authored-only hot reload applies to the next acquisition",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
-            authoredOnlyDisabledHandling,
-            false));
+            authoredOnlyDisabledHandling));
     auto detachPosePreservationDisabled = coreWeaponHandling;
     detachPosePreservationDisabled.immersiveWeapon.
         firingGripDetachPosePreservationEnabled = false;
@@ -2262,24 +2260,21 @@ int main()
     ok &= expectFalse("pose-preservation hot reload does not tear down a legal carry",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
-            detachPosePreservationDisabled,
-            false));
+            detachPosePreservationDisabled));
     auto addonDetachHandling = fixedOnlyHandling;
     addonDetachHandling.firingGripOwnershipEnabled = true;
     addonDetachHandling.primaryDetachEnabled = true;
     ok &= expectTrue("removing provider detach capability reconciles manual weapon state",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             addonDetachHandling,
-            fixedOnlyHandling,
-            false));
+            fixedOnlyHandling));
     auto integratedDetachDisabled = coreWeaponHandling;
     integratedDetachDisabled.immersiveWeapon.
         firingGripDetachEnabled = false;
     ok &= expectTrue("removing integrated immersive detach reconciles manual weapon state",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
-            integratedDetachDisabled,
-            false));
+            integratedDetachDisabled));
     const auto disabledIntegratedDetach =
         rock::resolveEquippedWeaponDetachDecision(
             integratedDetachDisabled);
@@ -2293,13 +2288,11 @@ int main()
     ok &= expectTrue("an addon override that disables handoff reconciles the live switch",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
-            fixedOnlyHandling,
-            false));
+            fixedOnlyHandling));
     ok &= expectFalse("gaining ROCK handoff capability does not require teardown",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             fixedOnlyHandling,
-            coreWeaponHandling,
-            false));
+            coreWeaponHandling));
 
     rock::provider::RockProviderEquippedWeaponHandlingRequestV1 legacyStashRequest{};
     legacyStashRequest.flags =
@@ -2341,26 +2334,12 @@ int main()
     ok &= expectNear("provider PrimaryDetach owns detach haptic tuning",
         providerDetach.gripDetachHapticIntensity,
         0.50f);
-    ok &= expectTrue("changing the fixed firing hand always reconciles carry ownership",
-        rock::requiresEquippedWeaponHandlingModeReconcile(
-            coreWeaponHandling,
-            coreWeaponHandling,
-            true));
-    auto addonPipboyHandling = externalHandling;
-    addonPipboyHandling.pipboyTriggerHandEquipEnabled = true;
-    ok &= expectTrue("removing addon Pip-Boy hand assignment reconciles its carry",
-        rock::requiresEquippedWeaponHandlingModeReconcile(
-            addonPipboyHandling,
-            coreWeaponHandling,
-            false));
-
     auto holdToGrabHandling = coreWeaponHandling;
     holdToGrabHandling.toggleGrabEnabled = false;
     ok &= expectTrue("changing equipped-weapon grab input mode reconciles live grips",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
-            holdToGrabHandling,
-            false));
+            holdToGrabHandling));
 
     {
         toggle_grab::RuntimeState toggleState{};

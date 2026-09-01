@@ -36,7 +36,6 @@ namespace rock
         bool gripZoneEquipEnabled{ false };
         bool gripZoneHoverHapticsEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
-        bool pipboyTriggerHandEquipEnabled{ false };
         immersive_weapon_policy::Config immersiveWeapon{};
 
         float gripZoneEquipRadiusGameUnits{ 3.0f };
@@ -126,8 +125,10 @@ namespace rock
             provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneEquip);
         settings.gripZoneHoverHapticsEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneHoverHaptics);
-        settings.pipboyTriggerHandEquipEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip);
+        // RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip
+        // remains an accepted ABI flag but no longer maps to any behavior:
+        // the Pip-Boy hand-equip mode was removed. Physical handoff and the
+        // provider hand request are the supported left-hand entry points.
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
         settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
         settings.firingGripReattachRadiusGameUnits = request->firingGripReattachRadiusGameUnits;
@@ -177,13 +178,8 @@ namespace rock
     [[nodiscard]] inline constexpr bool
     requiresEquippedWeaponHandlingModeReconcile(
         const EquippedWeaponHandlingSettings& previous,
-        const EquippedWeaponHandlingSettings& current,
-        const bool fixedFiringHandChanged) noexcept
+        const EquippedWeaponHandlingSettings& current) noexcept
     {
-        if (fixedFiringHandChanged) {
-            return true;
-        }
-
         if (previous.toggleGrabEnabled != current.toggleGrabEnabled) {
             return true;
         }
@@ -205,8 +201,6 @@ namespace rock
                    !current.primaryDetachEnabled) ||
                integratedImmersiveDetachRemoved ||
                (previous.ambidextrousHandoffEnabled &&
-                   !current.ambidextrousHandoffEnabled) ||
-               (previous.pipboyTriggerHandEquipEnabled &&
-                   !current.pipboyTriggerHandEquipEnabled);
+                   !current.ambidextrousHandoffEnabled);
     }
 }

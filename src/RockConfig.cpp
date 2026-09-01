@@ -26,7 +26,6 @@ namespace
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
     constexpr auto IMMERSIVE_WEAPONS_SECTION = "ImmersiveWeapons";
-    constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr float kDefaultWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
@@ -371,10 +370,6 @@ namespace rock
             0.0f,
             1.0f);
 
-        rockLeftHandedMode = ini.GetBoolValue(
-            WEAPON_HANDEDNESS_SECTION,
-            "bLeftHandedMode",
-            rockLeftHandedMode);
         rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",

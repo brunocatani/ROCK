@@ -251,10 +251,6 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
         std::atomic<bool> s_pipboyMenuOpen{ false };
-        std::atomic<std::uint32_t> s_pipboyMenuGeneration{ 1 };
-        // High 32 bits = Pip-Boy menu generation, low 32 bits =
-        // GetTickCount64() milliseconds. Zero means no pending evidence.
-        std::array<std::atomic<std::uint64_t>, 2> s_pipboyTriggerTransitions{};
         std::atomic<bool> s_missingVRSystemLogged{ false };
         std::atomic<bool> s_missingUILogged{ false };
         std::array<std::atomic<bool>, 2> s_providerOpenVrGameInputSuppressed{};
@@ -385,27 +381,7 @@ namespace rock::input_remap_runtime
 
         void publishPipboyMenuOpen(const bool open)
         {
-            const bool wasOpen = s_pipboyMenuOpen.exchange(open, std::memory_order_acq_rel);
-            if (open && !wasOpen) {
-                s_pipboyMenuGeneration.fetch_add(1, std::memory_order_acq_rel);
-            }
-            if (open != wasOpen) {
-                for (auto& token : s_pipboyTriggerTransitions) {
-                    token.store(0, std::memory_order_release);
-                }
-            }
-        }
-
-        void publishPipboyTriggerTransition(const input_remap_policy::Hand hand)
-        {
-            if (!s_pipboyMenuOpen.load(std::memory_order_acquire)) {
-                return;
-            }
-            const std::uint32_t generation = s_pipboyMenuGeneration.load(std::memory_order_acquire);
-            const std::uint32_t tick = static_cast<std::uint32_t>(GetTickCount64());
-            const std::uint64_t packed = (static_cast<std::uint64_t>(generation) << 32u) | tick;
-            const std::size_t index = hand == input_remap_policy::Hand::Left ? 0u : 1u;
-            s_pipboyTriggerTransitions[index].store(packed, std::memory_order_release);
+            s_pipboyMenuOpen.store(open, std::memory_order_release);
         }
 
         [[nodiscard]] std::optional<std::size_t> findGameStoppingMenuIndex(const RE::BSFixedString& menuName)
@@ -812,10 +788,6 @@ namespace rock::input_remap_runtime
             if (hadPrevious) {
                 tracker.pressedEdges.fetch_or(rawTransition.pressedEdges, std::memory_order_acq_rel);
                 tracker.releasedEdges.fetch_or(rawTransition.releasedEdges, std::memory_order_acq_rel);
-                const auto triggerMask = input_remap_policy::buttonMask(input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-                if (((rawTransition.pressedEdges | rawTransition.releasedEdges) & triggerMask) != 0) {
-                    publishPipboyTriggerTransition(hand);
-                }
             }
 
             const bool inputBlockingMenuActive = isInputBlockingMenuActive();
@@ -2524,35 +2496,6 @@ namespace rock::input_remap_runtime
         state.held = held;
         state.availabilityReason = RawButtonAvailabilityReason::Available;
         return state;
-    }
-
-    PipboyEquipTriggerResolution consumePipboyEquipTriggerResolution()
-    {
-        constexpr std::uint32_t kTransitionMaximumAgeMilliseconds = 500;
-        const auto unpack = [](const std::uint64_t packed) {
-            return pipboy_equip_policy::TransitionToken{
-                .menuGeneration = static_cast<std::uint32_t>(packed >> 32u),
-                .tickMilliseconds = static_cast<std::uint32_t>(packed),
-                .present = packed != 0,
-            };
-        };
-
-        // Consume both tokens even when held-state resolves the hand so no
-        // transition can leak into the next Pip-Boy selection.
-        const auto leftTransition = unpack(s_pipboyTriggerTransitions[0].exchange(0, std::memory_order_acq_rel));
-        const auto rightTransition = unpack(s_pipboyTriggerTransitions[1].exchange(0, std::memory_order_acq_rel));
-        const auto resolution = pipboy_equip_policy::resolveTriggerHand(
-            isRawButtonPhysicallyHeld(true, input_remap_policy::kOpenVrSteamVrTriggerButtonId),
-            isRawButtonPhysicallyHeld(false, input_remap_policy::kOpenVrSteamVrTriggerButtonId),
-            leftTransition,
-            rightTransition,
-            s_pipboyMenuGeneration.load(std::memory_order_acquire),
-            static_cast<std::uint32_t>(GetTickCount64()),
-            kTransitionMaximumAgeMilliseconds);
-        return PipboyEquipTriggerResolution{
-            .hand = resolution.hand,
-            .source = resolution.source,
-        };
     }
 
     bool consumePendingSavedGrabOffsetRequest(bool isLeft)

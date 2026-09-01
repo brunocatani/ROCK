@@ -3,7 +3,6 @@
 #include "RE/NetImmerse/NiTransform.h"
 
 #include "physics-interaction/weapon/AuthoredSupportGrabPolicy.h"
-#include "physics-interaction/weapon/PipboyEquipPolicy.h"
 
 #include <cmath>
 #include <cstdint>
@@ -79,9 +78,30 @@ namespace rock::left_carry_readiness
         std::uint8_t matchingFrames{ 0 };
     };
 
+    /*
+     * Direct left carry is serviced before TwoHandedGrip's per-frame update.
+     * Requiring two consecutive observations of hFRIK's stable native-right
+     * offset reserves the intervening update for canonical-frame capture.
+     */
+    [[nodiscard]] inline constexpr bool advanceNativeOffsetReadiness(
+        const bool offsetSampleValid,
+        const bool liveOffsetMatches,
+        std::uint8_t& consecutiveMatchingFrames) noexcept
+    {
+        if (!offsetSampleValid || !liveOffsetMatches) {
+            consecutiveMatchingFrames = 0;
+            return false;
+        }
+
+        if (consecutiveMatchingFrames < 2) {
+            ++consecutiveMatchingFrames;
+        }
+        return consecutiveMatchingFrames >= 2;
+    }
+
     // Advances the stable-offset observation against the live native-right
     // local transform. Returns true once the offset has held stable long
-    // enough (per pipboy_equip_policy) to trust as the canonical baseline.
+    // enough to trust as the canonical baseline.
     [[nodiscard]] inline bool advanceNativeOffset(
         NativeOffsetWitness& witness,
         const RE::NiTransform& liveLocal) noexcept
@@ -95,10 +115,24 @@ namespace rock::left_carry_readiness
             witness.matchingFrames = 0;
             liveMatches = true;
         }
-        return pipboy_equip_policy::advanceNativeOffsetReadiness(
+        return advanceNativeOffsetReadiness(
             witness.sampleValid,
             liveMatches,
             witness.matchingFrames);
+    }
+
+    [[nodiscard]] inline constexpr bool shouldReacquirePersistentLeftCarry(
+        const bool assignmentActive,
+        const bool assignedLeft,
+        const bool effectiveLeft,
+        const bool persistentCarryActive,
+        const bool manualOwnershipActive) noexcept
+    {
+        return assignmentActive &&
+               assignedLeft &&
+               effectiveLeft &&
+               !persistentCarryActive &&
+               !manualOwnershipActive;
     }
 
     struct TakeoverWitness

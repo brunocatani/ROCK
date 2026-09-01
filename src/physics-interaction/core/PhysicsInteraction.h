@@ -408,12 +408,6 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool firingHandIsLeft);
-        void serviceFixedWeaponHand(
-            RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey,
-            bool menuInputActive);
-
         void serviceEquippedWeaponHandAssignment(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
@@ -421,7 +415,7 @@ namespace rock
             bool menuInputActive,
             const EquippedWeaponHandlingSettings& handlingSettings);
         void reconcileEquippedWeaponHandAssignmentAfterGrip();
-        void clearEquippedWeaponHandAssignment(const char* reason, bool clearUiAssignment);
+        void clearEquippedWeaponHandAssignment(const char* reason);
 
         void suppressRightHandCollisionForDominantWeapon(RE::hknpWorld* world);
 
@@ -521,7 +515,6 @@ namespace rock
         AuthoredSupportGripIndicatorEffect
             _authoredSupportGripIndicator;
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
-        bool _fixedFiringHandIsLeft{ false };
         bool _equippedWeaponHandlingModeInitialized{ false };
         bool _equippedWeaponHandlingModeReconcilePending{ false };
         AuthoredPrimaryFiringGripRuntime _authoredPrimaryFiringGrip;
@@ -773,8 +766,7 @@ namespace rock
         enum class EquippedWeaponHandAssignmentSource : std::uint8_t
         {
             None = 0,
-            Pipboy = 1,
-            Provider = 2,
+            Provider = 1,
         };
         struct EquippedWeaponHandAssignmentState
         {
@@ -786,8 +778,6 @@ namespace rock
             bool assignedLeft{ false };
             bool effectiveLeft{ false };
             std::uint16_t remainingResolveFrames{ 0 };
-            std::uint32_t handleId{ 0 };
-            std::uint32_t stackId{ 0 };
             std::uint32_t formId{ 0 };
             std::uint64_t ownerToken{ 0 };
             std::uint64_t requestedWeaponGenerationKey{ 0 };
@@ -798,17 +788,6 @@ namespace rock
             left_carry_readiness::TakeoverWitness takeoverWitness{};
         };
         EquippedWeaponHandAssignmentState _equippedWeaponHandAssignment{};
-        std::uint64_t _lastPipboyWeaponSelectionSequence{ 0 };
-        struct FixedLeftCarryState
-        {
-            std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t weaponOwnershipKey{ 0 };
-            std::uint16_t remainingResolveFrames{ 0 };
-            bool infrastructureWarningLogged{ false };
-            left_carry_readiness::NativeOffsetWitness nativeOffset{};
-            left_carry_readiness::TakeoverWitness takeoverWitness{};
-        };
-        FixedLeftCarryState _fixedLeftCarry{};
         bool _equippedWeaponMenuReconcilePending = false;
         /*
          * Single-consumption snapshot of the firing hand's grab button. The
