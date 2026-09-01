@@ -13,6 +13,9 @@ namespace rock
         const std::uint64_t currentWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey)
     {
+        if (!g_rockConfig.rockDebugGripFailureTelemetry) {
+            return;
+        }
         if (std::isfinite(dt) && dt > 0.0f) {
             _gripFailureDetailedLogCooldownSeconds = (std::max)(
                 0.0f,
@@ -88,8 +91,9 @@ namespace rock
         const bool bridgeAvailable,
         const bool applied)
     {
-        if (_currentGripFailureHistoryIndex >=
-            kGripFailureHistoryCapacity) {
+        if (!g_rockConfig.rockDebugGripFailureTelemetry ||
+            _currentGripFailureHistoryIndex >=
+                kGripFailureHistoryCapacity) {
             return;
         }
 
@@ -117,6 +121,24 @@ namespace rock
 
     void TwoHandedGrip::logGripFailureIncident(const char* const reason)
     {
+        if (!g_rockConfig.rockDebugGripFailureTelemetry) {
+            // Summary line only; the ring is empty while telemetry is off.
+            const auto occupancy = getGripOccupancy();
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: grip failure incident={} reason={} state={} authority={} firingHand={} generation={:016X} ownership={:016X} partGrip(L/R)={}/{}",
+                ++_gripFailureIncidentSequence,
+                reason ? reason : "unknown",
+                twoHandedStateDiagnosticName(_state),
+                supportAuthorityDiagnosticName(_authorityMode),
+                firingHandName(),
+                _activeWeaponGenerationKey,
+                _activeEquippedWeaponOwnershipKey,
+                occupancy.left.partGripActive,
+                occupancy.right.partGripActive);
+            return;
+        }
+
         GripFailureFrameSnapshot fallback{};
         GripFailureFrameSnapshot* current = &fallback;
         if (_currentGripFailureHistoryIndex <

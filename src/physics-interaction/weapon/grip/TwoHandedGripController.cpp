@@ -727,7 +727,6 @@ namespace rock
         _hasLeftNaturalBoneInDampedDriver = false;
         _authoredPrimaryFingerPoseSuppressed = false;
         _leftFiringHandWorldActive = false;
-        _leftFiringPositionOnlyTracePending = false;
         _leftHandHoldingObjectForPose = false;
         _rightHandHoldingObjectForPose = false;
         if (_state != TwoHandedState::Inactive) {
@@ -950,7 +949,6 @@ namespace rock
         // The firing-hand role is grip-session state: outside manual
         // ownership the weapon is FRIK/native-carried by the right hand.
         _firingHandIsLeft = false;
-        _leftFiringPositionOnlyTracePending = false;
         _leftFiringDampedFollowFrame = {};
 
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: grip released");
@@ -987,7 +985,6 @@ namespace rock
         // The authored support mirror and activation cone are role-specific.
         // Never carry a capability verdict across a firing/support hand swap.
         resetAuthoredSupportCapability("firing-hand-changed");
-        _leftFiringPositionOnlyTracePending = isLeft;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand switched to {} reason={}", isLeft ? "left" : "right", reason ? reason : "unknown");
     }
 }

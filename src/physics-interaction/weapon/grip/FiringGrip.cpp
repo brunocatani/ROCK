@@ -189,7 +189,6 @@ namespace rock
             // frame must not redefine the selected left firing seat.
             _primaryGripLocal = resolvedLeftFiringGripWeaponLocal;
             _primaryGripConfidence = 1.0f;
-            _leftFiringPositionOnlyTracePending = true;
         }
         // Only a fresh grab pulses; transitionToPrimaryOnly is also reached
         // from support-release paths where the firing grip never changed.

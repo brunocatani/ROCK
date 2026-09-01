@@ -15,9 +15,7 @@ namespace rock
         const RE::NiPoint3& gripWorldPoint,
         const bool cachedTrianglesFound,
         const WeaponCollision::SupportGripEvidenceView& evidenceView,
-        WeaponPartGrip& grip,
-        std::size_t& outSourceTriangleCount,
-        std::size_t& outCompositeEvidenceViewCount)
+        WeaponPartGrip& grip)
     {
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
         for (auto& ranking : fingerScratch.rankings) {
@@ -454,7 +452,5 @@ namespace rock
             }
         }
 
-        outSourceTriangleCount = sourceTriangleCount;
-        outCompositeEvidenceViewCount = compositeEvidenceViewCount;
     }
 }

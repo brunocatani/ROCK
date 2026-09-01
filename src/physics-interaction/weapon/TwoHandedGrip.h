@@ -1407,7 +1407,7 @@ namespace rock
         // Per-finger surface solve for a freshly seated support grip: selects
         // evidence triangles, solves the frozen-mesh finger pose, and
         // publishes the resulting pose and full-hand local transforms into
-        // the grip. Counts feed the caller's acquisition log.
+        // the grip.
         void solveSupportGripFingerPose(
             bool isLeft,
             RE::NiNode* weaponNode,
@@ -1418,9 +1418,7 @@ namespace rock
             const RE::NiPoint3& gripWorldPoint,
             bool cachedTrianglesFound,
             const WeaponCollision::SupportGripEvidenceView& evidenceView,
-            WeaponPartGrip& grip,
-            std::size_t& outSourceTriangleCount,
-            std::size_t& outCompositeEvidenceViewCount);
+            WeaponPartGrip& grip);
 
         void lockPartGripToWeaponRoot(bool isLeft);
 
@@ -1878,8 +1876,6 @@ namespace rock
         bool _firingGripReattachHoverHandIsLeft{ false };
 
         // Rate limiter for the left-firing carry aim diagnostic.
-        int _leftFiringAimLogCounter{ 0 };
-        bool _leftFiringPositionOnlyTracePending{ false };
     };
 
 }

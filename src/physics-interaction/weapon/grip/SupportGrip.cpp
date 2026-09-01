@@ -3084,11 +3084,6 @@ namespace rock
         const bool cachedTrianglesFound = weaponCollision.tryGetSupportGripEvidenceView(decision.bodyId, weaponNode, evidenceView) &&
             evidenceView.weaponGenerationKey == decision.weaponGenerationKey &&
             evidenceView.weaponGenerationKey == _activeWeaponGenerationKey;
-        const std::size_t contactedSourceTriangleCount =
-            cachedTrianglesFound ?
-            evidenceView.localTriangles.size() :
-            0u;
-
         GrabPoint grabPoint{};
         bool meshFound = false;
         if (!useDynamicHandoffGrip && cachedTrianglesFound) {
@@ -3175,8 +3170,6 @@ namespace rock
             grip.hasAttachmentWeaponLocal = true;
         }
 
-        std::size_t sourceTriangleCount = 0;
-        std::size_t compositeEvidenceViewCount = 0;
         solveSupportGripFingerPose(
             isLeft,
             weaponNode,
@@ -3187,9 +3180,7 @@ namespace rock
             gripWorldPoint,
             cachedTrianglesFound,
             evidenceView,
-            grip,
-            sourceTriangleCount,
-            compositeEvidenceViewCount);
+            grip);
 
         grip.visualLerp = {};
         grip.active = true;
@@ -3199,22 +3190,17 @@ namespace rock
             _hapticEvents.rightPartGripCaptured = true;
         }
 
+        // The authored-rejection WARN above already reports the full authored
+        // gate diagnostics when selection falls through; the capture line
+        // records only what identifies the resulting grip.
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} sourceTriangles={} sources={} contactedTriangles={} fingerTriangles={} cachedTriangles={} sourceNodeCurrent={} surfaceSeat={:.2f}deg authoredSupport=NO acquisition={} authority={} provider={} attachOnly={} authoredCandidate={} authoredFrame={} authoredIdentity={} authoredGeneration={} authoredSurface={} surfaceDistance={:.3f} surfaceRadius={:.3f} authoredFingerMask=0x{:04X} touchToAuthoredSeat={:.3f} authoredSeatLocal=({:.3f},{:.3f},{:.3f}) touchProbeLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} partKind={} pose={} generation={:016X}",
+            "TwoHandedGrip: part grip captured hand={} weapon='{}' meshGrab={} fingerTriangles={} surfaceSeat={:.2f}deg acquisition={} authority={} provider={} attachOnly={} generation={:016X}",
             isLeft ? "left" : "right",
             weaponNode->name.c_str(),
-            grip.gripLocal.x,
-            grip.gripLocal.y,
-            grip.gripLocal.z,
             useDynamicHandoffGrip ?
                 "HANDOFF" :
                 (meshFound ? "YES" : "FALLBACK"),
-            sourceTriangleCount,
-            compositeEvidenceViewCount,
-            contactedSourceTriangleCount,
             fingerScratch.localTriangles.size(),
-            cachedTrianglesFound ? "yes" : "no",
-            cachedTrianglesFound && evidenceView.sourceNodeCurrent ? "yes" : "no",
             grip.surfaceSeatRotationRadians *
                 RADIANS_TO_DEGREES,
             weaponInteractionAcquisitionSourceName(
@@ -3224,24 +3210,6 @@ namespace rock
                 "full",
             providerPartAuthority.active ? "yes" : "no",
             grip.attachOnly ? "yes" : "no",
-            authoredSupportCandidateForHandValid ? "yes" : "no",
-            authoredSupportFrameValid ? "yes" : "no",
-            authoredWeaponIdentityMatches ? "yes" : "no",
-            authoredGenerationMatches ? "yes" : "no",
-            authoredSeatWeaponSurfaceValid ? "yes" : "no",
-            authoredSupportSurfaceDistance,
-            g_rockConfig.rockWeaponInteractionTouchRadius,
-            authoredSupportFingerLocalTransformMask,
-            authoredSupportTouchProbeDistance,
-            authoredSupportPalmWeaponLocal.x,
-            authoredSupportPalmWeaponLocal.y,
-            authoredSupportPalmWeaponLocal.z,
-            authoredSupportProximity.liveTouchProbeWeaponLocal.x,
-            authoredSupportProximity.liveTouchProbeWeaponLocal.y,
-            authoredSupportProximity.liveTouchProbeWeaponLocal.z,
-            authoredSupportProximity.frameAgreementErrorGameUnits,
-            static_cast<int>(grip.partKind),
-            static_cast<int>(grip.gripPose),
             _activeWeaponGenerationKey);
         return selectionDecision.selection;
     }
