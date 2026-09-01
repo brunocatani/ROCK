@@ -17,6 +17,9 @@ namespace rock::frik_weapon_offset_cache
         None,
         EmbeddedResource,
         CustomFile,
+        // Live equipped Weapon-node local. It is hFRIK's carrier only while
+        // hFRIK drives that node; under ROCK weapon authority it is ROCK's
+        // own solve and must not be consumed as a native carrier.
         LiveWeaponNodeFallback,
     };
 

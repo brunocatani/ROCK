@@ -53,6 +53,9 @@ namespace rock::loose_weapon_grip_zone
 
         std::size_t handIndex(const bool isLeft) { return isLeft ? 0u : 1u; }
 
+        constexpr const char* kLiveWeaponNodeCarrierRejected =
+            "liveWeaponNodeLocalIsNotNativeCarrier";
+
         bool isFinitePoint(const RE::NiPoint3& point)
         {
             return vector_math::hasFiniteComponents(point);
@@ -194,6 +197,22 @@ namespace rock::loose_weapon_grip_zone
                         outFailureReason = frikLookup.reason;
                         return false;
                     }
+                    /*
+                     * The live Weapon-node local is hFRIK's carrier only while
+                     * hFRIK drives that node. Under ROCK's carry (part carry,
+                     * support lock, left-firing carry) it is ROCK's own solve
+                     * and moves with the carry hands; consuming it rotated
+                     * every loose grab of a weapon without an hFRIK offset
+                     * while the equipped weapon was carried. hFRIK carries
+                     * such a weapon on the animation's own local, which the
+                     * authored relation already encodes, so the full authored
+                     * hold below is the exact native placement for it.
+                     */
+                    if (frikLookup.source ==
+                        frik_weapon_offset_cache::OffsetSource::LiveWeaponNodeFallback) {
+                        outFailureReason = kLiveWeaponNodeCarrierRejected;
+                        return false;
+                    }
 
                     outAttachedRootWorld = transform_math::composeTransforms(
                         canonicalHandWorld,
@@ -254,12 +273,17 @@ namespace rock::loose_weapon_grip_zone
                     canonicalPlacementHandWeaponLocal =
                         canonicalHandWeaponLocal;
                     canonicalPlacementResolved = true;
-                    state.placementReason =
+                    const bool noFrikOffset =
+                        carrierFailureReason == kLiveWeaponNodeCarrierRejected;
+                    state.placementReason = noFrikOffset ?
+                        "authoredFullRigidNoFrikOffset" :
                         "authoredFullRigidFallback";
-                    ROCK_LOG_SAMPLE_WARN(Hand, 1000,
-                        "Authored loose weapon position-only carrier unavailable formID={:08X} source={}; using full authored hold",
-                        weapon->formID,
-                        carrierFailureReason);
+                    if (!noFrikOffset) {
+                        ROCK_LOG_SAMPLE_WARN(Hand, 1000,
+                            "Authored loose weapon position-only carrier unavailable formID={:08X} source={}; using full authored hold",
+                            weapon->formID,
+                            carrierFailureReason);
+                    }
                 }
             } else if (
                 selectedSource == weapon_grip_authority_policy::Source::FrikCustomFile ||
