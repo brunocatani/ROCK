@@ -1349,8 +1349,8 @@ namespace rock
 
         // Hand frame composed from the wand and the cached natural
         // bone-in-wand map (orientation only). Transient-free input for the
-        // takeover seat diagnostic (former wand conjugation); the seat itself
-        // reads no hand frame.
+        // equip-takeover seat conjugation; the damped weapon-offset drivers
+        // ride the draw/equip animation and must not feed it.
         bool tryResolveNaturalWandHandOrientationFrame(
             bool isLeft,
             RE::NiTransform& outHandWorld) const;
