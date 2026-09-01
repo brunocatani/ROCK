@@ -278,19 +278,19 @@ namespace rock
             WeaponCollisionProfileEvidenceDescriptor& outDescriptor,
             RE::NiAVObject*& outSourceNode) const;
 
-        std::uint64_t getCurrentEquippedWeaponGenerationKey() const { return _cachedWeaponKey; }
+        std::uint64_t getCurrentEquippedWeaponGenerationKey() const { return _identity.cachedWeaponKey; }
 
-        std::uint64_t getCurrentEquippedWeaponIdentityKey() const { return _observedEquippedWeaponIdentityKey; }
+        std::uint64_t getCurrentEquippedWeaponIdentityKey() const { return _identity.observedIdentityKey; }
 
-        std::uint64_t getCurrentEquippedWeaponOwnershipKey() const { return _observedEquippedWeaponOwnershipKey; }
+        std::uint64_t getCurrentEquippedWeaponOwnershipKey() const { return _identity.observedOwnershipKey; }
 
-        std::uint64_t getCurrentEquippedWeaponInstanceContentKey() const { return _observedEquippedWeaponInstanceContentKey; }
+        std::uint64_t getCurrentEquippedWeaponInstanceContentKey() const { return _identity.observedInstanceContentKey; }
 
-        std::uint32_t getCurrentObservedEquippedWeaponFormID() const { return _observedEquippedWeaponFormID; }
+        std::uint32_t getCurrentObservedEquippedWeaponFormID() const { return _identity.observedFormID; }
 
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity getEquippedWeaponClassification() const;
 
-        std::uint64_t getCurrentWeaponGenerationKey() const { return _weaponBodySetKeyAtomic.load(std::memory_order_acquire); }
+        std::uint64_t getCurrentWeaponGenerationKey() const { return _published.setKey.load(std::memory_order_acquire); }
 
         bool tryFindInteractionContactNearPoint(
             const RE::NiAVObject* weaponNode,
@@ -620,107 +620,181 @@ namespace rock
 
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
 
-        WeaponBodyBank _weaponBodies{};
-        WeaponBodyBank _weaponReplacementBodies{};
-        std::array<RetiredWeaponBodyPayload, MAX_RETIRED_GENERATED_WEAPON_BODY_PAYLOADS> _retiredWeaponBodyPayloads{};
-        std::uint32_t _retiredWeaponBodyPayloadCount{ 0 };
-        mutable std::mutex _retiredWeaponBodyPayloadMutex;
-        bool _usingReplacementWeaponBodies{ false };
-        PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
-        std::uint64_t _cachedWeaponKey{ 0 };
-        std::uint64_t _cachedWeaponVisualKey{ 0 };
-        std::uint64_t _cachedWeaponIdentityKey{ 0 };
-        // Body-associated ownership witnesses. Unlike the observed fields
-        // below, these remain bound to the currently published body set.
-        std::uint64_t _cachedWeaponOwnershipKey{ 0 };
-        std::uint32_t _cachedWeaponFormID{ 0 };
-        // Available before generated bodies publish; the cached identity above
-        // remains body-associated for replacement safety.
-        std::uint64_t _observedEquippedWeaponIdentityKey{ 0 };
-        // Instance-bound authority witness; never substitute this for a
-        // collision generation or content-equivalence key.
-        std::uint64_t _observedEquippedWeaponOwnershipKey{ 0 };
-        // Form paired with the observed identity/ownership witnesses above.
-        // Consumers use it to reject the one-frame old-generation/new-form
-        // overlap during direct Pip-Boy equipment changes.
-        std::uint32_t _observedEquippedWeaponFormID{ 0 };
-        // Deterministic equipped-object-instance content witness. This excludes
-        // transient engine pointer identity and is safe to combine with a
-        // stable form identity for persisted authored-pose lookups.
-        std::uint64_t _observedEquippedWeaponInstanceContentKey{ 0 };
-        std::uint64_t _cachedWeaponBodySetKey{ 0 };
-        std::uint64_t _weaponBodySetEpoch{ 0 };
-        weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};
-        GeneratedSourceCache _generatedSourceCache{};
-        std::uint64_t _detachedSourceExclusionEquippedKey{ 0 };
-        std::unordered_set<std::uintptr_t> _detachedSourceExclusionGroups;
-        GeneratedRecaptureDiagnostic _generatedRecaptureDiagnostic{};
-        PendingGeneratedWeaponBuild _pendingGeneratedWeaponBuild{};
-        RE::hknpWorld* _cachedWorld{ nullptr };
-        void* _cachedBhkWorld{ nullptr };
-        std::atomic<bool> _driveRebuildRequested{ false };
-        std::atomic<bool> _workbenchExitRebuildRequested{ false };
-        std::atomic<std::uint32_t> _driveFailureCount{ 0 };
-
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyIdsAtomic;
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyPartKindsAtomic;
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyReloadRolesAtomic;
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySupportRolesAtomic;
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySocketRolesAtomic;
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyActionRolesAtomic;
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyGripPosesAtomic;
-        std::array<std::atomic<std::uintptr_t>, MAX_WEAPON_BODIES> _weaponBodyInteractionRootsAtomic;
-        std::array<std::atomic<std::uintptr_t>, MAX_WEAPON_BODIES> _weaponBodySourceRootsAtomic;
-        std::array<std::atomic<std::uint64_t>, MAX_WEAPON_BODIES> _weaponBodyGenerationKeysAtomic;
-        std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityHavokXAtomic;
-        std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityHavokYAtomic;
-        std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityHavokZAtomic;
-        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityValidAtomic;
-        std::atomic<std::uint32_t> _weaponBodyCountAtomic{ 0 };
-        std::atomic<std::uint64_t> _weaponBodySetKeyAtomic{ 0 };
-        std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };
-        mutable std::mutex _weaponEvidenceSnapshotMutex;
-        std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
-        WeaponEmitterSnapshot _weaponEmitterSnapshot{};
-        NativeScopeSightAnchorSnapshot _nativeScopeSightAnchorSnapshot{};
-        WeaponCompositionSnapshot _weaponCompositionSnapshot{};
-        std::uint64_t _weaponCompositionPublicationSequence{ 0 };
-        // Debug OMOD evidence dump fires once per weapon generation key.
-        std::uint64_t _lastOmodDumpGenerationKey{ 0 };
         /*
-         * Functional OMOD reconciliation runs before initial collider capture
-         * and once after publication. Coverage diagnostics may repeat on their
+         * ---- Partitioned member state ----
+         * Each collision/ module owns one state struct below;
+         * WeaponIdentityState is the shared identity core. The Havok world
+         * binding and the physics-callback gate remain direct members.
+         */
+
+        /*
+         * Shared identity core: which equipped weapon the published body set
+         * belongs to, and which equipped weapon is currently observed on the
+         * player. The cached fields are body-associated ownership witnesses -
+         * unlike the observed fields, they remain bound to the currently
+         * published body set (replacement safety).
+         */
+        struct WeaponIdentityState
+        {
+            std::uint64_t cachedWeaponKey{ 0 };
+            std::uint64_t cachedVisualKey{ 0 };
+            std::uint64_t cachedIdentityKey{ 0 };
+            std::uint64_t cachedOwnershipKey{ 0 };
+            std::uint32_t cachedFormID{ 0 };
+            std::uint64_t cachedBodySetKey{ 0 };
+            std::uint64_t bodySetEpoch{ 0 };
+            // Available before generated bodies publish; the cached identity
+            // above remains body-associated for replacement safety.
+            std::uint64_t observedIdentityKey{ 0 };
+            // Instance-bound authority witness; never substitute this for a
+            // collision generation or content-equivalence key.
+            std::uint64_t observedOwnershipKey{ 0 };
+            // Form paired with the observed identity/ownership witnesses
+            // above. Consumers use it to reject the one-frame
+            // old-generation/new-form overlap during direct Pip-Boy
+            // equipment changes.
+            std::uint32_t observedFormID{ 0 };
+            // Deterministic equipped-object-instance content witness. This
+            // excludes transient engine pointer identity and is safe to
+            // combine with a stable form identity for persisted
+            // authored-pose lookups.
+            std::uint64_t observedInstanceContentKey{ 0 };
+        };
+
+        // State owned by the WeaponCollisionBodies module: the live and
+        // replacement body banks and the retired-payload holding area.
+        struct WeaponBodyBankState
+        {
+            WeaponBodyBank bank{};
+            WeaponBodyBank replacementBank{};
+            bool usingReplacementBank{ false };
+            std::array<RetiredWeaponBodyPayload, MAX_RETIRED_GENERATED_WEAPON_BODY_PAYLOADS> retiredPayloads{};
+            std::uint32_t retiredPayloadCount{ 0 };
+            mutable std::mutex retiredPayloadMutex;
+        };
+
+        /*
+         * Lock-free body-set publication written by the bodies module and
+         * read by the queries module (including off-thread readers). Every
+         * field is atomic; `version` is the odd/even publication guard.
+         * The arrays are deliberately left without initializers, exactly as
+         * before the partition: `count` and `version` gate every read.
+         */
+        struct AtomicBodyPublicationState
+        {
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> ids;
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> partKinds;
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> reloadRoles;
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> supportRoles;
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> socketRoles;
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> actionRoles;
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> gripPoses;
+            std::array<std::atomic<std::uintptr_t>, MAX_WEAPON_BODIES> interactionRoots;
+            std::array<std::atomic<std::uintptr_t>, MAX_WEAPON_BODIES> sourceRoots;
+            std::array<std::atomic<std::uint64_t>, MAX_WEAPON_BODIES> generationKeys;
+            std::array<std::atomic<float>, MAX_WEAPON_BODIES> sampledVelocityHavokX;
+            std::array<std::atomic<float>, MAX_WEAPON_BODIES> sampledVelocityHavokY;
+            std::array<std::atomic<float>, MAX_WEAPON_BODIES> sampledVelocityHavokZ;
+            std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> sampledVelocityValid;
+            std::atomic<std::uint32_t> count{ 0 };
+            std::atomic<std::uint64_t> setKey{ 0 };
+            std::atomic<std::uint64_t> version{ 0 };
+        };
+
+        // Read-side evidence snapshots published by the bodies module and
+        // served by the queries module under `mutex`.
+        struct EvidenceSnapshotState
+        {
+            mutable std::mutex mutex;
+            std::vector<WeaponCollisionProfileEvidenceDescriptor> profileDescriptors;
+            WeaponEmitterSnapshot emitters{};
+            NativeScopeSightAnchorSnapshot sightAnchor{};
+            WeaponCompositionSnapshot composition{};
+            std::uint64_t compositionPublicationSequence{ 0 };
+        };
+
+        // State owned by the GeneratedWeaponSources module: the visual
+        // source cache, the incremental pending build, visual-stability
+        // gating, retention across visual-source misses, and detached-source
+        // exclusion.
+        struct GeneratedSourceState
+        {
+            GeneratedSourceCache cache{};
+            weapon_generated_source_completeness_policy::GeneratedSourceCompleteness cachedCompleteness{};
+            PendingGeneratedWeaponBuild pendingBuild{};
+            std::uint64_t pendingVisualRebuildKey{ 0 };
+            std::uint64_t pendingVisualWitnessKey{ 0 };
+            std::size_t pendingVisualVisibleTriShapeCount{ 0 };
+            // Elapsed time the visual witness has stayed identical (seconds).
+            float pendingVisualStableSeconds{ 0.0f };
+            std::uint64_t visualUnavailableRetainIdentityKey{ 0 };
+            std::uintptr_t visualUnavailableRetainRoot{ 0 };
+            // Elapsed time the current bodies were retained across a visual
+            // source miss (seconds).
+            float visualUnavailableRetainSeconds{ 0.0f };
+            std::uint64_t detachedExclusionEquippedKey{ 0 };
+            std::unordered_set<std::uintptr_t> detachedExclusionGroups;
+        };
+
+        /*
+         * State owned by the WeaponOmodReconciliation module. Functional
+         * OMOD reconciliation runs before initial collider capture and once
+         * after publication. Coverage diagnostics may repeat on their
          * configured interval without owning self-heal scheduling.
          */
-        std::uint64_t _omodReconciliationBodySetKey{ 0 };
-        int _omodReconciliationFrameCounter{ 0 };
-        std::uint32_t _omodReconciliationRunIndex{ 0 };
-        // Cache only a non-mutating pre-build pass for an exact equipped
-        // identity and assembled root.
-        std::uint64_t _omodPrebuildReconciliationEquippedKey{ 0 };
-        RE::NiAVObject* _omodPrebuildReconciliationRoot{ nullptr };
-        /*
-         * Self-heal attempts are keyed by (weapon instance node address ^
-         * OMOD formID): the same assembled tree is never retried (a failed or
-         * name-unmatchable heal must not stack duplicate geometry across
-         * audits), while an engine reassembly produces a new instance address
-         * and legitimately re-opens healing.
-         */
-        std::unordered_set<std::uint64_t> _omodSelfHealAttempted;
-        int _posLogCounter{ 0 };
+        struct OmodReconciliationState
+        {
+            std::uint64_t reconciledBodySetKey{ 0 };
+            int frameCounter{ 0 };
+            std::uint32_t runIndex{ 0 };
+            // Cache only a non-mutating pre-build pass for an exact equipped
+            // identity and assembled root.
+            std::uint64_t prebuildEquippedKey{ 0 };
+            RE::NiAVObject* prebuildRoot{ nullptr };
+            /*
+             * Self-heal attempts are keyed by (weapon instance node address ^
+             * OMOD formID): the same assembled tree is never retried (a
+             * failed or name-unmatchable heal must not stack duplicate
+             * geometry across audits), while an engine reassembly produces a
+             * new instance address and legitimately re-opens healing.
+             */
+            std::unordered_set<std::uint64_t> selfHealAttempted;
+        };
 
-        std::uint64_t _pendingWeaponVisualRebuildKey{ 0 };
-        std::uint64_t _pendingWeaponVisualWitnessKey{ 0 };
-        std::size_t _pendingWeaponVisualVisibleTriShapeCount{ 0 };
-        // Elapsed time the visual witness has stayed identical (seconds).
-        float _pendingWeaponVisualStableSeconds{ 0.0f };
-        std::uint64_t _visualSourceUnavailableRetainIdentityKey{ 0 };
-        std::uintptr_t _visualSourceUnavailableRetainRoot{ 0 };
-        // Elapsed time the current bodies were retained across a visual
-        // source miss (seconds).
-        float _visualSourceUnavailableRetainSeconds{ 0.0f };
-        int _weaponAnimNodeDumpFrameCounter{ 0 };
-        std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
+        // Cross-thread rebuild requests and drive-failure accounting
+        // consumed by the update module.
+        struct DriveControlState
+        {
+            std::atomic<bool> rebuildRequested{ false };
+            std::atomic<bool> workbenchExitRebuildRequested{ false };
+            std::atomic<std::uint32_t> failureCount{ 0 };
+        };
+
+        // State owned by the collision diagnostics TUs
+        // (WeaponCollisionDiagnostics and WeaponCollisionOmodDiagnostics).
+        struct CollisionDiagnosticsState
+        {
+            GeneratedRecaptureDiagnostic generatedRecapture{};
+            int animNodeDumpFrameCounter{ 0 };
+            std::uint64_t lastAnimNodeDumpKey{ 0 };
+            // Debug OMOD evidence dump fires once per weapon generation key.
+            std::uint64_t lastOmodDumpGenerationKey{ 0 };
+        };
+
+        WeaponIdentityState _identity{};
+        WeaponBodyBankState _bodies{};
+        // Default-initialized on purpose; see the struct comment.
+        AtomicBodyPublicationState _published;
+        EvidenceSnapshotState _evidence;
+        GeneratedSourceState _sources{};
+        OmodReconciliationState _omod{};
+        DriveControlState _drive{};
+        CollisionDiagnosticsState _diagnostics{};
+
+        // ---- Shared direct members ----
+        PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
+        RE::hknpWorld* _cachedWorld{ nullptr };
+        void* _cachedBhkWorld{ nullptr };
 
     };
 

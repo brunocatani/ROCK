@@ -368,35 +368,35 @@ namespace rock
         }
 
         for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
             if ((startVersion & 1u) != 0) {
                 continue;
             }
 
             WeaponInteractionContact candidate{};
-            const std::uint32_t count = (std::min)(_weaponBodyCountAtomic.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
+            const std::uint32_t count = (std::min)(_published.count.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
             bool found = false;
             for (std::uint32_t i = 0; i < count; ++i) {
-                if (_weaponBodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
+                if (_published.ids[i].load(std::memory_order_acquire) != bodyId) {
                     continue;
                 }
 
                 candidate.valid = true;
                 candidate.bodyId = bodyId;
-                candidate.partKind = static_cast<WeaponPartKind>(_weaponBodyPartKindsAtomic[i].load(std::memory_order_acquire));
-                candidate.reloadRole = static_cast<WeaponReloadRole>(_weaponBodyReloadRolesAtomic[i].load(std::memory_order_acquire));
-                candidate.supportGripRole = static_cast<WeaponSupportGripRole>(_weaponBodySupportRolesAtomic[i].load(std::memory_order_acquire));
-                candidate.socketRole = static_cast<WeaponSocketRole>(_weaponBodySocketRolesAtomic[i].load(std::memory_order_acquire));
-                candidate.actionRole = static_cast<WeaponActionRole>(_weaponBodyActionRolesAtomic[i].load(std::memory_order_acquire));
-                candidate.fallbackGripPose = static_cast<WeaponGripPoseId>(_weaponBodyGripPosesAtomic[i].load(std::memory_order_acquire));
-                candidate.interactionRoot = reinterpret_cast<RE::NiAVObject*>(_weaponBodyInteractionRootsAtomic[i].load(std::memory_order_acquire));
-                candidate.sourceRoot = reinterpret_cast<RE::NiAVObject*>(_weaponBodySourceRootsAtomic[i].load(std::memory_order_acquire));
-                candidate.weaponGenerationKey = _weaponBodyGenerationKeysAtomic[i].load(std::memory_order_acquire);
+                candidate.partKind = static_cast<WeaponPartKind>(_published.partKinds[i].load(std::memory_order_acquire));
+                candidate.reloadRole = static_cast<WeaponReloadRole>(_published.reloadRoles[i].load(std::memory_order_acquire));
+                candidate.supportGripRole = static_cast<WeaponSupportGripRole>(_published.supportRoles[i].load(std::memory_order_acquire));
+                candidate.socketRole = static_cast<WeaponSocketRole>(_published.socketRoles[i].load(std::memory_order_acquire));
+                candidate.actionRole = static_cast<WeaponActionRole>(_published.actionRoles[i].load(std::memory_order_acquire));
+                candidate.fallbackGripPose = static_cast<WeaponGripPoseId>(_published.gripPoses[i].load(std::memory_order_acquire));
+                candidate.interactionRoot = reinterpret_cast<RE::NiAVObject*>(_published.interactionRoots[i].load(std::memory_order_acquire));
+                candidate.sourceRoot = reinterpret_cast<RE::NiAVObject*>(_published.sourceRoots[i].load(std::memory_order_acquire));
+                candidate.weaponGenerationKey = _published.generationKeys[i].load(std::memory_order_acquire);
                 found = true;
                 break;
             }
 
-            const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
                 if (found) {
                     outContact = candidate;
@@ -421,7 +421,7 @@ namespace rock
         }
 
         for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
             if ((startVersion & 1u) != 0) {
                 continue;
             }
@@ -430,21 +430,21 @@ namespace rock
             float vy = 0.0f;
             float vz = 0.0f;
             bool found = false;
-            const std::uint32_t count = (std::min)(_weaponBodyCountAtomic.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
+            const std::uint32_t count = (std::min)(_published.count.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
             for (std::uint32_t i = 0; i < count; ++i) {
-                if (_weaponBodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId ||
-                    _weaponBodySampledVelocityValidAtomic[i].load(std::memory_order_acquire) == 0) {
+                if (_published.ids[i].load(std::memory_order_acquire) != bodyId ||
+                    _published.sampledVelocityValid[i].load(std::memory_order_acquire) == 0) {
                     continue;
                 }
 
-                vx = _weaponBodySampledVelocityHavokXAtomic[i].load(std::memory_order_acquire);
-                vy = _weaponBodySampledVelocityHavokYAtomic[i].load(std::memory_order_acquire);
-                vz = _weaponBodySampledVelocityHavokZAtomic[i].load(std::memory_order_acquire);
+                vx = _published.sampledVelocityHavokX[i].load(std::memory_order_acquire);
+                vy = _published.sampledVelocityHavokY[i].load(std::memory_order_acquire);
+                vz = _published.sampledVelocityHavokZ[i].load(std::memory_order_acquire);
                 found = true;
                 break;
             }
 
-            const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion != endVersion || (endVersion & 1u) != 0) {
                 continue;
             }
@@ -832,8 +832,8 @@ namespace rock
          */
         const auto omodByAttachPointFormId =
             readEquippedOmodsByAttachPointFormId(&outComposition);
-        outComposition.weaponGenerationKey = _cachedWeaponBodySetKey;
-        outComposition.weaponFormId = _cachedWeaponFormID;
+        outComposition.weaponGenerationKey = _identity.cachedBodySetKey;
+        outComposition.weaponFormId = _identity.cachedFormID;
 
         auto copyLocalPoints = [](const std::vector<RE::NiPoint3>& points) {
             std::vector<WeaponEvidencePoint3> result;
@@ -854,7 +854,7 @@ namespace rock
             WeaponCollisionProfileEvidenceDescriptor descriptor{};
             descriptor.valid = true;
             descriptor.bodyId = instance.body.getBodyId().value;
-            descriptor.weaponGenerationKey = _cachedWeaponBodySetKey;
+            descriptor.weaponGenerationKey = _identity.cachedBodySetKey;
             descriptor.sourceRootAddress = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
             descriptor.geometryRootAddress = reinterpret_cast<std::uintptr_t>(interactionRoot);
             descriptor.sourceRootName = instance.sourceRootName;
@@ -945,7 +945,7 @@ namespace rock
     void WeaponCollision::updateWeaponEmitterSnapshot(RE::NiAVObject* weaponNode, std::uint64_t equippedWeaponKey)
     {
         const std::uint64_t weaponGenerationKey = getCurrentWeaponGenerationKey();
-        if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0 || _cachedWeaponKey != equippedWeaponKey) {
+        if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0 || _identity.cachedWeaponKey != equippedWeaponKey) {
             clearWeaponEmitterSnapshot();
             return;
         }
@@ -953,8 +953,8 @@ namespace rock
         const std::uint64_t rootSetKey = makeWeaponEmitterRootSetKey(weaponNode);
         WeaponEmitterSnapshot snapshot{};
         {
-            std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-            snapshot = _weaponEmitterSnapshot;
+            std::scoped_lock lock(_evidence.mutex);
+            snapshot = _evidence.emitters;
         }
 
         const bool discoveryRequired = snapshot.weaponGenerationKey != weaponGenerationKey ||
@@ -974,32 +974,32 @@ namespace rock
             });
         }
 
-        std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-        _weaponEmitterSnapshot = snapshot;
+        std::scoped_lock lock(_evidence.mutex);
+        _evidence.emitters = snapshot;
     }
 
     void WeaponCollision::clearWeaponEmitterSnapshot()
     {
-        std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-        _weaponEmitterSnapshot = {};
+        std::scoped_lock lock(_evidence.mutex);
+        _evidence.emitters = {};
     }
 
 
     std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::getProfileEvidenceDescriptors() const
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
             if ((startVersion & 1u) != 0) {
                 continue;
             }
 
             std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
             {
-                std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-                descriptors = _profileEvidenceSnapshot;
+                std::scoped_lock lock(_evidence.mutex);
+                descriptors = _evidence.profileDescriptors;
             }
 
-            const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
                 return descriptors;
             }
@@ -1010,25 +1010,25 @@ namespace rock
 
     WeaponEmitterSnapshot WeaponCollision::getWeaponEmitterSnapshot() const
     {
-        std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-        return _weaponEmitterSnapshot;
+        std::scoped_lock lock(_evidence.mutex);
+        return _evidence.emitters;
     }
 
     WeaponCollision::NativeScopeSightAnchorSnapshot WeaponCollision::getNativeScopeSightAnchorSnapshot() const
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
             if ((startVersion & 1u) != 0) {
                 continue;
             }
 
             NativeScopeSightAnchorSnapshot snapshot{};
             {
-                std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-                snapshot = _nativeScopeSightAnchorSnapshot;
+                std::scoped_lock lock(_evidence.mutex);
+                snapshot = _evidence.sightAnchor;
             }
 
-            const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
                 return snapshot;
             }
@@ -1042,17 +1042,17 @@ namespace rock
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
             const auto startVersion =
-                _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+                _published.version.load(std::memory_order_acquire);
             if ((startVersion & 1u) != 0) {
                 continue;
             }
             WeaponCompositionSnapshot snapshot{};
             {
-                std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-                snapshot = _weaponCompositionSnapshot;
+                std::scoped_lock lock(_evidence.mutex);
+                snapshot = _evidence.composition;
             }
             const auto endVersion =
-                _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+                _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
                 return snapshot;
             }

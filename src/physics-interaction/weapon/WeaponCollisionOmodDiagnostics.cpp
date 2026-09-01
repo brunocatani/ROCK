@@ -114,10 +114,10 @@ namespace rock
         if (!g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
             return;
         }
-        if (_cachedWeaponBodySetKey == 0 || _cachedWeaponBodySetKey == _lastOmodDumpGenerationKey) {
+        if (_identity.cachedBodySetKey == 0 || _identity.cachedBodySetKey == _diagnostics.lastOmodDumpGenerationKey) {
             return;
         }
-        _lastOmodDumpGenerationKey = _cachedWeaponBodySetKey;
+        _diagnostics.lastOmodDumpGenerationKey = _identity.cachedBodySetKey;
 
         auto* player = f4vr::getPlayer();
         auto* equipData = f4vr::getEquippedWeaponItem();
@@ -125,7 +125,7 @@ namespace rock
         auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
         ROCK_LOG_INFO(Weapon,
             "OMOD-DUMP begin generation={:016X} weapon={:08X} '{}'",
-            _cachedWeaponBodySetKey,
+            _identity.cachedBodySetKey,
             weaponForm ? weaponForm->formID : 0u,
             weaponForm ? RE::TESFullName::GetFullName(*weaponForm) : std::string_view{});
 

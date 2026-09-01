@@ -8,17 +8,17 @@ namespace rock
 
     WeaponCollision::WeaponBodyBank& WeaponCollision::activeWeaponBodies()
     {
-        return _usingReplacementWeaponBodies ? _weaponReplacementBodies : _weaponBodies;
+        return _bodies.usingReplacementBank ? _bodies.replacementBank : _bodies.bank;
     }
 
     const WeaponCollision::WeaponBodyBank& WeaponCollision::activeWeaponBodies() const
     {
-        return _usingReplacementWeaponBodies ? _weaponReplacementBodies : _weaponBodies;
+        return _bodies.usingReplacementBank ? _bodies.replacementBank : _bodies.bank;
     }
 
     WeaponCollision::WeaponBodyBank& WeaponCollision::inactiveWeaponBodies()
     {
-        return _usingReplacementWeaponBodies ? _weaponBodies : _weaponReplacementBodies;
+        return _bodies.usingReplacementBank ? _bodies.bank : _bodies.replacementBank;
     }
 
     bool WeaponCollision::bankHasWeaponBody(const WeaponBodyBank& bank)
@@ -95,21 +95,21 @@ namespace rock
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
         resetVisualSourceUnavailableRetention();
-        _detachedSourceExclusionEquippedKey = 0;
-        _detachedSourceExclusionGroups.clear();
-        _omodPrebuildReconciliationEquippedKey = 0;
-        _omodPrebuildReconciliationRoot = nullptr;
+        _sources.detachedExclusionEquippedKey = 0;
+        _sources.detachedExclusionGroups.clear();
+        _omod.prebuildEquippedKey = 0;
+        _omod.prebuildRoot = nullptr;
 
         ROCK_LOG_INFO(Weapon,
             "Retired generated weapon bodies before scene transition reason={} bodies={} cached(identity/ownership/form)=({:016X}/{:016X}/{:08X}) observed(identity/ownership/form)=({:016X}/{:016X}/{:08X})",
             reason ? reason : "unknown",
             retiredBodyCount,
-            _cachedWeaponIdentityKey,
-            _cachedWeaponOwnershipKey,
-            _cachedWeaponFormID,
-            _observedEquippedWeaponIdentityKey,
-            _observedEquippedWeaponOwnershipKey,
-            _observedEquippedWeaponFormID);
+            _identity.cachedIdentityKey,
+            _identity.cachedOwnershipKey,
+            _identity.cachedFormID,
+            _identity.observedIdentityKey,
+            _identity.observedOwnershipKey,
+            _identity.observedFormID);
         return true;
     }
 
@@ -120,7 +120,7 @@ namespace rock
 
     std::uint32_t WeaponCollision::getWeaponBodyCount() const
     {
-        return _weaponBodyCountAtomic.load(std::memory_order_acquire);
+        return _published.count.load(std::memory_order_acquire);
     }
 
     RE::hknpBodyId WeaponCollision::getWeaponBodyId() const
@@ -153,20 +153,20 @@ namespace rock
         snapshot.bodyIds.fill(INVALID_BODY_ID);
 
         for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t startVersion = _published.version.load(std::memory_order_acquire);
             if ((startVersion & 1u) != 0) {
                 continue;
             }
 
             WeaponBodySnapshot candidate{};
             candidate.bodyIds.fill(INVALID_BODY_ID);
-            candidate.generationKey = _weaponBodySetKeyAtomic.load(std::memory_order_acquire);
-            candidate.count = (std::min)(_weaponBodyCountAtomic.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
+            candidate.generationKey = _published.setKey.load(std::memory_order_acquire);
+            candidate.count = (std::min)(_published.count.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
             for (std::uint32_t i = 0; i < candidate.count; ++i) {
-                candidate.bodyIds[i] = _weaponBodyIdsAtomic[i].load(std::memory_order_acquire);
+                candidate.bodyIds[i] = _published.ids[i].load(std::memory_order_acquire);
             }
 
-            const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            const std::uint64_t endVersion = _published.version.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
                 return candidate;
             }
@@ -205,13 +205,13 @@ namespace rock
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
-        if (!bankHasWeaponBody(_weaponBodies) && !bankHasWeaponBody(_weaponReplacementBodies)) {
+        if (!bankHasWeaponBody(_bodies.bank) && !bankHasWeaponBody(_bodies.replacementBank)) {
             clearGeneratedSourceCompletenessTracking();
             clearPendingWeaponVisualRebuild();
             clearGeneratedSourceCache();
             clearPendingGeneratedWeaponBuild(world, false);
-            _driveRebuildRequested.store(false, std::memory_order_release);
-            _driveFailureCount.store(0, std::memory_order_release);
+            _drive.rebuildRequested.store(false, std::memory_order_release);
+            _drive.failureCount.store(0, std::memory_order_release);
             return;
         }
 
@@ -222,13 +222,13 @@ namespace rock
         const auto inactiveDestroyed = bankWeaponBodyCount(inactiveWeaponBodies());
         destroyWeaponBodyBank(activeWeaponBodies(), true);
         destroyWeaponBodyBank(inactiveWeaponBodies(), true);
-        _usingReplacementWeaponBodies = false;
+        _bodies.usingReplacementBank = false;
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
         clearPendingGeneratedWeaponBuild(world, false);
-        _driveRebuildRequested.store(false, std::memory_order_release);
-        _driveFailureCount.store(0, std::memory_order_release);
+        _drive.rebuildRequested.store(false, std::memory_order_release);
+        _drive.failureCount.store(0, std::memory_order_release);
 
         ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", activeDestroyed + inactiveDestroyed);
     }
@@ -245,24 +245,24 @@ namespace rock
             ROCK_LOG_DEBUG(Weapon, "Generated weapon collision scale invalidation had no active bodies");
         }
 
-        _cachedWeaponKey = 0;
-        _cachedWeaponVisualKey = 0;
-        _cachedWeaponIdentityKey = 0;
-        _cachedWeaponOwnershipKey = 0;
-        _cachedWeaponFormID = 0;
-        _observedEquippedWeaponIdentityKey = 0;
-        _observedEquippedWeaponOwnershipKey = 0;
-        _observedEquippedWeaponFormID = 0;
-        _observedEquippedWeaponInstanceContentKey = 0;
-        _omodPrebuildReconciliationEquippedKey = 0;
-        _omodPrebuildReconciliationRoot = nullptr;
+        _identity.cachedWeaponKey = 0;
+        _identity.cachedVisualKey = 0;
+        _identity.cachedIdentityKey = 0;
+        _identity.cachedOwnershipKey = 0;
+        _identity.cachedFormID = 0;
+        _identity.observedIdentityKey = 0;
+        _identity.observedOwnershipKey = 0;
+        _identity.observedFormID = 0;
+        _identity.observedInstanceContentKey = 0;
+        _omod.prebuildEquippedKey = 0;
+        _omod.prebuildRoot = nullptr;
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
         clearPendingGeneratedWeaponBuild(world, true);
         resetVisualSourceUnavailableRetention();
-        _driveRebuildRequested.store(false, std::memory_order_release);
-        _driveFailureCount.store(0, std::memory_order_release);
+        _drive.rebuildRequested.store(false, std::memory_order_release);
+        _drive.failureCount.store(0, std::memory_order_release);
     }
 
     void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
@@ -299,19 +299,19 @@ namespace rock
             return;
         }
 
-        std::scoped_lock lock(_retiredWeaponBodyPayloadMutex);
-        for (auto& retired : _retiredWeaponBodyPayloads) {
+        std::scoped_lock lock(_bodies.retiredPayloadMutex);
+        for (auto& retired : _bodies.retiredPayloads) {
             if (!retired.occupied()) {
                 retired.bodyPayload = payload;
                 retired.remainingPhysicsSteps = RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS;
                 retired.processLifetimeHold = false;
-                ++_retiredWeaponBodyPayloadCount;
+                ++_bodies.retiredPayloadCount;
                 ROCK_LOG_SAMPLE_DEBUG(Weapon,
                     1000,
                     "Generated weapon body {} payload retired for {} physics steps activeRetired={}",
                     payload.bodyId,
                     RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS,
-                    _retiredWeaponBodyPayloadCount);
+                    _bodies.retiredPayloadCount);
                 payload = {};
                 return;
             }
@@ -320,7 +320,7 @@ namespace rock
         BethesdaPhysicsBody::retainRetiredPayloadForProcessLifetime(
             payload,
             "weapon-body-queue",
-            _retiredWeaponBodyPayloads.size());
+            _bodies.retiredPayloads.size());
     }
 
     void WeaponCollision::setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled)
@@ -369,69 +369,69 @@ namespace rock
 
     void WeaponCollision::beginWeaponBodyPublication()
     {
-        const std::uint64_t version = _weaponBodyPublicationVersion.load(std::memory_order_relaxed);
-        _weaponBodyPublicationVersion.store((version & ~1ull) + 1ull, std::memory_order_release);
+        const std::uint64_t version = _published.version.load(std::memory_order_relaxed);
+        _published.version.store((version & ~1ull) + 1ull, std::memory_order_release);
     }
 
     void WeaponCollision::endWeaponBodyPublication()
     {
-        const std::uint64_t version = _weaponBodyPublicationVersion.load(std::memory_order_relaxed);
-        _weaponBodyPublicationVersion.store((version | 1ull) + 1ull, std::memory_order_release);
+        const std::uint64_t version = _published.version.load(std::memory_order_relaxed);
+        _published.version.store((version | 1ull) + 1ull, std::memory_order_release);
     }
 
     void WeaponCollision::clearAtomicBodyIds()
     {
         beginWeaponBodyPublication();
-        _weaponBodyCountAtomic.store(0, std::memory_order_release);
-        _weaponBodySetKeyAtomic.store(0, std::memory_order_release);
-        for (auto& id : _weaponBodyIdsAtomic) {
+        _published.count.store(0, std::memory_order_release);
+        _published.setKey.store(0, std::memory_order_release);
+        for (auto& id : _published.ids) {
             id.store(INVALID_BODY_ID, std::memory_order_release);
         }
-        for (auto& value : _weaponBodyPartKindsAtomic) {
+        for (auto& value : _published.partKinds) {
             value.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
         }
-        for (auto& value : _weaponBodyReloadRolesAtomic) {
+        for (auto& value : _published.reloadRoles) {
             value.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
         }
-        for (auto& value : _weaponBodySupportRolesAtomic) {
+        for (auto& value : _published.supportRoles) {
             value.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
         }
-        for (auto& value : _weaponBodySocketRolesAtomic) {
+        for (auto& value : _published.socketRoles) {
             value.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
         }
-        for (auto& value : _weaponBodyActionRolesAtomic) {
+        for (auto& value : _published.actionRoles) {
             value.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
         }
-        for (auto& value : _weaponBodyGripPosesAtomic) {
+        for (auto& value : _published.gripPoses) {
             value.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
         }
-        for (auto& value : _weaponBodyInteractionRootsAtomic) {
+        for (auto& value : _published.interactionRoots) {
             value.store(0, std::memory_order_release);
         }
-        for (auto& value : _weaponBodySourceRootsAtomic) {
+        for (auto& value : _published.sourceRoots) {
             value.store(0, std::memory_order_release);
         }
-        for (auto& value : _weaponBodyGenerationKeysAtomic) {
+        for (auto& value : _published.generationKeys) {
             value.store(0, std::memory_order_release);
         }
-        for (auto& value : _weaponBodySampledVelocityHavokXAtomic) {
+        for (auto& value : _published.sampledVelocityHavokX) {
             value.store(0.0f, std::memory_order_release);
         }
-        for (auto& value : _weaponBodySampledVelocityHavokYAtomic) {
+        for (auto& value : _published.sampledVelocityHavokY) {
             value.store(0.0f, std::memory_order_release);
         }
-        for (auto& value : _weaponBodySampledVelocityHavokZAtomic) {
+        for (auto& value : _published.sampledVelocityHavokZ) {
             value.store(0.0f, std::memory_order_release);
         }
-        for (auto& value : _weaponBodySampledVelocityValidAtomic) {
+        for (auto& value : _published.sampledVelocityValid) {
             value.store(0, std::memory_order_release);
         }
         {
-            std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-            _profileEvidenceSnapshot.clear();
-            _weaponEmitterSnapshot = {};
-            _nativeScopeSightAnchorSnapshot = {};
-            _weaponCompositionSnapshot = {};
+            std::scoped_lock lock(_evidence.mutex);
+            _evidence.profileDescriptors.clear();
+            _evidence.emitters = {};
+            _evidence.sightAnchor = {};
+            _evidence.composition = {};
         }
         endWeaponBodyPublication();
     }
@@ -448,12 +448,12 @@ namespace rock
             bank,
             weaponCompositionSnapshot);
         weaponCompositionSnapshot.publicationSequence =
-            ++_weaponCompositionPublicationSequence;
+            ++_evidence.compositionPublicationSequence;
         RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
         NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(
-            _cachedWeaponBodySetKey,
-            _cachedWeaponOwnershipKey,
-            _cachedWeaponFormID,
+            _identity.cachedBodySetKey,
+            _identity.cachedOwnershipKey,
+            _identity.cachedFormID,
             evidenceSnapshot);
         const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode);
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayValid = manualScopeTarget.overlayValid;
@@ -462,61 +462,61 @@ namespace rock
             manualScopeTarget.directTransitionRequired;
         std::uint32_t count = 0;
         beginWeaponBodyPublication();
-        _weaponBodyCountAtomic.store(0, std::memory_order_release);
-        for (auto& id : _weaponBodyIdsAtomic) {
+        _published.count.store(0, std::memory_order_release);
+        for (auto& id : _published.ids) {
             id.store(INVALID_BODY_ID, std::memory_order_release);
         }
-        for (auto& value : _weaponBodySampledVelocityValidAtomic) {
+        for (auto& value : _published.sampledVelocityValid) {
             value.store(0, std::memory_order_release);
         }
-        _weaponBodySetKeyAtomic.store(_cachedWeaponBodySetKey, std::memory_order_release);
+        _published.setKey.store(_identity.cachedBodySetKey, std::memory_order_release);
         {
-            std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
-            _profileEvidenceSnapshot = std::move(evidenceSnapshot);
-            _nativeScopeSightAnchorSnapshot = nativeScopeSightAnchorSnapshot;
-            _weaponCompositionSnapshot = weaponCompositionSnapshot;
+            std::scoped_lock lock(_evidence.mutex);
+            _evidence.profileDescriptors = std::move(evidenceSnapshot);
+            _evidence.sightAnchor = nativeScopeSightAnchorSnapshot;
+            _evidence.composition = weaponCompositionSnapshot;
         }
         for (auto& instance : bank) {
             if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {
                 instance.publicationIndex = count;
-                _weaponBodyPartKindsAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.partKind), std::memory_order_release);
-                _weaponBodyReloadRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.reloadRole), std::memory_order_release);
-                _weaponBodySupportRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.supportGripRole), std::memory_order_release);
-                _weaponBodySocketRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.socketRole), std::memory_order_release);
-                _weaponBodyActionRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.actionRole), std::memory_order_release);
-                _weaponBodyGripPosesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.fallbackGripPose), std::memory_order_release);
-                _weaponBodyInteractionRootsAtomic[count].store(reinterpret_cast<std::uintptr_t>(packageDriveNode), std::memory_order_release);
-                _weaponBodySourceRootsAtomic[count].store(reinterpret_cast<std::uintptr_t>(instance.sourceNode), std::memory_order_release);
-                _weaponBodyGenerationKeysAtomic[count].store(_cachedWeaponBodySetKey, std::memory_order_release);
-                _weaponBodyIdsAtomic[count].store(instance.body.getBodyId().value, std::memory_order_release);
+                _published.partKinds[count].store(static_cast<std::uint32_t>(instance.semantic.partKind), std::memory_order_release);
+                _published.reloadRoles[count].store(static_cast<std::uint32_t>(instance.semantic.reloadRole), std::memory_order_release);
+                _published.supportRoles[count].store(static_cast<std::uint32_t>(instance.semantic.supportGripRole), std::memory_order_release);
+                _published.socketRoles[count].store(static_cast<std::uint32_t>(instance.semantic.socketRole), std::memory_order_release);
+                _published.actionRoles[count].store(static_cast<std::uint32_t>(instance.semantic.actionRole), std::memory_order_release);
+                _published.gripPoses[count].store(static_cast<std::uint32_t>(instance.semantic.fallbackGripPose), std::memory_order_release);
+                _published.interactionRoots[count].store(reinterpret_cast<std::uintptr_t>(packageDriveNode), std::memory_order_release);
+                _published.sourceRoots[count].store(reinterpret_cast<std::uintptr_t>(instance.sourceNode), std::memory_order_release);
+                _published.generationKeys[count].store(_identity.cachedBodySetKey, std::memory_order_release);
+                _published.ids[count].store(instance.body.getBodyId().value, std::memory_order_release);
                 ++count;
             } else {
                 instance.publicationIndex = INVALID_BODY_ID;
             }
         }
-        _weaponBodyCountAtomic.store(count, std::memory_order_release);
+        _published.count.store(count, std::memory_order_release);
         endWeaponBodyPublication();
         dumpEquippedWeaponOmodEvidence(bank, packageDriveNode);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
     {
-        if (publicationIndex >= MAX_WEAPON_BODIES || publicationIndex >= _weaponBodyCountAtomic.load(std::memory_order_acquire)) {
+        if (publicationIndex >= MAX_WEAPON_BODIES || publicationIndex >= _published.count.load(std::memory_order_acquire)) {
             return;
         }
 
         if (!queueResult.sampledVelocityValid) {
-            _weaponBodySampledVelocityValidAtomic[publicationIndex].store(0, std::memory_order_release);
-            _weaponBodySampledVelocityHavokXAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _weaponBodySampledVelocityHavokYAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _weaponBodySampledVelocityHavokZAtomic[publicationIndex].store(0.0f, std::memory_order_release);
+            _published.sampledVelocityValid[publicationIndex].store(0, std::memory_order_release);
+            _published.sampledVelocityHavokX[publicationIndex].store(0.0f, std::memory_order_release);
+            _published.sampledVelocityHavokY[publicationIndex].store(0.0f, std::memory_order_release);
+            _published.sampledVelocityHavokZ[publicationIndex].store(0.0f, std::memory_order_release);
             return;
         }
 
-        _weaponBodySampledVelocityHavokXAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
-        _weaponBodySampledVelocityHavokYAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
-        _weaponBodySampledVelocityHavokZAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
-        _weaponBodySampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
+        _published.sampledVelocityHavokX[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
+        _published.sampledVelocityHavokY[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
+        _published.sampledVelocityHavokZ[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
+        _published.sampledVelocityValid[publicationIndex].store(1, std::memory_order_release);
     }
 
     void WeaponCollision::queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds)
@@ -537,8 +537,8 @@ namespace rock
             return;
         }
 
-        std::scoped_lock lock(_retiredWeaponBodyPayloadMutex);
-        for (auto& retired : _retiredWeaponBodyPayloads) {
+        std::scoped_lock lock(_bodies.retiredPayloadMutex);
+        for (auto& retired : _bodies.retiredPayloads) {
             if (!retired.occupied()) {
                 continue;
             }
@@ -567,14 +567,14 @@ namespace rock
                 continue;
             }
             retired = {};
-            if (_retiredWeaponBodyPayloadCount > 0) {
-                --_retiredWeaponBodyPayloadCount;
+            if (_bodies.retiredPayloadCount > 0) {
+                --_bodies.retiredPayloadCount;
             }
             ROCK_LOG_SAMPLE_DEBUG(Weapon,
                 1000,
                 "Retired generated weapon body {} transferred to collision-object quarantine activeRetired={}",
                 bodyId,
-                _retiredWeaponBodyPayloadCount);
+                _bodies.retiredPayloadCount);
         }
     }
 }

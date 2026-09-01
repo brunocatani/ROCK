@@ -9,32 +9,32 @@ namespace rock
         // Cache the Havok context for the generated weapon-collision lifetime.
         _cachedWorld = world;
         _cachedBhkWorld = bhkWorld;
-        _cachedWeaponKey = 0;
-        _cachedWeaponVisualKey = 0;
-        _cachedWeaponIdentityKey = 0;
-        _cachedWeaponOwnershipKey = 0;
-        _cachedWeaponFormID = 0;
-        _observedEquippedWeaponIdentityKey = 0;
-        _observedEquippedWeaponOwnershipKey = 0;
-        _observedEquippedWeaponFormID = 0;
-        _observedEquippedWeaponInstanceContentKey = 0;
-        _omodPrebuildReconciliationEquippedKey = 0;
-        _omodPrebuildReconciliationRoot = nullptr;
+        _identity.cachedWeaponKey = 0;
+        _identity.cachedVisualKey = 0;
+        _identity.cachedIdentityKey = 0;
+        _identity.cachedOwnershipKey = 0;
+        _identity.cachedFormID = 0;
+        _identity.observedIdentityKey = 0;
+        _identity.observedOwnershipKey = 0;
+        _identity.observedFormID = 0;
+        _identity.observedInstanceContentKey = 0;
+        _omod.prebuildEquippedKey = 0;
+        _omod.prebuildRoot = nullptr;
         resetWeaponBodySetGeneration();
-        _weaponBodySetEpoch = 0;
+        _identity.bodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
-        _detachedSourceExclusionEquippedKey = 0;
-        _detachedSourceExclusionGroups.clear();
-        _generatedRecaptureDiagnostic = {};
+        _sources.detachedExclusionEquippedKey = 0;
+        _sources.detachedExclusionGroups.clear();
+        _diagnostics.generatedRecapture = {};
         clearPendingGeneratedWeaponBuild(world, false);
-        _usingReplacementWeaponBodies = false;
-        _driveRebuildRequested.store(false, std::memory_order_release);
-        _workbenchExitRebuildRequested.store(false, std::memory_order_release);
-        _driveFailureCount.store(0, std::memory_order_release);
-        _weaponAnimNodeDumpFrameCounter = 0;
-        _lastWeaponAnimNodeDumpKey = 0;
+        _bodies.usingReplacementBank = false;
+        _drive.rebuildRequested.store(false, std::memory_order_release);
+        _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
+        _drive.failureCount.store(0, std::memory_order_release);
+        _diagnostics.animNodeDumpFrameCounter = 0;
+        _diagnostics.lastAnimNodeDumpKey = 0;
         clearAtomicBodyIds();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
@@ -47,34 +47,34 @@ namespace rock
             destroyWeaponBody(_cachedWorld);
         }
 
-        _cachedWeaponKey = 0;
-        _cachedWeaponVisualKey = 0;
-        _cachedWeaponIdentityKey = 0;
-        _cachedWeaponOwnershipKey = 0;
-        _cachedWeaponFormID = 0;
-        _observedEquippedWeaponIdentityKey = 0;
-        _observedEquippedWeaponOwnershipKey = 0;
-        _observedEquippedWeaponFormID = 0;
-        _observedEquippedWeaponInstanceContentKey = 0;
-        _omodPrebuildReconciliationEquippedKey = 0;
-        _omodPrebuildReconciliationRoot = nullptr;
+        _identity.cachedWeaponKey = 0;
+        _identity.cachedVisualKey = 0;
+        _identity.cachedIdentityKey = 0;
+        _identity.cachedOwnershipKey = 0;
+        _identity.cachedFormID = 0;
+        _identity.observedIdentityKey = 0;
+        _identity.observedOwnershipKey = 0;
+        _identity.observedFormID = 0;
+        _identity.observedInstanceContentKey = 0;
+        _omod.prebuildEquippedKey = 0;
+        _omod.prebuildRoot = nullptr;
         resetWeaponBodySetGeneration();
-        _weaponBodySetEpoch = 0;
+        _identity.bodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
-        _detachedSourceExclusionEquippedKey = 0;
-        _detachedSourceExclusionGroups.clear();
-        _generatedRecaptureDiagnostic = {};
+        _sources.detachedExclusionEquippedKey = 0;
+        _sources.detachedExclusionGroups.clear();
+        _diagnostics.generatedRecapture = {};
         clearPendingGeneratedWeaponBuild(_cachedWorld, true);
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
-        _usingReplacementWeaponBodies = false;
-        _driveRebuildRequested.store(false, std::memory_order_release);
-        _workbenchExitRebuildRequested.store(false, std::memory_order_release);
-        _driveFailureCount.store(0, std::memory_order_release);
-        _weaponAnimNodeDumpFrameCounter = 0;
-        _lastWeaponAnimNodeDumpKey = 0;
+        _bodies.usingReplacementBank = false;
+        _drive.rebuildRequested.store(false, std::memory_order_release);
+        _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
+        _drive.failureCount.store(0, std::memory_order_release);
+        _diagnostics.animNodeDumpFrameCounter = 0;
+        _diagnostics.lastAnimNodeDumpKey = 0;
         clearWeaponEmitterSnapshot();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
@@ -88,15 +88,15 @@ namespace rock
 
         clearAtomicBodyIds();
         resetWeaponBodySetGeneration();
-        for (auto& instance : _weaponBodies) {
+        for (auto& instance : _bodies.bank) {
             clearWeaponBodyInstance(instance, true);
         }
-        for (auto& instance : _weaponReplacementBodies) {
+        for (auto& instance : _bodies.replacementBank) {
             clearWeaponBodyInstance(instance, true);
         }
-        _pendingGeneratedWeaponBuild = {};
-        _generatedRecaptureDiagnostic = {};
-        _usingReplacementWeaponBodies = false;
+        _sources.pendingBuild = {};
+        _diagnostics.generatedRecapture = {};
+        _bodies.usingReplacementBank = false;
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         ROCK_LOG_INFO(Weapon, "Weapon collision wrappers abandoned after Havok world loss");
@@ -111,7 +111,7 @@ namespace rock
          * drawn weapon visual is available, so reload-null visuals cannot turn
          * this permission into a destroy/recreate cycle.
          */
-        _workbenchExitRebuildRequested.store(true, std::memory_order_release);
+        _drive.workbenchExitRebuildRequested.store(true, std::memory_order_release);
     }
 
     void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn)
@@ -119,26 +119,26 @@ namespace rock
         (void)dt;
 
         auto clearCurrentWeaponState = [&]() {
-            _cachedWeaponKey = 0;
-            _cachedWeaponVisualKey = 0;
-            _cachedWeaponIdentityKey = 0;
-            _cachedWeaponOwnershipKey = 0;
-            _cachedWeaponFormID = 0;
-            _observedEquippedWeaponIdentityKey = 0;
-            _observedEquippedWeaponOwnershipKey = 0;
-            _observedEquippedWeaponFormID = 0;
-            _observedEquippedWeaponInstanceContentKey = 0;
+            _identity.cachedWeaponKey = 0;
+            _identity.cachedVisualKey = 0;
+            _identity.cachedIdentityKey = 0;
+            _identity.cachedOwnershipKey = 0;
+            _identity.cachedFormID = 0;
+            _identity.observedIdentityKey = 0;
+            _identity.observedOwnershipKey = 0;
+            _identity.observedFormID = 0;
+            _identity.observedInstanceContentKey = 0;
             clearGeneratedSourceCompletenessTracking();
             clearPendingWeaponVisualRebuild();
             clearGeneratedSourceCache();
             clearPendingGeneratedWeaponBuild(world, true);
             resetVisualSourceUnavailableRetention();
             resetWeaponBodySetGeneration();
-            _driveRebuildRequested.store(false, std::memory_order_release);
-            _workbenchExitRebuildRequested.store(false, std::memory_order_release);
-            _driveFailureCount.store(0, std::memory_order_release);
-            _omodPrebuildReconciliationEquippedKey = 0;
-            _omodPrebuildReconciliationRoot = nullptr;
+            _drive.rebuildRequested.store(false, std::memory_order_release);
+            _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
+            _drive.failureCount.store(0, std::memory_order_release);
+            _omod.prebuildEquippedKey = 0;
+            _omod.prebuildRoot = nullptr;
             clearWeaponEmitterSnapshot();
         };
 
@@ -154,15 +154,15 @@ namespace rock
                 clearAtomicBodyIds();
             }
             _cachedWorld = world;
-            _detachedSourceExclusionEquippedKey = 0;
-            _detachedSourceExclusionGroups.clear();
-            _generatedRecaptureDiagnostic = {};
+            _sources.detachedExclusionEquippedKey = 0;
+            _sources.detachedExclusionGroups.clear();
+            _diagnostics.generatedRecapture = {};
             clearCurrentWeaponState();
         }
 
         if (!weaponDrawn) {
-            if (_generatedRecaptureDiagnostic.valid) {
-                _generatedRecaptureDiagnostic.sawUndrawnInterval = true;
+            if (_diagnostics.generatedRecapture.valid) {
+                _diagnostics.generatedRecapture.sawUndrawnInterval = true;
             }
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon, "Weapon no longer drawn - destroying generated weapon bodies");
@@ -186,18 +186,18 @@ namespace rock
             clearCurrentWeaponState();
             return;
         }
-        _observedEquippedWeaponIdentityKey = observedIdentityKey;
-        _observedEquippedWeaponOwnershipKey = observedOwnershipKey;
-        _observedEquippedWeaponFormID = observedFormID;
-        _observedEquippedWeaponInstanceContentKey = observedInstanceContentKey;
+        _identity.observedIdentityKey = observedIdentityKey;
+        _identity.observedOwnershipKey = observedOwnershipKey;
+        _identity.observedFormID = observedFormID;
+        _identity.observedInstanceContentKey = observedInstanceContentKey;
 
-        const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
+        const bool driveRequestedRebuild = _drive.rebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool workbenchExitRequested =
-            weaponNode != nullptr && _workbenchExitRebuildRequested.exchange(false, std::memory_order_acq_rel);
-        const bool keyChanged = observedKey != 0 && observedKey != _cachedWeaponKey;
-        const bool identityKeyChanged = observedIdentityKey != 0 && observedIdentityKey != _cachedWeaponIdentityKey;
+            weaponNode != nullptr && _drive.workbenchExitRebuildRequested.exchange(false, std::memory_order_acq_rel);
+        const bool keyChanged = observedKey != 0 && observedKey != _identity.cachedWeaponKey;
+        const bool identityKeyChanged = observedIdentityKey != 0 && observedIdentityKey != _identity.cachedIdentityKey;
         const bool ownershipKeyChanged =
-            _cachedWeaponOwnershipKey != 0 && observedOwnershipKey != _cachedWeaponOwnershipKey;
+            _identity.cachedOwnershipKey != 0 && observedOwnershipKey != _identity.cachedOwnershipKey;
         const bool hadPublishedWeaponBodies =
             getCurrentWeaponGenerationKey() != 0 &&
             getWeaponBodyCount() != 0 &&
@@ -231,7 +231,7 @@ namespace rock
             if (missingBodies) {
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildReasonMissingBodies);
             }
-            if (keyChanged && _cachedWeaponKey != 0) {
+            if (keyChanged && _identity.cachedWeaponKey != 0) {
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildReasonKeyChanged);
                 if (identityKeyChanged) {
                     performance_profiler::addCounter(performance_profiler::Counter::WeaponKeyChangeIdentityOnly);
@@ -245,17 +245,17 @@ namespace rock
         if (driveRequestedRebuild) {
             ROCK_LOG_WARN(Weapon,
                 "Generated weapon collision drive failure requested rebuild cachedKey={:016X} observedKey={:016X}",
-                _cachedWeaponKey,
+                _identity.cachedWeaponKey,
                 observedKey);
         }
         if (workbenchExitRequested) {
             ROCK_LOG_INFO(Weapon,
                 "Workbench exit requested generated weapon collision rebuild cachedKey={:016X} observedKey={:016X}",
-                _cachedWeaponKey,
+                _identity.cachedWeaponKey,
                 observedKey);
         }
 
-        if (_pendingGeneratedWeaponBuild.active) {
+        if (_sources.pendingBuild.active) {
             const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested || activeRootChanged ||
                 !pendingGeneratedWeaponBuildMatches(
                     observedKey,
@@ -265,9 +265,9 @@ namespace rock
             if (pendingInvalidated) {
                 ROCK_LOG_INFO(Weapon,
                     "Generated weapon staged create cancelled: pendingKey={:016X} observedKey={:016X} pendingVisual={:016X} driveRebuild={} workbenchExit={}",
-                    _pendingGeneratedWeaponBuild.equippedKey,
+                    _sources.pendingBuild.equippedKey,
                     observedKey,
-                    _pendingGeneratedWeaponBuild.visualKey,
+                    _sources.pendingBuild.visualKey,
                     driveRequestedRebuild ? "yes" : "no",
                     workbenchExitRequested ? "yes" : "no");
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildCanceled);
@@ -290,7 +290,7 @@ namespace rock
                 ROCK_LOG_SAMPLE_DEBUG(Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Weapon visual node absent for unchanged equipped identity - retaining generated weapon bodies key={:016X} bodies={}",
-                    _cachedWeaponKey,
+                    _identity.cachedWeaponKey,
                     getWeaponBodyCount());
                 clearPendingWeaponVisualRebuild();
                 resetVisualSourceUnavailableRetention();
@@ -300,7 +300,7 @@ namespace rock
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon,
                     "Weapon visual node absent while rebuild required - destroying generated weapon bodies cachedKey={:016X} observedKey={:016X} missingBodies={} driveRebuild={} identityChanged={}",
-                    _cachedWeaponKey,
+                    _identity.cachedWeaponKey,
                     observedKey,
                     missingBodies ? "yes" : "no",
                     driveRequestedRebuild ? "yes" : "no",
@@ -314,11 +314,11 @@ namespace rock
         if (rebuildRequired) {
             WeaponVisualKeyStats visualKeyStats{};
             const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, visualKeyStats);
-            const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _cachedWeaponVisualKey;
+            const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _identity.cachedVisualKey;
             const bool generationDrivenRebuild = keyChanged || missingBodies;
             const bool omodPrebuildReconciliationCurrent =
-                _omodPrebuildReconciliationEquippedKey == observedKey &&
-                _omodPrebuildReconciliationRoot == weaponNode;
+                _omod.prebuildEquippedKey == observedKey &&
+                _omod.prebuildRoot == weaponNode;
             if (generationDrivenRebuild &&
                 !omodPrebuildReconciliationCurrent) {
                 const auto reconciliation = maybeRunWeaponOmodReconciliation(weaponNode, observedKey, true);
@@ -338,8 +338,8 @@ namespace rock
                     // Cache only a non-mutating pass. A successful attachment
                     // must be followed by another pre-build pass so batches
                     // larger than the per-pass cap fully converge.
-                    _omodPrebuildReconciliationEquippedKey = observedKey;
-                    _omodPrebuildReconciliationRoot = weaponNode;
+                    _omod.prebuildEquippedKey = observedKey;
+                    _omod.prebuildRoot = weaponNode;
                 }
             }
             const float requiredStableSeconds = (std::max)(0.0f, g_rockConfig.rockWeaponCollisionVisualStabilizationSeconds);
@@ -349,10 +349,10 @@ namespace rock
 
             if (stabilizeVisualRebuild && !weaponVisualNodeVisible(weaponNode)) {
                 const bool newInvisibleDeferred =
-                    _pendingWeaponVisualRebuildKey != observedKey ||
-                    _pendingWeaponVisualWitnessKey != observedVisualKey ||
-                    _pendingWeaponVisualVisibleTriShapeCount != 0 ||
-                    _pendingWeaponVisualStableSeconds != 0.0f;
+                    _sources.pendingVisualRebuildKey != observedKey ||
+                    _sources.pendingVisualWitnessKey != observedVisualKey ||
+                    _sources.pendingVisualVisibleTriShapeCount != 0 ||
+                    _sources.pendingVisualStableSeconds != 0.0f;
                 /*
                  * Weapon mod swaps can expose a transient app-culled Weapon root
                  * while child TriShapes still look locally visible. Replacing the
@@ -360,17 +360,17 @@ namespace rock
                  * inventory, so keep the current bodies until the visual tree has
                  * presented a stable, visible witness.
                  */
-                _pendingWeaponVisualRebuildKey = observedKey;
-                _pendingWeaponVisualWitnessKey = observedVisualKey;
-                _pendingWeaponVisualVisibleTriShapeCount = 0;
-                _pendingWeaponVisualStableSeconds = 0.0f;
+                _sources.pendingVisualRebuildKey = observedKey;
+                _sources.pendingVisualWitnessKey = observedVisualKey;
+                _sources.pendingVisualVisibleTriShapeCount = 0;
+                _sources.pendingVisualStableSeconds = 0.0f;
                 if (newInvisibleDeferred) {
                     performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualRootDeferred);
                 }
                 ROCK_LOG_SAMPLE_INFO(Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Generated weapon collision rebuild deferred: visual root not ready cachedKey={:016X} observedKey={:016X} root='{}' flags=0x{:X} appCulled={} visibleTriShapes={} visualNodes={} invisibleNodes={} requiredStableSeconds={:.3f}",
-                    _cachedWeaponKey,
+                    _identity.cachedWeaponKey,
                     observedKey,
                     safeNodeName(weaponNode),
                     static_cast<std::uint32_t>(weaponNode->flags.flags),
@@ -387,29 +387,29 @@ namespace rock
                      * visible tree has stayed stable for the configured frames.
                      */
                     const bool samePendingVisual =
-                        _pendingWeaponVisualRebuildKey == observedKey &&
-                        _pendingWeaponVisualWitnessKey == observedVisualKey &&
-                        _pendingWeaponVisualVisibleTriShapeCount == visualKeyStats.visibleTriShapeCount;
+                        _sources.pendingVisualRebuildKey == observedKey &&
+                        _sources.pendingVisualWitnessKey == observedVisualKey &&
+                        _sources.pendingVisualVisibleTriShapeCount == visualKeyStats.visibleTriShapeCount;
 
-                    _pendingWeaponVisualRebuildKey = observedKey;
-                    _pendingWeaponVisualWitnessKey = observedVisualKey;
-                    _pendingWeaponVisualVisibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
+                    _sources.pendingVisualRebuildKey = observedKey;
+                    _sources.pendingVisualWitnessKey = observedVisualKey;
+                    _sources.pendingVisualVisibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
                     // Measured elapsed stability only: an unmeasurable frame
                     // holds the wait instead of advancing it.
-                    _pendingWeaponVisualStableSeconds = samePendingVisual ?
-                        _pendingWeaponVisualStableSeconds + measuredStabilizationDelta :
+                    _sources.pendingVisualStableSeconds = samePendingVisual ?
+                        _sources.pendingVisualStableSeconds + measuredStabilizationDelta :
                         measuredStabilizationDelta;
 
-                    if (_pendingWeaponVisualStableSeconds < requiredStableSeconds) {
+                    if (_sources.pendingVisualStableSeconds < requiredStableSeconds) {
                         if (!samePendingVisual) {
                             performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualStableWait);
                         }
                         ROCK_LOG_SAMPLE_INFO(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
                             "Generated weapon collision rebuild waiting for stable visual witness cachedKey={:016X} observedKey={:016X} stableSeconds={:.3f}/{:.3f} visualKey={:016X} visualRoots={} visibleTriShapes={} visualNodes={} invisibleNodes={}",
-                            _cachedWeaponKey,
+                            _identity.cachedWeaponKey,
                             observedKey,
-                            _pendingWeaponVisualStableSeconds,
+                            _sources.pendingVisualStableSeconds,
                             requiredStableSeconds,
                             observedVisualKey,
                             visualKeyStats.rootCount,
@@ -430,8 +430,8 @@ namespace rock
                         observedOwnershipKey,
                         observedVisualKey,
                         weaponNode)) {
-                    generatedSources = _generatedSourceCache.sources;
-                    generatedSummary = _generatedSourceCache.summary;
+                    generatedSources = _sources.cache.sources;
+                    generatedSummary = _sources.cache.summary;
                     generatedCount = generatedSources.size();
                     usedCachedSources = true;
                     ROCK_LOG_DEBUG(Weapon,
@@ -460,7 +460,7 @@ namespace rock
                     ROCK_LOG_SAMPLE_WARN(Weapon,
                         g_rockConfig.rockLogSampleMilliseconds,
                         "Generated weapon mesh collision unavailable from current visible geometry cachedKey={:016X} observedKey={:016X} visualRoots={} visualNodes={} visibleTriShapes={} sources={} missingGeometry={} invisibleNodes={}",
-                        _cachedWeaponKey,
+                        _identity.cachedWeaponKey,
                         observedKey,
                         visualKeyStats.rootCount,
                         visualKeyStats.nodeCount,
@@ -471,8 +471,8 @@ namespace rock
 
                     const bool sameEquippedIdentity =
                         observedIdentityKey != 0 &&
-                        _cachedWeaponIdentityKey != 0 &&
-                        observedIdentityKey == _cachedWeaponIdentityKey &&
+                        _identity.cachedIdentityKey != 0 &&
+                        observedIdentityKey == _identity.cachedIdentityKey &&
                         !identityKeyChanged;
                     RE::NiAVObject* retainedPackageRoot = resolvePackageDriveNode(activeWeaponBodies(), nullptr);
                     const bool retainedPackageRootStillCurrent = retainedPackageRoot && retainedPackageRoot == weaponNode;
@@ -497,11 +497,11 @@ namespace rock
                         ROCK_LOG_SAMPLE_INFO(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
                             "Generated weapon mesh collision unavailable for same equipped identity - retaining current bodies cachedKey={:016X} observedKey={:016X} visualKey={:016X} bodies={} retainSeconds={:.3f}/{:.3f}",
-                            _cachedWeaponKey,
+                            _identity.cachedWeaponKey,
                             observedKey,
                             observedVisualKey,
                             getWeaponBodyCount(),
-                            _visualSourceUnavailableRetainSeconds,
+                            _sources.visualUnavailableRetainSeconds,
                             visualSourceMissRetainSecondsLimit);
                         clearPendingGeneratedWeaponBuild(world, true);
                         clearPendingWeaponVisualRebuild();
@@ -512,10 +512,10 @@ namespace rock
                         ROCK_LOG_SAMPLE_WARN(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
                             "Generated weapon mesh collision same-identity retain window expired cachedKey={:016X} observedKey={:016X} visualKey={:016X} retainSeconds={:.3f} limit={:.3f} - destroying stale bodies",
-                            _cachedWeaponKey,
+                            _identity.cachedWeaponKey,
                             observedKey,
                             observedVisualKey,
-                            _visualSourceUnavailableRetainSeconds,
+                            _sources.visualUnavailableRetainSeconds,
                             visualSourceMissRetainSecondsLimit);
                     } else {
                         resetVisualSourceUnavailableRetention();
@@ -527,11 +527,11 @@ namespace rock
                         clearAtomicBodyIds();
                         resetWeaponBodySetGeneration();
                     }
-                    _cachedWeaponKey = 0;
-                    _cachedWeaponVisualKey = 0;
-                    _cachedWeaponIdentityKey = 0;
-                    _cachedWeaponOwnershipKey = 0;
-                    _cachedWeaponFormID = 0;
+                    _identity.cachedWeaponKey = 0;
+                    _identity.cachedVisualKey = 0;
+                    _identity.cachedIdentityKey = 0;
+                    _identity.cachedOwnershipKey = 0;
+                    _identity.cachedFormID = 0;
                     clearGeneratedSourceCompletenessTracking();
                     clearPendingWeaponVisualRebuild();
                     clearGeneratedSourceCache();
@@ -572,17 +572,17 @@ namespace rock
                         generatedSummary)) {
                     ROCK_LOG_WARN(Weapon,
                         "Generated weapon staged creation could not be queued cachedKey={:016X} observedKey={:016X} sources={}",
-                        _cachedWeaponKey,
+                        _identity.cachedWeaponKey,
                         observedKey,
                         generatedCount);
                     if (!replacingExisting) {
                         clearAtomicBodyIds();
                         resetWeaponBodySetGeneration();
-                        _cachedWeaponKey = 0;
-                        _cachedWeaponVisualKey = 0;
-                        _cachedWeaponIdentityKey = 0;
-                        _cachedWeaponOwnershipKey = 0;
-                        _cachedWeaponFormID = 0;
+                        _identity.cachedWeaponKey = 0;
+                        _identity.cachedVisualKey = 0;
+                        _identity.cachedIdentityKey = 0;
+                        _identity.cachedOwnershipKey = 0;
+                        _identity.cachedFormID = 0;
                         clearGeneratedSourceCompletenessTracking();
                     }
                     clearPendingWeaponVisualRebuild();
@@ -593,7 +593,7 @@ namespace rock
 
                 ROCK_LOG_INFO(Weapon,
                     "Generated weapon collision staged create queued cachedKey={:016X} observedKey={:016X} sources={} replacingExisting={} driveRebuild={} workbenchExit={} cachedSources={} batch={}",
-                    _cachedWeaponKey,
+                    _identity.cachedWeaponKey,
                     observedKey,
                     generatedCount,
                     replacingExisting ? "yes" : "no",
@@ -622,7 +622,7 @@ namespace rock
         auto& bank = activeWeaponBodies();
         RE::NiAVObject* cachedPackageDriveNode = resolvePackageDriveNode(bank, nullptr);
         if (!fallbackWeaponNode || !activeWeaponBodyRootMatches(fallbackWeaponNode)) {
-            _driveRebuildRequested.store(true, std::memory_order_release);
+            _drive.rebuildRequested.store(true, std::memory_order_release);
             ROCK_LOG_SAMPLE_WARN(Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "Generated weapon source update rejected: cached root 0x{:X} does not own current root 0x{:X}; requesting rebuild",
@@ -693,7 +693,7 @@ namespace rock
         }
 
         if (result.driven) {
-            _driveFailureCount.store(0, std::memory_order_release);
+            _drive.failureCount.store(0, std::memory_order_release);
             return;
         }
 
@@ -701,8 +701,8 @@ namespace rock
             return;
         }
 
-        const auto failures = _driveFailureCount.fetch_add(1, std::memory_order_acq_rel) + 1;
-        _driveRebuildRequested.store(true, std::memory_order_release);
+        const auto failures = _drive.failureCount.fetch_add(1, std::memory_order_acq_rel) + 1;
+        _drive.rebuildRequested.store(true, std::memory_order_release);
         ROCK_LOG_SAMPLE_WARN(Weapon,
             g_rockConfig.rockLogSampleMilliseconds,
             "Weapon generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} ownerMismatch={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f} bodyRotErr={:.2f}",

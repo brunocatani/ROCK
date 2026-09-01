@@ -1036,14 +1036,14 @@ namespace rock
         OmodReconciliationResult result{};
         const bool emitCoverageDiagnostics = g_rockConfig.rockDebugWeaponOmodCoverageAudit;
         if (!weaponNode || auditedEquippedKey == 0 ||
-            (!forceBeforeInitialBuild && (!hasWeaponBody() || _cachedWeaponBodySetKey == 0))) {
+            (!forceBeforeInitialBuild && (!hasWeaponBody() || _identity.cachedBodySetKey == 0))) {
             return result;
         }
 
-        if (!forceBeforeInitialBuild && _omodReconciliationBodySetKey != _cachedWeaponBodySetKey) {
-            _omodReconciliationBodySetKey = _cachedWeaponBodySetKey;
-            _omodReconciliationFrameCounter = 0;
-            _omodReconciliationRunIndex = 0;
+        if (!forceBeforeInitialBuild && _omod.reconciledBodySetKey != _identity.cachedBodySetKey) {
+            _omod.reconciledBodySetKey = _identity.cachedBodySetKey;
+            _omod.frameCounter = 0;
+            _omod.runIndex = 0;
         }
 
         const int diagnosticIntervalFrames =
@@ -1052,19 +1052,19 @@ namespace rock
         // Self-heal owns one fixed post-build check. Coverage diagnostics may
         // continue at their configured interval after that functional pass.
         if (!forceBeforeInitialBuild && !emitCoverageDiagnostics &&
-            _omodReconciliationRunIndex != 0) {
+            _omod.runIndex != 0) {
             return result;
         }
-        const int dueFrames = _omodReconciliationRunIndex == 0 ?
+        const int dueFrames = _omod.runIndex == 0 ?
             (emitCoverageDiagnostics ?
                     (std::min)(kPostBuildSelfHealCheckFrames, diagnosticIntervalFrames) :
                     kPostBuildSelfHealCheckFrames) :
             diagnosticIntervalFrames;
-        if (!forceBeforeInitialBuild && ++_omodReconciliationFrameCounter < dueFrames) {
+        if (!forceBeforeInitialBuild && ++_omod.frameCounter < dueFrames) {
             return result;
         }
-        _omodReconciliationFrameCounter = 0;
-        const std::uint32_t runIndex = _omodReconciliationRunIndex++;
+        _omod.frameCounter = 0;
+        const std::uint32_t runIndex = _omod.runIndex++;
         result.ran = true;
 
         auto* player = f4vr::getPlayer();
@@ -1077,20 +1077,20 @@ namespace rock
             const std::uint64_t visualKeyNow =
                 getWeaponVisualCompositionKey(weaponNode, visualStatsNow);
             const bool visualDrift = visualKeyNow != 0 &&
-                _cachedWeaponVisualKey != 0 &&
-                visualKeyNow != _cachedWeaponVisualKey;
+                _identity.cachedVisualKey != 0 &&
+                visualKeyNow != _identity.cachedVisualKey;
             const RE::NiAVObject* rootHiddenAncestor =
                 findOmodAuditHiddenAncestor(weaponNode);
             const RE::NiPoint3 cameraPosition = f4vr::getCameraPosition();
             ROCK_LOG_INFO(Weapon,
                 "OMOD-AUDIT begin run={} bodySetKey={:016X} weapon={:08X} '{}' bodies={} visualKeyNow={:016X} visualKeyAtBuild={:016X} drift={} visibleTriShapes={} nodes={} invisibleNodes={} rootVisible={} rootHiddenAncestor='{}' rootWorldT=({:.2f},{:.2f},{:.2f}) rootWorldScale={:.3f} cameraT=({:.2f},{:.2f},{:.2f})",
                 runIndex,
-                _cachedWeaponBodySetKey,
+                _identity.cachedBodySetKey,
                 weaponForm ? weaponForm->formID : 0u,
                 weaponForm ? RE::TESFullName::GetFullName(*weaponForm) : std::string_view{},
                 getWeaponBodyCount(),
                 visualKeyNow,
-                _cachedWeaponVisualKey,
+                _identity.cachedVisualKey,
                 visualDrift ? "YES" : "no",
                 visualStatsNow.visibleTriShapeCount,
                 visualStatsNow.nodeCount,
@@ -1115,8 +1115,8 @@ namespace rock
         std::unordered_map<std::uint32_t, std::uint32_t> bodiesByAttachPointFormId;
         const bool publishedBodyEvidenceCurrent = weapon_omod_audit_policy::publishedBodyEvidenceMatchesAudit(
             auditedEquippedKey,
-            _cachedWeaponKey,
-            hasWeaponBody() && _cachedWeaponBodySetKey != 0);
+            _identity.cachedWeaponKey,
+            hasWeaponBody() && _identity.cachedBodySetKey != 0);
         if (publishedBodyEvidenceCurrent) {
             for (const auto& instance : activeWeaponBodies()) {
                 if (!instance.body.isValid()) {
@@ -1136,8 +1136,8 @@ namespace rock
                 "OMOD-AUDIT run={} ignoring published body evidence from a different equipped generation auditedKey={:016X} publishedKey={:016X} bodySetKey={:016X}",
                 runIndex,
                 auditedEquippedKey,
-                _cachedWeaponKey,
-                _cachedWeaponBodySetKey);
+                _identity.cachedWeaponKey,
+                _identity.cachedBodySetKey);
         }
 
         std::vector<OmodAuditRecord> records;
@@ -1779,8 +1779,8 @@ namespace rock
                     return nullptr;
                 };
 
-                if (_omodSelfHealAttempted.size() > 256) {
-                    _omodSelfHealAttempted.clear();
+                if (_omod.selfHealAttempted.size() > 256) {
+                    _omod.selfHealAttempted.clear();
                 }
                 for (const std::size_t candidateIndex : orderedSelfHealCandidates) {
                     if (selfHealAttemptCount >= OMOD_SELF_HEAL_MAX_PER_RECONCILIATION) {
@@ -1789,13 +1789,13 @@ namespace rock
                     const auto& record = records[candidateIndex];
                     const std::uint64_t attemptKey =
                         reinterpret_cast<std::uintptr_t>(healTargetNode) ^ (static_cast<std::uint64_t>(record.formId) << 20);
-                    if (_omodSelfHealAttempted.contains(attemptKey)) {
+                    if (_omod.selfHealAttempted.contains(attemptKey)) {
                         continue;
                     }
 
                     auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(record.formId);
                     if (!omod) {
-                        _omodSelfHealAttempted.insert(attemptKey);
+                        _omod.selfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon, "OMOD-HEAL run={} omod={:08X} skipped: form no longer resolves", runIndex, record.formId);
                         continue;
                     }
@@ -1815,7 +1815,7 @@ namespace rock
                      */
                     const OmodRecoveryTemplate* recoveryTemplate = findRecoveryTemplate(record.formId);
                     if (!recoveryTemplate || !recoveryTemplate->physicalRoot()) {
-                        _omodSelfHealAttempted.insert(attemptKey);
+                        _omod.selfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: complete 0xED model load failed model='{}'",
                             runIndex,
@@ -1828,7 +1828,7 @@ namespace rock
                     RE::NiNode* signatureRoot = recoveryTemplate->physicalRoot();
                     const auto& templateSignature = recoveryTemplate->physicalSignature;
                     if (templateSignature.meshNames.empty() || templateSignature.durableAnchorName.empty()) {
-                        _omodSelfHealAttempted.insert(attemptKey);
+                        _omod.selfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: template has no verifiable physical housing model='{}'",
                             runIndex,
@@ -1854,7 +1854,7 @@ namespace rock
                             templateSignature.meshNames.size(),
                             durableAnchorPresent);
                     if (!weapon_omod_audit_policy::requiresDurableAnchorRecovery(durableAnchorPresent)) {
-                        _omodSelfHealAttempted.insert(attemptKey);
+                        _omod.selfHealAttempted.insert(attemptKey);
                         ROCK_LOG_INFO(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: durable physical housing already present in slot "
                             "matches={}/{} required={} coherent={} anchor='{}' example='{}' — no duplicate recovery needed",
@@ -1910,7 +1910,7 @@ namespace rock
                             "omod-scene-enrichment");
                         activeSceneSourceBankRetired = true;
                     }
-                    _omodSelfHealAttempted.insert(attemptKey);
+                    _omod.selfHealAttempted.insert(attemptKey);
                     ++selfHealAttemptCount;
                     const bool nativeWholeModelEligible = weapon_omod_audit_policy::shouldAttemptWholeModelAttach(
                         matchedSignatureNameCount,
@@ -2011,7 +2011,7 @@ namespace rock
             ROCK_LOG_INFO(Weapon,
                 "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={} flatMatches={} healCandidates={} healAttempted={} healed={}",
                 runIndex,
-                _cachedWeaponBodySetKey,
+                _identity.cachedBodySetKey,
                 records.size(),
                 connectPointMatches.size(),
                 weaponInstanceCount,

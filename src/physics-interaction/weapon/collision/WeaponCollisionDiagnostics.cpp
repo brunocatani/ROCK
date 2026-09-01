@@ -47,15 +47,15 @@ namespace rock
                     .sourceNodeScale = source.sourceNodeScale,
                 });
             }
-            _generatedRecaptureDiagnostic = std::move(captured);
+            _diagnostics.generatedRecapture = std::move(captured);
         };
 
         const bool sameExactIdentity =
-            _generatedRecaptureDiagnostic.valid &&
-            _generatedRecaptureDiagnostic.equippedKey == equippedKey &&
-            _generatedRecaptureDiagnostic.identityKey == identityKey &&
-            _generatedRecaptureDiagnostic.ownershipKey == ownershipKey &&
-            _generatedRecaptureDiagnostic.weaponFormID == weaponFormID;
+            _diagnostics.generatedRecapture.valid &&
+            _diagnostics.generatedRecapture.equippedKey == equippedKey &&
+            _diagnostics.generatedRecapture.identityKey == identityKey &&
+            _diagnostics.generatedRecapture.ownershipKey == ownershipKey &&
+            _diagnostics.generatedRecapture.weaponFormID == weaponFormID;
         if (!sameExactIdentity) {
             captureCurrent(0);
             ROCK_LOG_DEBUG(Weapon,
@@ -68,8 +68,8 @@ namespace rock
             return;
         }
 
-        if (!_generatedRecaptureDiagnostic.sawUndrawnInterval) {
-            const auto comparisonSequence = _generatedRecaptureDiagnostic.comparisonSequence;
+        if (!_diagnostics.generatedRecapture.sawUndrawnInterval) {
+            const auto comparisonSequence = _diagnostics.generatedRecapture.comparisonSequence;
             captureCurrent(comparisonSequence);
             return;
         }
@@ -106,24 +106,24 @@ namespace rock
             const GeneratedRecaptureDiagnosticSource* baseline = nullptr;
             if (current.sourceGroupId != 0) {
                 const auto exact = std::find_if(
-                    _generatedRecaptureDiagnostic.sources.begin(),
-                    _generatedRecaptureDiagnostic.sources.end(),
+                    _diagnostics.generatedRecapture.sources.begin(),
+                    _diagnostics.generatedRecapture.sources.end(),
                     [&](const GeneratedRecaptureDiagnosticSource& candidate) {
                         return candidate.sourceGroupId == current.sourceGroupId &&
                                candidate.sourceName == current.sourceName;
                     });
-                if (exact != _generatedRecaptureDiagnostic.sources.end()) {
+                if (exact != _diagnostics.generatedRecapture.sources.end()) {
                     baseline = &*exact;
                 }
             }
             if (!baseline) {
                 const auto sameName = std::find_if(
-                    _generatedRecaptureDiagnostic.sources.begin(),
-                    _generatedRecaptureDiagnostic.sources.end(),
+                    _diagnostics.generatedRecapture.sources.begin(),
+                    _diagnostics.generatedRecapture.sources.end(),
                     [&](const GeneratedRecaptureDiagnosticSource& candidate) {
                         return candidate.sourceName == current.sourceName;
                     });
-                if (sameName != _generatedRecaptureDiagnostic.sources.end()) {
+                if (sameName != _diagnostics.generatedRecapture.sources.end()) {
                     baseline = &*sameName;
                 }
             }
@@ -218,8 +218,8 @@ namespace rock
         }
 
         const std::size_t unmatchedBaselineCount =
-            _generatedRecaptureDiagnostic.sources.size() > matchedSourceCount ?
-                _generatedRecaptureDiagnostic.sources.size() - matchedSourceCount :
+            _diagnostics.generatedRecapture.sources.size() > matchedSourceCount ?
+                _diagnostics.generatedRecapture.sources.size() - matchedSourceCount :
                 0;
         treeReplacementCount += unmatchedBaselineCount;
         const char* classification = "stable";
@@ -240,7 +240,7 @@ namespace rock
             treeReplacementCount == 0 &&
             sourceGeometryDriftCount == 0 &&
             matchedSourceCount == sources.size() &&
-            matchedSourceCount == _generatedRecaptureDiagnostic.sources.size() &&
+            matchedSourceCount == _diagnostics.generatedRecapture.sources.size() &&
             std::all_of(
                 driftRows.begin(),
                 driftRows.end(),
@@ -250,18 +250,18 @@ namespace rock
                            row.sourceGeometryStable && row.sourceScaleStable;
                 });
 
-        ++_generatedRecaptureDiagnostic.comparisonSequence;
-        _generatedRecaptureDiagnostic.sawUndrawnInterval = false;
+        ++_diagnostics.generatedRecapture.comparisonSequence;
+        _diagnostics.generatedRecapture.sawUndrawnInterval = false;
         ROCK_LOG_INFO(Weapon,
             "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} liveSourceContinuity={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f} maxSourceLocalTriangleDelta={:.3f}",
-            _generatedRecaptureDiagnostic.comparisonSequence,
+            _diagnostics.generatedRecapture.comparisonSequence,
             classification,
             liveSourceContinuityValid ? "yes" : "no",
             equippedKey,
             identityKey,
             ownershipKey,
             weaponFormID,
-            _generatedRecaptureDiagnostic.sources.size(),
+            _diagnostics.generatedRecapture.sources.size(),
             sources.size(),
             matchedSourceCount,
             sameSourcePointerCount,
@@ -338,20 +338,20 @@ namespace rock
     void WeaponCollision::maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey)
     {
         if (!g_rockConfig.rockDebugDumpWeaponAnimNodes) {
-            _weaponAnimNodeDumpFrameCounter = 0;
-            _lastWeaponAnimNodeDumpKey = 0;
+            _diagnostics.animNodeDumpFrameCounter = 0;
+            _diagnostics.lastAnimNodeDumpKey = 0;
             return;
         }
 
-        const bool generationChanged = observedKey != _lastWeaponAnimNodeDumpKey;
+        const bool generationChanged = observedKey != _diagnostics.lastAnimNodeDumpKey;
         const int intervalFrames = (std::max)(1, g_rockConfig.rockDebugWeaponAnimNodeDumpIntervalFrames);
-        const bool intervalDue = ++_weaponAnimNodeDumpFrameCounter >= intervalFrames;
+        const bool intervalDue = ++_diagnostics.animNodeDumpFrameCounter >= intervalFrames;
         if (!generationChanged && !intervalDue) {
             return;
         }
 
-        _weaponAnimNodeDumpFrameCounter = 0;
-        _lastWeaponAnimNodeDumpKey = observedKey;
+        _diagnostics.animNodeDumpFrameCounter = 0;
+        _diagnostics.lastAnimNodeDumpKey = observedKey;
 
         auto* firstPersonBoneTree = f4vr::getFirstPersonBoneTree();
         auto* gameFlattenedBoneTree = f4vr::getFlattenedBoneTree();
