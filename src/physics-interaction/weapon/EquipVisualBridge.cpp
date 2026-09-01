@@ -107,12 +107,23 @@ namespace rock
                    std::ranges::all_of(outTransforms, isFiniteTransform);
         }
 
+        /*
+         * The glue reference must be the WAND (controller device node), never
+         * the hand bone. Hand-pose authority changes during the equip - the
+         * loose-grab wrap releasing, then the left carry's authored wrist -
+         * flip the bone's basis convention by ~180 degrees while the hand
+         * still looks correct, and a model glued through the old basis flips
+         * with it. The wand basis is authority-independent.
+         */
         [[nodiscard]] RE::NiNode* resolveHandWandNode(bool isLeftHand)
         {
-            if (!f4vr::getPlayer()) {
+            auto* playerNodes = f4vr::getPlayerNodes();
+            if (!f4vr::getPlayer() || !playerNodes) {
                 return nullptr;
             }
-            return isLeftHand ? f4vr::getLeftHandNode() : f4vr::getRightHandNode();
+            return isLeftHand ?
+                playerNodes->SecondaryWandNode :
+                playerNodes->primaryWandNode;
         }
 
         /*
