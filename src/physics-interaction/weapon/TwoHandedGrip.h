@@ -648,6 +648,24 @@ namespace rock
                    _hasSolvedWeaponTransform;
         }
 
+        /*
+         * Latest solved LEFT-carry weapon world - the pose the weapon node is
+         * actually rendered at. The equip visual bridge must use this as its
+         * rotation carrier instead of sampling the node early in the frame:
+         * FRIK re-glues the node to the RIGHT hand before ROCK runs, so an
+         * early-frame read returns the right-glue orientation (~180 degrees
+         * from the mirrored left carry) even while the carry owns the node.
+         */
+        [[nodiscard]] bool tryGetSolvedLeftFiringWeaponWorld(
+            RE::NiTransform& outWeaponWorld) const noexcept
+        {
+            if (!hasSolvedLeftFiringCarryPose()) {
+                return false;
+            }
+            outWeaponWorld = _lastSolvedWeaponTransform;
+            return true;
+        }
+
         TwoHandedState getState() const { return _session.state; }
 
         weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _session.authorityMode; }

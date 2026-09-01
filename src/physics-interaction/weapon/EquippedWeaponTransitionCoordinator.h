@@ -70,11 +70,12 @@ namespace rock
             // this is set. Equip recovery must neither unhide nor reattach the
             // same graph during that authority window.
             bool nativeWeaponAnimationActive{ false };
-            // The LEFT firing carry drives the native weapon root. A left-hand
-            // bridge uses the root as its rotation carrier only once this is
-            // set; before that the root still holds the right-hand glue or
-            // mid-draw orientation.
-            bool leftCarryOwnsWeaponRoot{ false };
+            // Solved LEFT-carry weapon world from the latest grip update. The
+            // left-hand bridge uses it as its rotation carrier; a live weapon
+            // root read at this frame phase would return the right-hand glue
+            // or draw-animation orientation instead of the rendered carry.
+            bool leftCarrySolvedWeaponWorldValid{ false };
+            RE::NiTransform leftCarrySolvedWeaponWorld{};
         };
 
         struct ExpectedIdentity

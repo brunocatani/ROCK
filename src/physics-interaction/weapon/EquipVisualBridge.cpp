@@ -483,19 +483,35 @@ namespace rock
             }
 
             /*
-             * The native weapon root is only a valid rotation carrier for a
-             * left-hand equip once the left firing carry drives it; before
-             * that it holds the right-hand glue or mid-draw animation
-             * orientation. Until then the model stays glued to the hand, and
-             * the short blend restarts when the carrier becomes usable so the
-             * correction converges instead of snapping.
+             * Rotation carrier selection. RIGHT bridges follow the live
+             * native root (its right-hand glue is the final carry). LEFT
+             * bridges must use the carry's solved pose supplied by the
+             * caller: this update runs before ROCK's carry re-poses the node
+             * each frame, so a live root read would return the right-glue or
+             * draw-animation orientation. Until a carrier is usable the model
+             * stays glued to the hand, and the short blend restarts when it
+             * becomes usable so the correction converges instead of snapping.
              */
-            const bool nativePositionOnlyCarrierAvailable =
-                input.nativeVisual &&
-                input.nativeVisual->weaponRoot &&
-                isFiniteTransform(
-                    input.nativeVisual->weaponRoot->world) &&
-                (!_isLeftHand || input.leftCarryOwnsWeaponRoot);
+            RE::NiTransform nativeCarrierWorld{};
+            bool nativePositionOnlyCarrierAvailable = false;
+            if (_isLeftHand) {
+                nativePositionOnlyCarrierAvailable =
+                    input.leftCarrySolvedWeaponWorldValid &&
+                    isFiniteTransform(input.leftCarrySolvedWeaponWorld);
+                if (nativePositionOnlyCarrierAvailable) {
+                    nativeCarrierWorld = input.leftCarrySolvedWeaponWorld;
+                }
+            } else {
+                nativePositionOnlyCarrierAvailable =
+                    input.nativeVisual &&
+                    input.nativeVisual->weaponRoot &&
+                    isFiniteTransform(
+                        input.nativeVisual->weaponRoot->world);
+                if (nativePositionOnlyCarrierAvailable) {
+                    nativeCarrierWorld =
+                        input.nativeVisual->weaponRoot->world;
+                }
+            }
             if (_isLeftHand &&
                 nativePositionOnlyCarrierAvailable &&
                 !_nativeCarrierWasUsable) {
@@ -522,7 +538,7 @@ namespace rock
                             _isLeftHand);
                     const RE::NiTransform& positionOnlyCarrierWorld =
                         nativePositionOnlyCarrierAvailable ?
-                            input.nativeVisual->weaponRoot->world :
+                            nativeCarrierWorld :
                             desiredWorld;
                     blendTarget = authored_weapon_grip_capture_policy::
                         resolveAuthoredPrimaryWeaponWorldPositionOnly(
@@ -561,7 +577,7 @@ namespace rock
                     }
                 }
             } else if (nativePositionOnlyCarrierAvailable) {
-                blendTarget = input.nativeVisual->weaponRoot->world;
+                blendTarget = nativeCarrierWorld;
                 haveBlendTarget = true;
             }
             if (haveBlendTarget && _blendSeconds > 0.0001f) {

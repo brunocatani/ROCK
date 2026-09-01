@@ -86,12 +86,17 @@ namespace rock
             bool advanceLifetime = true;
             bool presentModel = true;
             const equipped_weapon_visual_state::Snapshot* nativeVisual = nullptr;
-            // The LEFT firing carry has published a solved pose for the native
-            // weapon root. Until then a left-hand bridge must not use that
-            // root as its rotation carrier: it still holds the right-hand
-            // glue or mid-draw animation orientation, which presented the
-            // model mirrored for the first frames of a left-hand equip.
-            bool leftCarryOwnsWeaponRoot = false;
+            /*
+             * Solved LEFT-carry weapon world from the latest grip update - the
+             * pose the weapon node is actually rendered at. A left-hand
+             * bridge must use THIS as its rotation carrier, never the live
+             * weapon root: the bridge updates before ROCK's carry re-poses
+             * the node each frame, so an early-frame root read returns the
+             * right-hand glue or draw-animation orientation (~180 degrees
+             * from the mirrored left carry).
+             */
+            bool leftCarrySolvedWeaponWorldValid = false;
+            RE::NiTransform leftCarrySolvedWeaponWorld{};
         };
 
         EquipVisualBridge() = default;

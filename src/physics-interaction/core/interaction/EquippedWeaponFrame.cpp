@@ -79,6 +79,7 @@ namespace rock
             provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
             nativeGunState ==
                 static_cast<std::uint32_t>(RE::GUN_STATE::kReloading);
+        RE::NiTransform leftCarrySolvedWeaponWorld{};
         _equipped.transition.update(
             EquippedWeaponTransitionCoordinator::FrameInput{
                 .deltaSeconds = runtime.deltaSeconds,
@@ -98,10 +99,12 @@ namespace rock
                 .nativeWeaponAnimationActive = nativeWeaponAnimationActive,
                 // Read one frame behind the grip solve by design: this update
                 // runs before TwoHandedGrip::update each frame, so the bridge
-                // adopts the native root as rotation carrier the frame after
-                // the left carry's first published solve.
-                .leftCarryOwnsWeaponRoot =
-                    _twoHandedGrip.hasSolvedLeftFiringCarryPose(),
+                // receives the previous frame's solved carry pose - the pose
+                // that was actually rendered.
+                .leftCarrySolvedWeaponWorldValid =
+                    _twoHandedGrip.tryGetSolvedLeftFiringWeaponWorld(
+                        leftCarrySolvedWeaponWorld),
+                .leftCarrySolvedWeaponWorld = leftCarrySolvedWeaponWorld,
             });
     }
 
