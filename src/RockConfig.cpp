@@ -345,6 +345,14 @@ namespace rock
             12.0f,
             0.25f,
             30.0f);
+        rockFiringGripReattachCylinderRadiusGameUnits = readClampedFloat(
+            ini,
+            IMMERSIVE_WEAPONS_SECTION,
+            "fFiringGripReattachCylinderRadiusGameUnits",
+            rockFiringGripReattachCylinderRadiusGameUnits,
+            2.0f,
+            0.1f,
+            30.0f);
         rockFiringGripHapticDurationSeconds = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,

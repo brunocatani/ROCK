@@ -1679,6 +1679,8 @@ namespace rock
                     g_rockConfig.
                         rockFiringGripDetachHapticIntensity,
             },
+            .firingGripReattachCylinderRadiusGameUnits =
+                g_rockConfig.rockFiringGripReattachCylinderRadiusGameUnits,
             .firingGripProximitySupportRadiusGameUnits =
                 g_rockConfig.rockFiringGripProximitySupportRadius,
             .firingGripPromotionRadiusGameUnits =

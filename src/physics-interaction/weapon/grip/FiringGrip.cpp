@@ -463,12 +463,10 @@ namespace rock
         firing_grip_reattach_zone_policy::ZoneResult& outZone)
     {
         outZone = {};
-        auto& approach = _firing.reattachApproach[handIsLeft ? 0u : 1u];
         RE::NiTransform handTransform{};
         if (!weaponNode ||
             !isFiniteTransform(weaponNode->world) ||
             !tryGetSolverHandTransform(handIsLeft, handTransform)) {
-            approach = {};
             return false;
         }
         /*
@@ -483,7 +481,6 @@ namespace rock
                 weaponNode,
                 _session.weaponGenerationKey,
                 _session.equippedWeaponOwnershipKey)) {
-            approach = {};
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
@@ -496,7 +493,6 @@ namespace rock
                 weaponNode->world,
                 _firing.rightCanonicalHandWeaponLocal);
         if (!isFiniteTransform(seatedRightHandWorld)) {
-            approach = {};
             return false;
         }
 
@@ -517,40 +513,35 @@ namespace rock
                 .gripWorld = toZoneVector(gripWorld),
                 .palmWorld = toZoneVector(palmWorld),
                 .weaponLeftAxisWorld = toZoneVector(weaponLeftAxisWorld),
-                .lastStableDirectionWorld = toZoneVector(
-                    approach.lastStableDirectionWorld),
-                .radialCapGameUnits =
+                .reachGameUnits =
                     _handlingSettings.firingGripReattachRadiusGameUnits,
-                .lastStableDirectionValid = approach.valid,
+                .radiusGameUnits =
+                    _handlingSettings.firingGripReattachCylinderRadiusGameUnits,
             });
+        if (!outZone.axisValid) {
+            return false;
+        }
 
         // Overlay record: values only, rebuilt every update().
         auto& debugSnapshot = _firing.reattachDebugSnapshot;
         debugSnapshot.gripWorld = gripWorld;
         debugSnapshot.weaponLeftAxisWorld = weaponLeftAxisWorld;
-        debugSnapshot.radialCapGameUnits =
+        debugSnapshot.reachGameUnits =
             _handlingSettings.firingGripReattachRadiusGameUnits;
+        debugSnapshot.cylinderRadiusGameUnits =
+            _handlingSettings.firingGripReattachCylinderRadiusGameUnits;
         debugSnapshot.valid = true;
         auto& handSample = debugSnapshot.hands[handIsLeft ? 0u : 1u];
         handSample.palmWorld = palmWorld;
+        handSample.alongAxisGameUnits = outZone.alongAxisGameUnits;
+        handSample.perpendicularDistanceGameUnits =
+            outZone.perpendicularDistanceGameUnits;
         handSample.radialDistanceGameUnits = outZone.radialDistanceGameUnits;
-        handSample.lateralDot = outZone.lateralDot;
         handSample.side = outZone.side;
         handSample.evaluated = true;
-        handSample.directionValid = outZone.directionValid;
-        handSample.usedLastStableDirection = outZone.usedLastStableDirection;
-        handSample.radialPass = outZone.radialPass;
-        handSample.directionPass = outZone.directionPass;
+        handSample.reachPass = outZone.reachPass;
+        handSample.radiusPass = outZone.radiusPass;
         handSample.inside = outZone.inside;
-
-        if (outZone.directionValid && !outZone.usedLastStableDirection) {
-            approach.lastStableDirectionWorld = RE::NiPoint3{
-                outZone.approachDirectionWorld.x,
-                outZone.approachDirectionWorld.y,
-                outZone.approachDirectionWorld.z,
-            };
-            approach.valid = true;
-        }
         return true;
     }
 

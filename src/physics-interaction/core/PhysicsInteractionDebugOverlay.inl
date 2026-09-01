@@ -2667,20 +2667,19 @@
             FiringGripReattachZoneDebugSnapshot snapshot{};
             if (_twoHandedGrip.getFiringGripReattachZoneDebugSnapshot(snapshot)) {
                 namespace reattach_zone = firing_grip_reattach_zone_policy;
-                // YELLOW cross: the captured firing grip point, apex of both
-                // reattach cones. BLUE crosses: each evaluated free palm.
+                // YELLOW cross: the captured firing grip point where both
+                // reattach cylinders start. BLUE crosses: each evaluated palm.
                 addMarkerPoint(
                     debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
                     snapshot.gripWorld,
                     3.0f);
 
-                const float drawRadiusGameUnits = (std::min)(
-                    snapshot.radialCapGameUnits,
+                const float drawReachGameUnits = (std::min)(
+                    snapshot.reachGameUnits,
                     12.0f);
-                const auto coneBoundary =
-                    reattach_zone::resolveConeBoundaryDimensions(
-                        drawRadiusGameUnits);
-                const auto tryBuildConeBasis = [](
+                const float drawRadiusGameUnits =
+                    snapshot.cylinderRadiusGameUnits;
+                const auto tryBuildCylinderBasis = [](
                     const RE::NiPoint3& axis,
                     RE::NiPoint3& outUnitAxis,
                     RE::NiPoint3& outTangentA,
@@ -2729,13 +2728,15 @@
                 RE::NiPoint3 unitAxis{};
                 RE::NiPoint3 tangentA{};
                 RE::NiPoint3 tangentB{};
-                if (coneBoundary.valid &&
-                    tryBuildConeBasis(
+                if (drawReachGameUnits > 0.0f &&
+                    std::isfinite(drawRadiusGameUnits) &&
+                    drawRadiusGameUnits > 0.0f &&
+                    tryBuildCylinderBasis(
                         snapshot.weaponLeftAxisWorld,
                         unitAxis,
                         tangentA,
                         tangentB)) {
-                    const auto conePoint = [&](
+                    const auto cylinderPoint = [&](
                         const float axial,
                         const float radialA,
                         const float radialB) {
@@ -2748,44 +2749,56 @@
                                 tangentA.z * radialA + tangentB.z * radialB,
                         };
                     };
-                    // One cone per side of the weapon, apex on the grip point,
-                    // rim on the reattach radius sphere.
-                    const auto drawWireCone = [&](const float axisSign) {
-                        addMarkerLine(
-                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
-                            snapshot.gripWorld,
-                            conePoint(axisSign * drawRadiusGameUnits, 0.0f, 0.0f));
-                        constexpr std::size_t SegmentCount = 12;
-                        std::array<RE::NiPoint3, SegmentCount> rim{};
-                        for (std::size_t segment = 0;
-                             segment < SegmentCount;
+                    constexpr std::size_t SegmentCount = 12;
+                    const auto drawRing = [&](const float axial) {
+                        RE::NiPoint3 previous =
+                            cylinderPoint(axial, drawRadiusGameUnits, 0.0f);
+                        for (std::size_t segment = 1;
+                             segment <= SegmentCount;
                              ++segment) {
                             const float angle =
                                 static_cast<float>(segment) *
                                 2.0f * std::numbers::pi_v<float> /
                                 static_cast<float>(SegmentCount);
-                            rim[segment] = conePoint(
-                                axisSign * coneBoundary.axialGameUnits,
-                                std::cos(angle) * coneBoundary.rimRadiusGameUnits,
-                                std::sin(angle) * coneBoundary.rimRadiusGameUnits);
-                        }
-                        for (std::size_t segment = 0;
-                             segment < SegmentCount;
-                             ++segment) {
+                            const RE::NiPoint3 point = cylinderPoint(
+                                axial,
+                                std::cos(angle) * drawRadiusGameUnits,
+                                std::sin(angle) * drawRadiusGameUnits);
                             addMarkerLine(
                                 debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
-                                rim[segment],
-                                rim[(segment + 1) % SegmentCount]);
-                            if ((segment % (SegmentCount / 4)) == 0) {
-                                addMarkerLine(
-                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
-                                    snapshot.gripWorld,
-                                    rim[segment]);
-                            }
+                                previous,
+                                point);
+                            previous = point;
                         }
                     };
-                    drawWireCone(1.0f);
-                    drawWireCone(-1.0f);
+                    // One cylinder per side of the weapon, starting on the
+                    // grip point: axis line, far ring, and four spokes.
+                    const auto drawWireCylinder = [&](const float axisSign) {
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
+                            snapshot.gripWorld,
+                            cylinderPoint(axisSign * drawReachGameUnits, 0.0f, 0.0f));
+                        drawRing(axisSign * drawReachGameUnits);
+                        for (std::size_t spoke = 0; spoke < 4; ++spoke) {
+                            const float angle =
+                                static_cast<float>(spoke) *
+                                0.5f * std::numbers::pi_v<float>;
+                            const float radialA =
+                                std::cos(angle) * drawRadiusGameUnits;
+                            const float radialB =
+                                std::sin(angle) * drawRadiusGameUnits;
+                            addMarkerLine(
+                                debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                cylinderPoint(0.0f, radialA, radialB),
+                                cylinderPoint(
+                                    axisSign * drawReachGameUnits,
+                                    radialA,
+                                    radialB));
+                        }
+                    };
+                    drawRing(0.0f);
+                    drawWireCylinder(1.0f);
+                    drawWireCylinder(-1.0f);
                 }
 
                 constexpr float kSeatColor[4]{ 1.0f, 0.78f, 0.05f, 0.98f };
@@ -2799,9 +2812,9 @@
                     labelAnchor,
                     2.1f,
                     kSeatColor,
-                    "FIRING REATTACH ZONE cap=%.2f cone=%.0fdeg x2",
-                    snapshot.radialCapGameUnits,
-                    reattach_zone::kConeApertureDegrees);
+                    "FIRING REATTACH ZONE reach=%.2f radius=%.2f x2",
+                    snapshot.reachGameUnits,
+                    snapshot.cylinderRadiusGameUnits);
                 float labelOffset = 2.2f;
                 for (std::size_t handIndex = 0;
                      handIndex < snapshot.hands.size();
@@ -2822,14 +2835,14 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, labelOffset },
                         1.65f,
                         hand.inside ? kPassColor : kFailColor,
-                        "%s palm d=%.2f dot=%.3f side=%s radial=%d cone=%d stable=%d grab=%s %s",
+                        "%s palm along=%.2f perp=%.2f d=%.2f side=%s reach=%d radius=%d grab=%s %s",
                         handIndex == 0 ? "LEFT" : "RIGHT",
+                        hand.alongAxisGameUnits,
+                        hand.perpendicularDistanceGameUnits,
                         hand.radialDistanceGameUnits,
-                        hand.lateralDot,
                         reattach_zone::sideName(hand.side),
-                        hand.radialPass ? 1 : 0,
-                        hand.directionPass ? 1 : 0,
-                        hand.usedLastStableDirection ? 1 : 0,
+                        hand.reachPass ? 1 : 0,
+                        hand.radiusPass ? 1 : 0,
                         hand.gripHeld ? "HELD" : "OPEN",
                         hand.inside ? "INSIDE" : "OUTSIDE");
                     labelOffset += 2.0f;

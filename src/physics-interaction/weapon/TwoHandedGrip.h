@@ -145,31 +145,31 @@ namespace rock
 
     /*
      * Main-thread diagnostic record of the firing-grip reattach zone for the
-     * debug overlay: the cone apex and lateral axis plus each evaluated free
-     * palm's verdict. Values only, never engine pointers.
+     * debug overlay: where the cylinders start, their axis and size, plus
+     * each evaluated free palm's verdict. Values only, never engine pointers.
      */
     struct FiringGripReattachZoneDebugSnapshot
     {
         struct HandSample
         {
             RE::NiPoint3 palmWorld{};
+            float alongAxisGameUnits{ 0.0f };
+            float perpendicularDistanceGameUnits{ 0.0f };
             float radialDistanceGameUnits{ 0.0f };
-            float lateralDot{ 0.0f };
             firing_grip_reattach_zone_policy::Side side{
                 firing_grip_reattach_zone_policy::Side::None
             };
             bool evaluated{ false };
             bool gripHeld{ false };
-            bool directionValid{ false };
-            bool usedLastStableDirection{ false };
-            bool radialPass{ false };
-            bool directionPass{ false };
+            bool reachPass{ false };
+            bool radiusPass{ false };
             bool inside{ false };
         };
 
         RE::NiPoint3 gripWorld{};
         RE::NiPoint3 weaponLeftAxisWorld{};
-        float radialCapGameUnits{ 0.0f };
+        float reachGameUnits{ 0.0f };
+        float cylinderRadiusGameUnits{ 0.0f };
         // Index 0 left hand, 1 right hand.
         std::array<HandSample, 2> hands{};
         bool valid{ false };
@@ -485,7 +485,7 @@ namespace rock
         }
 
         // Marker for the firing-grip reattach zone: visible while an open
-        // free palm hovers inside a lateral cone during part carry.
+        // free palm hovers inside a lateral cylinder during part carry.
         [[nodiscard]] FiringGripReattachIndicatorFrame
             getFiringGripReattachIndicatorFrame() const noexcept
         {
@@ -1509,12 +1509,10 @@ namespace rock
 
         /*
          * Evaluates the firing-grip reattach zone for one free hand: its palm
-         * pivot against the captured grip point through the lateral cones and
-         * the reattach radius. The lateral axis is the seated canonical right
-         * palm normal on the current weapon; without that canonical hold the
-         * zone fails closed. Updates that hand's last stable approach
-         * direction, so it is only called while part carry evaluates the
-         * hand.
+         * pivot against the lateral cylinders that start at the captured grip
+         * point. The lateral axis is the seated canonical right palm normal on
+         * the current weapon; without that canonical hold the zone fails
+         * closed. Records the overlay sample for that hand.
          */
         bool tryEvaluateFiringGripReattachZoneForHand(
             RE::NiNode* weaponNode,
@@ -1905,20 +1903,6 @@ namespace rock
             // Per-frame hover state; only ever true in PartCarry (see getter).
             bool reattachHoverInsideZone{ false };
             bool reattachHoverHandIsLeft{ false };
-
-            /*
-             * Last stable palm approach direction toward the firing grip per
-             * physical hand (index 0 left, 1 right), kept only during part
-             * carry so the reattach cones stay decidable once the palm is
-             * closer than the zone's minimum direction distance.
-             */
-            struct ReattachApproachState
-            {
-                RE::NiPoint3 lastStableDirectionWorld{};
-                bool valid{ false };
-            };
-            std::array<ReattachApproachState, 2> reattachApproach{};
-
             // Per-frame indicator and overlay records; rebuilt every update().
             FiringGripReattachIndicatorFrame reattachIndicatorFrame{};
             FiringGripReattachZoneDebugSnapshot reattachDebugSnapshot{};

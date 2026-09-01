@@ -71,6 +71,7 @@ namespace rock
         bool rockFiringGripDetachEnabled = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
         float rockFiringGripReattachRadiusGameUnits = 12.0f;
+        float rockFiringGripReattachCylinderRadiusGameUnits = 2.0f;
         float rockFiringGripHapticDurationSeconds = 0.10f;
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;

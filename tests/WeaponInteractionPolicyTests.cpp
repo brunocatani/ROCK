@@ -2161,6 +2161,7 @@ int main()
             .firingGripAttachHapticIntensity = 0.81f,
             .firingGripDetachHapticIntensity = 0.31f,
         },
+        .firingGripReattachCylinderRadiusGameUnits = 2.5f,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
         .firingGripPromotionRadiusGameUnits = 5.5f,
         .leftFiringAimYawDegrees = 1.5f,
@@ -2177,6 +2178,9 @@ int main()
     ok &= expectNear("base ROCK owns the proximity support radius",
         coreWeaponHandling.firingGripProximitySupportRadiusGameUnits,
         7.0f);
+    ok &= expectNear("base ROCK owns the reattach cylinder radius",
+        coreWeaponHandling.firingGripReattachCylinderRadiusGameUnits,
+        2.5f);
     ok &= expectTrue("base ROCK enables configured firing-grip ownership",
         coreWeaponHandling.firingGripOwnershipEnabled);
     ok &= expectTrue("base ROCK enables configured ambidextrous handoff",
@@ -2780,152 +2784,110 @@ int main()
         namespace zone = rock::firing_grip_reattach_zone_policy;
         using zone::Side;
         using zone::Vec3;
-        constexpr float kPi = 3.14159265358979323846f;
-        constexpr float kRadius = 4.0f;
-
-        ok &= expectNear("reattach cone aperture is 20 degrees",
-            zone::kConeApertureDegrees, 20.0f);
-        ok &= expectNear("reattach cone minimum dot is cos(half aperture)",
-            zone::kConeMinimumDot,
-            std::cos(zone::kConeHalfAngleDegrees * kPi / 180.0f),
-            0.000001f);
+        constexpr float kReach = 12.0f;
+        constexpr float kCylinderRadius = 2.0f;
 
         const Vec3 grip{ 10.0f, -4.0f, 55.0f };
         // Unit lateral axis with a deliberately non-axis-aligned direction.
         const Vec3 weaponLeft{ 0.6f, 0.8f, 0.0f };
         const Vec3 across{ -0.8f, 0.6f, 0.0f };
-        const auto palmAt = [&](const float distance,
-                                const float degreesOffAxis,
-                                const float lateralSign) {
-            const float radians = degreesOffAxis * kPi / 180.0f;
-            const float along = std::cos(radians) * lateralSign * distance;
-            const float sideways = std::sin(radians) * distance;
+        const auto palmAt = [&](const float along, const float perpendicular) {
             return Vec3{
-                grip.x + weaponLeft.x * along + across.x * sideways,
-                grip.y + weaponLeft.y * along + across.y * sideways,
-                grip.z + weaponLeft.z * along + across.z * sideways,
+                grip.x + weaponLeft.x * along + across.x * perpendicular,
+                grip.y + weaponLeft.y * along + across.y * perpendicular,
+                grip.z + weaponLeft.z * along + across.z * perpendicular,
             };
         };
         const auto evaluate = [&](const Vec3& palm,
-                                  const float radius,
-                                  const bool lastStableValid = false,
-                                  const Vec3& lastStable = Vec3{}) {
+                                  const float reach,
+                                  const float radius) {
             return zone::evaluateZone(zone::ZoneInput{
                 .gripWorld = grip,
                 .palmWorld = palm,
                 .weaponLeftAxisWorld = weaponLeft,
-                .lastStableDirectionWorld = lastStable,
-                .radialCapGameUnits = radius,
-                .lastStableDirectionValid = lastStableValid,
+                .reachGameUnits = reach,
+                .radiusGameUnits = radius,
             });
         };
 
-        const auto leftOnAxis = evaluate(palmAt(2.0f, 0.0f, 1.0f), kRadius);
-        ok &= expectTrue("palm approaching on the weapon-left axis is inside the zone",
-            leftOnAxis.inside);
-        ok &= expectTrue("left-side approach reports the LEFT side",
-            leftOnAxis.side == Side::Left);
-        ok &= expectTrue("left-side approach used the live radial direction",
-            leftOnAxis.directionValid && !leftOnAxis.usedLastStableDirection);
-        ok &= expectNear("left-side approach reports the radial distance",
-            leftOnAxis.radialDistanceGameUnits, 2.0f, 0.001f);
+        const auto leftMid = evaluate(palmAt(6.0f, 1.5f), kReach, kCylinderRadius);
+        ok &= expectTrue("palm inside the weapon-left cylinder is inside the zone",
+            leftMid.inside && leftMid.reachPass && leftMid.radiusPass);
+        ok &= expectTrue("left cylinder reports the LEFT side",
+            leftMid.side == Side::Left);
+        ok &= expectNear("left cylinder reports the distance along the axis",
+            leftMid.alongAxisGameUnits, 6.0f, 0.001f);
+        ok &= expectNear("left cylinder reports the perpendicular offset",
+            leftMid.perpendicularDistanceGameUnits, 1.5f, 0.001f);
 
-        const auto rightNearEdge = evaluate(palmAt(3.9f, 5.0f, -1.0f), kRadius);
-        ok &= expectTrue("palm 5 degrees off the weapon-right axis is inside the zone",
-            rightNearEdge.inside);
-        ok &= expectTrue("right-side approach reports the RIGHT side",
-            rightNearEdge.side == Side::Right);
+        const auto rightFar = evaluate(palmAt(-11.9f, 1.9f), kReach, kCylinderRadius);
+        ok &= expectTrue("palm near the end of the weapon-right cylinder is inside the zone",
+            rightFar.inside);
+        ok &= expectTrue("right cylinder reports the RIGHT side",
+            rightFar.side == Side::Right);
 
-        const auto outsideCone = evaluate(palmAt(2.0f, 15.0f, 1.0f), kRadius);
-        ok &= expectTrue("palm 15 degrees off the lateral axis is inside the radius",
-            outsideCone.radialPass);
-        ok &= expectFalse("palm 15 degrees off the lateral axis fails the cone",
-            outsideCone.directionPass);
-        ok &= expectFalse("palm outside the cone is outside the zone",
-            outsideCone.inside);
-        ok &= expectTrue("palm outside the cone reports no side",
-            outsideCone.side == Side::None);
+        const auto tooWide = evaluate(palmAt(6.0f, 2.5f), kReach, kCylinderRadius);
+        ok &= expectTrue("palm off the axis beyond the radius still passes the reach",
+            tooWide.reachPass);
+        ok &= expectFalse("palm off the axis beyond the radius fails the radius",
+            tooWide.radiusPass);
+        ok &= expectFalse("palm off the axis beyond the radius is outside the zone",
+            tooWide.inside);
 
-        const auto fromAbove = evaluate(palmAt(1.0f, 90.0f, 1.0f), kRadius);
-        ok &= expectFalse("palm approaching across the lateral axis is outside the zone",
-            fromAbove.inside);
+        const auto beyondReach = evaluate(palmAt(12.5f, 0.5f), kReach, kCylinderRadius);
+        ok &= expectFalse("palm beyond the reach fails the reach",
+            beyondReach.reachPass);
+        ok &= expectTrue("palm beyond the reach still passes the radius",
+            beyondReach.radiusPass);
+        ok &= expectFalse("palm beyond the reach is outside the zone",
+            beyondReach.inside);
 
-        const auto beyondRadius = evaluate(palmAt(4.5f, 0.0f, 1.0f), kRadius);
-        ok &= expectTrue("palm beyond the radius still passes the cone",
-            beyondRadius.directionPass);
-        ok &= expectFalse("palm beyond the radius fails the radial cap",
-            beyondRadius.radialPass);
-        ok &= expectFalse("palm beyond the radius is outside the zone",
-            beyondRadius.inside);
+        const auto onGrip = evaluate(palmAt(0.05f, 0.1f), kReach, kCylinderRadius);
+        ok &= expectTrue("palm on the grip point is inside the zone without history",
+            onGrip.inside);
 
-        const auto seatedNoHistory = evaluate(palmAt(0.1f, 0.0f, 1.0f), kRadius);
-        ok &= expectTrue("palm on the grip is inside the radius",
-            seatedNoHistory.radialPass);
-        ok &= expectFalse("palm on the grip without an approach history has no direction",
-            seatedNoHistory.directionValid);
-        ok &= expectFalse("palm on the grip without an approach history fails closed",
-            seatedNoHistory.inside);
-
-        const auto seatedFromSide = evaluate(
-            palmAt(0.1f, 0.0f, 1.0f), kRadius, true, weaponLeft);
-        ok &= expectTrue("palm on the grip reuses the last stable side approach",
-            seatedFromSide.inside && seatedFromSide.usedLastStableDirection);
-        ok &= expectTrue("last stable side approach keeps its side",
-            seatedFromSide.side == Side::Left);
-
-        const auto seatedFromAbove = evaluate(
-            palmAt(0.1f, 0.0f, 1.0f), kRadius, true, across);
-        ok &= expectFalse("palm on the grip after an across approach stays outside the zone",
-            seatedFromAbove.inside);
+        const auto above = evaluate(palmAt(0.0f, 3.0f), kReach, kCylinderRadius);
+        ok &= expectFalse("palm above the grip beyond the radius is outside the zone",
+            above.inside);
 
         const auto zeroAxis = zone::evaluateZone(zone::ZoneInput{
             .gripWorld = grip,
-            .palmWorld = palmAt(2.0f, 0.0f, 1.0f),
+            .palmWorld = palmAt(2.0f, 0.0f),
             .weaponLeftAxisWorld = Vec3{},
-            .radialCapGameUnits = kRadius,
+            .reachGameUnits = kReach,
+            .radiusGameUnits = kCylinderRadius,
         });
         ok &= expectFalse("zone without a lateral axis fails closed",
-            zeroAxis.inside);
+            zeroAxis.axisValid || zeroAxis.inside);
 
-        const auto negativeRadius = evaluate(palmAt(1.0f, 0.0f, 1.0f), -1.0f);
-        ok &= expectFalse("negative radial cap fails the radial gate",
-            negativeRadius.radialPass);
+        const auto negativeReach = evaluate(palmAt(1.0f, 0.0f), -1.0f, kCylinderRadius);
+        ok &= expectFalse("negative reach fails closed",
+            negativeReach.reachPass || negativeReach.inside);
+        const auto negativeRadius = evaluate(palmAt(1.0f, 0.0f), kReach, -1.0f);
+        ok &= expectFalse("negative radius fails closed",
+            negativeRadius.radiusPass || negativeRadius.inside);
 
         const float nan = std::numeric_limits<float>::quiet_NaN();
-        const auto nonFinite = evaluate(Vec3{ nan, 0.0f, 0.0f }, kRadius);
+        const auto nonFinite = evaluate(Vec3{ nan, 0.0f, 0.0f }, kReach, kCylinderRadius);
         ok &= expectFalse("non-finite palm fails every zone gate",
-            nonFinite.inside || nonFinite.radialPass || nonFinite.directionValid);
+            nonFinite.inside || nonFinite.reachPass || nonFinite.radiusPass);
 
-        ok &= expectTrue("left-side approach seats the indicator",
-            leftOnAxis.indicatorValid);
-        ok &= expectNear("left-side indicator sits at the offset along weapon left (x)",
-            leftOnAxis.indicatorWorld.x,
+        ok &= expectTrue("palm inside the left cylinder seats the indicator",
+            leftMid.indicatorValid);
+        ok &= expectNear("left indicator sits at the offset along weapon left (x)",
+            leftMid.indicatorWorld.x,
             grip.x + weaponLeft.x * zone::kIndicatorOffsetGameUnits,
             0.001f);
-        ok &= expectNear("left-side indicator sits at the offset along weapon left (y)",
-            leftOnAxis.indicatorWorld.y,
+        ok &= expectNear("left indicator sits at the offset along weapon left (y)",
+            leftMid.indicatorWorld.y,
             grip.y + weaponLeft.y * zone::kIndicatorOffsetGameUnits,
             0.001f);
-        ok &= expectNear("right-side indicator sits at the offset along weapon right (x)",
-            rightNearEdge.indicatorWorld.x,
+        ok &= expectNear("right indicator sits at the offset along weapon right (x)",
+            rightFar.indicatorWorld.x,
             grip.x - weaponLeft.x * zone::kIndicatorOffsetGameUnits,
             0.001f);
-        ok &= expectFalse("palm outside the cone seats no indicator",
-            outsideCone.indicatorValid);
-
-        const auto coneBoundary = zone::resolveConeBoundaryDimensions(kRadius);
-        ok &= expectTrue("cone boundary is valid for a positive radius",
-            coneBoundary.valid);
-        ok &= expectNear("cone height is the radius scaled by the half-angle cosine",
-            coneBoundary.axialGameUnits,
-            kRadius * std::cos(zone::kConeHalfAngleDegrees * kPi / 180.0f),
-            0.001f);
-        ok &= expectNear("cone rim radius is the radius scaled by the half-angle sine",
-            coneBoundary.rimRadiusGameUnits,
-            kRadius * std::sin(zone::kConeHalfAngleDegrees * kPi / 180.0f),
-            0.001f);
-        ok &= expectFalse("cone boundary rejects a zero radius",
-            zone::resolveConeBoundaryDimensions(0.0f).valid);
+        ok &= expectFalse("palm outside the zone seats no indicator",
+            tooWide.indicatorValid);
     }
 
     ok &= expectTrue("free hand part grip starts on grab press over a routed support part",

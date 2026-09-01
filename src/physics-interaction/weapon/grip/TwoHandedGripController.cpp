@@ -695,7 +695,6 @@ namespace rock
         _equippedWeaponDropRequest = {};
         _hapticEvents = {};
         _firing.reattachHoverInsideZone = false;
-        _firing.reattachApproach = {};
         _firing.reattachIndicatorFrame = {};
         _firing.reattachDebugSnapshot = {};
         _scope.anchorWeaponNode = nullptr;
