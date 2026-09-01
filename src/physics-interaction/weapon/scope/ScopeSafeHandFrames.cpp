@@ -8,44 +8,44 @@ namespace rock
     {
         // A final trace is valid only for the same update that produced its
         // pre-solve sample. Early-return frames deliberately remain pre-only.
-        _nativeScopeTransitionFinalTracePending = false;
+        _scope.transitionFinalTracePending = false;
         const bool activationStateChanged =
             frameInput.manualScopeActivationRequested !=
-                _manualScopeActivationRequested ||
-            frameInput.nativeScopeRequestStateValid != _nativeScopeRequestStateValid ||
+                _scope.manualActivationRequested ||
+            frameInput.nativeScopeRequestStateValid != _scope.nativeRequestStateValid ||
             (frameInput.nativeScopeRequestStateValid &&
-                frameInput.nativeScopeRequestActive != _nativeScopeRequestActive);
-        _manualScopeActivationRequested =
+                frameInput.nativeScopeRequestActive != _scope.nativeRequestActive);
+        _scope.manualActivationRequested =
             frameInput.manualScopeActivationRequested;
-        _nativeScopeRequestStateValid = frameInput.nativeScopeRequestStateValid;
-        _nativeScopeRequestActive = frameInput.nativeScopeRequestStateValid &&
+        _scope.nativeRequestStateValid = frameInput.nativeScopeRequestStateValid;
+        _scope.nativeRequestActive = frameInput.nativeScopeRequestStateValid &&
                                     frameInput.nativeScopeRequestActive;
-        _nativeScopeActivationDebugSnapshot = NativeScopeActivationDebugSnapshot{
+        _scope.activationDebugSnapshot = NativeScopeActivationDebugSnapshot{
             .publicationSequence =
-                _nativeScopeActivationDebugSnapshot.publicationSequence + 1,
-            .weaponGenerationKey = _nativeScopeAnchorGenerationKey,
-            .anchorSource = _nativeScopeAnchorSource,
-            .manualInputRequested = _manualScopeActivationRequested,
-            .rendererStateValid = _nativeScopeRequestStateValid,
-            .rendererActive = _nativeScopeRequestActive,
+                _scope.activationDebugSnapshot.publicationSequence + 1,
+            .weaponGenerationKey = _scope.anchorGenerationKey,
+            .anchorSource = _scope.anchorSource,
+            .manualInputRequested = _scope.manualActivationRequested,
+            .rendererStateValid = _scope.nativeRequestStateValid,
+            .rendererActive = _scope.nativeRequestActive,
         };
         if (activationStateChanged) {
-            ++_nativeScopeTransitionTraceSequence;
-            _nativeScopeTransitionTraceFramesRemaining =
+            ++_scope.transitionTraceSequence;
+            _scope.transitionTraceFramesRemaining =
                 SCOPE_TRANSITION_TRACE_FRAMES;
         }
 
-        const bool scopeStateChanged = _scopeMenuOpenThisFrame != frameInput.scopeMenuOpen;
-        _scopeMenuOpenThisFrame = frameInput.scopeMenuOpen;
-        _scopeMenuClosedThisFrame = scopeStateChanged && !_scopeMenuOpenThisFrame;
-        const bool driverFrameAuthorityWasActive = _scopeDriverFrameAuthorityActive;
-        _scopeDriverFrameAuthorityActive = scope_safe_hand_frame_math::retainDriverFrameAuthority(
-            _scopeMenuOpenThisFrame,
-            _manualScopeActivationRequested,
+        const bool scopeStateChanged = _scope.menuOpenThisFrame != frameInput.scopeMenuOpen;
+        _scope.menuOpenThisFrame = frameInput.scopeMenuOpen;
+        _scope.menuClosedThisFrame = scopeStateChanged && !_scope.menuOpenThisFrame;
+        const bool driverFrameAuthorityWasActive = _scope.driverFrameAuthorityActive;
+        _scope.driverFrameAuthorityActive = scope_safe_hand_frame_math::retainDriverFrameAuthority(
+            _scope.menuOpenThisFrame,
+            _scope.manualActivationRequested,
             isManualOwnershipActive(),
             driverFrameAuthorityWasActive);
         const bool driverFrameAuthorityStoppedThisFrame =
-            driverFrameAuthorityWasActive && !_scopeDriverFrameAuthorityActive;
+            driverFrameAuthorityWasActive && !_scope.driverFrameAuthorityActive;
 
         if (scopeStateChanged) {
             // Never resume a pre-menu visual interpolation after hFRIK restores
@@ -53,12 +53,12 @@ namespace rock
             resetLockedHandVisualLerp();
             ROCK_LOG_INFO(Weapon,
                 "TwoHandedGrip: native scope hand-frame menu={} solver={} leftCache={} rightCache={}",
-                _scopeMenuOpenThisFrame ? "open" : "closed",
-                _scopeDriverFrameAuthorityActive ?
-                    (_scopeMenuOpenThisFrame ? "frik-driver" : "frik-driver-latched") :
+                _scope.menuOpenThisFrame ? "open" : "closed",
+                _scope.driverFrameAuthorityActive ?
+                    (_scope.menuOpenThisFrame ? "frik-driver" : "frik-driver-latched") :
                     "root-flattened",
-                _scopeSafeHandFrames[0].hasDriverToHandLocal ? "ready" : "missing",
-                _scopeSafeHandFrames[1].hasDriverToHandLocal ? "ready" : "missing");
+                _scope.safeHandFrames[0].hasDriverToHandLocal ? "ready" : "missing",
+                _scope.safeHandFrames[1].hasDriverToHandLocal ? "ready" : "missing");
         }
 
         // Central game delta; an unmeasurable frame holds the rebase
@@ -66,15 +66,15 @@ namespace rock
         const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : 0.0f;
         const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
             const std::size_t handIndex = isLeft ? 0u : 1u;
-            ScopeSafeHandFrameState& state = _scopeSafeHandFrames[handIndex];
+            ScopeSafeHandFrameState& state = _scope.safeHandFrames[handIndex];
             ScopeSafeHandFrameDiagnostic& diagnostic = state.diagnostic;
             diagnostic = {};
             state.currentHandWorldValid = false;
 
             RE::NiTransform rootHandWorld{};
             const bool rootSampleAllowed =
-                !_scopeDriverFrameAuthorityActive;
-            const bool rootHandValid = !_scopeDriverFrameAuthorityActive &&
+                !_scope.driverFrameAuthorityActive;
+            const bool rootHandValid = !_scope.driverFrameAuthorityActive &&
                                        tryGetRootFlattenedHandBoneTransform(isLeft, rootHandWorld);
             const bool driverValid = driverFrame.valid &&
                                      isUsableHandAuthorityTransform(driverFrame.world);
@@ -87,8 +87,8 @@ namespace rock
                 reconstructedHandValid = isUsableHandAuthorityTransform(reconstructedHandWorld);
             }
             const auto resolutionMode = scope_safe_hand_frame_math::resolveCollisionIsolatedMode(
-                _weaponCollisionHandPresentationFromPreviousFrame[handIndex],
-                _scopeDriverFrameAuthorityActive,
+                _visuals.weaponCollisionHandPresentationFromPreviousFrame[handIndex],
+                _scope.driverFrameAuthorityActive,
                 rootHandValid,
                 reconstructedHandValid,
                 state.hasLastHandWorld,
@@ -112,15 +112,15 @@ namespace rock
             diagnostic.reconstructedHandValid = reconstructedHandValid;
             diagnostic.lastHandWorldAvailable = state.hasLastHandWorld;
             diagnostic.collisionPresentationWasLive =
-                _weaponCollisionHandPresentationFromPreviousFrame[handIndex];
+                _visuals.weaponCollisionHandPresentationFromPreviousFrame[handIndex];
             diagnostic.scopeDriverFrameAuthorityActive =
-                _scopeDriverFrameAuthorityActive;
+                _scope.driverFrameAuthorityActive;
 
             if (resolutionMode == scope_safe_hand_frame_math::ResolutionMode::RootFlattened) {
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
                                                        state.consecutiveDriverMissFrames < SCOPE_DRIVER_MISS_GRACE_FRAMES;
                 if (scope_safe_hand_frame_math::shouldStartRootRebase(
-                        _manualScopeActivationRequested,
+                        _scope.manualActivationRequested,
                         driverFrameAuthorityStoppedThisFrame,
                         reconstructedHandValid,
                         recentScopedHandAvailable)) {
@@ -173,8 +173,8 @@ namespace rock
 
                 const bool preserveAuthoredPhysicalRelation =
                     !isLeft &&
-                    _authoredPrimaryFiringHandWorldActive &&
-                    _hasRightNaturalBoneInDampedDriver;
+                    _firing.authoredHandWorldActive &&
+                    _firing.hasRightNaturalBoneInDampedDriver;
                 if (driverValid && !preserveAuthoredPhysicalRelation) {
                     const RE::NiTransform driverToHandLocal =
                         scope_safe_hand_frame_math::captureDriverToHandLocal(driverFrame.world, resolvedHandWorld);
@@ -204,7 +204,7 @@ namespace rock
                 ++state.consecutiveDriverMissFrames;
                 state.currentHandWorld = state.lastHandWorld;
                 state.currentHandWorldValid = true;
-            } else if (_scopeDriverFrameAuthorityActive) {
+            } else if (_scope.driverFrameAuthorityActive) {
                 state.consecutiveDriverMissFrames = SCOPE_DRIVER_MISS_GRACE_FRAMES;
             }
         };
@@ -215,8 +215,8 @@ namespace rock
         for (const bool isLeft : { true, false }) {
             const bool positionOnlyHandWorldActive =
                 isLeft ?
-                _leftFiringHandWorldActive :
-                _authoredPrimaryFiringHandWorldActive;
+                _firing.leftHandWorldActive :
+                _firing.authoredHandWorldActive;
             if (!positionOnlyHandWorldActive) {
                 continue;
             }
@@ -232,7 +232,7 @@ namespace rock
                     physicalHandWorld,
                     driverWorld)) {
                 auto& firingState =
-                    _scopeSafeHandFrames[isLeft ? 0u : 1u];
+                    _scope.safeHandFrames[isLeft ? 0u : 1u];
                 firingState.currentHandWorld = physicalHandWorld;
                 firingState.currentHandWorldValid = true;
                 firingState.lastHandWorld = physicalHandWorld;
@@ -241,7 +241,7 @@ namespace rock
             }
         }
 
-        for (ScopeSafeHandFrameState& state : _scopeSafeHandFrames) {
+        for (ScopeSafeHandFrameState& state : _scope.safeHandFrames) {
             state.diagnostic.currentHandWorld = state.currentHandWorld;
             state.diagnostic.currentHandWorldValid =
                 state.currentHandWorldValid;
@@ -249,7 +249,7 @@ namespace rock
                 state.consecutiveDriverMissFrames;
         }
 
-        if (_nativeScopeTransitionTraceFramesRemaining > 0) {
+        if (_scope.transitionTraceFramesRemaining > 0) {
             struct HandTrace
             {
                 RE::NiTransform rootWorld{};
@@ -272,7 +272,7 @@ namespace rock
             const auto captureHandTrace = [this, &distanceBetween](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
                 HandTrace trace{};
                 const ScopeSafeHandFrameState& state =
-                    _scopeSafeHandFrames[isLeft ? 0u : 1u];
+                    _scope.safeHandFrames[isLeft ? 0u : 1u];
                 trace.rootValid =
                     tryGetRootFlattenedHandBoneTransform(isLeft, trace.rootWorld);
                 trace.driverValid = driverFrame.valid &&
@@ -327,19 +327,19 @@ namespace rock
 
             const std::uint32_t sampleIndex =
                 SCOPE_TRANSITION_TRACE_FRAMES -
-                _nativeScopeTransitionTraceFramesRemaining;
+                _scope.transitionTraceFramesRemaining;
             ROCK_LOG_INFO(Weapon,
                 "SCOPE-TRANSITION seq={} sample={}/{} buttonRequested={} rendererValid={} rendererActive={} menuOpen={} manual={} state={} driverAuthority={} weaponValid={} weapon=({:.2f},{:.2f},{:.2f}) playerOffsetValid={} playerOffset=({:.2f},{:.2f},{:.2f}) left[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}] right[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}]",
-                _nativeScopeTransitionTraceSequence,
+                _scope.transitionTraceSequence,
                 sampleIndex,
                 SCOPE_TRANSITION_TRACE_FRAMES,
-                _manualScopeActivationRequested ? "yes" : "no",
+                _scope.manualActivationRequested ? "yes" : "no",
                 frameInput.nativeScopeRequestStateValid ? "yes" : "no",
-                _nativeScopeRequestActive ? "yes" : "no",
-                _scopeMenuOpenThisFrame ? "yes" : "no",
+                _scope.nativeRequestActive ? "yes" : "no",
+                _scope.menuOpenThisFrame ? "yes" : "no",
                 isManualOwnershipActive() ? "yes" : "no",
-                static_cast<std::uint32_t>(_state),
-                _scopeDriverFrameAuthorityActive ? "yes" : "no",
+                static_cast<std::uint32_t>(_session.state),
+                _scope.driverFrameAuthorityActive ? "yes" : "no",
                 weaponWorldValid ? "yes" : "no",
                 weaponWorldPosition.x,
                 weaponWorldPosition.y,
@@ -384,11 +384,11 @@ namespace rock
                 rightTrace.solverWorld.translate.z,
                 rightTrace.rootToReconstructedDistance,
                 rightTrace.rootToSolverDistance);
-            _nativeScopeTransitionFinalTraceSequence =
-                _nativeScopeTransitionTraceSequence;
-            _nativeScopeTransitionFinalTraceSample = sampleIndex;
-            _nativeScopeTransitionFinalTracePending = true;
-            --_nativeScopeTransitionTraceFramesRemaining;
+            _scope.transitionFinalTraceSequence =
+                _scope.transitionTraceSequence;
+            _scope.transitionFinalTraceSample = sampleIndex;
+            _scope.transitionFinalTracePending = true;
+            --_scope.transitionTraceFramesRemaining;
         }
     }
 
@@ -396,7 +396,7 @@ namespace rock
         const scope_safe_hand_frame_math::HandAuthorityRole role,
         const bool isLeft)
     {
-        _scopeDeferredHandAuthorityClears[isLeft ? 0u : 1u] |= scope_safe_hand_frame_math::roleMask(role);
+        _scope.deferredHandAuthorityClears[isLeft ? 0u : 1u] |= scope_safe_hand_frame_math::roleMask(role);
     }
 
     void TwoHandedGrip::recordScopeHandAuthorityPublication(
@@ -405,10 +405,10 @@ namespace rock
     {
         const std::size_t index = isLeft ? 0u : 1u;
         const auto roleBit = scope_safe_hand_frame_math::roleMask(role);
-        _scopeHandAuthorityPublishedThisFrame[index] |= roleBit;
+        _scope.handAuthorityPublishedThisFrame[index] |= roleBit;
         // A successfully republished role is live again; a clear requested for
         // the same role while ScopeMenu was open is obsolete.
-        _scopeDeferredHandAuthorityClears[index] &= static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(~roleBit);
+        _scope.deferredHandAuthorityClears[index] &= static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(~roleBit);
     }
 
     bool TwoHandedGrip::clearHandAuthorityRoleNow(
@@ -433,26 +433,26 @@ namespace rock
         }
 
         const auto roleBit = scope_safe_hand_frame_math::roleMask(role);
-        _scopeDeferredHandAuthorityClears[isLeft ? 0u : 1u] &=
+        _scope.deferredHandAuthorityClears[isLeft ? 0u : 1u] &=
             static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(~roleBit);
         return true;
     }
 
     void TwoHandedGrip::reconcileDeferredScopeHandAuthority(RE::NiNode* weaponNode)
     {
-        if (_scopeMenuOpenThisFrame || !frik_visual_authority::isAvailable()) {
+        if (_scope.menuOpenThisFrame || !frik_visual_authority::isAvailable()) {
             return;
         }
 
-        const auto pendingBefore = _scopeDeferredHandAuthorityClears;
+        const auto pendingBefore = _scope.deferredHandAuthorityClears;
         if (pendingBefore[0] == 0 && pendingBefore[1] == 0) {
             return;
         }
 
         const scope_safe_hand_frame_math::DesiredHandAuthorityInput ownership{
-            .gripping = _state == TwoHandedState::Gripping,
+            .gripping = _session.state == TwoHandedState::Gripping,
             .primaryHandAuthorityEnabled =
-                weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_authorityMode),
+                weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_session.authorityMode),
             .firingHandIsLeft = isFiringHandLeft(),
             .leftPartGripActive = partGrip(true).active,
             .rightPartGripActive = partGrip(false).active,
@@ -473,16 +473,16 @@ namespace rock
             const std::size_t index = isLeft ? 0u : 1u;
             const auto desiredRoles = scope_safe_hand_frame_math::desiredRolesForHand(ownership, isLeft);
             for (const auto role : roles) {
-                if (!scope_safe_hand_frame_math::hasRole(_scopeDeferredHandAuthorityClears[index], role)) {
+                if (!scope_safe_hand_frame_math::hasRole(_scope.deferredHandAuthorityClears[index], role)) {
                     continue;
                 }
 
                 switch (scope_safe_hand_frame_math::resolveDeferredClearAction(
                     role,
                     desiredRoles,
-                    _scopeHandAuthorityPublishedThisFrame[index])) {
+                    _scope.handAuthorityPublishedThisFrame[index])) {
                 case scope_safe_hand_frame_math::DeferredClearAction::RetainLiveRole:
-                    _scopeDeferredHandAuthorityClears[index] &=
+                    _scope.deferredHandAuthorityClears[index] &=
                         static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(
                             ~scope_safe_hand_frame_math::roleMask(role));
                     retained[index] |= scope_safe_hand_frame_math::roleMask(role);
@@ -511,9 +511,9 @@ namespace rock
             "right(clear=0x{:02X},retain=0x{:02X},pending=0x{:02X})",
             static_cast<unsigned>(cleared[0]),
             static_cast<unsigned>(retained[0]),
-            static_cast<unsigned>(_scopeDeferredHandAuthorityClears[0]),
+            static_cast<unsigned>(_scope.deferredHandAuthorityClears[0]),
             static_cast<unsigned>(cleared[1]),
             static_cast<unsigned>(retained[1]),
-            static_cast<unsigned>(_scopeDeferredHandAuthorityClears[1]));
+            static_cast<unsigned>(_scope.deferredHandAuthorityClears[1]));
     }
 }

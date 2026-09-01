@@ -14,39 +14,39 @@ namespace rock
         return true;
     }
 
-    void TwoHandedGrip::clearNativeScopeRigidFrame() { _nativeScopeRigidFrame = {}; }
+    void TwoHandedGrip::clearNativeScopeRigidFrame() { _scope.rigidFrame = {}; }
 
     bool TwoHandedGrip::rebuildNativeScopeRigidFrameTarget()
     {
-        if (!_nativeScopeRigidFrame.valid ||
-            !_nativeScopeAnchorValid ||
-            _nativeScopeRigidFrame.weaponNodeIdentity !=
-                _nativeScopeAnchorWeaponNode ||
-            _nativeScopeRigidFrame.weaponGenerationKey !=
-                _nativeScopeAnchorGenerationKey) {
+        if (!_scope.rigidFrame.valid ||
+            !_scope.anchorValid ||
+            _scope.rigidFrame.weaponNodeIdentity !=
+                _scope.anchorWeaponNode ||
+            _scope.rigidFrame.weaponGenerationKey !=
+                _scope.anchorGenerationKey) {
             return false;
         }
 
         RE::NiTransform targetCameraWeaponLocal =
-            _nativeScopeRigidFrame.nativeCameraWeaponLocal;
-        targetCameraWeaponLocal.translate = _nativeScopeAnchorWeaponLocal;
-        if (_nativeScopeAnchorSource ==
+            _scope.rigidFrame.nativeCameraWeaponLocal;
+        targetCameraWeaponLocal.translate = _scope.anchorWeaponLocal;
+        if (_scope.anchorSource ==
             native_scope_sight_anchor_policy::AnchorSource::
                 FiringGripFallback) {
             targetCameraWeaponLocal =
                 native_scope_camera_follow_math::
                     applyWeaponLocalRotationOffset(
                         targetCameraWeaponLocal,
-                        _nativeScopeFallbackRotationDegrees.x,
-                        _nativeScopeFallbackRotationDegrees.y,
-                        _nativeScopeFallbackRotationDegrees.z);
+                        _scope.fallbackRotationDegrees.x,
+                        _scope.fallbackRotationDegrees.y,
+                        _scope.fallbackRotationDegrees.z);
         }
         if (!isFiniteTransform(targetCameraWeaponLocal) ||
             std::abs(targetCameraWeaponLocal.scale) <= 0.0001f) {
             return false;
         }
 
-        _nativeScopeRigidFrame.cameraWeaponLocal =
+        _scope.rigidFrame.cameraWeaponLocal =
             targetCameraWeaponLocal;
         return true;
     }
@@ -55,25 +55,25 @@ namespace rock
         TwoHandedGrip::getNativeScopeCameraTargetPreviewSnapshot() const
     {
         const bool valid =
-            _nativeScopeRigidFrame.valid &&
-            _nativeScopeAnchorValid &&
-            _nativeScopeRigidFrame.weaponNodeIdentity ==
-                _nativeScopeAnchorWeaponNode &&
-            _nativeScopeRigidFrame.weaponGenerationKey ==
-                _nativeScopeAnchorGenerationKey &&
+            _scope.rigidFrame.valid &&
+            _scope.anchorValid &&
+            _scope.rigidFrame.weaponNodeIdentity ==
+                _scope.anchorWeaponNode &&
+            _scope.rigidFrame.weaponGenerationKey ==
+                _scope.anchorGenerationKey &&
             isFiniteTransform(
-                _nativeScopeRigidFrame.cameraWeaponLocal) &&
-            std::abs(_nativeScopeRigidFrame.cameraWeaponLocal.scale) >
+                _scope.rigidFrame.cameraWeaponLocal) &&
+            std::abs(_scope.rigidFrame.cameraWeaponLocal.scale) >
                 0.0001f;
         return NativeScopeCameraTargetPreviewSnapshot{
             .weaponGenerationKey =
-                _nativeScopeRigidFrame.weaponGenerationKey,
+                _scope.rigidFrame.weaponGenerationKey,
             .equippedWeaponOwnershipKey =
-                _nativeScopeAnchorOwnershipKey,
-            .weaponFormID = _nativeScopeAnchorWeaponFormID,
-            .anchorSource = _nativeScopeAnchorSource,
+                _scope.anchorOwnershipKey,
+            .weaponFormID = _scope.anchorWeaponFormID,
+            .anchorSource = _scope.anchorSource,
             .cameraWeaponLocal =
-                _nativeScopeRigidFrame.cameraWeaponLocal,
+                _scope.rigidFrame.cameraWeaponLocal,
             .valid = valid,
         };
     }
@@ -81,25 +81,25 @@ namespace rock
     bool TwoHandedGrip::captureNativeScopeRigidFrame(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera,
         const RE::NiTransform& nativeCameraWorld)
     {
-        if (_nativeScopeRigidFrame.valid && _nativeScopeRigidFrame.weaponGenerationKey == currentWeaponGenerationKey && _nativeScopeRigidFrame.weaponNodeIdentity == weaponNode &&
-            _nativeScopeRigidFrame.scopeCameraIdentity == scopeCamera) {
+        if (_scope.rigidFrame.valid && _scope.rigidFrame.weaponGenerationKey == currentWeaponGenerationKey && _scope.rigidFrame.weaponNodeIdentity == weaponNode &&
+            _scope.rigidFrame.scopeCameraIdentity == scopeCamera) {
             return true;
         }
 
         clearNativeScopeRigidFrame();
-        if (!weaponNode || currentWeaponGenerationKey == 0 || !_nativeScopeAnchorValid || _nativeScopeAnchorWeaponNode != weaponNode ||
-            _nativeScopeAnchorGenerationKey != currentWeaponGenerationKey || !scopeCamera || !isFiniteTransform(weaponNode->world) || !isFiniteTransform(nativeCameraWorld)) {
+        if (!weaponNode || currentWeaponGenerationKey == 0 || !_scope.anchorValid || _scope.anchorWeaponNode != weaponNode ||
+            _scope.anchorGenerationKey != currentWeaponGenerationKey || !scopeCamera || !isFiniteTransform(weaponNode->world) || !isFiniteTransform(nativeCameraWorld)) {
             return false;
         }
 
         const RE::NiTransform nativeCameraWeaponLocal =
-            native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(weaponNode->world, nativeCameraWorld, _nativeScopeAnchorWeaponLocal);
+            native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(weaponNode->world, nativeCameraWorld, _scope.anchorWeaponLocal);
         if (!isFiniteTransform(nativeCameraWeaponLocal) ||
             std::abs(nativeCameraWeaponLocal.scale) <= 0.0001f) {
             return false;
         }
 
-        _nativeScopeRigidFrame = NativeScopeRigidFrameState{
+        _scope.rigidFrame = NativeScopeRigidFrameState{
             .weaponGenerationKey = currentWeaponGenerationKey,
             .weaponNodeIdentity = weaponNode,
             .scopeCameraIdentity = scopeCamera,
@@ -112,22 +112,22 @@ namespace rock
             return false;
         }
         ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: native scope rigid frame captured generation={:016X} cameraLocal=({:.2f},{:.2f},{:.2f}) scale={:.3f}", currentWeaponGenerationKey,
-            _nativeScopeRigidFrame.cameraWeaponLocal.translate.x, _nativeScopeRigidFrame.cameraWeaponLocal.translate.y,
-            _nativeScopeRigidFrame.cameraWeaponLocal.translate.z, _nativeScopeRigidFrame.cameraWeaponLocal.scale);
+            _scope.rigidFrame.cameraWeaponLocal.translate.x, _scope.rigidFrame.cameraWeaponLocal.translate.y,
+            _scope.rigidFrame.cameraWeaponLocal.translate.z, _scope.rigidFrame.cameraWeaponLocal.scale);
         return true;
     }
 
     void TwoHandedGrip::synchronizeNativeScopePresentationAfterFrikUpdate(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
     {
-        if (!weaponNode || currentWeaponGenerationKey == 0 || !_nativeScopeAnchorValid || _nativeScopeAnchorWeaponNode != weaponNode ||
-            _nativeScopeAnchorGenerationKey != currentWeaponGenerationKey) {
+        if (!weaponNode || currentWeaponGenerationKey == 0 || !_scope.anchorValid || _scope.anchorWeaponNode != weaponNode ||
+            _scope.anchorGenerationKey != currentWeaponGenerationKey) {
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
             return;
         }
 
-        if ((_nativeScopeOverlayCalibration.valid && _nativeScopeOverlayCalibration.weaponGenerationKey != currentWeaponGenerationKey) ||
-            (_nativeScopeRigidFrame.valid && _nativeScopeRigidFrame.weaponGenerationKey != currentWeaponGenerationKey)) {
+        if ((_scope.overlayCalibration.valid && _scope.overlayCalibration.weaponGenerationKey != currentWeaponGenerationKey) ||
+            (_scope.rigidFrame.valid && _scope.rigidFrame.weaponGenerationKey != currentWeaponGenerationKey)) {
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
         }
@@ -145,26 +145,26 @@ namespace rock
         }
 
         const bool overlayCalibrationReady = captureNativeScopeOverlayCalibration(capture.cameraWorldBefore, currentWeaponGenerationKey);
-        const RE::NiTransform targetCameraWorld = native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(weaponNode->world, _nativeScopeRigidFrame.cameraWeaponLocal);
+        const RE::NiTransform targetCameraWorld = native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(weaponNode->world, _scope.rigidFrame.cameraWeaponLocal);
         const NativeScopeCameraFollowResult result = applyNativeScopeCameraWorldTarget(capture, targetCameraWorld);
         if (overlayCalibrationReady && result.targetValid && result.writeApplied) {
             (void)applyNativeScopeOverlayTarget(result.targetCameraWorld, currentWeaponGenerationKey);
         }
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
-            _nativeScopeCameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(_nativeScopeCameraDebugSnapshot, currentWeaponGenerationKey,
-                NativeScopeCameraWriteSource::PostFrikPresentationSync, capture, result, _nativeScopeAnchorSource);
+            _scope.cameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(_scope.cameraDebugSnapshot, currentWeaponGenerationKey,
+                NativeScopeCameraWriteSource::PostFrikPresentationSync, capture, result, _scope.anchorSource);
         }
     }
 
     void TwoHandedGrip::clearNativeScopeOverlayAuthority(const bool restoreNativeLocal)
     {
-        if (restoreNativeLocal && _nativeScopeOverlayCalibration.valid && _nativeScopeOverlayCalibration.hasAppliedLocal && runtime_state::isLocalSkeletonReady() &&
+        if (restoreNativeLocal && _scope.overlayCalibration.valid && _scope.overlayCalibration.hasAppliedLocal && runtime_state::isLocalSkeletonReady() &&
             RE::PlayerCharacter::GetSingleton()) {
             const auto* playerNodes = f4vr::getPlayerNodes();
             auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
-            if (scopeParent == _nativeScopeOverlayCalibration.scopeParentIdentity &&
-                areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal)) {
-                scopeParent->local = _nativeScopeOverlayCalibration.nativeScopeParentLocal;
+            if (scopeParent == _scope.overlayCalibration.scopeParentIdentity &&
+                areTransformsNearlyEqual(scopeParent->local, _scope.overlayCalibration.lastAppliedScopeParentLocal)) {
+                scopeParent->local = _scope.overlayCalibration.nativeScopeParentLocal;
                 if (scopeParent->parent) {
                     f4vr::updateTransformsDown(scopeParent, true);
                 } else {
@@ -174,7 +174,7 @@ namespace rock
             }
         }
 
-        _nativeScopeOverlayCalibration = {};
+        _scope.overlayCalibration = {};
     }
 
     bool TwoHandedGrip::captureNativeScopeOverlayCalibration(
@@ -199,15 +199,15 @@ namespace rock
             return false;
         }
 
-        if (_nativeScopeOverlayCalibration.valid) {
+        if (_scope.overlayCalibration.valid) {
             const bool sameOwner =
-                _nativeScopeOverlayCalibration.weaponGenerationKey == currentWeaponGenerationKey &&
-                _nativeScopeOverlayCalibration.scopeParentIdentity == scopeParent &&
-                _nativeScopeOverlayCalibration.scopeModelRootIdentity == scopeModelRoot &&
-                areTransformsNearlyEqual(scopeModelRoot->local, _nativeScopeOverlayCalibration.scopeModelRootLocal);
+                _scope.overlayCalibration.weaponGenerationKey == currentWeaponGenerationKey &&
+                _scope.overlayCalibration.scopeParentIdentity == scopeParent &&
+                _scope.overlayCalibration.scopeModelRootIdentity == scopeModelRoot &&
+                areTransformsNearlyEqual(scopeModelRoot->local, _scope.overlayCalibration.scopeModelRootLocal);
             const bool engineStillHasRockLocal =
-                !_nativeScopeOverlayCalibration.hasAppliedLocal ||
-                areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal);
+                !_scope.overlayCalibration.hasAppliedLocal ||
+                areTransformsNearlyEqual(scopeParent->local, _scope.overlayCalibration.lastAppliedScopeParentLocal);
             if (sameOwner && engineStillHasRockLocal) {
                 return true;
             }
@@ -234,7 +234,7 @@ namespace rock
             return false;
         }
 
-        _nativeScopeOverlayCalibration = NativeScopeOverlayCalibrationState{
+        _scope.overlayCalibration = NativeScopeOverlayCalibrationState{
             .weaponGenerationKey = currentWeaponGenerationKey,
             .scopeParentIdentity = scopeParent,
             .scopeModelRootIdentity = scopeModelRoot,
@@ -262,27 +262,27 @@ namespace rock
         const RE::NiTransform& correctedCameraWorld,
         const std::uint64_t currentWeaponGenerationKey)
     {
-        if (!_nativeScopeOverlayCalibration.valid ||
-            _nativeScopeOverlayCalibration.weaponGenerationKey != currentWeaponGenerationKey ||
+        if (!_scope.overlayCalibration.valid ||
+            _scope.overlayCalibration.weaponGenerationKey != currentWeaponGenerationKey ||
             !isFiniteTransform(correctedCameraWorld) || !RE::PlayerCharacter::GetSingleton()) {
             return false;
         }
 
         const auto* playerNodes = f4vr::getPlayerNodes();
         auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
-        if (!scopeParent || scopeParent != _nativeScopeOverlayCalibration.scopeParentIdentity ||
+        if (!scopeParent || scopeParent != _scope.overlayCalibration.scopeParentIdentity ||
             !scopeParent->parent || std::abs(scopeParent->parent->world.scale) <= 0.0001f) {
             return false;
         }
 
         auto* scopeModelRoot = f4vr::find1StChildNode(scopeParent, "world_scope.nif");
-        if (!scopeModelRoot || scopeModelRoot != _nativeScopeOverlayCalibration.scopeModelRootIdentity ||
+        if (!scopeModelRoot || scopeModelRoot != _scope.overlayCalibration.scopeModelRootIdentity ||
             scopeModelRoot->parent != scopeParent ||
-            !areTransformsNearlyEqual(scopeModelRoot->local, _nativeScopeOverlayCalibration.scopeModelRootLocal)) {
+            !areTransformsNearlyEqual(scopeModelRoot->local, _scope.overlayCalibration.scopeModelRootLocal)) {
             return false;
         }
 
-        if (_nativeScopeOverlayCalibration.hasAppliedLocal && !areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal)) {
+        if (_scope.overlayCalibration.hasAppliedLocal && !areTransformsNearlyEqual(scopeParent->local, _scope.overlayCalibration.lastAppliedScopeParentLocal)) {
             // FO4VR reclaimed the node after our calibration. The next
             // post-hFRIK presentation sync captures its new native baseline.
             return false;
@@ -299,7 +299,7 @@ namespace rock
         const RE::NiTransform targetScopeModelRootWorld =
             native_scope_overlay_follow_math::resolveScopeModelRootWorld(
                 correctedCameraWorld,
-                _nativeScopeOverlayCalibration.scopeModelRootCalibrationInCameraLocal,
+                _scope.overlayCalibration.scopeModelRootCalibrationInCameraLocal,
                 modelRootFineTuneLocal);
         if (!isFiniteTransform(targetScopeModelRootWorld)) {
             return false;
@@ -308,7 +308,7 @@ namespace rock
         const RE::NiTransform targetScopeParentWorld =
             native_scope_overlay_follow_math::resolveScopeParentWorldForModelRoot(
                 targetScopeModelRootWorld,
-                _nativeScopeOverlayCalibration.scopeModelRootLocal);
+                _scope.overlayCalibration.scopeModelRootLocal);
         if (!isFiniteTransform(targetScopeParentWorld)) {
             return false;
         }
@@ -323,8 +323,8 @@ namespace rock
 
         scopeParent->local = targetScopeParentLocal;
         f4vr::updateTransformsDown(scopeParent, true);
-        _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal = targetScopeParentLocal;
-        _nativeScopeOverlayCalibration.hasAppliedLocal = true;
+        _scope.overlayCalibration.lastAppliedScopeParentLocal = targetScopeParentLocal;
+        _scope.overlayCalibration.hasAppliedLocal = true;
 
         RE::NiTransform immediateScopeModelRootWorld{};
         return tryGetComposedNodeWorld(scopeModelRoot, immediateScopeModelRootWorld) &&
@@ -358,28 +358,28 @@ namespace rock
             currentWeaponGenerationKey,
             currentEquippedWeaponOwnershipKey);
         if (firingGripValid) {
-            firingGripWeaponLocal = _rightFiringGripCanonicalWeaponLocal;
+            firingGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal;
             firingGripFromCanonical = true;
         } else if (isManualOwnershipActive() &&
-                   _activeWeaponNode == weaponNode &&
-                   _activeWeaponGenerationKey == currentWeaponGenerationKey &&
-                   _activeEquippedWeaponOwnershipKey ==
+                   _session.weaponNode == weaponNode &&
+                   _session.weaponGenerationKey == currentWeaponGenerationKey &&
+                   _session.equippedWeaponOwnershipKey ==
                        currentEquippedWeaponOwnershipKey &&
-                   _primaryGripConfidence > 0.0f &&
+                   _firing.primaryGripConfidence > 0.0f &&
                    native_scope_sight_anchor_policy::isFinitePoint(
-                       _primaryGripLocal)) {
-            firingGripWeaponLocal = _primaryGripLocal;
+                       _firing.primaryGripLocal)) {
+            firingGripWeaponLocal = _firing.primaryGripLocal;
             firingGripValid = true;
         }
 
         const bool sameIdentity =
-            _nativeScopeAnchorWeaponNode == weaponNode &&
-            _nativeScopeAnchorGenerationKey == currentWeaponGenerationKey &&
-            _nativeScopeAnchorOwnershipKey ==
+            _scope.anchorWeaponNode == weaponNode &&
+            _scope.anchorGenerationKey == currentWeaponGenerationKey &&
+            _scope.anchorOwnershipKey ==
                 currentEquippedWeaponOwnershipKey &&
-            _nativeScopeAnchorWeaponFormID == currentEquippedWeaponFormID;
+            _scope.anchorWeaponFormID == currentEquippedWeaponFormID;
         if (sameIdentity &&
-            _nativeScopeAnchorSource ==
+            _scope.anchorSource ==
                 native_scope_sight_anchor_policy::AnchorSource::GeneratedSight &&
             !forceFiringGripFallback) {
             return;
@@ -389,16 +389,16 @@ namespace rock
         if (identityChanged) {
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
-            _nativeScopeAnchorWeaponNode = weaponNode;
-            _nativeScopeAnchorGenerationKey = currentWeaponGenerationKey;
-            _nativeScopeAnchorOwnershipKey =
+            _scope.anchorWeaponNode = weaponNode;
+            _scope.anchorGenerationKey = currentWeaponGenerationKey;
+            _scope.anchorOwnershipKey =
                 currentEquippedWeaponOwnershipKey;
-            _nativeScopeAnchorWeaponFormID = currentEquippedWeaponFormID;
-            _nativeScopeAnchorWeaponLocal = {};
-            _nativeScopeAnchorSource =
+            _scope.anchorWeaponFormID = currentEquippedWeaponFormID;
+            _scope.anchorWeaponLocal = {};
+            _scope.anchorSource =
                 native_scope_sight_anchor_policy::AnchorSource::None;
-            _nativeScopeAnchorValid = false;
-            _nativeScopeFallbackRotationDegrees = fallbackRotationDegrees;
+            _scope.anchorValid = false;
+            _scope.fallbackRotationDegrees = fallbackRotationDegrees;
         }
         if (!weaponNode || currentWeaponGenerationKey == 0 ||
             currentEquippedWeaponOwnershipKey == 0 ||
@@ -432,15 +432,15 @@ namespace rock
                 // A racing publication is never allowed to select either its
                 // geometry or a sticky fallback. Clear the identity so the
                 // next frame retries against one coherent body-set snapshot.
-                _nativeScopeAnchorWeaponNode = nullptr;
-                _nativeScopeAnchorGenerationKey = 0;
-                _nativeScopeAnchorOwnershipKey = 0;
-                _nativeScopeAnchorWeaponFormID = 0;
-                _nativeScopeAnchorWeaponLocal = {};
-                _nativeScopeAnchorSource =
+                _scope.anchorWeaponNode = nullptr;
+                _scope.anchorGenerationKey = 0;
+                _scope.anchorOwnershipKey = 0;
+                _scope.anchorWeaponFormID = 0;
+                _scope.anchorWeaponLocal = {};
+                _scope.anchorSource =
                     native_scope_sight_anchor_policy::AnchorSource::None;
-                _nativeScopeAnchorValid = false;
-                _nativeScopeFallbackRotationDegrees = {};
+                _scope.anchorValid = false;
+                _scope.fallbackRotationDegrees = {};
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
                 ROCK_LOG_DEBUG(Weapon,
@@ -463,15 +463,15 @@ namespace rock
             firingGripWeaponLocal,
             fallbackOffsetWeaponLocal);
         if (!resolved.valid) {
-            if (_nativeScopeAnchorValid) {
+            if (_scope.anchorValid) {
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
             }
-            _nativeScopeAnchorWeaponLocal = {};
-            _nativeScopeAnchorSource =
+            _scope.anchorWeaponLocal = {};
+            _scope.anchorSource =
                 native_scope_sight_anchor_policy::AnchorSource::None;
-            _nativeScopeAnchorValid = false;
-            _nativeScopeFallbackRotationDegrees =
+            _scope.anchorValid = false;
+            _scope.fallbackRotationDegrees =
                 fallbackRotationDegrees;
             ROCK_LOG_SAMPLE_DEBUG(Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
@@ -485,26 +485,26 @@ namespace rock
 
         const bool sameResolvedAnchor =
             !identityChanged &&
-            _nativeScopeAnchorValid &&
-            _nativeScopeAnchorSource == resolved.source &&
+            _scope.anchorValid &&
+            _scope.anchorSource == resolved.source &&
             arePointsNearlyEqual(
-                _nativeScopeAnchorWeaponLocal,
+                _scope.anchorWeaponLocal,
                 resolved.weaponLocal);
         const bool fallbackRotationChanged =
             resolved.source ==
                 native_scope_sight_anchor_policy::AnchorSource::
                     FiringGripFallback &&
             !arePointsNearlyEqual(
-                _nativeScopeFallbackRotationDegrees,
+                _scope.fallbackRotationDegrees,
                 fallbackRotationDegrees);
         if (sameResolvedAnchor && !fallbackRotationChanged) {
             return;
         }
 
         if (sameResolvedAnchor) {
-            _nativeScopeFallbackRotationDegrees =
+            _scope.fallbackRotationDegrees =
                 fallbackRotationDegrees;
-            if (_nativeScopeRigidFrame.valid &&
+            if (_scope.rigidFrame.valid &&
                 !rebuildNativeScopeRigidFrameTarget()) {
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
@@ -524,12 +524,12 @@ namespace rock
             return;
         }
 
-        _nativeScopeAnchorWeaponLocal = resolved.weaponLocal;
-        _nativeScopeAnchorSource = resolved.source;
-        _nativeScopeAnchorValid = true;
-        _nativeScopeFallbackRotationDegrees =
+        _scope.anchorWeaponLocal = resolved.weaponLocal;
+        _scope.anchorSource = resolved.source;
+        _scope.anchorValid = true;
+        _scope.fallbackRotationDegrees =
             fallbackRotationDegrees;
-        if (_nativeScopeRigidFrame.valid &&
+        if (_scope.rigidFrame.valid &&
             !rebuildNativeScopeRigidFrameTarget()) {
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
@@ -571,9 +571,9 @@ namespace rock
                 fallbackRotationDegrees.x,
                 fallbackRotationDegrees.y,
                 fallbackRotationDegrees.z,
-                _nativeScopeAnchorWeaponLocal.x,
-                _nativeScopeAnchorWeaponLocal.y,
-                _nativeScopeAnchorWeaponLocal.z,
+                _scope.anchorWeaponLocal.x,
+                _scope.anchorWeaponLocal.y,
+                _scope.anchorWeaponLocal.z,
                 forceFiringGripFallback);
         }
     }

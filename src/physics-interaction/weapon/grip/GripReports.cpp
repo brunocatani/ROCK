@@ -35,13 +35,13 @@ namespace rock
         const bool handHasFiringRole = isFiringHand(isLeft);
         const WeaponPartGrip& grip = partGrip(isLeft);
         const auto kind = weapon_part_grip_report_policy::resolveHandGripKind(
-            _state == TwoHandedState::Gripping,
-            _state == TwoHandedState::PartCarry,
-            _state == TwoHandedState::PrimaryOnly,
+            _session.state == TwoHandedState::Gripping,
+            _session.state == TwoHandedState::PartCarry,
+            _session.state == TwoHandedState::PrimaryOnly,
             handHasFiringRole,
             grip.active,
             grip.attachOnly,
-            _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport);
+            _session.authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport);
         outReport.kind = kind;
         if (kind == weapon_part_grip_report_policy::HandGripKind::None) {
             return;
@@ -52,18 +52,18 @@ namespace rock
             // In PrimaryOnly the weapon rides the FRIK-native hand attach and
             // ROCK holds no captured hand-to-weapon frame; hasHandPartLocal
             // stays false there by design.
-            outReport.gripSequence = _firingGripSequence;
-            outReport.weaponGenerationKey = _activeWeaponGenerationKey;
-            outReport.sourceRoot = reinterpret_cast<std::uintptr_t>(_activeWeaponNode);
-            outReport.hasHandPartLocal = _hasFiringHandWeaponLocal;
-            outReport.handPartLocal = _primaryHandWeaponLocal;
+            outReport.gripSequence = _session.firingGripSequence;
+            outReport.weaponGenerationKey = _session.weaponGenerationKey;
+            outReport.sourceRoot = reinterpret_cast<std::uintptr_t>(_session.weaponNode);
+            outReport.hasHandPartLocal = _firing.hasPrimaryHandWeaponLocal;
+            outReport.handPartLocal = _firing.primaryHandWeaponLocal;
             return;
         }
 
         outReport.attachOnly = grip.attachOnly;
         outReport.authoredSupportGrip = grip.authoredSupportGrip;
         outReport.gripSequence = grip.gripSequence;
-        outReport.weaponGenerationKey = grip.weaponGenerationKey != 0 ? grip.weaponGenerationKey : _activeWeaponGenerationKey;
+        outReport.weaponGenerationKey = grip.weaponGenerationKey != 0 ? grip.weaponGenerationKey : _session.weaponGenerationKey;
         outReport.bodyId = grip.contactBodyId;
         outReport.partKind = static_cast<std::uint32_t>(grip.partKind);
         outReport.reloadRole = static_cast<std::uint32_t>(grip.reloadRole);
@@ -116,7 +116,7 @@ namespace rock
             "TwoHandedGrip: equipped weapon drop requested reason={} sourceHand={} generation={:016X} detachSource={}",
             reason ? reason : "unknown",
             equipped_weapon_drop_policy::sourceHandName(sourceHand),
-            _activeWeaponGenerationKey,
+            _session.weaponGenerationKey,
             immersive_weapon_policy::authorityName(
                 _handlingSettings.detachAuthority));
         clearWeaponVisualReturn("equipped-weapon-drop", true, true);
@@ -127,23 +127,23 @@ namespace rock
         SelectedAuthoredGripPoseSnapshot& outSnapshot) const
     {
         outSnapshot = {};
-        const auto generationKey = _activeWeaponGenerationKey != 0 ?
-            _activeWeaponGenerationKey :
-            _rightFiringHandCanonicalGenerationKey;
+        const auto generationKey = _session.weaponGenerationKey != 0 ?
+            _session.weaponGenerationKey :
+            _firing.rightCanonicalGenerationKey;
         if (generationKey == 0) {
             return false;
         }
 
         const bool canonicalCurrent =
-            _hasRightFiringHandCanonicalWeaponLocal &&
-            _rightFiringHandCanonicalGenerationKey == generationKey &&
-            (!_activeWeaponNode ||
-                _rightFiringHandCanonicalWeaponNode == _activeWeaponNode);
+            _firing.hasRightCanonicalHandWeaponLocal &&
+            _firing.rightCanonicalGenerationKey == generationKey &&
+            (!_session.weaponNode ||
+                _firing.rightCanonicalWeaponNode == _session.weaponNode);
         const bool supportCurrent =
-            _authoredSupportGripCandidate.valid &&
-            _authoredSupportGripCandidate.weaponGenerationKey == generationKey &&
-            (!_activeWeaponNode ||
-                _authoredSupportGripCandidate.weaponNode == _activeWeaponNode);
+            _support.authoredCandidate.valid &&
+            _support.authoredCandidate.weaponGenerationKey == generationKey &&
+            (!_session.weaponNode ||
+                _support.authoredCandidate.weaponNode == _session.weaponNode);
         if (!canonicalCurrent && !supportCurrent) {
             return false;
         }
@@ -151,16 +151,16 @@ namespace rock
         outSnapshot.weaponGenerationKey = generationKey;
         if (canonicalCurrent) {
             outSnapshot.rightHandWeaponLocal =
-                _rightFiringHandCanonicalWeaponLocal;
+                _firing.rightCanonicalHandWeaponLocal;
             outSnapshot.rightHandValid = true;
             outSnapshot.rightFingerLocalTransforms =
-                _rightFiringFingerLocalTransforms;
+                _firing.rightFingerLocalTransforms;
             outSnapshot.rightFingerLocalTransformMask =
-                _rightFiringFingerLocalTransformMask;
+                _firing.rightFingerLocalTransformMask;
             outSnapshot.captureSequence =
-                _rightFiringHandCanonicalCaptureSequence;
+                _firing.rightCanonicalCaptureSequence;
             outSnapshot.source =
-                _rightFiringHandCanonicalSource ==
+                _firing.rightCanonicalSource ==
                         RightFiringCanonicalSource::AuthoredAnimation ?
                     SelectedAuthoredGripPoseSnapshot::Source::NativeIdlePreharvest :
                     SelectedAuthoredGripPoseSnapshot::Source::RuntimeCanonical;
@@ -168,24 +168,24 @@ namespace rock
 
         if (supportCurrent) {
             outSnapshot.leftHandWeaponLocal =
-                _authoredSupportGripCandidate.leftHandWeaponLocal;
+                _support.authoredCandidate.leftHandWeaponLocal;
             outSnapshot.leftHandValid = true;
             outSnapshot.leftFingerLocalTransforms =
-                _authoredSupportGripCandidate.leftFingerLocalTransforms;
+                _support.authoredCandidate.leftFingerLocalTransforms;
             outSnapshot.leftFingerLocalTransformMask =
-                _authoredSupportGripCandidate.leftFingerLocalTransformMask;
+                _support.authoredCandidate.leftFingerLocalTransformMask;
             outSnapshot.captureSequence = (std::max)(
                 outSnapshot.captureSequence,
-                _authoredSupportGripCandidate.captureSequence);
+                _support.authoredCandidate.captureSequence);
             if (!canonicalCurrent) {
                 outSnapshot.rightHandWeaponLocal =
-                    _authoredSupportGripCandidate.rightHandWeaponLocal;
+                    _support.authoredCandidate.rightHandWeaponLocal;
                 outSnapshot.rightHandValid =
-                    _authoredSupportGripCandidate.rightMirrorValid;
+                    _support.authoredCandidate.rightMirrorValid;
                 outSnapshot.rightFingerLocalTransforms =
-                    _authoredSupportGripCandidate.rightFingerLocalTransforms;
+                    _support.authoredCandidate.rightFingerLocalTransforms;
                 outSnapshot.rightFingerLocalTransformMask =
-                    _authoredSupportGripCandidate.rightFingerLocalTransformMask;
+                    _support.authoredCandidate.rightFingerLocalTransformMask;
             }
             outSnapshot.source =
                 SelectedAuthoredGripPoseSnapshot::Source::NativeIdlePreharvest;
@@ -198,9 +198,9 @@ namespace rock
                 outSnapshot.leftHandWeaponLocal = leftHandWeaponLocal;
                 outSnapshot.leftHandValid = true;
                 outSnapshot.leftFingerLocalTransforms =
-                    _leftFiringFingerLocalTransforms;
+                    _firing.leftFingerLocalTransforms;
                 outSnapshot.leftFingerLocalTransformMask =
-                    _leftFiringFingerLocalTransformMask;
+                    _firing.leftFingerLocalTransformMask;
             }
         }
 

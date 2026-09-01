@@ -13,28 +13,28 @@ namespace rock
         outFailureReason = "carry-identity-unavailable";
 
         const WeaponPartGrip& carryGrip = partGrip(carryHandIsLeft);
-        if (!_activeWeaponNode ||
-            _activeWeaponGenerationKey == 0 ||
-            _activeEquippedWeaponOwnershipKey == 0 ||
+        if (!_session.weaponNode ||
+            _session.weaponGenerationKey == 0 ||
+            _session.equippedWeaponOwnershipKey == 0 ||
             !carryGrip.active ||
             !carryGrip.hasHandWeaponLocal) {
             return false;
         }
         if (carryGrip.weaponGenerationKey == 0 ||
             carryGrip.weaponGenerationKey !=
-                _activeWeaponGenerationKey ||
+                _session.weaponGenerationKey ||
             carryGrip.gripSequence == 0) {
             outFailureReason = "carry-grip-identity-stale";
             return false;
         }
-        if (!_hasLastRenderedWeaponWorld ||
-            !isInvertibleTransform(_lastRenderedWeaponWorld)) {
+        if (!_visuals.hasLastRenderedWeaponWorld ||
+            !isInvertibleTransform(_visuals.lastRenderedWeaponWorld)) {
             outFailureReason = "no-rendered-frame";
             return false;
         }
 
         const auto& carryDriver =
-            _currentHandDriverFrames[carryHandIsLeft ? 0u : 1u];
+            _scope.currentHandDriverFrames[carryHandIsLeft ? 0u : 1u];
         if (!carryDriver.valid ||
             !isInvertibleTransform(carryDriver.world)) {
             outFailureReason = "no-raw-carry-driver";
@@ -59,7 +59,7 @@ namespace rock
          */
         const RE::NiTransform authoredGripTargetWorld =
             weapon_visual_authority_math::weaponLocalFrameToWorld(
-                _lastRenderedWeaponWorld,
+                _visuals.lastRenderedWeaponWorld,
                 carryGrip.handWeaponLocal);
         RE::NiTransform driverToGripTargetLocal{};
         RE::NiTransform driverToWeaponLocal{};
@@ -72,7 +72,7 @@ namespace rock
             !weapon_support_acquisition_math::
                 tryCaptureSupportInputBaseline(
                     calibratedCarryDriverWorld,
-                    _lastRenderedWeaponWorld,
+                    _visuals.lastRenderedWeaponWorld,
                     driverToWeaponLocal)) {
             outFailureReason = "driver-baseline-capture-failed";
             return false;
@@ -81,10 +81,10 @@ namespace rock
         outBaseline = {
             .inputToGripTargetLocal = driverToGripTargetLocal,
             .inputToWeaponLocal = driverToWeaponLocal,
-            .weaponWorldAtCapture = _lastRenderedWeaponWorld,
+            .weaponWorldAtCapture = _visuals.lastRenderedWeaponWorld,
             .weaponGenerationKey = carryGrip.weaponGenerationKey,
             .equippedWeaponOwnershipKey =
-                _activeEquippedWeaponOwnershipKey,
+                _session.equippedWeaponOwnershipKey,
             .gripSequence = carryGrip.gripSequence,
             .supportHandIsLeft = carryHandIsLeft,
             .kind = SupportInputBaselineKind::PartCarry,
@@ -97,7 +97,7 @@ namespace rock
 
     bool TwoHandedGrip::transitionToPartCarry()
     {
-        if (_state == TwoHandedState::PartCarry) {
+        if (_session.state == TwoHandedState::PartCarry) {
             return true;
         }
 
@@ -140,9 +140,9 @@ namespace rock
         clearPrimaryGripFingerPose(isFiringHandLeft());
         clearPrimaryGripWorldAuthority(isFiringHandLeft());
         if (usesLeftFiringCarry()) {
-            _leftFiringDampedFollowFrame = {};
+            _firing.leftDampedFollowFrame = {};
         }
-        _primaryHandVisualLerp = {};
+        _visuals.primaryHandLerp = {};
         WeaponPartGrip& carryGrip = partGrip(carryHandIsLeft);
         carryGrip.visualLerp = {};
         lockPartGripToWeaponRoot(carryHandIsLeft);
@@ -155,11 +155,11 @@ namespace rock
                 carryHandIsLeft ? "left" : "right",
                 poseHandoffReason);
         }
-        _rotationBlend = 1.0f;
-        _partCarryPivotIsLeft = carryHandIsLeft;
-        _partCarryDetachAuthority = _handlingSettings.detachAuthority;
-        _partCarryGripSeparationWorld = 0.0f;
-        _state = TwoHandedState::PartCarry;
+        _support.rotationBlend = 1.0f;
+        _partCarry.pivotIsLeft = carryHandIsLeft;
+        _partCarry.detachAuthority = _handlingSettings.detachAuthority;
+        _partCarry.gripSeparationWorld = 0.0f;
+        _session.state = TwoHandedState::PartCarry;
         recordFiringGripDetachedHaptic();
         if (poseHandoffReady) {
             ROCK_LOG_INFO(
@@ -181,7 +181,7 @@ namespace rock
 
     bool TwoHandedGrip::republishPartCarryWeaponTransform(RE::NiNode* weaponNode)
     {
-        if (_state != TwoHandedState::PartCarry || !_hasSolvedWeaponTransform || !weaponNode) {
+        if (_session.state != TwoHandedState::PartCarry || !_hasSolvedWeaponTransform || !weaponNode) {
             return false;
         }
         return applyWeaponVisualAuthority(weaponNode, _lastSolvedWeaponTransform);
@@ -272,13 +272,13 @@ namespace rock
                         WeaponInteractionAcquisitionSource::ProximityProbe &&
                     !authoredProviderAuthorityActive &&
                     !authoredAttachOnlyAuthorityActive);
-            if (!_firingGripReattachHoverInsideRadius &&
+            if (!_firing.reattachHoverInsideRadius &&
                 weapon_two_handed_grip_math::isFiringGripReattachHoverCandidate(
                     candidate.gripHeld,
                     palmToGripDistance,
                     _handlingSettings.firingGripReattachRadiusGameUnits)) {
-                _firingGripReattachHoverInsideRadius = true;
-                _firingGripReattachHoverHandIsLeft = candidate.isLeft;
+                _firing.reattachHoverInsideRadius = true;
+                _firing.reattachHoverHandIsLeft = candidate.isLeft;
             }
             if (reattachRequested &&
                 tryReattachFiringGrip(
@@ -292,27 +292,27 @@ namespace rock
                     // Re-lock the two-hand separation against the (possibly
                     // swapped) support grip and re-blend the support target in.
                     const RE::NiPoint3 supportGripWorld = resolvePartGripWorld(partGrip(newSupportHandIsLeft), weaponNode);
-                    const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+                    const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
                     const RE::NiPoint3 separationDelta = sub(supportGripWorld, firingGripWorld);
                     const float separation = std::sqrt(dot(separationDelta, separationDelta));
                     if (std::isfinite(separation)) {
-                        _lockedGripSeparationWorld = separation;
+                        _support.lockedGripSeparationWorld = separation;
                     }
                     if (candidate.isLeft != firingHandIsLeft) {
-                        _rotationBlend = 0.0f;
+                        _support.rotationBlend = 0.0f;
                     }
-                    _state = TwoHandedState::Gripping;
-                    _partCarryDetachAuthority =
+                    _session.state = TwoHandedState::Gripping;
+                    _partCarry.detachAuthority =
                         immersive_weapon_policy::DetachAuthority::None;
                     // Fresh two-hand configuration: the just-taken firing grip
                     // gets the same release-defer window as a fresh support grab.
-                    _supportGripAgeSeconds = 0.0f;
-                    _freshSupportGripDeferLogged = false;
+                    _support.gripAgeSeconds = 0.0f;
+                    _support.freshGripDeferLogged = false;
                     WeaponPartGrip& reattachedSupportGrip =
                         partGrip(newSupportHandIsLeft);
                     if (weapon_support_authority_policy::
                             shouldUseDynamicSupportAcquisition(
-                                _authorityMode,
+                                _session.authorityMode,
                                 reattachedSupportGrip.authoredSupportGrip,
                                 reattachedSupportGrip.providerPartAuthority.active,
                                 reattachedSupportGrip.attachOnly) &&
@@ -424,7 +424,7 @@ namespace rock
                             immersive_weapon_policy::
                                 DetachedFiringHandPartGrabInput{
                                     .partCarryAuthority =
-                                        _partCarryDetachAuthority,
+                                        _partCarry.detachAuthority,
                                     .authoredOnlySupportGrabsEnabled =
                                         _handlingSettings.
                                             authoredOnlySupportGrabsEnabled,
@@ -463,8 +463,8 @@ namespace rock
                     } else {
                         lockPartGripToWeaponRoot(firingHandIsLeft);
                         if (weapon_part_grip_report_policy::partGripCountsAsCarry(supportGrip.active, supportGrip.attachOnly)) {
-                            _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
-                            _rotationBlend = 0.0f;
+                            _partCarry.gripSeparationWorld = partCarryGripSeparation(weaponNode);
+                            _support.rotationBlend = 0.0f;
                         }
                     }
                 }
@@ -491,8 +491,8 @@ namespace rock
                     } else {
                         lockPartGripToWeaponRoot(supportHandIsLeft);
                         if (weapon_part_grip_report_policy::partGripCountsAsCarry(freeHandGrip.active, freeHandGrip.attachOnly)) {
-                            _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
-                            _rotationBlend = 0.0f;
+                            _partCarry.gripSeparationWorld = partCarryGripSeparation(weaponNode);
+                            _support.rotationBlend = 0.0f;
                         }
                     }
                 }
@@ -520,9 +520,9 @@ namespace rock
         // The pivot must always be a carry-authority grip; after the check
         // above, the other hand is guaranteed to hold one.
         if (!weapon_part_grip_report_policy::partGripCountsAsCarry(
-                partGrip(_partCarryPivotIsLeft).active,
-                partGrip(_partCarryPivotIsLeft).attachOnly)) {
-            _partCarryPivotIsLeft = !_partCarryPivotIsLeft;
+                partGrip(_partCarry.pivotIsLeft).active,
+                partGrip(_partCarry.pivotIsLeft).attachOnly)) {
+            _partCarry.pivotIsLeft = !_partCarry.pivotIsLeft;
         }
 
         (void)solvePartCarryWeaponAuthority(weaponNode, dt);
@@ -539,7 +539,7 @@ namespace rock
 
     bool TwoHandedGrip::solvePartCarryWeaponAuthority(RE::NiNode* weaponNode, float dt)
     {
-        const bool pivotIsLeft = _partCarryPivotIsLeft;
+        const bool pivotIsLeft = _partCarry.pivotIsLeft;
         WeaponPartGrip& pivotGrip = partGrip(pivotIsLeft);
         const WeaponPartGrip& aimGrip = partGrip(!pivotIsLeft);
         // An AttachOnly glue never aims the weapon; the carry solves
@@ -571,7 +571,7 @@ namespace rock
         RE::NiTransform calibratedPartCarryWeaponWorld{};
         if (partCarryBaselineActive) {
             const auto& pivotDriver =
-                _currentHandDriverFrames[pivotIsLeft ? 0u : 1u];
+                _scope.currentHandDriverFrames[pivotIsLeft ? 0u : 1u];
             RE::NiTransform calibratedPivotDriverWorld{};
             if (pivotDriver.valid) {
                 calibratedPivotDriverWorld = pivotDriver.world;
@@ -619,7 +619,7 @@ namespace rock
                 return false;
             }
 
-            _rotationBlend = (std::min)(1.0f, _rotationBlend + dt * ROTATION_BLEND_SPEED);
+            _support.rotationBlend = (std::min)(1.0f, _support.rotationBlend + dt * ROTATION_BLEND_SPEED);
 
             /*
              * The two-anchor solve must be closed over the captured
@@ -638,14 +638,14 @@ namespace rock
             const RE::NiPoint3 currentPivotGripWorld = weaponLocalToWorld(pivotGrip.gripLocal, weaponNode);
             const RE::NiPoint3 currentSeparationDelta = sub(currentAimGripWorld, currentPivotGripWorld);
             const float currentSeparation = std::sqrt(dot(currentSeparationDelta, currentSeparationDelta));
-            const float lockedSeparation = _partCarryGripSeparationWorld > 0.0f ? _partCarryGripSeparationWorld : currentSeparation;
+            const float lockedSeparation = _partCarry.gripSeparationWorld > 0.0f ? _partCarry.gripSeparationWorld : currentSeparation;
             const RE::NiPoint3 lockedAimTarget = makeLockedSupportGripTarget(
                 pivotPalm,
                 aimPalm,
                 currentAimGripWorld,
                 lockedSeparation,
                 0.001f);
-            const RE::NiPoint3 blendedAimTarget = lerpPoint(currentAimGripWorld, lockedAimTarget, _rotationBlend);
+            const RE::NiPoint3 blendedAimTarget = lerpPoint(currentAimGripWorld, lockedAimTarget, _support.rotationBlend);
 
             WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{};
             solverInput.weaponWorldTransform = weaponNode->world;

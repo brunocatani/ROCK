@@ -17,15 +17,15 @@ namespace rock
             return;
         }
         if (std::isfinite(dt) && dt > 0.0f) {
-            _gripFailureDetailedLogCooldownSeconds = (std::max)(
+            _telemetry.detailedLogCooldownSeconds = (std::max)(
                 0.0f,
-                _gripFailureDetailedLogCooldownSeconds - dt);
+                _telemetry.detailedLogCooldownSeconds - dt);
         }
 
         const auto& runtime = runtime_state::currentFrame();
         GripFailureFrameSnapshot snapshot{};
-        snapshot.handFrames[0] = _scopeSafeHandFrames[0].diagnostic;
-        snapshot.handFrames[1] = _scopeSafeHandFrames[1].diagnostic;
+        snapshot.handFrames[0] = _scope.safeHandFrames[0].diagnostic;
+        snapshot.handFrames[1] = _scope.safeHandFrames[1].diagnostic;
         snapshot.hmdPositionWorld = frameInput.hmdPositionWorld;
         snapshot.playerSpaceDeltaGameUnits =
             runtime.playerSpace.deltaGameUnits;
@@ -44,10 +44,10 @@ namespace rock
             supportGrip.active ? supportGrip.gripSequence : 0;
         snapshot.weaponFormID = currentWeaponFormID;
         snapshot.primaryReleaseOpenFrames =
-            _primaryReleaseDebounce.consecutiveOpenFrames;
+            _firing.primaryReleaseDebounce.consecutiveOpenFrames;
         snapshot.deltaSeconds = dt;
-        snapshot.state = _state;
-        snapshot.authorityMode = _authorityMode;
+        snapshot.state = _session.state;
+        snapshot.authorityMode = _session.authorityMode;
         snapshot.firingHandIsLeft = isFiringHandLeft();
         snapshot.leftGripHeld = stableFrameInput.leftGripHeld;
         snapshot.rightGripHeld = stableFrameInput.rightGripHeld;
@@ -73,14 +73,14 @@ namespace rock
             snapshot.weaponWorldValid = isFiniteTransform(weaponNode->world);
         }
 
-        const std::size_t historyIndex = _gripFailureHistoryNext;
-        _gripFailureHistory[historyIndex] = snapshot;
-        _currentGripFailureHistoryIndex = historyIndex;
-        _gripFailureHistoryNext =
+        const std::size_t historyIndex = _telemetry.historyNext;
+        _telemetry.history[historyIndex] = snapshot;
+        _telemetry.currentHistoryIndex = historyIndex;
+        _telemetry.historyNext =
             (historyIndex + 1) % kGripFailureHistoryCapacity;
-        _gripFailureHistoryCount = (std::min)(
+        _telemetry.historyCount = (std::min)(
             kGripFailureHistoryCapacity,
-            _gripFailureHistoryCount + 1);
+            _telemetry.historyCount + 1);
     }
 
     void TwoHandedGrip::recordLockedHandAuthorityAttempt(
@@ -92,13 +92,13 @@ namespace rock
         const bool applied)
     {
         if (!g_rockConfig.rockDebugGripFailureTelemetry ||
-            _currentGripFailureHistoryIndex >=
+            _telemetry.currentHistoryIndex >=
                 kGripFailureHistoryCapacity) {
             return;
         }
 
         auto& snapshot =
-            _gripFailureHistory[_currentGripFailureHistoryIndex];
+            _telemetry.history[_telemetry.currentHistoryIndex];
         if (snapshot.frameIndex != runtime_state::currentFrame().frameIndex) {
             return;
         }
@@ -127,13 +127,13 @@ namespace rock
             ROCK_LOG_WARN(
                 Weapon,
                 "TwoHandedGrip: grip failure incident={} reason={} state={} authority={} firingHand={} generation={:016X} ownership={:016X} partGrip(L/R)={}/{}",
-                ++_gripFailureIncidentSequence,
+                ++_telemetry.incidentSequence,
                 reason ? reason : "unknown",
-                twoHandedStateDiagnosticName(_state),
-                supportAuthorityDiagnosticName(_authorityMode),
+                twoHandedStateDiagnosticName(_session.state),
+                supportAuthorityDiagnosticName(_session.authorityMode),
                 firingHandName(),
-                _activeWeaponGenerationKey,
-                _activeEquippedWeaponOwnershipKey,
+                _session.weaponGenerationKey,
+                _session.equippedWeaponOwnershipKey,
                 occupancy.left.partGripActive,
                 occupancy.right.partGripActive);
             return;
@@ -141,38 +141,38 @@ namespace rock
 
         GripFailureFrameSnapshot fallback{};
         GripFailureFrameSnapshot* current = &fallback;
-        if (_currentGripFailureHistoryIndex <
+        if (_telemetry.currentHistoryIndex <
             kGripFailureHistoryCapacity) {
             current =
-                &_gripFailureHistory[_currentGripFailureHistoryIndex];
+                &_telemetry.history[_telemetry.currentHistoryIndex];
         } else {
             current->frameIndex = runtime_state::currentFrame().frameIndex;
         }
 
-        current->state = _state;
-        current->authorityMode = _authorityMode;
+        current->state = _session.state;
+        current->authorityMode = _session.authorityMode;
         current->firingHandIsLeft = isFiringHandLeft();
-        current->handFrames[0] = _scopeSafeHandFrames[0].diagnostic;
-        current->handFrames[1] = _scopeSafeHandFrames[1].diagnostic;
-        current->weaponGenerationKey = _activeWeaponGenerationKey;
+        current->handFrames[0] = _scope.safeHandFrames[0].diagnostic;
+        current->handFrames[1] = _scope.safeHandFrames[1].diagnostic;
+        current->weaponGenerationKey = _session.weaponGenerationKey;
         current->equippedWeaponOwnershipKey =
-            _activeEquippedWeaponOwnershipKey;
+            _session.equippedWeaponOwnershipKey;
         const WeaponPartGrip& supportGrip = supportPartGrip();
         current->supportGripSequence =
             supportGrip.active ? supportGrip.gripSequence : 0;
-        if (_activeWeaponNode) {
-            current->weaponWorld = _activeWeaponNode->world;
+        if (_session.weaponNode) {
+            current->weaponWorld = _session.weaponNode->world;
             current->weaponWorldValid =
-                isFiniteTransform(_activeWeaponNode->world);
+                isFiniteTransform(_session.weaponNode->world);
         }
 
         const auto occupancy = getGripOccupancy();
         const std::uint64_t incident =
-            ++_gripFailureIncidentSequence;
+            ++_telemetry.incidentSequence;
         const bool emitDetailedHistory =
-            _gripFailureDetailedLogCooldownSeconds <= 0.0f;
+            _telemetry.detailedLogCooldownSeconds <= 0.0f;
         if (emitDetailedHistory) {
-            _gripFailureDetailedLogCooldownSeconds =
+            _telemetry.detailedLogCooldownSeconds =
                 GRIP_FAILURE_DETAILED_LOG_COOLDOWN_SECONDS;
         }
 
@@ -320,23 +320,23 @@ namespace rock
         logAuthorityAttempt(true, current->authorityAttempts[0]);
         logAuthorityAttempt(false, current->authorityAttempts[1]);
 
-        if (!emitDetailedHistory || _gripFailureHistoryCount == 0) {
+        if (!emitDetailedHistory || _telemetry.historyCount == 0) {
             return;
         }
 
         const std::size_t historyStart =
-            _gripFailureHistoryCount == kGripFailureHistoryCapacity ?
-            _gripFailureHistoryNext :
+            _telemetry.historyCount == kGripFailureHistoryCapacity ?
+            _telemetry.historyNext :
             0;
         ROCK_LOG_INFO(
             Weapon,
             "TwoHandedGrip: grip failure history begin incident={} samples={}",
             incident,
-            _gripFailureHistoryCount);
+            _telemetry.historyCount);
         for (std::size_t ordinal = 0;
-             ordinal < _gripFailureHistoryCount;
+             ordinal < _telemetry.historyCount;
              ++ordinal) {
-            const auto& sample = _gripFailureHistory[
+            const auto& sample = _telemetry.history[
                 (historyStart + ordinal) % kGripFailureHistoryCapacity];
             const auto& leftFrame = sample.handFrames[0];
             const auto& rightFrame = sample.handFrames[1];
@@ -351,7 +351,7 @@ namespace rock
                 "TwoHandedGrip: grip failure history incident={} sample={}/{} frame={} ageFrames={} dt={:.5f} state={} authority={} firing={} input={} held(L/R)={}/{} physicalHeld(L/R)={}/{} primary(logical/debounced)={}/{} releaseOpen={} animationBoundary={} scope={} weaponT=({:.2f},{:.2f},{:.2f}) playerDelta=({:.2f},{:.2f},{:.2f}) handL(mode/current/driver/reconstructed/collision)={}/{}/{}/{}/{} handR(mode/current/driver/reconstructed/collision)={}/{}/{}/{}/{} authorityL(role/requested/applied/T)=({}/{}/{}/({:.2f},{:.2f},{:.2f})) authorityR(role/requested/applied/T)=({}/{}/{}/({:.2f},{:.2f},{:.2f}))",
                 incident,
                 ordinal + 1,
-                _gripFailureHistoryCount,
+                _telemetry.historyCount,
                 sample.frameIndex,
                 ageFrames,
                 sample.deltaSeconds,
@@ -405,12 +405,12 @@ namespace rock
 
     void TwoHandedGrip::resetGripFailureDiagnostics()
     {
-        _gripFailureHistory = {};
-        _gripFailureHistoryNext = 0;
-        _gripFailureHistoryCount = 0;
-        _currentGripFailureHistoryIndex =
+        _telemetry.history = {};
+        _telemetry.historyNext = 0;
+        _telemetry.historyCount = 0;
+        _telemetry.currentHistoryIndex =
             kGripFailureHistoryCapacity;
-        _gripFailureIncidentSequence = 0;
-        _gripFailureDetailedLogCooldownSeconds = 0.0f;
+        _telemetry.incidentSequence = 0;
+        _telemetry.detailedLogCooldownSeconds = 0.0f;
     }
 }

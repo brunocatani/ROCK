@@ -193,7 +193,7 @@ namespace rock
                 if (candidateView.weaponGenerationKey !=
                         decision.weaponGenerationKey ||
                     candidateView.weaponGenerationKey !=
-                        _activeWeaponGenerationKey ||
+                        _session.weaponGenerationKey ||
                     candidateView.localTriangles.empty()) {
                     continue;
                 }

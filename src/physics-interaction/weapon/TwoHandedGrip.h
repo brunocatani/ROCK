@@ -441,7 +441,7 @@ namespace rock
         [[nodiscard]] AuthoredSupportGripIndicatorFrame
             getAuthoredSupportGripIndicatorFrame() const noexcept
         {
-            return _authoredSupportGripIndicatorFrame;
+            return _support.authoredIndicatorFrame;
         }
 
         /*
@@ -520,7 +520,7 @@ namespace rock
             std::uint64_t weaponOwnershipKey);
         [[nodiscard]] bool hasPublishedAuthoredPrimaryFiringGripFingerPose(const bool isLeft) const noexcept
         {
-            return _authoredPrimaryFingerPosePublished && _publishedFiringFingerPoseIsLeft == isLeft;
+            return _firing.authoredFingerPosePublished && _firing.publishedFingerPoseIsLeft == isLeft;
         }
         void clearAuthoredPrimaryFiringGripFingerPose();
         void setAuthoredPrimaryFiringGripFingerPoseSuppressed(bool suppressed);
@@ -559,8 +559,8 @@ namespace rock
             void* context,
             WeaponVisualIntentObserver observer)
         {
-            _weaponVisualIntentObserverContext = context;
-            _weaponVisualIntentObserver = observer;
+            _visuals.weaponIntentObserverContext = context;
+            _visuals.weaponIntentObserver = observer;
         }
 
         // Captures which hands retained collision presentation through the
@@ -571,8 +571,8 @@ namespace rock
 
         bool previousWeaponCollisionPresentationWasLive() const
         {
-            return _weaponCollisionHandPresentationFromPreviousFrame[0] ||
-                   _weaponCollisionHandPresentationFromPreviousFrame[1];
+            return _visuals.weaponCollisionHandPresentationFromPreviousFrame[0] ||
+                   _visuals.weaponCollisionHandPresentationFromPreviousFrame[1];
         }
 
         // Republishes a physics-resolved visual pose without feeding that
@@ -582,20 +582,20 @@ namespace rock
             const RE::NiTransform& resolvedWeaponWorld,
             std::uint64_t authorityGenerationKey);
 
-        bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PartCarry; }
+        bool isGripping() const { return _session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry; }
 
         bool isManualOwnershipActive() const
         {
-            return _state == TwoHandedState::Gripping ||
-                   _state == TwoHandedState::PartCarry ||
-                   _state == TwoHandedState::PrimaryOnly;
+            return _session.state == TwoHandedState::Gripping ||
+                   _session.state == TwoHandedState::PartCarry ||
+                   _session.state == TwoHandedState::PrimaryOnly;
         }
 
         bool isWeaponVisualReturnActive() const;
 
-        bool isPartCarryActive() const { return _state == TwoHandedState::PartCarry; }
+        bool isPartCarryActive() const { return _session.state == TwoHandedState::PartCarry; }
 
-        bool isPrimaryOnlyActive() const { return _state == TwoHandedState::PrimaryOnly; }
+        bool isPrimaryOnlyActive() const { return _session.state == TwoHandedState::PrimaryOnly; }
 
         bool isHandPartGripping(bool isLeft) const { return partGrip(isLeft).active; }
 
@@ -610,7 +610,7 @@ namespace rock
             return weapon_part_grip_report_policy::partGripCountsAsCarry(grip.active, grip.attachOnly);
         }
 
-        bool isFiringGripOccupied() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly; }
+        bool isFiringGripOccupied() const { return _session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PrimaryOnly; }
 
         /*
          * True while the OPEN firing palm hovers inside the reattach radius
@@ -618,26 +618,26 @@ namespace rock
          * firing grip. Recomputed every update(); PhysicsInteraction consumes
          * it each frame to drive continuous hover haptics on the firing hand.
          */
-        bool isFiringGripReattachHoverInsideRadius() const { return _firingGripReattachHoverInsideRadius; }
+        bool isFiringGripReattachHoverInsideRadius() const { return _firing.reattachHoverInsideRadius; }
 
         // Which physical hand the hover above refers to (either free hand can
         // hover the firing grip when ambidextrous takeover is available).
-        bool isFiringGripReattachHoverHandLeft() const { return _firingGripReattachHoverHandIsLeft; }
+        bool isFiringGripReattachHoverHandLeft() const { return _firing.reattachHoverHandIsLeft; }
 
         bool canUseFiringGripInput() const
         {
-            return _state == TwoHandedState::Gripping ||
-                   _state == TwoHandedState::PartCarry ||
-                   _state == TwoHandedState::PrimaryOnly;
+            return _session.state == TwoHandedState::Gripping ||
+                   _session.state == TwoHandedState::PartCarry ||
+                   _session.state == TwoHandedState::PrimaryOnly;
         }
 
-        bool isTouching() const { return _state == TwoHandedState::Touching; }
+        bool isTouching() const { return _session.state == TwoHandedState::Touching; }
 
-        bool isFiringHandLeft() const { return _firingHandIsLeft; }
+        bool isFiringHandLeft() const { return _session.firingHandIsLeft; }
 
-        TwoHandedState getState() const { return _state; }
+        TwoHandedState getState() const { return _session.state; }
 
-        weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _authorityMode; }
+        weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _session.authorityMode; }
 
         bool ownsWeaponTransform() const;
 
@@ -667,25 +667,25 @@ namespace rock
         bool getAuthoredSupportGripDebugSnapshot(
             AuthoredSupportGripDebugSnapshot& outSnapshot) const;
 
-        NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
+        NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _scope.cameraDebugSnapshot; }
         NativeScopeCameraTargetPreviewSnapshot
             getNativeScopeCameraTargetPreviewSnapshot() const;
-        NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _nativeScopeActivationDebugSnapshot; }
+        NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _scope.activationDebugSnapshot; }
         NativeScopeResolvedAnchorSnapshot getNativeScopeResolvedAnchorSnapshot() const
         {
             return NativeScopeResolvedAnchorSnapshot{
-                .weaponGenerationKey = _nativeScopeAnchorGenerationKey,
-                .equippedWeaponOwnershipKey = _nativeScopeAnchorOwnershipKey,
-                .weaponFormID = _nativeScopeAnchorWeaponFormID,
-                .anchorWeaponLocal = _nativeScopeAnchorWeaponLocal,
-                .source = _nativeScopeAnchorSource,
-                .valid = _nativeScopeAnchorValid,
+                .weaponGenerationKey = _scope.anchorGenerationKey,
+                .equippedWeaponOwnershipKey = _scope.anchorOwnershipKey,
+                .weaponFormID = _scope.anchorWeaponFormID,
+                .anchorWeaponLocal = _scope.anchorWeaponLocal,
+                .source = _scope.anchorSource,
+                .valid = _scope.anchorValid,
             };
         }
         bool getSelectedAuthoredGripPoseSnapshot(
             SelectedAuthoredGripPoseSnapshot& outSnapshot) const;
 
-        bool isScopeMenuOpenThisFrame() const { return _scopeMenuOpenThisFrame; }
+        bool isScopeMenuOpenThisFrame() const { return _scope.menuOpenThisFrame; }
 
         bool hasVisualAuthorityForHand(bool isLeft) const;
         bool isHandVisualReturnActive(bool isLeft) const;
@@ -715,7 +715,7 @@ namespace rock
         void restoreNativeRightEquippedCarry(const char* reason);
         bool isPersistentEquippedCarryInputAcquisitionPending() const
         {
-            return _persistentEquippedCarryInputAcquisitionPending;
+            return _firing.persistentCarryInputAcquisitionPending;
         }
 
         // Left-hand primary ownership requires ROCK's hFRIK weapon-pose and
@@ -1124,8 +1124,8 @@ namespace rock
             bool initialized{ false };
         };
 
-        WeaponPartGrip& partGrip(bool isLeft) { return _partGrips[isLeft ? 0u : 1u]; }
-        const WeaponPartGrip& partGrip(bool isLeft) const { return _partGrips[isLeft ? 0u : 1u]; }
+        WeaponPartGrip& partGrip(bool isLeft) { return _support.partGrips[isLeft ? 0u : 1u]; }
+        const WeaponPartGrip& partGrip(bool isLeft) const { return _support.partGrips[isLeft ? 0u : 1u]; }
 
         /*
          * Role predicates. Grip math is weapon-relative and hands own roles;
@@ -1134,16 +1134,16 @@ namespace rock
          * stays authoritative and ROCK applies position-only authored
          * alignment. usesLeftFiringCarry: ROCK owns the weapon node
          * end-to-end (reparent, pose blockers, feed-forward publish, left
-         * recoil route). _firingHandIsLeft itself is written only by
+         * recoil route). _session.firingHandIsLeft itself is written only by
          * setFiringHand() and reset().
          */
-        [[nodiscard]] bool isFiringHand(bool isLeft) const noexcept { return isLeft == _firingHandIsLeft; }
-        [[nodiscard]] bool isSupportHandLeft() const noexcept { return !_firingHandIsLeft; }
-        [[nodiscard]] bool usesLeftFiringCarry() const noexcept { return _firingHandIsLeft; }
-        [[nodiscard]] bool usesNativeRightCarry() const noexcept { return !_firingHandIsLeft; }
-        [[nodiscard]] const char* firingHandName() const noexcept { return _firingHandIsLeft ? "left" : "right"; }
-        [[nodiscard]] WeaponPartGrip& supportPartGrip() noexcept { return partGrip(!_firingHandIsLeft); }
-        [[nodiscard]] const WeaponPartGrip& supportPartGrip() const noexcept { return partGrip(!_firingHandIsLeft); }
+        [[nodiscard]] bool isFiringHand(bool isLeft) const noexcept { return isLeft == _session.firingHandIsLeft; }
+        [[nodiscard]] bool isSupportHandLeft() const noexcept { return !_session.firingHandIsLeft; }
+        [[nodiscard]] bool usesLeftFiringCarry() const noexcept { return _session.firingHandIsLeft; }
+        [[nodiscard]] bool usesNativeRightCarry() const noexcept { return !_session.firingHandIsLeft; }
+        [[nodiscard]] const char* firingHandName() const noexcept { return _session.firingHandIsLeft ? "left" : "right"; }
+        [[nodiscard]] WeaponPartGrip& supportPartGrip() noexcept { return partGrip(!_session.firingHandIsLeft); }
+        [[nodiscard]] const WeaponPartGrip& supportPartGrip() const noexcept { return partGrip(!_session.firingHandIsLeft); }
 
         bool clearWeaponCollisionHandAuthority(bool isLeft);
 
@@ -1576,33 +1576,76 @@ namespace rock
             float dt,
             LockedHandVisualLerpState& state);
 
-        TwoHandedState _state{ TwoHandedState::Inactive };
+        /*
+         * ---- Partitioned member state ----
+         * Each implementation module (grip/*.cpp, scope/*.cpp,
+         * telemetry/*.cpp) owns one state struct below; GripSession is the
+         * only state every module shares. Genuinely cross-module values (the
+         * solved-weapon product, the native weapon-node baseline, outbound
+         * one-shot queues, the handling-settings snapshot) remain direct
+         * members at the end.
+         */
 
-        // Reused one-shot solve storage. It owns no engine pointers and keeps
-        // bounded vector/BVH capacity across re-grabs without polluting the
-        // per-frame WeaponPartGrip state.
-        std::unique_ptr<FingerPoseSolveScratch> _fingerPoseSolveScratch;
-
-        weapon_support_authority_policy::WeaponSupportAuthorityMode _authorityMode{
-            weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver
-        };
+        static constexpr float TOUCH_TIMEOUT_SECONDS = 5.0f / 90.0f;
+        static constexpr float ROTATION_BLEND_SPEED = 8.0f;
 
         /*
-         * Physical hand that owns the firing grip when occupied. Seeded right
-         * (false) and reset to right whenever authority clears (weapon change,
-         * holster, drop, teardown). Flipped only through setFiringHand() from
-         * a hand-specific loose-weapon equip or the two takeover paths
-         * (free-hand firing-grip squeeze in PartCarry, support-grip promotion
-         * on firing-hand release); PhysicsInteraction and InputRemap read
-         * isFiringHandLeft() each frame to route input and ownership per role.
+         * Core grip session: the manual-ownership state machine, the
+         * firing-hand role, the identity of the weapon the session is bound
+         * to, the support authority mode, and the monotonic capture
+         * sequences.
+         *
+         * Legal combinations:
+         * - Inactive: no grip authority anywhere; weaponNode and the identity
+         *   keys are stale bookkeeping and must be revalidated before use.
+         * - Touching: support hand hovers the weapon; no transform authority.
+         * - Gripping: firing grip and a support part grip are both occupied;
+         *   authorityMode selects the active two-hand solver flavor.
+         * - PartCarry: the firing grip is vacant and the weapon is carried by
+         *   one or two part grips; firingHandIsLeft still names the hand that
+         *   would re-take the firing grip.
+         * - PrimaryOnly: the firing grip alone is occupied. With the right
+         *   role the weapon transform stays native (FRIK); with the left role
+         *   ROCK owns the weapon node end to end (LeftFiringCarryState).
          */
-        bool _firingHandIsLeft{ false };
+        struct GripSession
+        {
+            TwoHandedState state{ TwoHandedState::Inactive };
 
-        // FRIK weapon-node ownership block + reparent bookkeeping for
-        // left-firing carry; see syncFiringHandWeaponNodeOwnership().
-        bool _weaponNodeOwnershipBlockEngaged{ false };
-        bool _weaponNodeReparentedToLeftHand{ false };
-        bool _recoilControllerRegistered{ false };
+            /*
+             * Physical hand that owns the firing grip when occupied. Seeded
+             * right (false) and reset to right whenever authority clears
+             * (weapon change, holster, drop, teardown). Flipped only through
+             * setFiringHand() from a hand-specific loose-weapon equip or the
+             * two takeover paths (free-hand firing-grip squeeze in PartCarry,
+             * support-grip promotion on firing-hand release); PhysicsInteraction
+             * and InputRemap read isFiringHandLeft() each frame to route input
+             * and ownership per role. Read only through the role predicates;
+             * written only by setFiringHand() and reset().
+             */
+            bool firingHandIsLeft{ false };
+
+            weapon_support_authority_policy::WeaponSupportAuthorityMode authorityMode{
+                weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver
+            };
+
+            // Weapon identity the session is bound to. The node is a
+            // non-owning identity witness for the currently published grip
+            // math; generation and ownership keys make later use fail closed
+            // when the weapon or equip changes.
+            RE::NiNode* weaponNode{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
+
+            /*
+             * Monotonic capture sequences so API consumers can detect a
+             * re-grab of the same part without frame-edge callbacks. One
+             * counter for part grips (stamped per capture) and one for fresh
+             * firing-grip captures.
+             */
+            std::uint64_t gripCaptureSequence{ 0 };
+            std::uint64_t firingGripSequence{ 0 };
+        };
 
         enum class RightFiringCanonicalSource : std::uint8_t
         {
@@ -1611,20 +1654,6 @@ namespace rock
             AuthoredAnimation,
         };
 
-        // Canonical right-hand firing hold, keyed by node identity, collision
-        // generation, and equipped ownership; see
-        // rememberRightFiringHandCanonicalFrame().
-        RE::NiTransform _rightFiringHandCanonicalWeaponLocal{};
-        RE::NiPoint3 _rightFiringGripCanonicalWeaponLocal{};
-        // Non-owning identity witness only; compared, never dereferenced.
-        RE::NiNode* _rightFiringHandCanonicalWeaponNode{ nullptr };
-        std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
-        std::uint64_t _rightFiringHandCanonicalOwnershipKey{ 0 };
-        std::uint64_t _rightFiringHandCanonicalCaptureSequence{ 0 };
-        RightFiringCanonicalSource _rightFiringHandCanonicalSource{
-            RightFiringCanonicalSource::None
-        };
-        bool _hasRightFiringHandCanonicalWeaponLocal{ false };
         struct RightNativeWeaponAimFrame
         {
             RE::NiTransform weaponInWandOrientation{};
@@ -1634,7 +1663,7 @@ namespace rock
             std::uint64_t weaponOwnershipKey{ 0 };
             bool valid{ false };
         };
-        RightNativeWeaponAimFrame _rightNativeWeaponAimFrame{};
+
         struct LeftFiringDampedFollowFrame
         {
             RE::NiTransform handInWandOrientation{};
@@ -1644,149 +1673,294 @@ namespace rock
             std::uint64_t weaponOwnershipKey{ 0 };
             bool valid{ false };
         };
-        LeftFiringDampedFollowFrame _leftFiringDampedFollowFrame{};
-        std::array<RE::NiTransform, 15> _rightFiringFingerLocalTransforms{};
-        std::array<RE::NiTransform, 15> _leftFiringFingerLocalTransforms{};
-        std::uint16_t _rightFiringFingerLocalTransformMask{ 0 };
-        std::uint16_t _leftFiringFingerLocalTransformMask{ 0 };
-        bool _publishedFiringFingerPoseIsLeft{ false };
-        bool _authoredPrimaryFingerPosePublished{ false };
-        bool _authoredPrimaryFingerPoseBlockEngaged{ false };
-        bool _authoredPrimaryFingerPoseSuppressed{ false };
-        // Position-only authored presentation: ROCK owns the right firing-hand
-        // world (weapon-relative authored wrist) while the weapon keeps its
-        // native rotation. Cleared whenever the authored runtime skips a frame.
-        bool _authoredPrimaryFiringHandWorldActive{ false };
-        bool _authoredPrimaryFiringHandWorldRefreshed{ false };
-        // Left position-only carry owns the authored firing wrist separately
-        // from the mirrored native weapon orientation.
-        bool _leftFiringHandWorldActive{ false };
-        bool _leftHandHoldingObjectForPose{ false };
-        bool _rightHandHoldingObjectForPose{ false };
 
-        /*
-         * Natural physical hand-bone relations in the raw wand and hFRIK's
-         * damped driver. They are refreshed only while ROCK has no visual
-         * authority for that hand and are deliberately not weapon-generation
-         * keyed so final alignment never consumes ROCK's previous output.
-         */
-        RE::NiTransform _rightNaturalBoneInWand{};
-        RE::NiTransform _leftNaturalBoneInWand{};
-        RE::NiTransform _rightNaturalBoneInDampedDriver{};
-        RE::NiTransform _leftNaturalBoneInDampedDriver{};
-        bool _hasRightNaturalBoneInWand{ false };
-        bool _hasLeftNaturalBoneInWand{ false };
-        bool _hasRightNaturalBoneInDampedDriver{ false };
-        bool _hasLeftNaturalBoneInDampedDriver{ false };
-
-        std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
-        // Frame-scoped hFRIK/controller drivers captured by
-        // PhysicsInteraction before ROCK publishes any hand visuals.
-        std::array<EquippedWeaponScopeHandDriverFrame, 2>
-            _currentHandDriverFrames{};
-        bool _scopeMenuOpenThisFrame{ false };
-        // True only for the first visible frame after ScopeMenu. Role clears
-        // on this edge use the same deferred transaction as hidden-frame
-        // clears so a same-frame handoff can publish its replacement first.
-        bool _scopeMenuClosedThisFrame{ false };
-        // Bounded edge trace comparing the UI signal, verified renderer
-        // request, restored root hands, hFRIK drivers, and ROCK solver frames.
-        // This remains low-volume and makes future scope-transition reports
-        // diagnosable from one session without enabling per-frame telemetry.
-        bool _nativeScopeRequestStateValid{ false };
-        bool _nativeScopeRequestActive{ false };
-        bool _manualScopeActivationRequested{ false };
-        std::uint64_t _nativeScopeTransitionTraceSequence{ 0 };
-        std::uint32_t _nativeScopeTransitionTraceFramesRemaining{ 0 };
-        std::uint64_t _nativeScopeTransitionFinalTraceSequence{ 0 };
-        std::uint32_t _nativeScopeTransitionFinalTraceSample{ 0 };
-        bool _nativeScopeTransitionFinalTracePending{ false };
-        // Latched across a manual grip session after its first scoped frame so
-        // ScopeMenu presentation edges cannot reselect the weapon-solver basis.
-        bool _scopeDriverFrameAuthorityActive{ false };
-        // Per physical hand (left index 0, right index 1). Clears requested
-        // while hFRIK's root is collapsed remain role-specific so scope exit
-        // never tears down authority that the current weapon state still owns.
-        std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeDeferredHandAuthorityClears{};
-        std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeHandAuthorityPublishedThisFrame{};
-
-        // Fixed-capacity, value-only prehistory. It allocates and formats
-        // nothing in the frame path; an involuntary teardown emits it once at
-        // a controlled rate so transient frame loss is reconstructible.
-        std::array<GripFailureFrameSnapshot, kGripFailureHistoryCapacity>
-            _gripFailureHistory{};
-        std::size_t _gripFailureHistoryNext{ 0 };
-        std::size_t _gripFailureHistoryCount{ 0 };
-        std::size_t _currentGripFailureHistoryIndex{
-            kGripFailureHistoryCapacity
-        };
-        std::uint64_t _gripFailureIncidentSequence{ 0 };
-        float _gripFailureDetailedLogCooldownSeconds{ 0.0f };
-
-        // Generation-bound resolved anchor. Generated sight evidence remains
-        // preferred; malformed/missing optics use the current firing-grip
-        // origin plus the configured Weapon-local offset. The pointer is an
-        // identity witness only and is never dereferenced from this cache.
-        RE::NiNode* _nativeScopeAnchorWeaponNode{ nullptr };
-        std::uint64_t _nativeScopeAnchorGenerationKey{ 0 };
-        std::uint64_t _nativeScopeAnchorOwnershipKey{ 0 };
-        std::uint32_t _nativeScopeAnchorWeaponFormID{ 0 };
-        RE::NiPoint3 _nativeScopeAnchorWeaponLocal{};
-        native_scope_sight_anchor_policy::AnchorSource _nativeScopeAnchorSource{
-            native_scope_sight_anchor_policy::AnchorSource::None
-        };
-        bool _nativeScopeAnchorValid{ false };
-        RE::NiPoint3 _nativeScopeFallbackRotationDegrees{};
-        NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
-        NativeScopeActivationDebugSnapshot _nativeScopeActivationDebugSnapshot{};
-        NativeScopeRigidFrameState _nativeScopeRigidFrame{};
-        NativeScopeOverlayCalibrationState _nativeScopeOverlayCalibration{};
-
-        std::array<WeaponPartGrip, 2> _partGrips{};
-        AuthoredSupportGripCandidate _authoredSupportGripCandidate{};
-        AuthoredSupportCapabilityState _authoredSupportCapability{};
-        authored_support_grab_policy::SelectionDecision
-            _lastSupportGrabSelection{};
-        std::uint64_t _lastSupportGrabSelectionGenerationKey{ 0 };
-        bool _lastSupportGrabSelectionHandIsLeft{ true };
-        bool _lastSupportGrabSelectionValid{ false };
-        AuthoredSupportGripIndicatorFrame
-            _authoredSupportGripIndicatorFrame{};
-        AuthoredSupportGripDebugSnapshot _authoredSupportGripDebugSnapshot{};
-        RE::NiPoint3 _authoredSupportLastStableApproachDirectionWorld{};
-        std::uint64_t _authoredSupportLastStableDirectionGenerationKey{ 0 };
-        std::uint64_t _authoredSupportLastStableDirectionCaptureSequence{ 0 };
-        authored_weapon_grip_activation_policy::HandTopology
-            _authoredSupportLastStableDirectionHandTopology{
-                authored_weapon_grip_activation_policy::HandTopology::Invalid
+        // State owned by the FiringGrip module: the canonical right firing
+        // seat and its mirrors, published finger poses, authored primary
+        // presentation flags, natural hand-in-wand calibration, the captured
+        // firing-grip frames, persistent-carry bookkeeping, and the
+        // reattach-hover witness.
+        struct FiringGripState
+        {
+            // Canonical right-hand firing hold, keyed by node identity,
+            // collision generation, and equipped ownership; see
+            // rememberRightFiringHandCanonicalFrame().
+            RE::NiTransform rightCanonicalHandWeaponLocal{};
+            RE::NiPoint3 rightCanonicalGripWeaponLocal{};
+            // Non-owning identity witness only; compared, never dereferenced.
+            RE::NiNode* rightCanonicalWeaponNode{ nullptr };
+            std::uint64_t rightCanonicalGenerationKey{ 0 };
+            std::uint64_t rightCanonicalOwnershipKey{ 0 };
+            std::uint64_t rightCanonicalCaptureSequence{ 0 };
+            RightFiringCanonicalSource rightCanonicalSource{
+                RightFiringCanonicalSource::None
             };
-        bool _authoredSupportLastStableApproachDirectionValid{ false };
+            bool hasRightCanonicalHandWeaponLocal{ false };
 
-        /*
-         * Monotonic capture sequences so API consumers can detect a re-grab
-         * of the same part without frame-edge callbacks. One counter for part
-         * grips (stamped per capture) and one for fresh firing-grip captures.
-         */
-        std::uint64_t _gripCaptureSequence{ 0 };
-        std::uint64_t _firingGripSequence{ 0 };
+            RightNativeWeaponAimFrame rightNativeWeaponAimFrame{};
+            LeftFiringDampedFollowFrame leftDampedFollowFrame{};
 
-        /*
-         * Which active part grip anchors the part-carry solve. The older grip
-         * carries the weapon (translation pivot); the newer grip aims it.
-         */
-        bool _partCarryPivotIsLeft{ true };
+            std::array<RE::NiTransform, 15> rightFingerLocalTransforms{};
+            std::array<RE::NiTransform, 15> leftFingerLocalTransforms{};
+            std::uint16_t rightFingerLocalTransformMask{ 0 };
+            std::uint16_t leftFingerLocalTransformMask{ 0 };
+            bool publishedFingerPoseIsLeft{ false };
+            bool authoredFingerPosePublished{ false };
+            bool authoredFingerPoseBlockEngaged{ false };
+            bool authoredFingerPoseSuppressed{ false };
+            // Position-only authored presentation: ROCK owns the right
+            // firing-hand world (weapon-relative authored wrist) while the
+            // weapon keeps its native rotation. Cleared whenever the authored
+            // runtime skips a frame.
+            bool authoredHandWorldActive{ false };
+            bool authoredHandWorldRefreshed{ false };
+            // Left position-only carry owns the authored firing wrist
+            // separately from the mirrored native weapon orientation.
+            bool leftHandWorldActive{ false };
+            bool leftHandHoldingObjectForPose{ false };
+            bool rightHandHoldingObjectForPose{ false };
 
-        // Captured when PartCarry begins so a later provider/config snapshot
-        // cannot silently change which detach contract owns the live carry.
-        immersive_weapon_policy::DetachAuthority _partCarryDetachAuthority{
-            immersive_weapon_policy::DetachAuthority::None
+            /*
+             * Natural physical hand-bone relations in the raw wand and
+             * hFRIK's damped driver. They are refreshed only while ROCK has
+             * no visual authority for that hand and are deliberately not
+             * weapon-generation keyed so final alignment never consumes
+             * ROCK's previous output.
+             */
+            RE::NiTransform rightNaturalBoneInWand{};
+            RE::NiTransform leftNaturalBoneInWand{};
+            RE::NiTransform rightNaturalBoneInDampedDriver{};
+            RE::NiTransform leftNaturalBoneInDampedDriver{};
+            bool hasRightNaturalBoneInWand{ false };
+            bool hasLeftNaturalBoneInWand{ false };
+            bool hasRightNaturalBoneInDampedDriver{ false };
+            bool hasLeftNaturalBoneInDampedDriver{ false };
+
+            // Captured firing-grip frames on the current weapon.
+            RE::NiPoint3 primaryGripLocal{};
+            RE::NiTransform primaryHandWeaponLocal{};
+            bool hasPrimaryHandWeaponLocal{ false };
+            float primaryGripConfidence{ 0.0f };
+
+            equipped_weapon_manual_ownership_policy::GripReleaseDebounceState primaryReleaseDebounce{};
+            bool persistentCarryActive{ false };
+            bool persistentCarryDetachArmed{ false };
+            bool persistentCarryInputAcquisitionPending{ false };
+
+            // Per-frame hover state; only ever true in PartCarry (see getter).
+            bool reattachHoverInsideRadius{ false };
+            bool reattachHoverHandIsLeft{ false };
         };
 
-        RE::NiPoint3 _primaryGripLocal{};
+        // State owned by the SupportGrip module: the per-hand part grips,
+        // the authored support candidate/capability/selection pipeline, and
+        // the dynamic support acquisition transaction.
+        struct SupportGripState
+        {
+            std::array<WeaponPartGrip, 2> partGrips{};
+            AuthoredSupportGripCandidate authoredCandidate{};
+            AuthoredSupportCapabilityState authoredCapability{};
+            authored_support_grab_policy::SelectionDecision lastSelection{};
+            std::uint64_t lastSelectionGenerationKey{ 0 };
+            bool lastSelectionHandIsLeft{ true };
+            bool lastSelectionValid{ false };
+            AuthoredSupportGripIndicatorFrame authoredIndicatorFrame{};
+            AuthoredSupportGripDebugSnapshot authoredDebugSnapshot{};
+            RE::NiPoint3 lastStableApproachDirectionWorld{};
+            std::uint64_t lastStableDirectionGenerationKey{ 0 };
+            std::uint64_t lastStableDirectionCaptureSequence{ 0 };
+            authored_weapon_grip_activation_policy::HandTopology
+                lastStableDirectionHandTopology{
+                    authored_weapon_grip_activation_policy::HandTopology::Invalid
+                };
+            bool lastStableApproachDirectionValid{ false };
 
-        float _lockedGripSeparationWorld{ 0.0f };
+            DynamicSupportAcquisitionState dynamicAcquisition{};
 
-        float _partCarryGripSeparationWorld{ 0.0f };
+            // Separation between primary and support grips captured when the
+            // two-hand solve locks.
+            float lockedGripSeparationWorld{ 0.0f };
+
+            float rotationBlend{ 0.0f };
+
+            /*
+             * Whole frames spent in Gripping since the support grab was
+             * captured. Gates promotion/detach on a confirmed firing-grip
+             * release: a release that confirms while this is still fresh is
+             * the same gesture (or a grab-synchronized grip flicker) and is
+             * deferred.
+             */
+            float gripAgeSeconds{ 0.0f };
+            bool freshGripDeferLogged{ false };
+        };
+
+        // State owned by the PartCarry module: which grip anchors the
+        // detached carry and the captured carry contracts.
+        struct PartCarryState
+        {
+            /*
+             * Which active part grip anchors the part-carry solve. The older
+             * grip carries the weapon (translation pivot); the newer grip
+             * aims it.
+             */
+            bool pivotIsLeft{ true };
+
+            // Captured when PartCarry begins so a later provider/config
+            // snapshot cannot silently change which detach contract owns the
+            // live carry.
+            immersive_weapon_policy::DetachAuthority detachAuthority{
+                immersive_weapon_policy::DetachAuthority::None
+            };
+
+            float gripSeparationWorld{ 0.0f };
+        };
+
+        // State owned by the LeftFiringCarry module: FRIK weapon-node
+        // ownership blocking, the LArm_Hand reparent witness, and the
+        // left-firing recoil route.
+        struct LeftFiringCarryState
+        {
+            // FRIK weapon-node ownership block + reparent bookkeeping for
+            // left-firing carry; see syncFiringHandWeaponNodeOwnership().
+            bool weaponNodeOwnershipBlockEngaged{ false };
+            bool weaponNodeReparented{ false };
+
+            /*
+             * hFRIK calls the recoil controller before ROCK's update on the
+             * same game thread. The sequence makes a sample valid for one
+             * ROCK update only. It prevents a skipped callback from reusing
+             * an old gun kick. Full two-hand left carry consumes that sample
+             * in the primary-hand solver target; one-hand carry consumes the
+             * native sample in the final direct weapon publication; close
+             * visual support consumes the attenuated sample there. These
+             * routes must remain mutually exclusive or supported left firing
+             * regresses to one-hand recoil.
+             */
+            RE::NiTransform recoilWorldDelta{};
+            std::uint64_t recoilSampleSequence{ 0 };
+            std::uint64_t observedRecoilSampleSequence{ 0 };
+            bool recoilSampleValid{ false };
+            bool recoilReadyThisUpdate{ false };
+            bool recoilSupportConstrainedThisUpdate{ false };
+            bool recoilControllerRegistered{ false };
+        };
+
+        // State owned by the HandVisualTransitions module: hand and weapon
+        // visual return transitions, published-world witnesses, and the
+        // collision-presentation frame tags.
+        struct HandVisualTransitionState
+        {
+            std::array<ReturningHandVisualState, 2> returningHands{};
+            std::array<RE::NiTransform, 2> lastPublishedHandWorld{};
+            std::array<bool, 2> hasLastPublishedHandWorld{};
+            // Per physical hand (left index 0, right index 1). A collision
+            // target survives only through the render interval that follows
+            // post-solve.
+            std::array<bool, 2> weaponCollisionHandAuthorityLive{};
+            // Captured before those tags are cleared. Because ROCK runs after
+            // FRIK, this identifies current root/weapon poses that already
+            // include the previous render interval's collision presentation.
+            std::array<bool, 2> weaponCollisionHandPresentationFromPreviousFrame{};
+            ReturningWeaponVisualState returningWeapon{};
+            RE::NiTransform lastRenderedWeaponWorld{};
+            bool hasLastRenderedWeaponWorld{ false };
+            LockedHandVisualLerpState primaryHandLerp{};
+            void* weaponIntentObserverContext{ nullptr };
+            WeaponVisualIntentObserver weaponIntentObserver{ nullptr };
+        };
+
+        // State owned by the scope modules (NativeScopePresentation and
+        // ScopeSafeHandFrames): scope-safe hand frames, ScopeMenu edges, the
+        // native scope request witness, transition traces, deferred hand
+        // authority clears, the resolved sight anchor, and the camera/overlay
+        // calibration.
+        struct ScopePresentationState
+        {
+            std::array<ScopeSafeHandFrameState, 2> safeHandFrames{};
+            // Frame-scoped hFRIK/controller drivers captured by
+            // PhysicsInteraction before ROCK publishes any hand visuals.
+            std::array<EquippedWeaponScopeHandDriverFrame, 2>
+                currentHandDriverFrames{};
+            bool menuOpenThisFrame{ false };
+            // True only for the first visible frame after ScopeMenu. Role
+            // clears on this edge use the same deferred transaction as
+            // hidden-frame clears so a same-frame handoff can publish its
+            // replacement first.
+            bool menuClosedThisFrame{ false };
+            // Bounded edge trace comparing the UI signal, verified renderer
+            // request, restored root hands, hFRIK drivers, and ROCK solver
+            // frames. This remains low-volume and makes future
+            // scope-transition reports diagnosable from one session without
+            // enabling per-frame telemetry.
+            bool nativeRequestStateValid{ false };
+            bool nativeRequestActive{ false };
+            bool manualActivationRequested{ false };
+            std::uint64_t transitionTraceSequence{ 0 };
+            std::uint32_t transitionTraceFramesRemaining{ 0 };
+            std::uint64_t transitionFinalTraceSequence{ 0 };
+            std::uint32_t transitionFinalTraceSample{ 0 };
+            bool transitionFinalTracePending{ false };
+            // Latched across a manual grip session after its first scoped
+            // frame so ScopeMenu presentation edges cannot reselect the
+            // weapon-solver basis.
+            bool driverFrameAuthorityActive{ false };
+            // Per physical hand (left index 0, right index 1). Clears
+            // requested while hFRIK's root is collapsed remain role-specific
+            // so scope exit never tears down authority that the current
+            // weapon state still owns.
+            std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> deferredHandAuthorityClears{};
+            std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> handAuthorityPublishedThisFrame{};
+
+            // Generation-bound resolved anchor. Generated sight evidence
+            // remains preferred; malformed/missing optics use the current
+            // firing-grip origin plus the configured Weapon-local offset. The
+            // pointer is an identity witness only and is never dereferenced
+            // from this cache.
+            RE::NiNode* anchorWeaponNode{ nullptr };
+            std::uint64_t anchorGenerationKey{ 0 };
+            std::uint64_t anchorOwnershipKey{ 0 };
+            std::uint32_t anchorWeaponFormID{ 0 };
+            RE::NiPoint3 anchorWeaponLocal{};
+            native_scope_sight_anchor_policy::AnchorSource anchorSource{
+                native_scope_sight_anchor_policy::AnchorSource::None
+            };
+            bool anchorValid{ false };
+            RE::NiPoint3 fallbackRotationDegrees{};
+            NativeScopeCameraDebugSnapshot cameraDebugSnapshot{};
+            NativeScopeActivationDebugSnapshot activationDebugSnapshot{};
+            NativeScopeRigidFrameState rigidFrame{};
+            NativeScopeOverlayCalibrationState overlayCalibration{};
+        };
+
+        // State owned by the GripFailureTelemetry module. Fixed-capacity,
+        // value-only prehistory: it allocates and formats nothing in the
+        // frame path; an involuntary teardown emits it once at a controlled
+        // rate so transient frame loss is reconstructible.
+        struct GripFailureTelemetryState
+        {
+            std::array<GripFailureFrameSnapshot, kGripFailureHistoryCapacity>
+                history{};
+            std::size_t historyNext{ 0 };
+            std::size_t historyCount{ 0 };
+            std::size_t currentHistoryIndex{ kGripFailureHistoryCapacity };
+            std::uint64_t incidentSequence{ 0 };
+            float detailedLogCooldownSeconds{ 0.0f };
+        };
+
+        GripSession _session{};
+        FiringGripState _firing{};
+        SupportGripState _support{};
+        PartCarryState _partCarry{};
+        LeftFiringCarryState _leftCarry{};
+        HandVisualTransitionState _visuals{};
+        ScopePresentationState _scope{};
+        GripFailureTelemetryState _telemetry{};
+
+        // ---- Shared cross-module members ----
+
+        // Reused one-shot solve storage. It owns no engine pointers and keeps
+        // bounded vector/BVH capacity across re-grabs without polluting the
+        // per-frame WeaponPartGrip state.
+        std::unique_ptr<FingerPoseSolveScratch> _fingerPoseSolveScratch;
 
         /*
          * Elapsed time the support hand has been off the weapon while in the
@@ -1794,88 +1968,26 @@ namespace rock
          * at the 90 Hz tuning baseline), rate-independent in seconds.
          */
         float _touchAbsentSeconds{ 0.0f };
-        static constexpr float TOUCH_TIMEOUT_SECONDS = 5.0f / 90.0f;
 
-        float _rotationBlend{ 0.0f };
-        static constexpr float ROTATION_BLEND_SPEED = 8.0f;
-
+        // Rate limiter shared by the support/part-carry diagnostics.
         int _gripLogCounter{ 0 };
 
+        // Solved-weapon product of the active carry program, consumed by
+        // every module and the debug snapshots.
         RE::NiTransform _lastSolvedWeaponTransform{};
-
         bool _hasSolvedWeaponTransform{ false };
 
-        RE::NiTransform _primaryHandWeaponLocal{};
-
-        bool _hasFiringHandWeaponLocal{ false };
-
-        LockedHandVisualLerpState _primaryHandVisualLerp{};
-        DynamicSupportAcquisitionState _dynamicSupportAcquisition{};
-
-        std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
-        std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};
-        std::array<bool, 2> _hasLastPublishedHandWorld{};
-        // Per physical hand (left index 0, right index 1). A collision target
-        // survives only through the render interval that follows post-solve.
-        std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
-        // Captured before those tags are cleared. Because ROCK runs after FRIK,
-        // this identifies current root/weapon poses that already include the
-        // previous render interval's collision presentation.
-        std::array<bool, 2> _weaponCollisionHandPresentationFromPreviousFrame{};
-        ReturningWeaponVisualState _returningWeaponVisual{};
-        RE::NiTransform _lastRenderedWeaponWorld{};
-        bool _hasLastRenderedWeaponWorld{ false };
-
-        /*
-         * hFRIK calls the recoil controller before ROCK's update on the same
-         * game thread. The sequence makes a sample valid for one ROCK update
-         * only. It prevents a skipped callback from reusing an old gun kick.
-         * Full two-hand left carry consumes that sample in the primary-hand
-         * solver target; one-hand carry consumes the native sample in the final
-         * direct weapon publication; close visual support consumes the
-         * attenuated sample there. These routes must remain mutually exclusive
-         * or supported left firing regresses to one-hand recoil.
-         */
-        RE::NiTransform _leftFiringWeaponRecoilWorldDelta{};
-        std::uint64_t _weaponRecoilSampleSequence{ 0 };
-        std::uint64_t _observedWeaponRecoilSampleSequence{ 0 };
-        bool _leftFiringWeaponRecoilSampleValid{ false };
-        bool _leftFiringWeaponRecoilReadyThisUpdate{ false };
-        bool _leftFiringWeaponRecoilSupportConstrainedThisUpdate{ false };
-
-        float _primaryGripConfidence{ 0.0f };
-
-        RE::NiNode* _activeWeaponNode{ nullptr };
-        std::uint64_t _activeWeaponGenerationKey{ 0 };
-        std::uint64_t _activeEquippedWeaponOwnershipKey{ 0 };
-        void* _weaponVisualIntentObserverContext{ nullptr };
-        WeaponVisualIntentObserver _weaponVisualIntentObserver{ nullptr };
-        equipped_weapon_manual_ownership_policy::GripReleaseDebounceState _primaryReleaseDebounce{};
-        bool _persistentEquippedCarryActive{ false };
-        bool _persistentEquippedCarryDetachArmed{ false };
-        bool _persistentEquippedCarryInputAcquisitionPending{ false };
-
-        /*
-         * Whole frames spent in Gripping since the support grab was captured.
-         * Gates promotion/detach on a confirmed firing-grip release: a
-         * release that confirms while this is still fresh is the same
-         * gesture (or a grab-synchronized grip flicker) and is deferred.
-         */
-        float _supportGripAgeSeconds{ 0.0f };
-        bool _freshSupportGripDeferLogged{ false };
-
+        // Native local transform of the weapon node captured before ROCK's
+        // first write, restored when manual ownership ends.
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
 
+        // Outbound one-shot queues consumed by PhysicsInteraction each frame.
         EquippedWeaponManualDropRequest _equippedWeaponDropRequest{};
         TwoHandedGripHapticEvents _hapticEvents{};
+
+        // Per-update snapshot of the configured handling settings.
         EquippedWeaponHandlingSettings _handlingSettings{};
-
-        // Per-frame hover state; only ever true in PartCarry (see getter).
-        bool _firingGripReattachHoverInsideRadius{ false };
-        bool _firingGripReattachHoverHandIsLeft{ false };
-
-        // Rate limiter for the left-firing carry aim diagnostic.
     };
 
 }

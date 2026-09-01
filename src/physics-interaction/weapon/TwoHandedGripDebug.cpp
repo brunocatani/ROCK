@@ -41,10 +41,10 @@ namespace rock
 
     void TwoHandedGrip::traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode)
     {
-        if (!_nativeScopeTransitionFinalTracePending) {
+        if (!_scope.transitionFinalTracePending) {
             return;
         }
-        _nativeScopeTransitionFinalTracePending = false;
+        _scope.transitionFinalTracePending = false;
 
         struct HmdRelativeTrace
         {
@@ -139,14 +139,14 @@ namespace rock
 
         ROCK_LOG_INFO(Weapon,
             "SCOPE-VIEW-FINAL seq={} sample={}/{} buttonRequested={} rendererActive={} menuOpen={} driverAuthority={} state={} hmdValid={} hmdWorld=({:.2f},{:.2f},{:.2f}) weaponHmdValid={} weaponHmd=({:.2f},{:.2f},{:.2f}) leftRootHmdValid={} leftRootHmd=({:.2f},{:.2f},{:.2f}) rightRootHmdValid={} rightRootHmd=({:.2f},{:.2f},{:.2f}) scopeCameraHmdValid={} scopeCameraHmd=({:.2f},{:.2f},{:.2f}) scopeParentHmdValid={} scopeParentHmd=({:.2f},{:.2f},{:.2f}) cameraRootHmdValid={} cameraRootHmd=({:.2f},{:.2f},{:.2f}) roomHmdValid={} roomHmd=({:.2f},{:.2f},{:.2f}) uprightHmdValid={} uprightHmd=({:.2f},{:.2f},{:.2f}) skeletonRootHmdValid={} skeletonRootHmd=({:.2f},{:.2f},{:.2f}) cameraValuesValid={} zoomInput={:.4f} worldFov={:.4f} firstPersonFov={:.4f} fovAdjust=({:.4f},{:.4f},{:.4f},{:.4f})",
-            _nativeScopeTransitionFinalTraceSequence,
-            _nativeScopeTransitionFinalTraceSample,
+            _scope.transitionFinalTraceSequence,
+            _scope.transitionFinalTraceSample,
             SCOPE_TRANSITION_TRACE_FRAMES,
-            _manualScopeActivationRequested ? "yes" : "no",
-            _nativeScopeRequestActive ? "yes" : "no",
-            _scopeMenuOpenThisFrame ? "yes" : "no",
-            _scopeDriverFrameAuthorityActive ? "yes" : "no",
-            static_cast<std::uint32_t>(_state),
+            _scope.manualActivationRequested ? "yes" : "no",
+            _scope.nativeRequestActive ? "yes" : "no",
+            _scope.menuOpenThisFrame ? "yes" : "no",
+            _scope.driverFrameAuthorityActive ? "yes" : "no",
+            static_cast<std::uint32_t>(_session.state),
             hmdWorldValid ? "yes" : "no",
             hmdWorld.translate.x,
             hmdWorld.translate.y,
@@ -201,24 +201,24 @@ namespace rock
     {
         const auto& leftGrip = partGrip(true);
         const auto& rightGrip = partGrip(false);
-        if (!_hasSolvedWeaponTransform || !_activeWeaponNode) {
+        if (!_hasSolvedWeaponTransform || !_session.weaponNode) {
             return false;
         }
-        if (!_hasFiringHandWeaponLocal && !leftGrip.active && !rightGrip.active) {
+        if (!_firing.hasPrimaryHandWeaponLocal && !leftGrip.active && !rightGrip.active) {
             return false;
         }
 
         outSnapshot.weaponWorld = _lastSolvedWeaponTransform;
         if (rightGrip.active) {
-            outSnapshot.rightRequestedHandWorld = resolvePartGripHandWorld(rightGrip, _activeWeaponNode);
-            outSnapshot.rightGripWorld = resolvePartGripWorld(rightGrip, _activeWeaponNode);
+            outSnapshot.rightRequestedHandWorld = resolvePartGripHandWorld(rightGrip, _session.weaponNode);
+            outSnapshot.rightGripWorld = resolvePartGripWorld(rightGrip, _session.weaponNode);
         } else {
-            outSnapshot.rightRequestedHandWorld = transform_math::composeTransforms(_lastSolvedWeaponTransform, _primaryHandWeaponLocal);
-            outSnapshot.rightGripWorld = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _primaryGripLocal);
+            outSnapshot.rightRequestedHandWorld = transform_math::composeTransforms(_lastSolvedWeaponTransform, _firing.primaryHandWeaponLocal);
+            outSnapshot.rightGripWorld = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _firing.primaryGripLocal);
         }
         if (leftGrip.active) {
-            outSnapshot.leftRequestedHandWorld = resolvePartGripHandWorld(leftGrip, _activeWeaponNode);
-            outSnapshot.leftGripWorld = resolvePartGripWorld(leftGrip, _activeWeaponNode);
+            outSnapshot.leftRequestedHandWorld = resolvePartGripHandWorld(leftGrip, _session.weaponNode);
+            outSnapshot.leftGripWorld = resolvePartGripWorld(leftGrip, _session.weaponNode);
         } else {
             outSnapshot.leftRequestedHandWorld = RE::NiTransform{};
             outSnapshot.leftGripWorld = RE::NiPoint3{};
@@ -229,7 +229,7 @@ namespace rock
     bool TwoHandedGrip::getAuthoredSupportGripDebugSnapshot(
         AuthoredSupportGripDebugSnapshot& outSnapshot) const
     {
-        outSnapshot = _authoredSupportGripDebugSnapshot;
+        outSnapshot = _support.authoredDebugSnapshot;
         return outSnapshot.valid;
     }
 }
