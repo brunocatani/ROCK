@@ -40,6 +40,7 @@
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/grip/LeftCarryReadiness.h"
+#include "physics-interaction/weapon/grip/WeaponTransformArbiter.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -516,6 +517,7 @@ namespace rock
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
+        WeaponTransformArbiter _weaponTransformArbiter{ _twoHandedGrip };
         AuthoredSupportGripIndicatorEffect
             _authoredSupportGripIndicator;
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};

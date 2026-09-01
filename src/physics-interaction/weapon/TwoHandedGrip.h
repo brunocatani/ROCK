@@ -710,6 +710,10 @@ namespace rock
          * marks the resulting PrimaryOnly session as persistent until the
          * selected inventory stack is unequipped or the player deliberately
          * acquires and releases the firing-hand grab.
+         *
+         * Ownership contract: only WeaponTransformArbiter may call the
+         * persistent-carry entry points below (begin/clear/restore); every
+         * carrier driver routes its claim through the arbiter.
          */
         bool beginPersistentEquippedCarry(
             RE::NiNode* weaponNode,

@@ -2338,6 +2338,19 @@ namespace rock
             currentEquippedWeaponOwnershipKey,
             input_remap_runtime::isMenuInputActive(),
             _equippedWeaponHandlingSettings);
+        // The claim context must reflect the assignment driver's outcome
+        // for this frame; it runs first and may engage or clear the
+        // assignment the fixed-hand precedence check reads.
+        _weaponTransformArbiter.beginFrame({
+            .shoulderSheathActive = _equippedWeaponShoulderSheath.active,
+            .pendingPrimaryOnlyGripStart =
+                _pendingEquippedWeaponPrimaryOnlyGripStart.pending,
+            .handAssignmentEngaged =
+                _equippedWeaponHandAssignment.pending ||
+                _equippedWeaponHandAssignment.active,
+            .ambidextrousHandoffEnabled =
+                _equippedWeaponHandlingSettings.ambidextrousHandoffEnabled,
+        });
         serviceFixedWeaponHand(
             weaponNode,
             currentWeaponGenerationKey,
@@ -4963,7 +4976,8 @@ namespace rock
                 persisted.active) {
                 pipboy_equip_runtime::clearWeaponAssignment();
             }
-            _twoHandedGrip.restoreNativeRightEquippedCarry(
+            _weaponTransformArbiter.restoreNativeRight(
+                WeaponTransformArbiter::CarrySource::HandlingModeReconcile,
                 "equipped-weapon-handling-mode-changed");
         }
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
@@ -5629,24 +5643,7 @@ namespace rock
             _fixedLeftCarry = {};
             return;
         }
-        if (_equippedWeaponShoulderSheath.active ||
-            _pendingEquippedWeaponPrimaryOnlyGripStart.pending) {
-            _fixedLeftCarry = {};
-            return;
-        }
-
-        // An addon-owned Pip-Boy selection is an explicit dynamic side choice.
-        // Likewise, a live manual handoff is preserved regardless of whether
-        // its effective ambidextrous policy comes from ROCK or the addon. The
-        // fixed hand remains the fallback/default rather than fighting the
-        // player's deliberate switch.
-        if (_equippedWeaponHandAssignment.pending ||
-            _equippedWeaponHandAssignment.active) {
-            _fixedLeftCarry = {};
-            return;
-        }
-        if (_equippedWeaponHandlingSettings.ambidextrousHandoffEnabled &&
-            _twoHandedGrip.isManualOwnershipActive()) {
+        if (!_weaponTransformArbiter.fixedHandMayClaim()) {
             _fixedLeftCarry = {};
             return;
         }
@@ -5656,7 +5653,8 @@ namespace rock
                 _fixedLeftCarry = {};
                 return;
             }
-            _twoHandedGrip.restoreNativeRightEquippedCarry(
+            _weaponTransformArbiter.restoreNativeRight(
+                WeaponTransformArbiter::CarrySource::FixedHand,
                 "fixed-left-hand-enforcement");
         }
 
@@ -5708,7 +5706,8 @@ namespace rock
                 currentEquippedWeaponOwnershipKey);
         }
         if (nativeOffsetReady && leftTakeoverReady &&
-            _twoHandedGrip.beginPersistentEquippedCarry(
+            _weaponTransformArbiter.requestLeftCarry(
+                WeaponTransformArbiter::CarrySource::FixedHand,
                 weaponNode,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey)) {
@@ -5836,7 +5835,9 @@ namespace rock
                 assignment.formId,
                 assignment.ownerToken);
         }
-        _twoHandedGrip.restoreNativeRightEquippedCarry(reason);
+        _weaponTransformArbiter.restoreNativeRight(
+            WeaponTransformArbiter::CarrySource::HandAssignment,
+            reason);
         if (clearUiAssignment &&
             assignment.source ==
                 EquippedWeaponHandAssignmentSource::Pipboy) {
@@ -6036,13 +6037,17 @@ namespace rock
 
         if (!assignment.pending) {
             if (!assignment.effectiveLeft) {
-                _twoHandedGrip.clearPersistentEquippedCarry("right-hand-assignment");
+                _weaponTransformArbiter.clearPersistentCarry(
+                    WeaponTransformArbiter::CarrySource::HandAssignment,
+                    "right-hand-assignment");
             }
             return;
         }
 
         const auto commitRight = [&](const char* reason) {
-            _twoHandedGrip.restoreNativeRightEquippedCarry(reason);
+            _weaponTransformArbiter.restoreNativeRight(
+                WeaponTransformArbiter::CarrySource::HandAssignment,
+                reason);
             assignment.pending = false;
             assignment.active = true;
             assignment.effectiveLeft = false;
@@ -6148,7 +6153,8 @@ namespace rock
         }
 
         if (identityReady && nativeOffsetReady && leftTakeoverReady &&
-            _twoHandedGrip.beginPersistentEquippedCarry(
+            _weaponTransformArbiter.requestLeftCarry(
+                WeaponTransformArbiter::CarrySource::HandAssignment,
                 weaponNode,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey)) {
