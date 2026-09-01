@@ -37,18 +37,22 @@ namespace rock
             return false;
         }
 
+        /*
+         * The damped weapon-offset drivers ride the draw/equip transient: an
+         * instant left takeover at equip time sampled that swing into the
+         * conjugation and baked a rotated (visibly inverted) left seat and
+         * hand for the whole first carry. The conjugation needs only the
+         * fixed per-hand bone-in-wand map, so use the cached natural frames
+         * captured while each hand was settled and authority-free.
+         */
         RE::NiTransform rightHandWorld{};
         RE::NiTransform leftHandWorld{};
-        RE::NiTransform rightDriverWorld{};
-        RE::NiTransform leftDriverWorld{};
-        if (!tryResolvePhysicalHandFrame(
+        if (!tryResolveNaturalWandHandOrientationFrame(
                 false,
-                rightHandWorld,
-                rightDriverWorld) ||
-            !tryResolvePhysicalHandFrame(
+                rightHandWorld) ||
+            !tryResolveNaturalWandHandOrientationFrame(
                 true,
-                leftHandWorld,
-                leftDriverWorld) ||
+                leftHandWorld) ||
             !tryBuildMirroredLeftFiringHandWeaponLocalImpl(
                 _firing.rightCanonicalHandWeaponLocal,
                 _firing.rightCanonicalGripWeaponLocal,
@@ -62,6 +66,41 @@ namespace rock
 
         outFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal;
         return true;
+    }
+
+    bool TwoHandedGrip::tryResolveNaturalWandHandOrientationFrame(
+        const bool isLeft,
+        RE::NiTransform& outHandWorld) const
+    {
+        outHandWorld = {};
+        auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiNode* wand = playerNodes ?
+            (isLeft ?
+                    playerNodes->SecondaryWandNode :
+                    playerNodes->primaryWandNode) :
+            nullptr;
+        const bool relationValid = isLeft ?
+            _firing.hasLeftNaturalBoneInWand :
+            _firing.hasRightNaturalBoneInWand;
+        const RE::NiTransform& boneInWand = isLeft ?
+            _firing.leftNaturalBoneInWand :
+            _firing.rightNaturalBoneInWand;
+        if (!wand || !relationValid ||
+            !isFiniteTransform(wand->world) ||
+            !isFiniteTransform(boneInWand)) {
+            return false;
+        }
+
+        // Orientation authority only: cached translate/scale are presentation
+        // state and may be collapsed (see the right-support mirror). The seat
+        // builders anchor position independently through the palm pin.
+        RE::NiTransform orientationOnly = boneInWand;
+        orientationOnly.translate = {};
+        orientationOnly.scale = 1.0f;
+        outHandWorld = transform_math::composeTransforms(
+            wand->world,
+            orientationOnly);
+        return isFiniteTransform(outHandWorld);
     }
 
     bool TwoHandedGrip::tryCaptureLeftFiringGripTransfer(

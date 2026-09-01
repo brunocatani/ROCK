@@ -1329,6 +1329,14 @@ namespace rock
             bool applyHandlingTrim,
             bool logDiagnostic);
 
+        // Hand frame composed from the wand and the cached natural
+        // bone-in-wand map (orientation only). Transient-free input for the
+        // equip-takeover seat conjugation; the damped weapon-offset drivers
+        // ride the draw/equip animation and must not feed it.
+        bool tryResolveNaturalWandHandOrientationFrame(
+            bool isLeft,
+            RE::NiTransform& outHandWorld) const;
+
         bool tryBuildMirroredRightSupportHandWeaponLocal(
             const RE::NiTransform& leftHandWeaponLocal,
             RE::NiTransform& outRightHandWeaponLocal) const;
