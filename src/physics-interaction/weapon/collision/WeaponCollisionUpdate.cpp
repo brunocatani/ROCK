@@ -20,6 +20,7 @@ namespace rock
         _identity.observedInstanceContentKey = 0;
         _omod.prebuildEquippedKey = 0;
         _omod.prebuildRoot = nullptr;
+        _omod.selfHealAttempted.clear();
         resetWeaponBodySetGeneration();
         _identity.bodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -58,6 +59,7 @@ namespace rock
         _identity.observedInstanceContentKey = 0;
         _omod.prebuildEquippedKey = 0;
         _omod.prebuildRoot = nullptr;
+        _omod.selfHealAttempted.clear();
         resetWeaponBodySetGeneration();
         _identity.bodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -97,6 +99,7 @@ namespace rock
         _sources.pendingBuild = {};
         _diagnostics.generatedRecapture = {};
         _bodies.usingReplacementBank = false;
+        _omod.selfHealAttempted.clear();
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         ROCK_LOG_INFO(Weapon, "Weapon collision wrappers abandoned after Havok world loss");
@@ -139,6 +142,13 @@ namespace rock
             _drive.failureCount.store(0, std::memory_order_release);
             _omod.prebuildEquippedKey = 0;
             _omod.prebuildRoot = nullptr;
+            /*
+             * getWeaponNode() is a persistent first-person skeleton root. Its
+             * address survives holster/drop and later equip cycles even though
+             * the engine replaces its assembled OMOD children, so pointer-keyed
+             * attempts must end with the equipped scene lifetime.
+             */
+            _omod.selfHealAttempted.clear();
             clearWeaponEmitterSnapshot();
         };
 
@@ -211,6 +221,7 @@ namespace rock
                 (ownershipKeyChanged ?
                         "equipped-ownership-changed" :
                         (activeRootChanged ? "weapon-root-changed" : "scene-rebuild-requested"));
+            _omod.selfHealAttempted.clear();
             retireActiveWeaponBodiesForSceneTransition(world, transitionReason);
         }
         updateWeaponEmitterSnapshot(weaponNode, observedKey);

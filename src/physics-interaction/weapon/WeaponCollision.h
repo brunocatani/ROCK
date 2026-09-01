@@ -752,11 +752,12 @@ namespace rock
             std::uint64_t prebuildEquippedKey{ 0 };
             RE::NiAVObject* prebuildRoot{ nullptr };
             /*
-             * Self-heal attempts are keyed by (weapon instance node address ^
-             * OMOD formID): the same assembled tree is never retried (a
-             * failed or name-unmatchable heal must not stack duplicate
-             * geometry across audits), while an engine reassembly produces a
-             * new instance address and legitimately re-opens healing.
+             * Self-heal attempts are keyed by (weapon update root address ^
+             * OMOD formID). The first-person update root is persistent and can
+             * be reused across engine reassemblies, so lifecycle code clears
+             * this set when the equipped scene ends or transitions. Within one
+             * live scene, a failed or name-unmatchable heal is never retried so
+             * it cannot stack duplicate geometry across audits.
              */
             std::unordered_set<std::uint64_t> selfHealAttempted;
         };
