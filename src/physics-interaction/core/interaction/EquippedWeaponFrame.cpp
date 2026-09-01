@@ -1533,6 +1533,18 @@ namespace rock
         (void)_authoredSupportGripIndicator.update(frame.positionWorld);
     }
 
+    void PhysicsInteraction::updateFiringGripReattachIndicator()
+    {
+        const auto frame =
+            _twoHandedGrip.getFiringGripReattachIndicatorFrame();
+        const Hand& hoverHand = frame.handIsLeft ? _leftHand : _rightHand;
+        if (!frame.visible || hoverHand.isHolding()) {
+            _firingGripReattachIndicator.hide();
+            return;
+        }
+        (void)_firingGripReattachIndicator.update(frame.positionWorld);
+    }
+
     void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()
     {
         const auto& runtime = runtime_state::currentFrame();

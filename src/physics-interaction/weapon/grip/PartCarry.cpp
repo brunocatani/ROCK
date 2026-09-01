@@ -274,6 +274,8 @@ namespace rock
                     reattachZone)) {
                 continue;
             }
+            _firing.reattachDebugSnapshot.hands[candidate.isLeft ? 0u : 1u]
+                .gripHeld = candidate.gripHeld;
             const bool reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                 candidate.gripHeld,
                 reattachZone.inside) ||
@@ -288,6 +290,18 @@ namespace rock
                     reattachZone.inside)) {
                 _firing.reattachHoverInsideZone = true;
                 _firing.reattachHoverHandIsLeft = candidate.isLeft;
+                // Marker on the side the palm entered from, mirroring the
+                // authored support seat indicator.
+                _firing.reattachIndicatorFrame =
+                    FiringGripReattachIndicatorFrame{
+                        .positionWorld = RE::NiPoint3{
+                            reattachZone.indicatorWorld.x,
+                            reattachZone.indicatorWorld.y,
+                            reattachZone.indicatorWorld.z,
+                        },
+                        .handIsLeft = candidate.isLeft,
+                        .visible = reattachZone.indicatorValid,
+                    };
             }
             if (reattachRequested &&
                 tryReattachFiringGrip(

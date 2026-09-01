@@ -30,6 +30,8 @@ namespace rock::firing_grip_reattach_zone_policy
     inline constexpr float kMinimumDirectionDistanceGameUnits =
         authored_weapon_grip_activation_policy::
             kMinimumDirectionDistanceGameUnits;
+    inline constexpr float kIndicatorOffsetGameUnits =
+        authored_weapon_grip_activation_policy::kIndicatorOffsetGameUnits;
 
     enum class Side : std::uint8_t
     {
@@ -61,6 +63,17 @@ namespace rock::firing_grip_reattach_zone_policy
         bool radialPass{ false };
         bool directionPass{ false };
         bool inside{ false };
+        // Indicator marker seat: the grip point pushed out along the side the
+        // palm entered from, so the marker never sits inside the weapon.
+        Vec3 indicatorWorld{};
+        bool indicatorValid{ false };
+    };
+
+    struct ConeBoundaryDimensions
+    {
+        float axialGameUnits{ 0.0f };
+        float rimRadiusGameUnits{ 0.0f };
+        bool valid{ false };
     };
 
     [[nodiscard]] inline bool isFinite(const Vec3& value)
@@ -108,12 +121,49 @@ namespace rock::firing_grip_reattach_zone_policy
                 if (std::abs(lateralDot) >= kConeMinimumDot) {
                     result.directionPass = true;
                     result.side = lateralDot > 0.0f ? Side::Left : Side::Right;
+                    const float indicatorSign =
+                        result.side == Side::Left ? 1.0f : -1.0f;
+                    result.indicatorWorld = Vec3{
+                        input.gripWorld.x +
+                            lateralAxis.x * indicatorSign * kIndicatorOffsetGameUnits,
+                        input.gripWorld.y +
+                            lateralAxis.y * indicatorSign * kIndicatorOffsetGameUnits,
+                        input.gripWorld.z +
+                            lateralAxis.z * indicatorSign * kIndicatorOffsetGameUnits,
+                    };
+                    result.indicatorValid = isFinite(result.indicatorWorld);
                 }
             }
         }
 
         result.inside = result.radialPass && result.directionPass;
         return result;
+    }
+
+    /*
+     * Debug boundary of one cone clipped by the reattach radius: the rim lies
+     * on the clipping sphere, so the cone height is the radius scaled by the
+     * half-angle cosine and the rim radius by its sine.
+     */
+    [[nodiscard]] inline ConeBoundaryDimensions resolveConeBoundaryDimensions(
+        const float radialCapGameUnits)
+    {
+        if (!std::isfinite(radialCapGameUnits) || radialCapGameUnits <= 0.0f) {
+            return {};
+        }
+        const float rimFactorSquared = 1.0f - kConeMinimumDot * kConeMinimumDot;
+        if (!std::isfinite(rimFactorSquared) || rimFactorSquared < 0.0f) {
+            return {};
+        }
+        const float axialGameUnits = radialCapGameUnits * kConeMinimumDot;
+        const float rimRadiusGameUnits =
+            radialCapGameUnits * std::sqrt(rimFactorSquared);
+        return ConeBoundaryDimensions{
+            .axialGameUnits = axialGameUnits,
+            .rimRadiusGameUnits = rimRadiusGameUnits,
+            .valid = std::isfinite(axialGameUnits) &&
+                     std::isfinite(rimRadiusGameUnits),
+        };
     }
 
     [[nodiscard]] constexpr const char* sideName(const Side side)

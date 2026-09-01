@@ -232,4 +232,11 @@ namespace rock
         outSnapshot = _support.authoredDebugSnapshot;
         return outSnapshot.valid;
     }
+
+    bool TwoHandedGrip::getFiringGripReattachZoneDebugSnapshot(
+        FiringGripReattachZoneDebugSnapshot& outSnapshot) const
+    {
+        outSnapshot = _firing.reattachDebugSnapshot;
+        return outSnapshot.valid;
+    }
 }

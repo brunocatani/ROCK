@@ -264,6 +264,7 @@ namespace rock
         updateFeedbackHaptics(frame.deltaSeconds);
 
         updateAuthoredSupportGripIndicator();
+        updateFiringGripReattachIndicator();
         publishDebugBodyOverlay(frame);
 
         resolveContacts(frame);
@@ -376,6 +377,7 @@ namespace rock
         if (!runtime.visualAuthorityAvailable) {
             retireDynamicWeaponForInterruptedFrame();
             _authoredSupportGripIndicator.hide();
+            _firingGripReattachIndicator.hide();
             restoreHeldMassMovementSlowdown("frik-unavailable");
             _grabInput.shoulderStashStates = {};
             _grabInput.mouthConsumeStates = {};
@@ -465,6 +467,7 @@ namespace rock
             }
             debug::ClearFrame();
             _authoredSupportGripIndicator.hide();
+            _firingGripReattachIndicator.hide();
             clearEquippedWeaponFiringGripInputState();
             _equipped.pendingPrimaryOnlyGripStart = {};
             auto* snapshotBhk = getPlayerBhkWorld();
@@ -518,6 +521,7 @@ namespace rock
             clearEquippedWeaponFiringGripInputState();
             debug::ClearFrame();
             _authoredSupportGripIndicator.hide();
+            _firingGripReattachIndicator.hide();
             restoreHeldMassMovementSlowdown("world-unavailable");
             _grabInput.shoulderStashStates = {};
             _grabInput.mouthConsumeStates = {};
@@ -604,6 +608,7 @@ namespace rock
                 debug::ClearFrame();
                 _twoHandedGrip.reset();
                 _authoredSupportGripIndicator.hide();
+                _firingGripReattachIndicator.hide();
                 _equipped.pendingPrimaryOnlyGripStart = {};
                 clearEquippedWeaponFiringGripInputState();
                 _grabInput.shoulderStashStates = {};
@@ -627,6 +632,7 @@ namespace rock
             debug::ClearFrame();
             _twoHandedGrip.reset();
             _authoredSupportGripIndicator.hide();
+            _firingGripReattachIndicator.hide();
             _equipped.pendingPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
             _grabInput.shoulderStashStates = {};

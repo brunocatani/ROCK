@@ -14,8 +14,6 @@ namespace rock
     {
         constexpr const char* kIndicatorNif =
             "Data/Meshes/ROCK/authored_support_grip_indicator_bright.nif";
-        constexpr const char* kIndicatorNodeName =
-            "ROCK_AuthoredSupportGripIndicator";
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
         constexpr float kIndicatorWorldScale = 1.0f;
         constexpr float kIndicatorAlpha = 1.0f;
@@ -72,30 +70,39 @@ namespace rock
         if (_assetLoadFailed) {
             return false;
         }
+        if (!_nodeName) {
+            ROCK_LOG_WARN(Weapon,
+                "Grip zone indicator disabled: no scene node name");
+            _assetLoadFailed = true;
+            return false;
+        }
 
         try {
             auto* marker = f4vr::loadNifObjectFromFile(kIndicatorNif);
             if (!marker) {
                 ROCK_LOG_WARN(Weapon,
-                    "Authored support-grip indicator disabled: source load returned null for '{}'",
+                    "Grip zone indicator '{}' disabled: source load returned null for '{}'",
+                    _nodeName,
                     kIndicatorNif);
                 _assetLoadFailed = true;
                 return false;
             }
-            marker->name = RE::BSFixedString(kIndicatorNodeName);
+            marker->name = RE::BSFixedString(_nodeName);
             marker->fadeAmount = 0.0f;
             setNodeVisible(marker, false);
             _marker.reset(marker);
         } catch (const std::exception& e) {
             ROCK_LOG_WARN(Weapon,
-                "Authored support-grip indicator disabled: failed to load '{}' ({})",
+                "Grip zone indicator '{}' disabled: failed to load '{}' ({})",
+                _nodeName,
                 kIndicatorNif,
                 e.what());
             _assetLoadFailed = true;
             return false;
         } catch (...) {
             ROCK_LOG_WARN(Weapon,
-                "Authored support-grip indicator disabled: failed to load '{}'",
+                "Grip zone indicator '{}' disabled: failed to load '{}'",
+                _nodeName,
                 kIndicatorNif);
             _assetLoadFailed = true;
             return false;

@@ -499,6 +499,7 @@ namespace rock
         _rightHand.preloadSelectionBeam();
         _leftHand.preloadSelectionBeam();
         (void)_authoredSupportGripIndicator.preload();
+        (void)_firingGripReattachIndicator.preload();
 
         _frame.hasPrevPositions = false;
         _diagnostics.deltaLogCounter = 0;
@@ -599,6 +600,7 @@ namespace rock
 
         if (worldValid) {
             _authoredSupportGripIndicator.shutdown();
+            _firingGripReattachIndicator.shutdown();
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
             _dynamicWorldCarCollision.restoreAll(_lifecycle.cachedBhkWorld, hknp, "shutdown");
             _touchGrabRuntime.releaseAll(
@@ -633,6 +635,7 @@ namespace rock
             destroyHandCollisions(_lifecycle.cachedBhkWorld);
         } else {
             _authoredSupportGripIndicator.abandonSceneGraph();
+            _firingGripReattachIndicator.abandonSceneGraph();
             _dynamicWorldCarCollision.abandon();
             _touchGrabRuntime.abandonAll(
                 provider::RockProviderTouchGrabReleaseReasonV1::

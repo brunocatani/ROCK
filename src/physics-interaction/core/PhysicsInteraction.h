@@ -367,6 +367,7 @@ namespace rock
             const Hand* sourceHand = nullptr);
 
         void updateAuthoredSupportGripIndicator();
+        void updateFiringGripReattachIndicator();
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
         void logGrabOverlayPointProbe(const PhysicsFrameContext& frame);
 
@@ -964,7 +965,9 @@ namespace rock
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         TwoHandedGrip _twoHandedGrip;
         AuthoredSupportGripIndicatorEffect
-            _authoredSupportGripIndicator;
+            _authoredSupportGripIndicator{ "ROCK_AuthoredSupportGripIndicator" };
+        AuthoredSupportGripIndicatorEffect
+            _firingGripReattachIndicator{ "ROCK_FiringGripReattachIndicator" };
         DynamicHandCollisionRuntime _dynamicHandCollision;
         DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;
         feedback_haptics::FeedbackHaptics _feedbackHaptics;

@@ -2895,6 +2895,37 @@ int main()
         const auto nonFinite = evaluate(Vec3{ nan, 0.0f, 0.0f }, kRadius);
         ok &= expectFalse("non-finite palm fails every zone gate",
             nonFinite.inside || nonFinite.radialPass || nonFinite.directionValid);
+
+        ok &= expectTrue("left-side approach seats the indicator",
+            leftOnAxis.indicatorValid);
+        ok &= expectNear("left-side indicator sits at the offset along weapon left (x)",
+            leftOnAxis.indicatorWorld.x,
+            grip.x + weaponLeft.x * zone::kIndicatorOffsetGameUnits,
+            0.001f);
+        ok &= expectNear("left-side indicator sits at the offset along weapon left (y)",
+            leftOnAxis.indicatorWorld.y,
+            grip.y + weaponLeft.y * zone::kIndicatorOffsetGameUnits,
+            0.001f);
+        ok &= expectNear("right-side indicator sits at the offset along weapon right (x)",
+            rightNearEdge.indicatorWorld.x,
+            grip.x - weaponLeft.x * zone::kIndicatorOffsetGameUnits,
+            0.001f);
+        ok &= expectFalse("palm outside the cone seats no indicator",
+            outsideCone.indicatorValid);
+
+        const auto coneBoundary = zone::resolveConeBoundaryDimensions(kRadius);
+        ok &= expectTrue("cone boundary is valid for a positive radius",
+            coneBoundary.valid);
+        ok &= expectNear("cone height is the radius scaled by the half-angle cosine",
+            coneBoundary.axialGameUnits,
+            kRadius * std::cos(zone::kConeHalfAngleDegrees * kPi / 180.0f),
+            0.001f);
+        ok &= expectNear("cone rim radius is the radius scaled by the half-angle sine",
+            coneBoundary.rimRadiusGameUnits,
+            kRadius * std::sin(zone::kConeHalfAngleDegrees * kPi / 180.0f),
+            0.001f);
+        ok &= expectFalse("cone boundary rejects a zero radius",
+            zone::resolveConeBoundaryDimensions(0.0f).valid);
     }
 
     ok &= expectTrue("free hand part grip starts on grab press over a routed support part",

@@ -2663,6 +2663,180 @@
             }
         }
 
+        if (drawAuthoredGripActivationZones) {
+            FiringGripReattachZoneDebugSnapshot snapshot{};
+            if (_twoHandedGrip.getFiringGripReattachZoneDebugSnapshot(snapshot)) {
+                namespace reattach_zone = firing_grip_reattach_zone_policy;
+                // YELLOW cross: the captured firing grip point, apex of both
+                // reattach cones. BLUE crosses: each evaluated free palm.
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                    snapshot.gripWorld,
+                    3.0f);
+
+                const float drawRadiusGameUnits = (std::min)(
+                    snapshot.radialCapGameUnits,
+                    12.0f);
+                const auto coneBoundary =
+                    reattach_zone::resolveConeBoundaryDimensions(
+                        drawRadiusGameUnits);
+                const auto tryBuildConeBasis = [](
+                    const RE::NiPoint3& axis,
+                    RE::NiPoint3& outUnitAxis,
+                    RE::NiPoint3& outTangentA,
+                    RE::NiPoint3& outTangentB) {
+                    const auto normalize = [](
+                        const RE::NiPoint3& value,
+                        RE::NiPoint3& outUnit) {
+                        const float lengthSquared =
+                            value.x * value.x +
+                            value.y * value.y +
+                            value.z * value.z;
+                        if (!std::isfinite(lengthSquared) ||
+                            lengthSquared <= 0.000001f) {
+                            return false;
+                        }
+                        const float inverseLength =
+                            1.0f / std::sqrt(lengthSquared);
+                        outUnit = RE::NiPoint3{
+                            value.x * inverseLength,
+                            value.y * inverseLength,
+                            value.z * inverseLength,
+                        };
+                        return true;
+                    };
+                    const auto cross = [](
+                        const RE::NiPoint3& a,
+                        const RE::NiPoint3& b) {
+                        return RE::NiPoint3{
+                            a.y * b.z - a.z * b.y,
+                            a.z * b.x - a.x * b.z,
+                            a.x * b.y - a.y * b.x,
+                        };
+                    };
+                    if (!normalize(axis, outUnitAxis)) {
+                        return false;
+                    }
+                    const RE::NiPoint3 reference =
+                        std::abs(outUnitAxis.z) < 0.9f ?
+                        RE::NiPoint3{ 0.0f, 0.0f, 1.0f } :
+                        RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+                    if (!normalize(cross(reference, outUnitAxis), outTangentA)) {
+                        return false;
+                    }
+                    return normalize(cross(outUnitAxis, outTangentA), outTangentB);
+                };
+                RE::NiPoint3 unitAxis{};
+                RE::NiPoint3 tangentA{};
+                RE::NiPoint3 tangentB{};
+                if (coneBoundary.valid &&
+                    tryBuildConeBasis(
+                        snapshot.weaponLeftAxisWorld,
+                        unitAxis,
+                        tangentA,
+                        tangentB)) {
+                    const auto conePoint = [&](
+                        const float axial,
+                        const float radialA,
+                        const float radialB) {
+                        return RE::NiPoint3{
+                            snapshot.gripWorld.x + unitAxis.x * axial +
+                                tangentA.x * radialA + tangentB.x * radialB,
+                            snapshot.gripWorld.y + unitAxis.y * axial +
+                                tangentA.y * radialA + tangentB.y * radialB,
+                            snapshot.gripWorld.z + unitAxis.z * axial +
+                                tangentA.z * radialA + tangentB.z * radialB,
+                        };
+                    };
+                    // One cone per side of the weapon, apex on the grip point,
+                    // rim on the reattach radius sphere.
+                    const auto drawWireCone = [&](const float axisSign) {
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
+                            snapshot.gripWorld,
+                            conePoint(axisSign * drawRadiusGameUnits, 0.0f, 0.0f));
+                        constexpr std::size_t SegmentCount = 12;
+                        std::array<RE::NiPoint3, SegmentCount> rim{};
+                        for (std::size_t segment = 0;
+                             segment < SegmentCount;
+                             ++segment) {
+                            const float angle =
+                                static_cast<float>(segment) *
+                                2.0f * std::numbers::pi_v<float> /
+                                static_cast<float>(SegmentCount);
+                            rim[segment] = conePoint(
+                                axisSign * coneBoundary.axialGameUnits,
+                                std::cos(angle) * coneBoundary.rimRadiusGameUnits,
+                                std::sin(angle) * coneBoundary.rimRadiusGameUnits);
+                        }
+                        for (std::size_t segment = 0;
+                             segment < SegmentCount;
+                             ++segment) {
+                            addMarkerLine(
+                                debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                rim[segment],
+                                rim[(segment + 1) % SegmentCount]);
+                            if ((segment % (SegmentCount / 4)) == 0) {
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                    snapshot.gripWorld,
+                                    rim[segment]);
+                            }
+                        }
+                    };
+                    drawWireCone(1.0f);
+                    drawWireCone(-1.0f);
+                }
+
+                constexpr float kSeatColor[4]{ 1.0f, 0.78f, 0.05f, 0.98f };
+                constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
+                constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
+                // Stack upward from the grip so the readout clears the
+                // authored support seat labels below it.
+                const RE::NiPoint3 labelAnchor =
+                    snapshot.gripWorld + RE::NiPoint3{ 0.0f, 0.0f, 6.0f };
+                addTextLineSized(
+                    labelAnchor,
+                    2.1f,
+                    kSeatColor,
+                    "FIRING REATTACH ZONE cap=%.2f cone=%.0fdeg x2",
+                    snapshot.radialCapGameUnits,
+                    reattach_zone::kConeApertureDegrees);
+                float labelOffset = 2.2f;
+                for (std::size_t handIndex = 0;
+                     handIndex < snapshot.hands.size();
+                     ++handIndex) {
+                    const auto& hand = snapshot.hands[handIndex];
+                    if (!hand.evaluated) {
+                        continue;
+                    }
+                    const auto verdictRole = hand.inside ?
+                        debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                        debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                    addMarkerPoint(
+                        debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
+                        hand.palmWorld,
+                        2.5f);
+                    addMarkerLine(verdictRole, snapshot.gripWorld, hand.palmWorld);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, labelOffset },
+                        1.65f,
+                        hand.inside ? kPassColor : kFailColor,
+                        "%s palm d=%.2f dot=%.3f side=%s radial=%d cone=%d stable=%d grab=%s %s",
+                        handIndex == 0 ? "LEFT" : "RIGHT",
+                        hand.radialDistanceGameUnits,
+                        hand.lateralDot,
+                        reattach_zone::sideName(hand.side),
+                        hand.radialPass ? 1 : 0,
+                        hand.directionPass ? 1 : 0,
+                        hand.usedLastStableDirection ? 1 : 0,
+                        hand.gripHeld ? "HELD" : "OPEN",
+                        hand.inside ? "INSIDE" : "OUTSIDE");
+                    labelOffset += 2.0f;
+                }
+            }
+        }
+
         if (drawWeaponAuthorityDebug) {
             TwoHandedGripDebugSnapshot snapshot{};
             if (_twoHandedGrip.getDebugAuthoritySnapshot(snapshot)) {

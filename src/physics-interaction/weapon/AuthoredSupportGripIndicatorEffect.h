@@ -5,10 +5,17 @@
 
 namespace rock
 {
+    /*
+     * World-root marker for a grip zone. The authored support seat zone and
+     * the firing-grip reattach zone each own one instance under their own
+     * scene node name; both show the same indicator mesh.
+     */
     class AuthoredSupportGripIndicatorEffect
     {
     public:
-        AuthoredSupportGripIndicatorEffect() = default;
+        explicit AuthoredSupportGripIndicatorEffect(const char* nodeName) noexcept
+            : _nodeName(nodeName)
+        {}
         ~AuthoredSupportGripIndicatorEffect();
 
         AuthoredSupportGripIndicatorEffect(
@@ -35,6 +42,7 @@ namespace rock
 
         RE::NiPointer<RE::NiAVObject> _marker;
         RE::NiNode* _parent{ nullptr };
+        const char* _nodeName{ nullptr };
         bool _active{ false };
         bool _assetLoadFailed{ false };
     };

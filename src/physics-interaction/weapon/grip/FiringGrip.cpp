@@ -500,26 +500,49 @@ namespace rock
             return false;
         }
 
+        const RE::NiPoint3 gripWorld =
+            weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
+        const RE::NiPoint3 palmWorld =
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                handTransform,
+                handIsLeft);
+        const RE::NiPoint3 weaponLeftAxisWorld =
+            computePalmNormalFromHandBasis(seatedRightHandWorld, false);
         using firing_grip_reattach_zone_policy::Vec3;
         const auto toZoneVector = [](const RE::NiPoint3& value) {
             return Vec3{ value.x, value.y, value.z };
         };
         outZone = firing_grip_reattach_zone_policy::evaluateZone(
             firing_grip_reattach_zone_policy::ZoneInput{
-                .gripWorld = toZoneVector(
-                    weaponLocalToWorld(_firing.primaryGripLocal, weaponNode)),
-                .palmWorld = toZoneVector(
-                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                        handTransform,
-                        handIsLeft)),
-                .weaponLeftAxisWorld = toZoneVector(
-                    computePalmNormalFromHandBasis(seatedRightHandWorld, false)),
+                .gripWorld = toZoneVector(gripWorld),
+                .palmWorld = toZoneVector(palmWorld),
+                .weaponLeftAxisWorld = toZoneVector(weaponLeftAxisWorld),
                 .lastStableDirectionWorld = toZoneVector(
                     approach.lastStableDirectionWorld),
                 .radialCapGameUnits =
                     _handlingSettings.firingGripReattachRadiusGameUnits,
                 .lastStableDirectionValid = approach.valid,
             });
+
+        // Overlay record: values only, rebuilt every update().
+        auto& debugSnapshot = _firing.reattachDebugSnapshot;
+        debugSnapshot.gripWorld = gripWorld;
+        debugSnapshot.weaponLeftAxisWorld = weaponLeftAxisWorld;
+        debugSnapshot.radialCapGameUnits =
+            _handlingSettings.firingGripReattachRadiusGameUnits;
+        debugSnapshot.valid = true;
+        auto& handSample = debugSnapshot.hands[handIsLeft ? 0u : 1u];
+        handSample.palmWorld = palmWorld;
+        handSample.radialDistanceGameUnits = outZone.radialDistanceGameUnits;
+        handSample.lateralDot = outZone.lateralDot;
+        handSample.side = outZone.side;
+        handSample.evaluated = true;
+        handSample.directionValid = outZone.directionValid;
+        handSample.usedLastStableDirection = outZone.usedLastStableDirection;
+        handSample.radialPass = outZone.radialPass;
+        handSample.directionPass = outZone.directionPass;
+        handSample.inside = outZone.inside;
+
         if (outZone.directionValid && !outZone.usedLastStableDirection) {
             approach.lastStableDirectionWorld = RE::NiPoint3{
                 outZone.approachDirectionWorld.x,

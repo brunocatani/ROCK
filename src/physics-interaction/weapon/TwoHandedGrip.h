@@ -136,6 +136,45 @@ namespace rock
         bool visible{ false };
     };
 
+    struct FiringGripReattachIndicatorFrame
+    {
+        RE::NiPoint3 positionWorld{};
+        bool handIsLeft{ false };
+        bool visible{ false };
+    };
+
+    /*
+     * Main-thread diagnostic record of the firing-grip reattach zone for the
+     * debug overlay: the cone apex and lateral axis plus each evaluated free
+     * palm's verdict. Values only, never engine pointers.
+     */
+    struct FiringGripReattachZoneDebugSnapshot
+    {
+        struct HandSample
+        {
+            RE::NiPoint3 palmWorld{};
+            float radialDistanceGameUnits{ 0.0f };
+            float lateralDot{ 0.0f };
+            firing_grip_reattach_zone_policy::Side side{
+                firing_grip_reattach_zone_policy::Side::None
+            };
+            bool evaluated{ false };
+            bool gripHeld{ false };
+            bool directionValid{ false };
+            bool usedLastStableDirection{ false };
+            bool radialPass{ false };
+            bool directionPass{ false };
+            bool inside{ false };
+        };
+
+        RE::NiPoint3 gripWorld{};
+        RE::NiPoint3 weaponLeftAxisWorld{};
+        float radialCapGameUnits{ 0.0f };
+        // Index 0 left hand, 1 right hand.
+        std::array<HandSample, 2> hands{};
+        bool valid{ false };
+    };
+
     struct TwoHandedGripDebugSnapshot
     {
         RE::NiTransform weaponWorld{};
@@ -445,6 +484,14 @@ namespace rock
             return _support.authoredIndicatorFrame;
         }
 
+        // Marker for the firing-grip reattach zone: visible while an open
+        // free palm hovers inside a lateral cone during part carry.
+        [[nodiscard]] FiringGripReattachIndicatorFrame
+            getFiringGripReattachIndicatorFrame() const noexcept
+        {
+            return _firing.reattachIndicatorFrame;
+        }
+
         /*
          * Called after hFRIK's weapon pass. FO4VR has already completed its
          * activation update earlier in PlayerCharacter::Update; this method
@@ -711,6 +758,9 @@ namespace rock
 
         bool getAuthoredSupportGripDebugSnapshot(
             AuthoredSupportGripDebugSnapshot& outSnapshot) const;
+
+        bool getFiringGripReattachZoneDebugSnapshot(
+            FiringGripReattachZoneDebugSnapshot& outSnapshot) const;
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _scope.cameraDebugSnapshot; }
         NativeScopeCameraTargetPreviewSnapshot
@@ -1868,6 +1918,10 @@ namespace rock
                 bool valid{ false };
             };
             std::array<ReattachApproachState, 2> reattachApproach{};
+
+            // Per-frame indicator and overlay records; rebuilt every update().
+            FiringGripReattachIndicatorFrame reattachIndicatorFrame{};
+            FiringGripReattachZoneDebugSnapshot reattachDebugSnapshot{};
         };
 
         // State owned by the SupportGrip module: the per-hand part grips,
