@@ -169,6 +169,7 @@ namespace rock
         _captureSequenceFloor = 0;
         _supportCaptureSequenceFloor = 0;
         clearStableAuthoredSupportGripSnapshot();
+        _liveSupportWitness = {};
         _mirroredLeftFingerPose = {};
         _mirroredFingerPoseCaptureSequence = 0;
         _mirroredFingerPoseValid = false;
@@ -205,6 +206,7 @@ namespace rock
             if (!_nativeReloadWasActive) {
                 _captureSequenceFloor = captureStatus.captureSequence;
                 _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+                _liveSupportWitness = {};
                 const auto& stable = _stableAuthoredSupportGrip;
                 const bool preserveLeftSupportSnapshot =
                     input.rockFiringHandIsLeft &&
@@ -231,6 +233,7 @@ namespace rock
             _nativeReloadWasActive = false;
             _captureSequenceFloor = captureStatus.captureSequence;
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+            _liveSupportWitness = {};
             endSession("native-reload-ended-awaiting-fresh-capture");
             return;
         }
@@ -253,6 +256,7 @@ namespace rock
             _weaponOwnershipKey = currentWeaponKey;
             _captureSequenceFloor = captureStatus.captureSequence;
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+            _liveSupportWitness = {};
             /*
              * Keep a content-fingerprinted support snapshot across the
              * boundary: a sheath/retrieve or re-equip replaces node and
@@ -330,6 +334,7 @@ namespace rock
                     "custom-frik-weapon-offset-change");
                 _captureSequenceFloor = captureStatus.captureSequence;
                 _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+                _liveSupportWitness = {};
                 clearStableAuthoredSupportGripSnapshot();
                 endSession("custom-frik-weapon-offset-change");
                 return;
@@ -366,6 +371,69 @@ namespace rock
             }
         }
         const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
+
+        /*
+         * Support-relation precedence. A native-idle support relation
+         * (sampled from the idle clip by the preharvest, or restored from
+         * its disk record) is the settled authored pose and is published
+         * directly, in both hand topologies, from frame zero. The live
+         * equipped-graph capture and its stable snapshot are only the
+         * fallback for a clip the preharvest could not serve.
+         */
+        const bool librarySupportAuthoritative =
+            harvestedRelationAvailable &&
+            authoredLookup.hasSupportRelation &&
+            authored_weapon_grip_library::isNativeIdleAuthority(
+                authoredLookup.supportSource) &&
+            authoredLookup.supportCaptureSequence != 0 &&
+            authoredLookup.supportFingerPose.complete();
+        const auto publishLibraryAuthoredSupportCandidate = [&]() {
+            if (!librarySupportAuthoritative ||
+                !input.weaponNode ||
+                input.weaponGenerationKey == 0) {
+                return false;
+            }
+            return weaponAuthority.setAuthoredSupportGripCandidate(
+                input.weaponNode,
+                authoredLookup.supportHandWeaponLocal,
+                authoredLookup.supportFingerPose.localTransforms,
+                authoredLookup.supportFingerPose.enabledMask,
+                input.weaponGenerationKey,
+                authoredLookup.supportCaptureSequence);
+        };
+        // Runtime evidence that the clip-sampled relation matches what the
+        // native right-primary graph settles to; sampled, debug only.
+        const auto traceLiveSupportAgainstLibrary = [&]() {
+            RE::NiTransform liveSupportHandInWeapon{};
+            std::array<RE::NiTransform, 15> liveFingerLocals{};
+            std::uint16_t liveFingerMask = 0;
+            std::uint64_t liveCaptureSequence = 0;
+            if (!supportCaptureStatus.valid ||
+                supportCaptureStatus.captureSequence <= _supportCaptureSequenceFloor ||
+                !authored_weapon_grip_capture::tryResolveAuthoredSupportGrip(
+                    input.weaponNode,
+                    liveSupportHandInWeapon,
+                    liveFingerLocals,
+                    liveFingerMask,
+                    liveCaptureSequence)) {
+                return;
+            }
+            ROCK_LOG_SAMPLE_DEBUG(Animation, 2000,
+                "Authored support library-vs-live trace weaponKey=0x{:X} libraryT=({:.3f},{:.3f},{:.3f}) liveT=({:.3f},{:.3f},{:.3f}) deltaT={:.3f}gu valueMatch={}",
+                currentWeaponKey,
+                authoredLookup.supportHandWeaponLocal.translate.x,
+                authoredLookup.supportHandWeaponLocal.translate.y,
+                authoredLookup.supportHandWeaponLocal.translate.z,
+                liveSupportHandInWeapon.translate.x,
+                liveSupportHandInWeapon.translate.y,
+                liveSupportHandInWeapon.translate.z,
+                translationDistance(
+                    authoredLookup.supportHandWeaponLocal,
+                    liveSupportHandInWeapon),
+                authored_weapon_grip_authority_policy::handRelationValueMatches(
+                    authoredLookup.supportHandWeaponLocal,
+                    liveSupportHandInWeapon) ? "yes" : "no");
+        };
 
         const auto supportCaptureFailureReason =
             static_cast<std::uint32_t>(supportCaptureStatus.failureReason);
@@ -420,6 +488,32 @@ namespace rock
                 return false;
             }
 
+            // The per-frame candidate above is published unconditionally.
+            // The snapshot and the library only take a converged run: an
+            // equip/draw blend sweeps the graph's left arm through space
+            // for several frames, and the takeover frame of a direct
+            // physical-left equip is the first of them.
+            const bool valueMatchesAnchor =
+                _liveSupportWitness.agreeingFrames != 0 &&
+                authored_weapon_grip_authority_policy::
+                    handRelationValueMatches(
+                        _liveSupportWitness.anchorHandWeaponLocal,
+                        authoredSupportHandInWeapon);
+            _liveSupportWitness.agreeingFrames =
+                authored_weapon_grip_capture_policy::
+                    advanceStableAuthoredSupportCaptureWitness(
+                        _liveSupportWitness.agreeingFrames,
+                        valueMatchesAnchor);
+            if (!valueMatchesAnchor) {
+                _liveSupportWitness.anchorHandWeaponLocal =
+                    authoredSupportHandInWeapon;
+            }
+            if (!authored_weapon_grip_capture_policy::
+                    stableAuthoredSupportCaptureConverged(
+                        _liveSupportWitness.agreeingFrames)) {
+                return true;
+            }
+
             _stableAuthoredSupportGrip = StableAuthoredSupportGripSnapshot{
                 .weaponNodeIdentity = input.weaponNode,
                 .handWeaponLocal = authoredSupportHandInWeapon,
@@ -437,11 +531,11 @@ namespace rock
                     input.weaponInstanceContentKnown,
                 .valid = true,
             };
-            // Mirror the validated relation into the authored library so a
+            // Mirror the converged relation into the authored library so a
             // later direct physical-left equip of the same content can seat
             // authored support grabs without a native-right frame. The
-            // library dedups value-equivalent republication, so per-frame
-            // captures only land when the relation materially changes.
+            // library keeps a native-idle relation over this live one and
+            // dedups value-equivalent republication.
             if (input.weaponInstanceContentKnown) {
                 authored_weapon_grip_library::FiringFingerPose supportPose{};
                 supportPose.localTransforms = authoredSupportFingerLocals;
@@ -452,7 +546,8 @@ namespace rock
                     input.inPowerArmor,
                     authoredSupportHandInWeapon,
                     supportPose,
-                    authoredSupportCaptureSequence);
+                    authoredSupportCaptureSequence,
+                    authored_weapon_grip_library::CaptureSource::LiveEquippedGraph);
             }
             return true;
         };
@@ -726,17 +821,21 @@ namespace rock
                         authoredLookup.captureSequence);
                     _canonicalPublishFailureLogged = true;
                 }
-                (void)rebindStableAuthoredSupportCandidate(
-                    authoredLookup.captureSequence,
-                    selectedRightHandInWeapon);
                 bool stableSupportPublished =
-                    publishStableAuthoredSupportCandidate(
+                    publishLibraryAuthoredSupportCandidate();
+                if (!stableSupportPublished) {
+                    (void)rebindStableAuthoredSupportCandidate(
                         authoredLookup.captureSequence,
                         selectedRightHandInWeapon);
+                    stableSupportPublished =
+                        publishStableAuthoredSupportCandidate(
+                            authoredLookup.captureSequence,
+                            selectedRightHandInWeapon);
+                }
                 // A replaced weapon identity (sheath/retrieve, re-equip)
                 // first tries to adopt the retained same-content snapshot,
-                // then falls back to the library relation mirrored from an
-                // earlier native-right carry or the disk cache.
+                // then falls back to the library relation converged from an
+                // earlier native-right carry.
                 if (!stableSupportPublished &&
                     adoptStableAuthoredSupportCandidate(
                         authoredLookup.captureSequence,
@@ -1096,9 +1195,11 @@ namespace rock
         // Keep the candidate frame-fresh by republishing the last verified
         // same-weapon snapshot instead of treating that animation gap as the
         // permanent loss of authored support-grip capability.
-        if (!publishLiveAuthoredSupportCandidate(
-                resolvedCaptureSequence,
-                authoredPrimaryHandInWeapon)) {
+        if (publishLibraryAuthoredSupportCandidate()) {
+            traceLiveSupportAgainstLibrary();
+        } else if (!publishLiveAuthoredSupportCandidate(
+                       resolvedCaptureSequence,
+                       authoredPrimaryHandInWeapon)) {
             bool stableSupportPublished =
                 publishStableAuthoredSupportCandidate(
                     resolvedCaptureSequence,

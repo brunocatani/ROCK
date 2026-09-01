@@ -62,5 +62,49 @@ int main()
     static_assert(!stableForPersistence(5, 2.0f, 0.01f, 0.6f, 0.01f, 0.2f, 0.0001f));
     static_assert(!stableForPersistence(5, 2.0f, 0.01f, 0.1f, 0.01f, 1.1f, 0.0001f));
 
+    // Support hand tolerates idle sway (1gu / 3deg) but not travel; the
+    // finger and scale limits stay as strict as the primary's.
+    static_assert(supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableForPersistence(4, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableForPersistence(5, 2.0f, 1.2f, 2.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 3.5f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.03f, 0.2f, 0.0001f));
+    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.01f, 1.1f, 0.0001f));
+    static_assert(!supportStableForPersistence(5, 2.0f, 0.8f, 2.5f, 0.01f, 0.2f, 0.002f));
+
+    // Bone chain walk: leaf first up to the root, failing closed on a bad
+    // parent, a short buffer, or a cycle.
+    static_assert([] {
+        constexpr std::array<std::int16_t, 6> chainParents{ -1, 0, 1, 2, 3, 3 };
+        std::array<int, 8> chain{};
+        const auto length = collectBoneChainToRoot(5, chainParents, chain);
+        return length == 5 && chain[0] == 5 && chain[1] == 3 && chain[2] == 2 && chain[3] == 1 && chain[4] == 0;
+    }());
+    static_assert([] {
+        constexpr std::array<std::int16_t, 6> chainParents{ -1, 0, 1, 2, 3, 3 };
+        std::array<int, 8> chain{};
+        return collectBoneChainToRoot(0, chainParents, chain) == 1 && chain[0] == 0;
+    }());
+    static_assert([] {
+        constexpr std::array<std::int16_t, 6> chainParents{ -1, 0, 1, 2, 3, 3 };
+        std::array<int, 8> chain{};
+        return collectBoneChainToRoot(6, chainParents, chain) == 0 && collectBoneChainToRoot(-1, chainParents, chain) == 0;
+    }());
+    static_assert([] {
+        constexpr std::array<std::int16_t, 6> chainParents{ -1, 0, 1, 2, 3, 3 };
+        std::array<int, 3> shortChain{};
+        return collectBoneChainToRoot(5, chainParents, shortChain) == 0;
+    }());
+    static_assert([] {
+        constexpr std::array<std::int16_t, 4> cyclicParents{ -1, 3, 1, 2 };
+        std::array<int, 8> chain{};
+        return collectBoneChainToRoot(3, cyclicParents, chain) == 0;
+    }());
+    static_assert([] {
+        constexpr std::array<std::int16_t, 3> badParents{ -1, 7, 1 };
+        std::array<int, 8> chain{};
+        return collectBoneChainToRoot(2, badParents, chain) == 0;
+    }());
+
     return 0;
 }

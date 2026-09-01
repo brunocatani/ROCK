@@ -51,16 +51,19 @@ namespace rock::authored_weapon_grip_library
         // the same authored grip translation.
         RE::NiTransform rightPositionOnlyHandWeaponLocal{};
         FiringFingerPose rightFiringFingerPose{};
-        // Paired support-arm relation captured while Bethesda's native
-        // right-primary topology carried this exact authored canonical. It
-        // lets a direct physical-left equip seat authored support grabs
-        // without ever seeing a native-right frame.
+        // Paired support-arm relation for this exact authored canonical:
+        // LArm_Hand in Weapon plus the left finger locals. A native-idle
+        // source sampled it from the same idle clip as the primary pose; a
+        // live source converged it from Bethesda's native right-primary
+        // graph. It lets a direct physical-left equip seat authored support
+        // grabs without ever seeing a native-right frame.
         RE::NiTransform supportHandWeaponLocal{};
         FiringFingerPose supportFingerPose{};
         std::uint64_t supportCaptureSequence{ 0 };
         std::uint64_t captureSequence{ 0 };
         std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
+        CaptureSource supportSource{ CaptureSource::Unknown };
         bool hasSupportRelation{ false };
         bool hasRightPositionOnlyHandWeaponLocal{ false };
         bool usedVariantFallback{ false };
@@ -114,11 +117,13 @@ namespace rock::authored_weapon_grip_library
         const RE::NiTransform& rightPositionOnlyHandWeaponLocal);
 
     /*
-     * Attach the live-captured paired support-arm relation to the entry for
-     * this exact variant. A value-equivalent republication keeps the stored
-     * sequence so downstream persistence stays quiet; a materially different
-     * relation replaces it. The entry's authored canonical must already
-     * exist.
+     * Attach the paired support-arm relation to the entry for this exact
+     * variant. The entry's authored canonical must already exist. Source
+     * authority follows the primary pose: a native-idle clip sample is never
+     * replaced by a live equipped-graph capture, which only fills an entry
+     * the preharvest could not serve. A same-source, value-equivalent
+     * republication keeps the stored sequence; a materially different
+     * relation of accepted authority replaces it.
      */
     [[nodiscard]] bool publishSupportRelation(
         const RE::TESObjectWEAP* weapon,
@@ -126,7 +131,8 @@ namespace rock::authored_weapon_grip_library
         bool inPowerArmor,
         const RE::NiTransform& supportHandWeaponLocal,
         const FiringFingerPose& supportFingerPose,
-        std::uint64_t supportCaptureSequence);
+        std::uint64_t supportCaptureSequence,
+        CaptureSource source);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
     [[nodiscard]] LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor);

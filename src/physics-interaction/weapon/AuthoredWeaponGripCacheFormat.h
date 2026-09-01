@@ -8,7 +8,10 @@
 
 namespace rock::authored_weapon_grip_cache
 {
-    inline constexpr std::uint32_t kFormatVersion = 2;
+    // v3: the support relation is sampled from the idle clip by the
+    // preharvest. v2 records carried a live-capture mirror that could hold a
+    // mid-blend pose; they are rejected and re-harvested once.
+    inline constexpr std::uint32_t kFormatVersion = 3;
     inline constexpr std::uint32_t kPoseAlgorithmVersion = 1;
     inline constexpr std::size_t kFiringFingerCount = 15;
     inline constexpr std::uint32_t kRequiredPersistenceSamples = 5;
@@ -65,10 +68,11 @@ namespace rock::authored_weapon_grip_cache
         PersistedTransform rightHandWeaponLocal{};
         std::array<PersistedTransform, kFiringFingerCount> rightFiringFingerLocals{};
         std::uint16_t rightFiringFingerMask{ 0 };
-        // Paired support-arm relation mirrored from a validated live capture
-        // of Bethesda's native right-primary topology. Optional: records
-        // persisted before that capture carry supportValid=false and gain
-        // the relation on a later save.
+        // Paired support-arm relation (LArm_Hand in Weapon plus left finger
+        // locals) sampled from the same idle clip as the primary pose and
+        // validated across the same persistence samples. Optional: a clip
+        // whose support arm cannot be composed or travels across the idle
+        // persists with supportValid=false.
         PersistedTransform supportHandWeaponLocal{};
         std::array<PersistedTransform, kFiringFingerCount> supportFingerLocals{};
         std::uint16_t supportFingerMask{ 0 };

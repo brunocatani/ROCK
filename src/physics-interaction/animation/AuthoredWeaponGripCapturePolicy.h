@@ -155,6 +155,36 @@ namespace rock::authored_weapon_grip_capture_policy
         std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
 
+    /*
+     * A live support capture is a per-frame read of the animation graph's
+     * logical pose. During an equip or draw blend that pose sweeps from the
+     * previous state toward the idle, so one frame is not evidence of the
+     * authored relation: the takeover frame of a direct physical-left equip
+     * read the left hand at the shoulder and froze it as "authored". Only a
+     * run of consecutive frames that value-match the run's anchor may enter
+     * the stable snapshot or the authored library. The per-frame candidate
+     * itself stays unconditional, so a native-right carry behaves as before.
+     */
+    inline constexpr std::uint32_t kStableAuthoredSupportCaptureFrames = 3;
+
+    [[nodiscard]] constexpr std::uint32_t advanceStableAuthoredSupportCaptureWitness(
+        const std::uint32_t agreeingFrames,
+        const bool valueMatchesAnchor) noexcept
+    {
+        if (!valueMatchesAnchor) {
+            return 1;
+        }
+        return agreeingFrames >= kStableAuthoredSupportCaptureFrames ?
+                   kStableAuthoredSupportCaptureFrames :
+                   agreeingFrames + 1;
+    }
+
+    [[nodiscard]] constexpr bool stableAuthoredSupportCaptureConverged(
+        const std::uint32_t agreeingFrames) noexcept
+    {
+        return agreeingFrames >= kStableAuthoredSupportCaptureFrames;
+    }
+
     [[nodiscard]] constexpr bool shouldAdoptStableAuthoredSupportGrip(
         const StableAuthoredSupportGripAdoptInput& input) noexcept
     {

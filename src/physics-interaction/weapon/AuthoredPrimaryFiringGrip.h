@@ -82,6 +82,16 @@ namespace rock
             bool valid{ false };
         };
 
+        // Convergence witness over consecutive live support captures. The
+        // anchor is the first value of the current run; a capture that
+        // leaves the value epsilon restarts the run. Only a converged run
+        // may enter the stable snapshot or the authored library.
+        struct LiveSupportCaptureWitness
+        {
+            RE::NiTransform anchorHandWeaponLocal{};
+            std::uint32_t agreeingFrames{ 0 };
+        };
+
         void endSession(const char* reason);
         void clearStableAuthoredSupportGripSnapshot();
 
@@ -93,6 +103,7 @@ namespace rock
         std::uint64_t _captureSequenceFloor{ 0 };
         std::uint64_t _supportCaptureSequenceFloor{ 0 };
         StableAuthoredSupportGripSnapshot _stableAuthoredSupportGrip{};
+        LiveSupportCaptureWitness _liveSupportWitness{};
         authored_weapon_grip_library::FiringFingerPose _mirroredLeftFingerPose{};
         std::uint64_t _mirroredFingerPoseCaptureSequence{ 0 };
         bool _active{ false };

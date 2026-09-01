@@ -36,6 +36,7 @@ namespace rock::authored_weapon_grip_library
             std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
             std::uint64_t publicationOrdinal{ 0 };
             CaptureSource source{ CaptureSource::Unknown };
+            CaptureSource supportSource{ CaptureSource::Unknown };
             bool inPowerArmor{ false };
             bool instanceContentKnown{ false };
             bool hasSupportRelation{ false };
@@ -146,6 +147,7 @@ namespace rock::authored_weapon_grip_library
                 .positionOnlyFrikOffsetRevision =
                     entry.positionOnlyFrikOffsetRevision,
                 .source = entry.source,
+                .supportSource = entry.supportSource,
                 .hasSupportRelation = entry.hasSupportRelation,
                 .hasRightPositionOnlyHandWeaponLocal =
                     entry.hasRightPositionOnlyHandWeaponLocal,
@@ -260,6 +262,7 @@ namespace rock::authored_weapon_grip_library
                 destination->supportHandWeaponLocal = {};
                 destination->supportFingerPose = {};
                 destination->supportCaptureSequence = 0;
+                destination->supportSource = CaptureSource::Unknown;
                 destination->hasSupportRelation = false;
             }
         }
@@ -321,10 +324,12 @@ namespace rock::authored_weapon_grip_library
         const bool inPowerArmor,
         const RE::NiTransform& supportHandWeaponLocal,
         const FiringFingerPose& supportFingerPose,
-        const std::uint64_t supportCaptureSequence)
+        const std::uint64_t supportCaptureSequence,
+        const CaptureSource source)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         if (weaponFormId == 0 || supportCaptureSequence == 0 ||
+            source == CaptureSource::Unknown ||
             !finiteTransform(supportHandWeaponLocal) ||
             !validCompleteFingerPose(supportFingerPose)) {
             return false;
@@ -337,28 +342,39 @@ namespace rock::authored_weapon_grip_library
             if (entry.captureSequence == 0) {
                 return false;
             }
+            // A live equipped-graph capture is a per-frame read that can
+            // land mid-blend; it never displaces the clip-sampled relation.
+            if (!authored_weapon_grip_authority_policy::shouldAcceptPublication(
+                    entry.hasSupportRelation,
+                    publicationAuthority(entry.supportSource),
+                    publicationAuthority(source))) {
+                return true;
+            }
             if (entry.hasSupportRelation &&
+                entry.supportSource == source &&
                 authored_weapon_grip_authority_policy::
                     handRelationValueMatches(
                         entry.supportHandWeaponLocal,
                         supportHandWeaponLocal)) {
                 // Same authored pose within idle-sway tolerance: keep the
-                // stored value and sequence so disk persistence stays quiet.
+                // stored value and sequence.
                 return true;
             }
             const bool firstRelation = !entry.hasSupportRelation;
             entry.supportHandWeaponLocal = supportHandWeaponLocal;
             entry.supportFingerPose = supportFingerPose;
             entry.supportCaptureSequence = supportCaptureSequence;
+            entry.supportSource = source;
             entry.hasSupportRelation = true;
             ROCK_LOG_INFO(Animation,
-                "{} authored support relation formID={:08X} pGripVariant={:016X} instanceContent={:016X} powerArmor={} capture={} supportHandT=({:.3f},{:.3f},{:.3f})",
+                "{} authored support relation formID={:08X} pGripVariant={:016X} instanceContent={:016X} powerArmor={} capture={} source={} supportHandT=({:.3f},{:.3f},{:.3f})",
                 firstRelation ? "Learned" : "Updated",
                 weaponFormId,
                 variant.key,
                 variant.instanceContentKey,
                 inPowerArmor ? "yes" : "no",
                 supportCaptureSequence,
+                captureSourceName(source),
                 supportHandWeaponLocal.translate.x,
                 supportHandWeaponLocal.translate.y,
                 supportHandWeaponLocal.translate.z);

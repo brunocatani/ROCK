@@ -438,6 +438,20 @@ int main()
         return !shouldAdoptStableAuthoredSupportGrip(input);
     }());
 
+    // Live support capture convergence witness: a run restarts on any
+    // non-matching frame, converges only after kStableAuthoredSupportCaptureFrames
+    // matching frames, and saturates instead of growing unbounded.
+    static_assert(advanceStableAuthoredSupportCaptureWitness(0, false) == 1);
+    static_assert(advanceStableAuthoredSupportCaptureWitness(1, true) == 2);
+    static_assert(advanceStableAuthoredSupportCaptureWitness(2, true) == 3);
+    static_assert(advanceStableAuthoredSupportCaptureWitness(3, true) == 3);
+    static_assert(advanceStableAuthoredSupportCaptureWitness(3, false) == 1);
+    static_assert(!stableAuthoredSupportCaptureConverged(0));
+    static_assert(!stableAuthoredSupportCaptureConverged(1));
+    static_assert(!stableAuthoredSupportCaptureConverged(2));
+    static_assert(stableAuthoredSupportCaptureConverged(3));
+    static_assert(stableAuthoredSupportCaptureConverged(kStableAuthoredSupportCaptureFrames));
+
     static_assert(kArms == (1u << 0));
     static_assert(kHands == (1u << 1));
     static_assert(kWeapon == (1u << 2));
