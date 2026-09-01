@@ -96,6 +96,12 @@ namespace rock
                 .shoulderSheathEquipIndex =
                     _equipped.shoulderSheath.equipIndex,
                 .nativeWeaponAnimationActive = nativeWeaponAnimationActive,
+                // Read one frame behind the grip solve by design: this update
+                // runs before TwoHandedGrip::update each frame, so the bridge
+                // adopts the native root as rotation carrier the frame after
+                // the left carry's first published solve.
+                .leftCarryOwnsWeaponRoot =
+                    _twoHandedGrip.hasSolvedLeftFiringCarryPose(),
             });
     }
 

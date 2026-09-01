@@ -606,6 +606,7 @@ namespace rock
             .advanceLifetime = true,
             .presentModel = decision.presentBridgeModel && !decision.handoffBridgeToNative,
             .nativeVisual = &visual,
+            .leftCarryOwnsWeaponRoot = input.leftCarryOwnsWeaponRoot,
         });
         if (_activeSeconds >= kTransitionWatchdogSeconds) {
             finish(

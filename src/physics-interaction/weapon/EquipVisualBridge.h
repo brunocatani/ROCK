@@ -86,6 +86,12 @@ namespace rock
             bool advanceLifetime = true;
             bool presentModel = true;
             const equipped_weapon_visual_state::Snapshot* nativeVisual = nullptr;
+            // The LEFT firing carry has published a solved pose for the native
+            // weapon root. Until then a left-hand bridge must not use that
+            // root as its rotation carrier: it still holds the right-hand
+            // glue or mid-draw animation orientation, which presented the
+            // model mirrored for the first frames of a left-hand equip.
+            bool leftCarryOwnsWeaponRoot = false;
         };
 
         EquipVisualBridge() = default;
@@ -185,6 +191,7 @@ namespace rock
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;
         bool _nativeCarrierTraceLogged = false;
+        bool _nativeCarrierWasUsable = false;
         bool _active = false;
     };
 }

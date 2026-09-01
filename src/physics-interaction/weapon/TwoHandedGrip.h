@@ -635,6 +635,19 @@ namespace rock
 
         bool isFiringHandLeft() const { return _session.firingHandIsLeft; }
 
+        /*
+         * True while a manual left-firing carry has published a solved weapon
+         * pose in the latest grip update. The equip visual bridge keys its
+         * rotation carrier on this: before the first solve, the native weapon
+         * root still holds the right-hand glue or draw-animation orientation.
+         */
+        [[nodiscard]] bool hasSolvedLeftFiringCarryPose() const noexcept
+        {
+            return _session.firingHandIsLeft &&
+                   isManualOwnershipActive() &&
+                   _hasSolvedWeaponTransform;
+        }
+
         TwoHandedState getState() const { return _session.state; }
 
         weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _session.authorityMode; }

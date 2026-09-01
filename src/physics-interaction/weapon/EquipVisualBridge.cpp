@@ -274,6 +274,7 @@ namespace rock
         _presentationLeaseStartedAt = std::chrono::steady_clock::now();
         _modelPresented = true;
         _nativeCarrierTraceLogged = false;
+        _nativeCarrierWasUsable = false;
         _active = true;
 
         if (authoredLookup.found &&
@@ -470,6 +471,27 @@ namespace rock
                 return;
             }
 
+            /*
+             * The native weapon root is only a valid rotation carrier for a
+             * left-hand equip once the left firing carry drives it; before
+             * that it holds the right-hand glue or mid-draw animation
+             * orientation. Until then the model stays glued to the hand, and
+             * the short blend restarts when the carrier becomes usable so the
+             * correction converges instead of snapping.
+             */
+            const bool nativePositionOnlyCarrierAvailable =
+                input.nativeVisual &&
+                input.nativeVisual->weaponRoot &&
+                isFiniteTransform(
+                    input.nativeVisual->weaponRoot->world) &&
+                (!_isLeftHand || input.leftCarryOwnsWeaponRoot);
+            if (_isLeftHand &&
+                nativePositionOnlyCarrierAvailable &&
+                !_nativeCarrierWasUsable) {
+                _elapsedSeconds = 0.0f;
+            }
+            _nativeCarrierWasUsable = nativePositionOnlyCarrierAvailable;
+
             RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
@@ -487,11 +509,6 @@ namespace rock
                         computeGrabLegacyPalmPivotAWorldFromHandBasis(
                             physicalHandWorld,
                             _isLeftHand);
-                    const bool nativePositionOnlyCarrierAvailable =
-                        input.nativeVisual &&
-                        input.nativeVisual->weaponRoot &&
-                        isFiniteTransform(
-                            input.nativeVisual->weaponRoot->world);
                     const RE::NiTransform& positionOnlyCarrierWorld =
                         nativePositionOnlyCarrierAvailable ?
                             input.nativeVisual->weaponRoot->world :
@@ -532,8 +549,7 @@ namespace rock
                         _nativeCarrierTraceLogged = true;
                     }
                 }
-            } else if (input.nativeVisual && input.nativeVisual->weaponRoot &&
-                       isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
+            } else if (nativePositionOnlyCarrierAvailable) {
                 blendTarget = input.nativeVisual->weaponRoot->world;
                 haveBlendTarget = true;
             }
@@ -706,6 +722,7 @@ namespace rock
         _isLeftHand = false;
         _modelPresented = false;
         _nativeCarrierTraceLogged = false;
+        _nativeCarrierWasUsable = false;
         _active = false;
     }
 }

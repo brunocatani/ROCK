@@ -70,6 +70,11 @@ namespace rock
             // this is set. Equip recovery must neither unhide nor reattach the
             // same graph during that authority window.
             bool nativeWeaponAnimationActive{ false };
+            // The LEFT firing carry drives the native weapon root. A left-hand
+            // bridge uses the root as its rotation carrier only once this is
+            // set; before that the root still holds the right-hand glue or
+            // mid-draw orientation.
+            bool leftCarryOwnsWeaponRoot{ false };
         };
 
         struct ExpectedIdentity
