@@ -1443,30 +1443,11 @@ namespace rock
             _session.weaponGenerationKey = 0;
             _weaponNodeLocalBaseline = currentWeaponNode->local;
             _hasWeaponNodeLocalBaseline = true;
-            if (usesLeftFiringCarry()) {
-                if (!_firing.rightNativeWeaponAimFrame.valid ||
-                    _firing.rightNativeWeaponAimFrame.weaponOwnershipKey !=
-                        currentEquippedWeaponOwnershipKey ||
-                    !isFiniteTransform(
-                        _firing.rightNativeWeaponAimFrame.
-                            weaponInWandOrientation)) {
-                    return false;
-                }
-                _firing.rightNativeWeaponAimFrame.weaponNodeIdentity =
-                    currentWeaponNode;
-                _firing.rightNativeWeaponAimFrame.weaponGenerationKey = 0;
-                if (_firing.leftDampedFollowFrame.valid) {
-                    if (_firing.leftDampedFollowFrame.weaponOwnershipKey !=
-                        currentEquippedWeaponOwnershipKey) {
-                        _firing.leftDampedFollowFrame = {};
-                    } else {
-                        _firing.leftDampedFollowFrame.weaponNodeIdentity =
-                            currentWeaponNode;
-                        _firing.leftDampedFollowFrame.weaponGenerationKey = 0;
-                    }
-                }
-            }
-            return true;
+            return rebindLeftCarryFramesToWeapon(
+                currentWeaponNode,
+                0,
+                currentEquippedWeaponOwnershipKey,
+                false);
         }
 
         const bool generationChanged = _session.weaponGenerationKey != currentWeaponGenerationKey;
@@ -1488,35 +1469,12 @@ namespace rock
         }
 
         if ((generationChanged || weaponRootChanged) &&
-            usesLeftFiringCarry()) {
-            if (!_firing.rightNativeWeaponAimFrame.valid ||
-                _firing.rightNativeWeaponAimFrame.weaponOwnershipKey !=
-                    currentEquippedWeaponOwnershipKey ||
-                !isFiniteTransform(
-                    _firing.rightNativeWeaponAimFrame.
-                        weaponInWandOrientation)) {
-                ROCK_LOG_WARN(
-                    Weapon,
-                    "TwoHandedGrip: left carry cannot rebind missing native weapon aim frame generation={:016X} ownership={:016X}",
-                    currentWeaponGenerationKey,
-                    currentEquippedWeaponOwnershipKey);
-                return false;
-            }
-            _firing.rightNativeWeaponAimFrame.weaponNodeIdentity =
-                currentWeaponNode;
-            _firing.rightNativeWeaponAimFrame.weaponGenerationKey =
-                currentWeaponGenerationKey;
-            if (_firing.leftDampedFollowFrame.valid) {
-                if (_firing.leftDampedFollowFrame.weaponOwnershipKey !=
-                    currentEquippedWeaponOwnershipKey) {
-                    _firing.leftDampedFollowFrame = {};
-                } else {
-                    _firing.leftDampedFollowFrame.weaponNodeIdentity =
-                        currentWeaponNode;
-                    _firing.leftDampedFollowFrame.weaponGenerationKey =
-                        currentWeaponGenerationKey;
-                }
-            }
+            !rebindLeftCarryFramesToWeapon(
+                currentWeaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey,
+                true)) {
+            return false;
         }
 
         if (generationChanged || weaponRootChanged) {

@@ -592,4 +592,45 @@ namespace rock
             ROCK_LOG_INFO(Weapon, "TwoHandedGrip: FRIK weapon-node ownership restored");
         }
     }
+
+    bool TwoHandedGrip::rebindLeftCarryFramesToWeapon(
+        RE::NiNode* currentWeaponNode,
+        const std::uint64_t targetWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey,
+        const bool logMissingAimFrame)
+    {
+        if (usesNativeRightCarry()) {
+            return true;
+        }
+        if (!_firing.rightNativeWeaponAimFrame.valid ||
+            _firing.rightNativeWeaponAimFrame.weaponOwnershipKey !=
+                currentEquippedWeaponOwnershipKey ||
+            !isFiniteTransform(
+                _firing.rightNativeWeaponAimFrame.weaponInWandOrientation)) {
+            if (logMissingAimFrame) {
+                ROCK_LOG_WARN(
+                    Weapon,
+                    "TwoHandedGrip: left carry cannot rebind missing native weapon aim frame generation={:016X} ownership={:016X}",
+                    targetWeaponGenerationKey,
+                    currentEquippedWeaponOwnershipKey);
+            }
+            return false;
+        }
+        _firing.rightNativeWeaponAimFrame.weaponNodeIdentity =
+            currentWeaponNode;
+        _firing.rightNativeWeaponAimFrame.weaponGenerationKey =
+            targetWeaponGenerationKey;
+        if (_firing.leftDampedFollowFrame.valid) {
+            if (_firing.leftDampedFollowFrame.weaponOwnershipKey !=
+                currentEquippedWeaponOwnershipKey) {
+                _firing.leftDampedFollowFrame = {};
+            } else {
+                _firing.leftDampedFollowFrame.weaponNodeIdentity =
+                    currentWeaponNode;
+                _firing.leftDampedFollowFrame.weaponGenerationKey =
+                    targetWeaponGenerationKey;
+            }
+        }
+        return true;
+    }
 }

@@ -1244,6 +1244,19 @@ namespace rock
         // is published separately. Used by PrimaryOnly and VisualOnlySupport.
         bool solveLeftFiringWeaponCarry(RE::NiNode* weaponNode);
 
+        /*
+         * Left-carry owner for weapon identity changes: validates the
+         * mirrored native aim frame for the current equipped owner (fail
+         * closed when missing) and rebinds it - plus the damped follow
+         * frame - to the new node and generation. A right-carry session has
+         * no left frames to rebind and succeeds unconditionally.
+         */
+        bool rebindLeftCarryFramesToWeapon(
+            RE::NiNode* currentWeaponNode,
+            std::uint64_t targetWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            bool logMissingAimFrame);
+
         bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode);
 
         void releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
