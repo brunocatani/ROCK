@@ -12,7 +12,7 @@ namespace rock
             !_weaponVisualIntentObserver ||
             !weaponNode ||
             currentWeaponGenerationKey == 0 ||
-            _firingHandIsLeft ||
+            usesLeftFiringCarry() ||
             ownsWeaponTransform() ||
             !isFiniteTransform(weaponNode->local)) {
             return;
@@ -91,7 +91,7 @@ namespace rock
             partGrip(isLeft).active) {
             return true;
         }
-        return isLeft == _firingHandIsLeft &&
+        return isFiringHand(isLeft) &&
             _state == TwoHandedState::Gripping &&
             weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_authorityMode);
     }
@@ -292,7 +292,7 @@ namespace rock
 
         RE::NiTransform returnTargetLocal = _weaponNodeLocalBaseline;
         const bool followsAuthoredPrimaryGrip =
-            !_firingHandIsLeft &&
+            usesNativeRightCarry() &&
             tryResolveAuthoredPrimaryWeaponReturnTargetLocal(
                 _activeWeaponNode,
                 nativeParent,
@@ -308,7 +308,7 @@ namespace rock
         returnState.equippedWeaponOwnershipKey = _activeEquippedWeaponOwnershipKey;
         returnState.nativeBaselineLocal = _weaponNodeLocalBaseline;
         returnState.lastTargetLocal = returnTargetLocal;
-        returnState.retainPrimaryPoseBlocker = _firingHandIsLeft;
+        returnState.retainPrimaryPoseBlocker = usesLeftFiringCarry();
         returnState.followsAuthoredPrimaryGrip = followsAuthoredPrimaryGrip;
         returnState.localTransition.begin(startLocal);
         returnState.localTransition.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
@@ -716,7 +716,7 @@ namespace rock
                 _state == TwoHandedState::PartCarry,
                 _state == TwoHandedState::Gripping ||
                     _state == TwoHandedState::PrimaryOnly,
-                _firingHandIsLeft,
+                isFiringHandLeft(),
                 partGrip(true).active,
                 partGrip(false).active);
 
@@ -831,7 +831,7 @@ namespace rock
                 pulses[1].applied,
                 pulses[1].retained,
                 static_cast<int>(_state),
-                _firingHandIsLeft ? "left" : "right");
+                firingHandName());
         }
         return weaponPublished && handPulsesSucceeded;
     }
@@ -850,15 +850,15 @@ namespace rock
 
         const RE::NiTransform firingHandWorld =
             weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _primaryHandWeaponLocal);
-        const auto& returningHand = _returningHandVisuals[_firingHandIsLeft ? 0u : 1u].transition;
+        const auto& returningHand = _returningHandVisuals[isFiringHandLeft() ? 0u : 1u].transition;
         const RE::NiTransform* acquisitionStart =
             returningHand.active && isUsableHandAuthorityTransform(returningHand.lastApplied) ?
             &returningHand.lastApplied :
             liveHandWorld;
         const bool synchronizedDynamicAcquisition =
             dynamicSupportAcquisitionMatches(
-                !_firingHandIsLeft,
-                partGrip(!_firingHandIsLeft));
+                isSupportHandLeft(),
+                supportPartGrip());
         const RE::NiTransform appliedFiringHandWorld =
             synchronizedDynamicAcquisition ?
             resolveDynamicSupportAcquisitionHandTarget(
@@ -870,9 +870,9 @@ namespace rock
                 acquisitionStart,
                 dt,
                 _primaryHandVisualLerp);
-        (void)publishAuthoredPrimaryFiringGripFingerPose(_firingHandIsLeft);
+        (void)publishAuthoredPrimaryFiringGripFingerPose(isFiringHandLeft());
         RE::NiTransform requestedFiringHandWorld = appliedFiringHandWorld;
-        if (_firingHandIsLeft &&
+        if (usesLeftFiringCarry() &&
             _leftFiringWeaponRecoilSupportConstrainedThisUpdate) {
             /*
              * hFRIK applies the accepted Direct recoil delta to every external
@@ -897,23 +897,23 @@ namespace rock
         const bool applied =
             frik_visual_authority::applyExternalHandWorldTransform(
                 PRIMARY_GRIP_TAG,
-                handFromBool(_firingHandIsLeft),
+                handFromBool(isFiringHandLeft()),
                 requestedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY);
         recordLockedHandAuthorityAttempt(
-            _firingHandIsLeft,
+            isFiringHandLeft(),
             LockedHandAuthorityRole::PrimaryGrip,
             requestedFiringHandWorld,
             liveHandWorld,
             true,
             applied);
         if (applied) {
-            if (_firingHandIsLeft) {
+            if (usesLeftFiringCarry()) {
                 _leftFiringHandWorldActive = true;
             }
-            recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, _firingHandIsLeft);
-            clearHandVisualReturn(_firingHandIsLeft, "firing-grip-authority-acquired", false);
-            recordPublishedHandWorld(_firingHandIsLeft, appliedFiringHandWorld);
+            recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isFiringHandLeft());
+            clearHandVisualReturn(isFiringHandLeft(), "firing-grip-authority-acquired", false);
+            recordPublishedHandWorld(isFiringHandLeft(), appliedFiringHandWorld);
         }
         return applied;
     }
@@ -995,7 +995,7 @@ namespace rock
             return true;
         }
 
-        const bool supportHandIsLeft = !_firingHandIsLeft;
+        const bool supportHandIsLeft = isSupportHandLeft();
         bool primaryApplied = true;
         bool supportApplied = true;
         if (applyPrimaryHand) {
@@ -1013,7 +1013,7 @@ namespace rock
             "firingHand={} supportHand={} state={} scopeMenu={} primaryFrame={} supportGrip={} supportFrame={}",
             primaryApplied ? "ok" : "failed",
             supportApplied ? "ok" : "failed",
-            _firingHandIsLeft ? "left" : "right",
+            firingHandName(),
             supportHandIsLeft ? "left" : "right",
             static_cast<int>(_state),
             _scopeMenuOpenThisFrame ? "open" : "closed",
@@ -1022,7 +1022,7 @@ namespace rock
             partGrip(supportHandIsLeft).hasHandWeaponLocal ? "ready" : "missing");
 
         if (applyPrimaryHand && primaryApplied) {
-            (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, _firingHandIsLeft);
+            (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isFiringHandLeft());
         }
         if (applySupportHand && supportApplied) {
             (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, supportHandIsLeft);

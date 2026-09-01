@@ -36,7 +36,7 @@ namespace rock
         snapshot.weaponGenerationKey = currentWeaponGenerationKey;
         snapshot.equippedWeaponOwnershipKey =
             currentEquippedWeaponOwnershipKey;
-        const WeaponPartGrip& supportGrip = partGrip(!_firingHandIsLeft);
+        const WeaponPartGrip& supportGrip = supportPartGrip();
         snapshot.supportGripSequence =
             supportGrip.active ? supportGrip.gripSequence : 0;
         snapshot.weaponFormID = currentWeaponFormID;
@@ -45,7 +45,7 @@ namespace rock
         snapshot.deltaSeconds = dt;
         snapshot.state = _state;
         snapshot.authorityMode = _authorityMode;
-        snapshot.firingHandIsLeft = _firingHandIsLeft;
+        snapshot.firingHandIsLeft = isFiringHandLeft();
         snapshot.leftGripHeld = stableFrameInput.leftGripHeld;
         snapshot.rightGripHeld = stableFrameInput.rightGripHeld;
         snapshot.leftHandHoldingObject =
@@ -129,13 +129,13 @@ namespace rock
 
         current->state = _state;
         current->authorityMode = _authorityMode;
-        current->firingHandIsLeft = _firingHandIsLeft;
+        current->firingHandIsLeft = isFiringHandLeft();
         current->handFrames[0] = _scopeSafeHandFrames[0].diagnostic;
         current->handFrames[1] = _scopeSafeHandFrames[1].diagnostic;
         current->weaponGenerationKey = _activeWeaponGenerationKey;
         current->equippedWeaponOwnershipKey =
             _activeEquippedWeaponOwnershipKey;
-        const WeaponPartGrip& supportGrip = partGrip(!_firingHandIsLeft);
+        const WeaponPartGrip& supportGrip = supportPartGrip();
         current->supportGripSequence =
             supportGrip.active ? supportGrip.gripSequence : 0;
         if (_activeWeaponNode) {

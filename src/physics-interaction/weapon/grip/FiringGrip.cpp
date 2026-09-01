@@ -76,7 +76,7 @@ namespace rock
 
         const bool activeLeftCaptureCurrent =
             isManualOwnershipActive() &&
-            _firingHandIsLeft &&
+            usesLeftFiringCarry() &&
             _activeWeaponNode == weaponNode &&
             currentEquippedWeaponOwnershipKey != 0 &&
             _activeEquippedWeaponOwnershipKey ==
@@ -196,7 +196,7 @@ namespace rock
         if (emitAttachHaptic) {
             _hapticEvents.firingGripAttached = true;
             _hapticEvents.firingGripAttachedHandIsLeft =
-                _firingHandIsLeft;
+                isFiringHandLeft();
         }
         _firingGripSequence = ++_gripCaptureSequence;
         if (retainUntilPhysicalGrip) {
@@ -212,7 +212,7 @@ namespace rock
     {
         if (!_persistentEquippedCarryActive ||
             !isManualOwnershipActive() ||
-            handIsLeft != _firingHandIsLeft) {
+            !isFiringHand(handIsLeft)) {
             return false;
         }
 
@@ -267,8 +267,8 @@ namespace rock
         clearDynamicSupportAcquisition(
             reason ? reason : "transition-to-primary-only",
             true);
-        const bool primaryHandIsLeft = _firingHandIsLeft;
-        const bool supportHandIsLeft = !_firingHandIsLeft;
+        const bool primaryHandIsLeft = isFiringHandLeft();
+        const bool supportHandIsLeft = isSupportHandLeft();
 
         if (_state == TwoHandedState::Inactive) {
             RE::NiTransform nativeWeaponLocalBaseline = weaponNode->local;
@@ -302,7 +302,7 @@ namespace rock
         clearSupportGripPose(supportHandIsLeft);
         clearSupportGripPose(primaryHandIsLeft);
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
-        if (!_firingHandIsLeft) {
+        if (usesNativeRightCarry()) {
             // FRIK's primary weapon pose targets the game-primary RIGHT hand.
             // During RIGHT carry that native pose remains authoritative.
             // LEFT carry keeps it blocked and publishes its authored wrist,
@@ -318,7 +318,7 @@ namespace rock
         if (_hasSolvedWeaponTransform) {
             _lastSolvedWeaponTransform = _lastRenderedWeaponWorld;
         }
-        if (!_firingHandIsLeft) {
+        if (usesNativeRightCarry()) {
             /*
              * Right firing hand: PrimaryOnly is FRIK-native carry, so ROCK
              * deliberately holds no hand-to-weapon frame. A LEFT firing hand
@@ -364,27 +364,27 @@ namespace rock
             });
 
         if (manualDecision.dropRequested) {
-            beginHandVisualReturn(_firingHandIsLeft, "primary-only-drop");
+            beginHandVisualReturn(isFiringHandLeft(), "primary-only-drop");
             if (_handlingSettings.detachAuthority ==
                 immersive_weapon_policy::DetachAuthority::
                     IntegratedImmersive) {
                 recordFiringGripDetachedHaptic();
             }
             requestEquippedWeaponDrop("primary-only-grip-released",
-                _firingHandIsLeft ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
+                isFiringHandLeft() ? equipped_weapon_drop_policy::SourceHand::Left : equipped_weapon_drop_policy::SourceHand::Right);
             return;
         }
 
         if (manualDecision.cleared) {
-            beginHandVisualReturn(_firingHandIsLeft, "primary-only-released");
-            if (_firingHandIsLeft) {
+            beginHandVisualReturn(isFiringHandLeft(), "primary-only-released");
+            if (usesLeftFiringCarry()) {
                 beginWeaponVisualReturn("left-primary-only-released");
             }
             transitionToInactive(false);
             return;
         }
 
-        if (!_firingHandIsLeft) {
+        if (usesNativeRightCarry()) {
             // Right firing hand: FRIK-native carry, ROCK bookkeeping only.
             _hasSolvedWeaponTransform = false;
             return;
@@ -582,7 +582,7 @@ namespace rock
 
         // Validated: commit. A takeover by the other hand flips the firing
         // role only after its complete normalized hold is ready.
-        if (handIsLeft != _firingHandIsLeft) {
+        if (!isFiringHand(handIsLeft)) {
             setFiringHand(handIsLeft, "firing-grip-reattach-other-hand");
         }
         _hasFiringHandWeaponLocal = true;
@@ -590,7 +590,7 @@ namespace rock
         _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};
         clearPrimaryDetachVisualAuthority(handIsLeft);
-        if (!_firingHandIsLeft) {
+        if (usesNativeRightCarry()) {
             restoreFrikPrimaryWeaponPose();
         }
         _hapticEvents.firingGripAttached = true;
@@ -939,7 +939,7 @@ namespace rock
 
     void TwoHandedGrip::rememberRightFiringHandCanonicalFrame()
     {
-        if (_firingHandIsLeft || !_activeWeaponNode ||
+        if (usesLeftFiringCarry() || !_activeWeaponNode ||
             !_hasFiringHandWeaponLocal || _activeWeaponGenerationKey == 0) {
             return;
         }
@@ -963,7 +963,7 @@ namespace rock
 
     bool TwoHandedGrip::canCaptureRightNativeWeaponAimFrame() const
     {
-        if (_firingHandIsLeft || _weaponNodeOwnershipBlockEngaged ||
+        if (usesLeftFiringCarry() || _weaponNodeOwnershipBlockEngaged ||
             _returningWeaponVisual.localTransition.active ||
             _weaponCollisionHandPresentationFromPreviousFrame[1] ||
             !scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(
@@ -1567,7 +1567,7 @@ namespace rock
 
     bool TwoHandedGrip::tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode)
     {
-        const bool supportHandIsLeft = !_firingHandIsLeft;
+        const bool supportHandIsLeft = isSupportHandLeft();
         if (!weaponNode || !_handlingSettings.ambidextrousHandoffEnabled ||
             !canBeginPrimaryOnlyGripForHand(supportHandIsLeft)) {
             return false;
@@ -1658,7 +1658,7 @@ namespace rock
                 transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
         }
 
-        beginHandVisualReturn(_firingHandIsLeft, "ambidextrous-firing-hand-promotion");
+        beginHandVisualReturn(isFiringHandLeft(), "ambidextrous-firing-hand-promotion");
         if (_handlingSettings.detachAuthority ==
             immersive_weapon_policy::DetachAuthority::
                 IntegratedImmersive) {
@@ -1674,17 +1674,17 @@ namespace rock
         _primaryHandWeaponLocal = newFiringHandWeaponLocal;
         _hasFiringHandWeaponLocal = true;
         rememberRightFiringHandCanonicalFrame();
-        if (_firingHandIsLeft &&
+        if (usesLeftFiringCarry() &&
             !solveLeftFiringWeaponCarry(weaponNode)) {
             return true;
         }
         _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};
         _hapticEvents.firingGripAttached = true;
-        _hapticEvents.firingGripAttachedHandIsLeft = _firingHandIsLeft;
+        _hapticEvents.firingGripAttachedHandIsLeft = isFiringHandLeft();
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: support hand promoted to firing grip hand={} gripToGrip={:.2f} hold={}",
-            _firingHandIsLeft ? "left" : "right",
+            firingHandName(),
             supportGripToFiringGripDistance,
             holdSource);
         return true;

@@ -101,7 +101,7 @@ namespace rock
             return true;
         }
 
-        const bool carryHandIsLeft = !_firingHandIsLeft;
+        const bool carryHandIsLeft = isSupportHandLeft();
         const bool integratedImmersiveDetach =
             _handlingSettings.detachAuthority ==
                 immersive_weapon_policy::DetachAuthority::
@@ -136,10 +136,10 @@ namespace rock
         // driver baseline below. A later return to Gripping recaptures its own
         // paired support calibration.
         clearSupportInputBaselines();
-        beginHandVisualReturn(_firingHandIsLeft, "primary-detach-part-carry");
-        clearPrimaryGripFingerPose(_firingHandIsLeft);
-        clearPrimaryGripWorldAuthority(_firingHandIsLeft);
-        if (_firingHandIsLeft) {
+        beginHandVisualReturn(isFiringHandLeft(), "primary-detach-part-carry");
+        clearPrimaryGripFingerPose(isFiringHandLeft());
+        clearPrimaryGripWorldAuthority(isFiringHandLeft());
+        if (usesLeftFiringCarry()) {
             _leftFiringDampedFollowFrame = {};
         }
         _primaryHandVisualLerp = {};
@@ -199,8 +199,8 @@ namespace rock
         const WeaponInteractionRuntimeState& leftRuntimeState,
         const WeaponInteractionRuntimeState& rightRuntimeState)
     {
-        const bool supportHandIsLeft = !_firingHandIsLeft;
-        const bool firingHandIsLeft = _firingHandIsLeft;
+        const bool supportHandIsLeft = isSupportHandLeft();
+        const bool firingHandIsLeft = isFiringHandLeft();
         const WeaponInteractionContact& firingHandContact = firingHandIsLeft ? leftWeaponContact : rightWeaponContact;
         const WeaponInteractionContact& supportHandContact = supportHandIsLeft ? leftWeaponContact : rightWeaponContact;
         const WeaponInteractionRuntimeState& firingRuntimeState = firingHandIsLeft ? leftRuntimeState : rightRuntimeState;
@@ -287,7 +287,7 @@ namespace rock
                     *candidate.contact,
                     authoredProviderAuthorityActive,
                     authoredAttachOnlyAuthorityActive)) {
-                const bool newSupportHandIsLeft = !_firingHandIsLeft;
+                const bool newSupportHandIsLeft = isSupportHandLeft();
                 if (partGrip(newSupportHandIsLeft).active) {
                     // Re-lock the two-hand separation against the (possibly
                     // swapped) support grip and re-blend the support target in.
@@ -328,7 +328,7 @@ namespace rock
                     }
                     updateFullWeaponAuthorityGrip(weaponNode, dt);
                 } else {
-                    if (!_firingHandIsLeft && ownsWeaponTransform()) {
+                    if (usesNativeRightCarry() && ownsWeaponTransform()) {
                         beginWeaponVisualReturn("part-carry-reattached-primary-only");
                     }
                     const bool primaryOnlyActive = transitionToPrimaryOnly(
@@ -336,7 +336,7 @@ namespace rock
                         currentWeaponGenerationKey,
                         currentEquippedWeaponOwnershipKey,
                         "part-carry-reattached-firing-grip");
-                    if (primaryOnlyActive && _firingHandIsLeft) {
+                    if (primaryOnlyActive && usesLeftFiringCarry()) {
                         (void)solveLeftFiringWeaponCarry(weaponNode);
                     }
                 }

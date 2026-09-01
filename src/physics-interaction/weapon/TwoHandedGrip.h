@@ -18,6 +18,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -28,8 +29,6 @@
 
 namespace rock
 {
-    class WeaponCollision;
-
     namespace authored_weapon_grip_library
     {
         struct FiringFingerPose;
@@ -1128,6 +1127,24 @@ namespace rock
         WeaponPartGrip& partGrip(bool isLeft) { return _partGrips[isLeft ? 0u : 1u]; }
         const WeaponPartGrip& partGrip(bool isLeft) const { return _partGrips[isLeft ? 0u : 1u]; }
 
+        /*
+         * Role predicates. Grip math is weapon-relative and hands own roles;
+         * these name the two carry programs so call sites read as intent
+         * instead of flag algebra. usesNativeRightCarry: FRIK native carry
+         * stays authoritative and ROCK applies position-only authored
+         * alignment. usesLeftFiringCarry: ROCK owns the weapon node
+         * end-to-end (reparent, pose blockers, feed-forward publish, left
+         * recoil route). _firingHandIsLeft itself is written only by
+         * setFiringHand() and reset().
+         */
+        [[nodiscard]] bool isFiringHand(bool isLeft) const noexcept { return isLeft == _firingHandIsLeft; }
+        [[nodiscard]] bool isSupportHandLeft() const noexcept { return !_firingHandIsLeft; }
+        [[nodiscard]] bool usesLeftFiringCarry() const noexcept { return _firingHandIsLeft; }
+        [[nodiscard]] bool usesNativeRightCarry() const noexcept { return !_firingHandIsLeft; }
+        [[nodiscard]] const char* firingHandName() const noexcept { return _firingHandIsLeft ? "left" : "right"; }
+        [[nodiscard]] WeaponPartGrip& supportPartGrip() noexcept { return partGrip(!_firingHandIsLeft); }
+        [[nodiscard]] const WeaponPartGrip& supportPartGrip() const noexcept { return partGrip(!_firingHandIsLeft); }
+
         bool clearWeaponCollisionHandAuthority(bool isLeft);
 
         void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
@@ -1386,6 +1403,24 @@ namespace rock
             bool firingGripProximityAuthorityEnabled,
             bool ambidextrousHandoffCaptureContext,
             RE::NiTransform* outCapturedHandWorld = nullptr);
+
+        // Per-finger surface solve for a freshly seated support grip: selects
+        // evidence triangles, solves the frozen-mesh finger pose, and
+        // publishes the resulting pose and full-hand local transforms into
+        // the grip. Counts feed the caller's acquisition log.
+        void solveSupportGripFingerPose(
+            bool isLeft,
+            RE::NiNode* weaponNode,
+            const WeaponInteractionDecision& decision,
+            const WeaponCollision& weaponCollision,
+            const RE::NiTransform& handTransform,
+            const RE::NiTransform& adjustedHandTransform,
+            const RE::NiPoint3& gripWorldPoint,
+            bool cachedTrianglesFound,
+            const WeaponCollision::SupportGripEvidenceView& evidenceView,
+            WeaponPartGrip& grip,
+            std::size_t& outSourceTriangleCount,
+            std::size_t& outCompositeEvidenceViewCount);
 
         void lockPartGripToWeaponRoot(bool isLeft);
 

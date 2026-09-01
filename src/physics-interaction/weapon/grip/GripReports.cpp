@@ -11,12 +11,12 @@ namespace rock
         return EquippedWeaponGripOccupancy{
             .left = {
                 .firingGripActive =
-                    firingGripActive && _firingHandIsLeft,
+                    firingGripActive && isFiringHandLeft(),
                 .partGripActive = partGrip(true).active,
             },
             .right = {
                 .firingGripActive =
-                    firingGripActive && !_firingHandIsLeft,
+                    firingGripActive && !isFiringHandLeft(),
                 .partGripActive = partGrip(false).active,
             },
         };
@@ -32,13 +32,13 @@ namespace rock
     void TwoHandedGrip::getHandGripReport(bool isLeft, HandGripReport& outReport) const
     {
         outReport = {};
-        const bool isFiringHand = isLeft == _firingHandIsLeft;
+        const bool handHasFiringRole = isFiringHand(isLeft);
         const WeaponPartGrip& grip = partGrip(isLeft);
         const auto kind = weapon_part_grip_report_policy::resolveHandGripKind(
             _state == TwoHandedState::Gripping,
             _state == TwoHandedState::PartCarry,
             _state == TwoHandedState::PrimaryOnly,
-            isFiringHand,
+            handHasFiringRole,
             grip.active,
             grip.attachOnly,
             _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport);
@@ -98,7 +98,7 @@ namespace rock
             return;
         }
         _hapticEvents.firingGripDetached = true;
-        _hapticEvents.firingGripDetachedHandIsLeft = _firingHandIsLeft;
+        _hapticEvents.firingGripDetachedHandIsLeft = isFiringHandLeft();
     }
 
     void TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand)

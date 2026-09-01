@@ -453,7 +453,7 @@ namespace rock
             .gripping = _state == TwoHandedState::Gripping,
             .primaryHandAuthorityEnabled =
                 weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_authorityMode),
-            .firingHandIsLeft = _firingHandIsLeft,
+            .firingHandIsLeft = isFiringHandLeft(),
             .leftPartGripActive = partGrip(true).active,
             .rightPartGripActive = partGrip(false).active,
         };
