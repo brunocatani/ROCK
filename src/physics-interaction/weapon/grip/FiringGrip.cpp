@@ -37,23 +37,14 @@ namespace rock
             return false;
         }
 
-        /*
-         * The damped weapon-offset drivers ride the draw/equip transient: an
-         * instant left takeover at equip time sampled that swing into the
-         * conjugation and baked a rotated (visibly inverted) left seat and
-         * hand for the whole first carry. The conjugation needs only the
-         * fixed per-hand bone-in-wand map, so use the cached natural frames
-         * captured while each hand was settled and authority-free.
-         */
+        // The seat is a pure function of the authored right seat. The
+        // cached natural bone-in-wand frames feed only the takeover
+        // diagnostic that compares it with the former wand conjugation.
         RE::NiTransform rightHandWorld{};
         RE::NiTransform leftHandWorld{};
-        if (!tryResolveNaturalWandHandOrientationFrame(
-                false,
-                rightHandWorld) ||
-            !tryResolveNaturalWandHandOrientationFrame(
-                true,
-                leftHandWorld) ||
-            !tryBuildMirroredLeftFiringHandWeaponLocalImpl(
+        (void)tryResolveNaturalWandHandOrientationFrame(false, rightHandWorld);
+        (void)tryResolveNaturalWandHandOrientationFrame(true, leftHandWorld);
+        if (!tryBuildMirroredLeftFiringHandWeaponLocalImpl(
                 _firing.rightCanonicalHandWeaponLocal,
                 _firing.rightCanonicalGripWeaponLocal,
                 rightHandWorld,
@@ -1256,35 +1247,23 @@ namespace rock
             return false;
         }
 
-        // Both relations come from the damped physical drivers. A takeover is
-        // normally initiated while the left hand is still visually locked as
-        // the support grip, so either rendered bone would contaminate the
-        // authored seat with ROCK's own previous output.
+        // Diagnostic-only inputs: the seat itself reads no hand or wand
+        // frame. The natural frames are transient-free, so the logged delta
+        // measures the fixed per-hand wand asymmetry that the former
+        // conjugation carried onto the weapon.
         RE::NiTransform leftHandWorld{};
         RE::NiTransform rightHandWorld{};
-        RE::NiTransform leftDriverWorld{};
-        RE::NiTransform rightDriverWorld{};
-        if (!tryResolvePhysicalHandFrame(
-                true,
-                leftHandWorld,
-                leftDriverWorld) ||
-            !tryResolvePhysicalHandFrame(
-                false,
-                rightHandWorld,
-                rightDriverWorld)) {
-            return false;
-        }
+        (void)tryResolveNaturalWandHandOrientationFrame(true, leftHandWorld);
+        (void)tryResolveNaturalWandHandOrientationFrame(false, rightHandWorld);
 
-        const bool mirrored =
-            tryBuildMirroredLeftFiringHandWeaponLocalImpl(
+        if (!tryBuildMirroredLeftFiringHandWeaponLocalImpl(
                 _firing.rightCanonicalHandWeaponLocal,
                 _firing.rightCanonicalGripWeaponLocal,
                 rightHandWorld,
                 leftHandWorld,
                 outHandWeaponLocal,
                 false,
-                logDiagnostic);
-        if (!mirrored) {
+                logDiagnostic)) {
             return false;
         }
 
@@ -1313,45 +1292,20 @@ namespace rock
         RE::NiTransform& outRightHandWeaponLocal) const
     {
         outRightHandWeaponLocal = {};
-        if (!_firing.hasLeftNaturalBoneInWand || !_firing.hasRightNaturalBoneInWand ||
-            !isFiniteTransform(leftHandWeaponLocal) ||
-            !isFiniteTransform(_firing.leftNaturalBoneInWand) ||
-            !isFiniteTransform(_firing.rightNaturalBoneInWand)) {
+        if (!isFiniteTransform(leftHandWeaponLocal)) {
             return false;
         }
 
         /*
-         * Mirror only ORIENTATION through the physical wand pair. The cached
-         * bone-in-wand transforms remove hFRIK's asymmetric hand-bone
-         * conventions, but their translations/scales are presentation state
-         * and can be collapsed while ROCK owns left-primary carry. Feeding
-         * those affine values through inverse composition produced enormous
-         * intermediate translations and a catastrophically cancelled right
-         * support seat. Position is anchored independently below, so rigid
-         * zero-origin frames are the complete source authority here.
+         * Orientation is the exact skeleton mirror of the authored left seat
+         * (see hand_seat_mirror_math); it reads no wand frame, so the
+         * per-hand wand asymmetry that the former conjugation carried onto
+         * the right support seat cannot enter. Position is anchored
+         * independently below, so the mirrored translation is discarded.
          */
-        const auto orientationFrame = [](const RE::NiTransform& source) {
-            RE::NiTransform result = source;
-            result.translate = {};
-            result.scale = 1.0f;
-            return result;
-        };
-        const RE::NiTransform leftBoneInWandOrientation =
-            orientationFrame(_firing.leftNaturalBoneInWand);
-        const RE::NiTransform rightBoneInWandOrientation =
-            orientationFrame(_firing.rightNaturalBoneInWand);
-        const RE::NiTransform leftHandWeaponOrientation =
-            orientationFrame(leftHandWeaponLocal);
-
-        const RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
-            leftBoneInWandOrientation,
-            transform_math::invertTransform(leftHandWeaponOrientation));
-        const RE::NiTransform weaponInRightWand =
-            conjugateAcrossLateralMirror(weaponInLeftWand);
-        const RE::NiTransform weaponInRightHand = transform_math::composeTransforms(
-            transform_math::invertTransform(rightBoneInWandOrientation),
-            weaponInRightWand);
-        RE::NiTransform mirroredRightHandWeaponLocal = transform_math::invertTransform(weaponInRightHand);
+        RE::NiTransform mirroredRightHandWeaponLocal =
+            hand_seat_mirror_math::mirrorHandWeaponLocalAcrossWeaponSidePlane(
+                leftHandWeaponLocal);
         if (!isFiniteTransform(mirroredRightHandWeaponLocal)) {
             return false;
         }
@@ -1444,88 +1398,91 @@ namespace rock
         }
 
         /*
-         * WAND-CONJUGATION MIRROR. The aim requirement is controller-
-         * relative: the tuned right-hand offsets align the barrel with the
-         * RIGHT controller's forward, so the mirrored hold must align it
-         * with the LEFT controller's forward with the lateral components
-         * negated ("2 degrees left of the right wand" becomes "2 degrees
-         * right of the left wand"). Left/right WAND device frames are the
-         * physically exact mirror pair; the hand BONE conventions are not
-         * mirrors (previous semantic-palm and bone-anchor mirrors both left
-         * a residual yaw/side bias in-game). Conjugating the canonical hold
-         * through the wand pair cancels every per-hand bone convention
-         * inside the live-sampled bone-in-wand transforms:
-         *
-         *   weaponInLeftWand = Msag o weaponInRightWand o Mside
-         *
-         * with two reflections keeping the result a proper rotation: Msag
-         * mirrors across the wand's sagittal plane (wand-local X lateral -
-         * same axis family as the weapon frame the wand chain parents) and
-         * Mside across the weapon's own side plane (+Y barrel, +X side),
-         * which maps the grip from the weapon's right flank to its left.
-         * Effect on the tuned offsets: yaw and roll negate, pitch and
-         * fore/aft/vertical placement are preserved.
-         *
-         * The native first-person arm sync drags each hand bone to its wand
-         * with a fixed per-hand map, so bone-in-wand is constant and
-         * sampling it at takeover time is exact.
+         * SKELETON MIRROR. The left seat is the exact anatomical mirror of
+         * the authored right seat (hand_seat_mirror_math): weapon side-plane
+         * reflection outside, hand-basis Z reflection inside. It is a pure
+         * function of the authored relation, so it is identical on every
+         * hold of a weapon and reads no controller state. The former wand
+         * conjugation assumed the two hand bones ride their wands as an
+         * exact mirror pair; the game seats each bone through its own fixed
+         * map, and that asymmetry landed on the weapon as a constant wrist
+         * error on every left hold while the finger pose stayed correct.
+         * Weapon aim relative to the wand is unaffected: equipped carry
+         * mirrors the native weapon-in-wand orientation separately.
          */
-        auto* playerNodes = f4vr::getPlayerNodes();
-        if (!playerNodes) {
-            return false;
-        }
-        // Ambidextrous stands down in game-left-handed mode, so primary is
-        // always the physical RIGHT wand here.
-        RE::NiNode* rightWand = playerNodes->primaryWandNode;
-        RE::NiNode* leftWand = playerNodes->SecondaryWandNode;
-        if (!rightWand || !leftWand ||
-            !isFiniteTransform(rightWand->world) || !isFiniteTransform(leftWand->world)) {
-            return false;
-        }
-
-        const RE::NiTransform boneInRightWand =
-            transform_math::composeTransforms(transform_math::invertTransform(rightWand->world), rightHandWorld);
-        const RE::NiTransform boneInLeftWand =
-            transform_math::composeTransforms(transform_math::invertTransform(leftWand->world), leftHandWorld);
-        // A hand bone rides its wand at wrist range; a large offset means a
-        // stale or foreign frame - fail closed to the live-capture fallback.
-        constexpr float kMaxBoneToWandDistance = 30.0f;
-        const auto transformOffsetLength = [](const RE::NiTransform& transform) {
-            return std::sqrt(dot(transform.translate, transform.translate));
-        };
-        if (!isFiniteTransform(boneInRightWand) || !isFiniteTransform(boneInLeftWand) ||
-            transformOffsetLength(boneInRightWand) > kMaxBoneToWandDistance ||
-            transformOffsetLength(boneInLeftWand) > kMaxBoneToWandDistance) {
-            return false;
-        }
-
-        const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
-            boneInRightWand, transform_math::invertTransform(canonicalRightHandWeaponLocal));
-        RE::NiTransform weaponInLeftWand =
-            conjugateAcrossLateralMirror(weaponInRightWand);
-
-        /*
-         * Loose-model callers have no equipped native weapon-in-wand frame,
-         * so their legacy solver hold still owns the optional aim trim here.
-         * Equipped carry requests the untrimmed authored wrist relation and
-         * applies the same trim to its separate native weapon orientation.
-         */
-        if (applyHandlingTrim) {
-            weaponInLeftWand = transform_math::composeTransforms(
-                makeLeftFiringWandAimTrim(handlingSettings),
-                weaponInLeftWand);
-        }
-
-        const RE::NiTransform weaponInLeftHand = transform_math::composeTransforms(
-            transform_math::invertTransform(boneInLeftWand), weaponInLeftWand);
-        RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);
-
+        RE::NiTransform mirroredHandWeaponLocal =
+            hand_seat_mirror_math::mirrorHandWeaponLocalAcrossWeaponSidePlane(
+                canonicalRightHandWeaponLocal);
         if (!isFiniteTransform(mirroredHandWeaponLocal)) {
             return false;
         }
 
+        // Live bone-in-wand frames serve only the loose-model aim trim (a
+        // wand-axis knob) and the takeover diagnostic. A hand bone rides its
+        // wand at wrist range; a larger offset is a stale or absent frame.
+        auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiNode* rightWand = playerNodes ? playerNodes->primaryWandNode : nullptr;
+        RE::NiNode* leftWand = playerNodes ? playerNodes->SecondaryWandNode : nullptr;
+        constexpr float kMaxBoneToWandDistance = 30.0f;
+        const auto transformOffsetLength = [](const RE::NiTransform& transform) {
+            return std::sqrt(dot(transform.translate, transform.translate));
+        };
+        const auto tryResolveBoneInWand = [&](const RE::NiNode* wand,
+                                              const RE::NiTransform& handWorld,
+                                              RE::NiTransform& outBoneInWand) {
+            outBoneInWand = {};
+            if (!wand || !isFiniteTransform(wand->world) || !isFiniteTransform(handWorld)) {
+                return false;
+            }
+            const RE::NiTransform boneInWand = transform_math::composeTransforms(
+                transform_math::invertTransform(wand->world), handWorld);
+            if (!isFiniteTransform(boneInWand) ||
+                transformOffsetLength(boneInWand) > kMaxBoneToWandDistance) {
+                return false;
+            }
+            outBoneInWand = boneInWand;
+            return true;
+        };
+        RE::NiTransform boneInRightWand{};
+        RE::NiTransform boneInLeftWand{};
+        const bool haveBoneInRightWand =
+            tryResolveBoneInWand(rightWand, rightHandWorld, boneInRightWand);
+        const bool haveBoneInLeftWand =
+            tryResolveBoneInWand(leftWand, leftHandWorld, boneInLeftWand);
+
         /*
-         * PALM-ANCHORED POSITION: the wand conjugation is the ORIENTATION
+         * Loose-model callers have no equipped native weapon-in-wand frame,
+         * so their legacy solver hold still owns the optional aim trim. The
+         * trim is authored about wand axes, so re-express it in the left
+         * hand frame through the live left bone-in-wand orientation; an
+         * identity trim needs no wand. Equipped carry requests the untrimmed
+         * authored wrist relation and applies the same trim to its separate
+         * native weapon orientation.
+         */
+        if (applyHandlingTrim &&
+            (handlingSettings.leftFiringAimYawDegrees != 0.0f ||
+                handlingSettings.leftFiringAimPitchDegrees != 0.0f)) {
+            if (!haveBoneInLeftWand) {
+                return false;
+            }
+            const RE::NiTransform boneInLeftWandOrientation =
+                left_firing_position_only_math::orientationOnly(boneInLeftWand);
+            const RE::NiTransform trimInLeftHand = transform_math::composeTransforms(
+                transform_math::invertTransform(boneInLeftWandOrientation),
+                transform_math::composeTransforms(
+                    makeLeftFiringWandAimTrim(handlingSettings),
+                    boneInLeftWandOrientation));
+            const RE::NiTransform trimmedWeaponInLeftHand = transform_math::composeTransforms(
+                trimInLeftHand,
+                transform_math::invertTransform(mirroredHandWeaponLocal));
+            mirroredHandWeaponLocal = transform_math::invertTransform(trimmedWeaponInLeftHand);
+            if (!isFiniteTransform(mirroredHandWeaponLocal)) {
+                return false;
+            }
+        }
+
+        /*
+         * PALM-ANCHORED POSITION: the skeleton mirror is the ORIENTATION
          * authority only. Deriving the translation through frame mirroring
          * left per-weapon height errors that no global knob can fix (UMP
          * too low while the P226 sits too high - weapons with authored
@@ -1565,26 +1522,45 @@ namespace rock
             }
         }
 
-        // Takeover-event diagnostic: barrel (+Y weapon) direction in each
-        // wand frame. A correct mirror negates x and preserves y/z; a wand
-        // axis-convention mismatch shows up here as a different component
-        // flipping.
+        /*
+         * Takeover diagnostic: angle between this seat and the seat the
+         * former wand conjugation would have produced from the same frames.
+         * A constant value across holds is the fixed per-hand wand asymmetry
+         * that conjugation carried onto the weapon. Remove together with the
+         * natural bone-in-wand frames once the skeleton seat is confirmed in
+         * a runtime session.
+         */
         if (logDiagnostic) {
-            const RE::NiPoint3 barrelInRightWand =
-                sub(transform_math::localPointToWorld(weaponInRightWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInRightWand.translate);
-            const RE::NiPoint3 barrelInLeftWand =
-                sub(transform_math::localPointToWorld(weaponInLeftWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInLeftWand.translate);
+            float legacyDeltaDegrees = -1.0f;
+            if (haveBoneInRightWand && haveBoneInLeftWand) {
+                const RE::NiTransform legacyWeaponInRightWand = transform_math::composeTransforms(
+                    boneInRightWand,
+                    transform_math::invertTransform(canonicalRightHandWeaponLocal));
+                const RE::NiTransform legacyWeaponInLeftHand = transform_math::composeTransforms(
+                    transform_math::invertTransform(boneInLeftWand),
+                    conjugateAcrossLateralMirror(legacyWeaponInRightWand));
+                const RE::NiTransform legacyHandWeaponLocal =
+                    transform_math::invertTransform(legacyWeaponInLeftHand);
+                if (isFiniteTransform(legacyHandWeaponLocal)) {
+                    // Relative rotation angle from the trace; independent of
+                    // the stored-matrix convention.
+                    const RE::NiMatrix3 relative = transform_math::multiplyStoredRotations(
+                        legacyHandWeaponLocal.rotate,
+                        transform_math::transposeRotation(mirroredHandWeaponLocal.rotate));
+                    const float trace = relative.entry[0][0] + relative.entry[1][1] + relative.entry[2][2];
+                    legacyDeltaDegrees =
+                        std::acos(std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f)) * 57.29577951308232f;
+                }
+            }
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: wand-conjugated left hand seat trim={} barrelInRightWand=({:.3f},{:.3f},{:.3f}) barrelInLeftWand=({:.3f},{:.3f},{:.3f}) boneWandDist=({:.2f},{:.2f})",
+                "TwoHandedGrip: skeleton-mirrored left hand seat trim={} handWeaponT=({:.3f},{:.3f},{:.3f}) legacyWandSeatDeltaDeg={:.2f} boneWandDist=({:.2f},{:.2f})",
                 applyHandlingTrim ? "legacy-hold" : "authored-only",
-                barrelInRightWand.x,
-                barrelInRightWand.y,
-                barrelInRightWand.z,
-                barrelInLeftWand.x,
-                barrelInLeftWand.y,
-                barrelInLeftWand.z,
-                transformOffsetLength(boneInRightWand),
-                transformOffsetLength(boneInLeftWand));
+                mirroredHandWeaponLocal.translate.x,
+                mirroredHandWeaponLocal.translate.y,
+                mirroredHandWeaponLocal.translate.z,
+                legacyDeltaDegrees,
+                haveBoneInRightWand ? transformOffsetLength(boneInRightWand) : -1.0f,
+                haveBoneInLeftWand ? transformOffsetLength(boneInLeftWand) : -1.0f);
         }
 
         outHandWeaponLocal = mirroredHandWeaponLocal;

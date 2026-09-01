@@ -562,6 +562,46 @@ namespace rock::native_scope_overlay_follow_math
     }
 }
 
+// ---- HandSeatMirrorMath.h ----
+
+namespace rock::hand_seat_mirror_math
+{
+    /*
+     * Exact skeleton mirror of a hand-in-weapon seat between the two hands.
+     * The active skeleton.nif places every left arm, hand, and finger bone
+     * as the Z-reflection of its right counterpart in the parent frame
+     * (L = diag(1,1,-1) * R * diag(1,1,-1), exact to five decimals from the
+     * forearm down), and weapon geometry uses +X as its lateral axis. A
+     * whole-body mirror of a right hold across the weapon's side plane is
+     * therefore
+     *
+     *   H_left = diag(-1,1,1) * H_right * diag(1,1,-1)
+     *
+     * with translation (-x, y, z). The two reflections keep a proper
+     * rotation, and the map is an involution, so it converts either way.
+     * Controller frames are deliberately absent: the game seats each hand
+     * bone on its wand through its own fixed map, and mirroring a seat
+     * through those maps carried their asymmetry onto the weapon as a
+     * constant wrist error on every mirrored hold.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform mirrorHandWeaponLocalAcrossWeaponSidePlane(
+        const Transform& handWeaponLocal)
+    {
+        Transform weaponSideReflection =
+            transform_math::makeIdentityTransform<Transform>();
+        weaponSideReflection.rotate.entry[0][0] = -1.0f;
+        Transform handBasisReflection =
+            transform_math::makeIdentityTransform<Transform>();
+        handBasisReflection.rotate.entry[2][2] = -1.0f;
+        return transform_math::composeTransforms(
+            weaponSideReflection,
+            transform_math::composeTransforms(
+                handWeaponLocal,
+                handBasisReflection));
+    }
+}
+
 // ---- LeftFiringPositionOnlyMath.h ----
 
 namespace rock::left_firing_position_only_math
