@@ -2247,7 +2247,7 @@ namespace rock
     authored_support_grab_policy::LeftFiringTakeoverReadiness
     TwoHandedGrip::getLeftFiringTakeoverReadiness(
         RE::NiNode* weaponNode,
-        const std::uint64_t collisionGenerationKey,
+        const std::uint64_t authoredGenerationKey,
         const std::uint64_t weaponOwnershipKey,
         const bool authoredOnlyModeEnabled) const noexcept
     {
@@ -2255,11 +2255,11 @@ namespace rock
         std::array<RE::NiTransform, 15> mirroredRightFingerLocals{};
         std::uint16_t mirroredRightFingerMask = 0;
         const bool mirroredCandidateAvailable =
-            collisionGenerationKey != 0 &&
+            authoredGenerationKey != 0 &&
             tryResolveAuthoredSupportGripCandidateForHand(
                 false,
                 weaponNode,
-                collisionGenerationKey,
+                authoredGenerationKey,
                 mirroredRightSupportHandWeaponLocal,
                 mirroredRightFingerLocals,
                 mirroredRightFingerMask) &&
@@ -2271,8 +2271,8 @@ namespace rock
             capability.weaponNodeIdentity == weaponNode &&
             weaponOwnershipKey != 0 &&
             capability.weaponOwnershipKey == weaponOwnershipKey &&
-            collisionGenerationKey != 0 &&
-            capability.weaponGenerationKey == collisionGenerationKey &&
+            authoredGenerationKey != 0 &&
+            capability.weaponGenerationKey == authoredGenerationKey &&
             capability.handTopology ==
                 authored_weapon_grip_activation_policy::HandTopology::
                     RightFiringLeftSupport;
@@ -2283,8 +2283,8 @@ namespace rock
                         .targetFiringHandIsLeft = true,
                         .authoredOnlyModeEnabled =
                             authoredOnlyModeEnabled,
-                        .collisionGenerationKey =
-                            collisionGenerationKey,
+                        .authoredGenerationKey =
+                            authoredGenerationKey,
                         .capabilityIdentityCurrent =
                             capabilityIdentityCurrent,
                         .capability = capability.capability,

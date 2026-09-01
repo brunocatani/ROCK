@@ -542,7 +542,7 @@ namespace rock
             LeftFiringTakeoverReadiness
             getLeftFiringTakeoverReadiness(
                 RE::NiNode* weaponNode,
-                std::uint64_t collisionGenerationKey,
+                std::uint64_t authoredGenerationKey,
                 std::uint64_t weaponOwnershipKey,
                 bool authoredOnlyModeEnabled) const noexcept;
         bool setAuthoredSupportGripCandidate(

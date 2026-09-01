@@ -78,7 +78,12 @@ namespace rock::authored_support_grab_policy
     {
         bool targetFiringHandIsLeft{ false };
         bool authoredOnlyModeEnabled{ false };
-        std::uint64_t collisionGenerationKey{ 0 };
+        // Authored generation identity (resolveAuthoredGenerationKey): the raw
+        // collision generation once built, the ownership key while it is still
+        // building. Authored grip data is deliberately collision-independent,
+        // so a left takeover must not wait for generated collision; the carry
+        // session migrates when the raw generation lands.
+        std::uint64_t authoredGenerationKey{ 0 };
         bool capabilityIdentityCurrent{ false };
         Capability capability{ Capability::Pending };
         bool mirroredCandidateAvailable{ false };
@@ -92,7 +97,7 @@ namespace rock::authored_support_grab_policy
             !input.authoredOnlyModeEnabled) {
             return LeftFiringTakeoverReadiness::NotRequired;
         }
-        if (input.collisionGenerationKey == 0) {
+        if (input.authoredGenerationKey == 0) {
             return LeftFiringTakeoverReadiness::AwaitingFinalGeneration;
         }
         if (!input.capabilityIdentityCurrent) {

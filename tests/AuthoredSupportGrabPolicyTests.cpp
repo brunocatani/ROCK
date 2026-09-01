@@ -28,7 +28,7 @@ int main()
     constexpr LeftFiringTakeoverReadinessInput pendingLeftTakeover{
         .targetFiringHandIsLeft = true,
         .authoredOnlyModeEnabled = true,
-        .collisionGenerationKey = 0x11u,
+        .authoredGenerationKey = 0x11u,
         .capabilityIdentityCurrent = true,
         .capability = Capability::Pending,
     };
@@ -37,7 +37,7 @@ int main()
                   LeftFiringTakeoverReadiness::AwaitingCapability);
     static_assert([=] {
         auto input = pendingLeftTakeover;
-        input.collisionGenerationKey = 0;
+        input.authoredGenerationKey = 0;
         return resolveLeftFiringTakeoverReadiness(input) ==
                LeftFiringTakeoverReadiness::AwaitingFinalGeneration;
     }());
@@ -77,14 +77,14 @@ int main()
     static_assert([=] {
         auto input = pendingLeftTakeover;
         input.targetFiringHandIsLeft = false;
-        input.collisionGenerationKey = 0;
+        input.authoredGenerationKey = 0;
         return leftFiringTakeoverReady(
             resolveLeftFiringTakeoverReadiness(input));
     }());
     static_assert([=] {
         auto input = pendingLeftTakeover;
         input.authoredOnlyModeEnabled = false;
-        input.collisionGenerationKey = 0;
+        input.authoredGenerationKey = 0;
         return leftFiringTakeoverReady(
             resolveLeftFiringTakeoverReadiness(input));
     }());

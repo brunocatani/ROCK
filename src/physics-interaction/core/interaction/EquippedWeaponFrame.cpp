@@ -682,6 +682,15 @@ namespace rock
                     ((primaryDetachFeatureAvailable && primaryState.held &&
                          primaryState.pressed) ||
                         pendingPrimaryOnlyStartRequested);
+                /*
+                 * The whole grip subsystem (session keys, reconcile/rebind,
+                 * authored canonical, support capability and candidate) runs
+                 * on the AUTHORED generation key, which exists the moment the
+                 * weapon node does. The takeover entry must use the same key:
+                 * keying it to the raw collision generation made every
+                 * left-hand equip wait for the collider build and present the
+                 * weapon at the native right-hand attach until takeover.
+                 */
                 if (pendingPrimaryStartMatchesCurrentWeapon &&
                     _equipped.pendingPrimaryOnlyGripStart.isLeft &&
                     (!_equipped.pendingPrimaryOnlyGripStart.hasFiringHandWeaponLocal ||
@@ -689,7 +698,7 @@ namespace rock
                     _equipped.pendingPrimaryOnlyGripStart.hasFiringHandWeaponLocal =
                         _twoHandedGrip.tryBuildCurrentLeftFiringGripCapture(
                             weaponNode,
-                            currentWeaponGenerationKey,
+                            currentAuthoredGripGenerationKey,
                             currentEquippedWeaponOwnershipKey,
                             _equipped.pendingPrimaryOnlyGripStart.firingHandWeaponLocal,
                             _equipped.pendingPrimaryOnlyGripStart.firingGripWeaponLocal);
@@ -714,7 +723,7 @@ namespace rock
                 const auto leftTakeoverReadiness =
                     _twoHandedGrip.getLeftFiringTakeoverReadiness(
                         weaponNode,
-                        currentWeaponGenerationKey,
+                        currentAuthoredGripGenerationKey,
                         currentEquippedWeaponOwnershipKey,
                         _equipped.handlingSettings.
                             authoredOnlySupportGrabsEnabled);
@@ -743,7 +752,7 @@ namespace rock
                 } else if (primaryOnlyStartRequested &&
                     _twoHandedGrip.beginPrimaryOnlyGrip(
                         weaponNode,
-                        currentWeaponGenerationKey,
+                        currentAuthoredGripGenerationKey,
                         currentEquippedWeaponOwnershipKey,
                         firingHandIsLeft,
                         capturedFiringHandWeaponLocal,
