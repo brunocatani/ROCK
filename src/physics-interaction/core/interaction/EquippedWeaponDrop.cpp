@@ -6,7 +6,7 @@ namespace rock
 {
     void PhysicsInteraction::updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode)
     {
-        auto& capture = _equippedWeaponReleaseCapture;
+        auto& capture = _drop.releaseCapture;
         if (!_twoHandedGrip.isManualOwnershipActive()) {
             capture = {};
             return;
@@ -54,8 +54,8 @@ namespace rock
     bool PhysicsInteraction::hasAvailableEquippedWeaponDropHandoff() const
     {
         return std::any_of(
-            _equippedWeaponDropMomentumHandoffs.begin(),
-            _equippedWeaponDropMomentumHandoffs.end(),
+            _drop.momentumHandoffs.begin(),
+            _drop.momentumHandoffs.end(),
             [](const EquippedWeaponDropMomentumHandoff& handoff) { return !handoff.active; });
     }
 
@@ -75,7 +75,7 @@ namespace rock
             return;
         }
         EquippedWeaponDropMomentumHandoff* handoff = nullptr;
-        for (auto& candidate : _equippedWeaponDropMomentumHandoffs) {
+        for (auto& candidate : _drop.momentumHandoffs) {
             if (!candidate.active) {
                 handoff = &candidate;
                 break;
@@ -85,12 +85,12 @@ namespace rock
             ROCK_LOG_WARN(Weapon,
                 "Equipped weapon drop handoff capacity exhausted after admission: dropped={:08X} capacity={}",
                 droppedFormId,
-                _equippedWeaponDropMomentumHandoffs.size());
+                _drop.momentumHandoffs.size());
             return;
         }
 
         // Unknown source (SourceHand::None) falls back to the right hand.
-        const auto& history = _equippedWeaponReleaseCapture.handHistories[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u];
+        const auto& history = _drop.releaseCapture.handHistories[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u];
         // Histories are world-space hand velocities; no player-space addend exists anymore.
         const auto release = equipped_weapon_drop_momentum::composeReleaseVelocity(
             history,
@@ -116,7 +116,7 @@ namespace rock
             .angularVelocityRadiansPerSecond = release.angularVelocityRadiansPerSecond,
             .hasReleaseWeaponWorld = releaseGeometry.hasCapturedWeaponWorld,
             .releaseWeaponWorld = releaseGeometry.capturedWeaponWorld,
-            .progressSolveSequence = _completedPhysicsSolveSequence.load(std::memory_order_acquire),
+            .progressSolveSequence = _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire),
         };
         ROCK_LOG_INFO(Weapon,
             "Equipped weapon drop handoff armed: dropped={:08X} sourceHand={} velocity={} lever={:.1f}gu angularScale={:.3f} angularCap={:.3f} "
@@ -137,7 +137,7 @@ namespace rock
 
     void PhysicsInteraction::serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame)
     {
-        for (auto& handoff : _equippedWeaponDropMomentumHandoffs) {
+        for (auto& handoff : _drop.momentumHandoffs) {
             if (handoff.active) {
                 serviceEquippedWeaponDropMomentumTransaction(handoff, frame);
             }
@@ -158,7 +158,7 @@ namespace rock
 
         handoff.elapsedSeconds += (std::max)(0.0f, frame.deltaSeconds);
         const std::uint64_t completedSolveSequence =
-            _completedPhysicsSolveSequence.load(std::memory_order_acquire);
+            _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire);
         const auto publicationStalled = [&]() {
             return equipped_weapon_drop_momentum::publicationProgressStalled(
                 handoff.progressSolveSequence,

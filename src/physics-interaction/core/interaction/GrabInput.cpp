@@ -59,7 +59,7 @@ namespace rock
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* legacyPlayer = f4vr::getPlayer();
         if (!player || !legacyPlayer) {
-            _bareFistGuardState = {};
+            _grabInput.bareFistGuardState = {};
             return;
         }
 
@@ -67,7 +67,7 @@ namespace rock
         const std::uint32_t equippedWeaponFormId = currentEquippedWeaponFormId();
         const bool actorUsingMelee = weaponDrawn && f4vr::CombatUtilities_IsActorUsingMelee(legacyPlayer);
         if (!bare_fist_guard_policy::shouldRefreshWitness(
-                _bareFistGuardState,
+                _grabInput.bareFistGuardState,
                 forceRecheck,
                 weaponDrawn,
                 equippedWeaponFormId,
@@ -79,7 +79,7 @@ namespace rock
         // frame while a legitimate melee weapon remains drawn.
         const bool realMeleeWeaponEquipped = actorUsingMelee && f4vr::isMeleeWeaponEquipped();
 
-        _bareFistGuardState = bare_fist_guard_policy::RecheckState{
+        _grabInput.bareFistGuardState = bare_fist_guard_policy::RecheckState{
             .initialized = true,
             .weaponDrawn = weaponDrawn,
             .equippedWeaponFormId = equippedWeaponFormId,
@@ -106,7 +106,7 @@ namespace rock
          * weapons such as knuckles or power fists.
          */
         player->DrawWeaponMagicHands(false);
-        _bareFistGuardState.weaponDrawn = false;
+        _grabInput.bareFistGuardState.weaponDrawn = false;
         ROCK_LOG_SAMPLE_INFO(Weapon,
             g_rockConfig.rockLogSampleMilliseconds,
             "Bare-fist draw state blocked: holstering unarmed fallback (equippedForm={:08X})",
@@ -308,13 +308,13 @@ namespace rock
 
     void PhysicsInteraction::clearShoulderStashForHand(Hand& hand, bool isLeft)
     {
-        shoulder_stash::resetRuntime(_shoulderStashStates[isLeft ? 1u : 0u]);
+        shoulder_stash::resetRuntime(_grabInput.shoulderStashStates[isLeft ? 1u : 0u]);
         hand.cancelStashCandidate();
     }
 
     void PhysicsInteraction::clearMouthConsumeForHand(Hand& hand, bool isLeft)
     {
-        mouth_consume::resetRuntime(_mouthConsumeStates[isLeft ? 1u : 0u]);
+        mouth_consume::resetRuntime(_grabInput.mouthConsumeStates[isLeft ? 1u : 0u]);
         hand.cancelConsumeCandidate();
     }
 
@@ -328,8 +328,8 @@ namespace rock
     {
         auto* heldRef = hand.isHolding() ? hand.getHeldRef() : nullptr;
         const bool pendingEquippedGripOwnership =
-            _pendingEquippedWeaponPrimaryOnlyGripStart.pending &&
-            _pendingEquippedWeaponPrimaryOnlyGripStart.isLeft == isLeft;
+            _equipped.pendingPrimaryOnlyGripStart.pending &&
+            _equipped.pendingPrimaryOnlyGripStart.isLeft == isLeft;
         input_remap_runtime::setHandHeldWeapon(isLeft, hand.isHoldingLooseWeapon());
         input_remap_runtime::setHandInteractionEngaged(
             isLeft,
@@ -404,9 +404,9 @@ namespace rock
         const auto collisionGeneration = context.collisionGeneration;
 
         const auto& handInput = isLeft ? frame.left : frame.right;
-        auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
-        auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
-        auto& inputSuppressionState = _providerHandInputSuppressionStates[isLeft ? 1u : 0u];
+        auto& inputIntentState = _grabInput.intentStates[isLeft ? 1u : 0u];
+        auto& peerHeldJoinRetryState = _grabInput.peerHeldJoinRetryStates[isLeft ? 1u : 0u];
+        auto& inputSuppressionState = _grabInput.providerHandInputSuppressionStates[isLeft ? 1u : 0u];
         const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
         const auto providerHand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
         const std::uint32_t providerInputSuppressionFlags = provider::currentHandInputSuppressionFlagsV1(providerHand);
@@ -444,13 +444,13 @@ namespace rock
         };
 
         const auto handIndex = isLeft ? 1u : 0u;
-        if (_equippedWeaponShoulderGestureConsumedThisFrame[handIndex]) {
+        if (_equipped.shoulderGestureConsumedThisFrame[handIndex]) {
             // The equipped-weapon shoulder transaction owns this complete
             // physical button cycle. Never reuse any part of it for world,
             // surface, touch, or peer-held selection.
-            if (_firingHandGrabButtonFrameState.valid &&
-                _firingHandGrabButtonFrameState.isLeft == isLeft) {
-                _firingHandGrabButtonFrameState.valid = false;
+            if (_grabInput.firingHandButtonFrame.valid &&
+                _grabInput.firingHandButtonFrame.isLeft == isLeft) {
+                _grabInput.firingHandButtonFrame.valid = false;
             } else {
                 static_cast<void>(
                     readGrabButtonState(isLeft, grabButton));
@@ -466,14 +466,14 @@ namespace rock
             }
             return false;
         }
-        if (_equippedWeaponToggleGrabReleasePressConsumedThisFrame[
+        if (_equipped.toggleGrabReleasePressConsumedThisFrame[
                 handIndex]) {
             // The second press belongs only to the equipped-weapon latch. Do
             // not let the same edge start a loose-object, surface, or touch
             // grab after the weapon state releases this hand.
-            if (_firingHandGrabButtonFrameState.valid &&
-                _firingHandGrabButtonFrameState.isLeft == isLeft) {
-                _firingHandGrabButtonFrameState.valid = false;
+            if (_grabInput.firingHandButtonFrame.valid &&
+                _grabInput.firingHandButtonFrame.isLeft == isLeft) {
+                _grabInput.firingHandButtonFrame.valid = false;
             } else {
                 static_cast<void>(
                     readGrabButtonState(isLeft, grabButton));
@@ -489,15 +489,15 @@ namespace rock
             }
             return false;
         }
-        if (_forceGrabCommittedThisFrame[handIndex]) {
+        if (_forceGrab.committedThisFrame[handIndex]) {
             /*
              * Consume, but do not apply, the physical button edges from
              * before this programmatic attachment. Otherwise a stale
              * release from the Pip-Boy/API frame can drop the object in
              * the same update that reported a successful force-grab.
              */
-            if (_firingHandGrabButtonFrameState.valid && _firingHandGrabButtonFrameState.isLeft == isLeft) {
-                _firingHandGrabButtonFrameState.valid = false;
+            if (_grabInput.firingHandButtonFrame.valid && _grabInput.firingHandButtonFrame.isLeft == isLeft) {
+                _grabInput.firingHandButtonFrame.valid = false;
             } else {
                 static_cast<void>(readGrabButtonState(isLeft, grabButton));
             }
@@ -507,7 +507,7 @@ namespace rock
             clearGameplayCandidatesForHand(hand, isLeft);
             return false;
         }
-        if (_pendingForceGrabCommits[handIndex].active) {
+        if (_forceGrab.pendingCommits[handIndex].active) {
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("pending-force-grab-reservation", true);
             clearGameplayCandidatesForHand(hand, isLeft);
@@ -517,7 +517,7 @@ namespace rock
             return false;
         }
 
-        const auto& peerCommit = _pendingForceGrabCommits[isLeft ? 0u : 1u];
+        const auto& peerCommit = _forceGrab.pendingCommits[isLeft ? 0u : 1u];
         if (peerCommit.active && hand.hasSelection()) {
             const auto peerTargetPtr = peerCommit.targetHandle.get();
             if (peerTargetPtr && hand.getSelection().refr == peerTargetPtr.get()) {
@@ -614,13 +614,13 @@ namespace rock
          * input.
          */
         GrabButtonState grabInput{};
-        if (_firingHandGrabButtonFrameState.valid && _firingHandGrabButtonFrameState.isLeft == isLeft) {
+        if (_grabInput.firingHandButtonFrame.valid && _grabInput.firingHandButtonFrame.isLeft == isLeft) {
             grabInput = GrabButtonState{
-                .held = _firingHandGrabButtonFrameState.held,
-                .pressed = _firingHandGrabButtonFrameState.pressed,
-                .released = _firingHandGrabButtonFrameState.released,
+                .held = _grabInput.firingHandButtonFrame.held,
+                .pressed = _grabInput.firingHandButtonFrame.pressed,
+                .released = _grabInput.firingHandButtonFrame.released,
             };
-            _firingHandGrabButtonFrameState.valid = false;
+            _grabInput.firingHandButtonFrame.valid = false;
         } else {
             grabInput = readGrabButtonState(isLeft, grabButton);
         }
@@ -690,8 +690,8 @@ namespace rock
         const auto skeletonGeneration = context.skeletonGeneration;
         const auto providerGeneration = context.providerGeneration;
         const auto collisionGeneration = context.collisionGeneration;
-        auto& inputIntentState = _grabInputIntentStates[handIndex];
-        auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[handIndex];
+        auto& inputIntentState = _grabInput.intentStates[handIndex];
+        auto& peerHeldJoinRetryState = _grabInput.peerHeldJoinRetryStates[handIndex];
 
         const auto handState = hand.getState();
         const bool touchGrabStateAvailable =
@@ -710,7 +710,7 @@ namespace rock
             touchGrabStateAvailable &&
             !hand.hasActivePullCatchIntent() &&
             !hand.hasPendingActorEquipmentDropHandoff() &&
-            !_pendingForceGrabCommits[handIndex].active &&
+            !_forceGrab.pendingCommits[handIndex].active &&
             touchGrabPhysicsWritesAllowed;
         if (rawGrabInput.pressed && !canTryTouchGrab) {
             ROCK_LOG_INFO(
@@ -726,7 +726,7 @@ namespace rock
                 touchGrabStateAvailable,
                 hand.hasActivePullCatchIntent(),
                 hand.hasPendingActorEquipmentDropHandoff(),
-                _pendingForceGrabCommits[handIndex].active,
+                _forceGrab.pendingCommits[handIndex].active,
                 touchGrabPhysicsWritesAllowed);
         }
         if (canTryTouchGrab) {
@@ -865,11 +865,11 @@ namespace rock
         const bool gripZoneSettleEquipEnabled = context.gripZoneSettleEquipEnabled;
         const auto& farHmdConeGate = context.farHmdConeGate;
         const auto& handInput = isLeft ? frame.left : frame.right;
-        auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
-        auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
-        auto& triggerEquipIntent = _heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
-        auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
-        auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
+        auto& inputIntentState = _grabInput.intentStates[isLeft ? 1u : 0u];
+        auto& peerHeldJoinRetryState = _grabInput.peerHeldJoinRetryStates[isLeft ? 1u : 0u];
+        auto& triggerEquipIntent = _grabInput.heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
+        auto& shoulderStashState = _grabInput.shoulderStashStates[isLeft ? 1u : 0u];
+        auto& mouthConsumeState = _grabInput.mouthConsumeStates[isLeft ? 1u : 0u];
         const bool heldWeaponAtFrameStart = prelude.heldWeaponAtFrameStart;
         const bool heldWeaponEquipTriggerPressedEdge = prelude.heldWeaponEquipTriggerPressedEdge;
         auto grabInput = prelude.grabInput;
@@ -1320,7 +1320,7 @@ namespace rock
             hand.getHeldRef(),
             hand.getState() == HandState::HeldBody,
             frame.deltaSeconds,
-            _equippedWeaponHandlingSettings.gripZoneEquipRadiusGameUnits);
+            _equipped.handlingSettings.gripZoneEquipRadiusGameUnits);
 
         /*
          * Grip-zone hover probe: while either OPEN hand's selection
@@ -1333,7 +1333,7 @@ namespace rock
          * because the hover candidate goes null while holding.
          */
         RE::TESObjectREFR* gripZoneHoverCandidate = nullptr;
-        if (_equippedWeaponHandlingSettings.gripZoneHoverHapticsEnabled &&
+        if (_equipped.handlingSettings.gripZoneHoverHapticsEnabled &&
             gripZoneSettleEquipEnabled &&
             !hand.isHolding() &&
             hand.hasSelection() &&
@@ -1346,12 +1346,12 @@ namespace rock
         loose_weapon_grip_zone::updateHoverCandidateWeapon(
             isLeft,
             gripZoneHoverCandidate,
-            _equippedWeaponHandlingSettings.gripZoneEquipRadiusGameUnits);
+            _equipped.handlingSettings.gripZoneEquipRadiusGameUnits);
         if (loose_weapon_grip_zone::isGripZoneHoverInsideRadius(isLeft)) {
             (void)_feedbackHaptics.queue(
                 isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
                 grip_zone_hover_haptic_policy::kContinuousQueueSeconds,
-                _equippedWeaponHandlingSettings.gripZoneHoverHapticIntensity);
+                _equipped.handlingSettings.gripZoneHoverHapticIntensity);
         }
 
         if (hand.isHolding()) {
@@ -1369,7 +1369,7 @@ namespace rock
             const bool heldWeaponGripZoneEquipSettled = !heldLooseGrenade &&
                 loose_weapon_grip_zone::isGripZoneEquipSettled(
                     isLeft,
-                    _equippedWeaponHandlingSettings.gripZoneEquipSettleSeconds);
+                    _equipped.handlingSettings.gripZoneEquipSettleSeconds);
             const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
                 .remapEnabled = true,
                 .gameplayInputAllowed = true,
@@ -1443,7 +1443,7 @@ namespace rock
                 pendingGripStart.isLeft = isLeft;
                 pendingGripStart.toggleAcquisitionCommitted =
                     pendingGripStart.pending &&
-                    _equippedWeaponHandlingSettings.toggleGrabEnabled;
+                    _equipped.handlingSettings.toggleGrabEnabled;
                 const bool handCarryAvailable =
                     TwoHandedGrip::canBeginPrimaryOnlyGripForHand(isLeft);
                 const bool capturedLooseHold = pendingGripStart.pending &&
@@ -1460,7 +1460,7 @@ namespace rock
                         g_rockConfig.rockLogSampleMilliseconds,
                         "left hand {} held weapon equip blocked: canonical weapon-relative left carry unavailable addonAuthority={} integratedDetach={} ambidextrousFiring={} grabHeld={} hFRIKBlockers={} gripFrame={}",
                         logAction ? logAction : "requested",
-                        _equippedWeaponHandlingSettings.externalAuthorityActive ? "yes" : "no",
+                        _equipped.handlingSettings.externalAuthorityActive ? "yes" : "no",
                         firingGripModes.integratedDetachEnabled ? "yes" : "no",
                         ambidextrousHandoffAvailable ? "yes" : "no",
                         rawGrabInput.held ? "yes" : "no",
@@ -1509,7 +1509,7 @@ namespace rock
                     const auto transitionSource = triggeredByInput ?
                         EquippedWeaponTransitionCoordinator::Source::HeldTriggerEquip :
                         EquippedWeaponTransitionCoordinator::Source::HeldGripZoneEquip;
-                    equipBridgeStarted = _equippedWeaponTransition.beginHeldTransition(
+                    equipBridgeStarted = _equipped.transition.beginHeldTransition(
                         EquippedWeaponTransitionCoordinator::ExpectedIdentity{
                             .formID = equipResult.weapon ? equipResult.weapon->formID : equipResult.observedEquippedFormID,
                             .instanceData = equipResult.requestedInstanceData,
@@ -1527,8 +1527,8 @@ namespace rock
                         .weapon = equipResult.weapon,
                         .hasFiringHandWeaponLocal = pendingGripStart.hasFiringHandWeaponLocal,
                         .firingHandWeaponLocal = pendingGripStart.firingHandWeaponLocal,
-                        .timeoutSeconds = _equippedWeaponHandlingSettings.equipVisualBridgeTimeoutSeconds,
-                        .blendSeconds = _equippedWeaponHandlingSettings.equipVisualBridgeBlendSeconds,
+                        .timeoutSeconds = _equipped.handlingSettings.equipVisualBridgeTimeoutSeconds,
+                        .blendSeconds = _equipped.handlingSettings.equipVisualBridgeBlendSeconds,
                     });
                 }
                 if (heldFormID == 0 && equipResult.formID != 0) {
@@ -1554,7 +1554,7 @@ namespace rock
                     pendingGripStart.previousWeaponInstanceData =
                         equipResult.previousEquippedInstanceData;
                     pendingGripStart.remainingSeconds = 10.0f;
-                    _pendingEquippedWeaponPrimaryOnlyGripStart = pendingGripStart;
+                    _equipped.pendingPrimaryOnlyGripStart = pendingGripStart;
                 }
                 const auto& actionTrace = equipResult.instantTransition.actionTrace;
                 ROCK_LOG_INFO(Hand,
@@ -1664,7 +1664,7 @@ namespace rock
                 }
                 if (hand.getState() == HandState::ConsumeCandidate) {
                     consumeCandidateActive = true;
-                    const bool pulseDue = _dynamicPushElapsedSeconds >= mouthConsumeState.nextCandidatePulseTimeSeconds;
+                    const bool pulseDue = _contacts.dynamicPushElapsedSeconds >= mouthConsumeState.nextCandidatePulseTimeSeconds;
                     if (consumeDecision.enteredCandidate || consumeDecision.changedCandidate || pulseDue) {
                         dispatchMouthConsumeEvent(
                             GrabEventType::ConsumeCandidate,
@@ -1673,7 +1673,7 @@ namespace rock
                             hand.getSavedObjectState().bodyId.value,
                             consumeDecision);
                         mouthConsumeState.nextCandidatePulseTimeSeconds =
-                            _dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockMouthConsumeCandidateHapticIntervalSeconds);
+                            _contacts.dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockMouthConsumeCandidateHapticIntervalSeconds);
                     }
                 }
             } else {
@@ -1694,9 +1694,9 @@ namespace rock
                 stashDecision = shoulder_stash::evaluate(shoulder_stash::DetectorInput{
                         .world = hknp,
                         .bodyColliders = &_bodyBoneColliders,
-                        .bodyContacts = &_bodyContactRuntime,
+                        .bodyContacts = &_contacts.bodyRuntime,
                         .heldBodyIds = &hand.getHeldBodyIds(),
-                        .contactElapsedSeconds = _handContactActivity.currentElapsedSeconds(),
+                        .contactElapsedSeconds = _contacts.handActivity.currentElapsedSeconds(),
                         .isLeftHand = isLeft,
                         .probe = makeShoulderStashObjectProbe(hknp, hand, handInput),
                         .hmdProbe = makeShoulderStashHmdProbe(handInput),
@@ -1717,7 +1717,7 @@ namespace rock
                     hand.beginStashCandidate();
                 }
                 if (hand.getState() == HandState::StashCandidate) {
-                    const bool pulseDue = _dynamicPushElapsedSeconds >= shoulderStashState.nextCandidatePulseTimeSeconds;
+                    const bool pulseDue = _contacts.dynamicPushElapsedSeconds >= shoulderStashState.nextCandidatePulseTimeSeconds;
                     if (stashDecision.enteredCandidate || stashDecision.changedCandidate || pulseDue) {
                         dispatchShoulderStashEvent(
                             GrabEventType::StashCandidate,
@@ -1726,7 +1726,7 @@ namespace rock
                             hand.getSavedObjectState().bodyId.value,
                             stashDecision);
                         shoulderStashState.nextCandidatePulseTimeSeconds =
-                            _dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockShoulderStashCandidateHapticIntervalSeconds);
+                            _contacts.dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockShoulderStashCandidateHapticIntervalSeconds);
                     }
                 }
             } else {
@@ -1846,8 +1846,8 @@ namespace rock
                     hand,
                     hknp,
                     &transform,
-                    _palmClockGameFrameIndex.load(std::memory_order_acquire),
-                    _palmClockGameDeltaSeconds.load(std::memory_order_acquire),
+                    _frame.palmClockGameFrameIndex.load(std::memory_order_acquire),
+                    _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire),
                     nullptr);
                 hand.updateHeldObject(hknp,
                     transform,
@@ -2166,7 +2166,7 @@ namespace rock
 
     void PhysicsInteraction::updateGrabInput(const PhysicsFrameContext& frame)
     {
-        _forceGrabCommittedThisFrame = {};
+        _forceGrab.committedThisFrame = {};
 
         if (!runtime_state::isLocalSkeletonReady()) {
             _touchGrabRuntime.releaseAll(
@@ -2174,7 +2174,7 @@ namespace rock
                 frame.hknpWorld,
                 provider::RockProviderTouchGrabReleaseReasonV1::
                     HandUnavailable,
-                _collisionGenerationAtomic.load(
+                _lifecycle.collisionGenerationAtomic.load(
                     std::memory_order_acquire));
             _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
             _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
@@ -2190,7 +2190,7 @@ namespace rock
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(false, false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(true, false);
-            _heldWeaponTriggerEquipIntents = {};
+            _grabInput.heldWeaponTriggerEquipIntents = {};
             clearGameplayCandidatesForHand(_rightHand, false);
             clearGameplayCandidatesForHand(_leftHand, true);
             return;
@@ -2198,16 +2198,16 @@ namespace rock
 
         auto* hknp = frame.hknpWorld;
         const auto worldGeneration =
-            _worldGenerationAtomic.load(
+            _lifecycle.worldGenerationAtomic.load(
                 std::memory_order_acquire);
         const auto skeletonGeneration =
-            _skeletonGenerationAtomic.load(
+            _lifecycle.skeletonGenerationAtomic.load(
                 std::memory_order_acquire);
         const auto providerGeneration =
-            _providerGenerationAtomic.load(
+            _lifecycle.providerGenerationAtomic.load(
                 std::memory_order_acquire);
         const auto collisionGeneration =
-            _collisionGenerationAtomic.load(
+            _lifecycle.collisionGenerationAtomic.load(
                 std::memory_order_acquire);
         _touchGrabRuntime.setGlobalSurfaceGrabEnabled(
             g_rockConfig.rockGlobalSurfaceGrabEnabled);
@@ -2230,17 +2230,17 @@ namespace rock
         constexpr int grabButton = input_remap_policy::kGrabButtonId;
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
         const bool ambidextrousHandoffAvailable =
-            _equippedWeaponHandlingSettings.ambidextrousHandoffEnabled &&
+            _equipped.handlingSettings.ambidextrousHandoffEnabled &&
             TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
         const equipped_weapon_manual_ownership_policy::FiringGripModeAvailability firingGripModes{
-            .primaryDetachEnabled = _equippedWeaponHandlingSettings.primaryDetachEnabled,
-            .integratedDetachEnabled = _equippedWeaponHandlingSettings.
+            .primaryDetachEnabled = _equipped.handlingSettings.primaryDetachEnabled,
+            .integratedDetachEnabled = _equipped.handlingSettings.
                 immersiveWeapon.firingGripDetachEnabled,
             .ambidextrousHandoffAvailable = ambidextrousHandoffAvailable,
         };
         const bool gripZoneSettleEquipEnabled =
             equipped_weapon_manual_ownership_policy::canSettleEquipInGripZone(
-                _equippedWeaponHandlingSettings.gripZoneEquipEnabled);
+                _equipped.handlingSettings.gripZoneEquipEnabled);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
         const GrabInputHandContext handContext{
             .hknp = hknp,

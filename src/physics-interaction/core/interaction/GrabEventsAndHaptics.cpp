@@ -6,13 +6,13 @@ namespace rock
 {
     void PhysicsInteraction::pruneHeldImpactHapticCooldowns()
     {
-        if (_heldImpactHapticCooldownUntil.size() < 128) {
+        if (_grabEvents.heldImpactHapticCooldownUntil.size() < 128) {
             return;
         }
 
-        for (auto it = _heldImpactHapticCooldownUntil.begin(); it != _heldImpactHapticCooldownUntil.end();) {
-            if (it->second <= _dynamicPushElapsedSeconds) {
-                it = _heldImpactHapticCooldownUntil.erase(it);
+        for (auto it = _grabEvents.heldImpactHapticCooldownUntil.begin(); it != _grabEvents.heldImpactHapticCooldownUntil.end();) {
+            if (it->second <= _contacts.dynamicPushElapsedSeconds) {
+                it = _grabEvents.heldImpactHapticCooldownUntil.erase(it);
             } else {
                 ++it;
             }
@@ -114,8 +114,8 @@ namespace rock
                 (static_cast<std::uint64_t>(eventData.isLeft ? 1u : 0u) << 63) |
                 (static_cast<std::uint64_t>(eventData.primaryBodyId) << 32) |
                 static_cast<std::uint64_t>(eventData.secondaryBodyId);
-            if (const auto it = _heldImpactHapticCooldownUntil.find(cooldownKey);
-                it != _heldImpactHapticCooldownUntil.end() && it->second > _dynamicPushElapsedSeconds) {
+            if (const auto it = _grabEvents.heldImpactHapticCooldownUntil.find(cooldownKey);
+                it != _grabEvents.heldImpactHapticCooldownUntil.end() && it->second > _contacts.dynamicPushElapsedSeconds) {
                 return;
             }
 
@@ -137,8 +137,8 @@ namespace rock
                 return;
             }
 
-            _heldImpactHapticCooldownUntil[cooldownKey] =
-                _dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockHeldImpactHapticCooldownSeconds);
+            _grabEvents.heldImpactHapticCooldownUntil[cooldownKey] =
+                _contacts.dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockHeldImpactHapticCooldownSeconds);
             queueHaptic(eventData.isLeft, g_rockConfig.rockHeldImpactHapticDurationSeconds, intensity);
             return;
         }
@@ -171,7 +171,7 @@ namespace rock
         if (eventData.refr && eventData.formID == 0) {
             eventData.formID = eventData.refr->GetFormID();
         }
-        eventData.frameIndex = ++_grabEventFrameCounter;
+        eventData.frameIndex = ++_grabEvents.frameCounter;
 
         handleGrabEventHaptics(eventData);
 

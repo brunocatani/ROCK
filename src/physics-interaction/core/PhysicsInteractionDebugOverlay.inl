@@ -350,7 +350,7 @@
             debug::BodyOverlayFrame focusedFrame{};
             focusedFrame.world = context.hknpWorld;
             focusedFrame.gameFrameIndex =
-                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             focusedFrame.drawRockBodies = true;
             focusedFrame.entries[0] = debug::BodyOverlayEntry{
                 RE::hknpBodyId{ colliderFocus.bodyId },
@@ -569,7 +569,7 @@
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
         frame.gameFrameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         frame.drawRockBodies = drawAnyRockColliderBodies;
         frame.drawTargetBodies = drawTargetColliders;
         frame.drawColliderPhaseDiagnostics = drawColliderPhaseDiagnostics;
@@ -2837,7 +2837,7 @@
             };
 
             auto publishGrabTelemetry = [&](Hand& hand, bool isLeft) {
-                auto& telemetryState = _grabTransformTelemetryStates[isLeft ? 1 : 0];
+                auto& telemetryState = _diagnostics.grabTransformTelemetryStates[isLeft ? 1 : 0];
                 if (!hand.isHolding()) {
                     telemetryState.active = false;
                     telemetryState.frame = 0;
@@ -2848,7 +2848,7 @@
 
                 if (!telemetryState.active) {
                     telemetryState.active = true;
-                    telemetryState.session = _grabTransformTelemetryNextSession++;
+                    telemetryState.session = _diagnostics.grabTransformTelemetryNextSession++;
                     telemetryState.frame = 0;
                     telemetryState.logFrameCounter = 0;
                     telemetryState.hasPreviousAngularDeltaSample = false;
@@ -3418,7 +3418,7 @@
             publishGrabTelemetry(_rightHand, false);
             publishGrabTelemetry(_leftHand, true);
         } else {
-            for (auto& state : _grabTransformTelemetryStates) {
+            for (auto& state : _diagnostics.grabTransformTelemetryStates) {
                 state.active = false;
                 state.frame = 0;
                 state.logFrameCounter = 0;

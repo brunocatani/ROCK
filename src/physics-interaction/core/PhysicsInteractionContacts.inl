@@ -7,8 +7,8 @@
 
         auto* bhk = frame.bhkWorld;
         auto* hknp = frame.hknpWorld;
-        auto rightContactBody = _lastContactBodyRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto rightSourceBody = _lastContactSourceRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        auto rightContactBody = _contacts.lastBodyRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        auto rightSourceBody = _contacts.lastSourceRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
         if (rightContactBody != 0xFFFFFFFF) {
             resolveAndLogContact("Right", bhk, hknp, RE::hknpBodyId{ rightContactBody });
             if (rightSourceBody == 0xFFFFFFFF) {
@@ -17,8 +17,8 @@
             applyDynamicPushAssist("Right", bhk, hknp, rightSourceBody, rightContactBody, false, &_rightHand);
         }
 
-        auto leftContactBody = _lastContactBodyLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto leftSourceBody = _lastContactSourceLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        auto leftContactBody = _contacts.lastBodyLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        auto leftSourceBody = _contacts.lastSourceLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
         if (leftContactBody != 0xFFFFFFFF) {
             resolveAndLogContact("Left", bhk, hknp, RE::hknpBodyId{ leftContactBody });
             if (leftSourceBody == 0xFFFFFFFF) {
@@ -27,8 +27,8 @@
             applyDynamicPushAssist("Left", bhk, hknp, leftSourceBody, leftContactBody, false, &_leftHand);
         }
 
-        auto weaponContactBody = _lastContactBodyWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto weaponSourceBody = _lastContactSourceWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        auto weaponContactBody = _contacts.lastBodyWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        auto weaponSourceBody = _contacts.lastSourceWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
         if (weaponContactBody != 0xFFFFFFFF && weaponSourceBody != 0xFFFFFFFF) {
             applyDynamicPushAssist("Weapon", bhk, hknp, weaponSourceBody, weaponContactBody, true);
         }
@@ -86,8 +86,8 @@
                 readBodySpeedGameUnits(hknp, heldBody));
         };
 
-        processHeldImpact(_rightHand, false, _lastHeldImpactPairRight);
-        processHeldImpact(_leftHand, true, _lastHeldImpactPairLeft);
+        processHeldImpact(_rightHand, false, _contacts.lastHeldImpactPairRight);
+        processHeldImpact(_leftHand, true, _contacts.lastHeldImpactPairLeft);
     }
     void PhysicsInteraction::applyDynamicPushAssist(const char* sourceName,
         RE::bhkWorld* bhk,
@@ -198,8 +198,8 @@
         const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
         const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
         float cooldownRemaining = 0.0f;
-        if (const auto it = _dynamicPushCooldownUntil.find(cooldownKey); it != _dynamicPushCooldownUntil.end() && it->second > _dynamicPushElapsedSeconds) {
-            cooldownRemaining = it->second - _dynamicPushElapsedSeconds;
+        if (const auto it = _contacts.dynamicPushCooldownUntil.find(cooldownKey); it != _contacts.dynamicPushCooldownUntil.end() && it->second > _contacts.dynamicPushElapsedSeconds) {
+            cooldownRemaining = it->second - _contacts.dynamicPushElapsedSeconds;
         }
 
         const push_assist::PushAssistInput<RE::NiPoint3> pushInput{
@@ -238,8 +238,8 @@
         }
 
         if (appliedCount > 0) {
-            _dynamicPushCooldownUntil[cooldownKey] =
-                _dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
+            _contacts.dynamicPushCooldownUntil[cooldownKey] =
+                _contacts.dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
             auto* baseObj = targetRef->GetObjectReference();
             auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
             const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
@@ -385,14 +385,14 @@
         subscribeBridge(
             RE::hknpEventType::kContact,
             s_contactEventBridge,
-            _contactEventWorld,
-            _contactEventSignal,
+            _contacts.eventWorld,
+            _contacts.eventSignal,
             "contact-impulse");
         subscribeBridge(
             kManifoldProcessedEventType,
             s_manifoldProcessedEventBridge,
-            _manifoldProcessedEventWorld,
-            _manifoldProcessedEventSignal,
+            _contacts.manifoldEventWorld,
+            _contacts.manifoldEventSignal,
             "manifold-processed");
     }
 
@@ -448,13 +448,13 @@
 
         deactivateBridge(
             s_contactEventBridge,
-            _contactEventWorld,
-            _contactEventSignal,
+            _contacts.eventWorld,
+            _contacts.eventSignal,
             "contact-impulse");
         deactivateBridge(
             s_manifoldProcessedEventBridge,
-            _manifoldProcessedEventWorld,
-            _manifoldProcessedEventSignal,
+            _contacts.manifoldEventWorld,
+            _contacts.manifoldEventSignal,
             "manifold-processed");
     }
 
@@ -485,7 +485,7 @@
 
         auto* bridge = static_cast<ContactEventSubscriptionBridge*>(userData);
         auto* self = bridge->instance.load(std::memory_order_acquire);
-        if (self && self->_initialized.load(std::memory_order_acquire)) {
+        if (self && self->_lifecycle.initialized.load(std::memory_order_acquire)) {
             auto* subscribedWorld = bridge->world.load(std::memory_order_acquire);
             auto* subscribedSignal = bridge->signal.load(std::memory_order_acquire);
             const auto snapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
@@ -796,8 +796,8 @@
 
         Classification bodyAClassification{};
         Classification bodyBClassification{};
-        const bool bodyAClassified = _generatedBodyContactRegistry.tryClassify(bodyIdA, bodyAClassification);
-        const bool bodyBClassified = _generatedBodyContactRegistry.tryClassify(bodyIdB, bodyBClassification);
+        const bool bodyAClassified = _contacts.generatedBodyRegistry.tryClassify(bodyIdA, bodyAClassification);
+        const bool bodyBClassified = _contacts.generatedBodyRegistry.tryClassify(bodyIdB, bodyBClassification);
         (void)bodyAClassified;
         (void)bodyBClassified;
 
@@ -901,7 +901,7 @@
             if (isInvalidGrabBodyId(bodyId)) {
                 return false;
             }
-            for (const auto& watchedBodyId : _armedLooseGrenadeImpactBodyIds) {
+            for (const auto& watchedBodyId : _forceGrab.grenadeImpactBodyIds) {
                 if (watchedBodyId.load(std::memory_order_acquire) == bodyId) {
                     return true;
                 }
@@ -920,7 +920,7 @@
                     return false;
                 }
 
-                _pendingLooseGrenadeImpactPair.store(packHeldImpactPair(watchedBodyId, otherBodyId), std::memory_order_release);
+                _forceGrab.pendingGrenadeImpactPair.store(packHeldImpactPair(watchedBodyId, otherBodyId), std::memory_order_release);
                 return true;
             };
 
@@ -1133,9 +1133,9 @@
             contact.sourceHand = sourceHand;
             contact.quality = ::rock::provider::RockProviderExternalContactQuality::BodyPairOnly;
             contact.frameIndex =
-                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             contact.collisionGeneration =
-                _collisionGenerationAtomic.load(std::memory_order_acquire);
+                _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
             if (fillSourceVelocity(sourceBodyId, sourceKind, handMetadata, contact)) {
                 contact.flags |= static_cast<std::uint32_t>(
                     ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid);
@@ -1174,7 +1174,7 @@
             if (transitionSuppressed) {
                 contact.flags |= static_cast<std::uint32_t>(
                     ::rock::provider::RockProviderExternalContactFlagV1::TransitionSuppressed);
-            } else if ((_lifecycleFlagsAtomic.load(std::memory_order_acquire) &
+            } else if ((_lifecycle.flagsAtomic.load(std::memory_order_acquire) &
                             static_cast<std::uint32_t>(
                                 ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed)) != 0) {
                 contact.flags |= static_cast<std::uint32_t>(
@@ -1183,9 +1183,9 @@
 
             ::rock::provider::recordExternalContact(
                 contact,
-                _worldGenerationAtomic.load(std::memory_order_acquire),
-                _skeletonGenerationAtomic.load(std::memory_order_acquire),
-                _providerGenerationAtomic.load(std::memory_order_acquire));
+                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire));
         };
 
         auto recordBodyContactEvidence = [&]() {
@@ -1199,8 +1199,8 @@
             }
 
             body_contact_runtime::BodyContactRecord record{};
-            record.frame = _handContactActivity.currentFrame();
-            record.elapsedSeconds = _handContactActivity.currentElapsedSeconds();
+            record.frame = _contacts.handActivity.currentFrame();
+            record.elapsedSeconds = _contacts.handActivity.currentElapsedSeconds();
             record.bodyId = contactRoute.sourceBodyId;
             record.targetBodyId = contactRoute.targetBodyId;
             record.bodyLayer = contactRoute.source.layer;
@@ -1228,7 +1228,7 @@
                 record.hasContactPointGame = true;
             }
 
-            _bodyContactRuntime.record(record);
+            _contacts.bodyRuntime.record(record);
         };
 
         auto notifyHeldExternalContact = [&](Hand& hand,
@@ -1293,8 +1293,8 @@
             impactPair.store(packHeldImpactPair(heldId, other), std::memory_order_release);
         };
 
-        notifyHeldExternalContact(_rightHand, _lastHeldImpactPairRight, bodyAIsRightHeld, bodyBIsRightHeld);
-        notifyHeldExternalContact(_leftHand, _lastHeldImpactPairLeft, bodyAIsLeftHeld, bodyBIsLeftHeld);
+        notifyHeldExternalContact(_rightHand, _contacts.lastHeldImpactPairRight, bodyAIsRightHeld, bodyBIsRightHeld);
+        notifyHeldExternalContact(_leftHand, _contacts.lastHeldImpactPairLeft, bodyAIsLeftHeld, bodyBIsLeftHeld);
 
         recordBodyContactEvidence();
 
@@ -1307,11 +1307,11 @@
          */
         const bool rightBodyPairSuppressed =
             (bodyAIsRight || bodyBIsRight) &&
-            (_rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire) ||
+            (_suppression.rightDominantSuppressed.load(std::memory_order_acquire) ||
                 _rightHand.hasContactEvidenceSuppressedAtomic());
         const bool leftBodyPairSuppressed =
             (bodyAIsLeft || bodyBIsLeft) &&
-            (_leftWeaponSupportCollisionSuppressed.load(std::memory_order_acquire) ||
+            (_suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire) ||
                 _leftHand.hasContactEvidenceSuppressedAtomic());
         if (rightBodyPairSuppressed || leftBodyPairSuppressed) {
             ROCK_LOG_SAMPLE_DEBUG(Hand,
@@ -1357,20 +1357,20 @@
         }
 
         if (contactRoute.driveWeaponDynamicPush) {
-            _lastContactSourceWeapon.store(contactRoute.sourceBodyId, std::memory_order_release);
-            _lastContactBodyWeapon.store(contactRoute.targetBodyId, std::memory_order_release);
+            _contacts.lastSourceWeapon.store(contactRoute.sourceBodyId, std::memory_order_release);
+            _contacts.lastBodyWeapon.store(contactRoute.targetBodyId, std::memory_order_release);
         }
 
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
-            auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
-            auto& reloadRole = isLeft ? _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
-            auto& supportRole = isLeft ? _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
-            auto& socketRole = isLeft ? _leftWeaponContactSocketRole : _rightWeaponContactSocketRole;
-            auto& actionRole = isLeft ? _leftWeaponContactActionRole : _rightWeaponContactActionRole;
-            auto& gripPose = isLeft ? _leftWeaponContactGripPose : _rightWeaponContactGripPose;
-            auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
-            auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
-            auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
+            auto& partKind = isLeft ? _weaponContact.left.partKind : _weaponContact.right.partKind;
+            auto& reloadRole = isLeft ? _weaponContact.left.reloadRole : _weaponContact.right.reloadRole;
+            auto& supportRole = isLeft ? _weaponContact.left.supportRole : _weaponContact.right.supportRole;
+            auto& socketRole = isLeft ? _weaponContact.left.socketRole : _weaponContact.right.socketRole;
+            auto& actionRole = isLeft ? _weaponContact.left.actionRole : _weaponContact.right.actionRole;
+            auto& gripPose = isLeft ? _weaponContact.left.gripPose : _weaponContact.right.gripPose;
+            auto& sequence = isLeft ? _weaponContact.left.sequence : _weaponContact.right.sequence;
+            auto& missedFrames = isLeft ? _weaponContact.left.missedFrames : _weaponContact.right.missedFrames;
+            auto& bodyIdAtomic = isLeft ? _weaponContact.left.bodyId : _weaponContact.right.bodyId;
 
             partKind.store(static_cast<std::uint32_t>(weaponContact.partKind), std::memory_order_release);
             reloadRole.store(static_cast<std::uint32_t>(weaponContact.reloadRole), std::memory_order_release);
@@ -1402,7 +1402,7 @@
             return;
         }
 
-        const auto contactActivity = _handContactActivity.registerHandContact(handSource->isLeft, handSource->metadata.bodyId, contactRoute.targetBodyId);
+        const auto contactActivity = _contacts.handActivity.registerHandContact(handSource->isLeft, handSource->metadata.bodyId, contactRoute.targetBodyId);
         if (contactActivity.newlyActive && g_rockConfig.rockDebugVerboseLogging) {
             ROCK_LOG_DEBUG(Hand,
                 "ContactActivity: {} {} body={} target={} frame={} inserted={} evictedStale={}",
@@ -1448,18 +1448,18 @@
         if (handSource->isLeft) {
             _leftHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
-                _lastContactSourceLeft.store(handSource->metadata.bodyId, std::memory_order_release);
-                _lastContactBodyLeft.store(contactRoute.targetBodyId, std::memory_order_release);
+                _contacts.lastSourceLeft.store(handSource->metadata.bodyId, std::memory_order_release);
+                _contacts.lastBodyLeft.store(contactRoute.targetBodyId, std::memory_order_release);
             }
         } else {
             _rightHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
-                _lastContactSourceRight.store(handSource->metadata.bodyId, std::memory_order_release);
-                _lastContactBodyRight.store(contactRoute.targetBodyId, std::memory_order_release);
+                _contacts.lastSourceRight.store(handSource->metadata.bodyId, std::memory_order_release);
+                _contacts.lastBodyRight.store(contactRoute.targetBodyId, std::memory_order_release);
             }
         }
 
-        int logCount = _contactLogCounter.fetch_add(1, std::memory_order_relaxed);
+        int logCount = _diagnostics.contactLogCounter.fetch_add(1, std::memory_order_relaxed);
         if (logCount % 30 == 0) {
             ROCK_LOG_DEBUG(Hand,
                 "Contact: {} {} body={} hit body {} route={}",

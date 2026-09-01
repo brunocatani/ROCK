@@ -7,10 +7,10 @@ namespace rock
     PhysicsInteraction::PhysicsInteraction(std::uint32_t skeletonGeneration, std::uint32_t providerGeneration)
     {
         s_instance.store(this, std::memory_order_release);
-        _lifecycleState.skeletonGeneration = skeletonGeneration == 0 ? 1 : skeletonGeneration;
-        _lifecycleState.providerGeneration = providerGeneration == 0 ? 1 : providerGeneration;
-        _skeletonGenerationAtomic.store(_lifecycleState.skeletonGeneration, std::memory_order_release);
-        _providerGenerationAtomic.store(_lifecycleState.providerGeneration, std::memory_order_release);
+        _lifecycle.state.skeletonGeneration = skeletonGeneration == 0 ? 1 : skeletonGeneration;
+        _lifecycle.state.providerGeneration = providerGeneration == 0 ? 1 : providerGeneration;
+        _lifecycle.skeletonGenerationAtomic.store(_lifecycle.state.skeletonGeneration, std::memory_order_release);
+        _lifecycle.providerGenerationAtomic.store(_lifecycle.state.providerGeneration, std::memory_order_release);
         _generatedBodyStepDrive.setDriveCallbacks(
             nullptr,
             &PhysicsInteraction::onGeneratedColliderPhysicsSubstep,
@@ -49,9 +49,9 @@ namespace rock
     {
         s_instance.store(nullptr, std::memory_order_release);
 
-        _authoredPrimaryFiringGrip.reset("physics-destroyed", _twoHandedGrip);
+        _equipped.authoredPrimaryFiringGrip.reset("physics-destroyed", _twoHandedGrip);
 
-        if (_initialized) {
+        if (_lifecycle.initialized) {
             shutdown();
         }
         ROCK_LOG_INFO(Init, "ROCK Physics Module — destroyed");
@@ -59,31 +59,31 @@ namespace rock
 
     void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
-        _authoredPrimaryFiringGrip.reset("skeleton-lifecycle", _twoHandedGrip);
-        physics_lifecycle::noteSkeletonGeneration(_lifecycleState, skeletonGeneration, reason);
-        physics_lifecycle::noteReason(_lifecycleState, reason);
+        _equipped.authoredPrimaryFiringGrip.reset("skeleton-lifecycle", _twoHandedGrip);
+        physics_lifecycle::noteSkeletonGeneration(_lifecycle.state, skeletonGeneration, reason);
+        physics_lifecycle::noteReason(_lifecycle.state, reason);
         markGeneratedBodiesInvalidated();
-        _lifecycleState.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
-        _lifecycleState.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
-        _lifecycleState.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::LoadingOrWorldTransition);
-        _lifecycleFlagsAtomic.store(_lifecycleState.flags, std::memory_order_release);
-        _skeletonGenerationAtomic.store(_lifecycleState.skeletonGeneration, std::memory_order_release);
-        _stableFrameCountAtomic.store(_lifecycleState.stableFrameCount, std::memory_order_release);
-        _lastLifecycleReasonAtomic.store(static_cast<std::uint32_t>(_lifecycleState.lastReason), std::memory_order_release);
-        _lifecycleHknpWorldAtomic.store(nullptr, std::memory_order_release);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
+        _lifecycle.state.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::LoadingOrWorldTransition);
+        _lifecycle.flagsAtomic.store(_lifecycle.state.flags, std::memory_order_release);
+        _lifecycle.skeletonGenerationAtomic.store(_lifecycle.state.skeletonGeneration, std::memory_order_release);
+        _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
+        _lifecycle.lastReasonAtomic.store(static_cast<std::uint32_t>(_lifecycle.state.lastReason), std::memory_order_release);
+        _lifecycle.hknpWorldAtomic.store(nullptr, std::memory_order_release);
     }
 
     void PhysicsInteraction::noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
-        _authoredPrimaryFiringGrip.reset("provider-lifecycle", _twoHandedGrip);
-        physics_lifecycle::noteProviderGeneration(_lifecycleState, providerGeneration, reason);
-        physics_lifecycle::noteReason(_lifecycleState, reason);
+        _equipped.authoredPrimaryFiringGrip.reset("provider-lifecycle", _twoHandedGrip);
+        physics_lifecycle::noteProviderGeneration(_lifecycle.state, providerGeneration, reason);
+        physics_lifecycle::noteReason(_lifecycle.state, reason);
         markGeneratedBodiesInvalidated();
-        _lifecycleState.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
-        _lifecycleFlagsAtomic.store(_lifecycleState.flags, std::memory_order_release);
-        _providerGenerationAtomic.store(_lifecycleState.providerGeneration, std::memory_order_release);
-        _stableFrameCountAtomic.store(_lifecycleState.stableFrameCount, std::memory_order_release);
-        _lastLifecycleReasonAtomic.store(static_cast<std::uint32_t>(_lifecycleState.lastReason), std::memory_order_release);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+        _lifecycle.flagsAtomic.store(_lifecycle.state.flags, std::memory_order_release);
+        _lifecycle.providerGenerationAtomic.store(_lifecycle.state.providerGeneration, std::memory_order_release);
+        _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
+        _lifecycle.lastReasonAtomic.store(static_cast<std::uint32_t>(_lifecycle.state.lastReason), std::memory_order_release);
     }
 
     bool PhysicsInteraction::generatedBodiesExistForConfig() const
@@ -94,12 +94,12 @@ namespace rock
     bool PhysicsInteraction::generatedBodiesMatchLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const
     {
         return generatedBodiesExistForConfig() &&
-               _generatedBodiesBhkWorld == bhk &&
-               _generatedBodiesHknpWorld == hknp &&
-               _generatedBodiesWorldGeneration != 0 &&
-               _generatedBodiesWorldGeneration == _lifecycleState.worldGeneration &&
-               _generatedBodiesSkeletonGeneration == _lifecycleState.skeletonGeneration &&
-               _generatedBodiesProviderGeneration == _lifecycleState.providerGeneration;
+               _lifecycle.generatedBodiesBhkWorld == bhk &&
+               _lifecycle.generatedBodiesHknpWorld == hknp &&
+               _lifecycle.generatedBodiesWorldGeneration != 0 &&
+               _lifecycle.generatedBodiesWorldGeneration == _lifecycle.state.worldGeneration &&
+               _lifecycle.generatedBodiesSkeletonGeneration == _lifecycle.state.skeletonGeneration &&
+               _lifecycle.generatedBodiesProviderGeneration == _lifecycle.state.providerGeneration;
     }
 
     void PhysicsInteraction::markGeneratedBodiesRebuilt(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
@@ -109,19 +109,19 @@ namespace rock
             return;
         }
 
-        _generatedBodiesBhkWorld = bhk;
-        _generatedBodiesHknpWorld = hknp;
-        _generatedBodiesWorldGeneration = _lifecycleState.worldGeneration;
-        _generatedBodiesSkeletonGeneration = _lifecycleState.skeletonGeneration;
-        _generatedBodiesProviderGeneration = _lifecycleState.providerGeneration;
-        _collisionGenerationAtomic.fetch_add(1, std::memory_order_acq_rel);
+        _lifecycle.generatedBodiesBhkWorld = bhk;
+        _lifecycle.generatedBodiesHknpWorld = hknp;
+        _lifecycle.generatedBodiesWorldGeneration = _lifecycle.state.worldGeneration;
+        _lifecycle.generatedBodiesSkeletonGeneration = _lifecycle.state.skeletonGeneration;
+        _lifecycle.generatedBodiesProviderGeneration = _lifecycle.state.providerGeneration;
+        _lifecycle.collisionGenerationAtomic.fetch_add(1, std::memory_order_acq_rel);
         refreshGeneratedBodyContactRegistry();
     }
 
     void PhysicsInteraction::markGeneratedBodiesInvalidated()
     {
         const auto collisionGeneration =
-            _collisionGenerationAtomic.fetch_add(
+            _lifecycle.collisionGenerationAtomic.fetch_add(
                 1,
                 std::memory_order_acq_rel) +
             1;
@@ -148,40 +148,40 @@ namespace rock
         clearGeneratedBodyContactRegistry();
         const bool generatedWorldStillLive =
             currentBhkWorld &&
-            currentBhkWorld == _generatedBodiesBhkWorld &&
+            currentBhkWorld == _lifecycle.generatedBodiesBhkWorld &&
             currentHknpWorld &&
-            currentHknpWorld == _generatedBodiesHknpWorld;
+            currentHknpWorld == _lifecycle.generatedBodiesHknpWorld;
         if (generatedWorldStillLive) {
-            _dynamicHandCollision.retireAll(_generatedBodiesBhkWorld);
-            _dynamicWeaponCollision.retireAll(_generatedBodiesBhkWorld);
+            _dynamicHandCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
+            _dynamicWeaponCollision.retireAll(_lifecycle.generatedBodiesBhkWorld);
         } else {
             _dynamicHandCollision.reset();
             _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
         }
-        _generatedBodiesBhkWorld = nullptr;
-        _generatedBodiesHknpWorld = nullptr;
-        _generatedBodiesWorldGeneration = 0;
-        _generatedBodiesSkeletonGeneration = 0;
-        _generatedBodiesProviderGeneration = 0;
-        _lifecycleState.generatedBodiesValid = false;
-        _lifecycleState.generatedBodiesWorldGeneration = 0;
-        _lifecycleState.generatedBodiesSkeletonGeneration = 0;
-        _lifecycleState.generatedBodiesProviderGeneration = 0;
-        _lifecycleState.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
-        _lifecycleState.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
-        _lifecycleFlagsAtomic.store(_lifecycleState.flags, std::memory_order_release);
-        _stableFrameCountAtomic.store(_lifecycleState.stableFrameCount, std::memory_order_release);
-        _lifecycleHknpWorldAtomic.store(nullptr, std::memory_order_release);
-        _completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _equippedWeaponDropMomentumHandoffs = {};
-        _shoulderStashStates = {};
-        _mouthConsumeStates = {};
+        _lifecycle.generatedBodiesBhkWorld = nullptr;
+        _lifecycle.generatedBodiesHknpWorld = nullptr;
+        _lifecycle.generatedBodiesWorldGeneration = 0;
+        _lifecycle.generatedBodiesSkeletonGeneration = 0;
+        _lifecycle.generatedBodiesProviderGeneration = 0;
+        _lifecycle.state.generatedBodiesValid = false;
+        _lifecycle.state.generatedBodiesWorldGeneration = 0;
+        _lifecycle.state.generatedBodiesSkeletonGeneration = 0;
+        _lifecycle.state.generatedBodiesProviderGeneration = 0;
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::GeneratedBodiesValid);
+        _lifecycle.state.flags &= ~static_cast<std::uint32_t>(::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
+        _lifecycle.flagsAtomic.store(_lifecycle.state.flags, std::memory_order_release);
+        _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
+        _lifecycle.hknpWorldAtomic.store(nullptr, std::memory_order_release);
+        _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
+        _drop.momentumHandoffs = {};
+        _grabInput.shoulderStashStates = {};
+        _grabInput.mouthConsumeStates = {};
         _feedbackHaptics.reset();
     }
 
     void PhysicsInteraction::clearGeneratedBodyContactRegistry()
     {
-        _generatedBodyContactRegistry.clear();
+        _contacts.generatedBodyRegistry.clear();
     }
 
     void PhysicsInteraction::refreshGeneratedBodyContactRegistry()
@@ -291,7 +291,7 @@ namespace rock
             addEntry(entry);
         }
 
-        _generatedBodyContactRegistry.publish(entries.data(), entryCount);
+        _contacts.generatedBodyRegistry.publish(entries.data(), entryCount);
     }
 
     bool PhysicsInteraction::rebuildGeneratedBodiesForLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp, const char* reason)
@@ -304,9 +304,9 @@ namespace rock
         ROCK_LOG_INFO(Init,
             "Rebuilding ROCK generated bodies for lifecycle reason={} worldGen={} skeletonGen={} providerGen={}",
             reason ? reason : "unknown",
-            _lifecycleState.worldGeneration,
-            _lifecycleState.skeletonGeneration,
-            _lifecycleState.providerGeneration);
+            _lifecycle.state.worldGeneration,
+            _lifecycle.state.skeletonGeneration,
+            _lifecycle.state.providerGeneration);
 
         _dynamicWeaponCollision.retireAll(bhk);
         destroyHandCollisions(bhk);
@@ -315,19 +315,19 @@ namespace rock
         if (!createHandCollisions(hknp, bhk)) {
             ROCK_LOG_WARN(Init, "Generated body lifecycle rebuild failed while creating hand colliders");
             markGeneratedBodiesInvalidated();
-            _handColliderCreateRetryFrames = 120;
+            _lifecycle.handColliderCreateRetryFrames = 120;
             return false;
         }
 
         if (g_rockConfig.rockBodyBoneCollidersEnabled && !createBodyBoneCollisions(hknp, bhk)) {
             ROCK_LOG_WARN(Init, "Generated body lifecycle rebuild continuing without body bone colliders; runtime update will retry");
-            _bodyBoneColliderCreateRetryFrames = 120;
+            _lifecycle.bodyBoneColliderCreateRetryFrames = 120;
         }
 
         _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
         _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f);
         _bodyBoneColliders.update(hknp, 0.011f);
-        _bodyContactRuntime.reset();
+        _contacts.bodyRuntime.reset();
         markGeneratedBodiesRebuilt(bhk, hknp);
         return generatedBodiesMatchLifecycle(bhk, hknp);
     }
@@ -338,38 +338,38 @@ namespace rock
         physics_lifecycle::FrameInputs inputs{};
         inputs.bhkWorld = reinterpret_cast<std::uintptr_t>(bhk);
         inputs.hknpWorld = reinterpret_cast<std::uintptr_t>(hknp);
-        inputs.skeletonGeneration = _lifecycleState.skeletonGeneration;
-        inputs.providerGeneration = _lifecycleState.providerGeneration;
-        inputs.providerReady = _initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable;
+        inputs.skeletonGeneration = _lifecycle.state.skeletonGeneration;
+        inputs.providerGeneration = _lifecycle.state.providerGeneration;
+        inputs.providerReady = _lifecycle.initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable;
         inputs.skeletonReady = runtime.localSkeletonReady;
         inputs.menuBlocking = runtime.localMenuBlocking;
         inputs.configBlocking = runtime.compatibilityConfigBlocking;
         inputs.generatedBodiesValid = generatedBodiesExistForConfig();
-        inputs.generatedBodiesWorldGeneration = _generatedBodiesWorldGeneration;
-        inputs.generatedBodiesSkeletonGeneration = _generatedBodiesSkeletonGeneration;
-        inputs.generatedBodiesProviderGeneration = _generatedBodiesProviderGeneration;
+        inputs.generatedBodiesWorldGeneration = _lifecycle.generatedBodiesWorldGeneration;
+        inputs.generatedBodiesSkeletonGeneration = _lifecycle.generatedBodiesSkeletonGeneration;
+        inputs.generatedBodiesProviderGeneration = _lifecycle.generatedBodiesProviderGeneration;
         inputs.reasonHint = reasonHint;
 
-        physics_lifecycle::observeFrame(_lifecycleState, inputs);
-        _cachedBhkWorld = bhk;
-        _cachedHknpWorld = hknp;
-        _lifecycleFlagsAtomic.store(_lifecycleState.flags, std::memory_order_release);
-        _lastLifecycleReasonAtomic.store(static_cast<std::uint32_t>(_lifecycleState.lastReason), std::memory_order_release);
-        _worldGenerationAtomic.store(_lifecycleState.worldGeneration, std::memory_order_release);
-        _skeletonGenerationAtomic.store(_lifecycleState.skeletonGeneration, std::memory_order_release);
-        _providerGenerationAtomic.store(_lifecycleState.providerGeneration, std::memory_order_release);
-        _stableFrameCountAtomic.store(_lifecycleState.stableFrameCount, std::memory_order_release);
-        _lifecycleHknpWorldAtomic.store(hknp, std::memory_order_release);
+        physics_lifecycle::observeFrame(_lifecycle.state, inputs);
+        _lifecycle.cachedBhkWorld = bhk;
+        _lifecycle.cachedHknpWorld = hknp;
+        _lifecycle.flagsAtomic.store(_lifecycle.state.flags, std::memory_order_release);
+        _lifecycle.lastReasonAtomic.store(static_cast<std::uint32_t>(_lifecycle.state.lastReason), std::memory_order_release);
+        _lifecycle.worldGenerationAtomic.store(_lifecycle.state.worldGeneration, std::memory_order_release);
+        _lifecycle.skeletonGenerationAtomic.store(_lifecycle.state.skeletonGeneration, std::memory_order_release);
+        _lifecycle.providerGenerationAtomic.store(_lifecycle.state.providerGeneration, std::memory_order_release);
+        _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
+        _lifecycle.hknpWorldAtomic.store(hknp, std::memory_order_release);
     }
 
     bool PhysicsInteraction::physicsWritesAllowedForWorld(RE::hknpWorld* world) const
     {
-        if (!world || world != _lifecycleHknpWorldAtomic.load(std::memory_order_acquire)) {
+        if (!world || world != _lifecycle.hknpWorldAtomic.load(std::memory_order_acquire)) {
             return false;
         }
 
         return ::rock::provider::hasLifecycleFlag(
-            _lifecycleFlagsAtomic.load(std::memory_order_acquire),
+            _lifecycle.flagsAtomic.load(std::memory_order_acquire),
             ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
     }
 
@@ -406,7 +406,7 @@ namespace rock
 
     void PhysicsInteraction::init()
     {
-        if (_initialized) {
+        if (_lifecycle.initialized) {
             ROCK_LOG_WARN(Init, "init() called but already initialized — skipping");
             return;
         }
@@ -449,20 +449,20 @@ namespace rock
         }
 
         physics_scale::refreshAndLogIfChanged();
-        _cachedBhkWorld = bhk;
-        _cachedHknpWorld = hknp;
+        _lifecycle.cachedBhkWorld = bhk;
+        _lifecycle.cachedHknpWorld = hknp;
         if (!refreshHandBoneCache()) {
             ROCK_LOG_WARN(Init, "HandBoneCache not ready during init; runtime remains on pre-00 transform paths");
         }
 
         registerCollisionLayer(hknp);
-        if (!_collisionLayerRegistered) {
+        if (!_layers.registered) {
             ROCK_LOG_CRITICAL(Init, "ROCK DISABLED: collision layer registration failed");
             (void)frik_visual_authority::blockOffHandWeaponGripping(
                 "ROCK_Physics",
                 false);
-            _cachedBhkWorld = nullptr;
-            _cachedHknpWorld = nullptr;
+            _lifecycle.cachedBhkWorld = nullptr;
+            _lifecycle.cachedHknpWorld = nullptr;
             return;
         }
 
@@ -471,8 +471,8 @@ namespace rock
             (void)frik_visual_authority::blockOffHandWeaponGripping(
                 "ROCK_Physics",
                 false);
-            _cachedBhkWorld = nullptr;
-            _cachedHknpWorld = nullptr;
+            _lifecycle.cachedBhkWorld = nullptr;
+            _lifecycle.cachedHknpWorld = nullptr;
             return;
         }
 
@@ -480,8 +480,8 @@ namespace rock
             ROCK_LOG_WARN(Init, "Body bone colliders were not available during init; runtime update will retry");
         }
 
-        _handContactActivity.reset();
-        _bodyContactRuntime.reset();
+        _contacts.handActivity.reset();
+        _contacts.bodyRuntime.reset();
         subscribeContactEvents(hknp);
 
         _weaponCollision.init(hknp, bhk);
@@ -500,52 +500,52 @@ namespace rock
         _leftHand.preloadSelectionBeam();
         (void)_authoredSupportGripIndicator.preload();
 
-        _hasPrevPositions = false;
-        _deltaLogCounter = 0;
-        _contactLogCounter = 0;
-        _bodyContactRuntime.reset();
-        _dynamicPushElapsedSeconds = 0.0f;
-        _dynamicPushCooldownUntil.clear();
-        _heldImpactHapticCooldownUntil.clear();
-        _grabEventFrameCounter = 0;
-        _shoulderStashStates = {};
-        _mouthConsumeStates = {};
+        _frame.hasPrevPositions = false;
+        _diagnostics.deltaLogCounter = 0;
+        _diagnostics.contactLogCounter = 0;
+        _contacts.bodyRuntime.reset();
+        _contacts.dynamicPushElapsedSeconds = 0.0f;
+        _contacts.dynamicPushCooldownUntil.clear();
+        _grabEvents.heldImpactHapticCooldownUntil.clear();
+        _grabEvents.frameCounter = 0;
+        _grabInput.shoulderStashStates = {};
+        _grabInput.mouthConsumeStates = {};
         _feedbackHaptics.reset();
-        _grabInputIntentStates = {};
-        _peerHeldJoinRetryStates = {};
-        _heldWeaponTriggerEquipIntents = {};
-        _forceGrabCommittedThisFrame = {};
+        _grabInput.intentStates = {};
+        _grabInput.peerHeldJoinRetryStates = {};
+        _grabInput.heldWeaponTriggerEquipIntents = {};
+        _forceGrab.committedThisFrame = {};
         equipped_weapon_toggle_grab_policy::reset(
-            _equippedWeaponToggleGrabState);
-        _equippedWeaponToggleGrabReleasePressConsumedThisFrame = {};
-        _equippedWeaponShoulderSheath = {};
+            _equipped.toggleGrabState);
+        _equipped.toggleGrabReleasePressConsumedThisFrame = {};
+        _equipped.shoulderSheath = {};
         input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
-        _equippedWeaponStashStates = {};
-        _equippedWeaponSheathRetrievalStates = {};
+        _equipped.stashStates = {};
+        _equipped.sheathRetrievalStates = {};
         equipped_weapon_shoulder::reset(
-            _equippedWeaponShoulderCoordinatorState);
-        _equippedWeaponShoulderGestureConsumedThisFrame = {};
-        _bareFistGuardState = {};
-        _completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _equippedWeaponDropMomentumHandoffs = {};
+            _equipped.shoulderCoordinator);
+        _equipped.shoulderGestureConsumedThisFrame = {};
+        _grabInput.bareFistGuardState = {};
+        _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
+        _drop.momentumHandoffs = {};
         clearLooseGrenadeRuntimeState();
-        _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-        _equippedWeaponHandlingSettings = {};
-        _equippedWeaponHandlingModeInitialized = false;
-        _equippedWeaponHandlingModeReconcilePending = false;
+        _equipped.pendingPrimaryOnlyGripStart = {};
+        _equipped.handlingSettings = {};
+        _equipped.handlingModeInitialized = false;
+        _equipped.handlingModeReconcilePending = false;
         equipped_weapon_handling_runtime::reset();
         clearEquippedWeaponPostDropCollisionSuppressionState();
-        _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactBodyLeft.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactSourceRight.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactSourceLeft.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactBodyWeapon.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactSourceWeapon.store(0xFFFFFFFF, std::memory_order_release);
-        _lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
-        _lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
-        _handContactActivity.reset();
+        _contacts.lastBodyRight.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastBodyLeft.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastSourceRight.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastSourceLeft.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastBodyWeapon.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastSourceWeapon.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
+        _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
+        _contacts.handActivity.reset();
 
-        _initialized = true;
+        _lifecycle.initialized = true;
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         markGeneratedBodiesRebuilt(bhk, hknp);
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
@@ -562,21 +562,21 @@ namespace rock
         debug::ShutdownShapePipeline();
         input_remap_runtime::setRealMeleeWeaponEquipped(false);
         equipped_weapon_handling_runtime::reset();
-        _equippedWeaponHandlingSettings = {};
-        _equippedWeaponHandlingModeInitialized = false;
-        _equippedWeaponHandlingModeReconcilePending = false;
+        _equipped.handlingSettings = {};
+        _equipped.handlingModeInitialized = false;
+        _equipped.handlingModeReconcilePending = false;
         equipped_weapon_toggle_grab_policy::reset(
-            _equippedWeaponToggleGrabState);
-        _equippedWeaponToggleGrabReleasePressConsumedThisFrame = {};
-        _authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
-        if (!_initialized) {
-            _equippedWeaponShoulderSheath = {};
+            _equipped.toggleGrabState);
+        _equipped.toggleGrabReleasePressConsumedThisFrame = {};
+        _equipped.authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
+        if (!_lifecycle.initialized) {
+            _equipped.shoulderSheath = {};
             input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
-            _equippedWeaponStashStates = {};
-            _equippedWeaponSheathRetrievalStates = {};
+            _equipped.stashStates = {};
+            _equipped.sheathRetrievalStates = {};
             equipped_weapon_shoulder::reset(
-                _equippedWeaponShoulderCoordinatorState);
-            _equippedWeaponShoulderGestureConsumedThisFrame = {};
+                _equipped.shoulderCoordinator);
+            _equipped.shoulderGestureConsumedThisFrame = {};
             return;
         }
 
@@ -592,21 +592,21 @@ namespace rock
         auto* currentBhk = getPlayerBhkWorld();
         auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
         const bool worldValid =
-            _cachedBhkWorld &&
-            currentBhk == _cachedBhkWorld &&
-            _cachedHknpWorld &&
-            currentHknp == _cachedHknpWorld;
+            _lifecycle.cachedBhkWorld &&
+            currentBhk == _lifecycle.cachedBhkWorld &&
+            _lifecycle.cachedHknpWorld &&
+            currentHknp == _lifecycle.cachedHknpWorld;
 
         if (worldValid) {
             _authoredSupportGripIndicator.shutdown();
-            auto* hknp = getHknpWorld(_cachedBhkWorld);
-            _dynamicWorldCarCollision.restoreAll(_cachedBhkWorld, hknp, "shutdown");
+            auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
+            _dynamicWorldCarCollision.restoreAll(_lifecycle.cachedBhkWorld, hknp, "shutdown");
             _touchGrabRuntime.releaseAll(
-                _cachedBhkWorld,
+                _lifecycle.cachedBhkWorld,
                 hknp,
                 provider::RockProviderTouchGrabReleaseReasonV1::
                     GenerationChanged,
-                _collisionGenerationAtomic.load(
+                _lifecycle.collisionGenerationAtomic.load(
                     std::memory_order_acquire));
             unsubscribeContactEvents(hknp);
             restoreNativePlayerCollisionSuppression(hknp, "shutdown");
@@ -627,10 +627,10 @@ namespace rock
                 if (r)
                     releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
             }
-            _dynamicWeaponCollision.retireAll(_cachedBhkWorld);
+            _dynamicWeaponCollision.retireAll(_lifecycle.cachedBhkWorld);
             _weaponCollision.destroyWeaponBody(hknp);
-            destroyBodyBoneCollisions(_cachedBhkWorld);
-            destroyHandCollisions(_cachedBhkWorld);
+            destroyBodyBoneCollisions(_lifecycle.cachedBhkWorld);
+            destroyHandCollisions(_lifecycle.cachedBhkWorld);
         } else {
             _authoredSupportGripIndicator.abandonSceneGraph();
             _dynamicWorldCarCollision.abandon();
@@ -643,38 +643,38 @@ namespace rock
             _leftHand.abandonHavokStateAfterWorldLoss();
             _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
             _weaponCollision.abandonHavokStateAfterWorldLoss();
-            _equippedWeaponTransition.abandonSceneGraph();
+            _equipped.transition.abandonSceneGraph();
             _bodyBoneColliders.reset();
-            _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-            _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            _rightDominantWeaponCollisionSuppression.clearTracking();
-            _leftWeaponSupportCollisionSuppression.clearTracking();
-            _rightWeaponSupportCollisionSuppression.clearTracking();
+            _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
+            _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
+            _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
+            _suppression.rightDominantLeases.clearTracking();
+            _suppression.leftWeaponSupportLeases.clearTracking();
+            _suppression.rightWeaponSupportLeases.clearTracking();
             clearEquippedWeaponPostDropCollisionSuppressionState();
-            _nativePlayerCollisionSuppressedBodies = {};
-            _nativePlayerCollisionSuppressedBodyCount = 0;
-            _nativePlayerCollisionSuppressionRefreshFrames = 0;
-            _nativePlayerCollisionSuppressionOverflowLogged = false;
+            _suppression.nativePlayerBodies = {};
+            _suppression.nativePlayerBodyCount = 0;
+            _suppression.nativePlayerRefreshFrames = 0;
+            _suppression.nativePlayerOverflowLogged = false;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _twoHandedGrip.reset();
-        _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+        _equipped.pendingPrimaryOnlyGripStart = {};
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
         clearLooseGrenadeRuntimeState();
         clearEquippedWeaponFiringGripInputState();
-        _bodyContactRuntime.reset();
-        _shoulderStashStates = {};
-        _mouthConsumeStates = {};
+        _contacts.bodyRuntime.reset();
+        _grabInput.shoulderStashStates = {};
+        _grabInput.mouthConsumeStates = {};
         _feedbackHaptics.reset();
-        _equippedWeaponTransition.shutdown();
+        _equipped.transition.shutdown();
         _weaponCollision.shutdown();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
-        _completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _equippedWeaponDropMomentumHandoffs = {};
+        _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
+        _drop.momentumHandoffs = {};
         markGeneratedBodiesInvalidated();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();
@@ -684,70 +684,70 @@ namespace rock
         _rightHand.reset();
         _leftHand.reset();
 
-        _cachedBhkWorld = nullptr;
-        _cachedHknpWorld = nullptr;
-        _collisionLayerRegistered = false;
-        _expectedHandLayerMask = 0;
-        _expectedWeaponLayerMask = 0;
-        _expectedReloadLayerMask = 0;
-        _expectedBodyLayerMask = 0;
-        _expectedDynamicHandProxyLayerMask = 0;
-        _expectedDynamicLeftHandProxyLayerMask = 0;
-        _expectedDynamicWeaponProxyLayerMask = 0;
-        _expectedDynamicWorldCarClutterLayerMask = 0;
-        _expectedDynamicWorldCarLargeClutterLayerMask = 0;
-        _originalNativeCharacterControllerLayerMask = 0;
-        _expectedNativeCharacterControllerLayerMask = 0;
-        _nativeCharacterControllerLayerPolicyCaptured = false;
-        _nativeCharacterControllerLayerPolicyEnabled = false;
-        _initialized = false;
+        _lifecycle.cachedBhkWorld = nullptr;
+        _lifecycle.cachedHknpWorld = nullptr;
+        _layers.registered = false;
+        _layers.expectedHandMask = 0;
+        _layers.expectedWeaponMask = 0;
+        _layers.expectedReloadMask = 0;
+        _layers.expectedBodyMask = 0;
+        _layers.expectedDynamicHandProxyMask = 0;
+        _layers.expectedDynamicLeftHandProxyMask = 0;
+        _layers.expectedDynamicWeaponProxyMask = 0;
+        _layers.expectedDynamicWorldCarClutterMask = 0;
+        _layers.expectedDynamicWorldCarLargeClutterMask = 0;
+        _layers.originalNativeCharacterControllerMask = 0;
+        _layers.expectedNativeCharacterControllerMask = 0;
+        _layers.nativeControllerPolicyCaptured = false;
+        _layers.nativeControllerPolicyEnabled = false;
+        _lifecycle.initialized = false;
         observeLifecycleFrame(nullptr, nullptr, reason);
-        _hasPrevPositions = false;
-        _heldMassMovementLogCounter = 0;
+        _frame.hasPrevPositions = false;
+        _diagnostics.heldMassLogCounter = 0;
         _handBoneCache.reset();
-        _handCacheResolveLogCounter = 0;
-        _paritySummaryCounter = 0;
-        _parityEnabledLogged = false;
-        _runtimeScaleLogged = false;
-        _rawHandParityStates = {};
-        _dynamicPushCooldownUntil.clear();
-        _heldImpactHapticCooldownUntil.clear();
-        _grabEventFrameCounter = 0;
-        _mouthConsumeStates = {};
+        _diagnostics.handCacheResolveLogCounter = 0;
+        _diagnostics.paritySummaryCounter = 0;
+        _diagnostics.parityEnabledLogged = false;
+        _diagnostics.runtimeScaleLogged = false;
+        _diagnostics.rawHandParityStates = {};
+        _contacts.dynamicPushCooldownUntil.clear();
+        _grabEvents.heldImpactHapticCooldownUntil.clear();
+        _grabEvents.frameCounter = 0;
+        _grabInput.mouthConsumeStates = {};
         _feedbackHaptics.reset();
-        _grabInputIntentStates = {};
-        _peerHeldJoinRetryStates = {};
-        _heldWeaponTriggerEquipIntents = {};
-        _forceGrabCommittedThisFrame = {};
-        _equippedWeaponStashStates = {};
-        _equippedWeaponSheathRetrievalStates = {};
+        _grabInput.intentStates = {};
+        _grabInput.peerHeldJoinRetryStates = {};
+        _grabInput.heldWeaponTriggerEquipIntents = {};
+        _forceGrab.committedThisFrame = {};
+        _equipped.stashStates = {};
+        _equipped.sheathRetrievalStates = {};
         equipped_weapon_shoulder::reset(
-            _equippedWeaponShoulderCoordinatorState);
-        _equippedWeaponShoulderGestureConsumedThisFrame = {};
-        _bareFistGuardState = {};
-        _bodyBoneColliderCreateRetryFrames = 0;
-        _handColliderCreateRetryFrames = 0;
-        _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactBodyLeft.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactSourceRight.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactSourceLeft.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactBodyWeapon.store(0xFFFFFFFF, std::memory_order_release);
-        _lastContactSourceWeapon.store(0xFFFFFFFF, std::memory_order_release);
-        _lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
-        _lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
-        _handContactActivity.reset();
-        _bodyContactRuntime.reset();
-        _rightDominantWeaponCollisionSuppression.clearTracking();
-        _leftWeaponSupportCollisionSuppression.clearTracking();
-        _rightWeaponSupportCollisionSuppression.clearTracking();
-        _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-        _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-        _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+            _equipped.shoulderCoordinator);
+        _equipped.shoulderGestureConsumedThisFrame = {};
+        _grabInput.bareFistGuardState = {};
+        _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
+        _lifecycle.handColliderCreateRetryFrames = 0;
+        _contacts.lastBodyRight.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastBodyLeft.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastSourceRight.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastSourceLeft.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastBodyWeapon.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastSourceWeapon.store(0xFFFFFFFF, std::memory_order_release);
+        _contacts.lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
+        _contacts.lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
+        _contacts.handActivity.reset();
+        _contacts.bodyRuntime.reset();
+        _suppression.rightDominantLeases.clearTracking();
+        _suppression.leftWeaponSupportLeases.clearTracking();
+        _suppression.rightWeaponSupportLeases.clearTracking();
+        _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
+        _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
+        _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
         clearEquippedWeaponPostDropCollisionSuppressionState();
-        _nativePlayerCollisionSuppressedBodies = {};
-        _nativePlayerCollisionSuppressedBodyCount = 0;
-        _nativePlayerCollisionSuppressionRefreshFrames = 0;
-        _nativePlayerCollisionSuppressionOverflowLogged = false;
+        _suppression.nativePlayerBodies = {};
+        _suppression.nativePlayerBodyCount = 0;
+        _suppression.nativePlayerRefreshFrames = 0;
+        _suppression.nativePlayerOverflowLogged = false;
 
         cleanupGrabConstraintVtable();
 
@@ -780,9 +780,9 @@ namespace rock
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::FO4_LAYER_CHARCONTROLLER, matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER]);
 
-        if (!_nativeCharacterControllerLayerPolicyCaptured) {
-            _originalNativeCharacterControllerLayerMask = matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER];
-            _nativeCharacterControllerLayerPolicyCaptured = true;
+        if (!_layers.nativeControllerPolicyCaptured) {
+            _layers.originalNativeCharacterControllerMask = matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER];
+            _layers.nativeControllerPolicyCaptured = true;
         }
 
         collision_layer_policy::applyRockGeneratedLayerPolicies(
@@ -793,41 +793,41 @@ namespace rock
         collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(
             matrix,
             g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
-            _originalNativeCharacterControllerLayerMask);
+            _layers.originalNativeCharacterControllerMask);
 
-        _expectedHandLayerMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
-        _expectedWeaponLayerMask =
+        _layers.expectedHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
+        _layers.expectedWeaponMask =
             collision_layer_policy::buildRockWeaponExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 true);
-        _expectedReloadLayerMask =
+        _layers.expectedReloadMask =
             collision_layer_policy::buildRockReloadExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
-        _expectedBodyLayerMask = collision_layer_policy::buildRockBodyExpectedMask();
-        _expectedDynamicHandProxyLayerMask =
+        _layers.expectedBodyMask = collision_layer_policy::buildRockBodyExpectedMask();
+        _layers.expectedDynamicHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                 false);
-        _expectedDynamicLeftHandProxyLayerMask =
+        _layers.expectedDynamicLeftHandProxyMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                 true);
-        _expectedDynamicWeaponProxyLayerMask =
+        _layers.expectedDynamicWeaponProxyMask =
             collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
-        _expectedDynamicWorldCarClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
-        _expectedDynamicWorldCarLargeClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
-        _expectedNativeCharacterControllerLayerMask =
+        _layers.expectedDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
+        _layers.expectedDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
+        _layers.expectedNativeCharacterControllerMask =
             collision_layer_policy::nativeCharacterControllerExpectedMask(
-                _originalNativeCharacterControllerLayerMask,
+                _layers.originalNativeCharacterControllerMask,
                 g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled);
-        _nativeCharacterControllerLayerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
-        _collisionLayerRegistered = true;
+        _layers.nativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
+        _layers.registered = true;
 
         const bool nativeControllerObjectPairsMatch =
-            collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
+            collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _layers.expectedNativeCharacterControllerMask);
         const char* nativeControllerObjectStatus =
-            _nativeCharacterControllerLayerPolicyEnabled ?
+            _layers.nativeControllerPolicyEnabled ?
                 (nativeControllerObjectPairsMatch ? "suppressed" : "bad") :
                 (nativeControllerObjectPairsMatch ? "restored" : "bad");
 
@@ -845,68 +845,68 @@ namespace rock
                 matrix,
                 collision_layer_policy::ROCK_LAYER_HAND,
                 collision_layer_policy::FO4_LAYER_BIPED,
-                collision_layer_policy::maskEnablesLayer(_expectedHandLayerMask, collision_layer_policy::FO4_LAYER_BIPED)) &&
+                collision_layer_policy::maskEnablesLayer(_layers.expectedHandMask, collision_layer_policy::FO4_LAYER_BIPED)) &&
                     collision_layer_policy::layerPairSymmetricMatches(
                         matrix,
                         collision_layer_policy::ROCK_LAYER_WEAPON,
                         collision_layer_policy::FO4_LAYER_BIPED,
-                        collision_layer_policy::maskEnablesLayer(_expectedWeaponLayerMask, collision_layer_policy::FO4_LAYER_BIPED)) ?
+                        collision_layer_policy::maskEnablesLayer(_layers.expectedWeaponMask, collision_layer_policy::FO4_LAYER_BIPED)) ?
                 "ok" :
                 "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_HAND,
                 collision_layer_policy::FO4_LAYER_DEADBIP,
-                collision_layer_policy::maskEnablesLayer(_expectedHandLayerMask, collision_layer_policy::FO4_LAYER_DEADBIP)) &&
+                collision_layer_policy::maskEnablesLayer(_layers.expectedHandMask, collision_layer_policy::FO4_LAYER_DEADBIP)) &&
                     collision_layer_policy::layerPairSymmetricMatches(
                         matrix,
                         collision_layer_policy::ROCK_LAYER_WEAPON,
                         collision_layer_policy::FO4_LAYER_DEADBIP,
-                        collision_layer_policy::maskEnablesLayer(_expectedWeaponLayerMask, collision_layer_policy::FO4_LAYER_DEADBIP)) ?
+                        collision_layer_policy::maskEnablesLayer(_layers.expectedWeaponMask, collision_layer_policy::FO4_LAYER_DEADBIP)) ?
                 "ok" :
                 "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_HAND,
                 collision_layer_policy::FO4_LAYER_BIPED_NO_CC,
-                collision_layer_policy::maskEnablesLayer(_expectedHandLayerMask, collision_layer_policy::FO4_LAYER_BIPED_NO_CC)) &&
+                collision_layer_policy::maskEnablesLayer(_layers.expectedHandMask, collision_layer_policy::FO4_LAYER_BIPED_NO_CC)) &&
                     collision_layer_policy::layerPairSymmetricMatches(
                         matrix,
                         collision_layer_policy::ROCK_LAYER_WEAPON,
                         collision_layer_policy::FO4_LAYER_BIPED_NO_CC,
-                        collision_layer_policy::maskEnablesLayer(_expectedWeaponLayerMask, collision_layer_policy::FO4_LAYER_BIPED_NO_CC)) ?
+                        collision_layer_policy::maskEnablesLayer(_layers.expectedWeaponMask, collision_layer_policy::FO4_LAYER_BIPED_NO_CC)) ?
                 "ok" :
                 "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_BODY,
                 collision_layer_policy::ROCK_LAYER_HAND,
-                collision_layer_policy::maskEnablesLayer(_expectedBodyLayerMask, collision_layer_policy::ROCK_LAYER_HAND)) ? "ok" : "bad",
+                collision_layer_policy::maskEnablesLayer(_layers.expectedBodyMask, collision_layer_policy::ROCK_LAYER_HAND)) ? "ok" : "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_BODY,
                 collision_layer_policy::ROCK_LAYER_WEAPON,
-                collision_layer_policy::maskEnablesLayer(_expectedBodyLayerMask, collision_layer_policy::ROCK_LAYER_WEAPON)) ? "ok" : "bad",
+                collision_layer_policy::maskEnablesLayer(_layers.expectedBodyMask, collision_layer_policy::ROCK_LAYER_WEAPON)) ? "ok" : "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_BODY,
                 collision_layer_policy::ROCK_LAYER_BODY,
-                collision_layer_policy::maskEnablesLayer(_expectedBodyLayerMask, collision_layer_policy::ROCK_LAYER_BODY)) ? "ok" : "bad",
+                collision_layer_policy::maskEnablesLayer(_layers.expectedBodyMask, collision_layer_policy::ROCK_LAYER_BODY)) ? "ok" : "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_BODY,
                 collision_layer_policy::FO4_LAYER_STATIC,
-                collision_layer_policy::maskEnablesLayer(_expectedBodyLayerMask, collision_layer_policy::FO4_LAYER_STATIC)) ? "ok" : "bad",
+                collision_layer_policy::maskEnablesLayer(_layers.expectedBodyMask, collision_layer_policy::FO4_LAYER_STATIC)) ? "ok" : "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_BODY,
                 collision_layer_policy::FO4_LAYER_ANIMSTATIC,
-                collision_layer_policy::maskEnablesLayer(_expectedBodyLayerMask, collision_layer_policy::FO4_LAYER_ANIMSTATIC)) ? "ok" : "bad",
+                collision_layer_policy::maskEnablesLayer(_layers.expectedBodyMask, collision_layer_policy::FO4_LAYER_ANIMSTATIC)) ? "ok" : "bad",
             collision_layer_policy::layerPairSymmetricMatches(
                 matrix,
                 collision_layer_policy::ROCK_LAYER_BODY,
                 collision_layer_policy::FO4_LAYER_CLUTTER,
-                collision_layer_policy::maskEnablesLayer(_expectedBodyLayerMask, collision_layer_policy::FO4_LAYER_CLUTTER)) ? "ok" : "bad",
+                collision_layer_policy::maskEnablesLayer(_layers.expectedBodyMask, collision_layer_policy::FO4_LAYER_CLUTTER)) ? "ok" : "bad",
             !collision_layer_policy::layerPairEnabledFromRow(matrix, collision_layer_policy::ROCK_LAYER_BODY, collision_layer_policy::FO4_LAYER_ITEMPICK) &&
                     !collision_layer_policy::layerPairEnabledFromRow(matrix, collision_layer_policy::FO4_LAYER_ITEMPICK, collision_layer_policy::ROCK_LAYER_BODY) ?
                 "ok" :
@@ -926,7 +926,7 @@ namespace rock
             "Registered dynamic weapon proxy layer={} worldOnlyMask=0x{:016X}",
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
             collision_layer_policy::matrixAddressableMask(
-                _expectedDynamicWeaponProxyLayerMask));
+                _layers.expectedDynamicWeaponProxyMask));
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)
@@ -958,7 +958,7 @@ namespace rock
             _leftHand.getHandColliderBodyCount(),
             g_rockConfig.rockHandBoneCollidersRequirePalmAnchor ? "true" : "false");
 
-        _handColliderCreateRetryFrames = 0;
+        _lifecycle.handColliderCreateRetryFrames = 0;
         return true;
     }
 
@@ -975,12 +975,12 @@ namespace rock
             hknpWorld,
             provider::RockProviderTouchGrabReleaseReasonV1::
                 GenerationChanged,
-            _collisionGenerationAtomic.load(
+            _lifecycle.collisionGenerationAtomic.load(
                 std::memory_order_acquire));
         clearGeneratedBodyContactRegistry();
         _rightHand.destroyCollision(bhkWorld);
         _leftHand.destroyCollision(bhkWorld);
-        _handColliderCreateRetryFrames = 0;
+        _lifecycle.handColliderCreateRetryFrames = 0;
     }
 
     bool PhysicsInteraction::createBodyBoneCollisions(RE::hknpWorld* world, void* bhkWorld)
@@ -999,8 +999,8 @@ namespace rock
             return false;
         }
 
-        _bodyBoneColliderCreateRetryFrames = 0;
-        _bodyContactRuntime.reset();
+        _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
+        _contacts.bodyRuntime.reset();
         ROCK_LOG_INFO(Body,
             "Body bone collider set created: bodies={} legsAndFeet={}",
             _bodyBoneColliders.getBodyCount(),
@@ -1012,8 +1012,8 @@ namespace rock
     {
         clearGeneratedBodyContactRegistry();
         _bodyBoneColliders.destroy(bhkWorld);
-        _bodyContactRuntime.reset();
-        _bodyBoneColliderCreateRetryFrames = 0;
+        _contacts.bodyRuntime.reset();
+        _lifecycle.bodyBoneColliderCreateRetryFrames = 0;
     }
 
     RE::bhkWorld* PhysicsInteraction::getPlayerBhkWorld() const

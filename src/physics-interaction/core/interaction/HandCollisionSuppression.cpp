@@ -6,28 +6,28 @@ namespace rock
 {
     void PhysicsInteraction::clearLeftWeaponContact()
     {
-        _leftWeaponContactBodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
-        _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
-        _leftWeaponContactReloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
-        _leftWeaponContactSupportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
-        _leftWeaponContactSocketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
-        _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
-        _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
-        _leftWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
-        _weaponInteractionAcquisitionStates[0] = {};
+        _weaponContact.left.bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+        _weaponContact.left.partKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
+        _weaponContact.left.reloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
+        _weaponContact.left.supportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
+        _weaponContact.left.socketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
+        _weaponContact.left.actionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
+        _weaponContact.left.gripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
+        _weaponContact.left.missedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
+        _equipped.weaponInteractionAcquisitionStates[0] = {};
     }
 
     void PhysicsInteraction::clearRightWeaponContact()
     {
-        _rightWeaponContactBodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
-        _rightWeaponContactPartKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
-        _rightWeaponContactReloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
-        _rightWeaponContactSupportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
-        _rightWeaponContactSocketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
-        _rightWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
-        _rightWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
-        _rightWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
-        _weaponInteractionAcquisitionStates[1] = {};
+        _weaponContact.right.bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+        _weaponContact.right.partKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
+        _weaponContact.right.reloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
+        _weaponContact.right.supportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
+        _weaponContact.right.socketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
+        _weaponContact.right.actionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
+        _weaponContact.right.gripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
+        _weaponContact.right.missedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
+        _equipped.weaponInteractionAcquisitionStates[1] = {};
     }
 
     bool PhysicsInteraction::isHandContactEvidenceSuppressed(bool isLeft) const
@@ -40,9 +40,9 @@ namespace rock
          */
         const Hand& hand = isLeft ? _leftHand : _rightHand;
         return hand.hasContactEvidenceSuppressedAtomic() ||
-               (!isLeft && _rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire)) ||
-               (!isLeft && _rightWeaponSupportCollisionSuppressed.load(std::memory_order_acquire)) ||
-               (isLeft && _leftWeaponSupportCollisionSuppressed.load(std::memory_order_acquire));
+               (!isLeft && _suppression.rightDominantSuppressed.load(std::memory_order_acquire)) ||
+               (!isLeft && _suppression.rightWeaponSupportSuppressed.load(std::memory_order_acquire)) ||
+               (isLeft && _suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire));
     }
 
     void PhysicsInteraction::clearContactEvidenceForHand(bool isLeft)
@@ -62,13 +62,13 @@ namespace rock
          * authority transition so callbacks cannot leave a stale touch owner.
          */
         if (_rightHand.hasContactEvidenceSuppressedAtomic() || rightHandWeaponAuthorityActive || rightPartGripActive ||
-            _rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire) ||
-            _rightWeaponSupportCollisionSuppressed.load(std::memory_order_acquire)) {
+            _suppression.rightDominantSuppressed.load(std::memory_order_acquire) ||
+            _suppression.rightWeaponSupportSuppressed.load(std::memory_order_acquire)) {
             clearContactEvidenceForHand(false);
         }
 
         if (_leftHand.hasContactEvidenceSuppressedAtomic() || leftSupportGripActive ||
-            _leftWeaponSupportCollisionSuppressed.load(std::memory_order_acquire)) {
+            _suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire)) {
             clearContactEvidenceForHand(true);
         }
     }
@@ -83,7 +83,7 @@ namespace rock
          * tool states as collision-filter ownership, so it uses the shared
          * suppression lease here instead of a visual-only gate.
          */
-        _rightDominantWeaponCollisionSuppressed.store(true, std::memory_order_release);
+        _suppression.rightDominantSuppressed.store(true, std::memory_order_release);
 
         if (!world) {
             return;
@@ -91,7 +91,7 @@ namespace rock
         releaseStaleGeneratedHandSuppressionLeases(
             world,
             _rightHand,
-            _rightDominantWeaponCollisionSuppression,
+            _suppression.rightDominantLeases,
             "dominant-weapon-hand-stale");
         if (!_rightHand.hasCollisionBody()) {
             return;
@@ -102,13 +102,13 @@ namespace rock
                 return;
             }
 
-            if (!_rightDominantWeaponCollisionSuppression.contains(bodyId) &&
-                _rightDominantWeaponCollisionSuppression.full()) {
+            if (!_suppression.rightDominantLeases.contains(bodyId) &&
+                _suppression.rightDominantLeases.full()) {
                 ROCK_LOG_WARN(Weapon, "DominantWeapon: right hand suppression set full; bodyId={} left active", bodyId);
                 return;
             }
 
-            const auto registryResult = _rightDominantWeaponCollisionSuppression.acquire(
+            const auto registryResult = _suppression.rightDominantLeases.acquire(
                 world,
                 bodyId,
                 "dominant-weapon-hand");
@@ -136,8 +136,8 @@ namespace rock
 
     void PhysicsInteraction::restoreRightHandCollisionAfterDominantWeapon(RE::hknpWorld* world)
     {
-        if (_rightDominantWeaponCollisionSuppression.empty()) {
-            _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
+        if (_suppression.rightDominantLeases.empty()) {
+            _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
             return;
         }
 
@@ -146,7 +146,7 @@ namespace rock
             return;
         }
 
-        const bool restored = _rightDominantWeaponCollisionSuppression.releaseAll(
+        const bool restored = _suppression.rightDominantLeases.releaseAll(
             world,
             "dominant-weapon-hand",
             [](std::uint32_t bodyId, const auto& releaseResult) {
@@ -167,8 +167,8 @@ namespace rock
             return;
         }
 
-        _rightDominantWeaponCollisionSuppression.clearTracking();
-        _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
+        _suppression.rightDominantLeases.clearTracking();
+        _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
     }
 
     void PhysicsInteraction::suppressHandCollisionForWeaponSupport(RE::hknpWorld* world, bool isLeft)
@@ -184,8 +184,8 @@ namespace rock
          * to the detached firing hand's part grips symmetrically.
          */
         Hand& hand = isLeft ? _leftHand : _rightHand;
-        auto& suppressionSet = isLeft ? _leftWeaponSupportCollisionSuppression : _rightWeaponSupportCollisionSuppression;
-        auto& suppressedFlag = isLeft ? _leftWeaponSupportCollisionSuppressed : _rightWeaponSupportCollisionSuppressed;
+        auto& suppressionSet = isLeft ? _suppression.leftWeaponSupportLeases : _suppression.rightWeaponSupportLeases;
+        auto& suppressedFlag = isLeft ? _suppression.leftWeaponSupportSuppressed : _suppression.rightWeaponSupportSuppressed;
         suppressionSet.cancelDelayedRestore();
         suppressedFlag.store(true, std::memory_order_release);
 
@@ -277,8 +277,8 @@ namespace rock
         RE::hknpWorld* world,
         const bool isLeft)
     {
-        auto& suppressionSet = isLeft ? _leftWeaponSupportCollisionSuppression : _rightWeaponSupportCollisionSuppression;
-        auto& suppressedFlag = isLeft ? _leftWeaponSupportCollisionSuppressed : _rightWeaponSupportCollisionSuppressed;
+        auto& suppressionSet = isLeft ? _suppression.leftWeaponSupportLeases : _suppression.rightWeaponSupportLeases;
+        auto& suppressedFlag = isLeft ? _suppression.leftWeaponSupportSuppressed : _suppression.rightWeaponSupportSuppressed;
         if (suppressionSet.empty()) {
             suppressionSet.cancelDelayedRestore();
             suppressedFlag.store(false, std::memory_order_release);
@@ -306,8 +306,8 @@ namespace rock
         const bool isLeft,
         const bool forceImmediate)
     {
-        auto& suppressionSet = isLeft ? _leftWeaponSupportCollisionSuppression : _rightWeaponSupportCollisionSuppression;
-        auto& suppressedFlag = isLeft ? _leftWeaponSupportCollisionSuppressed : _rightWeaponSupportCollisionSuppressed;
+        auto& suppressionSet = isLeft ? _suppression.leftWeaponSupportLeases : _suppression.rightWeaponSupportLeases;
+        auto& suppressedFlag = isLeft ? _suppression.leftWeaponSupportSuppressed : _suppression.rightWeaponSupportSuppressed;
         if (suppressionSet.empty()) {
             suppressionSet.cancelDelayedRestore();
             suppressedFlag.store(false, std::memory_order_release);
@@ -359,7 +359,7 @@ namespace rock
         const float deltaSeconds)
     {
         auto updateHand = [&](const bool isLeft) {
-            auto& suppressionSet = isLeft ? _leftWeaponSupportCollisionSuppression : _rightWeaponSupportCollisionSuppression;
+            auto& suppressionSet = isLeft ? _suppression.leftWeaponSupportLeases : _suppression.rightWeaponSupportLeases;
             if (!suppressionSet.delayedRestorePending() ||
                 !suppressionSet.advanceDelayedRestore(deltaSeconds)) {
                 return;
@@ -383,8 +383,8 @@ namespace rock
 
         const bool isLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
         auto& hand = isLeft ? _leftHand : _rightHand;
-        auto& suppressionSet = isLeft ? _leftEquippedWeaponDropCollisionSuppression : _rightEquippedWeaponDropCollisionSuppression;
-        auto& suppressed = isLeft ? _leftEquippedWeaponDropCollisionSuppressed : _rightEquippedWeaponDropCollisionSuppressed;
+        auto& suppressionSet = isLeft ? _suppression.leftDropLeases : _suppression.rightDropLeases;
+        auto& suppressed = isLeft ? _suppression.leftDropSuppressed : _suppression.rightDropSuppressed;
         suppressionSet.cancelDelayedRestore();
 
         if (!world || !hand.hasCollisionBody()) {
@@ -459,8 +459,8 @@ namespace rock
 
     void PhysicsInteraction::restoreHandCollisionAfterEquippedWeaponDrop(RE::hknpWorld* world, bool isLeft)
     {
-        auto& suppressionSet = isLeft ? _leftEquippedWeaponDropCollisionSuppression : _rightEquippedWeaponDropCollisionSuppression;
-        auto& suppressed = isLeft ? _leftEquippedWeaponDropCollisionSuppressed : _rightEquippedWeaponDropCollisionSuppressed;
+        auto& suppressionSet = isLeft ? _suppression.leftDropLeases : _suppression.rightDropLeases;
+        auto& suppressed = isLeft ? _suppression.leftDropSuppressed : _suppression.rightDropSuppressed;
 
         if (suppressionSet.empty()) {
             suppressionSet.cancelDelayedRestore();
@@ -506,8 +506,8 @@ namespace rock
     void PhysicsInteraction::updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world, float deltaSeconds)
     {
         auto updateHand = [&](bool isLeft) {
-            auto& suppressionSet = isLeft ? _leftEquippedWeaponDropCollisionSuppression : _rightEquippedWeaponDropCollisionSuppression;
-            auto& suppressed = isLeft ? _leftEquippedWeaponDropCollisionSuppressed : _rightEquippedWeaponDropCollisionSuppressed;
+            auto& suppressionSet = isLeft ? _suppression.leftDropLeases : _suppression.rightDropLeases;
+            auto& suppressed = isLeft ? _suppression.leftDropSuppressed : _suppression.rightDropSuppressed;
 
             if (suppressionSet.delayedRestorePending() &&
                 !suppressionSet.advanceDelayedRestore(deltaSeconds)) {
@@ -529,10 +529,10 @@ namespace rock
 
     void PhysicsInteraction::clearEquippedWeaponPostDropCollisionSuppressionState()
     {
-        _rightEquippedWeaponDropCollisionSuppression.clearTracking();
-        _leftEquippedWeaponDropCollisionSuppression.clearTracking();
-        _rightEquippedWeaponDropCollisionSuppressed.store(false, std::memory_order_release);
-        _leftEquippedWeaponDropCollisionSuppressed.store(false, std::memory_order_release);
+        _suppression.rightDropLeases.clearTracking();
+        _suppression.leftDropLeases.clearTracking();
+        _suppression.rightDropSuppressed.store(false, std::memory_order_release);
+        _suppression.leftDropSuppressed.store(false, std::memory_order_release);
     }
 
     void PhysicsInteraction::updateHandCollisions(const PhysicsFrameContext& frame)
@@ -549,8 +549,8 @@ namespace rock
             if (frame.reloadBoundaryActive) {
                 return;
             }
-            if (_handColliderCreateRetryFrames > 0) {
-                --_handColliderCreateRetryFrames;
+            if (_lifecycle.handColliderCreateRetryFrames > 0) {
+                --_lifecycle.handColliderCreateRetryFrames;
                 return;
             }
 
@@ -560,7 +560,7 @@ namespace rock
                 _leftHand.hasCollisionBody() ? "yes" : "no");
             destroyHandCollisions(frame.bhkWorld);
             if (!createHandCollisions(frame.hknpWorld, frame.bhkWorld)) {
-                _handColliderCreateRetryFrames = 120;
+                _lifecycle.handColliderCreateRetryFrames = 120;
             }
             return;
         }
@@ -590,7 +590,7 @@ namespace rock
             if (_bodyBoneColliders.hasBodies()) {
                 ROCK_LOG_INFO(Body, "Body bone collider config disabled; destroying generated body set");
                 destroyBodyBoneCollisions(frame.bhkWorld);
-                _bodyContactRuntime.reset();
+                _contacts.bodyRuntime.reset();
             }
             return;
         }
@@ -599,13 +599,13 @@ namespace rock
             if (frame.reloadBoundaryActive) {
                 return;
             }
-            if (_bodyBoneColliderCreateRetryFrames > 0) {
-                --_bodyBoneColliderCreateRetryFrames;
+            if (_lifecycle.bodyBoneColliderCreateRetryFrames > 0) {
+                --_lifecycle.bodyBoneColliderCreateRetryFrames;
                 return;
             }
 
             if (!createBodyBoneCollisions(frame.hknpWorld, frame.bhkWorld)) {
-                _bodyBoneColliderCreateRetryFrames = 120;
+                _lifecycle.bodyBoneColliderCreateRetryFrames = 120;
             }
             return;
         }
@@ -648,8 +648,8 @@ namespace rock
 
     void PhysicsInteraction::restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason)
     {
-        if (_nativePlayerCollisionSuppressedBodyCount == 0) {
-            _nativePlayerCollisionSuppressionRefreshFrames = 0;
+        if (_suppression.nativePlayerBodyCount == 0) {
+            _suppression.nativePlayerRefreshFrames = 0;
             return;
         }
 
@@ -663,8 +663,8 @@ namespace rock
             }
         };
 
-        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
-            const auto& body = _nativePlayerCollisionSuppressedBodies[i];
+        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
+            const auto& body = _suppression.nativePlayerBodies[i];
             if (!contact_pipeline_policy::isValidBodyId(body.bodyId)) {
                 continue;
             }
@@ -679,20 +679,20 @@ namespace rock
             }
         }
 
-        _nativePlayerCollisionSuppressedBodies = pending;
-        _nativePlayerCollisionSuppressedBodyCount = pendingCount;
-        _nativePlayerCollisionSuppressionRefreshFrames = pendingCount == 0 ? 0 : 30;
+        _suppression.nativePlayerBodies = pending;
+        _suppression.nativePlayerBodyCount = pendingCount;
+        _suppression.nativePlayerRefreshFrames = pendingCount == 0 ? 0 : 30;
     }
 
     void PhysicsInteraction::refreshNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* context)
     {
-        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _nativePlayerCollisionSuppressedBodyCount == 0) {
+        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _suppression.nativePlayerBodyCount == 0) {
             return;
         }
 
         std::uint32_t retainedCount = 0;
-        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
-            const auto body = _nativePlayerCollisionSuppressedBodies[i];
+        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
+            const auto body = _suppression.nativePlayerBodies[i];
             if (!contact_pipeline_policy::isValidBodyId(body.bodyId)) {
                 continue;
             }
@@ -703,24 +703,24 @@ namespace rock
                 collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
                 context ? context : "native-player-body-refresh");
             if (refreshResult.readFailed || (refreshResult.valid && !refreshResult.staleLeaseDiscarded)) {
-                _nativePlayerCollisionSuppressedBodies[retainedCount++] = body;
+                _suppression.nativePlayerBodies[retainedCount++] = body;
             }
         }
 
-        for (std::uint32_t i = retainedCount; i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
-            _nativePlayerCollisionSuppressedBodies[i] = {};
+        for (std::uint32_t i = retainedCount; i < _suppression.nativePlayerBodies.size(); ++i) {
+            _suppression.nativePlayerBodies[i] = {};
         }
-        _nativePlayerCollisionSuppressedBodyCount = retainedCount;
+        _suppression.nativePlayerBodyCount = retainedCount;
     }
 
     void PhysicsInteraction::refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(RE::hknpWorld* hknp, const char* context)
     {
-        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _nativePlayerCollisionSuppressedBodyCount == 0) {
+        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _suppression.nativePlayerBodyCount == 0) {
             return;
         }
 
-        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
-            const auto& leasedBody = _nativePlayerCollisionSuppressedBodies[i];
+        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
+            const auto& leasedBody = _suppression.nativePlayerBodies[i];
             if (!contact_pipeline_policy::isValidBodyId(leasedBody.bodyId)) {
                 continue;
             }
@@ -783,11 +783,11 @@ namespace rock
         auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         refreshNativePlayerCollisionSuppression(hknp, "native-player-body-frame-refresh");
 
-        if (_nativePlayerCollisionSuppressionRefreshFrames > 0) {
-            --_nativePlayerCollisionSuppressionRefreshFrames;
+        if (_suppression.nativePlayerRefreshFrames > 0) {
+            --_suppression.nativePlayerRefreshFrames;
             return;
         }
-        _nativePlayerCollisionSuppressionRefreshFrames = 30;
+        _suppression.nativePlayerRefreshFrames = 30;
 
         struct NativePlayerBodyScanContext
         {
@@ -938,13 +938,13 @@ namespace rock
                 kNearbyCarCollisionRadiusGameUnits);
         }
 
-        if (scanContext.overflow && !_nativePlayerCollisionSuppressionOverflowLogged) {
-            _nativePlayerCollisionSuppressionOverflowLogged = true;
+        if (scanContext.overflow && !_suppression.nativePlayerOverflowLogged) {
+            _suppression.nativePlayerOverflowLogged = true;
             ROCK_LOG_WARN(Hand,
                 "Native player collision suppression body capacity exceeded; keeping first {} bodies",
                 kNativePlayerCollisionSuppressionBodyCapacity);
         } else if (!scanContext.overflow) {
-            _nativePlayerCollisionSuppressionOverflowLogged = false;
+            _suppression.nativePlayerOverflowLogged = false;
         }
 
         std::array<NativePlayerCollisionSuppressedBody, kNativePlayerCollisionSuppressionBodyCapacity> next{};
@@ -990,8 +990,8 @@ namespace rock
             }
         }
 
-        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
-            const auto& body = _nativePlayerCollisionSuppressedBodies[i];
+        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
+            const auto& body = _suppression.nativePlayerBodies[i];
             if (nextContains(body.bodyId)) {
                 continue;
             }
@@ -1006,7 +1006,7 @@ namespace rock
             }
         }
 
-        _nativePlayerCollisionSuppressedBodies = next;
-        _nativePlayerCollisionSuppressedBodyCount = nextCount;
+        _suppression.nativePlayerBodies = next;
+        _suppression.nativePlayerBodyCount = nextCount;
     }
 }

@@ -6,15 +6,15 @@ namespace rock
 {
     void PhysicsInteraction::clearLooseGrenadeImpactWatches()
     {
-        for (auto& bodyId : _armedLooseGrenadeImpactBodyIds) {
+        for (auto& bodyId : _forceGrab.grenadeImpactBodyIds) {
             bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
         }
-        _pendingLooseGrenadeImpactPair.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
+        _forceGrab.pendingGrenadeImpactPair.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
     }
 
     void PhysicsInteraction::clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin origin)
     {
-        for (auto& commit : _pendingForceGrabCommits) {
+        for (auto& commit : _forceGrab.pendingCommits) {
             if (commit.active && commit.origin == origin) {
                 if (origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand &&
                     provider::isInteractionCommandActiveV1(
@@ -41,7 +41,7 @@ namespace rock
     void PhysicsInteraction::clearLooseGrenadeRuntimeState()
     {
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw);
-        _armedLooseGrenadeFuses = {};
+        _forceGrab.grenadeFuses = {};
         clearLooseGrenadeImpactWatches();
     }
 
@@ -70,7 +70,7 @@ namespace rock
             .holding = hand.isHolding(),
             .activePullCatch = hand.hasActivePullCatchIntent(),
             .actorEquipmentHandoff = hand.hasPendingActorEquipmentDropHandoff(),
-            .pendingForceGrab = includePendingCommit && _pendingForceGrabCommits[isLeft ? 1u : 0u].active,
+            .pendingForceGrab = includePendingCommit && _forceGrab.pendingCommits[isLeft ? 1u : 0u].active,
             .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
         });
@@ -88,7 +88,7 @@ namespace rock
 
     bool PhysicsInteraction::hasActiveLooseGrenadeCommit() const
     {
-        for (const auto& commit : _pendingForceGrabCommits) {
+        for (const auto& commit : _forceGrab.pendingCommits) {
             if (commit.active && commit.targetIsLooseThrowable) {
                 return true;
             }
@@ -101,7 +101,7 @@ namespace rock
         if (!ref) {
             return false;
         }
-        for (const auto& commit : _pendingForceGrabCommits) {
+        for (const auto& commit : _forceGrab.pendingCommits) {
             if (!commit.active) {
                 continue;
             }
@@ -115,7 +115,7 @@ namespace rock
 
     void PhysicsInteraction::pruneInactiveProviderForceGrabCommits()
     {
-        for (auto& commit : _pendingForceGrabCommits) {
+        for (auto& commit : _forceGrab.pendingCommits) {
             if (commit.active &&
                 commit.origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand &&
                 !provider::isInteractionCommandActiveV1(
@@ -184,7 +184,7 @@ namespace rock
         }
 
         const bool isLeft = handSelection.hand == force_grab_policy::HandChoice::Left;
-        auto& commit = _pendingForceGrabCommits[isLeft ? 1u : 0u];
+        auto& commit = _forceGrab.pendingCommits[isLeft ? 1u : 0u];
         const auto& handInput = isLeft ? frame.left : frame.right;
 
         /*
@@ -238,7 +238,7 @@ namespace rock
             return;
         }
 
-        for (auto& commit : _pendingForceGrabCommits) {
+        for (auto& commit : _forceGrab.pendingCommits) {
             if (!commit.active) {
                 continue;
             }
@@ -431,7 +431,7 @@ namespace rock
                     primaryBodyId,
                     commit.grenadeRequestId);
             }
-            _forceGrabCommittedThisFrame[commit.isLeft ? 1u : 0u] = true;
+            _forceGrab.committedThisFrame[commit.isLeft ? 1u : 0u] = true;
             commit = {};
         }
     }
@@ -443,7 +443,7 @@ namespace rock
             return false;
         }
 
-        for (const auto& fuse : _armedLooseGrenadeFuses) {
+        for (const auto& fuse : _forceGrab.grenadeFuses) {
             const auto fuseRefPtr = fuse.handle.get();
             if (fuse.active && fuseRefPtr.get() == heldRef) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
@@ -488,8 +488,8 @@ namespace rock
             }
         }
 
-        for (std::size_t slotIndex = 0; slotIndex < _armedLooseGrenadeFuses.size(); ++slotIndex) {
-            auto& fuse = _armedLooseGrenadeFuses[slotIndex];
+        for (std::size_t slotIndex = 0; slotIndex < _forceGrab.grenadeFuses.size(); ++slotIndex) {
+            auto& fuse = _forceGrab.grenadeFuses[slotIndex];
             if (fuse.active) {
                 continue;
             }
@@ -503,7 +503,7 @@ namespace rock
                 .impactBodyId = impactBodyId,
                 .releasedSinceArming = false,
             };
-            _armedLooseGrenadeImpactBodyIds[slotIndex].store(
+            _forceGrab.grenadeImpactBodyIds[slotIndex].store(
                 runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact ? impactBodyId : INVALID_CONTACT_BODY_ID,
                 std::memory_order_release);
             ROCK_LOG_INFO(Hand,
@@ -546,7 +546,7 @@ namespace rock
         std::uint32_t pendingImpactOtherBodyId = INVALID_CONTACT_BODY_ID;
         const bool pendingImpact =
             unpackHeldImpactPair(
-                _pendingLooseGrenadeImpactPair.exchange(INVALID_HELD_IMPACT_PAIR, std::memory_order_acq_rel),
+                _forceGrab.pendingGrenadeImpactPair.exchange(INVALID_HELD_IMPACT_PAIR, std::memory_order_acq_rel),
                 pendingImpactBodyId,
                 pendingImpactOtherBodyId);
 
@@ -594,12 +594,12 @@ namespace rock
                     loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode),
                     reason ? reason : "unknown");
             }
-            _armedLooseGrenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+            _forceGrab.grenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
             fuse = {};
         };
 
-        for (std::size_t slotIndex = 0; slotIndex < _armedLooseGrenadeFuses.size(); ++slotIndex) {
-            auto& fuse = _armedLooseGrenadeFuses[slotIndex];
+        for (std::size_t slotIndex = 0; slotIndex < _forceGrab.grenadeFuses.size(); ++slotIndex) {
+            auto& fuse = _forceGrab.grenadeFuses[slotIndex];
             if (!fuse.active) {
                 continue;
             }
@@ -611,7 +611,7 @@ namespace rock
                     "Loose throwable activation cleared because ref is gone: ref={:08X} remaining={:.3f}s",
                     fuse.refFormID,
                     fuse.remainingSeconds);
-                _armedLooseGrenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+                _forceGrab.grenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
                 fuse = {};
                 continue;
             }
@@ -726,7 +726,7 @@ namespace rock
                     "Cleared loose throwable with unsupported live mode: ref={:08X} mode={}",
                     fuse.refFormID,
                     loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode));
-                _armedLooseGrenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+                _forceGrab.grenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
                 fuse = {};
                 continue;
             }

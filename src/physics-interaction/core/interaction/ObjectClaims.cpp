@@ -9,18 +9,18 @@ namespace rock
     {
         if (!ref)
             return false;
-        std::scoped_lock lock(_ownedObjectsMutex);
-        const auto it = _ownedObjects.find(ref->GetFormID());
-        return it != _ownedObjects.end() && it->second != 0;
+        std::scoped_lock lock(_claims.mutex);
+        const auto it = _claims.owned.find(ref->GetFormID());
+        return it != _claims.owned.end() && it->second != 0;
     }
 
     bool PhysicsInteraction::physicsModOwnsObject(RE::TESObjectREFR* ref, PhysicsObjectClaimOwner owner) const
     {
         if (!ref)
             return false;
-        std::scoped_lock lock(_ownedObjectsMutex);
-        const auto it = _ownedObjects.find(ref->GetFormID());
-        return it != _ownedObjects.end() && (it->second & claimOwnerBit(owner)) != 0;
+        std::scoped_lock lock(_claims.mutex);
+        const auto it = _claims.owned.find(ref->GetFormID());
+        return it != _claims.owned.end() && (it->second & claimOwnerBit(owner)) != 0;
     }
 
     void PhysicsInteraction::claimObject(RE::TESObjectREFR* ref, PhysicsObjectClaimOwner owner)
@@ -28,8 +28,8 @@ namespace rock
         if (!ref)
             return;
         auto formID = ref->GetFormID();
-        std::scoped_lock lock(_ownedObjectsMutex);
-        auto& ownerMask = _ownedObjects[formID];
+        std::scoped_lock lock(_claims.mutex);
+        auto& ownerMask = _claims.owned[formID];
         const auto previousMask = ownerMask;
         ownerMask |= claimOwnerBit(owner);
         ROCK_LOG_DEBUG(Hand,
@@ -46,9 +46,9 @@ namespace rock
         if (!ref)
             return;
         auto formID = ref->GetFormID();
-        std::scoped_lock lock(_ownedObjectsMutex);
-        auto it = _ownedObjects.find(formID);
-        if (it == _ownedObjects.end()) {
+        std::scoped_lock lock(_claims.mutex);
+        auto it = _claims.owned.find(formID);
+        if (it == _claims.owned.end()) {
             return;
         }
 
@@ -65,7 +65,7 @@ namespace rock
             return;
         }
 
-        _ownedObjects.erase(it);
+        _claims.owned.erase(it);
         ROCK_LOG_DEBUG(Hand,
             "Released object: formID={:08X} owner={} mask=0x{:02X}->0x00",
             formID,
@@ -75,10 +75,10 @@ namespace rock
 
     void PhysicsInteraction::releaseAllObjects()
     {
-        std::scoped_lock lock(_ownedObjectsMutex);
-        if (!_ownedObjects.empty()) {
-            ROCK_LOG_DEBUG(Hand, "Releasing all {} owned objects", _ownedObjects.size());
-            _ownedObjects.clear();
+        std::scoped_lock lock(_claims.mutex);
+        if (!_claims.owned.empty()) {
+            ROCK_LOG_DEBUG(Hand, "Releasing all {} owned objects", _claims.owned.size());
+            _claims.owned.clear();
         }
 
         (void)frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", false);

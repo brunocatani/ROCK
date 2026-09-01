@@ -6,12 +6,12 @@ namespace rock
 {
     void PhysicsInteraction::requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName)
     {
-        if (!_initialized.load(std::memory_order_acquire)) {
+        if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
             return;
         }
 
         _weaponCollision.requestWorkbenchExitRebuild();
-        _equippedWeaponTransition.requestCurrentWeaponReconcile(
+        _equipped.transition.requestCurrentWeaponReconcile(
             EquippedWeaponTransitionCoordinator::Source::WorkbenchExit);
         ROCK_LOG_DEBUG(Weapon,
             "Weapon collision workbench-exit rebuild gate armed by {} close",
@@ -32,12 +32,12 @@ namespace rock
     bool PhysicsInteraction::refreshHandBoneCache()
     {
         if (_handBoneCache.resolve()) {
-            _handCacheResolveLogCounter = 0;
+            _diagnostics.handCacheResolveLogCounter = 0;
             return true;
         }
 
         if (g_rockConfig.rockDebugHandTransformParity) {
-            if (++_handCacheResolveLogCounter == 1 || _handCacheResolveLogCounter % 90 == 0) {
+            if (++_diagnostics.handCacheResolveLogCounter == 1 || _diagnostics.handCacheResolveLogCounter % 90 == 0) {
                 ROCK_LOG_WARN(Hand, "HandBoneCache unresolved; raw parity sampling skipped this frame");
             }
         }
@@ -70,8 +70,8 @@ namespace rock
     void PhysicsInteraction::sampleHandTransformParity()
     {
         if (!g_rockConfig.rockDebugHandTransformParity) {
-            _parityEnabledLogged = false;
-            _paritySummaryCounter = 0;
+            _diagnostics.parityEnabledLogged = false;
+            _diagnostics.paritySummaryCounter = 0;
             return;
         }
 
@@ -79,16 +79,16 @@ namespace rock
             return;
         }
 
-        if (!_parityEnabledLogged) {
+        if (!_diagnostics.parityEnabledLogged) {
             ROCK_LOG_INFO(Init, "Hand-transform parity enabled (root flattened cache vs FRIK API, pre-write sampling)");
-            _parityEnabledLogged = true;
+            _diagnostics.parityEnabledLogged = true;
         }
 
         const bool playerMoving = runtime_state::currentFrame().playerSpace.moving;
-        const bool emitSummary = (++_paritySummaryCounter >= kRawParitySummaryFrames);
+        const bool emitSummary = (++_diagnostics.paritySummaryCounter >= kRawParitySummaryFrames);
 
         auto sampleHand = [&](bool isLeft) {
-            auto& state = _rawHandParityStates[isLeft ? 1 : 0];
+            auto& state = _diagnostics.rawHandParityStates[isLeft ? 1 : 0];
             const auto handEnum = handFromBool(isLeft);
             const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
             RE::NiTransform apiTransform{};
@@ -153,9 +153,9 @@ namespace rock
         sampleHand(true);
 
         if (emitSummary) {
-            _paritySummaryCounter = 0;
-            const auto& right = _rawHandParityStates[0];
-            const auto& left = _rawHandParityStates[1];
+            _diagnostics.paritySummaryCounter = 0;
+            const auto& right = _diagnostics.rawHandParityStates[0];
+            const auto& left = _diagnostics.rawHandParityStates[1];
             ROCK_LOG_DEBUG(Hand, "Raw hand parity summary: R(pos={:.3f}, rot={:.3f}deg) L(pos={:.3f}, rot={:.3f}deg)", right.lastPositionDelta, right.lastRotationDeltaDegrees,
                 left.lastPositionDelta, left.lastRotationDeltaDegrees);
         }
@@ -165,7 +165,7 @@ namespace rock
 
     void PhysicsInteraction::synchronizeNativeScopePresentationAfterFrikUpdate()
     {
-        if (!_initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
             return;
         }
 
@@ -230,12 +230,12 @@ namespace rock
             _leftHand,
             _bodyBoneColliders,
             rightHandWeaponAuthorityActive || rightPartGripActive ||
-                _rightWeaponSupportCollisionSuppressed.load(
+                _suppression.rightWeaponSupportSuppressed.load(
                     std::memory_order_acquire),
             leftSupportGripActive ||
                 (_twoHandedGrip.isFiringHandLeft() &&
                     _twoHandedGrip.isFiringGripOccupied()) ||
-                _leftWeaponSupportCollisionSuppressed.load(
+                _suppression.leftWeaponSupportSuppressed.load(
                     std::memory_order_acquire),
             _dynamicWeaponCollision.proxyBodyIdForDebug().value,
             _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
@@ -276,7 +276,7 @@ namespace rock
         _leftHand.tickTouchState(measuredFrameDeltaSeconds);
         _rightHand.tickSemanticContactState(measuredFrameDeltaSeconds);
         _leftHand.tickSemanticContactState(measuredFrameDeltaSeconds);
-        _handContactActivity.advanceFrame(measuredFrameDeltaSeconds);
+        _contacts.handActivity.advanceFrame(measuredFrameDeltaSeconds);
         if (wasTouchingR && !_rightHand.isTouching()) {
             dispatchPhysicsMessage(kPhysMsg_OnTouchEnd, false, _rightHand.getLastTouchedRef(), _rightHand.getLastTouchedFormID(), _rightHand.getLastTouchedLayer());
         }
@@ -326,23 +326,23 @@ namespace rock
                 leftGrabClock.sourceIntervalSeconds);
         }
 
-        _deltaLogCounter++;
-        if (g_rockConfig.rockDebugVerboseLogging && _deltaLogCounter >= 90) {
-            _deltaLogCounter = 0;
+        _diagnostics.deltaLogCounter++;
+        if (g_rockConfig.rockDebugVerboseLogging && _diagnostics.deltaLogCounter >= 90) {
+            _diagnostics.deltaLogCounter = 0;
 
             const auto& playerSpace = runtime_state::currentFrame().playerSpace;
             if (playerSpace.valid) {
                 const auto smoothPos = playerSpace.world.translate;
                 const bool moving = playerSpace.moving;
 
-                if (_hasPrevPositions && moving) {
-                    const auto smoothDelta = smoothPos - _prevSmoothedPos;
+                if (_frame.hasPrevPositions && moving) {
+                    const auto smoothDelta = smoothPos - _frame.prevSmoothedPos;
 
                     ROCK_LOG_DEBUG(Update, "PlayerSpace: smoothDelta=({:.2f},{:.2f},{:.2f}) moving={}", smoothDelta.x, smoothDelta.y, smoothDelta.z, moving);
                 }
 
-                _prevSmoothedPos = smoothPos;
-                _hasPrevPositions = true;
+                _frame.prevSmoothedPos = smoothPos;
+                _frame.hasPrevPositions = true;
             }
         }
 
@@ -356,17 +356,17 @@ namespace rock
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
-        _equippedWeaponShoulderGestureConsumedThisFrame = {};
-        _equippedWeaponToggleGrabReleasePressConsumedThisFrame = {};
+        _equipped.shoulderGestureConsumedThisFrame = {};
+        _equipped.toggleGrabReleasePressConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
         const auto retireDynamicWeaponForInterruptedFrame = [this]() {
-            if (!_initialized.load(std::memory_order_acquire)) {
+            if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
             }
             auto* currentBhk = getPlayerBhkWorld();
             auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
-            if (currentBhk && currentBhk == _cachedBhkWorld &&
-                currentHknp && currentHknp == _cachedHknpWorld) {
+            if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
+                currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
                 _dynamicWeaponCollision.retireAll(currentBhk);
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
@@ -377,8 +377,8 @@ namespace rock
             retireDynamicWeaponForInterruptedFrame();
             _authoredSupportGripIndicator.hide();
             restoreHeldMassMovementSlowdown("frik-unavailable");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
+            _grabInput.shoulderStashStates = {};
+            _grabInput.mouthConsumeStates = {};
             _feedbackHaptics.reset();
             return;
         }
@@ -399,13 +399,13 @@ namespace rock
          * resanitization. Consumers migrate to runtime.timing individually
          * with explicit invalid-sample handling.
          */
-        _deltaTime = runtime.deltaSeconds;
+        _frame.deltaTime = runtime.deltaSeconds;
         enforceNativeGrabHapticRuntimeSuppression();
-        _dynamicPushElapsedSeconds += _deltaTime;
-        if (_dynamicPushCooldownUntil.size() > 512) {
-            for (auto it = _dynamicPushCooldownUntil.begin(); it != _dynamicPushCooldownUntil.end();) {
-                if (it->second <= _dynamicPushElapsedSeconds) {
-                    it = _dynamicPushCooldownUntil.erase(it);
+        _contacts.dynamicPushElapsedSeconds += _frame.deltaTime;
+        if (_contacts.dynamicPushCooldownUntil.size() > 512) {
+            for (auto it = _contacts.dynamicPushCooldownUntil.begin(); it != _contacts.dynamicPushCooldownUntil.end();) {
+                if (it->second <= _contacts.dynamicPushElapsedSeconds) {
+                    it = _contacts.dynamicPushCooldownUntil.erase(it);
                 } else {
                     ++it;
                 }
@@ -413,7 +413,7 @@ namespace rock
         }
 
         if (!runtime.localSkeletonReady) {
-            if (_initialized) {
+            if (_lifecycle.initialized) {
                 ROCK_LOG_WARN(Update, "Local skeleton no longer ready — shutting down");
                 shutdown();
             }
@@ -426,10 +426,10 @@ namespace rock
                 false,
                 false)) {
             retireDynamicWeaponForInterruptedFrame();
-            _equippedWeaponMenuReconcilePending = true;
-            if (_initialized) {
+            _equipped.menuReconcilePending = true;
+            if (_lifecycle.initialized) {
                 _twoHandedGrip.reset();
-                _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+                _equipped.pendingPrimaryOnlyGripStart = {};
                 clearEquippedWeaponFiringGripInputState();
                 auto* bhkMenu = getPlayerBhkWorld();
                 if (bhkMenu) {
@@ -454,19 +454,19 @@ namespace rock
                         }
                     }
                 } else {
-                    _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-                    _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-                    _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-                    _rightDominantWeaponCollisionSuppression.clearTracking();
-                    _leftWeaponSupportCollisionSuppression.clearTracking();
-                    _rightWeaponSupportCollisionSuppression.clearTracking();
+                    _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
+                    _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
+                    _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
+                    _suppression.rightDominantLeases.clearTracking();
+                    _suppression.leftWeaponSupportLeases.clearTracking();
+                    _suppression.rightWeaponSupportLeases.clearTracking();
                     clearEquippedWeaponPostDropCollisionSuppressionState();
                 }
             }
             debug::ClearFrame();
             _authoredSupportGripIndicator.hide();
             clearEquippedWeaponFiringGripInputState();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            _equipped.pendingPrimaryOnlyGripStart = {};
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
             if (snapshotBhk && snapshotHknp) {
@@ -476,8 +476,8 @@ namespace rock
             }
             observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
             restoreHeldMassMovementSlowdown("menu-blocked");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
+            _grabInput.shoulderStashStates = {};
+            _grabInput.mouthConsumeStates = {};
             _feedbackHaptics.reset();
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
@@ -486,46 +486,46 @@ namespace rock
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
             _dynamicWorldCarCollision.abandon();
-            if (_initialized) {
+            if (_lifecycle.initialized) {
                 ROCK_LOG_WARN(Update, "bhkWorld became null — shutting down");
                 shutdown();
             }
             return;
         }
 
-        if (_initialized && bhk != _cachedBhkWorld) {
+        if (_lifecycle.initialized && bhk != _lifecycle.cachedBhkWorld) {
             ROCK_LOG_INFO(Update, "bhkWorld changed (cell transition) — reinitializing");
 
             shutdown();
         }
 
-        if (!_initialized) {
+        if (!_lifecycle.initialized) {
             init();
-            if (!_initialized) {
+            if (!_lifecycle.initialized) {
                 return;
             }
         }
 
-        _cachedBhkWorld = bhk;
+        _lifecycle.cachedBhkWorld = bhk;
 
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
             _dynamicWorldCarCollision.abandon();
-            _cachedHknpWorld = nullptr;
+            _lifecycle.cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
             _twoHandedGrip.reset();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            _equipped.pendingPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
             debug::ClearFrame();
             _authoredSupportGripIndicator.hide();
             restoreHeldMassMovementSlowdown("world-unavailable");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
+            _grabInput.shoulderStashStates = {};
+            _grabInput.mouthConsumeStates = {};
             _feedbackHaptics.reset();
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
         }
-        _cachedHknpWorld = hknp;
+        _lifecycle.cachedHknpWorld = hknp;
 
         if (physics_scale::refreshAndLogIfChanged()) {
             ROCK_LOG_WARN(Config, "Authoritative Havok scale changed; invalidating ROCK-generated collision bodies");
@@ -555,9 +555,9 @@ namespace rock
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
             _twoHandedGrip.reset();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            _equipped.pendingPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
-            _bodyContactRuntime.reset();
+            _contacts.bodyRuntime.reset();
             clearLeftWeaponContact();
             clearRightWeaponContact();
 
@@ -565,23 +565,23 @@ namespace rock
             destroyBodyBoneCollisions(bhk);
             _weaponCollision.invalidateForScaleChange(hknp);
             markGeneratedBodiesInvalidated();
-            _rightDominantWeaponCollisionSuppression.clearTracking();
-            _leftWeaponSupportCollisionSuppression.clearTracking();
-            _rightWeaponSupportCollisionSuppression.clearTracking();
-            _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-            _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+            _suppression.rightDominantLeases.clearTracking();
+            _suppression.leftWeaponSupportLeases.clearTracking();
+            _suppression.rightWeaponSupportLeases.clearTracking();
+            _suppression.rightDominantSuppressed.store(false, std::memory_order_release);
+            _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
+            _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
             clearEquippedWeaponPostDropCollisionSuppressionState();
             restoreNativePlayerCollisionSuppression(hknp, "scale-change");
-            _nativePlayerCollisionSuppressionRefreshFrames = 0;
+            _suppression.nativePlayerRefreshFrames = 0;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
         refreshHandBoneCache();
         sampleHandTransformParity();
         const auto frame = buildFrameContext(bhk, hknp);
-        _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
-        _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
+        _frame.palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
+        _frame.palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
             const bool rebuilt =
@@ -595,19 +595,19 @@ namespace rock
                     g_rockConfig.rockLogSampleMilliseconds,
                     "ROCK lifecycle generated-body rebuild pending: animationBoundary={} flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
                     frame.reloadBoundaryActive ? "yes" : "no",
-                    _lifecycleFlagsAtomic.load(std::memory_order_acquire),
-                    _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
-                    _worldGenerationAtomic.load(std::memory_order_acquire),
-                    _skeletonGenerationAtomic.load(std::memory_order_acquire),
-                    _providerGenerationAtomic.load(std::memory_order_acquire),
-                    _stableFrameCountAtomic.load(std::memory_order_acquire));
+                    _lifecycle.flagsAtomic.load(std::memory_order_acquire),
+                    _lifecycle.lastReasonAtomic.load(std::memory_order_acquire),
+                    _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
+                    _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire),
+                    _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire),
+                    _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
                 debug::ClearFrame();
                 _twoHandedGrip.reset();
                 _authoredSupportGripIndicator.hide();
-                _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+                _equipped.pendingPrimaryOnlyGripStart = {};
                 clearEquippedWeaponFiringGripInputState();
-                _shoulderStashStates = {};
-                _mouthConsumeStates = {};
+                _grabInput.shoulderStashStates = {};
+                _grabInput.mouthConsumeStates = {};
                 _feedbackHaptics.reset();
                 ::rock::provider::dispatchFrameCallbacks(*this);
                 return;
@@ -618,56 +618,56 @@ namespace rock
             ROCK_LOG_SAMPLE_DEBUG(Update,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "ROCK lifecycle gate closed frame: flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
-                _lifecycleFlagsAtomic.load(std::memory_order_acquire),
-                _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
-                _worldGenerationAtomic.load(std::memory_order_acquire),
-                _skeletonGenerationAtomic.load(std::memory_order_acquire),
-                _providerGenerationAtomic.load(std::memory_order_acquire),
-                _stableFrameCountAtomic.load(std::memory_order_acquire));
+                _lifecycle.flagsAtomic.load(std::memory_order_acquire),
+                _lifecycle.lastReasonAtomic.load(std::memory_order_acquire),
+                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
             debug::ClearFrame();
             _twoHandedGrip.reset();
             _authoredSupportGripIndicator.hide();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+            _equipped.pendingPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
+            _grabInput.shoulderStashStates = {};
+            _grabInput.mouthConsumeStates = {};
             _feedbackHaptics.reset();
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
         }
 
-        const bool forceBareFistRecheck = _equippedWeaponMenuReconcilePending;
-        if (_equippedWeaponMenuReconcilePending) {
+        const bool forceBareFistRecheck = _equipped.menuReconcilePending;
+        if (_equipped.menuReconcilePending) {
             const bool firingHandIsLeft =
                 _twoHandedGrip.isFiringGripOccupied() &&
                 _twoHandedGrip.isFiringHandLeft();
             const auto detachDecision =
                 resolveEquippedWeaponDetachDecision(
-                    _equippedWeaponHandlingSettings);
+                    _equipped.handlingSettings);
             const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(
                 firingHandIsLeft,
                 input_remap_policy::kGrabButtonId);
-            _pendingEquippedWeaponPrimaryOnlyGripStart = PendingEquippedWeaponPrimaryOnlyGripStart{
+            _equipped.pendingPrimaryOnlyGripStart = PendingEquippedWeaponPrimaryOnlyGripStart{
                 .pending = detachDecision.primaryDetachEnabled &&
                     primaryGrabHeld,
                 .isLeft = firingHandIsLeft,
                 .toggleAcquisitionCommitted =
-                    _equippedWeaponHandlingSettings.toggleGrabEnabled &&
+                    _equipped.handlingSettings.toggleGrabEnabled &&
                     primaryGrabHeld,
             };
-            _equippedWeaponMenuReconcilePending = false;
+            _equipped.menuReconcilePending = false;
             ROCK_LOG_DEBUG(Weapon,
                 "Equipped weapon ownership reconciled after menu: primaryGrabHeld={} pendingPrimaryOnlyStart={}",
                 primaryGrabHeld ? "yes" : "no",
-                _pendingEquippedWeaponPrimaryOnlyGripStart.pending ? "yes" : "no");
+                _equipped.pendingPrimaryOnlyGripStart.pending ? "yes" : "no");
         }
         enforceNoBareFistState(forceBareFistRecheck);
 
-        if (_collisionLayerRegistered &&
-            (_expectedHandLayerMask != 0 || _expectedWeaponLayerMask != 0 || _expectedReloadLayerMask != 0 || _expectedBodyLayerMask != 0 ||
-                _expectedDynamicHandProxyLayerMask != 0 || _expectedDynamicWeaponProxyLayerMask != 0 ||
-                _expectedDynamicWorldCarClutterLayerMask != 0 || _expectedDynamicWorldCarLargeClutterLayerMask != 0 ||
-                _nativeCharacterControllerLayerPolicyCaptured)) {
+        if (_layers.registered &&
+            (_layers.expectedHandMask != 0 || _layers.expectedWeaponMask != 0 || _layers.expectedReloadMask != 0 || _layers.expectedBodyMask != 0 ||
+                _layers.expectedDynamicHandProxyMask != 0 || _layers.expectedDynamicWeaponProxyMask != 0 ||
+                _layers.expectedDynamicWorldCarClutterMask != 0 || _layers.expectedDynamicWorldCarLargeClutterMask != 0 ||
+                _layers.nativeControllerPolicyCaptured)) {
             const auto desiredHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
             const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
@@ -688,24 +688,24 @@ namespace rock
                 collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
             const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             const bool nativeControllerPolicyModeChanged =
-                _nativeCharacterControllerLayerPolicyCaptured &&
-                _nativeCharacterControllerLayerPolicyEnabled != desiredNativeControllerPolicyEnabled;
-            if (!collision_layer_policy::matrixLayerMaskMatches(_expectedHandLayerMask, desiredHandMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_expectedWeaponLayerMask, desiredWeaponMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_expectedReloadLayerMask, desiredReloadMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_expectedBodyLayerMask, desiredBodyMask) ||
+                _layers.nativeControllerPolicyCaptured &&
+                _layers.nativeControllerPolicyEnabled != desiredNativeControllerPolicyEnabled;
+            if (!collision_layer_policy::matrixLayerMaskMatches(_layers.expectedHandMask, desiredHandMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedWeaponMask, desiredWeaponMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedReloadMask, desiredReloadMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedBodyMask, desiredBodyMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(
-                    _expectedDynamicHandProxyLayerMask,
+                    _layers.expectedDynamicHandProxyMask,
                     desiredDynamicRightHandProxyMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(
-                    _expectedDynamicLeftHandProxyLayerMask,
+                    _layers.expectedDynamicLeftHandProxyMask,
                     desiredDynamicLeftHandProxyMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(
-                    _expectedDynamicWeaponProxyLayerMask,
+                    _layers.expectedDynamicWeaponProxyMask,
                     desiredDynamicWeaponProxyMask) ||
                 nativeControllerPolicyModeChanged) {
                 ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
-                _collisionLayerRegistered = false;
+                _layers.registered = false;
                 registerCollisionLayer(hknp);
             }
 
@@ -719,61 +719,61 @@ namespace rock
                 const auto currentDynamicWeaponProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY];
                 const auto currentDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
                 const auto currentDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
-                const bool handMaskDrifted = _expectedHandLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentHandMask, _expectedHandLayerMask);
-                const bool weaponMaskDrifted = _expectedWeaponLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentWeaponMask, _expectedWeaponLayerMask);
-                const bool reloadMaskDrifted = _expectedReloadLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentReloadMask, _expectedReloadLayerMask);
-                const bool bodyMaskDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::bodyManagedLayerMaskMatches(currentBodyMask, _expectedBodyLayerMask);
-                const bool dynamicHandProxyMaskDrifted = _expectedDynamicHandProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicHandProxyMask, _expectedDynamicHandProxyLayerMask);
+                const bool handMaskDrifted = _layers.expectedHandMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentHandMask, _layers.expectedHandMask);
+                const bool weaponMaskDrifted = _layers.expectedWeaponMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentWeaponMask, _layers.expectedWeaponMask);
+                const bool reloadMaskDrifted = _layers.expectedReloadMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentReloadMask, _layers.expectedReloadMask);
+                const bool bodyMaskDrifted = _layers.expectedBodyMask != 0 && !collision_layer_policy::bodyManagedLayerMaskMatches(currentBodyMask, _layers.expectedBodyMask);
+                const bool dynamicHandProxyMaskDrifted = _layers.expectedDynamicHandProxyMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicHandProxyMask, _layers.expectedDynamicHandProxyMask);
                 const bool dynamicLeftHandProxyMaskDrifted =
-                    _expectedDynamicLeftHandProxyLayerMask != 0 &&
+                    _layers.expectedDynamicLeftHandProxyMask != 0 &&
                     !collision_layer_policy::matrixLayerMaskMatches(
                         currentDynamicLeftHandProxyMask,
-                        _expectedDynamicLeftHandProxyLayerMask);
-                const bool dynamicWeaponProxyMaskDrifted = _expectedDynamicWeaponProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _expectedDynamicWeaponProxyLayerMask);
-                const bool dynamicWorldCarClutterMaskDrifted = _expectedDynamicWorldCarClutterLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _expectedDynamicWorldCarClutterLayerMask);
-                const bool dynamicWorldCarLargeClutterMaskDrifted = _expectedDynamicWorldCarLargeClutterLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _expectedDynamicWorldCarLargeClutterLayerMask);
+                        _layers.expectedDynamicLeftHandProxyMask);
+                const bool dynamicWeaponProxyMaskDrifted = _layers.expectedDynamicWeaponProxyMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _layers.expectedDynamicWeaponProxyMask);
+                const bool dynamicWorldCarClutterMaskDrifted = _layers.expectedDynamicWorldCarClutterMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _layers.expectedDynamicWorldCarClutterMask);
+                const bool dynamicWorldCarLargeClutterMaskDrifted = _layers.expectedDynamicWorldCarLargeClutterMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _layers.expectedDynamicWorldCarLargeClutterMask);
                 const bool actorToolPairsDrifted =
-                    _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
-                    !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
-                const bool bodyPairsDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _expectedBodyLayerMask);
+                    _layers.expectedHandMask != 0 && _layers.expectedWeaponMask != 0 &&
+                    !collision_layer_policy::rockToolActorPairsMatch(matrix, _layers.expectedHandMask, _layers.expectedWeaponMask);
+                const bool bodyPairsDrifted = _layers.expectedBodyMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _layers.expectedBodyMask);
                 const bool nativeControllerObjectPairsDrifted =
-                    _nativeCharacterControllerLayerPolicyCaptured &&
-                    !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
+                    _layers.nativeControllerPolicyCaptured &&
+                    !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _layers.expectedNativeCharacterControllerMask);
                 if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
                     dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
                     nativeControllerObjectPairsDrifted) {
                     const auto currentNativeCharacterControllerMask =
-                        _nativeCharacterControllerLayerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
+                        _layers.nativeControllerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
                     ROCK_LOG_WARN(Config,
                         "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicRightHandProxy expected=0x{:016X} current=0x{:016X}, dynamicLeftHandProxy expected=0x{:016X} current=0x{:016X}, dynamicWeaponProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, nativeController expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}, nativeControllerObjects={}; re-registering",
-                        collision_layer_policy::matrixAddressableMask(_expectedHandLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedHandMask),
                         collision_layer_policy::matrixAddressableMask(currentHandMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedWeaponLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedWeaponMask),
                         collision_layer_policy::matrixAddressableMask(currentWeaponMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedReloadLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedReloadMask),
                         collision_layer_policy::matrixAddressableMask(currentReloadMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedBodyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedBodyMask),
                         collision_layer_policy::matrixAddressableMask(currentBodyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicHandProxyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicHandProxyMask),
                         collision_layer_policy::matrixAddressableMask(currentDynamicHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicLeftHandProxyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicLeftHandProxyMask),
                         collision_layer_policy::matrixAddressableMask(currentDynamicLeftHandProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWeaponProxyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicWeaponProxyMask),
                         collision_layer_policy::matrixAddressableMask(currentDynamicWeaponProxyMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarClutterLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicWorldCarClutterMask),
                         collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarClutterMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarLargeClutterLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicWorldCarLargeClutterMask),
                         collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarLargeClutterMask),
-                        collision_layer_policy::matrixAddressableMask(_expectedNativeCharacterControllerLayerMask),
+                        collision_layer_policy::matrixAddressableMask(_layers.expectedNativeCharacterControllerMask),
                         collision_layer_policy::matrixAddressableMask(currentNativeCharacterControllerMask),
                         actorToolPairsDrifted ? "drifted" : "ok",
                         bodyPairsDrifted ? "drifted" : "ok",
                         nativeControllerObjectPairsDrifted ? "drifted" : "ok");
-                    _collisionLayerRegistered = false;
+                    _layers.registered = false;
                     registerCollisionLayer(hknp);
                 }
             }
@@ -835,7 +835,7 @@ namespace rock
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GeneratedColliderPhysicsFlush);
 
-        if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
+        if (!world || !_lifecycle.initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
         }
 
@@ -845,20 +845,20 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
-        const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
-        const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
+        const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
+        const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-collider-drive", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
     }
 
     void PhysicsInteraction::driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
-        if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
+        if (!world || !_lifecycle.initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
         }
 
-        const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
-        const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
+        const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
+        const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-between-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-between-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         _rightHand.flushPendingCustomGrabAuthority(world, timing);
@@ -867,12 +867,12 @@ namespace rock
 
     void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
-        if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
+        if (!world || !_lifecycle.initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
         }
 
         const auto completedSolveSequence =
-            _completedPhysicsSolveSequence.fetch_add(
+            _frame.completedPhysicsSolveSequence.fetch_add(
                 1,
                 std::memory_order_release) +
             1;
@@ -882,13 +882,13 @@ namespace rock
             world,
             completedSolveSequence);
         _dynamicHandCollision.samplePostSolveDeviations(world, timing);
-        const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
+        const auto gameFrameIndex = _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         debug::CapturePostSolveBodyPhases(
             world,
             timing,
             gameFrameIndex,
             completedSolveSequence);
-        const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
+        const auto gameDeltaSeconds = _frame.palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
@@ -909,8 +909,8 @@ namespace rock
             return;
         }
 
-        const auto rightPendingTargetPtr = _pendingForceGrabCommits[0].targetHandle.get();
-        const auto leftPendingTargetPtr = _pendingForceGrabCommits[1].targetHandle.get();
+        const auto rightPendingTargetPtr = _forceGrab.pendingCommits[0].targetHandle.get();
+        const auto leftPendingTargetPtr = _forceGrab.pendingCommits[1].targetHandle.get();
 
         auto selectionContextForOtherHand = [](const Hand& hand, RE::TESObjectREFR* pendingTarget) {
             OtherHandSelectionContext context{};
@@ -934,13 +934,13 @@ namespace rock
 
         const auto rightHandContext = selectionContextForOtherHand(
             _rightHand,
-            _pendingForceGrabCommits[0].active ? rightPendingTargetPtr.get() : nullptr);
+            _forceGrab.pendingCommits[0].active ? rightPendingTargetPtr.get() : nullptr);
         const auto leftHandContext = selectionContextForOtherHand(
             _leftHand,
-            _pendingForceGrabCommits[1].active ? leftPendingTargetPtr.get() : nullptr);
+            _forceGrab.pendingCommits[1].active ? leftPendingTargetPtr.get() : nullptr);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
 
-        if (_pendingForceGrabCommits[0].active) {
+        if (_forceGrab.pendingCommits[0].active) {
             if (_rightHand.hasSelection()) {
                 _rightHand.clearSelectionState(false);
             }
@@ -962,7 +962,7 @@ namespace rock
             _rightHand.stopSelectionBeam();
         }
 
-        if (_pendingForceGrabCommits[1].active) {
+        if (_forceGrab.pendingCommits[1].active) {
             if (_leftHand.hasSelection()) {
                 _leftHand.clearSelectionState(false);
             }
@@ -987,16 +987,16 @@ namespace rock
 
     void PhysicsInteraction::restoreHeldMassMovementSlowdown(const char* reason)
     {
-        if (_heldMassMovementSpeedReduction <= 0.0f) {
+        if (_frame.heldMassSpeedReduction <= 0.0f) {
             return;
         }
 
-        const float previousReduction = _heldMassMovementSpeedReduction;
+        const float previousReduction = _frame.heldMassSpeedReduction;
         if (applyPlayerSpeedReduction(previousReduction, 0.0f)) {
-            _heldMassMovementSpeedReduction = 0.0f;
-            _heldMassMovementFadeStartReduction = 0.0f;
-            _heldMassMovementFadeElapsedSeconds = 0.0f;
-            _heldMassMovementLogCounter = 0;
+            _frame.heldMassSpeedReduction = 0.0f;
+            _frame.heldMassFadeStartReduction = 0.0f;
+            _frame.heldMassFadeElapsedSeconds = 0.0f;
+            _diagnostics.heldMassLogCounter = 0;
             ROCK_LOG_DEBUG(Hand,
                 "Held mass movement slowdown restored: previousReduction={:.2f} reason={}",
                 previousReduction,
@@ -1080,29 +1080,29 @@ namespace rock
         const float heldMassReduction = held_mass_movement::computeHeldMassReduction(heldMass, movementConfig);
         float targetReduction = heldMassReduction;
         if (heldMassReduction > 0.0f) {
-            _heldMassMovementFadeStartReduction = heldMassReduction;
-            _heldMassMovementFadeElapsedSeconds = 0.0f;
-        } else if (_heldMassMovementSpeedReduction > 0.0f) {
-            if (_heldMassMovementFadeStartReduction <= 0.0f) {
-                _heldMassMovementFadeStartReduction = _heldMassMovementSpeedReduction;
-                _heldMassMovementFadeElapsedSeconds = 0.0f;
+            _frame.heldMassFadeStartReduction = heldMassReduction;
+            _frame.heldMassFadeElapsedSeconds = 0.0f;
+        } else if (_frame.heldMassSpeedReduction > 0.0f) {
+            if (_frame.heldMassFadeStartReduction <= 0.0f) {
+                _frame.heldMassFadeStartReduction = _frame.heldMassSpeedReduction;
+                _frame.heldMassFadeElapsedSeconds = 0.0f;
             }
-            _heldMassMovementFadeElapsedSeconds += std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f;
+            _frame.heldMassFadeElapsedSeconds += std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f;
             targetReduction = held_mass_movement::computeFadeOutReduction(
-                _heldMassMovementFadeStartReduction,
-                _heldMassMovementFadeElapsedSeconds,
+                _frame.heldMassFadeStartReduction,
+                _frame.heldMassFadeElapsedSeconds,
                 movementConfig.fadeOutSeconds);
         } else {
-            _heldMassMovementFadeStartReduction = 0.0f;
-            _heldMassMovementFadeElapsedSeconds = 0.0f;
+            _frame.heldMassFadeStartReduction = 0.0f;
+            _frame.heldMassFadeElapsedSeconds = 0.0f;
         }
 
-        if (std::fabs(targetReduction - _heldMassMovementSpeedReduction) <= 0.001f &&
-            (targetReduction > 0.0f || _heldMassMovementSpeedReduction <= 0.0f)) {
+        if (std::fabs(targetReduction - _frame.heldMassSpeedReduction) <= 0.001f &&
+            (targetReduction > 0.0f || _frame.heldMassSpeedReduction <= 0.0f)) {
             return;
         }
 
-        const float previousReduction = _heldMassMovementSpeedReduction;
+        const float previousReduction = _frame.heldMassSpeedReduction;
         if (!applyPlayerSpeedReduction(previousReduction, targetReduction)) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 300,
@@ -1113,15 +1113,15 @@ namespace rock
             return;
         }
 
-        _heldMassMovementSpeedReduction = targetReduction;
+        _frame.heldMassSpeedReduction = targetReduction;
         if (targetReduction <= 0.0f) {
-            _heldMassMovementFadeStartReduction = 0.0f;
-            _heldMassMovementFadeElapsedSeconds = 0.0f;
+            _frame.heldMassFadeStartReduction = 0.0f;
+            _frame.heldMassFadeElapsedSeconds = 0.0f;
         }
         if (g_rockConfig.rockDebugGrabFrameLogging) {
-            ++_heldMassMovementLogCounter;
-            if (_heldMassMovementLogCounter >= 90 || heldMass <= 0.0f || previousReduction <= 0.0f) {
-                _heldMassMovementLogCounter = 0;
+            ++_diagnostics.heldMassLogCounter;
+            if (_diagnostics.heldMassLogCounter >= 90 || heldMass <= 0.0f || previousReduction <= 0.0f) {
+                _diagnostics.heldMassLogCounter = 0;
                 ROCK_LOG_DEBUG(Hand,
                     "Held mass movement slowdown: heldMass={:.3f} previousReduction={:.2f} targetReduction={:.2f}",
                     heldMass,

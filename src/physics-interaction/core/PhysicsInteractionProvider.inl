@@ -4,22 +4,22 @@
     void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const
     {
         const auto& runtime = runtime_state::currentFrame();
-        outSnapshot.providerReady = (_initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable) ? 1u : 0u;
+        outSnapshot.providerReady = (_lifecycle.initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable) ? 1u : 0u;
         outSnapshot.frikSkeletonReady = runtime.localSkeletonReady ? 1u : 0u;
         outSnapshot.menuBlocking = runtime.localMenuBlocking ? 1u : 0u;
         outSnapshot.configBlocking = runtime.compatibilityConfigBlocking ? 1u : 0u;
-        outSnapshot.bhkWorld = reinterpret_cast<std::uintptr_t>(_cachedBhkWorld);
-        outSnapshot.hknpWorld = reinterpret_cast<std::uintptr_t>(_cachedHknpWorld);
+        outSnapshot.bhkWorld = reinterpret_cast<std::uintptr_t>(_lifecycle.cachedBhkWorld);
+        outSnapshot.hknpWorld = reinterpret_cast<std::uintptr_t>(_lifecycle.cachedHknpWorld);
         outSnapshot.gameToHavokScale = physics_scale::gameToHavok();
         outSnapshot.havokToGameScale = physics_scale::havokToGame();
         outSnapshot.physicsScaleRevision = physics_scale::revision();
-        outSnapshot.lifecycleFlags = _lifecycleFlagsAtomic.load(std::memory_order_acquire);
+        outSnapshot.lifecycleFlags = _lifecycle.flagsAtomic.load(std::memory_order_acquire);
         outSnapshot.lastLifecycleReason = static_cast<::rock::provider::RockProviderLifecycleReason>(
-            _lastLifecycleReasonAtomic.load(std::memory_order_acquire));
-        outSnapshot.worldGeneration = _worldGenerationAtomic.load(std::memory_order_acquire);
-        outSnapshot.skeletonGeneration = _skeletonGenerationAtomic.load(std::memory_order_acquire);
-        outSnapshot.providerGeneration = _providerGenerationAtomic.load(std::memory_order_acquire);
-        outSnapshot.stableFrameCount = _stableFrameCountAtomic.load(std::memory_order_acquire);
+            _lifecycle.lastReasonAtomic.load(std::memory_order_acquire));
+        outSnapshot.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+        outSnapshot.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+        outSnapshot.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+        outSnapshot.stableFrameCount = _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire);
         /*
          * Truthful timing publication: the validity flag is set only for a
          * measured game delta. Consumers guard for non-positive values, so an
@@ -62,11 +62,11 @@
         outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
             ::rock::provider::RockProviderFrameEnrichmentFlagV1::CoherentHandRoles);
         outSnapshot.collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
             ::rock::provider::RockProviderFrameEnrichmentFlagV1::CollisionGenerationValid);
         outSnapshot.equippedWeaponTransitionSequence =
-            _equippedWeaponTransition.getPublicSnapshot().transitionSequence;
+            _equipped.transition.getPublicSnapshot().transitionSequence;
         outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
             ::rock::provider::RockProviderFrameEnrichmentFlagV1::EquippedTransitionSequenceValid);
 
@@ -155,7 +155,7 @@
 
         physics_ray_cast::ClosestSegmentResult rayResult{};
         if (!physics_ray_cast::castClosestSegment(
-                _cachedBhkWorld,
+                _lifecycle.cachedBhkWorld,
                 start,
                 end,
                 selection_query_policy::kFarClipRayFilterInfo,
@@ -188,11 +188,11 @@
             };
         }
         outResult.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outResult.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outResult.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
     void PhysicsInteraction::fillProviderWeaponPartGripStates(
@@ -326,7 +326,7 @@
 
         outState = {};
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
-        if (!_initialized.load(std::memory_order_acquire) || !weaponNode) {
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !weaponNode) {
             return false;
         }
 
@@ -442,7 +442,7 @@
         if (resolveEquippedWeaponInteractionNode()) {
             setFlag(RuntimeFlag::WeaponPresent);
         }
-        return _initialized.load(std::memory_order_acquire);
+        return _lifecycle.initialized.load(std::memory_order_acquire);
     }
 
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
@@ -600,7 +600,7 @@
 
         std::array<body_contact_runtime::BodyContactRecord, body_contact_runtime::kMaxBodyContactRecords> records{};
         const auto requested = (std::min)(static_cast<std::size_t>(maxContacts), records.size());
-        const auto copied = _bodyContactRuntime.snapshot(records.data(), requested);
+        const auto copied = _contacts.bodyRuntime.snapshot(records.data(), requested);
         for (std::size_t i = 0; i < copied; ++i) {
             const auto& record = records[i];
             auto& out = outContacts[i];
@@ -674,13 +674,13 @@
         };
 
         const auto worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         const auto skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         const auto providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         const auto collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         const bool primaryIsLeft = _twoHandedGrip.isFiringHandLeft();
 
         for (const bool isLeft : { false, true }) {
@@ -868,7 +868,7 @@
         using Flag =
             ::rock::provider::RockProviderEquippedWeaponStateFlagV1;
         outState = {};
-        const auto transition = _equippedWeaponTransition.getPublicSnapshot();
+        const auto transition = _equipped.transition.getPublicSnapshot();
         outState.weaponFormId = transition.weaponFormID != 0 ?
             transition.weaponFormID :
             currentEquippedWeaponFormId();
@@ -919,11 +919,11 @@
         setFlag(Flag::RecoveryExhausted, transition.recoveryExhausted);
         setFlag(Flag::TransitionActive, transition.active);
         outState.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) != 0 ||
                transition.transitionSequence != 0 ||
                transition.terminalSequence != 0;
@@ -957,7 +957,7 @@
             auto& out = outParts[i];
             out = {};
             out.frameIndex =
-                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             out.weaponGenerationKey = descriptor.weaponGenerationKey;
             out.bodyId = descriptor.bodyId;
             out.partKind = static_cast<std::uint32_t>(
@@ -1011,11 +1011,11 @@
         }
         std::uint32_t copied = 0;
         const auto count = (std::min)(
-            _providerWeaponPartDriveResultCount,
+            _providerDrives.resultCount,
             static_cast<std::uint32_t>(
-                _providerWeaponPartDriveResults.size()));
+                _providerDrives.results.size()));
         for (std::uint32_t i = 0; i < count && copied < maxResults; ++i) {
-            const auto& result = _providerWeaponPartDriveResults[i];
+            const auto& result = _providerDrives.results[i];
             if (result.ownerToken == ownerToken) {
                 outResults[copied++] = result;
             }
@@ -1126,13 +1126,13 @@
             outState.publicationSequence = composition.publicationSequence;
         }
         outState.frameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         outState.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
 
@@ -1241,11 +1241,11 @@
                 Flag::LeftFingersValid);
         }
         outPose.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outPose.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outPose.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
 
@@ -1276,7 +1276,7 @@
         fillProviderTransform(handWorld, outPose.handWorld);
 
         DirectSkeletonBoneSnapshot skeleton{};
-        if (_providerPresentedPoseReader.capture(
+        if (_providerDrives.presentedPoseReader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                 skeleton)) {
@@ -1329,11 +1329,11 @@
             }
         }
         outPose.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outPose.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outPose.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
 
@@ -1378,7 +1378,7 @@
             auto& out = outContacts[copied++];
             out = {};
             out.frameIndex =
-                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             out.hand = handValue;
             out.role = static_cast<std::uint32_t>(record.role);
             out.finger = static_cast<std::uint32_t>(record.finger);
@@ -1415,10 +1415,10 @@
                     record.contactNormalGame.z,
                 };
             }
-            if (_cachedBhkWorld && _cachedHknpWorld) {
+            if (_lifecycle.cachedBhkWorld && _lifecycle.cachedHknpWorld) {
                 if (auto* target = resolveBodyToRef(
-                        _cachedBhkWorld,
-                        _cachedHknpWorld,
+                        _lifecycle.cachedBhkWorld,
+                        _lifecycle.cachedHknpWorld,
                         RE::hknpBodyId{ record.otherBodyId })) {
                     out.targetFormId = target->GetFormID();
                     out.flags |= static_cast<std::uint32_t>(
@@ -1438,7 +1438,7 @@
                     Flag::TransitionSuppressed);
             }
             out.collisionGeneration =
-                _collisionGenerationAtomic.load(std::memory_order_acquire);
+                _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         }
         return copied;
     }
@@ -1453,11 +1453,11 @@
         using Kind = ::rock::provider::RockProviderPlayerColliderKindV1;
         using Flag = ::rock::provider::RockProviderPlayerColliderFlagV1;
         const auto frameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         const auto lifecycleFlags =
-            _lifecycleFlagsAtomic.load(std::memory_order_acquire);
+            _lifecycle.flagsAtomic.load(std::memory_order_acquire);
         const bool enabled =
             ::rock::provider::hasLifecycleFlag(
                 lifecycleFlags,
@@ -1557,9 +1557,9 @@
         const Hand& hand = isLeft ? _leftHand : _rightHand;
         outState.hand = handValue;
         outState.frameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         outState.collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         outState.handBodyCount = hand.getHandColliderBodyCount();
         if (outState.handBodyCount != 0) {
             outState.flags |= static_cast<std::uint32_t>(Flag::BodiesReady);
@@ -1628,10 +1628,10 @@
             }
         }
         outState.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
