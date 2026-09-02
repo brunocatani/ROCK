@@ -12301,6 +12301,7 @@ namespace rock
         bool convergingAcquisitionPhase)
     {
         const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
+        const auto& desiredBodyWorld = driveUpdate.desiredBodyWorld;
         const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
         const auto& desiredTargetPointWorld = driveUpdate.desiredTargetPointWorld;
         const auto& activePivotBBodyLocalGame = driveUpdate.activePivotBBodyLocalGame;
@@ -12411,8 +12412,24 @@ namespace rock
                 if (!tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
                     timeoutReacquireReason = "missingProxyLocalPalmPocketPivot";
                     seatedRetargetRejectedKeepFrozen = true;
+                } else if (!grab_three_phase::isFinite(desiredBodyWorld)) {
+                    timeoutReacquireReason = "missingSeatTargetPose";
+                    seatedRetargetRejectedKeepFrozen = true;
                 } else {
-                    const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.authority.bodyLocal);
+                    /*
+                     * Reacquire against the frozen target pose, not the live body.
+                     * The touch envelope is crossed while the object is still
+                     * converging (about 0.7 m/s with 3-4 gu to go on pulled
+                     * objects), so a live-pose pick lands on whatever mesh point
+                     * is nearest the pocket mid-flight and shifted the seat
+                     * laterally by 5-10 gu. The target pose is where the object
+                     * rests once converged, so the pick, its support patch and
+                     * its depth stop are the same on every frame, and a capture
+                     * that already seats the surface on the palm is
+                     * re-parametrised without moving the object.
+                     */
+                    const RE::NiTransform seatBodyWorld = desiredBodyWorld;
+                    const RE::NiTransform seatNodeWorld = deriveNodeWorldFromBodyWorld(seatBodyWorld, _grabFrame.authority.bodyLocal);
                     const RE::NiTransform authorityFrame =
                         makeGeneratedProxyAuthorityRelationFrame(proxyAuthorityWorld);
                     const float seatedEnvelope =
@@ -12432,8 +12449,8 @@ namespace rock
                         seatedPocket.valid ? seatedPocket.crossPalmWorld : transformHandspaceDirection(authorityFrame, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, _isLeft);
                     const auto seatedPivot = findSeatedGrabPivotNearPalmPocket(
                         _grabFrame.localMeshTriangles,
-                        currentNodeWorld,
-                        grabBodyWorld,
+                        seatNodeWorld,
+                        seatBodyWorld,
                         livePivotAWorld,
                         palmNormalWorld,
                         seatedEnvelope,
@@ -12443,7 +12460,7 @@ namespace rock
                         const RE::NiPoint3 previousGripPointLocal = _grabFrame.gripEvidence.gripPointLocal;
                         const RE::NiPoint3 previousGripLocalDelta = seatedPivot.pointNodeLocal - previousGripPointLocal;
                         const float nodeScale =
-                            std::isfinite(currentNodeWorld.scale) && currentNodeWorld.scale > 0.0f ? currentNodeWorld.scale : 1.0f;
+                            std::isfinite(seatNodeWorld.scale) && seatNodeWorld.scale > 0.0f ? seatNodeWorld.scale : 1.0f;
                         const float reacquireLocalDeltaGameUnits = vectorMagnitude(previousGripLocalDelta) * nodeScale;
                         const float immediateLocalDelta =
                             (std::max)(2.0f,
@@ -12463,7 +12480,7 @@ namespace rock
                             seatedSupportPatch = buildSeatedPalmPocketSupportPatch(
                                 _grabFrame.localMeshTriangles,
                                 _savedObjectState.bodyId.value,
-                                currentNodeWorld,
+                                seatNodeWorld,
                                 livePivotAWorld,
                                 seatedPivot.pointWorld,
                                 palmNormalWorld,
@@ -12500,14 +12517,14 @@ namespace rock
                         if (promotionDecision.promotePivot) {
                             const float pivotBlend = 1.0f;
                             const RE::NiPoint3 promotedPointNodeLocal = seatedPivot.pointNodeLocal;
-                            const RE::NiPoint3 promotedPointWorld = transform_math::localPointToWorld(currentNodeWorld, promotedPointNodeLocal);
+                            const RE::NiPoint3 promotedPointWorld = transform_math::localPointToWorld(seatNodeWorld, promotedPointNodeLocal);
                             const bool promotedNormalTrusted =
                                 seatedSupportPatch.valid ? seatedSupportPatch.normalTrusted : seatedPivot.normalTrusted;
                             const RE::NiPoint3 promotedNormalWorld =
                                 promotedNormalTrusted && seatedSupportPatch.valid ? seatedSupportPatch.patch.normal : seatedPivot.normalWorld;
                             const RE::NiPoint3 promotedNormalNodeLocal =
                                 promotedNormalTrusted && seatedSupportPatch.valid ?
-                                    transform_math::worldVectorToLocal(currentNodeWorld, promotedNormalWorld) :
+                                    transform_math::worldVectorToLocal(seatNodeWorld, promotedNormalWorld) :
                                     seatedPivot.normalNodeLocal;
                             /*
                              * Seat depth stop, reacquire flavor: the promoted point is
@@ -12518,7 +12535,7 @@ namespace rock
                              */
                             const auto seatDepthStop = computeGrabSeatDepthStop(
                                 _grabFrame.localMeshTriangles,
-                                currentNodeWorld,
+                                seatNodeWorld,
                                 promotedPointWorld,
                                 palmNormalWorld,
                                 g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
@@ -12531,7 +12548,7 @@ namespace rock
                             }
                             const float promotedPocketDistanceGameUnits = pointDistanceGameUnits(promotedPointWorld, seatPivotAWorld);
                             const RE::NiTransform desiredBodyWorldAtSeat =
-                                grab_frame_math::shiftObjectToAlignGripWithPocket(grabBodyWorld, seatPivotAWorld, promotedPointWorld);
+                                grab_frame_math::shiftObjectToAlignGripWithPocket(seatBodyWorld, seatPivotAWorld, promotedPointWorld);
                             const RE::NiTransform desiredObjectWorldAtSeat =
                                 deriveNodeWorldFromBodyWorld(desiredBodyWorldAtSeat, _grabFrame.authority.bodyLocal);
                             const RE::NiTransform proxyAuthorityFrameWorld =
@@ -12541,9 +12558,9 @@ namespace rock
                                     .rawHandWorld = handWorldTransform,
                                     .proxyWorld = proxyAuthorityWorld,
                                     .proxyAuthorityFrameWorld = proxyAuthorityFrameWorld,
-                                    .objectWorld = currentNodeWorld,
-                                    .bodyWorld = grabBodyWorld,
-                                    .constraintBodyWorld = grabBodyWorld,
+                                    .objectWorld = seatNodeWorld,
+                                    .bodyWorld = seatBodyWorld,
+                                    .constraintBodyWorld = seatBodyWorld,
                                     .rootBodyLocal = _grabFrame.rootBodyLocal,
                                     .ownerBodyLocal = _grabFrame.ownerBodyLocal,
                                     .desiredObjectWorld = desiredObjectWorldAtSeat,
@@ -12564,7 +12581,7 @@ namespace rock
                                 _grabFrame.gripEvidence.gripEvidenceLocal = promotedPointNodeLocal;
                                 _grabFrame.gripEvidence.gripNormalLocal = promotedNormalNodeLocal;
                                 _grabFrame.gripEvidence.gripSourceNode = nullptr;
-                                _grabFrame.gripEvidence.gripSourceNodeWorldAtGrab = currentNodeWorld;
+                                _grabFrame.gripEvidence.gripSourceNodeWorldAtGrab = seatNodeWorld;
                                 _grabFrame.gripEvidence.gripPointSourceNodeLocal = {};
                                 _grabFrame.gripEvidence.gripNormalSourceNodeLocal = {};
                                 _grabFrame.gripEvidence.hasGripSourceNodePoint = false;
@@ -12593,14 +12610,14 @@ namespace rock
                                 _grabFrame.fingerPoseAimReason = promotedNormalTrusted ?
                                     promotionDecision.reason :
                                     "seatedPalmPocketPositionOnly";
-                                _grabFrame.authority.objectNodeWorldAtGrab = currentNodeWorld;
+                                _grabFrame.authority.objectNodeWorldAtGrab = seatNodeWorld;
                                 _grabFrame.pivotAuthority.longLeverGameUnits = seatedPivot.longLeverGameUnits;
                                 _grabFrame.seat.hasPivotReacquire = true;
                                 _grabFrame.seat.lastPivotReacquireLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
                                 _grabFrame.seat.lastPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
                                 ++_grabFrame.seat.pivotReacquireCount;
                                 const auto seatedPoseTargets = buildRuntimeFingerPoseTargets(promotedPointWorld, promotedNormalWorld);
-                                storeFingerPoseTargetsInGrabFrame(_grabFrame, seatedPoseTargets, currentNodeWorld);
+                                storeFingerPoseTargetsInGrabFrame(_grabFrame, seatedPoseTargets, seatNodeWorld);
 
                                 /*
                                  * The finger endpoint is object-local and was
@@ -12610,7 +12627,7 @@ namespace rock
                                  * and visibly re-fire that endpoint at touch.
                                  */
 
-                                _grabObjectGripAtGrab.objectBodyWorldAtCapture = grabBodyWorld;
+                                _grabObjectGripAtGrab.objectBodyWorldAtCapture = seatBodyWorld;
                                 _grabObjectGripAtGrab.contactSeedWorld = promotedPointWorld;
                                 _grabObjectGripAtGrab.contactSeedBodyLocal = frozenSeatAuthorityFrame.pivotBBodyLocalGame;
                                 _grabObjectGripAtGrab.gripCenterWorld = promotedPointWorld;
@@ -12655,7 +12672,7 @@ namespace rock
                                 _grabVisualDeviationHistoryNext = 0;
                                 ROCK_LOG_DEBUG(Hand,
                                     "{} THREE-PHASE GRAB SEATED SUPPORT-GROUP PROMOTION: phase={} source={} reason={} complete={} blend={:.2f} point=({:.1f},{:.1f},{:.1f}) "
-                                    "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu localDelta={:.2f}gu normalTrusted={} samples={} patchReason={} fingerGroups={} longLever={:.1f}gu count={}",
+                                    "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu localDelta={:.2f}gu poseGap={:.2f}gu normalTrusted={} samples={} patchReason={} fingerGroups={} longLever={:.1f}gu count={}",
                                     handName(),
                                     grab_three_phase::phaseName(previousAcquisitionPhase),
                                     grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
@@ -12671,6 +12688,7 @@ namespace rock
                                     promotedPocketDistanceGameUnits,
                                     seatedPivot.meshDistanceGameUnits,
                                     reacquireLocalDeltaGameUnits,
+                                    pointDistanceGameUnits(grabBodyWorld.translate, seatBodyWorld.translate),
                                     promotedNormalTrusted ? "yes" : "no",
                                     _grabFrame.contactPatchSampleCount,
                                     seatedSupportPatch.reason,
