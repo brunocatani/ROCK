@@ -41,6 +41,7 @@ int main()
 
     bool ok = true;
     Config config{};
+    config.enabled = true;
     config.leewaySeconds = 0.12f;
     config.forceSeconds = 0.08f;
 
@@ -71,6 +72,13 @@ int main()
     ok &= expectTrue("force window press is synthetic", decision.syntheticPressed);
     ok &= expectState("force state is observable", decision.state, State::Force);
 
+    RuntimeState disabledState{};
+    Config disabled = config;
+    disabled.enabled = false;
+    decision = update(disabledState, RawButtonState{ .held = true, .pressed = true }, false, false, 1.0f / 90.0f, disabled);
+    ok &= expectTrue("disabled policy preserves raw press", decision.pressed);
+    ok &= expectState("disabled policy leaves runtime idle", decision.state, State::Idle);
+
     RuntimeState resetState{};
     decision = update(resetState, RawButtonState{ .held = true, .pressed = true }, false, false, 1.0f / 90.0f, config);
     ok &= expectTrue("reset setup has pending press", decision.pendingPress);
@@ -88,6 +96,7 @@ int main()
     {
         using namespace rock::peer_held_join_retry_policy;
         rock::peer_held_join_retry_policy::Config retryConfig{};
+        retryConfig.enabled = true;
         retryConfig.leewaySeconds = 0.12f;
         retryConfig.forceSeconds = 0.08f;
         retryConfig.retryIntervalSeconds = 0.05f;

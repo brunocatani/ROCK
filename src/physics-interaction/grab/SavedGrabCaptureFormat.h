@@ -152,9 +152,13 @@ namespace rock::saved_grab_capture
         float secondElongationRatio{ 0.0f };
         float alignmentAngleDegrees{ 0.0f };
         std::string alignmentReason;
+        float rollAngleDegrees{ 0.0f };
+        std::string rollReason;
         float depthGameUnits{ 0.0f };
         float depthOffsetGameUnits{ 0.0f };
         std::string depthReason;
+        float penetrationBackstopGameUnits{ 0.0f };
+        std::string penetrationBackstopReason;
         float gripPointObjectLocal[3]{ 0.0f, 0.0f, 0.0f };
         float pivotProxyLocal[3]{ 0.0f, 0.0f, 0.0f };
         std::string seatMode;
@@ -167,8 +171,12 @@ namespace rock::saved_grab_capture
     {
         float seatDepthMaxGameUnits{ 0.0f };
         float seatDepthFootprintRadiusGameUnits{ 0.0f };
+        float seatPenetrationBackstopFootprintRadiusGameUnits{ 0.0f };
         float seatDepthSkinGameUnits{ 0.0f };
+        float gripInsetGameUnits{ 0.0f };
         float pullPresentationMinElongationRatio{ 0.0f };
+        float pullPresentationGripAxisTiltDegrees{ 0.0f };
+        float seatRollMinSecondElongationRatio{ 0.0f };
         float pocketDepthGameUnits{ 0.0f };
         float pocketRadiusGameUnits{ 0.0f };
     };

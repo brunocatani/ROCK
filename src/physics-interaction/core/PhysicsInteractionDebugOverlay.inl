@@ -14,6 +14,332 @@
      * bDebugGrabFrameLogging like the HELD_POSTSOLVE probe and logs only while a
      * hand holds an object.
      */
+    void PhysicsInteraction::logGrabOverlayPointProbe(const PhysicsFrameContext& context)
+    {
+        if (!g_rockConfig.rockDebugGrabFrameLogging) {
+            return;
+        }
+
+        auto* hknp = context.hknpWorld;
+        if (!hknp) {
+            return;
+        }
+
+        const bool probeRight = _rightHand.isHolding() && !context.right.disabled;
+        const bool probeLeft = _leftHand.isHolding() && !context.left.disabled;
+        if (!probeRight && !probeLeft) {
+            return;
+        }
+
+        RE::NiPoint3 stereoOrigin{};
+        const bool stereoOk = debug::TryGetCurrentStereoOrigin(stereoOrigin);
+        const auto probeMicroseconds =
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+
+        // Per-hand previous-frame rotations for the rotation-step fields. The
+        // 2026-07-13 post-phase-lock session proved the visible stutter is NOT
+        // translation (obj-cam jitter 0.118gu with the percept unchanged);
+        // rotation was never sampled at the point of visibility. Probe-only
+        // state; consecutive-frame validity gated on the time gap.
+        struct RotationStepState
+        {
+            RE::NiMatrix3 wand{};
+            RE::NiMatrix3 target{};
+            RE::NiMatrix3 object{};
+            RE::NiMatrix3 handBody{};
+            RE::NiMatrix3 renderNode{};
+            long long microseconds = 0;
+            bool valid = false;
+            bool renderNodeValid = false;
+        };
+        static RotationStepState s_rotationStepState[2]{};
+
+        auto logHand = [&](Hand& hand, const RE::NiTransform& rawHandWorld) {
+            GrabOverlayPointProbeSample sample{};
+            if (!hand.tryGetGrabOverlayPointProbeSample(hknp, sample)) {
+                s_rotationStepState[hand.isLeft() ? 1 : 0].valid = false;
+                return;
+            }
+
+            RE::NiTransform objectWorld{};
+            RE::NiTransform handBodyWorld{};
+            RE::NiTransform proxyWorld{};
+            const bool objectOk = tryResolveLiveBodyWorldTransform(hknp, sample.objectBodyId, objectWorld);
+            const bool handBodyOk = tryResolveLiveBodyWorldTransform(hknp, hand.getCollisionBodyId(), handBodyWorld);
+            const bool proxyOk = tryResolveLiveBodyWorldTransform(hknp, sample.proxyBodyId, proxyWorld);
+
+            // Per-frame rotation steps (degrees) of each trajectory. A steadily
+            // carried object should step like the wand; motor wobble shows as
+            // rotObj >> rotWand with rotTgt clean (downstream) or rotTgt dirty
+            // (upstream target noise).
+            auto& rotationState = s_rotationStepState[hand.isLeft() ? 1 : 0];
+            float rotStepWand = -1.0f;
+            float rotStepTarget = -1.0f;
+            float rotStepObject = -1.0f;
+            float rotStepHandBody = -1.0f;
+            if (rotationState.valid && objectOk && handBodyOk &&
+                (probeMicroseconds - rotationState.microseconds) < 50000) {
+                rotStepWand = grab_authority_source_clock::rotationDeltaDegrees(rawHandWorld.rotate, rotationState.wand);
+                rotStepTarget = grab_authority_source_clock::rotationDeltaDegrees(sample.appliedProxyTargetWorld.rotate, rotationState.target);
+                rotStepObject = grab_authority_source_clock::rotationDeltaDegrees(objectWorld.rotate, rotationState.object);
+                rotStepHandBody = grab_authority_source_clock::rotationDeltaDegrees(handBodyWorld.rotate, rotationState.handBody);
+            }
+            // RENDER-READ probe fields: the scene-graph world transform the
+            // renderer consumes for the held object, paired with the post-solve
+            // body transform read in the same instant. Every prior stutter probe
+            // measured the drive/physics side only; whether the engine's actual
+            // render read matches it was never verified (2026-07-14 attempt
+            // history, open lead #2). Node resolution reuses the origin-
+            // diagnostics visual-source chain; fails closed to nodeOk=n when the
+            // body, refr, or node is unavailable. Runs before the shared
+            // rotation-state update so the step gap check still sees the
+            // previous frame's timestamp.
+            RE::NiPoint3 renderNodePosition{};
+            const char* renderNodeSource = "none";
+            float renderNodeBodyDistance = -1.0f;
+            float rotStepRenderNode = -1.0f;
+            float rotRenderNodeVsBody = -1.0f;
+            bool renderNodeOk = false;
+            {
+                origin_diagnostics::TargetOriginSample renderSample{};
+                const auto& savedState = hand.getSavedObjectState();
+                if (origin_diagnostics::sampleTarget(context.bhkWorld, hknp, savedState.bodyId, savedState.refr, nullptr, nullptr, 0.0f, renderSample) &&
+                    renderSample.visualSourceNode) {
+                    renderNodeOk = true;
+                    renderNodePosition = renderSample.visualSourceNode->world.translate;
+                    renderNodeSource = origin_diagnostics::visualSourceKindName(renderSample.visualSourceKind);
+                    if (objectOk) {
+                        renderNodeBodyDistance = origin_diagnostics::distance(renderNodePosition, objectWorld.translate);
+                        rotRenderNodeVsBody =
+                            grab_authority_source_clock::rotationDeltaDegrees(renderSample.visualSourceNode->world.rotate, objectWorld.rotate);
+                    }
+                    if (rotationState.renderNodeValid && (probeMicroseconds - rotationState.microseconds) < 50000) {
+                        rotStepRenderNode =
+                            grab_authority_source_clock::rotationDeltaDegrees(renderSample.visualSourceNode->world.rotate, rotationState.renderNode);
+                    }
+                    rotationState.renderNode = renderSample.visualSourceNode->world.rotate;
+                }
+                rotationState.renderNodeValid = renderNodeOk;
+            }
+
+            rotationState.wand = rawHandWorld.rotate;
+            rotationState.target = sample.appliedProxyTargetWorld.rotate;
+            rotationState.object = objectWorld.rotate;
+            rotationState.handBody = handBodyWorld.rotate;
+            rotationState.microseconds = probeMicroseconds;
+            rotationState.valid = objectOk && handBodyOk;
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f}",
+                hand.handName(),
+                probeMicroseconds,
+                sample.flushSequence,
+                rawHandWorld.translate.x,
+                rawHandWorld.translate.y,
+                rawHandWorld.translate.z,
+                sample.appliedRawHandWorld.translate.x,
+                sample.appliedRawHandWorld.translate.y,
+                sample.appliedRawHandWorld.translate.z,
+                sample.appliedProxyTargetWorld.translate.x,
+                sample.appliedProxyTargetWorld.translate.y,
+                sample.appliedProxyTargetWorld.translate.z,
+                objectOk ? "y" : "n",
+                objectWorld.translate.x,
+                objectWorld.translate.y,
+                objectWorld.translate.z,
+                handBodyOk ? "y" : "n",
+                handBodyWorld.translate.x,
+                handBodyWorld.translate.y,
+                handBodyWorld.translate.z,
+                proxyOk ? "y" : "n",
+                proxyWorld.translate.x,
+                proxyWorld.translate.y,
+                proxyWorld.translate.z,
+                stereoOk ? "y" : "n",
+                stereoOrigin.x,
+                stereoOrigin.y,
+                stereoOrigin.z,
+                rotStepWand,
+                rotStepTarget,
+                rotStepObject,
+                rotStepHandBody);
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} RENDER_READ: t={}us flushSeq={} nodeOk={} node=({:.3f},{:.3f},{:.3f}) nodeSrc={} body=({:.3f},{:.3f},{:.3f}) d={:.3f} rotNode={:.3f} rotNB={:.3f}",
+                hand.handName(),
+                probeMicroseconds,
+                sample.flushSequence,
+                renderNodeOk ? "y" : "n",
+                renderNodePosition.x,
+                renderNodePosition.y,
+                renderNodePosition.z,
+                renderNodeSource,
+                objectWorld.translate.x,
+                objectWorld.translate.y,
+                objectWorld.translate.z,
+                renderNodeBodyDistance,
+                rotStepRenderNode,
+                rotRenderNodeVsBody);
+
+            GrabPresentationNodeDebugSnapshot presentationNodes{};
+            if (hand.getGrabPresentationNodeDebugSnapshot(
+                    presentationNodes)) {
+                const auto nodeName = [](const GrabPresentationNodeDebugPose& pose) {
+                    if (!pose.node) {
+                        return "none";
+                    }
+                    const char* name = pose.node->name.c_str();
+                    return name && *name ? name : "(unnamed)";
+                };
+                const auto previousRotationGap = [](const GrabPresentationNodeDebugPose& pose) {
+                    return pose.valid ?
+                        grab_authority_source_clock::rotationDeltaDegrees(
+                            pose.world.rotate,
+                            pose.previousWorld.rotate) :
+                        -1.0f;
+                };
+
+                const auto& owner = presentationNodes.collisionOwner;
+                const auto& root = presentationNodes.referenceRoot;
+                const auto& geometry = presentationNodes.visibleGeometry;
+                const auto& geometryParent =
+                    presentationNodes.visibleGeometryParent;
+                ROCK_LOG_DEBUG(Hand,
+                    "{} MESH_PHASE: t={}us flushSeq={} trace={} ownerOk={} owner={:p} '{}' ownerParent={:p} ownerW=({:.3f},{:.3f},{:.3f}) ownerPrev=({:.3f},{:.3f},{:.3f}) ownerPrevRot={:.3f} rootOk={} root={:p} '{}' rootParent={:p} rootW=({:.3f},{:.3f},{:.3f}) rootPrev=({:.3f},{:.3f},{:.3f}) rootPrevRot={:.3f} meshOk={} mesh={:p} '{}' meshParent={:p} meshL=({:.3f},{:.3f},{:.3f}) meshW=({:.3f},{:.3f},{:.3f}) meshPrev=({:.3f},{:.3f},{:.3f}) meshPrevRot={:.3f} meshParentOk={} meshParentW=({:.3f},{:.3f},{:.3f}) meshParentPrev=({:.3f},{:.3f},{:.3f}) meshParentPrevRot={:.3f} same(owner/root/mesh/meshParent)={}/{}/{}/{}",
+                    hand.handName(),
+                    probeMicroseconds,
+                    sample.flushSequence,
+                    presentationNodes.traceId,
+                    owner.valid ? "y" : "n",
+                    static_cast<const void*>(owner.node),
+                    nodeName(owner),
+                    static_cast<const void*>(owner.parent),
+                    owner.world.translate.x,
+                    owner.world.translate.y,
+                    owner.world.translate.z,
+                    owner.previousWorld.translate.x,
+                    owner.previousWorld.translate.y,
+                    owner.previousWorld.translate.z,
+                    previousRotationGap(owner),
+                    root.valid ? "y" : "n",
+                    static_cast<const void*>(root.node),
+                    nodeName(root),
+                    static_cast<const void*>(root.parent),
+                    root.world.translate.x,
+                    root.world.translate.y,
+                    root.world.translate.z,
+                    root.previousWorld.translate.x,
+                    root.previousWorld.translate.y,
+                    root.previousWorld.translate.z,
+                    previousRotationGap(root),
+                    geometry.valid ? "y" : "n",
+                    static_cast<const void*>(geometry.node),
+                    nodeName(geometry),
+                    static_cast<const void*>(geometry.parent),
+                    geometry.local.translate.x,
+                    geometry.local.translate.y,
+                    geometry.local.translate.z,
+                    geometry.world.translate.x,
+                    geometry.world.translate.y,
+                    geometry.world.translate.z,
+                    geometry.previousWorld.translate.x,
+                    geometry.previousWorld.translate.y,
+                    geometry.previousWorld.translate.z,
+                    previousRotationGap(geometry),
+                    geometryParent.valid ? "y" : "n",
+                    geometryParent.world.translate.x,
+                    geometryParent.world.translate.y,
+                    geometryParent.world.translate.z,
+                    geometryParent.previousWorld.translate.x,
+                    geometryParent.previousWorld.translate.y,
+                    geometryParent.previousWorld.translate.z,
+                    previousRotationGap(geometryParent),
+                    owner.node && owner.node == root.node ? "y" : "n",
+                    owner.node && owner.node == geometry.node ? "y" : "n",
+                    root.node && root.node == geometry.node ? "y" : "n",
+                    owner.node && owner.node == geometryParent.node ? "y" : "n");
+
+            }
+
+            const auto readBodyVelocityGameUnits = [&](RE::hknpBodyId bodyId, RE::NiPoint3& outVelocity) {
+                outVelocity = {};
+                auto* motion = havok_runtime::getBodyMotion(hknp, bodyId);
+                if (!motion) {
+                    return false;
+                }
+                const float havokToGame = physics_scale::havokToGame();
+                if (!std::isfinite(havokToGame) || havokToGame <= 0.0f) {
+                    return false;
+                }
+                outVelocity = RE::NiPoint3{
+                    motion->linearVelocity.x * havokToGame,
+                    motion->linearVelocity.y * havokToGame,
+                    motion->linearVelocity.z * havokToGame,
+                };
+                return std::isfinite(outVelocity.x) &&
+                       std::isfinite(outVelocity.y) &&
+                       std::isfinite(outVelocity.z);
+            };
+
+            RE::NiPoint3 controllerVelocityGameUnits{};
+            RE::NiPoint3 objectVelocityGameUnits{};
+            RE::NiPoint3 proxyVelocityGameUnits{};
+            const bool controllerVelocityOk =
+                character_controller_runtime::
+                    tryGetPlayerLocomotionVelocityRawGameUnits(
+                        controllerVelocityGameUnits);
+            const bool objectVelocityOk = readBodyVelocityGameUnits(
+                sample.objectBodyId,
+                objectVelocityGameUnits);
+            const bool proxyVelocityOk = readBodyVelocityGameUnits(
+                sample.proxyBodyId,
+                proxyVelocityGameUnits);
+            const auto& runtime = runtime_state::currentFrame();
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} LOCOMOTION_PHASE: t={}us gameSeq={} gameDt={:.6f} flushSeq={} playerSpaceOk={} playerSpaceSrc={} roomDelta=({:.4f},{:.4f},{:.4f}) controllerOk={} controllerVel=({:.3f},{:.3f},{:.3f}) objectVelOk={} objectVel=({:.3f},{:.3f},{:.3f}) proxyVelOk={} proxyVel=({:.3f},{:.3f},{:.3f}) objectTargetGap={:.3f} proxyTargetGap={:.3f}",
+                hand.handName(),
+                probeMicroseconds,
+                runtime.timing.sequence,
+                runtime.deltaSeconds,
+                sample.flushSequence,
+                runtime.playerSpace.valid ? "y" : "n",
+                runtime.playerSpace.source,
+                runtime.playerSpace.deltaGameUnits.x,
+                runtime.playerSpace.deltaGameUnits.y,
+                runtime.playerSpace.deltaGameUnits.z,
+                controllerVelocityOk ? "y" : "n",
+                controllerVelocityGameUnits.x,
+                controllerVelocityGameUnits.y,
+                controllerVelocityGameUnits.z,
+                objectVelocityOk ? "y" : "n",
+                objectVelocityGameUnits.x,
+                objectVelocityGameUnits.y,
+                objectVelocityGameUnits.z,
+                proxyVelocityOk ? "y" : "n",
+                proxyVelocityGameUnits.x,
+                proxyVelocityGameUnits.y,
+                proxyVelocityGameUnits.z,
+                objectOk ? origin_diagnostics::distance(
+                               objectWorld.translate,
+                               sample.appliedProxyTargetWorld.translate) :
+                           -1.0f,
+                proxyOk ? origin_diagnostics::distance(
+                              proxyWorld.translate,
+                              sample.appliedProxyTargetWorld.translate) :
+                          -1.0f);
+
+        };
+
+        if (probeRight) {
+            logHand(_rightHand, context.right.rawHandWorld);
+        }
+        if (probeLeft) {
+            logHand(_leftHand, context.left.rawHandWorld);
+        }
+
+    }
+
     void PhysicsInteraction::publishDebugBodyOverlay(const PhysicsFrameContext& context)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
@@ -34,6 +360,8 @@
             debug::PublishFrame(focusedFrame);
             return;
         }
+
+        logGrabOverlayPointProbe(context);
 
         auto* hknp = context.hknpWorld;
         provider_debug_overlay::Snapshot* providerOverlay = nullptr;
@@ -66,6 +394,7 @@
                 g_rockConfig.rockDebugDrawDynamicWeaponColliders,
             .handAxes = g_rockConfig.rockDebugShowHandAxes,
             .grabPivots = g_rockConfig.rockDebugShowGrabPivots,
+            .fingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes,
             .fingerSweptArc = g_rockConfig.rockDebugShowGrabFingerSweptArc,
             .fingerSweptArcText =
                 g_rockConfig.rockDebugShowGrabFingerSweptArcText,
@@ -83,8 +412,24 @@
             .skeletonBoneLogging = g_rockConfig.rockDebugLogSkeletonBones,
             .skeletonBoneTruncationLogging =
                 g_rockConfig.rockDebugLogSkeletonBoneTruncation,
+            .grabPocketNormal = g_rockConfig.rockDebugShowGrabPocketNormal,
+            .grabContactPatch = g_rockConfig.rockDebugDrawGrabContactPatch,
+            .grabForceTorque = g_rockConfig.rockDebugDrawGrabForceTorque,
+            .grabForceTorqueText =
+                g_rockConfig.rockDebugDrawGrabForceTorqueText,
+            .grabPivotSourceCollider =
+                g_rockConfig.rockDebugDrawGrabPivotSourceCollider,
+            .grabPivotSourceEvidence =
+                g_rockConfig.rockDebugDrawGrabPivotSourceEvidence,
+            .grabSupportFrame = g_rockConfig.rockDebugDrawGrabSupportFrame,
             .handBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts,
             .grabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy,
+            .grabTransformTelemetry =
+                g_rockConfig.rockDebugGrabTransformTelemetry,
+            .grabTransformTelemetryAxes =
+                g_rockConfig.rockDebugGrabTransformTelemetryAxes,
+            .grabTransformTelemetryText =
+                g_rockConfig.rockDebugGrabTransformTelemetryText,
             .videoSyncMarker = g_rockConfig.rockDebugVideoSyncMarker,
             .weaponAuthority = g_rockConfig.rockDebugDrawWeaponAuthority,
             .looseWeaponGripZones =
@@ -114,6 +459,7 @@
             visualization.grabAuthorityProxyCollider;
         const bool drawHandAxes = visualization.handAxes;
         const bool drawGrabPivots = visualization.grabPivots;
+        const bool drawFingerProbes = visualization.fingerProbes;
         const bool drawFingerSweptArc = visualization.fingerSweptArc;
         const bool drawFingerSweptArcText =
             visualization.fingerSweptArcText;
@@ -124,8 +470,24 @@
         const bool drawRootFlattenedFingerSkeleton =
             visualization.rootFlattenedFingerSkeleton;
         const bool drawSkeletonBones = visualization.skeletonBones;
+        const bool drawGrabPocketNormal = visualization.grabPocketNormal;
+        const bool drawGrabContactPatch = visualization.grabContactPatch;
+        const bool drawGrabForceTorque = visualization.grabForceTorque;
+        const bool drawGrabForceTorqueText =
+            visualization.grabForceTorqueText;
+        const bool drawGrabPivotSourceCollider =
+            visualization.grabPivotSourceCollider;
+        const bool drawGrabPivotSourceEvidence =
+            visualization.grabPivotSourceEvidence;
+        const bool drawGrabSupportFrame = visualization.grabSupportFrame;
         const bool drawHandBoneContacts = visualization.handBoneContacts;
         const bool drawGrabAuthorityProxy = visualization.grabAuthorityProxy;
+        const bool drawGrabTransformTelemetry =
+            visualization.grabTransformTelemetry;
+        const bool drawGrabTransformTelemetryAxes =
+            visualization.grabTransformTelemetryAxes;
+        const bool drawGrabTransformTelemetryText =
+            visualization.grabTransformTelemetryText;
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
         const bool drawVideoSyncMarker = visualization.videoSyncMarker;
         const bool drawWeaponAuthorityDebug =
@@ -183,7 +545,7 @@
             drawBodyBoneColliders || drawDynamicHandColliders ||
             drawWeaponColliders || hasGrabbedWeaponPartCollider ||
             drawDynamicWeaponColliders ||
-            drawGrabAuthorityProxyCollider;
+            drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
             ROCK_LOG_INFO(Hand,
                 "World object origin diagnostics enabled: intervalFrames={} warnThresholdGameUnits={:.2f} visualSourceOrder=bodyOwnerNode>hitNode>visualNode>referenceRoot",
@@ -193,10 +555,10 @@
         } else if (!drawWorldOriginDiagnostics) {
             s_worldOriginDiagnosticsEnabledLogged = false;
         }
-        if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots &&
-            !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones &&
-            !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawPerformanceProfilerOverlay &&
-            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawWorldOriginDiagnostics &&
+        if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
+            !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
+            !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
+            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics &&
             !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
@@ -211,17 +573,17 @@
         frame.drawRockBodies = drawAnyRockColliderBodies;
         frame.drawTargetBodies = drawTargetColliders;
         frame.drawColliderPhaseDiagnostics = drawColliderPhaseDiagnostics;
-        frame.drawAxes = drawHandAxes || drawGrabAuthorityProxy || drawNativeScopeActivation ||
+        frame.drawAxes = drawHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque || drawNativeScopeActivation ||
             drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug;
-        frame.drawMarkers = drawGrabPivots || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
-            drawHandBoneContacts || drawGrabAuthorityProxy ||
-            drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
+        frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
+            drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
+            drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
             drawAuthoredSupportGripDebug;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
-        frame.drawText = drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
+        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug || drawVideoSyncMarker || drawGrabPockets ||
+            drawAuthoredSupportGripDebug || drawVideoSyncMarker || drawGrabAuthorityProxy ||
             (providerOverlay && providerOverlay->textCount > 0);
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
@@ -1275,6 +1637,385 @@
             addGrabPivotDebug(_leftHand);
         }
 
+        if (drawGrabPocketNormal) {
+            auto addGrabPocketNormalDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                GrabPocketNormalDebugSnapshot snapshot{};
+                if (!hand.getGrabPocketNormalDebugSnapshot(hknp, snapshot)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabSurfacePoint : debug::MarkerOverlayRole::RightGrabSurfacePoint, snapshot.contactPointWorld, 2.4f);
+                addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftGrabSurfaceNormal : debug::MarkerOverlayRole::RightGrabSurfaceNormal, snapshot.contactPointWorld,
+                    snapshot.normalEndWorld, 1.4f);
+            };
+
+            addGrabPocketNormalDebug(_rightHand);
+            addGrabPocketNormalDebug(_leftHand);
+        }
+
+        if (drawGrabContactPatch) {
+            auto addGrabContactPatchDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                GrabContactPatchDebugSnapshot snapshot{};
+                if (!hand.getGrabContactPatchDebugSnapshot(hknp, snapshot)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                const auto role = isLeft ? debug::MarkerOverlayRole::LeftGrabContactPatchSample : debug::MarkerOverlayRole::RightGrabContactPatchSample;
+                for (std::uint32_t i = 0; i < snapshot.sampleCount; ++i) {
+                    addMarkerPoint(role, snapshot.samplePointsWorld[i], 1.8f);
+                }
+            };
+
+            addGrabContactPatchDebug(_rightHand);
+            addGrabContactPatchDebug(_leftHand);
+        }
+
+        if (drawGrabSupportFrame) {
+            auto addGrabSupportFrameDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                GrabSupportFrameDebugSnapshot snapshot{};
+                if (!hand.getGrabSupportFrameDebugSnapshot(hknp, snapshot)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                const auto pivotRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFramePivot : debug::MarkerOverlayRole::RightGrabSupportFramePivot;
+                const auto normalRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFrameNormal : debug::MarkerOverlayRole::RightGrabSupportFrameNormal;
+                const auto axisRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFrameAxis : debug::MarkerOverlayRole::RightGrabSupportFrameAxis;
+                const auto binormalRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFrameBinormal : debug::MarkerOverlayRole::RightGrabSupportFrameBinormal;
+                const auto triangleRole = isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceTriangle : debug::MarkerOverlayRole::RightGrabPivotSourceTriangle;
+
+                if (snapshot.hasPivotTriangle) {
+                    addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[0], snapshot.pivotTriangleWorld[1]);
+                    addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[1], snapshot.pivotTriangleWorld[2]);
+                    addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[2], snapshot.pivotTriangleWorld[0]);
+                }
+
+                addMarkerPoint(pivotRole, snapshot.pivotWorld, 3.4f);
+                if (snapshot.hasNormal) {
+                    addMarkerRay(normalRole, snapshot.pivotWorld, snapshot.normalEndWorld, 1.8f);
+                }
+                if (snapshot.hasSupportAxis) {
+                    const RE::NiPoint3 axisVector = snapshot.supportAxisEndWorld - snapshot.pivotWorld;
+                    addMarkerLine(axisRole, snapshot.pivotWorld - axisVector, snapshot.supportAxisEndWorld);
+                    addMarkerRay(axisRole, snapshot.pivotWorld, snapshot.supportAxisEndWorld, 1.4f);
+                }
+                if (snapshot.hasBinormal) {
+                    const RE::NiPoint3 binormalVector = snapshot.binormalEndWorld - snapshot.pivotWorld;
+                    addMarkerLine(binormalRole, snapshot.pivotWorld - binormalVector, snapshot.binormalEndWorld);
+                    addMarkerRay(binormalRole, snapshot.pivotWorld, snapshot.binormalEndWorld, 1.2f);
+                }
+            };
+
+            addGrabSupportFrameDebug(_rightHand);
+            addGrabSupportFrameDebug(_leftHand);
+        }
+
+        if (drawGrabForceTorque) {
+            auto addGrabForceTorqueDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                const RE::NiTransform& rawHandWorld = isLeft ? context.left.rawHandWorld : context.right.rawHandWorld;
+                GrabForceTorqueDebugSnapshot snapshot{};
+                if (!hand.getGrabForceTorqueDebugSnapshot(hknp, rawHandWorld, snapshot)) {
+                    return;
+                }
+
+                const float labelLiveColor[4]{ 0.80f, 1.0f, 0.95f, 0.90f };
+                const float labelTargetColor[4]{ 1.0f, 0.90f, 0.18f, 0.92f };
+                const float labelRelationColor[4]{ 0.55f, 0.92f, 1.0f, 0.86f };
+                const float labelSolverColor[4]{ 1.0f, 0.36f, 0.18f, 0.96f };
+                const RE::NiPoint3 labelLift{ 0.0f, 0.0f, 3.2f };
+                auto addTriadLabel = [&](const RE::NiTransform& transform, const float color[4], const char* label) {
+                    if (!drawGrabForceTorqueText) {
+                        return;
+                    }
+                    addTextLineSized(transform.translate + labelLift, 1.85f, color, "%s", label);
+                };
+
+                if (drawGrabPivotSourceCollider) {
+                    addBody(snapshot.pivotSourceBodyId,
+                        isLeft ? debug::BodyOverlayRole::LeftGrabPivotSourceCollider : debug::BodyOverlayRole::RightGrabPivotSourceCollider);
+                }
+
+                addAxisTransform(snapshot.liveBodyWorld,
+                    isLeft ? debug::AxisOverlayRole::LeftGrabForceTorqueLiveBody : debug::AxisOverlayRole::RightGrabForceTorqueLiveBody,
+                    snapshot.livePivotWorld,
+                    true);
+                addTriadLabel(snapshot.liveBodyWorld, labelLiveColor, "LIVE BODY");
+                addAxisTransform(snapshot.desiredBodyWorld,
+                    isLeft ? debug::AxisOverlayRole::LeftGrabForceTorqueDesiredBody : debug::AxisOverlayRole::RightGrabForceTorqueDesiredBody,
+                    snapshot.targetPivotWorld,
+                    true);
+                addTriadLabel(snapshot.desiredBodyWorld, labelTargetColor, "DESIRED BODY");
+                if (snapshot.hasMotorConstraintFrames) {
+                    addAxisTransform(snapshot.motorConstraintAWorld,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabMotorConstraintA : debug::AxisOverlayRole::RightGrabMotorConstraintA,
+                        snapshot.liveBodyWorld.translate,
+                        true);
+                    addTriadLabel(snapshot.motorConstraintAWorld, labelRelationColor, "A FRAME");
+                    addAxisTransform(snapshot.motorConstraintBWorld,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabMotorConstraintB : debug::AxisOverlayRole::RightGrabMotorConstraintB,
+                        snapshot.liveBodyWorld.translate,
+                        true);
+                    addTriadLabel(snapshot.motorConstraintBWorld, labelRelationColor, "B FRAME");
+                    addAxisTransform(snapshot.motorAtomTargetBodyWorld,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabMotorAtomTargetBody : debug::AxisOverlayRole::RightGrabMotorAtomTargetBody,
+                        snapshot.motorAnchorAWorld,
+                        true);
+                    addTriadLabel(snapshot.motorAtomTargetBodyWorld, labelTargetColor, "ATOM ROW");
+                    if (snapshot.hasMotorSolverEffectiveBody) {
+                        addAxisTransform(snapshot.motorSolverEffectiveBodyWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabMotorSolverEffectiveBody : debug::AxisOverlayRole::RightGrabMotorSolverEffectiveBody,
+                            snapshot.motorAnchorAWorld,
+                            true);
+                        addTriadLabel(snapshot.motorSolverEffectiveBodyWorld, labelSolverColor, "SOLVER EFF");
+                    }
+                    if (snapshot.hasMotorRelationFrames) {
+                        addAxisTransform(snapshot.motorRelationInputBodyWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabMotorRelationInputBody : debug::AxisOverlayRole::RightGrabMotorRelationInputBody,
+                            snapshot.motorAnchorAWorld,
+                            true);
+                        addTriadLabel(snapshot.motorRelationInputBodyWorld, labelRelationColor, "REL INPUT");
+                        addAxisTransform(snapshot.motorRelationInverseBodyWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabMotorRelationInverseBody : debug::AxisOverlayRole::RightGrabMotorRelationInverseBody,
+                            snapshot.motorAnchorAWorld,
+                            true);
+                        addTriadLabel(snapshot.motorRelationInverseBodyWorld, labelRelationColor, "REL INV");
+                    }
+                }
+
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueTargetPivot : debug::MarkerOverlayRole::RightGrabForceTorqueTargetPivot,
+                    snapshot.targetPivotWorld,
+                    3.2f);
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueLivePivot : debug::MarkerOverlayRole::RightGrabForceTorqueLivePivot,
+                    snapshot.livePivotWorld,
+                    3.2f);
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBDesiredBody : debug::MarkerOverlayRole::RightGrabActivePivotBDesiredBody,
+                    snapshot.activePivotBDesiredBodyWorld,
+                    4.4f);
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBLiveBody : debug::MarkerOverlayRole::RightGrabActivePivotBLiveBody,
+                    snapshot.activePivotBLiveBodyWorld,
+                    4.4f);
+                if (snapshot.hasActivePivotBVisualNode) {
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBVisualNode : debug::MarkerOverlayRole::RightGrabActivePivotBVisualNode,
+                        snapshot.activePivotBVisualNodeWorld,
+                        4.0f);
+                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBVisualLock : debug::MarkerOverlayRole::RightGrabActivePivotBVisualLock,
+                        snapshot.activePivotBLiveBodyWorld,
+                        snapshot.activePivotBVisualNodeWorld);
+                }
+                addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueCorrection : debug::MarkerOverlayRole::RightGrabForceTorqueCorrection,
+                    snapshot.livePivotWorld,
+                    snapshot.correctionEndWorld);
+                addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueLever : debug::MarkerOverlayRole::RightGrabForceTorqueLever,
+                    snapshot.liveBodyWorld.translate,
+                    snapshot.leverArmEndWorld);
+                if (snapshot.hasTorqueAxis) {
+                    addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueAxis : debug::MarkerOverlayRole::RightGrabForceTorqueAxis,
+                        snapshot.liveBodyWorld.translate,
+                        snapshot.torqueAxisEndWorld,
+                        1.4f);
+                }
+                if (snapshot.hasMotorConstraintFrames) {
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAnchorA : debug::MarkerOverlayRole::RightGrabMotorAnchorA,
+                        snapshot.motorAnchorAWorld,
+                        3.8f);
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAnchorB : debug::MarkerOverlayRole::RightGrabMotorAnchorB,
+                        snapshot.motorAnchorBWorld,
+                        3.4f);
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAtomTargetPivot : debug::MarkerOverlayRole::RightGrabMotorAtomTargetPivot,
+                        snapshot.motorAtomTargetPivotWorld,
+                        3.2f);
+                    if (snapshot.hasMotorRelationFrames) {
+                        addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAtomTargetPivot : debug::MarkerOverlayRole::RightGrabMotorAtomTargetPivot,
+                            snapshot.motorRelationPivotWorld,
+                            2.4f);
+                    }
+                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAnchorB : debug::MarkerOverlayRole::RightGrabMotorAnchorB,
+                        snapshot.motorAnchorBWorld,
+                        snapshot.motorAnchorAWorld);
+                    if (snapshot.hasMotorAngularCommand) {
+                        addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAngularCommand : debug::MarkerOverlayRole::RightGrabMotorAngularCommand,
+                            snapshot.liveBodyWorld.translate,
+                            snapshot.motorAngularAxisEndWorld,
+                            1.5f);
+                    }
+                    if (snapshot.hasMotorTargetBodyDelta) {
+                        addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorTargetBodyDelta : debug::MarkerOverlayRole::RightGrabMotorTargetBodyDelta,
+                            snapshot.desiredBodyWorld.translate,
+                            snapshot.motorTargetBodyDeltaEndWorld);
+                    }
+                }
+
+                if (drawGrabPivotSourceEvidence) {
+                    const auto triangleRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceTriangle : debug::MarkerOverlayRole::RightGrabPivotSourceTriangle;
+                    if (snapshot.hasPivotTriangle) {
+                        addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[0], snapshot.pivotTriangleWorld[1]);
+                        addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[1], snapshot.pivotTriangleWorld[2]);
+                        addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[2], snapshot.pivotTriangleWorld[0]);
+                    }
+                    if (snapshot.hasMeshGripPoint) {
+                        addMarkerPoint(
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceMeshPoint : debug::MarkerOverlayRole::RightGrabPivotSourceMeshPoint,
+                            snapshot.meshGripPointWorld,
+                            2.4f);
+                    }
+                    if (snapshot.hasVisualMeshGripPoint) {
+                        addMarkerPoint(
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceVisualMeshPoint : debug::MarkerOverlayRole::RightGrabPivotSourceVisualMeshPoint,
+                            snapshot.visualMeshGripPointWorld,
+                            2.2f);
+                        if (snapshot.hasMeshGripPoint) {
+                            addMarkerLine(
+                                isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceBodyVisualLock : debug::MarkerOverlayRole::RightGrabPivotSourceBodyVisualLock,
+                                snapshot.meshGripPointWorld,
+                                snapshot.visualMeshGripPointWorld);
+                        }
+                    }
+                    if (snapshot.hasCaptureMeshGripPoint) {
+                        addMarkerPoint(
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceCapturePoint : debug::MarkerOverlayRole::RightGrabPivotSourceCapturePoint,
+                            snapshot.captureMeshGripPointBodyWorld,
+                            2.8f);
+                        if (snapshot.hasMeshGripPoint && snapshot.gripPointMutatedAfterCapture) {
+                            addMarkerLine(
+                                isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceCaptureMutation : debug::MarkerOverlayRole::RightGrabPivotSourceCaptureMutation,
+                                snapshot.captureMeshGripPointBodyWorld,
+                                snapshot.meshGripPointWorld);
+                        }
+                    }
+                    if (snapshot.hasContactPatchPoint) {
+                        const auto contactRole =
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceContactPoint : debug::MarkerOverlayRole::RightGrabPivotSourceContactPoint;
+                        addMarkerPoint(contactRole, snapshot.contactPatchPointWorld, 2.5f);
+                        for (std::uint32_t i = 0; i < snapshot.contactSampleCount; ++i) {
+                            addMarkerLine(contactRole, snapshot.contactPatchPointWorld, snapshot.contactSamplePointsWorld[i]);
+                            addMarkerPoint(contactRole, snapshot.contactSamplePointsWorld[i], 1.4f);
+                        }
+                    }
+                }
+
+                if (drawGrabForceTorqueText) {
+                    const float headerColor[4]{ 0.90f, 1.0f, 0.95f, 0.94f };
+                    const float detailColor[4]{ 0.95f, 0.92f, 0.22f, 0.92f };
+                    const RE::NiPoint3 labelAnchor = snapshot.targetPivotWorld + RE::NiPoint3{ 0.0f, 0.0f, 5.0f };
+                    addTextLine(labelAnchor,
+                        headerColor,
+                        "GRAB track %.1f rot %.1f lever %.1f",
+                        snapshot.pivotTrackingErrorGameUnits,
+                        snapshot.rotationErrorDegrees,
+                        snapshot.leverLengthGameUnits);
+                    addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -3.5f },
+                        detailColor,
+                        "phase %s src %s body %u pbLock %.1f mut %.1f rq %u",
+                        snapshot.acquisitionPhase,
+                        snapshot.pivotAuthoritySource,
+                        snapshot.pivotSourceBodyId.value,
+                        snapshot.activePivotBVisualLockErrorGameUnits,
+                        snapshot.captureGripLocalDeltaGameUnits,
+                        snapshot.seatedPivotReacquireCount);
+                    addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -7.0f },
+                        detailColor,
+                        "cap shift %.1f rot %.1f gap %.1f>%.1f dot %.2f lev %.1f",
+                        snapshot.captureFreezeBodyShiftGameUnits,
+                        snapshot.captureFreezeBodyRotationDegrees,
+                        snapshot.captureFreezePivotGapBeforeGameUnits,
+                        snapshot.captureFreezePivotGapAfterGameUnits,
+                        snapshot.captureFreezeShiftDot,
+                        snapshot.captureFreezePivotLeverGameUnits);
+                    if (snapshot.hasMotorConstraintFrames) {
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.5f },
+                            detailColor,
+                            "atom %.2fgu %.1fdeg Aerr %.2fgu",
+                            snapshot.motorTargetBodyDeltaGameUnits,
+                            snapshot.motorTargetBodyDeltaDegrees,
+                            snapshot.motorTransformBPivotToAnchorAGameUnits);
+                        if (snapshot.hasMotorRelationFrames) {
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -14.0f },
+                                detailColor,
+                                "relInv %.2fgu %.1fdeg atomRel %.1fdeg pivRel %.2fgu",
+                                snapshot.motorRelationInverseBodyDeltaGameUnits,
+                                snapshot.motorRelationInverseBodyDeltaDegrees,
+                                snapshot.motorAtomToRelationInverseDeltaDegrees,
+                                snapshot.motorTransformBRelationLocalDeltaGameUnits);
+                        }
+                        if (snapshot.hasMotorSolverEffectiveBody) {
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -17.5f },
+                                detailColor,
+                                "solverEff %.2fgu %.1fdeg effAtom %.1fdeg",
+                                snapshot.motorSolverEffectiveBodyDeltaGameUnits,
+                                snapshot.motorSolverEffectiveBodyDeltaDegrees,
+                                snapshot.motorSolverEffectiveToAtomDeltaDegrees);
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -21.0f },
+                                detailColor,
+                                "solv targetA %.1f liveA %.1f renderA %.2fgu %.1fdeg",
+                                snapshot.motorSolverEffectiveBodyDeltaDegrees,
+                                snapshot.motorSolverEffectiveLiveABodyDeltaDegrees,
+                                snapshot.motorTargetProxyToLiveProxyDeltaGameUnits,
+                                snapshot.motorTargetProxyToLiveProxyDeltaDegrees);
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -24.5f },
+                                detailColor,
+                                "physA %.2fgu %.1fdeg relCon %.0f/%.0f raw %.0e %.0e %.0e",
+                                snapshot.motorPhysicsProxyToLiveProxyDeltaGameUnits,
+                                snapshot.motorPhysicsProxyToLiveProxyDeltaDegrees,
+                                snapshot.motorRelationToConstraintATargetDegrees,
+                                snapshot.motorRelationToConstraintALiveDegrees,
+                                snapshot.motorTransformARawMaxDelta,
+                                snapshot.motorTransformBRawMaxDelta,
+                                snapshot.motorTargetBRcaRawMaxDelta);
+                        }
+                        const auto liveToA = grab_transform_telemetry::formatBasisBestMap(
+                            "live>A",
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.liveBodyWorld),
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
+                        const auto desiredToA = grab_transform_telemetry::formatBasisBestMap(
+                            "des>A",
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.desiredBodyWorld),
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -28.0f },
+                            detailColor,
+                            "%s",
+                            liveToA.c_str());
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -31.5f },
+                            detailColor,
+                            "%s",
+                            desiredToA.c_str());
+                        if (snapshot.hasMotorSolverEffectiveBody) {
+                            const auto solverToA = grab_transform_telemetry::formatBasisBestMap(
+                                "solv>A",
+                                grab_transform_telemetry::makeOrientationBasis(snapshot.motorSolverEffectiveBodyWorld),
+                                grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -35.0f },
+                                detailColor,
+                                "%s",
+                                solverToA.c_str());
+                        }
+                    }
+                }
+            };
+
+            addGrabForceTorqueDebug(_rightHand);
+            addGrabForceTorqueDebug(_leftHand);
+        }
+
         if (drawFingerSweptArc) {
             bool anySweepCapture = false;
             constexpr float kSweepHitTextColor[4] = { 1.0f, 0.90f, 0.05f, 1.0f };
@@ -1460,6 +2201,61 @@
             if (drawFingerSweptArcText && !anySweepCapture && (_rightHand.isHolding() || _leftHand.isHolding())) {
                 addScreenTextLine(20.0f, 20.0f, kSweepMissTextColor, "SWEPT ARC: no captured regular solve; release and grab again (pinch is intentionally excluded)");
             }
+        }
+
+        if (drawFingerProbes) {
+            auto addFingerProbeDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                std::array<RE::NiPoint3, 5> starts{};
+                std::array<RE::NiPoint3, 5> ends{};
+                if (!hand.getGrabFingerProbeDebug(starts, ends)) {
+                    return;
+                }
+
+                const auto role = hand.isLeft() ? debug::MarkerOverlayRole::LeftGrabFingerProbe : debug::MarkerOverlayRole::RightGrabFingerProbe;
+                for (std::size_t i = 0; i < starts.size(); ++i) {
+                    addMarkerLine(role, starts[i], ends[i]);
+                }
+
+                std::array<RE::NiPoint3, 5> padStarts{};
+                std::array<RE::NiPoint3, 5> padEnds{};
+                std::array<RE::NiPoint3, 5> padHits{};
+                std::array<std::uint8_t, 5> padHitValid{};
+                if (hand.getGrabFingerPadProbeDebug(padStarts, padEnds, padHits, padHitValid)) {
+                    const auto padRole = hand.isLeft() ? debug::MarkerOverlayRole::LeftGrabFingerPadProbe : debug::MarkerOverlayRole::RightGrabFingerPadProbe;
+                    for (std::size_t i = 0; i < padStarts.size(); ++i) {
+                        const RE::NiPoint3 delta = padEnds[i] - padStarts[i];
+                        const bool hasLine =
+                            std::isfinite(padStarts[i].x) && std::isfinite(padStarts[i].y) && std::isfinite(padStarts[i].z) &&
+                            std::isfinite(padEnds[i].x) && std::isfinite(padEnds[i].y) && std::isfinite(padEnds[i].z) &&
+                            (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z) > 0.000001f;
+                        if (!hasLine) {
+                            continue;
+                        }
+                        addMarkerLine(padRole, padStarts[i], padEnds[i]);
+                        if (padHitValid[i]) {
+                            addMarkerPoint(padRole, padHits[i], 1.4f);
+                        }
+                    }
+                }
+
+                std::array<RE::NiPoint3, 5> surfaceTargets{};
+                std::array<std::uint8_t, 5> surfaceTargetValid{};
+                if (hand.getGrabFingerSurfaceTargetDebug(surfaceTargets, surfaceTargetValid)) {
+                    const auto targetRole = hand.isLeft() ? debug::MarkerOverlayRole::LeftGrabFingerSurfaceTarget : debug::MarkerOverlayRole::RightGrabFingerSurfaceTarget;
+                    for (std::size_t i = 0; i < surfaceTargets.size(); ++i) {
+                        if (surfaceTargetValid[i]) {
+                            addMarkerPoint(targetRole, surfaceTargets[i], 2.0f);
+                        }
+                    }
+                }
+            };
+
+            addFingerProbeDebug(_rightHand);
+            addFingerProbeDebug(_leftHand);
         }
 
         if (drawHandBoneContacts) {
@@ -2123,6 +2919,699 @@
             }
         }
 
+        if (drawGrabTransformTelemetry) {
+            struct GrabAngularDeltaLogValue
+            {
+                bool valid = false;
+                float angleDegrees = 0.0f;
+                RE::NiPoint3 worldDegrees{};
+                RE::NiPoint3 handLocalDegrees{};
+                RE::NiPoint3 hmdLocalDegrees{};
+            };
+
+            auto vectorDot = [](const RE::NiPoint3& a, const RE::NiPoint3& b) {
+                return a.x * b.x + a.y * b.y + a.z * b.z;
+            };
+            auto vectorCross = [](const RE::NiPoint3& a, const RE::NiPoint3& b) {
+                return RE::NiPoint3{
+                    a.y * b.z - a.z * b.y,
+                    a.z * b.x - a.x * b.z,
+                    a.x * b.y - a.y * b.x,
+                };
+            };
+            auto vectorLength = [&](const RE::NiPoint3& value) {
+                return std::sqrt((std::max)(0.0f, vectorDot(value, value)));
+            };
+            auto normalizeOr = [&](const RE::NiPoint3& value, const RE::NiPoint3& fallback) {
+                const float length = vectorLength(value);
+                if (!std::isfinite(length) || length <= 0.000001f) {
+                    return fallback;
+                }
+                const float inverseLength = 1.0f / length;
+                return RE::NiPoint3{ value.x * inverseLength, value.y * inverseLength, value.z * inverseLength };
+            };
+            auto projectToBasis = [&](const RE::NiPoint3& worldVector, const grab_transform_telemetry::OrientationBasis& basis) {
+                return RE::NiPoint3{
+                    vectorDot(worldVector, basis.x),
+                    vectorDot(worldVector, basis.y),
+                    vectorDot(worldVector, basis.z),
+                };
+            };
+            auto makePlanarHmdBasis = [&]() {
+                grab_transform_telemetry::OrientationBasis basis{};
+                const RE::NiPoint3 worldUp{ 0.0f, 0.0f, 1.0f };
+                RE::NiPoint3 forward = context.hasHmdFrame ? context.hmdForwardWorld : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+                forward.z = 0.0f;
+                forward = normalizeOr(forward, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+                const RE::NiPoint3 right = normalizeOr(vectorCross(forward, worldUp), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+                basis.x = right;
+                basis.y = forward;
+                basis.z = worldUp;
+                return basis;
+            };
+            auto computeAngularDeltaLogValue = [&](const RE::NiTransform& previous,
+                                                   const RE::NiTransform& current,
+                                                   const grab_transform_telemetry::OrientationBasis& currentHandBasis,
+                                                   const grab_transform_telemetry::OrientationBasis& hmdBasis,
+                                                   bool enabled) {
+                GrabAngularDeltaLogValue result{};
+                if (!enabled) {
+                    return result;
+                }
+
+                const auto previousBasis = grab_transform_telemetry::makeOrientationBasis(previous);
+                const auto currentBasis = grab_transform_telemetry::makeOrientationBasis(current);
+                const float angleDegrees = grab_transform_telemetry::orientationBasisMaxDeltaDegrees(previousBasis, currentBasis);
+                if (!std::isfinite(angleDegrees) || angleDegrees <= 0.0001f) {
+                    result.valid = true;
+                    return result;
+                }
+
+                RE::NiPoint3 axisSum{};
+                axisSum = axisSum + vectorCross(previousBasis.x, currentBasis.x);
+                axisSum = axisSum + vectorCross(previousBasis.y, currentBasis.y);
+                axisSum = axisSum + vectorCross(previousBasis.z, currentBasis.z);
+                const RE::NiPoint3 axis = normalizeOr(axisSum, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+                if (vectorLength(axis) <= 0.000001f) {
+                    return result;
+                }
+
+                result.valid = true;
+                result.angleDegrees = angleDegrees;
+                result.worldDegrees = RE::NiPoint3{
+                    axis.x * angleDegrees,
+                    axis.y * angleDegrees,
+                    axis.z * angleDegrees,
+                };
+                result.handLocalDegrees = projectToBasis(result.worldDegrees, currentHandBasis);
+                result.hmdLocalDegrees = projectToBasis(result.worldDegrees, hmdBasis);
+                return result;
+            };
+            auto storePreviousAngularDeltaSample = [](GrabTransformTelemetryState& telemetryState, const grab_transform_telemetry::RuntimeSample& sample) {
+                telemetryState.previousRawHandWorld = sample.rawHandWorld;
+                telemetryState.previousPalmAnchorGrabAuthorityWorld = sample.palmAnchorGrabAuthorityWorld;
+                telemetryState.previousProxyReadbackWorld = sample.proxyReadbackWorld;
+                telemetryState.previousRawDesiredObjectWorld = sample.currentRawDesiredObjectWorld;
+                telemetryState.previousHeldNodeWorld = sample.heldNodeWorld;
+                telemetryState.previousHeldBodyWorld = sample.heldBodyWorld;
+                telemetryState.previousNativeBodyWorld = sample.heldNativeBodyWorld;
+                telemetryState.previousHasPalmAnchorGrabAuthority = sample.hasPalmAnchorGrabAuthority;
+                telemetryState.previousHasProxyReadback = sample.hasProxyReadback;
+                telemetryState.previousHasHeldNodeWorld = sample.hasHeldNodeWorld;
+                telemetryState.previousHasHeldBodyWorld = sample.hasHeldBodyWorld;
+                telemetryState.previousHasHeldNativeBodyWorld = sample.hasHeldNativeBodyWorld;
+                telemetryState.hasPreviousAngularDeltaSample = true;
+            };
+
+            auto publishGrabTelemetry = [&](Hand& hand, bool isLeft) {
+                auto& telemetryState = _diagnostics.grabTransformTelemetryStates[isLeft ? 1 : 0];
+                if (!hand.isHolding()) {
+                    telemetryState.active = false;
+                    telemetryState.frame = 0;
+                    telemetryState.logFrameCounter = 0;
+                    telemetryState.hasPreviousAngularDeltaSample = false;
+                    return;
+                }
+
+                if (!telemetryState.active) {
+                    telemetryState.active = true;
+                    telemetryState.session = _diagnostics.grabTransformTelemetryNextSession++;
+                    telemetryState.frame = 0;
+                    telemetryState.logFrameCounter = 0;
+                    telemetryState.hasPreviousAngularDeltaSample = false;
+                }
+
+                ++telemetryState.frame;
+                const grab_transform_telemetry::FrameStamp stamp{
+                    .session = telemetryState.session,
+                    .frame = telemetryState.frame,
+                };
+
+                const RE::NiTransform rawHandWorld = isLeft ? context.left.rawHandWorld : context.right.rawHandWorld;
+
+                grab_transform_telemetry::RuntimeSample sample{};
+                if (!hand.getGrabTransformTelemetrySnapshot(
+                        hknp,
+                        rawHandWorld,
+                        sample)) {
+                    return;
+                }
+
+                const auto hmdBasis = makePlanarHmdBasis();
+                const bool hasPreviousAngularDeltaSample = telemetryState.hasPreviousAngularDeltaSample;
+                const auto rawHandAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousRawHandWorld,
+                    sample.rawHandWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample);
+                const auto palmAuthorityAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousPalmAnchorGrabAuthorityWorld,
+                    sample.palmAnchorGrabAuthorityWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasPalmAnchorGrabAuthority &&
+                        sample.hasPalmAnchorGrabAuthority);
+                const auto proxyAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousProxyReadbackWorld,
+                    sample.proxyReadbackWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasProxyReadback &&
+                        sample.hasProxyReadback);
+                const auto rawDesiredObjectAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousRawDesiredObjectWorld,
+                    sample.currentRawDesiredObjectWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        sample.hasGrabStartFrames);
+                const auto heldNodeAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousHeldNodeWorld,
+                    sample.heldNodeWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasHeldNodeWorld &&
+                        sample.hasHeldNodeWorld);
+                const auto heldBodyAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousHeldBodyWorld,
+                    sample.heldBodyWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasHeldBodyWorld &&
+                        sample.hasHeldBodyWorld);
+                const auto nativeBodyAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousNativeBodyWorld,
+                    sample.heldNativeBodyWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasHeldNativeBodyWorld &&
+                        sample.hasHeldNativeBodyWorld);
+
+                if (drawGrabTransformTelemetryAxes) {
+                    const auto palmDebugBasis = grab_transform_telemetry_overlay::buildHandAttachedTextBasis(sample.rawHandWorld, isLeft);
+                    const RE::NiPoint3 palmReference =
+                        sample.hasPalmAnchorTarget ? sample.palmAnchorTargetWorld.translate : sample.rawHandWorld.translate;
+                    auto withOverlayOrigin = [](RE::NiTransform transform, const RE::NiPoint3& origin) {
+                        transform.translate = origin;
+                        return transform;
+                    };
+
+                    if (sample.hasPalmAnchorTarget) {
+                        /*
+                         * These palm triads intentionally keep the generated
+                         * collider frame, grab-authority frame, and live proxy
+                         * readback separate. The generated collider frame uses
+                         * the in-game verified native placement convention; the
+                         * grab-authority frame is the explicit adapter handed
+                         * to proxy/body-A grab math.
+                         */
+                        addStoredColumnAxisTransform(
+                            withOverlayOrigin(sample.palmAnchorTargetWorld, palmReference - palmDebugBasis.panelRight * 8.0f),
+                            isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
+                            palmReference,
+                            true);
+                    }
+                    if (sample.hasPalmAnchorGrabAuthority) {
+                        addAxisTransform(
+                            withOverlayOrigin(sample.palmAnchorGrabAuthorityWorld, palmReference),
+                            isLeft ? debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame : debug::AxisOverlayRole::RightGrabPalmAuthorityFrame,
+                            palmReference,
+                            false);
+                    }
+                    if (sample.hasProxyReadback) {
+                        addAxisTransform(
+                            withOverlayOrigin(sample.proxyReadbackWorld, palmReference + palmDebugBasis.panelRight * 8.0f),
+                            isLeft ? debug::AxisOverlayRole::LeftGrabProxyReadback : debug::AxisOverlayRole::RightGrabProxyReadback,
+                            palmReference,
+                            true);
+                    }
+                    if (sample.hasGrabStartFrames) {
+                        addAxisTransform(sample.currentRawDesiredObjectWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabDesiredObject : debug::AxisOverlayRole::RightGrabDesiredObject,
+                            sample.rawHandWorld.translate,
+                            true);
+                        addAxisTransform(sample.heldNodeWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabHeldNode : debug::AxisOverlayRole::RightGrabHeldNode,
+                            sample.rawHandWorld.translate,
+                            true);
+                        addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabHeldDesiredError : debug::MarkerOverlayRole::RightGrabHeldDesiredError,
+                            sample.currentRawDesiredObjectWorld.translate,
+                            sample.heldNodeWorld.translate);
+                    }
+                    if (sample.hasHeldRelativeHandTarget) {
+                        addAxisTransform(sample.heldRelativeHandTargetWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabHeldRelativeHandTarget : debug::AxisOverlayRole::RightGrabHeldRelativeHandTarget,
+                            sample.rawHandWorld.translate,
+                            true);
+                        addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabHeldRelativeHandTargetError : debug::MarkerOverlayRole::RightGrabHeldRelativeHandTargetError,
+                            sample.rawHandWorld.translate,
+                            sample.heldRelativeHandTargetWorld.translate);
+                    }
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotA : debug::MarkerOverlayRole::RightGrabPivotA, sample.pivotAWorld, 3.0f);
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotB : debug::MarkerOverlayRole::RightGrabPivotB, sample.pivotBWorld, 3.0f);
+                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotError : debug::MarkerOverlayRole::RightGrabPivotError, sample.pivotAWorld, sample.pivotBWorld);
+                }
+
+                if (drawGrabTransformTelemetryText) {
+                    const float color[4] = { isLeft ? 1.0f : 0.55f, isLeft ? 0.55f : 1.0f, isLeft ? 0.95f : 1.0f, 0.94f };
+                    const auto textBasis = grab_transform_telemetry_overlay::buildHandAttachedTextBasis(sample.rawHandWorld, isLeft);
+                    const auto labelRole = isLeft ? debug::MarkerOverlayRole::LeftGrabTelemetryLabelAnchor : debug::MarkerOverlayRole::RightGrabTelemetryLabelAnchor;
+                    addMarkerPoint(labelRole, textBasis.anchor, 2.6f);
+                    addMarkerLine(labelRole, textBasis.hand, textBasis.anchor);
+
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 0),
+                        color,
+                        "GTEL S%u F%llu H%s BODY%u HB%s OB%s",
+                        stamp.session,
+                        static_cast<unsigned long long>(stamp.frame),
+                        grab_transform_telemetry::handLabel(isLeft),
+                        sample.heldBodyId,
+                        body_frame::bodyFrameSourceCode(sample.handBodySource),
+                        body_frame::bodyFrameSourceCode(sample.heldBodySource));
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 1),
+                        color,
+                        "LIVE_HAND %.1f %.1f %.1f",
+                        sample.rawHandWorld.translate.x,
+                        sample.rawHandWorld.translate.y,
+                        sample.rawHandWorld.translate.z);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 2),
+                        color,
+                        "PALM_BODY %s %.1f %.1f %.1f D %.2f %.2f",
+                        body_frame::bodyFrameSourceCode(sample.handBodySource),
+                        sample.handBodyWorld.translate.x,
+                        sample.handBodyWorld.translate.y,
+                        sample.handBodyWorld.translate.z,
+                        sample.rawToHandBody.positionGameUnits,
+                        sample.rawToHandBody.rotationDegrees);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 3),
+                        color,
+                        "VIS_NODE %.1f %.1f %.1f BODYNODE %.1f %.1f %.1f D %.2f %.2f",
+                        sample.heldNodeWorld.translate.x,
+                        sample.heldNodeWorld.translate.y,
+                        sample.heldNodeWorld.translate.z,
+                        sample.heldBodyDerivedNodeWorld.translate.x,
+                        sample.heldBodyDerivedNodeWorld.translate.y,
+                        sample.heldBodyDerivedNodeWorld.translate.z,
+                        sample.bodyDerivedNodeToHeldNode.positionGameUnits,
+                        sample.bodyDerivedNodeToHeldNode.rotationDegrees);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 4),
+                        color,
+                        "PIVERR NTV %.2f A %.1f %.1f %.1f B %.1f %.1f %.1f",
+                        sample.pivotErrorGameUnits,
+                        sample.pivotAWorld.x,
+                        sample.pivotAWorld.y,
+                        sample.pivotAWorld.z,
+                        sample.pivotBWorld.x,
+                        sample.pivotBWorld.y,
+                        sample.pivotBWorld.z);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 5),
+                        color,
+                        "RAW_DESN %.1f %.1f %.1f D %.2f %.2f",
+                        sample.currentRawDesiredObjectWorld.translate.x,
+                        sample.currentRawDesiredObjectWorld.translate.y,
+                        sample.currentRawDesiredObjectWorld.translate.z,
+                        sample.heldNodeToRawDesiredObject.positionGameUnits,
+                        sample.heldNodeToRawDesiredObject.rotationDegrees);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 6),
+                        color,
+                        "RAW_DESB %.1f %.1f %.1f D %.2f %.2f",
+                        sample.currentRawDesiredBodyWorld.translate.x,
+                        sample.currentRawDesiredBodyWorld.translate.y,
+                        sample.currentRawDesiredBodyWorld.translate.z,
+                        sample.heldBodyToRawDesiredBody.positionGameUnits,
+                        sample.heldBodyToRawDesiredBody.rotationDegrees);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 7),
+                        color,
+                        "RAWHS_REV %.1f %.1f %.1f D %.2f %.2f",
+                        sample.heldRelativeHandTargetWorld.translate.x,
+                        sample.heldRelativeHandTargetWorld.translate.y,
+                        sample.heldRelativeHandTargetWorld.translate.z,
+                        sample.rawToHeldRelativeHandTarget.positionGameUnits,
+                        sample.rawToHeldRelativeHandTarget.rotationDegrees);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 8),
+                        color,
+                        "BODY_ERR %.2f %.2f REL %.2f",
+                        sample.bodyTargetNodeErr.positionGameUnits,
+                        sample.bodyTargetNodeErr.rotationDegrees,
+                        sample.relationPivotErr);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 9),
+                        color,
+                        "TBLOC %.1f %.1f %.1f DES %.1f %.1f %.1f E %.2f",
+                        sample.constraintTransformBLocalGame.x,
+                        sample.constraintTransformBLocalGame.y,
+                        sample.constraintTransformBLocalGame.z,
+                        sample.desiredTransformBLocalGame.x,
+                        sample.desiredTransformBLocalGame.y,
+                        sample.desiredTransformBLocalGame.z,
+                        sample.transformBLocalDelta.distance);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 10),
+                        color,
+                        "ANGT CI %.2f HIG %.2f CF %.2f TBF %.2f EN%d",
+                        sample.targetColumnsToConstraintInverseDegrees,
+                        sample.targetToHiggsRelationDegrees,
+                        sample.targetColumnsToConstraintForwardDegrees,
+                        sample.transformBFrozenDeltaDegrees,
+                        sample.ragdollMotorEnabled ? 1 : 0);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 11),
+                        color,
+                        "MOTOR AT %.3f AD %.2f AF %.0f LT %.3f LF %.0f M %.2f",
+                        sample.angularMotorTau,
+                        sample.angularMotorDamping,
+                        sample.angularMotorMaxForce,
+                        sample.linearMotorTau,
+                        sample.linearMotorMaxForce,
+                        sample.heldBodyMass);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 12),
+                        color,
+                        "AXIS RAW %.2f %.2f %.2f",
+                        sample.rawToHeldRelativeHandTargetAxes.x,
+                        sample.rawToHeldRelativeHandTargetAxes.y,
+                        sample.rawToHeldRelativeHandTargetAxes.z);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 13),
+                        color,
+                        "NATIVE flat->palm %.2fgu %.2fdeg legacy->palm %.2f",
+                        sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
+                        sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees,
+                        sample.legacyPalmPivotAToPalmAnchor.distance);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 14),
+                        color,
+                        "AUTH palm->auth %.2fgu %.2fdeg auth->proxy %.2fgu %.2fdeg",
+                        sample.palmAnchorTargetToGrabAuthority.positionGameUnits,
+                        sample.palmAnchorTargetToGrabAuthority.rotationDegrees,
+                        sample.grabAuthorityToProxyReadback.positionGameUnits,
+                        sample.grabAuthorityToProxyReadback.rotationDegrees);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 15),
+                        color,
+                        "LEGACY cfg->runtime %.2f cfg->proxy %.2f proxy%d",
+                        sample.legacyPalmPivotAToRuntimePivotA.distance,
+                        sample.legacyPalmPivotAToProxyReadback.distance,
+                        sample.hasProxyReadback ? 1 : 0);
+                }
+
+                ++telemetryState.logFrameCounter;
+                const std::uint64_t logInterval =
+                    static_cast<std::uint64_t>((std::max)(1, g_rockConfig.rockDebugGrabTransformTelemetryLogIntervalFrames));
+                if (telemetryState.frame == 1 || telemetryState.logFrameCounter >= logInterval) {
+                    telemetryState.logFrameCounter = 0;
+                    const auto prefix = grab_transform_telemetry::formatStampPrefix(stamp, isLeft, telemetryState.frame == 1 ? "start" : "held");
+                    const char* phaseLabel = telemetryState.frame == 1 ? "START" : "HELD";
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB TELEMETRY {} {} formID={:08X} heldBody={} handBody={} heldSource={} handSource={} heldMotion={} handMotion={} pivotFrame=NATIVE_BODY pivotA=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) pivotErr={:.3f}",
+                        prefix,
+                        phaseLabel,
+                        sample.heldFormId,
+                        sample.heldBodyId,
+                        sample.handBodyId,
+                        body_frame::bodyFrameSourceCode(sample.heldBodySource),
+                        body_frame::bodyFrameSourceCode(sample.handBodySource),
+                        sample.heldMotionIndex,
+                        sample.handMotionIndex,
+                        sample.pivotAWorld.x,
+                        sample.pivotAWorld.y,
+                        sample.pivotAWorld.z,
+                        sample.pivotBWorld.x,
+                        sample.pivotBWorld.y,
+                        sample.pivotBWorld.z,
+                        sample.pivotErrorGameUnits);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB TELEMETRY {} {} liveHand=({:.2f},{:.2f},{:.2f}) handBody[{}]=({:.2f},{:.2f},{:.2f}) heldBody[{}]=({:.2f},{:.2f},{:.2f}) nativeBody[BODY]=({:.2f},{:.2f},{:.2f}) nativeToHeld={:.3f}gu/{:.3f}deg visualNode=({:.2f},{:.2f},{:.2f}) bodyDerivedNode=({:.2f},{:.2f},{:.2f}) bodyNodeToVisual={:.3f}gu/{:.3f}deg liveToHandBody={:.3f}gu/{:.3f}deg",
+                        prefix,
+                        phaseLabel,
+                        sample.rawHandWorld.translate.x,
+                        sample.rawHandWorld.translate.y,
+                        sample.rawHandWorld.translate.z,
+                        body_frame::bodyFrameSourceCode(sample.handBodySource),
+                        sample.handBodyWorld.translate.x,
+                        sample.handBodyWorld.translate.y,
+                        sample.handBodyWorld.translate.z,
+                        body_frame::bodyFrameSourceCode(sample.heldBodySource),
+                        sample.heldBodyWorld.translate.x,
+                        sample.heldBodyWorld.translate.y,
+                        sample.heldBodyWorld.translate.z,
+                        sample.heldNativeBodyWorld.translate.x,
+                        sample.heldNativeBodyWorld.translate.y,
+                        sample.heldNativeBodyWorld.translate.z,
+                        sample.heldNativeBodyToHeldBody.positionGameUnits,
+                        sample.heldNativeBodyToHeldBody.rotationDegrees,
+                        sample.heldNodeWorld.translate.x,
+                        sample.heldNodeWorld.translate.y,
+                        sample.heldNodeWorld.translate.z,
+                        sample.heldBodyDerivedNodeWorld.translate.x,
+                        sample.heldBodyDerivedNodeWorld.translate.y,
+                        sample.heldBodyDerivedNodeWorld.translate.z,
+                        sample.bodyDerivedNodeToHeldNode.positionGameUnits,
+                        sample.bodyDerivedNodeToHeldNode.rotationDegrees,
+                        sample.rawToHandBody.positionGameUnits,
+                        sample.rawToHandBody.rotationDegrees);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB TELEMETRY {} {} startLive=({:.2f},{:.2f},{:.2f}) startHandBody=({:.2f},{:.2f},{:.2f}) objectAtGrab=({:.2f},{:.2f},{:.2f}) desiredAtGrab=({:.2f},{:.2f},{:.2f}) startDrift={:.3f}gu/{:.3f}deg rawHS=({:.2f},{:.2f},{:.2f}) bodyRaw=({:.2f},{:.2f},{:.2f}) bodyLocal=({:.2f},{:.2f},{:.2f})",
+                        prefix,
+                        phaseLabel,
+                        sample.liveHandWorldAtGrab.translate.x,
+                        sample.liveHandWorldAtGrab.translate.y,
+                        sample.liveHandWorldAtGrab.translate.z,
+                        sample.handBodyWorldAtGrab.translate.x,
+                        sample.handBodyWorldAtGrab.translate.y,
+                        sample.handBodyWorldAtGrab.translate.z,
+                        sample.objectNodeWorldAtGrab.translate.x,
+                        sample.objectNodeWorldAtGrab.translate.y,
+                        sample.objectNodeWorldAtGrab.translate.z,
+                        sample.desiredObjectWorldAtGrab.translate.x,
+                        sample.desiredObjectWorldAtGrab.translate.y,
+                        sample.desiredObjectWorldAtGrab.translate.z,
+                        sample.heldNodeToDesiredObjectAtGrab.positionGameUnits,
+                        sample.heldNodeToDesiredObjectAtGrab.rotationDegrees,
+                        sample.rawHandSpace.translate.x,
+                        sample.rawHandSpace.translate.y,
+                        sample.rawHandSpace.translate.z,
+                        sample.handBodyToRawHandAtGrab.translate.x,
+                        sample.handBodyToRawHandAtGrab.translate.y,
+                        sample.handBodyToRawHandAtGrab.translate.z,
+                        sample.bodyLocal.translate.x,
+                        sample.bodyLocal.translate.y,
+                        sample.bodyLocal.translate.z);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB TELEMETRY {} {} rawDesiredNode=({:.2f},{:.2f},{:.2f}) heldToRawDesiredNode={:.3f}gu/{:.3f}deg rawDesiredBody=({:.2f},{:.2f},{:.2f}) heldToRawDesiredBody={:.3f}gu/{:.3f}deg",
+                        prefix,
+                        phaseLabel,
+                        sample.currentRawDesiredObjectWorld.translate.x,
+                        sample.currentRawDesiredObjectWorld.translate.y,
+                        sample.currentRawDesiredObjectWorld.translate.z,
+                        sample.heldNodeToRawDesiredObject.positionGameUnits,
+                        sample.heldNodeToRawDesiredObject.rotationDegrees,
+                        sample.currentRawDesiredBodyWorld.translate.x,
+                        sample.currentRawDesiredBodyWorld.translate.y,
+                        sample.currentRawDesiredBodyWorld.translate.z,
+                        sample.heldBodyToRawDesiredBody.positionGameUnits,
+                        sample.heldBodyToRawDesiredBody.rotationDegrees);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB TELEMETRY {} {} invariants relationPivotErr={:.3f}gu rotationPreservedDeg={:.3f} bodyTargetNodeErr={:.3f}gu/{:.3f}deg normalAuthority={} authoredRotation={}",
+                        prefix,
+                        phaseLabel,
+                        sample.relationPivotErr,
+                        sample.rotationPreservedDeg,
+                        sample.bodyTargetNodeErr.positionGameUnits,
+                        sample.bodyTargetNodeErr.rotationDegrees,
+                        sample.normalAuthority ? "true" : "false",
+                        sample.authoredRotationAuthority ? "true" : "false");
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB TELEMETRY {} {} rawHSRev=({:.2f},{:.2f},{:.2f}) liveToRawHSRev={:.3f}gu/{:.3f}deg",
+                        prefix,
+                        phaseLabel,
+                        sample.heldRelativeHandTargetWorld.translate.x,
+                        sample.heldRelativeHandTargetWorld.translate.y,
+                        sample.heldRelativeHandTargetWorld.translate.z,
+                        sample.rawToHeldRelativeHandTarget.positionGameUnits,
+                        sample.rawToHeldRelativeHandTarget.rotationDegrees);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB TELEMETRY {} {} axisDots rawHSRev=({:.3f},{:.3f},{:.3f})",
+                        prefix,
+                        phaseLabel,
+                        sample.rawToHeldRelativeHandTargetAxes.x,
+                        sample.rawToHeldRelativeHandTargetAxes.y,
+                        sample.rawToHeldRelativeHandTargetAxes.z);
+                    const char* sideLabel = isLeft ? "left" : "right";
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB BASIS {} {} side={} convention=niLocalVectorToWorld nativeFlattenedHand={} generatedPalm={} rootFinger={} {} {} rootBase={} rootTip={} rootPalmLine={} handBodyPalmLine={} generatedPalmLine={} rootOpenLine={} rootPalmNormal={} nativeToPalm={:.3f}gu/{:.3f}deg",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        "yes",
+                        sample.hasPalmAnchorTarget ? "yes" : "no",
+                        sample.hasRootFingerLandmarks ? "yes" : "no",
+                        grab_transform_telemetry::formatBasis("nativeFlattenedHand", sample.nativeFlattenedHandBasis),
+                        grab_transform_telemetry::formatBasis("generatedPalm", sample.palmAnchorTargetBasis),
+                        grab_transform_telemetry::formatVector3(sample.rootFingerBaseCenterWorld),
+                        grab_transform_telemetry::formatVector3(sample.rootFingerTipCenterWorld),
+                        grab_transform_telemetry::formatVector3(sample.rootFingerBaseLineWorld),
+                        grab_transform_telemetry::formatVector3(sample.handBodyFingerBaseLineWorld),
+                        grab_transform_telemetry::formatVector3(sample.palmAnchorFingerBaseLineWorld),
+                        grab_transform_telemetry::formatVector3(sample.rootFingerOpenLineWorld),
+                        grab_transform_telemetry::formatVector3(sample.rootPalmNormalWorld),
+                        sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
+                        sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB BASIS FRAMECHAIN {} {} side={} generatedPalm={} grabAuthority={} proxyReadback={} nativeToPalm={:.3f}gu/{:.3f}deg nativeToAuthority={:.3f}gu/{:.3f}deg nativeToProxy={:.3f}gu/{:.3f}deg palmToAuthority={:.3f}gu/{:.3f}deg authorityToProxy={:.3f}gu/{:.3f}deg {} {} {}",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        sample.hasPalmAnchorTarget ? "yes" : "no",
+                        sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
+                        sample.hasProxyReadback ? "yes" : "no",
+                        sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
+                        sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees,
+                        sample.nativeFlattenedHandToGrabAuthority.positionGameUnits,
+                        sample.nativeFlattenedHandToGrabAuthority.rotationDegrees,
+                        sample.nativeFlattenedHandToProxyReadback.positionGameUnits,
+                        sample.nativeFlattenedHandToProxyReadback.rotationDegrees,
+                        sample.palmAnchorTargetToGrabAuthority.positionGameUnits,
+                        sample.palmAnchorTargetToGrabAuthority.rotationDegrees,
+                        sample.grabAuthorityToProxyReadback.positionGameUnits,
+                        sample.grabAuthorityToProxyReadback.rotationDegrees,
+                        grab_transform_telemetry::formatBasis("generatedPalm", sample.palmAnchorTargetBasis),
+                        grab_transform_telemetry::formatBasis("grabAuthority", sample.palmAnchorGrabAuthorityBasis),
+                        grab_transform_telemetry::formatBasis("proxyReadback", sample.proxyReadbackBasis));
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB BASIS LEGACY_PIVOT {} {} side={} legacyPresent={} legacyActive=no activeSource={} legacyPivotA={} runtimePivotA={} generatedPalm={} grabAuthority={} proxyReadback={} legacyToRuntime={:.3f}gu legacyToPalm={:.3f}gu legacyToAuthority={:.3f}gu legacyToProxy={:.3f}gu",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        sample.hasLegacyPalmPivotAWorld ? "yes" : "no",
+                        sample.runtimePivotSource,
+                        grab_transform_telemetry::formatVector3(sample.legacyPalmPivotAWorld),
+                        grab_transform_telemetry::formatVector3(sample.pivotAWorld),
+                        sample.hasPalmAnchorTarget ? "yes" : "no",
+                        sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
+                        sample.hasProxyReadback ? "yes" : "no",
+                        sample.legacyPalmPivotAToRuntimePivotA.distance,
+                        sample.legacyPalmPivotAToPalmAnchor.distance,
+                        sample.legacyPalmPivotAToGrabAuthority.distance,
+                        sample.legacyPalmPivotAToProxyReadback.distance);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB ANGULAR_DELTA {} {} side={} prev={} hmd={} raw={:.3f}deg world={} hand={} hmdLocal={} authority={:.3f}deg world={} hand={} hmdLocal={} proxy={:.3f}deg world={} hand={} hmdLocal={} rawDesired={:.3f}deg world={} hand={} hmdLocal={} heldNode={:.3f}deg world={} hand={} hmdLocal={} heldBody={:.3f}deg world={} hand={} hmdLocal={} nativeBody={:.3f}deg world={} hand={} hmdLocal={}",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        hasPreviousAngularDeltaSample ? "yes" : "no",
+                        context.hasHmdFrame ? "yes" : "no",
+                        rawHandAngularDelta.valid ? rawHandAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(rawHandAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(rawHandAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(rawHandAngularDelta.hmdLocalDegrees),
+                        palmAuthorityAngularDelta.valid ? palmAuthorityAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(palmAuthorityAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(palmAuthorityAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(palmAuthorityAngularDelta.hmdLocalDegrees),
+                        proxyAngularDelta.valid ? proxyAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(proxyAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(proxyAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(proxyAngularDelta.hmdLocalDegrees),
+                        rawDesiredObjectAngularDelta.valid ? rawDesiredObjectAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.hmdLocalDegrees),
+                        heldNodeAngularDelta.valid ? heldNodeAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(heldNodeAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(heldNodeAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(heldNodeAngularDelta.hmdLocalDegrees),
+                        heldBodyAngularDelta.valid ? heldBodyAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(heldBodyAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(heldBodyAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(heldBodyAngularDelta.hmdLocalDegrees),
+                        nativeBodyAngularDelta.valid ? nativeBodyAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(nativeBodyAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(nativeBodyAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(nativeBodyAngularDelta.hmdLocalDegrees));
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB BASIS {} {} side={} objectFrames {} {} {} {} {} {}",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        grab_transform_telemetry::formatBasis("objectAtGrab", sample.objectNodeWorldAtGrabBasis),
+                        grab_transform_telemetry::formatBasis("desiredAtGrab", sample.desiredObjectWorldAtGrabBasis),
+                        grab_transform_telemetry::formatBasis("heldNode", sample.heldNodeBasis),
+                        grab_transform_telemetry::formatBasis("bodyDerivedNode", sample.heldBodyDerivedNodeBasis),
+                        grab_transform_telemetry::formatBasis("heldBody", sample.heldBodyBasis),
+                        grab_transform_telemetry::formatBasis("nativeBody", sample.heldNativeBodyBasis));
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB BASIS {} {} side={} desiredFrames {} {} {}",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        grab_transform_telemetry::formatBasis("rawDesiredObj", sample.currentRawDesiredObjectWorldBasis),
+                        grab_transform_telemetry::formatBasis("rawDesiredBody", sample.currentRawDesiredBodyWorldBasis),
+                        grab_transform_telemetry::formatBasis("rawHSReverseHand", sample.heldRelativeHandTargetBasis));
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB BASIS DELTA {} {} side={} {} {} {} {} {} {} {} {}",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        grab_transform_telemetry::formatBasisDelta("rawToPalmAnchor", sample.rawHandBasis, sample.palmAnchorTargetBasis),
+                        grab_transform_telemetry::formatBasisDelta("rawToHandBody", sample.rawHandBasis, sample.handBodyBasis),
+                        grab_transform_telemetry::formatBasisDelta("objectAtGrabToDesiredAtGrab", sample.objectNodeWorldAtGrabBasis, sample.desiredObjectWorldAtGrabBasis),
+                        grab_transform_telemetry::formatBasisDelta("heldNodeToObjectAtGrab", sample.heldNodeBasis, sample.objectNodeWorldAtGrabBasis),
+                        grab_transform_telemetry::formatBasisDelta("heldNodeToRawDesired", sample.heldNodeBasis, sample.currentRawDesiredObjectWorldBasis),
+                        grab_transform_telemetry::formatBasisDelta("heldBodyToRawDesiredBody", sample.heldBodyBasis, sample.currentRawDesiredBodyWorldBasis),
+                        grab_transform_telemetry::formatBasisDelta("nativeBodyToHeldBody", sample.heldNativeBodyBasis, sample.heldBodyBasis),
+                        grab_transform_telemetry::formatBasisDelta("rawHandToHeldRelativeHand", sample.rawHandBasis, sample.heldRelativeHandTargetBasis));
+                    const bool hasAuthorityAxisBasis = sample.hasProxyReadback || sample.hasPalmAnchorGrabAuthority;
+                    if (hasAuthorityAxisBasis && sample.hasHeldBodyWorld && sample.hasGrabStartFrames) {
+                        const auto& authorityBasis = sample.hasProxyReadback ? sample.proxyReadbackBasis : sample.palmAnchorGrabAuthorityBasis;
+                        ROCK_LOG_INFO(Hand,
+                            "GRAB BASIS AXISMAP {} {} side={} authority={} {} {} {} {}",
+                            prefix,
+                            phaseLabel,
+                            sideLabel,
+                            sample.hasProxyReadback ? "proxyReadback" : "grabAuthority",
+                            grab_transform_telemetry::formatBasisCrossMap("heldBodyToAuthority", sample.heldBodyBasis, authorityBasis),
+                            grab_transform_telemetry::formatBasisCrossMap("desiredBodyToAuthority", sample.currentRawDesiredBodyWorldBasis, authorityBasis),
+                            grab_transform_telemetry::formatBasisCrossMap("heldBodyToDesiredBody", sample.heldBodyBasis, sample.currentRawDesiredBodyWorldBasis),
+                            grab_transform_telemetry::formatBasisCrossMap("rawHandToAuthority", sample.rawHandBasis, authorityBasis));
+                    }
+                    if (sample.hasConstraintAngularTelemetry) {
+                        ROCK_LOG_INFO(Hand,
+                            "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) pivotBRelationDelta={:.3f}gu targetErr(colsInv={:.3f}deg targetToHiggsRelation={:.3f}deg colsForward={:.3f}deg transformBFrozenDelta={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",
+                            prefix,
+                            phaseLabel,
+                            sample.constraintTransformBLocalGame.x,
+                            sample.constraintTransformBLocalGame.y,
+                            sample.constraintTransformBLocalGame.z,
+                            sample.desiredTransformBLocalGame.x,
+                            sample.desiredTransformBLocalGame.y,
+                            sample.desiredTransformBLocalGame.z,
+                            sample.transformBLocalDelta.distance,
+                            sample.targetColumnsToConstraintInverseDegrees,
+                            sample.targetToHiggsRelationDegrees,
+                            sample.targetColumnsToConstraintForwardDegrees,
+                            sample.transformBFrozenDeltaDegrees,
+                            sample.ragdollMotorEnabled ? "yes" : "no",
+                            sample.angularMotorTau,
+                            sample.angularMotorDamping,
+                            sample.angularMotorMaxForce,
+                            sample.linearMotorTau,
+                            sample.linearMotorMaxForce,
+                            sample.heldBodyMass);
+                    }
+                }
+                storePreviousAngularDeltaSample(telemetryState, sample);
+            };
+
+            publishGrabTelemetry(_rightHand, false);
+            publishGrabTelemetry(_leftHand, true);
+        } else {
+            for (auto& state : _diagnostics.grabTransformTelemetryStates) {
+                state.active = false;
+                state.frame = 0;
+                state.logFrameCounter = 0;
+            }
+        }
+
         if (drawGrabAuthorityProxy) {
             auto addGrabAuthorityAxisReference = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
                 if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
@@ -2140,52 +3629,131 @@
                 }
             };
 
-            auto addGrabAuthorityProxyBody = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
+            auto addGrabAuthorityProxyClock = [&](Hand& hand, const RE::NiTransform& rawHandWorld) {
                 if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
                     return;
                 }
 
-                GrabAuthorityProxyDebugSnapshot snapshot{};
-                if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, rawHandWorld, snapshot)) {
+                GrabAuthorityProxyClockDebugSnapshot snapshot{};
+                if (!hand.tryGetGrabAuthorityProxyClockDebugSnapshot(hknp, snapshot)) {
                     return;
                 }
 
                 const bool isLeft = hand.isLeft();
-                const RE::hknpBodyId proxyBodyId = hand.getGrabAuthorityProxyBodyId();
-                if (drawGrabAuthorityProxyCollider && proxyBodyId.value != INVALID_BODY_ID) {
+                const RE::NiTransform* currentTarget =
+                    drawColliderPhaseDiagnostics ?
+                    (snapshot.hasQueuedTarget ?
+                            &snapshot.queuedProxyTargetWorld :
+                            (snapshot.hasAppliedTarget ?
+                                    &snapshot.appliedProxyTargetWorld :
+                                    nullptr)) :
+                    nullptr;
+                if (drawGrabAuthorityProxyCollider) {
                     addBodyWithTarget(
-                        proxyBodyId,
+                        snapshot.proxyBodyId,
                         isLeft ?
                             debug::BodyOverlayRole::LeftGrabAuthorityProxy :
                             debug::BodyOverlayRole::RightGrabAuthorityProxy,
-                        drawColliderPhaseDiagnostics ? &snapshot.proxyTargetWorld : nullptr);
+                        currentTarget);
                 }
-                addAxisTransform(
-                    snapshot.proxyTargetWorld,
-                    isLeft ?
-                        debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget :
-                        debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
-                    snapshot.palmAuthorityBaseWorld.translate,
-                    true);
-                addMarkerPoint(
-                    isLeft ?
-                        debug::MarkerOverlayRole::LeftGrabAuthorityProxyTarget :
-                        debug::MarkerOverlayRole::RightGrabAuthorityProxyTarget,
-                    snapshot.proxyTargetWorld.translate,
-                    4.0f);
-                addMarkerLine(
-                    isLeft ?
-                        debug::MarkerOverlayRole::LeftGrabAuthorityProxyOffset :
-                        debug::MarkerOverlayRole::RightGrabAuthorityProxyOffset,
-                    snapshot.palmAuthorityBaseWorld.translate,
-                    snapshot.proxyTargetWorld.translate);
+
+                RE::NiTransform currentPalmTarget{};
+                const bool hasCurrentPalmTarget = hand.tryGetPalmAnchorTarget(currentPalmTarget);
+                const RE::NiTransform currentPalmAuthority = hasCurrentPalmTarget ?
+                    hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(currentPalmTarget) :
+                    rawHandWorld;
+
+                if (snapshot.hasQueuedTarget) {
+                    addAxisTransform(
+                        snapshot.queuedProxyTargetWorld,
+                        isLeft ?
+                            debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget :
+                            debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
+                        currentPalmAuthority.translate,
+                        true);
+                    addMarkerPoint(
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyTarget :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyTarget,
+                        snapshot.queuedProxyTargetWorld.translate,
+                        4.0f);
+                    addMarkerLine(
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyOffset :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyOffset,
+                        currentPalmAuthority.translate,
+                        snapshot.queuedProxyTargetWorld.translate);
+                }
+                if (snapshot.hasAppliedTarget) {
+                    addAxisTransform(
+                        snapshot.appliedProxyTargetWorld,
+                        isLeft ?
+                            debug::AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget :
+                            debug::AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget,
+                        snapshot.appliedRawHandWorld.translate,
+                        true);
+                    addMarkerPoint(
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyAppliedTarget :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyAppliedTarget,
+                        snapshot.appliedProxyTargetWorld.translate,
+                        3.0f);
+                }
+                if (snapshot.hasQueuedTarget && snapshot.hasAppliedTarget) {
+                    addMarkerLine(
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyClockDelta :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyClockDelta,
+                        snapshot.appliedProxyTargetWorld.translate,
+                        snapshot.queuedProxyTargetWorld.translate);
+                }
+
+                RE::NiTransform liveProxyWorld{};
+                const bool liveProxyOk = tryResolveLiveBodyWorldTransform(
+                    hknp,
+                    snapshot.proxyBodyId,
+                    liveProxyWorld);
+                const float queuedToApplied =
+                    snapshot.hasQueuedTarget && snapshot.hasAppliedTarget ?
+                    origin_diagnostics::distance(
+                        snapshot.queuedProxyTargetWorld.translate,
+                        snapshot.appliedProxyTargetWorld.translate) :
+                    -1.0f;
+                const float appliedToPre =
+                    snapshot.hasAppliedTarget && liveProxyOk ?
+                    origin_diagnostics::distance(
+                        snapshot.appliedProxyTargetWorld.translate,
+                        liveProxyWorld.translate) :
+                    -1.0f;
+                constexpr float clockTextColor[4]{ 1.0f, 0.92f, 0.10f, 0.98f };
+                const RE::NiPoint3 clockLabel = snapshot.hasQueuedTarget ?
+                    snapshot.queuedProxyTargetWorld.translate :
+                    snapshot.appliedProxyTargetWorld.translate;
+                addTextLineSized(
+                    clockLabel + RE::NiPoint3{ 0.0f, 0.0f, 6.0f },
+                    1.45f,
+                    clockTextColor,
+                    "PROXY CLOCK %s Q=%llu F=%llu Q-A=%.2f A-PRE=%.2f",
+                    isLeft ? "L" : "R",
+                    static_cast<unsigned long long>(snapshot.queuedSequence),
+                    static_cast<unsigned long long>(snapshot.flushSequence),
+                    queuedToApplied,
+                    appliedToPre);
+
             };
 
             addGrabAuthorityAxisReference(_rightHand, context.right.rawHandWorld);
             addGrabAuthorityAxisReference(_leftHand, context.left.rawHandWorld);
 
-            addGrabAuthorityProxyBody(_rightHand, context.right.rawHandWorld);
-            addGrabAuthorityProxyBody(_leftHand, context.left.rawHandWorld);
+            addGrabAuthorityProxyClock(_rightHand, context.right.rawHandWorld);
+            addGrabAuthorityProxyClock(_leftHand, context.left.rawHandWorld);
+
+            const float proxyClockLegendColor[4]{ 1.0f, 1.0f, 1.0f, 0.98f };
+            addScreenTextLine(
+                18.0f,
+                76.0f,
+                proxyClockLegendColor,
+                "GRAB PROXY CLOCK  QUEUED=YELLOW  APPLIED=ORANGE  PRE=MAGENTA  POST=CYAN");
         }
 
         if (frame.drawRockBodies) {
@@ -2515,17 +4083,23 @@
 
         if (frame.drawTargetBodies || drawWorldOriginDiagnostics) {
             auto addHandTarget = [&](const Hand& hand) {
+                const auto& handInput = hand.isLeft() ? context.left : context.right;
                 if (hand.isHolding()) {
                     const auto& savedState = hand.getSavedObjectState();
                     if (frame.drawTargetBodies) {
-                        RE::NiTransform desiredBodyWorld{};
+                        GrabForceTorqueDebugSnapshot targetSnapshot{};
                         const bool hasCurrentTarget =
                             drawColliderPhaseDiagnostics &&
-                            hand.tryGetHeldDesiredBodyWorld(hknp, desiredBodyWorld);
+                            hand.getGrabForceTorqueDebugSnapshot(
+                                hknp,
+                                handInput.rawHandWorld,
+                                targetSnapshot);
                         addBodyWithTarget(
                             savedState.bodyId,
                             debug::BodyOverlayRole::Target,
-                            hasCurrentTarget ? &desiredBodyWorld : nullptr);
+                            hasCurrentTarget ?
+                                &targetSnapshot.desiredBodyWorld :
+                                nullptr);
                     }
                     addWorldOriginDiagnostic(hand, true, savedState.bodyId, savedState.refr, nullptr, nullptr);
                     return;

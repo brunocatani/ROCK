@@ -18,7 +18,12 @@ namespace rock
         SelectionFoundClose,
         SelectionFoundFar,
         SelectionLost,
-        LockSelectionForPull,
+        LockFarSelection,
+        BeginPreGrabItem,
+        BeginPrePullItem,
+        BeginExternalGrab,
+        BeginLootOtherHand,
+        SpawnedItemReady,
         BeginPull,
         PullArrivedClose,
         BeginGrabCommit,
@@ -29,9 +34,15 @@ namespace rock
         CancelGameplayCandidate,
         CommitStash,
         CommitConsume,
+        CompleteLoot,
         ReleaseRequested,
         ObjectInvalidated,
         WorldInvalidated,
+        BeginOtherHandTransfer,
+        CompleteOtherHandTransfer,
+        BeginTwoHandSelection,
+        BeginTwoHandHold,
+        EndTwoHandHold,
     };
 
     enum class HandTransitionEffect : std::uint32_t
@@ -46,8 +57,10 @@ namespace rock
         ReleaseHeld = 1u << 6,
         ClearHeldRuntime = 1u << 7,
         ClearFingerPose = 1u << 8,
-        EnterGameplayScaffold = 1u << 9,
-        ExitGameplayScaffold = 1u << 10,
+        EnterTwoHandAuthority = 1u << 9,
+        ExitTwoHandAuthority = 1u << 10,
+        EnterGameplayScaffold = 1u << 11,
+        ExitGameplayScaffold = 1u << 12,
     };
 
     struct HandTransitionRequest
@@ -57,6 +70,8 @@ namespace rock
         bool hasSelection = false;
         bool selectionIsFar = false;
         bool hasHeldBody = false;
+        bool otherHandTransferPending = false;
+        bool twoHandCandidateValid = false;
     };
 
     struct HandTransitionResult
@@ -104,32 +119,48 @@ namespace rock
     [[nodiscard]] constexpr bool hasExclusiveObjectSelection(HandState state)
     {
         return state == HandState::SelectionLocked ||
+               state == HandState::PreGrabItem ||
+               state == HandState::PrePullItem ||
                state == HandState::Pulled ||
                state == HandState::HeldInit ||
                state == HandState::HeldBody ||
+               state == HandState::GrabExternal ||
+               state == HandState::LootOtherHand ||
                state == HandState::StashCandidate ||
                state == HandState::ConsumeCandidate;
     }
 
     [[nodiscard]] constexpr bool isGameplayScaffoldState(HandState state)
     {
-        return state == HandState::StashCandidate || state == HandState::ConsumeCandidate;
+        return state == HandState::PreGrabItem ||
+               state == HandState::PrePullItem ||
+               state == HandState::GrabExternal ||
+               state == HandState::LootOtherHand ||
+               state == HandState::StashCandidate ||
+               state == HandState::ConsumeCandidate;
     }
 
     [[nodiscard]] constexpr bool suppressesGeneratedHandContactEvidence(HandState state)
     {
         /*
-         * ROCK disables generated hand contact while a dynamic held grab is
-         * active. ROCK's hknp hand bodies are also the
+         * ROCK disables generated hand contact while a dynamic held grab or
+         * two-handed hand owner is active. ROCK's hknp hand bodies are also the
          * source of semantic and native contact evidence, so the physics-thread
          * producer must use the same ownership boundary as the visual solver.
          * SelectedClose/SelectedFar stay open because fresh pre-grab contact is
-         * useful evidence; locked/pulled/held states own the hand.
+         * useful evidence; locked/pulled/held/two-hand states own the hand.
          */
         return state == HandState::SelectionLocked ||
+               state == HandState::PreGrabItem ||
+               state == HandState::PrePullItem ||
                state == HandState::Pulled ||
                state == HandState::HeldInit ||
                state == HandState::HeldBody ||
+               state == HandState::GrabFromOtherHand ||
+               state == HandState::GrabExternal ||
+               state == HandState::LootOtherHand ||
+               state == HandState::SelectedTwoHand ||
+               state == HandState::HeldTwoHanded ||
                state == HandState::StashCandidate ||
                state == HandState::ConsumeCandidate;
     }

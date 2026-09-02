@@ -103,12 +103,26 @@ namespace rock
                 return "SelectedFar";
             case HandState::SelectionLocked:
                 return "SelectionLocked";
+            case HandState::PreGrabItem:
+                return "PreGrabItem";
+            case HandState::PrePullItem:
+                return "PrePullItem";
             case HandState::HeldInit:
                 return "HeldInit";
             case HandState::HeldBody:
                 return "HeldBody";
             case HandState::Pulled:
                 return "Pulled";
+            case HandState::GrabFromOtherHand:
+                return "GrabFromOtherHand";
+            case HandState::GrabExternal:
+                return "GrabExternal";
+            case HandState::LootOtherHand:
+                return "LootOtherHand";
+            case HandState::SelectedTwoHand:
+                return "SelectedTwoHand";
+            case HandState::HeldTwoHanded:
+                return "HeldTwoHanded";
             case HandState::StashCandidate:
                 return "StashCandidate";
             case HandState::ConsumeCandidate:
@@ -128,8 +142,18 @@ namespace rock
                 return "SelectionFoundFar";
             case HandInteractionEvent::SelectionLost:
                 return "SelectionLost";
-            case HandInteractionEvent::LockSelectionForPull:
-                return "LockSelectionForPull";
+            case HandInteractionEvent::LockFarSelection:
+                return "LockFarSelection";
+            case HandInteractionEvent::BeginPreGrabItem:
+                return "BeginPreGrabItem";
+            case HandInteractionEvent::BeginPrePullItem:
+                return "BeginPrePullItem";
+            case HandInteractionEvent::BeginExternalGrab:
+                return "BeginExternalGrab";
+            case HandInteractionEvent::BeginLootOtherHand:
+                return "BeginLootOtherHand";
+            case HandInteractionEvent::SpawnedItemReady:
+                return "SpawnedItemReady";
             case HandInteractionEvent::BeginPull:
                 return "BeginPull";
             case HandInteractionEvent::PullArrivedClose:
@@ -150,12 +174,24 @@ namespace rock
                 return "CommitStash";
             case HandInteractionEvent::CommitConsume:
                 return "CommitConsume";
+            case HandInteractionEvent::CompleteLoot:
+                return "CompleteLoot";
             case HandInteractionEvent::ReleaseRequested:
                 return "ReleaseRequested";
             case HandInteractionEvent::ObjectInvalidated:
                 return "ObjectInvalidated";
             case HandInteractionEvent::WorldInvalidated:
                 return "WorldInvalidated";
+            case HandInteractionEvent::BeginOtherHandTransfer:
+                return "BeginOtherHandTransfer";
+            case HandInteractionEvent::CompleteOtherHandTransfer:
+                return "CompleteOtherHandTransfer";
+            case HandInteractionEvent::BeginTwoHandSelection:
+                return "BeginTwoHandSelection";
+            case HandInteractionEvent::BeginTwoHandHold:
+                return "BeginTwoHandHold";
+            case HandInteractionEvent::EndTwoHandHold:
+                return "EndTwoHandHold";
             }
             return "Unknown";
         }
@@ -234,6 +270,8 @@ namespace rock
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _grabStartTime = 0.0f;
+        _heldLogCounter = 0;
+        _notifCounter = 0;
         _heldBodyIds.clear();
         clearPullRuntimeState(false, "reset");
         clearPullCatchIntent("reset");
@@ -243,8 +281,12 @@ namespace rock
         }
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
+        _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
         _grabFingerPosePublished = false;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
+        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
         clearGrabVisualReturn("reset", false);
@@ -253,10 +295,22 @@ namespace rock
         _hasGrabVisualHandTransform = false;
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
+        _grabVisualDeviationExceededSeconds = 0.0f;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
+        _grabFingerProbeStart = {};
+        _grabFingerProbeEnd = {};
+        _hasGrabFingerProbeDebug = false;
         _grabFingerSweepDebugCapture = {};
         _grabFingerSweepDebugObjectWorld = {};
         _hasGrabFingerSweepDebug = false;
+        _grabFingerPadProbeStart = {};
+        _grabFingerPadProbeEnd = {};
+        _grabFingerPadProbeHit = {};
+        _grabFingerPadProbeHitValid = {};
+        _hasGrabFingerPadProbeDebug = false;
+        _grabFingerSurfaceTarget = {};
+        _grabFingerSurfaceTargetValid = {};
+        _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
@@ -337,8 +391,12 @@ namespace rock
         _isHoldingFlag.store(false, std::memory_order_release);
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
+        _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
         _grabFingerPosePublished = false;
+        _grabConvergeStableInsidePocketSeconds = 0.0f;
+        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         clearGrabHandCollisionSuppressionState();
         clearHeldLooseWeaponBodyCollisionSuppressionState();
         _boneColliders.reset();
@@ -351,6 +409,7 @@ namespace rock
         _hasGrabVisualHandTransform = false;
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
+        _grabVisualDeviationExceededSeconds = 0.0f;
         clearSelectedCloseFingerPose();
         _grabFingerSweepDebugCapture = {};
         _grabFingerSweepDebugObjectWorld = {};
@@ -701,11 +760,13 @@ namespace rock
     {
         _pullCatchIntent = PullCatchIntent{
             .active = refr != nullptr && primaryBodyId != INVALID_BODY_ID,
-            .arrived = false,
+            .commitPending = false,
             .refr = refr,
             .formId = refr ? refr->GetFormID() : 0,
             .primaryBodyId = primaryBodyId,
             .targetKind = targetKind,
+            .commitElapsedSeconds = 0.0f,
+            .failedCommitAttempts = 0,
         };
 
         if (_pullCatchIntent.active) {
@@ -723,7 +784,9 @@ namespace rock
             return;
         }
 
-        _pullCatchIntent.arrived = true;
+        _pullCatchIntent.commitPending = true;
+        _pullCatchIntent.commitElapsedSeconds = 0.0f;
+        _pullCatchIntent.failedCommitAttempts = 0;
         ROCK_LOG_DEBUG(Hand,
             "{} hand PULL catch intent arrived formID={:08X} primaryBody={}",
             handName(),
@@ -734,7 +797,7 @@ namespace rock
     bool Hand::pullCatchIntentMatchesSelection() const
     {
         return _pullCatchIntent.active &&
-               _pullCatchIntent.arrived &&
+               _pullCatchIntent.commitPending &&
                _state == HandState::SelectedClose &&
                _currentSelection.isValid() &&
                !_currentSelection.isFarSelection &&
@@ -750,12 +813,123 @@ namespace rock
 
     bool Hand::hasArrivedPullCatchIntent() const
     {
-        return _pullCatchIntent.active && _pullCatchIntent.arrived;
+        return _pullCatchIntent.active && _pullCatchIntent.commitPending;
+    }
+
+    bool Hand::hasPendingPullCatchCommit() const
+    {
+        return pullCatchIntentMatchesSelection();
+    }
+
+    bool Hand::advancePullCatchCommit(float deltaTime, float maxCommitSeconds)
+    {
+        if (!hasPendingPullCatchCommit()) {
+            return false;
+        }
+
+        if (_pullCatchIntent.failedCommitAttempts == 0) {
+            return true;
+        }
+
+        _pullCatchIntent.commitElapsedSeconds += (std::max)(0.0f, std::isfinite(deltaTime) ? deltaTime : 0.0f);
+        const float retryWindow = (std::max)(0.0f, std::isfinite(maxCommitSeconds) ? maxCommitSeconds : 0.0f);
+        return retryWindow <= 0.0f || _pullCatchIntent.commitElapsedSeconds <= retryWindow;
+    }
+
+    void Hand::notePullCatchCommitAttemptFailed()
+    {
+        if (!hasPendingPullCatchCommit()) {
+            return;
+        }
+
+        ++_pullCatchIntent.failedCommitAttempts;
     }
 
     RE::TESObjectREFR* Hand::getPullCatchIntentRef() const
     {
         return _pullCatchIntent.refr;
+    }
+
+    bool Hand::reacquirePullCatchCloseSelection(RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        const RE::NiPoint3& selectionOrigin,
+        const RE::NiPoint3& palmNormal,
+        float radiusGameUnits,
+        float maxBodyDistanceGameUnits)
+    {
+        /*
+         * ROCK gives the pulled object a wider target-specific close grab query
+         * after arrival instead of falling back to normal near/far selection.
+         * This path can only restore the already-claimed ref/body stored in
+         * PullCatchIntent, never switch hands to a fresh object or restart far
+         * selection.
+         */
+        if (!_pullCatchIntent.active || !_pullCatchIntent.commitPending || !hknpWorld || !_pullCatchIntent.refr ||
+            _pullCatchIntent.primaryBodyId == INVALID_BODY_ID) {
+            return false;
+        }
+
+        auto* refr = _pullCatchIntent.refr;
+        if (refr->IsDeleted() || refr->IsDisabled() || refr->GetFormID() != _pullCatchIntent.formId) {
+            return false;
+        }
+
+        RE::NiTransform bodyWorld{};
+        const auto bodyId = RE::hknpBodyId{ _pullCatchIntent.primaryBodyId };
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, bodyId, bodyWorld) &&
+            !tryResolveLiveBodyWorldTransform(hknpWorld, bodyId, bodyWorld)) {
+            return false;
+        }
+
+        const float distance = pointDistanceGameUnits(selectionOrigin, bodyWorld.translate);
+        const float radius = std::isfinite(radiusGameUnits) ? (std::max)(0.0f, radiusGameUnits) : 0.0f;
+        const float maxBodyDistance = std::isfinite(maxBodyDistanceGameUnits) ? (std::max)(0.0f, maxBodyDistanceGameUnits) : radius;
+        const float acceptedDistance = (std::max)(radius, maxBodyDistance);
+        if (acceptedDistance <= 0.0f || distance > acceptedDistance) {
+            return false;
+        }
+
+        SelectedObject selection{};
+        selection.setReference(refr);
+        selection.bodyId = bodyId;
+        selection.hitPointWorld = bodyWorld.translate;
+        selection.hitNormalWorld = normalizeOrFallback(selectionOrigin - bodyWorld.translate, palmNormal);
+        selection.distance = distance;
+        selection.signedAlongDistance = distance;
+        selection.lateralDistance = 0.0f;
+        selection.hitFraction = 0.0f;
+        selection.targetKind = _pullCatchIntent.targetKind;
+        selection.isFarSelection = false;
+        selection.hasHitPoint = true;
+        selection.hasHitNormal = true;
+        selection.visualNode = refr->Get3D();
+        selection.hitNode = selection.visualNode;
+        if (bhkWorld) {
+            auto bodyHandle = bodyId;
+            if (auto* collisionObject = RE::bhkNPCollisionObject::Getbhk(bhkWorld, bodyHandle)) {
+                selection.hitNode = collisionObject->sceneObject ? collisionObject->sceneObject : selection.hitNode;
+            }
+        }
+
+        if (!selection.isValid()) {
+            return false;
+        }
+
+        stopSelectionHighlight();
+        _currentSelection = selection;
+        applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
+        _selectionHoldSeconds = 0.0f;
+        clearSelectedCloseFingerPose();
+        playSelectionHighlight(_currentSelection);
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand pull-catch wide reacquired close selection: formID={:08X} body={} dist={:.1f} acceptedDistance={:.1f}",
+            handName(),
+            _pullCatchIntent.formId,
+            _pullCatchIntent.primaryBodyId,
+            distance,
+            acceptedDistance);
+        return true;
     }
 
     bool Hand::beginActorEquipmentDropHandoff(
@@ -1069,12 +1243,14 @@ namespace rock
     {
         if (_pullCatchIntent.active) {
             ROCK_LOG_DEBUG(Hand,
-                "{} hand PULL catch intent cleared reason={} formID={:08X} primaryBody={} arrived={}",
+                "{} hand PULL catch intent cleared reason={} formID={:08X} primaryBody={} pending={} elapsed={:.3f}s failedAttempts={}",
                 handName(),
                 reason ? reason : "cleared",
                 _pullCatchIntent.formId,
                 _pullCatchIntent.primaryBodyId,
-                _pullCatchIntent.arrived ? "yes" : "no");
+                _pullCatchIntent.commitPending ? "yes" : "no",
+                _pullCatchIntent.commitElapsedSeconds,
+                _pullCatchIntent.failedCommitAttempts);
         }
         _pullCatchIntent = {};
     }
@@ -1492,9 +1668,13 @@ namespace rock
         seat.secondElongationRatio = diagnostics.secondElongationRatio;
         seat.alignmentAngleDegrees = diagnostics.alignmentAngleDegrees;
         seat.alignmentReason = diagnostics.alignmentReason;
+        seat.rollAngleDegrees = diagnostics.rollAngleDegrees;
+        seat.rollReason = diagnostics.rollReason;
         seat.depthGameUnits = diagnostics.depthGameUnits;
         seat.depthOffsetGameUnits = diagnostics.depthOffsetGameUnits;
         seat.depthReason = diagnostics.depthReason;
+        seat.penetrationBackstopGameUnits = diagnostics.penetrationBackstopGameUnits;
+        seat.penetrationBackstopReason = diagnostics.penetrationBackstopReason;
         seat.gripPointObjectLocal[0] = telemetry.gripEvidence.gripPointLocal.x;
         seat.gripPointObjectLocal[1] = telemetry.gripEvidence.gripPointLocal.y;
         seat.gripPointObjectLocal[2] = telemetry.gripEvidence.gripPointLocal.z;
@@ -1511,10 +1691,14 @@ namespace rock
             storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(telemetry.authority.objectNodeWorldAtGrab, telemetry.authority.bodyWorldAtGrab));
 
         auto& tuning = outCapture.tuning;
-        tuning.seatDepthMaxGameUnits = kGrabSeatDepthMaxGameUnits;
-        tuning.seatDepthFootprintRadiusGameUnits = kGrabSeatDepthFootprintRadiusGameUnits;
+        tuning.seatDepthMaxGameUnits = g_rockConfig.rockGrabSeatDepthMaxGameUnits;
+        tuning.seatDepthFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits;
+        tuning.seatPenetrationBackstopFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits;
         tuning.seatDepthSkinGameUnits = g_rockConfig.rockGrabSeatDepthSkinGameUnits;
+        tuning.gripInsetGameUnits = g_rockConfig.rockGrabGripInsetGameUnits;
         tuning.pullPresentationMinElongationRatio = g_rockConfig.rockPullPresentationMinElongationRatio;
+        tuning.pullPresentationGripAxisTiltDegrees = g_rockConfig.rockPullPresentationGripAxisTiltDegrees;
+        tuning.seatRollMinSecondElongationRatio = g_rockConfig.rockGrabSeatRollMinSecondElongationRatio;
         tuning.pocketDepthGameUnits = g_rockConfig.rockGrabPocketDepthGameUnits;
         tuning.pocketRadiusGameUnits = g_rockConfig.rockGrabPocketRadiusGameUnits;
         return true;
@@ -1546,6 +1730,36 @@ namespace rock
         out.palmSource = palmReference.source;
         out.palmMotionIndex = palmReference.motionIndex;
         return true;
+    }
+
+    bool Hand::tryGetGrabAuthorityProxyClockDebugSnapshot(
+        RE::hknpWorld* world,
+        GrabAuthorityProxyClockDebugSnapshot& out)
+    {
+        out = {};
+        if (!world) {
+            return false;
+        }
+
+        std::scoped_lock lock(_grabAuthorityProxyMutex);
+        if (!_grabAuthorityProxy.isValid() || _grabAuthorityProxyHknpWorld != world) {
+            return false;
+        }
+
+        out.proxyBodyId = _grabAuthorityProxy.getBodyId();
+        out.queuedSequence = _grabAuthorityProxyQueuedSequence;
+        out.flushSequence = _grabAuthorityProxyFlushSequence;
+        if (_grabAuthorityPendingTarget.valid) {
+            out.queuedProxyTargetWorld = _grabAuthorityPendingTarget.proxyWorld;
+            out.queuedRawHandWorld = _grabAuthorityPendingTarget.rawHandWorld;
+            out.hasQueuedTarget = true;
+        }
+        if (_hasLastAppliedGrabAuthorityProxyWorld) {
+            out.appliedProxyTargetWorld = _lastAppliedGrabAuthorityProxyWorld;
+            out.appliedRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
+            out.hasAppliedTarget = true;
+        }
+        return out.hasQueuedTarget || out.hasAppliedTarget;
     }
 
     void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata,
@@ -1953,19 +2167,18 @@ namespace rock
                contact.segment == hand_collider_semantics::HandFingerSegment::Tip;
     }
 
-    bool Hand::lockSelectionForPull()
+    bool Hand::lockFarSelection()
     {
-        const HandState expectedState = _currentSelection.isFarSelection ? HandState::SelectedFar : HandState::SelectedClose;
-        if (_state != expectedState || !_currentSelection.isValid()) {
+        if (_state != HandState::SelectedFar || !_currentSelection.isValid() || !_currentSelection.isFarSelection) {
             return false;
         }
 
-        const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::LockSelectionForPull });
+        const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::LockFarSelection });
         if (!transition.accepted) {
             return false;
         }
         _selectionHoldSeconds = 0.0f;
-        ROCK_LOG_DEBUG(Hand, "{} hand locked {} selection for pull formID={:08X} dist={:.1f}", handName(), _currentSelection.isFarSelection ? "far" : "close", _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
+        ROCK_LOG_DEBUG(Hand, "{} hand locked far selection formID={:08X} dist={:.1f}", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
             _currentSelection.distance);
         return true;
     }
@@ -2049,7 +2262,7 @@ namespace rock
         if (hasArrivedPullCatchIntent()) {
             /*
              * Once pull arrives, the original ref/body is the owner until close
-             * commit succeeds or release cancels.
+             * commit succeeds, release cancels, or the retry window expires.
              * Letting normal near/far queries refresh this selection can orphan
              * the claimed pulled object or restart the far-pull path.
              */
@@ -2391,13 +2604,10 @@ namespace rock
             return refuse(_currentSelection.isFarSelection ? "unrelated-far-selection" : "unrelated-close-selection");
         }
 
-        // Reach pad for joining a peer-held object; fixed at the former touch
-        // acquire distance so the second hand's close query does not shrink.
-        constexpr float kPeerHeldCloseReachPadGameUnits = 4.0f;
         const float closeReach = (std::max)(
             selection_query_policy::kNearCastDistanceGameUnits,
             selection_query_policy::kNearDetectionRangeGameUnits) +
-                                 (std::max)(selection_query_policy::kNearCastRadiusGameUnits, kPeerHeldCloseReachPadGameUnits);
+                                 (std::max)(selection_query_policy::kNearCastRadiusGameUnits, g_rockConfig.rockGrabTouchAcquireDistanceGameUnits);
 
         std::vector<std::uint32_t> candidateBodyIds;
         candidateBodyIds.reserve(peerHeldBodyIds.size() + 1);

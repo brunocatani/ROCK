@@ -246,7 +246,7 @@ namespace rock
 
             saved_grab_offset::saveCapture(capture);
             ROCK_LOG_INFO(Hand,
-                "Saved grab capture for {:08X} ({} hand): triangles={} colliders={} mass={:.2f} com={} shape={} seatReasons=[align={} depth={}]",
+                "Saved grab capture for {:08X} ({} hand): triangles={} colliders={} mass={:.2f} com={} shape={} seatReasons=[align={} roll={} depth={} backstop={}]",
                 baseForm->GetFormID(),
                 isLeft ? "left" : "right",
                 capture.capture.mesh.triangleCount,
@@ -255,7 +255,9 @@ namespace rock
                 capture.capture.physics.hasCenterOfMass ? (capture.capture.physics.comTrusted ? "trusted" : "UNTRUSTED") : "none",
                 capture.capture.seat.shapeClass,
                 capture.capture.seat.alignmentReason,
-                capture.capture.seat.depthReason);
+                capture.capture.seat.rollReason,
+                capture.capture.seat.depthReason,
+                capture.capture.seat.penetrationBackstopReason);
         } else {
             ROCK_LOG_WARN(Hand,
                 "Saved grab offset: ground-truth capture unavailable for {} hand ({:08X}); the offset itself was still saved",
@@ -907,7 +909,8 @@ namespace rock
             selection_state_policy::canProcessSelectedState(hand.getState()) &&
             hand.hasSelection() &&
             hand.getSelection().isFarSelection &&
-            !hand.hasPendingActorEquipmentDropHandoff()) {
+            !hand.hasPendingActorEquipmentDropHandoff() &&
+            !hand.hasPendingPullCatchCommit()) {
             float hmdConeDot = -1.0f;
             if (!selectedObjectPassesFarHmdCone(hknp, hand.getSelection(), farHmdConeGate, &hmdConeDot)) {
                 ROCK_LOG_DEBUG(Hand,
@@ -918,6 +921,29 @@ namespace rock
                     farHmdConeGate.minDot);
                 hand.clearSelectionState(true);
                 grab_input_intent_policy::reset(inputIntentState);
+                return;
+            }
+        }
+
+        if (hand.hasArrivedPullCatchIntent() && !hand.hasPendingPullCatchCommit()) {
+            auto* pullCatchRef = hand.getPullCatchIntentRef();
+            if (pull_motion_math::kCatchWideReacquireEnabled &&
+                hand.reacquirePullCatchCloseSelection(frame.bhkWorld,
+                    frame.hknpWorld,
+                    handInput.grabAnchorWorld,
+                    handInput.closeSelectionDirectionWorld,
+                    pull_motion_math::kCatchWideReacquireRadiusGameUnits,
+                    pull_motion_math::kCatchWideReacquireMaximumBodyDistanceGameUnits)) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand restored stale pull catch commit with target-specific wide close reacquire",
+                    hand.handName());
+            } else {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand cancelled stale pull catch commit because selected close ref/body no longer matches the pull owner",
+                    hand.handName());
+                hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-stale-reacquire-failed");
+                hand.clearSelectionState(true);
+                releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                 return;
             }
         }
@@ -940,6 +966,7 @@ namespace rock
             !hand.isHolding() &&
             hand.hasSelection() &&
             selection_state_policy::canProcessSelectedState(hand.getState());
+        const bool pullCatchPressCandidate = !hand.isHolding() && hand.hasPendingPullCatchCommit();
         const auto intentDecision = grab_input_intent_policy::update(
             inputIntentState,
             grab_input_intent_policy::RawButtonState{
@@ -947,10 +974,11 @@ namespace rock
                 .pressed = grabInput.pressed,
                 .released = grabInput.released,
             },
-            selectedPressCandidate || peerHeldCloseSelectionReady,
+            selectedPressCandidate || pullCatchPressCandidate || peerHeldCloseSelectionReady,
             hand.isHolding(),
             frame.deltaSeconds,
             grab_input_intent_policy::Config{
+                .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                 .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                 .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
             });
@@ -1037,6 +1065,7 @@ namespace rock
                 .peerFormId = peerHeldFormIdForRetry,
                 .deltaSeconds = frame.deltaSeconds,
                 .config = peer_held_join_retry_policy::Config{
+                    .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                     .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                     .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
                 },
@@ -1048,6 +1077,7 @@ namespace rock
                 peerHeldJoinRetryState.peerFormId,
                 peerHeldJoinRetryState.windowSeconds,
                 peer_held_join_retry_policy::retryIntervalSeconds(peer_held_join_retry_policy::Config{
+                    .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                     .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                     .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
                 }));
@@ -1147,9 +1177,9 @@ namespace rock
             const auto& transform = handInput.rawHandWorld;
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);
-            const bool grabbedFromPullCatchCommit = hand.hasArrivedPullCatchIntent();
+            const bool grabbedFromPullCatchCommit = hand.hasPendingPullCatchCommit();
             prepareDynamicWorldCarCollisionForGrab(frame.bhkWorld, hknp, hand.getSelection().refr);
-            const auto outcome = hand.grabSelectedObject(hknp,
+            bool grabbed = hand.grabSelectedObject(hknp,
                 transform,
                 g_rockConfig.rockGrabLinearTau,
                 g_rockConfig.rockGrabLinearDamping,
@@ -1159,11 +1189,18 @@ namespace rock
                 &_bodyBoneColliders,
                 sharedContext);
 
-            if (outcome == Hand::GrabAttemptOutcome::Grabbed) {
+            if (grabbed) {
                 if (sharedContext.joiningPeerHeldObject) {
                     Hand& peer = isLeft ? _rightHand : _leftHand;
+                    const auto& peerInput = isLeft ? frame.right : frame.left;
                     if (!peer.promoteHeldObjectToConstraintDrive(frame.bhkWorld,
                             hknp,
+                            peerInput.rawHandWorld,
+                            g_rockConfig.rockGrabLinearTau,
+                            g_rockConfig.rockGrabLinearDamping,
+                            g_rockConfig.rockGrabConstraintMaxForce,
+                            g_rockConfig.rockGrabLinearProportionalRecovery,
+                            g_rockConfig.rockGrabLinearConstantRecovery,
                             "peer-hand-joined-loose-object")) {
                         auto* joinedRef = hand.getHeldRef();
                         ROCK_LOG_WARN(Hand,
@@ -1171,7 +1208,7 @@ namespace rock
                             hand.handName(),
                             joinedRef ? joinedRef->GetFormID() : 0);
                         hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(hand, isLeft));
-                        return Hand::GrabAttemptOutcome::Refused;
+                        return false;
                     }
                 }
                 auto* heldRef = hand.getHeldRef();
@@ -1182,39 +1219,7 @@ namespace rock
                     dispatchSimpleGrabEvent(GrabEventType::PullCatchSucceeded, isLeft, heldRef, hand.getSavedObjectState().bodyId.value);
                 }
             }
-            return outcome;
-        };
-        auto beginSelectionPull = [&]() {
-            auto* selectedRef = hand.getSelection().refr;
-            const auto selectedBodyId = hand.getSelection().bodyId.value;
-            const auto& transform = handInput.rawHandWorld;
-            /*
-             * Pull startup publishes the lock before dynamic body conversion because
-             * startDynamicPull owns failure cleanup and may clear selection internally.
-             * Deferring SelectionLocked fixed haptic overwrite but exposed impossible
-             * lock/unlock ordering to API consumers, so the event stays ordered and only
-             * the selection haptic is suppressed on this pull-start path.
-             */
-            const bool lockedSelection = hand.lockSelectionForPull();
-            if (lockedSelection) {
-                dispatchSimpleGrabEvent(
-                    GrabEventType::SelectionLocked,
-                    isLeft,
-                    selectedRef,
-                    selectedBodyId,
-                    ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC);
-            }
-            const bool pullStarted = lockedSelection && hand.startDynamicPull(hknp, transform);
-            if (pullStarted) {
-                claimObject(selectedRef, claimOwnerForHand(isLeft));
-                dispatchSimpleGrabEvent(GrabEventType::PullStarted, isLeft, selectedRef, selectedBodyId);
-            } else {
-                if (lockedSelection) {
-                    dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft, selectedRef, selectedBodyId);
-                }
-                releaseObject(selectedRef, claimOwnerForHand(isLeft));
-            }
-            return pullStarted;
+            return grabbed;
         };
         auto dispatchHeldObjectEventByFormID =
             [&](GrabEventType type, RE::TESObjectREFR* refr, std::uint32_t formID, std::uint32_t primaryBodyId) {
@@ -1867,7 +1872,28 @@ namespace rock
         }
 
         if (!hand.isHolding() && selection_state_policy::canProcessSelectedState(hand.getState()) && hand.hasSelection()) {
+            const bool pullCatchCommitPending = hand.hasPendingPullCatchCommit();
+            auto* pullCatchRef = pullCatchCommitPending ? hand.getPullCatchIntentRef() : nullptr;
             bool actorEquipmentDropHandoffReady = false;
+            if (pullCatchCommitPending) {
+                if (grabInput.released || !grabInput.held) {
+                    ROCK_LOG_DEBUG(Hand, "{} hand cancelled pull catch commit because grip was released", hand.handName());
+                    hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-release");
+                    hand.clearSelectionState(true);
+                    releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
+                    return;
+                }
+                if (!hand.advancePullCatchCommit(frame.deltaSeconds, pull_motion_math::kCatchRetryMaximumTimeSeconds)) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand cancelled pull catch commit because retry window expired ({:.3f}s)",
+                        hand.handName(),
+                        pull_motion_math::kCatchRetryMaximumTimeSeconds);
+                    hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-retry-expired");
+                    hand.clearSelectionState(true);
+                    releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
+                    return;
+                }
+            }
 
             if (hand.hasPendingActorEquipmentDropHandoff()) {
                 if (grabInput.released || !grabInput.held) {
@@ -1903,7 +1929,7 @@ namespace rock
                 }
             }
 
-            if (grabInput.pressed || peerHeldRetryCommitIntent || (actorEquipmentDropHandoffReady && grabInput.held)) {
+            if (grabInput.pressed || peerHeldRetryCommitIntent || (pullCatchCommitPending && grabInput.held) || (actorEquipmentDropHandoffReady && grabInput.held)) {
                 if (!grab_interaction_policy::canAttemptSelectedObjectGrab(
                         hand.getSelection().isFarSelection, hand.getSelection().distance, selection_query_policy::kFarDetectionRangeGameUnits)) {
                     ROCK_LOG_DEBUG(Hand,
@@ -1928,7 +1954,8 @@ namespace rock
                     }
                 }
 
-                if (hand.getSelection().isFarSelection &&
+                if (!pullCatchCommitPending &&
+                    hand.getSelection().isFarSelection &&
                     hand.getSelection().targetKind == grab_target::Kind::ActorEquipment) {
                     const auto actorSelection = hand.getSelection();
                     const auto dropResult = actor_equipment_grab::dropFarActorEquipmentSelection(
@@ -1982,14 +2009,59 @@ namespace rock
                 }
 
                 if (selectedObjectInteractionBlocked()) {
+                    if (pullCatchCommitPending) {
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-blocked");
+                        hand.clearSelectionState(true);
+                        releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
+                    }
                     return;
                 }
 
                 if (hand.getSelection().isFarSelection) {
-                    (void)beginSelectionPull();
+                    if (pullCatchCommitPending) {
+                        ROCK_LOG_WARN(Hand,
+                            "{} hand cancelled pull catch commit because pending catch unexpectedly resolved to far selection",
+                            hand.handName());
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-far-selection");
+                        hand.clearSelectionState(true);
+                        releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
+                        return;
+                    }
+                    auto* selectedRef = hand.getSelection().refr;
+                    const auto selectedBodyId = hand.getSelection().bodyId.value;
+                    const auto& transform = handInput.rawHandWorld;
+                    /*
+                     * Far-pull startup publishes the lock before dynamic body conversion because
+                     * startDynamicPull owns failure cleanup and may clear selection internally.
+                     * Deferring SelectionLocked fixed haptic overwrite but exposed impossible
+                     * lock/unlock ordering to API consumers, so the event stays ordered and only
+                     * the selection haptic is suppressed on this pull-start path.
+                     */
+                    const bool lockedSelection = hand.lockFarSelection();
+                    if (lockedSelection) {
+                        dispatchSimpleGrabEvent(
+                            GrabEventType::SelectionLocked,
+                            isLeft,
+                            selectedRef,
+                            selectedBodyId,
+                            ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC);
+                    }
+                    const bool pullStarted = lockedSelection && hand.startDynamicPull(hknp, transform);
+                    if (pullStarted) {
+                        claimObject(selectedRef, claimOwnerForHand(isLeft));
+                        dispatchSimpleGrabEvent(GrabEventType::PullStarted, isLeft, selectedRef, selectedBodyId);
+                    } else {
+                        if (lockedSelection) {
+                            dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft, selectedRef, selectedBodyId);
+                        }
+                        releaseObject(selectedRef, claimOwnerForHand(isLeft));
+                    }
                     return;
                 }
 
+                if (pullCatchCommitPending) {
+                    dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pullCatchRef, hand.getSelection().bodyId.value);
+                }
                 const bool peerHeldRetryWasActiveForCommit =
                     peerHeldJoinRetryState.active &&
                     rawGrabInput.held &&
@@ -1997,14 +2069,7 @@ namespace rock
                     hand.hasSelection() &&
                     !hand.getSelection().isFarSelection &&
                     hand.getSelection().refr == peerHeldRefForInput;
-                const bool selectionIsPeerHeld = peerHoldingLooseObject && hand.getSelection().refr == peerHeldRefForInput;
-                const bool pullCandidateSelection = !selectionIsPeerHeld && !hand.getSelection().pinchCloseSelectionFallback;
-                if (pullCandidateSelection && hand.isCloseSelectionClearlyOutsidePocket(hknp)) {
-                    (void)beginSelectionPull();
-                    return;
-                }
-                const auto grabOutcome = attemptSelectedGrab();
-                const bool grabbed = grabOutcome == Hand::GrabAttemptOutcome::Grabbed;
+                const bool grabbed = attemptSelectedGrab();
                 if (grabbed && peerHeldRetryWasActiveForCommit) {
                     const auto peerFormId = peerHeldJoinRetryState.peerFormId;
                     const auto attempts = peerHeldJoinRetryState.attempts;
@@ -2021,12 +2086,12 @@ namespace rock
                         "{} hand retaining peer-held join retry after grab commit refused; grip still held",
                         hand.handName());
                 }
-                if (grabOutcome == Hand::GrabAttemptOutcome::OutsidePocket && pullCandidateSelection && hand.hasSelection()) {
-                    /*
-                     * A close press whose grip point is outside the palm pocket
-                     * becomes a short pull; the commit is retried on arrival.
-                     */
-                    (void)beginSelectionPull();
+                if (!grabbed && pullCatchCommitPending) {
+                    hand.notePullCatchCommitAttemptFailed();
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} hand retaining pull catch commit after grab attempt failed; grip still held",
+                        hand.handName());
                 }
             }
         } else if (hand.getState() == HandState::SelectionLocked) {
@@ -2064,15 +2129,17 @@ namespace rock
                 }
 
                 dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pulledRef, hand.getSelection().bodyId.value);
-                const auto grabOutcome = attemptSelectedGrab();
-                if (grabOutcome != Hand::GrabAttemptOutcome::Grabbed) {
-                    ROCK_LOG_DEBUG(Hand,
-                        "{} hand pull arrived but grab commit refused outcome={}; dropping pulled object",
-                        hand.handName(),
-                        grabOutcome == Hand::GrabAttemptOutcome::OutsidePocket ? "outsidePocket" : "refused");
+                const bool grabbed = attemptSelectedGrab();
+                if (!grabbed && (!hand.hasSelection() || !hand.hasPendingPullCatchCommit())) {
                     hand.finishPullPrepAsPhysicalDropIfActive("pull-grab-refused");
                     hand.clearSelectionState(true);
                     releaseObject(pulledRef, claimOwnerForHand(isLeft));
+                } else if (!grabbed) {
+                    hand.notePullCatchCommitAttemptFailed();
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} hand pull arrived but grab commit did not accept yet; retaining catch intent while grip is held",
+                        hand.handName());
                 }
             }
         }

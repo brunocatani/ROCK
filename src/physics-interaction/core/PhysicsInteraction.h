@@ -369,6 +369,7 @@ namespace rock
         void updateAuthoredSupportGripIndicator();
         void updateFiringGripReattachIndicator();
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
+        void logGrabOverlayPointProbe(const PhysicsFrameContext& frame);
 
         void clearLeftWeaponContact();
         void clearRightWeaponContact();
@@ -653,6 +654,27 @@ namespace rock
             bool hasPreviousApiTransform = false;
         };
 
+        struct GrabTransformTelemetryState
+        {
+            bool active = false;
+            std::uint32_t session = 0;
+            std::uint64_t frame = 0;
+            std::uint64_t logFrameCounter = 0;
+            bool hasPreviousAngularDeltaSample = false;
+            RE::NiTransform previousRawHandWorld{};
+            RE::NiTransform previousPalmAnchorGrabAuthorityWorld{};
+            RE::NiTransform previousProxyReadbackWorld{};
+            RE::NiTransform previousRawDesiredObjectWorld{};
+            RE::NiTransform previousHeldNodeWorld{};
+            RE::NiTransform previousHeldBodyWorld{};
+            RE::NiTransform previousNativeBodyWorld{};
+            bool previousHasPalmAnchorGrabAuthority = false;
+            bool previousHasProxyReadback = false;
+            bool previousHasHeldNodeWorld = false;
+            bool previousHasHeldBodyWorld = false;
+            bool previousHasHeldNativeBodyWorld = false;
+        };
+
         struct ProviderHandInputSuppressionRuntimeState
         {
             bool deferredGrabRelease = false;
@@ -911,6 +933,8 @@ namespace rock
             bool parityEnabledLogged = false;
             bool runtimeScaleLogged = false;
             std::array<RawHandParityState, 2> rawHandParityStates{};
+            std::array<GrabTransformTelemetryState, 2> grabTransformTelemetryStates{};
+            std::uint32_t grabTransformTelemetryNextSession = 1;
             weapon_debug_notification_policy::WeaponNotificationState weaponDebugNotification{};
         };
 

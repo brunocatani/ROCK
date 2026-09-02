@@ -45,6 +45,7 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabEvent.h"
+#include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
@@ -755,6 +756,7 @@ namespace rock
         {
             Disabled,
             Sampled,
+            Trace,
         };
 
         inline const char* physicsStepPhaseName(havok_physics_timing::PhysicsStepPhase phase)
@@ -774,10 +776,19 @@ namespace rock
 
         inline PalmClockLogMode palmClockLogMode()
         {
+            if (g_rockConfig.rockDebugGrabTimelineTrace) {
+                return PalmClockLogMode::Trace;
+            }
             if (g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging) {
                 return PalmClockLogMode::Sampled;
             }
             return PalmClockLogMode::Disabled;
+        }
+
+        inline bool palmClockTraceFrameSelected(std::uint64_t gameFrameIndex)
+        {
+            const auto interval = static_cast<std::uint64_t>((std::max)(1, g_rockConfig.rockDebugGrabTimelineTraceIntervalFrames));
+            return gameFrameIndex <= 3 || (gameFrameIndex % interval) == 0;
         }
 
         /*
@@ -796,6 +807,9 @@ namespace rock
         {
             const PalmClockLogMode mode = palmClockLogMode();
             if (mode == PalmClockLogMode::Disabled) {
+                return;
+            }
+            if (mode == PalmClockLogMode::Trace && !palmClockTraceFrameSelected(gameFrameIndex)) {
                 return;
             }
             if (!hand.isHoldingAtomic() && !g_rockConfig.rockDebugVerboseLogging) {
@@ -836,43 +850,82 @@ namespace rock
                 const RE::NiPoint3 targetPosition = targetOk ? palmTargetWorld.translate : RE::NiPoint3{};
                 const RE::NiPoint3 livePosition = liveOk ? livePalm.world.translate : RE::NiPoint3{};
 
-                ROCK_LOG_SAMPLE_DEBUG(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
-                    stage ? stage : "unknown",
-                    hand.handName(),
-                    gameFrameIndex,
-                    hand.isHoldingAtomic() ? "yes" : "no",
-                    rawState,
-                    targetState,
-                    liveState,
-                    hand.getCollisionBodyId().value,
-                    hand.getGrabAuthorityProxyBodyId().value,
-                    gameDeltaSeconds,
-                    physicsPhase,
-                    rawDt,
-                    subDt,
-                    driveDt,
-                    substepIndex,
-                    substepCount,
-                    progress,
-                    rawToTarget.position,
-                    rawToTarget.rotationDegrees,
-                    rawToLive.position,
-                    rawToLive.rotationDegrees,
-                    targetToLive.position,
-                    targetToLive.rotationDegrees,
-                    rawPosition.x,
-                    rawPosition.y,
-                    rawPosition.z,
-                    targetPosition.x,
-                    targetPosition.y,
-                    targetPosition.z,
-                    livePosition.x,
-                    livePosition.y,
-                    livePosition.z,
-                    palmSource,
-                    palmMotion);
+                if (mode == PalmClockLogMode::Trace) {
+                    ROCK_LOG_INFO(Hand,
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        stage ? stage : "unknown",
+                        hand.handName(),
+                        gameFrameIndex,
+                        hand.isHoldingAtomic() ? "yes" : "no",
+                        rawState,
+                        targetState,
+                        liveState,
+                        hand.getCollisionBodyId().value,
+                        hand.getGrabAuthorityProxyBodyId().value,
+                        gameDeltaSeconds,
+                        physicsPhase,
+                        rawDt,
+                        subDt,
+                        driveDt,
+                        substepIndex,
+                        substepCount,
+                        progress,
+                        rawToTarget.position,
+                        rawToTarget.rotationDegrees,
+                        rawToLive.position,
+                        rawToLive.rotationDegrees,
+                        targetToLive.position,
+                        targetToLive.rotationDegrees,
+                        rawPosition.x,
+                        rawPosition.y,
+                        rawPosition.z,
+                        targetPosition.x,
+                        targetPosition.y,
+                        targetPosition.z,
+                        livePosition.x,
+                        livePosition.y,
+                        livePosition.z,
+                        palmSource,
+                        palmMotion);
+                } else {
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        stage ? stage : "unknown",
+                        hand.handName(),
+                        gameFrameIndex,
+                        hand.isHoldingAtomic() ? "yes" : "no",
+                        rawState,
+                        targetState,
+                        liveState,
+                        hand.getCollisionBodyId().value,
+                        hand.getGrabAuthorityProxyBodyId().value,
+                        gameDeltaSeconds,
+                        physicsPhase,
+                        rawDt,
+                        subDt,
+                        driveDt,
+                        substepIndex,
+                        substepCount,
+                        progress,
+                        rawToTarget.position,
+                        rawToTarget.rotationDegrees,
+                        rawToLive.position,
+                        rawToLive.rotationDegrees,
+                        targetToLive.position,
+                        targetToLive.rotationDegrees,
+                        rawPosition.x,
+                        rawPosition.y,
+                        rawPosition.z,
+                        targetPosition.x,
+                        targetPosition.y,
+                        targetPosition.z,
+                        livePosition.x,
+                        livePosition.y,
+                        livePosition.z,
+                        palmSource,
+                        palmMotion);
+                }
             };
 
             emit();

@@ -24,6 +24,7 @@ namespace rock::grab_input_intent_policy
 
     struct Config
     {
+        bool enabled = true;
         float leewaySeconds = 0.12f;
         float forceSeconds = 0.08f;
     };
@@ -85,11 +86,11 @@ namespace rock::grab_input_intent_policy
         decision.held = raw.held;
         decision.released = raw.released;
 
-        if (resetIntent) {
+        if (!config.enabled || resetIntent) {
             reset(state);
             decision.pressed = raw.pressed;
             decision.state = State::Idle;
-            decision.reason = "reset";
+            decision.reason = config.enabled ? "reset" : "disabled";
             return decision;
         }
 
@@ -171,6 +172,7 @@ namespace rock::peer_held_join_retry_policy
      */
     struct Config
     {
+        bool enabled = true;
         float leewaySeconds = 0.12f;
         float forceSeconds = 0.08f;
         float minWindowSeconds = 0.08f;
@@ -243,7 +245,8 @@ namespace rock::peer_held_join_retry_policy
 
     [[nodiscard]] inline bool canStartRetry(const Input& input)
     {
-        return input.rawPressed &&
+        return input.config.enabled &&
+               input.rawPressed &&
                input.rawHeld &&
                !input.normalGrabSuppressed &&
                !input.handHolding &&
@@ -255,6 +258,17 @@ namespace rock::peer_held_join_retry_policy
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
     {
         Decision decision{};
+
+        if (!input.config.enabled) {
+            if (state.active) {
+                reset(state);
+                decision.cancelled = true;
+                decision.reason = "disabled";
+                return decision;
+            }
+            decision.reason = "disabled";
+            return decision;
+        }
 
         if (state.active && input.grabSucceeded) {
             reset(state);

@@ -136,6 +136,7 @@ namespace rock::equipped_weapon_drop_momentum
             settings.longObjectMinAngularScale);
         release.angularVelocityCapRadiansPerSecond = grab_motion_controller::computeAuthorityScaledAngularVelocityCap(
             settings.maxAngularVelocityRadiansPerSecond,
+            1.0f,
             release.longObjectAngularScale);
         if (history.count == 0) {
             return release;

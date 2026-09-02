@@ -882,6 +882,8 @@ namespace rock
                 1,
                 std::memory_order_release) +
             1;
+        _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
+        _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _dynamicWeaponCollision.samplePostSolve(
             world,
             completedSolveSequence);

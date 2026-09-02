@@ -44,6 +44,7 @@ namespace rock
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
         std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
+        bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
 
@@ -158,7 +159,15 @@ namespace rock
         bool rockDebugDrawColliderPhaseDiagnostics = false;
         bool rockDebugShowHandAxes = false;
         bool rockDebugShowGrabPivots = false;
+        bool rockDebugShowGrabPocketNormal = false;
+        bool rockDebugDrawGrabContactPatch = false;
+        bool rockDebugDrawGrabForceTorque = false;
+        bool rockDebugDrawGrabForceTorqueText = false;
+        bool rockDebugDrawGrabPivotSourceCollider = false;
+        bool rockDebugDrawGrabPivotSourceEvidence = false;
+        bool rockDebugDrawGrabSupportFrame = false;
         bool rockDebugDrawGrabPockets = false;
+        bool rockDebugShowGrabFingerProbes = false;
         bool rockDebugShowGrabFingerSweptArc = false;
         bool rockDebugShowGrabFingerSweptArcText = true;
         bool rockDebugShowGrabFingerSweptArcLiveSkeleton = true;
@@ -199,6 +208,15 @@ namespace rock
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugVideoSyncMarker = false;
         float rockDebugVideoSyncMarkerSize = 4.0f;
+        bool rockDebugGrabTimelineTrace = false;
+        bool rockDebugGrabAfterSolveAnomalySampling = false;
+        bool rockDebugGrabTransformTelemetry = false;
+        bool rockDebugGrabTransformTelemetryText = false;
+        bool rockDebugGrabTransformTelemetryAxes = false;
+        int rockDebugGrabTimelineTraceIntervalFrames = 1;
+        int rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
+        int rockDebugGrabTransformTelemetryTextMode = 0;
+        bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
         bool rockDebugWeaponOmodDumpEnabled = false;
         bool rockDebugWeaponOmodCoverageAudit = false;
@@ -296,6 +314,13 @@ namespace rock
         bool rockGrabLongObjectAngularScalingEnabled = true;
         float rockGrabLongObjectReferenceLeverGameUnits = 24.0f;
         float rockGrabLongObjectMinAngularScale = 0.35f;
+        bool rockGrabPivotQualityAngularScalingEnabled = true;
+        float rockGrabPositionOnlyAngularScale = 0.55f;
+        float rockGrabSmallObjectReferenceLeverGameUnits = 12.0f;
+        float rockGrabSmallObjectAngularScale = 0.65f;
+        float rockGrabLowContactSupportAngularScale = 0.75f;
+        float rockGrabMinAngularAuthorityScale = 0.30f;
+        float rockGrabWeakPivotTwistScale = 0.35f;
 
         float rockGrabMaxInertiaRatio = 10.0f;
         float rockGrabMinInertia = 0.01f;
@@ -350,9 +375,30 @@ namespace rock
         float rockGrabHeldMassMovementMassExponent = 1.0f;
         float rockGrabHeldMassMovementMaxReduction = 75.0f;
         float rockGrabHeldMassMovementFadeOutSeconds = 5.0f;
+        float rockGrabTouchAcquireDistanceGameUnits = 4.0f;
+        float rockGrabNearConvergeDistanceGameUnits = 28.0f;
         float rockGrabPocketDepthGameUnits = 7.0f;
         float rockGrabPocketRadiusGameUnits = 9.0f;
+        float rockGrabSeatDepthMaxGameUnits = 30.0f;
+        float rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        // Penetration backstop only, and only for plate-shaped objects: a
+        // narrow footprint bounds detectable tilt penetration to r*sin(theta),
+        // which is why the seating radius above cannot double as the safety
+        // check. Irregular shapes keep the seating radius.
+        float rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         float rockGrabSeatDepthSkinGameUnits = 0.5f;
+        float rockGrabGripInsetGameUnits = 2.0f;
+        float rockGrabConvergeMaxTimeSeconds = 0.35f;
+        // Elapsed stable dwell inside the grab pocket before convergence
+        // promotes (historical 3-frame tuning at 90 Hz).
+        float rockGrabConvergeStableSeconds = 3.0f / 90.0f;
+        float rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
+        float rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
+        bool rockGrabMultiFingerContactValidationEnabled = true;
+        int rockGrabContactQualityMode = 1;
+        int rockGrabMinFingerContactGroups = 3;
+        float rockGrabMinFingerContactSpreadGameUnits = 1.0f;
+        float rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
         float rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         // Elapsed opposition/patch contact freshness (historical 5-frame
         // tuning at 90 Hz).
@@ -373,7 +419,7 @@ namespace rock
         bool rockGrabHandLerpEnabled = true;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;
-        float rockGrabHandLerpMinDistance = 2.0f;
+        float rockGrabHandLerpMinDistance = 7.0f;
         float rockGrabHandLerpMaxDistance = 14.0f;
         bool rockGrabHandReturnEnabled = true;
         float rockGrabHandReturnTimeMin = 0.10f;
@@ -402,14 +448,27 @@ namespace rock
         float rockGrabLateralWeight = 0.6f;
         float rockGrabDirectionalWeight = 0.4f;
         float rockGrabMaxTriangleDistance = 100.0f;
+        bool rockGrabMeshContactOnly = true;
+        bool rockGrabRequireMeshContact = true;
+        bool rockGrabContactPatchEnabled = true;
+        int rockGrabContactPatchProbeCount = 9;
+        float rockGrabContactPatchProbeSpacingGameUnits = 3.0f;
+        float rockGrabContactPatchProbeRadiusGameUnits = 2.0f;
+        float rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
+        float rockGrabContactPatchMaxNormalAngleDegrees = 35.0f;
+        float rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
         bool rockSelectedCloseFingerCurlEnabled = true;
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;
         bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
+        bool rockForceGrabSeatAlignmentEnabled = true;
+        bool rockGrabSeatRollAlignmentEnabled = true;
         float rockPullPresentationMinElongationRatio = 2.0f;
+        float rockGrabSeatRollMinSecondElongationRatio = 1.25f;
         float rockPullPresentationAngularGainPerSecond = 6.0f;
         float rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
+        float rockPullPresentationGripAxisTiltDegrees = 10.0f;
 
         RE::NiPoint3 rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         RE::NiPoint3 rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
