@@ -2786,18 +2786,6 @@ namespace rock::debug
                 color[2] = 0.05f;
                 color[3] = 0.95f;
                 break;
-            case MarkerOverlayRole::RightGrabContactPatchSample:
-                color[0] = 0.05f;
-                color[1] = 0.80f;
-                color[2] = 1.0f;
-                color[3] = 0.80f;
-                break;
-            case MarkerOverlayRole::LeftGrabContactPatchSample:
-                color[0] = 1.0f;
-                color[1] = 0.20f;
-                color[2] = 0.90f;
-                color[3] = 0.80f;
-                break;
             case MarkerOverlayRole::RightGrabForceTorqueTargetPivot:
             case MarkerOverlayRole::LeftGrabForceTorqueTargetPivot:
                 color[0] = 0.05f;
@@ -2965,41 +2953,6 @@ namespace rock::debug
                 color[1] = 0.35f;
                 color[2] = 1.0f;
                 color[3] = 0.88f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceContactPoint:
-            case MarkerOverlayRole::LeftGrabPivotSourceContactPoint:
-                color[0] = 1.0f;
-                color[1] = 0.55f;
-                color[2] = 0.08f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightGrabSupportFramePivot:
-            case MarkerOverlayRole::LeftGrabSupportFramePivot:
-                color[0] = 0.98f;
-                color[1] = 0.98f;
-                color[2] = 0.98f;
-                color[3] = 0.98f;
-                break;
-            case MarkerOverlayRole::RightGrabSupportFrameNormal:
-            case MarkerOverlayRole::LeftGrabSupportFrameNormal:
-                color[0] = 1.0f;
-                color[1] = 0.90f;
-                color[2] = 0.05f;
-                color[3] = 0.98f;
-                break;
-            case MarkerOverlayRole::RightGrabSupportFrameAxis:
-            case MarkerOverlayRole::LeftGrabSupportFrameAxis:
-                color[0] = 1.0f;
-                color[1] = 0.18f;
-                color[2] = 0.95f;
-                color[3] = 0.98f;
-                break;
-            case MarkerOverlayRole::RightGrabSupportFrameBinormal:
-            case MarkerOverlayRole::LeftGrabSupportFrameBinormal:
-                color[0] = 0.10f;
-                color[1] = 0.95f;
-                color[2] = 1.0f;
-                color[3] = 0.94f;
                 break;
             case MarkerOverlayRole::RightGrabFingerProbe:
                 color[0] = 0.45f;

@@ -1543,13 +1543,9 @@ namespace rock
         seat.secondElongationRatio = diagnostics.secondElongationRatio;
         seat.alignmentAngleDegrees = diagnostics.alignmentAngleDegrees;
         seat.alignmentReason = diagnostics.alignmentReason;
-        seat.rollAngleDegrees = diagnostics.rollAngleDegrees;
-        seat.rollReason = diagnostics.rollReason;
         seat.depthGameUnits = diagnostics.depthGameUnits;
         seat.depthOffsetGameUnits = diagnostics.depthOffsetGameUnits;
         seat.depthReason = diagnostics.depthReason;
-        seat.penetrationBackstopGameUnits = diagnostics.penetrationBackstopGameUnits;
-        seat.penetrationBackstopReason = diagnostics.penetrationBackstopReason;
         seat.gripPointObjectLocal[0] = telemetry.gripEvidence.gripPointLocal.x;
         seat.gripPointObjectLocal[1] = telemetry.gripEvidence.gripPointLocal.y;
         seat.gripPointObjectLocal[2] = telemetry.gripEvidence.gripPointLocal.z;
@@ -1568,12 +1564,9 @@ namespace rock
         auto& tuning = outCapture.tuning;
         tuning.seatDepthMaxGameUnits = g_rockConfig.rockGrabSeatDepthMaxGameUnits;
         tuning.seatDepthFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits;
-        tuning.seatPenetrationBackstopFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits;
         tuning.seatDepthSkinGameUnits = g_rockConfig.rockGrabSeatDepthSkinGameUnits;
-        tuning.gripInsetGameUnits = g_rockConfig.rockGrabGripInsetGameUnits;
         tuning.pullPresentationMinElongationRatio = g_rockConfig.rockPullPresentationMinElongationRatio;
         tuning.pullPresentationGripAxisTiltDegrees = g_rockConfig.rockPullPresentationGripAxisTiltDegrees;
-        tuning.seatRollMinSecondElongationRatio = g_rockConfig.rockGrabSeatRollMinSecondElongationRatio;
         tuning.pocketDepthGameUnits = g_rockConfig.rockGrabPocketDepthGameUnits;
         tuning.pocketRadiusGameUnits = g_rockConfig.rockGrabPocketRadiusGameUnits;
         return true;

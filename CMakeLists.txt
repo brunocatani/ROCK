@@ -350,26 +350,12 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKSurfaceMeshGrabPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKSurfaceMeshGrabPolicyTests)
 
-  add_executable(ROCKGrabContactEvidencePolicyTests
-    "${ROOT_DIR}/tests/GrabContactEvidencePolicyTests.cpp"
-  )
-  target_compile_features(ROCKGrabContactEvidencePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKGrabContactEvidencePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKGrabContactEvidencePolicyTests)
-
   add_executable(ROCKHandSemanticContactPolicyTests
     "${ROOT_DIR}/tests/HandSemanticContactPolicyTests.cpp"
   )
   target_compile_features(ROCKHandSemanticContactPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHandSemanticContactPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHandSemanticContactPolicyTests)
-
-  add_executable(ROCKGrabContactPatchClusterPolicyTests
-    "${ROOT_DIR}/tests/GrabContactPatchClusterPolicyTests.cpp"
-  )
-  target_compile_features(ROCKGrabContactPatchClusterPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKGrabContactPatchClusterPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKGrabContactPatchClusterPolicyTests)
 
   add_executable(ROCKContactSignalSubscriptionPolicyTests
     "${ROOT_DIR}/tests/ContactSignalSubscriptionPolicyTests.cpp"
@@ -391,13 +377,6 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKRuntimeStatePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKRuntimeStatePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKRuntimeStatePolicyTests)
-
-  add_executable(ROCKGrabPivotAuthorityPolicyTests
-    "${ROOT_DIR}/tests/GrabPivotAuthorityPolicyTests.cpp"
-  )
-  target_compile_features(ROCKGrabPivotAuthorityPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKGrabPivotAuthorityPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKGrabPivotAuthorityPolicyTests)
 
   add_executable(ROCKGrabMotionControllerPolicyTests
     "${ROOT_DIR}/tests/GrabMotionControllerPolicyTests.cpp"
@@ -743,13 +722,10 @@ if(BUILD_ROCK_TESTS)
     ROCKDynamicHandCollisionFeedbackPolicyTests
     ROCKSurfaceFingerCollisionPolicyTests
     ROCKSurfaceMeshGrabPolicyTests
-    ROCKGrabContactEvidencePolicyTests
     ROCKHandSemanticContactPolicyTests
-    ROCKGrabContactPatchClusterPolicyTests
     ROCKContactSignalSubscriptionPolicyTests
     ROCKPhysicsCreationGatePolicyTests
     ROCKRuntimeStatePolicyTests
-    ROCKGrabPivotAuthorityPolicyTests
     ROCKGrabMotionControllerPolicyTests
     ROCKGrabAuthorityFramePolicyTests
     ROCKTransformMathDoublePrecisionPolicyTests

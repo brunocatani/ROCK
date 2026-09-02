@@ -29,12 +29,10 @@ namespace rock::debug_visualization_policy
         bool skeletonBoneLogging{ false };
         bool skeletonBoneTruncationLogging{ false };
         bool grabPocketNormal{ false };
-        bool grabContactPatch{ false };
         bool grabForceTorque{ false };
         bool grabForceTorqueText{ false };
         bool grabPivotSourceCollider{ false };
         bool grabPivotSourceEvidence{ false };
-        bool grabSupportFrame{ false };
         bool handBoneContacts{ false };
         bool grabAuthorityProxy{ false };
         bool grabTransformTelemetry{ false };
@@ -77,11 +75,9 @@ namespace rock::debug_visualization_policy
         bool skeletonBoneLogging{ false };
         bool skeletonBoneTruncationLogging{ false };
         bool grabPocketNormal{ false };
-        bool grabContactPatch{ false };
         bool grabForceTorque{ false };
         bool grabForceTorqueText{ false };
         bool grabPivotSourceEvidence{ false };
-        bool grabSupportFrame{ false };
         bool handBoneContacts{ false };
         bool grabAuthorityProxy{ false };
         bool grabTransformTelemetry{ false };
@@ -139,13 +135,11 @@ namespace rock::debug_visualization_policy
             .skeletonBoneTruncationLogging =
                 skeleton && input.skeletonBoneTruncationLogging,
             .grabPocketNormal = input.grabPocketNormal,
-            .grabContactPatch = input.grabContactPatch,
             .grabForceTorque = forceTorque,
             .grabForceTorqueText =
                 forceTorque && input.grabForceTorqueText,
             .grabPivotSourceEvidence =
                 forceTorque && input.grabPivotSourceEvidence,
-            .grabSupportFrame = input.grabSupportFrame,
             .handBoneContacts = input.handBoneContacts,
             .grabAuthorityProxy = input.grabAuthorityProxy,
             .grabTransformTelemetry = telemetry,

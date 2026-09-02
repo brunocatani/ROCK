@@ -60,68 +60,6 @@ int main()
     bool ok = true;
 
     {
-        using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;
-        const std::array<Candidate, 5> candidates{
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::CollisionFallback,
-                .pointWorld = RE::NiPoint3{ 50.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "collision",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::SelectionMeshSnap,
-                .pointWorld = RE::NiPoint3{ 40.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "selection",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::PalmPocketMesh,
-                .pointWorld = RE::NiPoint3{ 30.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "palm",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::GripSupportModel,
-                .pointWorld = RE::NiPoint3{ 20.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "support",
-            },
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::PinchPocket,
-                .pointWorld = RE::NiPoint3{ 10.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "pinch",
-            },
-        };
-
-        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates);
-        ok &= expectTrue("resolver accepts best candidate", resolved.valid);
-        ok &= expectTrue("pinch pocket has highest priority", resolved.source == authority::GrabAuthorityPivotSource::PinchPocket);
-        ok &= expectPointNear("pinch point selected", resolved.pointWorld, RE::NiPoint3{ 10.0f, 0.0f, 0.0f }, 0.001f);
-    }
-
-    {
-        using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;
-        const std::array<Candidate, 1> candidates{
-            Candidate{
-                .valid = true,
-                .source = authority::GrabAuthorityPivotSource::CollisionFallback,
-                .pointWorld = RE::NiPoint3{ 50.0f, 0.0f, 0.0f },
-                .bodyId = 7,
-                .reason = "collision",
-            },
-        };
-
-        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates);
-        ok &= expectFalse("collision fallback cannot be final authority", resolved.valid);
-    }
-
-    {
         RE::NiTransform rawHandWorld = identityTransform();
         rawHandWorld.translate = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
 
@@ -148,7 +86,7 @@ int main()
                 .pivotAWorld = pivotAWorld,
                 .gripPointWorld = gripPointWorld,
                 .visualNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-                .source = authority::GrabAuthorityPivotSource::GripSupportModel,
+                .source = authority::GrabAuthorityPivotSource::PalmPocketMeshPoint,
                 .visualNormalValid = true,
             });
 
@@ -224,7 +162,7 @@ int main()
                 .desiredBodyWorld = desiredBodyWorld,
                 .pivotAWorld = RE::NiPoint3{ 5.0f, 0.0f, 0.0f },
                 .gripPointWorld = RE::NiPoint3{ 11.0f, 0.0f, 0.0f },
-                .source = authority::GrabAuthorityPivotSource::GripSupportModel,
+                .source = authority::GrabAuthorityPivotSource::PalmPocketMeshPoint,
                 .hasDesiredObjectWorld = true,
                 .hasDesiredBodyWorld = true,
             });
@@ -271,7 +209,7 @@ int main()
                 .desiredBodyWorld = desiredBodyWorld,
                 .pivotAWorld = RE::NiPoint3{ 5.0f, 0.0f, 0.0f },
                 .gripPointWorld = RE::NiPoint3{ 11.0f, 0.0f, 0.0f },
-                .source = authority::GrabAuthorityPivotSource::GripSupportModel,
+                .source = authority::GrabAuthorityPivotSource::PalmPocketMeshPoint,
                 .hasDesiredObjectWorld = true,
                 .hasDesiredBodyWorld = true,
             });
@@ -331,7 +269,7 @@ int main()
                 .constraintBodyWorld = bodyWorld,
                 .pivotAWorld = frame.translate,
                 .gripPointWorld = RE::NiPoint3{ 11.0f, 0.0f, 0.0f },
-                .source = authority::GrabAuthorityPivotSource::GripSupportModel,
+                .source = authority::GrabAuthorityPivotSource::PalmPocketMeshPoint,
             });
         ok &= expectFalse("freeze rejects non-finite authority rotation", frozen.valid);
     }

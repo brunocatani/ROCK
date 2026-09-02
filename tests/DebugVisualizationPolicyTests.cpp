@@ -94,11 +94,11 @@ namespace
     constexpr auto unrelatedGenericVisuals = resolve({
         .handAxes = true,
         .grabPivots = true,
-        .grabContactPatch = true,
+        .grabPocketNormal = true,
     });
     static_assert(unrelatedGenericVisuals.handAxes);
     static_assert(unrelatedGenericVisuals.grabPivots);
-    static_assert(unrelatedGenericVisuals.grabContactPatch);
+    static_assert(unrelatedGenericVisuals.grabPocketNormal);
     static_assert(!unrelatedGenericVisuals.weaponAuthority);
     static_assert(!unrelatedGenericVisuals.looseWeaponGripZones);
     static_assert(!unrelatedGenericVisuals.authoredGripActivationZones);

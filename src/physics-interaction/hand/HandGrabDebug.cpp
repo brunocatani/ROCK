@@ -13,7 +13,6 @@
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabConstraintMath.h"
-#include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/GrabFinger.h"
@@ -172,97 +171,6 @@ namespace rock
         out.normalEndWorld = out.contactPointWorld + normalWorld * kFrameAxisLengthGameUnits;
 
         return true;
-    }
-
-    bool Hand::getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const
-    {
-        out = {};
-
-        if (!world || !isHolding() || !_grabFrame.hasContactPatch || _grabFrame.contactPatchSampleCount == 0 || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
-            return false;
-        }
-
-        RE::NiTransform grabBodyWorld{};
-        if (!tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
-            return false;
-        }
-        const std::uint32_t count = (std::min)(_grabFrame.contactPatchSampleCount, static_cast<std::uint32_t>(out.samplePointsWorld.size()));
-        for (std::uint32_t i = 0; i < count; ++i) {
-            out.samplePointsWorld[i] = transform_math::localPointToWorld(grabBodyWorld, _grabFrame.contactPatchSamples[i].point);
-        }
-        out.sampleCount = count;
-        return count > 0;
-    }
-
-    bool Hand::getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const
-    {
-        out = {};
-
-        if (!world || !isHolding() || !_grabFrame.authority.hasFrozenPivotB || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
-            return false;
-        }
-
-        RE::NiTransform liveBodyWorld{};
-        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld)) {
-            return false;
-        }
-
-        out.pivotWorld = transform_math::localPointToWorld(liveBodyWorld, activeProxyConstraintPivotBLocalGame());
-        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.authority.bodyLocal);
-
-        RE::NiPoint3 normalWorld = _grabFrame.support.hasNormal ?
-            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.normalBodyLocal)) :
-            RE::NiPoint3{};
-        if (vector_math::lengthSquared(normalWorld) <= 0.000001f && _grabFrame.gripEvidence.hasGripPoint) {
-            normalWorld = gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
-        }
-        if (vector_math::lengthSquared(normalWorld) <= 0.000001f) {
-            return false;
-        }
-
-        RE::NiPoint3 axisWorld = _grabFrame.support.hasAxis ?
-            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.axisBodyLocal)) :
-            RE::NiPoint3{};
-        if (vector_math::lengthSquared(axisWorld) <= 0.000001f) {
-            axisWorld = stablePerpendicularAxis(normalWorld);
-        }
-
-        RE::NiPoint3 binormalWorld = _grabFrame.support.hasBinormal ?
-            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.support.binormalBodyLocal)) :
-            RE::NiPoint3{};
-        if (vector_math::lengthSquared(binormalWorld) <= 0.000001f) {
-            binormalWorld = normalizeOrZero(vector_math::cross(normalWorld, axisWorld));
-        }
-
-        const float supportHalfSpan = std::isfinite(_grabFrame.support.spanGameUnits) && _grabFrame.support.spanGameUnits > 0.0f ?
-            _grabFrame.support.spanGameUnits * 0.5f :
-            0.0f;
-        const float axisLength = std::clamp((std::max)(supportHalfSpan, 10.0f), 6.0f, 24.0f);
-        out.axisLengthGameUnits = axisLength;
-        out.normalEndWorld = out.pivotWorld + normalWorld * axisLength;
-        out.supportAxisEndWorld = out.pivotWorld + axisWorld * axisLength;
-        out.binormalEndWorld = out.pivotWorld + binormalWorld * axisLength;
-        out.hasNormal = true;
-        out.hasSupportAxis = vector_math::lengthSquared(axisWorld) > 0.000001f;
-        out.hasBinormal = vector_math::lengthSquared(binormalWorld) > 0.000001f;
-        out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
-            _grabFrame.pivotAuthority.source);
-        out.activeGrabPointMode = _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none";
-        out.supportKind = grab_support_model_math::gripSupportKindName(_grabFrame.support.kind);
-        out.supportReason = _grabFrame.support.reason ? _grabFrame.support.reason : "none";
-        out.authoredSupportPivot = _grabFrame.support.authoredPivot;
-        out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
-        out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
-
-        if (_grabFrame.gripEvidence.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
-            const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidence.gripEvidenceTriangleIndex];
-            out.pivotTriangleWorld[0] = transform_math::localPointToWorld(currentNodeWorld, triangle.v0);
-            out.pivotTriangleWorld[1] = transform_math::localPointToWorld(currentNodeWorld, triangle.v1);
-            out.pivotTriangleWorld[2] = transform_math::localPointToWorld(currentNodeWorld, triangle.v2);
-            out.hasPivotTriangle = true;
-        }
-
-        return out.hasNormal || out.hasSupportAxis || out.hasBinormal || out.hasPivotTriangle;
     }
 
     bool Hand::getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const
@@ -612,20 +520,6 @@ namespace rock
             out.pivotTriangleWorld[1] = transform_math::localPointToWorld(currentNodeWorld, triangle.v1);
             out.pivotTriangleWorld[2] = transform_math::localPointToWorld(currentNodeWorld, triangle.v2);
             out.hasPivotTriangle = true;
-        }
-
-        if (_grabFrame.hasContactPatch && _grabFrame.contactPatchSampleCount > 0) {
-            const std::uint32_t count = (std::min)(_grabFrame.contactPatchSampleCount, static_cast<std::uint32_t>(out.contactSamplePointsWorld.size()));
-            RE::NiPoint3 average{};
-            for (std::uint32_t i = 0; i < count; ++i) {
-                out.contactSamplePointsWorld[i] = transform_math::localPointToWorld(liveBodyWorld, _grabFrame.contactPatchSamples[i].point);
-                average = average + out.contactSamplePointsWorld[i];
-            }
-            out.contactSampleCount = count;
-            if (count > 0) {
-                out.contactPatchPointWorld = average * (1.0f / static_cast<float>(count));
-                out.hasContactPatchPoint = true;
-            }
         }
 
         return true;

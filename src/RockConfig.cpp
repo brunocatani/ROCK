@@ -661,14 +661,12 @@ namespace rock
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
         rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
         rockDebugShowGrabPocketNormal = ini.GetBoolValue(SECTION, "bDebugShowGrabPocketNormal", rockDebugShowGrabPocketNormal);
-        rockDebugDrawGrabContactPatch = ini.GetBoolValue(SECTION, "bDebugDrawGrabContactPatch", rockDebugDrawGrabContactPatch);
         rockDebugDrawGrabForceTorque = ini.GetBoolValue(SECTION, "bDebugDrawGrabForceTorque", rockDebugDrawGrabForceTorque);
         rockDebugDrawGrabForceTorqueText = ini.GetBoolValue(SECTION, "bDebugDrawGrabForceTorqueText", rockDebugDrawGrabForceTorqueText);
         rockDebugDrawGrabPivotSourceCollider =
             ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceCollider", rockDebugDrawGrabPivotSourceCollider);
         rockDebugDrawGrabPivotSourceEvidence =
             ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceEvidence", rockDebugDrawGrabPivotSourceEvidence);
-        rockDebugDrawGrabSupportFrame = ini.GetBoolValue(SECTION, "bDebugDrawGrabSupportFrame", rockDebugDrawGrabSupportFrame);
         rockDebugDrawGrabPockets = ini.GetBoolValue(SECTION, "bDebugDrawGrabPockets", rockDebugDrawGrabPockets);
         rockDebugShowGrabFingerProbes = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerProbes", rockDebugShowGrabFingerProbes);
         rockDebugShowGrabFingerSweptArc = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerSweptArc", rockDebugShowGrabFingerSweptArc);
@@ -1251,42 +1249,10 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthFootprintRadiusGameUnits={} -- using 10.0", rockGrabSeatDepthFootprintRadiusGameUnits);
             rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
         }
-        rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatPenetrationBackstopFootprintRadiusGameUnits",
-                rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits));
-        if (!std::isfinite(rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits) ||
-            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits < 1.0f ||
-            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits > 30.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabSeatPenetrationBackstopFootprintRadiusGameUnits={} -- using 6.0",
-                rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits);
-            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
-        }
         rockGrabSeatDepthSkinGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthSkinGameUnits", rockGrabSeatDepthSkinGameUnits));
         if (!std::isfinite(rockGrabSeatDepthSkinGameUnits) || rockGrabSeatDepthSkinGameUnits < 0.0f || rockGrabSeatDepthSkinGameUnits > 5.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthSkinGameUnits={} -- using 0.5", rockGrabSeatDepthSkinGameUnits);
             rockGrabSeatDepthSkinGameUnits = 0.5f;
-        }
-        rockGrabGripInsetGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabGripInsetGameUnits", rockGrabGripInsetGameUnits));
-        if (!std::isfinite(rockGrabGripInsetGameUnits) || rockGrabGripInsetGameUnits < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabGripInsetGameUnits={} -- using 2.0", rockGrabGripInsetGameUnits);
-            rockGrabGripInsetGameUnits = 2.0f;
-        }
-        rockGrabMultiFingerContactValidationEnabled =
-            ini.GetBoolValue(SECTION, "bGrabMultiFingerContactValidationEnabled", rockGrabMultiFingerContactValidationEnabled);
-        rockGrabContactQualityMode = static_cast<int>(ini.GetLongValue(SECTION, "iGrabContactQualityMode", rockGrabContactQualityMode));
-        rockGrabContactQualityMode = std::clamp(rockGrabContactQualityMode, 0, 2);
-        rockGrabMinFingerContactGroups =
-            static_cast<int>(ini.GetLongValue(SECTION, "iGrabMinFingerContactGroups", rockGrabMinFingerContactGroups));
-        rockGrabMinFingerContactGroups = std::clamp(rockGrabMinFingerContactGroups, 1, 5);
-        rockGrabMinFingerContactSpreadGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMinFingerContactSpreadGameUnits", rockGrabMinFingerContactSpreadGameUnits));
-        if (!std::isfinite(rockGrabMinFingerContactSpreadGameUnits) || rockGrabMinFingerContactSpreadGameUnits < 0.0f) {
-            rockGrabMinFingerContactSpreadGameUnits = 1.0f;
-        }
-        rockGrabFingerContactMeshSnapMaxDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerContactMeshSnapMaxDistanceGameUnits", rockGrabFingerContactMeshSnapMaxDistanceGameUnits));
-        if (!std::isfinite(rockGrabFingerContactMeshSnapMaxDistanceGameUnits) || rockGrabFingerContactMeshSnapMaxDistanceGameUnits < 0.0f) {
-            rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
         }
         rockGrabSurfaceBehindPalmToleranceGameUnits =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSurfaceBehindPalmToleranceGameUnits", rockGrabSurfaceBehindPalmToleranceGameUnits));
@@ -1528,34 +1494,6 @@ namespace rock
         rockGrabLateralWeight = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLateralWeight", rockGrabLateralWeight));
         rockGrabDirectionalWeight = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabDirectionalWeight", rockGrabDirectionalWeight));
         rockGrabMaxTriangleDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxTriangleDistance", rockGrabMaxTriangleDistance));
-        rockGrabMeshContactOnly = ini.GetBoolValue(SECTION, "bGrabMeshContactOnly", rockGrabMeshContactOnly);
-        rockGrabRequireMeshContact = ini.GetBoolValue(SECTION, "bGrabRequireMeshContact", rockGrabRequireMeshContact);
-        rockGrabContactPatchEnabled = ini.GetBoolValue(SECTION, "bGrabContactPatchEnabled", rockGrabContactPatchEnabled);
-        rockGrabContactPatchProbeCount = static_cast<int>(ini.GetLongValue(SECTION, "iGrabContactPatchProbeCount", rockGrabContactPatchProbeCount));
-        rockGrabContactPatchProbeCount = std::clamp(rockGrabContactPatchProbeCount, 1, 9);
-        rockGrabContactPatchProbeSpacingGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchProbeSpacingGameUnits", rockGrabContactPatchProbeSpacingGameUnits));
-        if (!std::isfinite(rockGrabContactPatchProbeSpacingGameUnits) || rockGrabContactPatchProbeSpacingGameUnits < 0.0f) {
-            rockGrabContactPatchProbeSpacingGameUnits = 3.0f;
-        }
-        rockGrabContactPatchProbeRadiusGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchProbeRadiusGameUnits", rockGrabContactPatchProbeRadiusGameUnits));
-        if (!std::isfinite(rockGrabContactPatchProbeRadiusGameUnits) || rockGrabContactPatchProbeRadiusGameUnits <= 0.0f) {
-            rockGrabContactPatchProbeRadiusGameUnits = 2.0f;
-        }
-        rockGrabContactPatchMeshSnapMaxDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchMeshSnapMaxDistanceGameUnits", rockGrabContactPatchMeshSnapMaxDistanceGameUnits));
-        if (!std::isfinite(rockGrabContactPatchMeshSnapMaxDistanceGameUnits) || rockGrabContactPatchMeshSnapMaxDistanceGameUnits < 0.0f) {
-            rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
-        }
-        rockGrabContactPatchMaxNormalAngleDegrees =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchMaxNormalAngleDegrees", rockGrabContactPatchMaxNormalAngleDegrees));
-        rockGrabContactPatchMaxNormalAngleDegrees = std::clamp(rockGrabContactPatchMaxNormalAngleDegrees, 0.0f, 179.0f);
-        rockGrabAlignmentMaxSelectionToMeshDistance =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAlignmentMaxSelectionToMeshDistance", rockGrabAlignmentMaxSelectionToMeshDistance));
-        if (!std::isfinite(rockGrabAlignmentMaxSelectionToMeshDistance)) {
-            rockGrabAlignmentMaxSelectionToMeshDistance = 8.0f;
-        }
         rockSelectedCloseFingerCurlEnabled = ini.GetBoolValue(SECTION, "bSelectedCloseFingerCurlEnabled", rockSelectedCloseFingerCurlEnabled);
         rockSelectedCloseFingerAnimMaxHandSpeed =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fSelectedCloseFingerAnimMaxHandSpeed", rockSelectedCloseFingerAnimMaxHandSpeed));
@@ -1571,20 +1509,11 @@ namespace rock
         rockSelectedCloseFingerAnimValue = std::clamp(rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
         rockPullToObjectCenterEnabled = ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled = ini.GetBoolValue(SECTION, "bPullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
-        rockForceGrabSeatAlignmentEnabled = ini.GetBoolValue(SECTION, "bForceGrabSeatAlignmentEnabled", rockForceGrabSeatAlignmentEnabled);
-        rockGrabSeatRollAlignmentEnabled = ini.GetBoolValue(SECTION, "bGrabSeatRollAlignmentEnabled", rockGrabSeatRollAlignmentEnabled);
         rockPullPresentationMinElongationRatio =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationMinElongationRatio", rockPullPresentationMinElongationRatio));
         if (!std::isfinite(rockPullPresentationMinElongationRatio) || rockPullPresentationMinElongationRatio < 1.0f) {
             ROCK_LOG_WARN(Config, "Invalid fPullPresentationMinElongationRatio={} -- using 2.0", rockPullPresentationMinElongationRatio);
             rockPullPresentationMinElongationRatio = 2.0f;
-        }
-        rockGrabSeatRollMinSecondElongationRatio =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatRollMinSecondElongationRatio", rockGrabSeatRollMinSecondElongationRatio));
-        if (!std::isfinite(rockGrabSeatRollMinSecondElongationRatio) || rockGrabSeatRollMinSecondElongationRatio < 1.0f ||
-            rockGrabSeatRollMinSecondElongationRatio > 10.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabSeatRollMinSecondElongationRatio={} -- using 1.25", rockGrabSeatRollMinSecondElongationRatio);
-            rockGrabSeatRollMinSecondElongationRatio = 1.25f;
         }
         rockPullPresentationAngularGainPerSecond =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationAngularGainPerSecond", rockPullPresentationAngularGainPerSecond));

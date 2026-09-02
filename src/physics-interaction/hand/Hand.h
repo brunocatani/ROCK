@@ -133,36 +133,8 @@ namespace rock
         std::uint64_t traceId = 0;
     };
 
-    struct GrabContactPatchDebugSnapshot
-    {
-        std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> samplePointsWorld{};
-        std::uint32_t sampleCount = 0;
-    };
-
-    struct GrabSupportFrameDebugSnapshot
-    {
-        std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
-        RE::NiPoint3 pivotWorld{};
-        RE::NiPoint3 normalEndWorld{};
-        RE::NiPoint3 supportAxisEndWorld{};
-        RE::NiPoint3 binormalEndWorld{};
-        float axisLengthGameUnits = 0.0f;
-        const char* pivotAuthoritySource = "none";
-        const char* activeGrabPointMode = "none";
-        const char* supportKind = "none";
-        const char* supportReason = "none";
-        bool hasNormal = false;
-        bool hasSupportAxis = false;
-        bool hasBinormal = false;
-        bool hasPivotTriangle = false;
-        bool authoredSupportPivot = false;
-        bool positionOnlyPivot = false;
-        bool normalTrusted = false;
-    };
-
     struct GrabForceTorqueDebugSnapshot
     {
-        std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> contactSamplePointsWorld{};
         std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
         RE::hknpBodyId pivotSourceBodyId{ INVALID_BODY_ID };
         RE::NiTransform liveBodyWorld{};
@@ -191,7 +163,6 @@ namespace rock
         RE::NiPoint3 visualMeshGripPointWorld{};
         RE::NiPoint3 captureMeshGripPointBodyWorld{};
         RE::NiPoint3 captureMeshGripPointVisualWorld{};
-        RE::NiPoint3 contactPatchPointWorld{};
         float pivotErrorGameUnits = 0.0f;
         float pivotTrackingErrorGameUnits = 0.0f;
         float bodyVisualMeshLockErrorGameUnits = 0.0f;
@@ -237,7 +208,6 @@ namespace rock
         const char* authorityFrameSource = "none";
         const char* capturePivotAuthoritySource = "none";
         const char* captureGrabPointMode = "none";
-        std::uint32_t contactSampleCount = 0;
         bool hasTorqueAxis = false;
         bool hasMotorConstraintFrames = false;
         bool hasMotorRelationFrames = false;
@@ -250,7 +220,6 @@ namespace rock
         bool hasActivePivotBVisualNode = false;
         bool hasCaptureMeshGripPoint = false;
         bool gripPointMutatedAfterCapture = false;
-        bool hasContactPatchPoint = false;
         bool positionOnlyPivot = false;
         bool normalTrusted = false;
     };
@@ -449,8 +418,6 @@ namespace rock
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
-        bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
-        bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
         bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,
@@ -733,14 +700,11 @@ namespace rock
         struct GrabSurfaceEvidence;
         struct GrabBodyResolution;
         struct ResolvedGrabBodyCapture;
-        struct GrabPivotEvidence;
-        struct GrabFingerEvidenceInput;
-        struct GrabFingerEvidence;
         struct GrabCommitPreparationInput;
         struct GrabBodyFrameCaptureInput;
         struct GrabBodyFrameCapture;
-        struct GrabSeatCaptureInput;
-        struct GrabSeatCaptureResult;
+        struct GrabSeatInput;
+        struct GrabSeatResult;
         struct GrabFrozenCommitInput;
         struct GrabPostFreezeInput;
         struct GrabConstraintCommitInput;
@@ -790,19 +754,15 @@ namespace rock
             bool handPocketOnlyGrab,
             GrabMeshExtraction& outExtraction);
         void resolveGrabSurfaceEvidence(
-            const ValidatedGrabSelection& selection,
             const GrabProxyPreparation& proxy,
-            const GrabMeshCaptureSetup& capture,
             const GrabMeshExtraction& mesh,
-            bool meshContactOnly,
             GrabSurfaceEvidence& outEvidence);
         void resolveGrabBodyAndContactPolicy(
-            const ValidatedGrabSelection& selection,
             const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
             const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
             const active_grab_body_lifecycle::BodyLifecycleSnapshot& activeLifecycle,
             const GrabProxyPreparation& proxy,
-            GrabSurfaceEvidence& surface,
+            const GrabSurfaceEvidence& surface,
             GrabBodyResolution& outResolution);
         bool captureResolvedGrabBody(
             RE::hknpWorld* world,
@@ -815,38 +775,16 @@ namespace rock
             std::uint64_t traceId,
             const std::string& objectName,
             ResolvedGrabBodyCapture& outCapture);
-        void resolveGrabPivotEvidence(
-            RE::hknpWorld* world,
-            const ValidatedGrabSelection& selection,
-            const GrabProxyPreparation& proxy,
-            const GrabMeshExtraction& mesh,
-            const ResolvedGrabBodyCapture& bodyCapture,
-            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
-            const grab_contact_source_policy::GrabContactSourcePolicy& contactSourcePolicy,
-            bool canonicalPivotAvailable,
-            const RE::NiPoint3& canonicalPivotPointWorld,
-            const RE::NiPoint3& canonicalPivotNormalWorld,
-            const char* canonicalPivotMode,
-            grab_authority_frame_math::GrabAuthorityPivotSource canonicalPivotAuthoritySource,
-            GrabSurfaceEvidence& surface,
-            GrabBodyResolution& bodyResolution,
-            GrabPivotEvidence& outEvidence);
-        bool resolveGrabFingerEvidence(
-            RE::hknpWorld* world,
-            const GrabFingerEvidenceInput& input,
-            GrabSurfaceEvidence& surface,
-            const GrabPivotEvidence& pivotEvidence,
-            GrabFingerEvidence& outEvidence);
         void beginResolvedGrabCommit(
             const GrabCommitPreparationInput& input);
         bool captureGrabBodyFrame(
             RE::hknpWorld* world,
             const GrabBodyFrameCaptureInput& input,
             GrabBodyFrameCapture& outCapture);
-        bool resolveGrabSeatCapture(
+        bool resolveGrabSeat(
             RE::hknpWorld* world,
-            const GrabSeatCaptureInput& input,
-            GrabSeatCaptureResult& outCapture);
+            const GrabSeatInput& input,
+            GrabSeatResult& outSeat);
         bool commitFrozenGrabAuthority(
             const GrabFrozenCommitInput& input);
         void initializePostFreezeGrab(
