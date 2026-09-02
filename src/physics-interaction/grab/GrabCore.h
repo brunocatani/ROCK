@@ -554,6 +554,15 @@ namespace rock
     };
 
     /*
+     * Seat depth stop dimensions, in game units. Max caps how far the seat
+     * is pushed out along the palm normal; the footprint is the lateral
+     * radius around the palm axis that counts as "over the palm". Only the
+     * skin gap (fGrabSeatDepthSkinGameUnits) stays configurable.
+     */
+    inline constexpr float kGrabSeatDepthMaxGameUnits = 30.0f;
+    inline constexpr float kGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+
+    /*
      * What the capture-time seat machinery decided: the shape class it read
      * from the mesh PCA, the ratios it classified from, and the outcome of
      * every correction it applied. Kept so a saved ground-truth capture can be
@@ -579,20 +588,14 @@ namespace rock
     {
         RE::NiPoint3 gripPointWorldAtGrab{};
         RE::NiPoint3 gripPointLocal{};
-        RE::NiPoint3 gripEvidenceLocal{};
         RE::NiPoint3 gripNormalLocal{};
         RE::NiTransform gripSourceNodeWorldAtGrab{};
         RE::NiPoint3 gripPointSourceNodeLocal{};
         RE::NiPoint3 gripNormalSourceNodeLocal{};
         RE::NiAVObject* gripSourceNode = nullptr;
-        std::uint32_t gripEvidenceTriangleIndex = 0xFFFF'FFFF;
-        std::uint32_t gripEvidenceShapeKey = 0xFFFF'FFFF;
-        std::uint32_t gripEvidenceShapeCollisionFilterInfo = 0;
-        float gripEvidenceHitFraction = 1.0f;
         bool hasGripPoint = false;
         bool hasGripSourceNodePoint = false;
         bool hasGripSourceNodeNormal = false;
-        bool hasGripEvidenceShapeKey = false;
     };
 
     struct GrabPivotAuthorityState
@@ -624,21 +627,14 @@ namespace rock
 
     struct GrabSeatState
     {
-        RE::NiPoint3 palmSeatPointWorldAtGrab{};
-        RE::NiPoint3 pinchPocketWorldAtGrab{};
-        RE::NiPoint3 pinchAxisWorldAtGrab{ 1.0f, 0.0f, 0.0f };
         GrabSeatDiagnostics diagnostics{};
         GrabSeatMode mode = GrabSeatMode::None;
         const char* activeGrabPointMode = "none";
         const char* palmSeatPointMode = "none";
-        bool hasPalmSeatPoint = false;
-        bool hasPinchPocket = false;
     };
 
     struct GrabFrozenAuthorityState
     {
-        RE::NiTransform liveHandWorldAtGrab{};
-        RE::NiTransform handBodyWorldAtGrab{};
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform bodyWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
@@ -646,7 +642,6 @@ namespace rock
         RE::NiTransform bodyLocal{};
         RE::NiPoint3 pivotAHandBodyLocalGame{};
         RE::NiPoint3 grabPivotWorldAtGrab{};
-        RE::NiPoint3 gripPointBodyLocalGame{};
         RE::NiPoint3 pivotBBodyLocalGame{};
         RE::NiPoint3 pivotBConstraintLocalGame{};
         bool hasFrozenPivotB = false;
@@ -680,7 +675,6 @@ namespace rock
         RE::NiTransform rawHandSpace{};
         RE::NiTransform proxyAuthorityHandSpace{};
         RE::NiTransform proxyAuthorityBodyHandSpace{};
-        RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform rootBodyLocal{};
         RE::NiTransform ownerBodyLocal{};
         std::array<RE::NiPoint3, 5> fingerPoseTargetLocal{};
@@ -688,17 +682,8 @@ namespace rock
         std::array<std::uint8_t, 5> fingerPoseTargetValid{};
         std::array<std::uint8_t, 5> fingerPoseTargetNormalValid{};
         std::uint32_t fingerPoseTargetCount = 0;
-        float handScaleAtGrab = 1.0f;
         std::uint64_t traceId = 0;
-        const char* bodyResolutionReason = "none";
         const char* fingerPoseAimReason = "none";
-        /*
-         * ROCK only fades the dynamic grab when the object must be synced from
-         * an initial/custom alignment. The canonical frame stores that decision
-         * so the native spring and diagnostics agree about whether startup
-         * softness is part of this grab.
-         */
-        const char* motorFadeReason = "none";
         ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
@@ -729,7 +714,6 @@ namespace rock
             rawHandSpace = RE::NiTransform();
             proxyAuthorityHandSpace = RE::NiTransform();
             proxyAuthorityBodyHandSpace = RE::NiTransform();
-            handBodyToRawHandAtGrab = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
             ownerBodyLocal = RE::NiTransform();
             fingerPoseTargetLocal = {};
@@ -737,11 +721,8 @@ namespace rock
             fingerPoseTargetValid = {};
             fingerPoseTargetNormalValid = {};
             fingerPoseTargetCount = 0;
-            handScaleAtGrab = 1.0f;
             traceId = 0;
-            bodyResolutionReason = "none";
             fingerPoseAimReason = "none";
-            motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
             fingerPoseLocalMeshTriangles.clear();

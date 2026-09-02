@@ -645,19 +645,12 @@
             case HandState::SelectedClose:
             case HandState::SelectedFar:
                 return Phase::Selecting;
-            case HandState::PrePullItem:
             case HandState::Pulled:
                 return Phase::Pulling;
             case HandState::SelectionLocked:
-            case HandState::PreGrabItem:
             case HandState::HeldInit:
-            case HandState::GrabFromOtherHand:
-            case HandState::GrabExternal:
                 return Phase::Catching;
             case HandState::HeldBody:
-            case HandState::SelectedTwoHand:
-            case HandState::HeldTwoHanded:
-            case HandState::LootOtherHand:
                 return Phase::Holding;
             case HandState::StashCandidate:
                 return Phase::StashCandidate;

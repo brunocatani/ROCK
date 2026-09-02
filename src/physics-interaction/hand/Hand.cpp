@@ -103,26 +103,12 @@ namespace rock
                 return "SelectedFar";
             case HandState::SelectionLocked:
                 return "SelectionLocked";
-            case HandState::PreGrabItem:
-                return "PreGrabItem";
-            case HandState::PrePullItem:
-                return "PrePullItem";
             case HandState::HeldInit:
                 return "HeldInit";
             case HandState::HeldBody:
                 return "HeldBody";
             case HandState::Pulled:
                 return "Pulled";
-            case HandState::GrabFromOtherHand:
-                return "GrabFromOtherHand";
-            case HandState::GrabExternal:
-                return "GrabExternal";
-            case HandState::LootOtherHand:
-                return "LootOtherHand";
-            case HandState::SelectedTwoHand:
-                return "SelectedTwoHand";
-            case HandState::HeldTwoHanded:
-                return "HeldTwoHanded";
             case HandState::StashCandidate:
                 return "StashCandidate";
             case HandState::ConsumeCandidate:
@@ -144,16 +130,6 @@ namespace rock
                 return "SelectionLost";
             case HandInteractionEvent::LockSelectionForPull:
                 return "LockSelectionForPull";
-            case HandInteractionEvent::BeginPreGrabItem:
-                return "BeginPreGrabItem";
-            case HandInteractionEvent::BeginPrePullItem:
-                return "BeginPrePullItem";
-            case HandInteractionEvent::BeginExternalGrab:
-                return "BeginExternalGrab";
-            case HandInteractionEvent::BeginLootOtherHand:
-                return "BeginLootOtherHand";
-            case HandInteractionEvent::SpawnedItemReady:
-                return "SpawnedItemReady";
             case HandInteractionEvent::BeginPull:
                 return "BeginPull";
             case HandInteractionEvent::PullArrivedClose:
@@ -174,24 +150,12 @@ namespace rock
                 return "CommitStash";
             case HandInteractionEvent::CommitConsume:
                 return "CommitConsume";
-            case HandInteractionEvent::CompleteLoot:
-                return "CompleteLoot";
             case HandInteractionEvent::ReleaseRequested:
                 return "ReleaseRequested";
             case HandInteractionEvent::ObjectInvalidated:
                 return "ObjectInvalidated";
             case HandInteractionEvent::WorldInvalidated:
                 return "WorldInvalidated";
-            case HandInteractionEvent::BeginOtherHandTransfer:
-                return "BeginOtherHandTransfer";
-            case HandInteractionEvent::CompleteOtherHandTransfer:
-                return "CompleteOtherHandTransfer";
-            case HandInteractionEvent::BeginTwoHandSelection:
-                return "BeginTwoHandSelection";
-            case HandInteractionEvent::BeginTwoHandHold:
-                return "BeginTwoHandHold";
-            case HandInteractionEvent::EndTwoHandHold:
-                return "EndTwoHandHold";
             }
             return "Unknown";
         }
@@ -1547,8 +1511,8 @@ namespace rock
             storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(telemetry.authority.objectNodeWorldAtGrab, telemetry.authority.bodyWorldAtGrab));
 
         auto& tuning = outCapture.tuning;
-        tuning.seatDepthMaxGameUnits = g_rockConfig.rockGrabSeatDepthMaxGameUnits;
-        tuning.seatDepthFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits;
+        tuning.seatDepthMaxGameUnits = kGrabSeatDepthMaxGameUnits;
+        tuning.seatDepthFootprintRadiusGameUnits = kGrabSeatDepthFootprintRadiusGameUnits;
         tuning.seatDepthSkinGameUnits = g_rockConfig.rockGrabSeatDepthSkinGameUnits;
         tuning.pullPresentationMinElongationRatio = g_rockConfig.rockPullPresentationMinElongationRatio;
         tuning.pocketDepthGameUnits = g_rockConfig.rockGrabPocketDepthGameUnits;

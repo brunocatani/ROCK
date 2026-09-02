@@ -951,7 +951,6 @@ namespace rock
             hand.isHolding(),
             frame.deltaSeconds,
             grab_input_intent_policy::Config{
-                .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                 .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                 .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
             });
@@ -1038,7 +1037,6 @@ namespace rock
                 .peerFormId = peerHeldFormIdForRetry,
                 .deltaSeconds = frame.deltaSeconds,
                 .config = peer_held_join_retry_policy::Config{
-                    .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                     .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                     .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
                 },
@@ -1050,7 +1048,6 @@ namespace rock
                 peerHeldJoinRetryState.peerFormId,
                 peerHeldJoinRetryState.windowSeconds,
                 peer_held_join_retry_policy::retryIntervalSeconds(peer_held_join_retry_policy::Config{
-                    .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
                     .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
                     .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
                 }));

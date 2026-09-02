@@ -44,7 +44,6 @@ namespace rock
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
         std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
-        bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
 
@@ -353,8 +352,6 @@ namespace rock
         float rockGrabHeldMassMovementFadeOutSeconds = 5.0f;
         float rockGrabPocketDepthGameUnits = 7.0f;
         float rockGrabPocketRadiusGameUnits = 9.0f;
-        float rockGrabSeatDepthMaxGameUnits = 30.0f;
-        float rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
         float rockGrabSeatDepthSkinGameUnits = 0.5f;
         float rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         // Elapsed opposition/patch contact freshness (historical 5-frame

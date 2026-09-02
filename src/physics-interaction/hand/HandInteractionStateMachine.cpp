@@ -31,10 +31,6 @@ namespace rock
                    state == HandState::HeldBody ||
                    state == HandState::Pulled ||
                    state == HandState::SelectionLocked ||
-                   state == HandState::PreGrabItem ||
-                   state == HandState::PrePullItem ||
-                   state == HandState::GrabExternal ||
-                   state == HandState::LootOtherHand ||
                    state == HandState::StashCandidate ||
                    state == HandState::ConsumeCandidate ||
                    state == HandState::SelectedClose ||
@@ -88,54 +84,6 @@ namespace rock
         case HandInteractionEvent::LockSelectionForPull:
             if (current == HandState::SelectedClose || current == HandState::SelectedFar) {
                 return accept(HandState::SelectionLocked, transitionEffectMask(HandTransitionEffect::LockSelection), "lockSelectionForPull");
-            }
-            break;
-
-        case HandInteractionEvent::BeginPreGrabItem:
-            if (isCommitCandidateState(current)) {
-                return accept(
-                    HandState::PreGrabItem,
-                    transitionEffectMask(HandTransitionEffect::LockSelection, HandTransitionEffect::EnterGameplayScaffold),
-                    "beginPreGrabItem");
-            }
-            break;
-
-        case HandInteractionEvent::BeginPrePullItem:
-            if (current == HandState::SelectionLocked) {
-                return accept(
-                    HandState::PrePullItem,
-                    transitionEffectMask(HandTransitionEffect::StartPull, HandTransitionEffect::EnterGameplayScaffold),
-                    "beginPrePullItem");
-            }
-            break;
-
-        case HandInteractionEvent::BeginExternalGrab:
-            if (current == HandState::Idle || isCommitCandidateState(current)) {
-                return accept(HandState::GrabExternal, transitionEffectMask(HandTransitionEffect::EnterGameplayScaffold), "beginExternalGrab");
-            }
-            break;
-
-        case HandInteractionEvent::BeginLootOtherHand:
-            if (current == HandState::SelectedClose || current == HandState::SelectionLocked) {
-                return accept(
-                    HandState::LootOtherHand,
-                    transitionEffectMask(HandTransitionEffect::LockSelection, HandTransitionEffect::EnterGameplayScaffold),
-                    "beginLootOtherHand");
-            }
-            break;
-
-        case HandInteractionEvent::SpawnedItemReady:
-            if (current == HandState::PreGrabItem || current == HandState::GrabExternal) {
-                return accept(
-                    HandState::HeldInit,
-                    transitionEffectMask(HandTransitionEffect::CommitGrab, HandTransitionEffect::ExitGameplayScaffold),
-                    "spawnedItemReadyGrab");
-            }
-            if (current == HandState::PrePullItem) {
-                return accept(
-                    HandState::Pulled,
-                    transitionEffectMask(HandTransitionEffect::StartPull, HandTransitionEffect::ExitGameplayScaffold),
-                    "spawnedItemReadyPull");
             }
             break;
 
@@ -202,12 +150,6 @@ namespace rock
             }
             break;
 
-        case HandInteractionEvent::CompleteLoot:
-            if (current == HandState::LootOtherHand) {
-                return accept(HandState::PreGrabItem, transitionEffectMask(HandTransitionEffect::EnterGameplayScaffold), "completeLoot");
-            }
-            break;
-
         case HandInteractionEvent::ReleaseRequested:
             if (isReleaseCandidateState(current)) {
                 const auto gameplayExit = isGameplayScaffoldState(current) ? transitionEffectMask(HandTransitionEffect::ExitGameplayScaffold) : 0;
@@ -225,40 +167,7 @@ namespace rock
         case HandInteractionEvent::WorldInvalidated:
             if (current != HandState::Idle) {
                 const auto gameplayExit = isGameplayScaffoldState(current) ? transitionEffectMask(HandTransitionEffect::ExitGameplayScaffold) : 0;
-                return accept(
-                    HandState::Idle, kReleaseAllEffects | transitionEffectMask(HandTransitionEffect::ExitTwoHandAuthority) | gameplayExit, "worldInvalidated");
-            }
-            break;
-
-        case HandInteractionEvent::BeginOtherHandTransfer:
-            if (current == HandState::SelectedClose || current == HandState::HeldBody) {
-                return accept(HandState::GrabFromOtherHand, 0, "beginOtherHandTransfer");
-            }
-            break;
-
-        case HandInteractionEvent::CompleteOtherHandTransfer:
-            if (current == HandState::GrabFromOtherHand) {
-                return accept(HandState::HeldInit, transitionEffectMask(HandTransitionEffect::CommitGrab), "completeOtherHandTransfer");
-            }
-            break;
-
-        case HandInteractionEvent::BeginTwoHandSelection:
-            if (current == HandState::Idle || current == HandState::SelectedClose) {
-                return accept(HandState::SelectedTwoHand, 0, "beginTwoHandSelection");
-            }
-            break;
-
-        case HandInteractionEvent::BeginTwoHandHold:
-            if (current == HandState::SelectedTwoHand) {
-                return accept(HandState::HeldTwoHanded, transitionEffectMask(HandTransitionEffect::EnterTwoHandAuthority), "beginTwoHandHold");
-            }
-            break;
-
-        case HandInteractionEvent::EndTwoHandHold:
-            if (current == HandState::HeldTwoHanded || current == HandState::SelectedTwoHand) {
-                return accept(HandState::Idle,
-                    transitionEffectMask(HandTransitionEffect::ExitTwoHandAuthority, HandTransitionEffect::ClearFingerPose),
-                    "endTwoHandHold");
+                return accept(HandState::Idle, kReleaseAllEffects | gameplayExit, "worldInvalidated");
             }
             break;
         }

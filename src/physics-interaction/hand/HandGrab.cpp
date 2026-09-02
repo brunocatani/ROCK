@@ -1944,7 +1944,6 @@ namespace rock
             }
 
             frame.rawHandSpace = frozen.rawHandSpace;
-            frame.handBodyToRawHandAtGrab = frozen.handBodyToRawHandAtGrab;
             frame.proxyAuthorityHandSpace = frozen.proxyAuthorityHandSpace;
             frame.proxyAuthorityBodyHandSpace = frozen.proxyAuthorityBodyHandSpace;
             frame.authority.bodyLocal = frozen.bodyLocal;
@@ -1952,7 +1951,6 @@ namespace rock
             frame.rootBodyLocal = frozen.rootBodyLocal;
             frame.ownerBodyLocal = frozen.ownerBodyLocal;
             frame.gripEvidence.gripPointLocal = frozen.gripPointLocal;
-            frame.authority.gripPointBodyLocalGame = frozen.pivotBBodyLocalGame;
             frame.authority.pivotBBodyLocalGame = frozen.pivotBBodyLocalGame;
             frame.authority.pivotBConstraintLocalGame = frozen.pivotBConstraintLocalGame;
             frame.authority.pivotAHandBodyLocalGame = frozen.pivotAHandBodyLocalGame;
@@ -5394,7 +5392,6 @@ namespace rock
         const RE::NiTransform* handWorldTransform = nullptr;
         const GrabProxyPreparation* proxy = nullptr;
         const GrabMeshCaptureSetup* meshCapture = nullptr;
-        const GrabBodyResolution* bodyResolution = nullptr;
         const std::vector<GrabLocalTriangle>* localMeshTriangles = nullptr;
         RE::NiAVObject* rootNode = nullptr;
         RE::hknpBodyId objectBodyId{};
@@ -5431,7 +5428,6 @@ namespace rock
         const auto& handWorldTransform = *input.handWorldTransform;
         const auto& proxy = *input.proxy;
         const auto& meshCapture = *input.meshCapture;
-        const auto& bodyResolution = *input.bodyResolution;
         const auto& grabLocalMeshTriangles = *input.localMeshTriangles;
         const auto& sel = _currentSelection;
         auto* collidableNode = meshCapture.collidableNode;
@@ -5513,7 +5509,6 @@ namespace rock
             _grabFrame.localMeshTriangles = grabLocalMeshTriangles;
         }
         _grabFrame.hasMeshPoseData = !_grabFrame.localMeshTriangles.empty();
-        _grabFrame.bodyResolutionReason = primaryBodyChoiceReasonName(bodyResolution.primaryChoice.reason);
         return true;
     }
 
@@ -5874,8 +5869,8 @@ namespace rock
                 seatObjectWorld,
                 grabGripPoint,
                 pocket.palmNormalWorld,
-                g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
-                g_rockConfig.rockGrabSeatDepthMaxGameUnits);
+                kGrabSeatDepthFootprintRadiusGameUnits,
+                kGrabSeatDepthMaxGameUnits);
             if (seatDepthStop.valid && seatDepthStop.depthGameUnits > 0.01f) {
                 seatDepthOffsetGameUnits =
                     seatDepthStop.depthGameUnits + (std::max)(0.0f, g_rockConfig.rockGrabSeatDepthSkinGameUnits);
@@ -6002,7 +5997,6 @@ namespace rock
             .depthOffsetGameUnits = seatDepthOffsetGameUnits,
             .depthReason = seatDepthStop.reason,
         };
-        _grabFrame.gripEvidence.gripEvidenceLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
         _grabFrame.gripEvidence.gripNormalLocal = transform_math::worldVectorToLocal(objectWorldTransform, gripNormalWorld);
         storeGripSourceEvidence(_grabFrame,
             grabSurfaceHit.sourceNode ? grabSurfaceHit.sourceNode : collidableNode,
@@ -6010,12 +6004,6 @@ namespace rock
             grabGripPoint,
             gripNormalWorld,
             lengthSquared(gripNormalWorld) > 0.000001f);
-        _grabFrame.gripEvidence.gripEvidenceTriangleIndex =
-            grabSurfaceHit.valid && grabSurfaceHit.hasTriangle ? static_cast<std::uint32_t>(grabSurfaceHit.triangleIndex) : 0xFFFF'FFFF;
-        _grabFrame.gripEvidence.gripEvidenceShapeKey = grabSurfaceHit.valid ? grabSurfaceHit.shapeKey : 0xFFFF'FFFF;
-        _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo = grabSurfaceHit.valid ? grabSurfaceHit.shapeCollisionFilterInfo : 0;
-        _grabFrame.gripEvidence.gripEvidenceHitFraction = grabSurfaceHit.valid ? grabSurfaceHit.hitFraction : 1.0f;
-        _grabFrame.gripEvidence.hasGripEvidenceShapeKey = grabSurfaceHit.valid && grabSurfaceHit.hasShapeKey;
         if (looseWeaponPrimaryAttachApplied) {
             _grabFrame.gripEvidence.gripSourceNode = nullptr;
             _grabFrame.gripEvidence.gripPointSourceNodeLocal = {};
@@ -6052,11 +6040,6 @@ namespace rock
         _grabFrame.gripEvidence.gripPointWorldAtGrab = grabGripPoint;
         _grabFrame.seat.activeGrabPointMode = surface.pointMode;
         _grabFrame.seat.mode = effectivePinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::PalmPocket;
-        _grabFrame.seat.hasPinchPocket = effectivePinchPocket;
-        _grabFrame.seat.pinchPocketWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : RE::NiPoint3{};
-        _grabFrame.seat.pinchAxisWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
-        _grabFrame.seat.palmSeatPointWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : pocket.palmCenterWorld;
-        _grabFrame.seat.hasPalmSeatPoint = true;
         _grabFrame.seat.palmSeatPointMode =
             effectivePinchPocket ? "pinchPocket" : (looseWeaponPrimaryAttachApplied ? "looseWeaponPrimaryAttach" : "palmPocket");
         _grabFrame.syntheticLooseWeaponPrimaryAttach = looseWeaponPrimaryAttachApplied;
@@ -6185,11 +6168,8 @@ namespace rock
                     std::isfinite(objectWorldTransform.scale) && objectWorldTransform.scale > 0.0f ? objectWorldTransform.scale : 1.0f;
                 _grabFrame.pivotAuthority.longLeverGameUnits =
                     computeLocalMeshMaxDistanceFromPoint(_grabFrame.localMeshTriangles, _grabFrame.gripEvidence.gripPointLocal) * objectScaleForLever;
-                _grabFrame.authority.liveHandWorldAtGrab = handWorldTransform;
-                _grabFrame.authority.handBodyWorldAtGrab = proxyFrameWorldAtGrab;
                 _grabFrame.authority.objectNodeWorldAtGrab = objectWorldTransform;
                 _grabFrame.hasTelemetryCapture = true;
-                _grabFrame.handScaleAtGrab = handWorldTransform.scale;
                 _grabFrame.traceId = grabTraceId;
                 _grabFrame.freezeCaptureTelemetry(objectBodyId.value);
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
@@ -6282,9 +6262,6 @@ namespace rock
                 const bool largeInitialSync = initialGrabDistance >= g_rockConfig.rockGrabHandLerpMinDistance;
                 const bool seatRotationSync = seatRotationDegrees >= kSeatRotationFadeDegrees;
                 _grabFrame.fadeInGrabConstraint = !seatCapture.warpedToSeat && (largeInitialSync || seatRotationSync);
-                _grabFrame.motorFadeReason = seatCapture.warpedToSeat ?
-                    "warpedToSeat" :
-                    (largeInitialSync ? "largeInitialSync" : (seatRotationSync ? "seatRotation" : "none"));
                 _heldLocalLinearVelocityHistory = {};
                 _heldLocalLinearVelocityHistoryCount = 0;
                 _heldLocalLinearVelocityHistoryNext = 0;
@@ -7226,7 +7203,6 @@ namespace rock
                 .handWorldTransform = &handWorldTransform,
                 .proxy = &proxyPreparation,
                 .meshCapture = &meshCaptureSetup,
-                .bodyResolution = &bodyResolution,
                 .localMeshTriangles = &grabLocalMeshTriangles,
                 .rootNode = rootNode,
                 .objectBodyId = objectBodyId,
