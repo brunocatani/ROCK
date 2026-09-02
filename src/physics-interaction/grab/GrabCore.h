@@ -601,9 +601,6 @@ namespace rock
         float pocketDistanceGameUnits = 0.0f;
         float selectionDistanceGameUnits = 0.0f;
         float longLeverGameUnits = 0.0f;
-        float positionConfidence = 0.0f;
-        bool positionOnly = false;
-        bool normalTrusted = false;
     };
 
     enum class GrabSeatMode : std::uint8_t

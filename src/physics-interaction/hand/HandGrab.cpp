@@ -405,6 +405,13 @@ namespace rock
             return looseWeaponGrab ? (std::isfinite(multiplier) ? multiplier : 1.0f) : 1.0f;
         }
 
+        float grabAngularToLinearForceRatio(bool looseWeaponGrab)
+        {
+            return looseWeaponGrab ?
+                looseWeaponMultiplier(true, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier) :
+                grab_motion_controller::kGrabAngularToLinearForceRatio;
+        }
+
         float scaleDriveValue(float value, float multiplier)
         {
             return (std::isfinite(value) ? value : 0.0f) * (std::isfinite(multiplier) ? multiplier : 1.0f);
@@ -431,53 +438,6 @@ namespace rock
 
             const float scale = maxRadiansPerSecond / magnitude;
             return RE::NiPoint3{ value.x * scale, value.y * scale, value.z * scale };
-        }
-
-        grab_motion_controller::ContactSupportShape classifyContactSupportShapeFromGrabFrame(const CanonicalGrabFrame& frame)
-        {
-            /*
-             * The seat carries no contact-patch or multi-finger evidence any
-             * more; the mesh lever is the only shape signal left and the
-             * policy classifies it from the lever references alone.
-             */
-            return grab_motion_controller::classifyContactSupportShape(
-                grab_motion_controller::ContactSupportShape::Unknown,
-                frame.pivotAuthority.normalTrusted,
-                false,
-                0,
-                0,
-                0.0f,
-                frame.pivotAuthority.longLeverGameUnits,
-                g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
-                g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits);
-        }
-
-        grab_motion_controller::AngularAuthorityInput makeAngularAuthorityInput(const CanonicalGrabFrame& frame)
-        {
-            return grab_motion_controller::AngularAuthorityInput{
-                .enabled = g_rockConfig.rockGrabPivotQualityAngularScalingEnabled,
-                .positionOnlyPivot = frame.pivotAuthority.positionOnly,
-                .normalTrusted = frame.pivotAuthority.normalTrusted,
-                .longObjectLeverGameUnits = frame.pivotAuthority.longLeverGameUnits,
-                .smallObjectReferenceLeverGameUnits = g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
-                .positionOnlyAngularScale = g_rockConfig.rockGrabPositionOnlyAngularScale,
-                .smallObjectAngularScale = g_rockConfig.rockGrabSmallObjectAngularScale,
-                .lowContactSupportAngularScale = g_rockConfig.rockGrabLowContactSupportAngularScale,
-                .minAngularAuthorityScale = g_rockConfig.rockGrabMinAngularAuthorityScale,
-                .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
-                .contactSupportShape = classifyContactSupportShapeFromGrabFrame(frame),
-                .longObjectReferenceLeverGameUnits = g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
-            };
-        }
-
-        grab_motion_controller::HeldAuthorityState evaluateRuntimeHeldAuthority(
-            const CanonicalGrabFrame& frame,
-            bool heldBodyContactSoftening)
-        {
-            return grab_motion_controller::evaluateHeldAuthority(grab_motion_controller::HeldAuthorityInput{
-                .angular = makeAngularAuthorityInput(frame),
-                .heldBodyColliding = heldBodyContactSoftening,
-            });
         }
 
         float sharedGrabAuthorityForceScale(bool peerHandStillHolding)
@@ -603,8 +563,6 @@ namespace rock
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
             const float maxForceMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier);
-            const float angularForceMultiplier =
-                looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier);
             const float linearRecoveryMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
             const float angularRecoveryMultiplier =
@@ -615,7 +573,7 @@ namespace rock
                 std::clamp(std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
             const float linearMaxForce =
                 grab_motion_controller::capForceByMass(linearBudget, mass, forceToMassRatio) * sanitizedAuthorityForceScale;
-            const float angularMaxForce = linearMaxForce * angularForceMultiplier;
+            const float angularMaxForce = linearMaxForce * grabAngularToLinearForceRatio(looseWeaponGrab);
 
             return GrabConstraintMotorTuning{
                 .linearTau = scaleDriveValue(tau, linearTauMultiplier),
@@ -2995,7 +2953,7 @@ namespace rock
 
         void applyRockGrabHandPose(bool isLeft, const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose, std::array<float, 15>& currentJointPose,
             bool& hasCurrentJointPose, std::array<RE::NiTransform, 15>& currentLocalTransforms, std::uint16_t& currentLocalTransformMask, bool& hasCurrentLocalTransforms,
-            float deltaTime, bool publishLocalTransforms = true, bool snapJointPoseToTarget = false)
+            float deltaTime, bool publishLocalTransforms = true)
         {
             if (!frik_visual_authority::isAvailable()) {
                 return;
@@ -3023,7 +2981,7 @@ namespace rock
 
             if (g_rockConfig.rockGrabMeshJointPoseEnabled && fingerPose.solved) {
                 const auto targetJointPose = fingerPose.hasJointValues ? fingerPose.jointValues : grab_finger_pose_math::expandFingerCurlsToJointValues(fingerPose.values);
-                if (!hasCurrentJointPose || snapJointPoseToTarget) {
+                if (!hasCurrentJointPose) {
                     currentJointPose = targetJointPose;
                     hasCurrentJointPose = true;
                 } else {
@@ -3059,7 +3017,8 @@ namespace rock
                     localTransformState);
                 syncLocalTransformState();
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_DEBUG(Hand,
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
                         "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={} localTransforms={} mask=0x{:04X}",
                         isLeft ? "Left" : "Right", currentJointPose[0], currentJointPose[1], currentJointPose[2], currentJointPose[3], currentJointPose[4],
                         currentJointPose[5], fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
@@ -3084,7 +3043,8 @@ namespace rock
                     currentSplayRadians);
                 const bool published = frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, handPose, 100);
                 if (published && g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_DEBUG(Hand,
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
                         "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={}",
                         isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
                         fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
@@ -4396,15 +4356,10 @@ namespace rock
     }
 
     bool Hand::resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
-        const RE::NiTransform& rawHandWorld,
-        const RE::NiTransform* fallbackPalmAnchorWorld,
         RE::NiTransform& outProxyWorld,
         const char*& outSource,
         Hand::GrabAuthorityProxyFramePolicy policy) const
     {
-        (void)rawHandWorld;
-        (void)fallbackPalmAnchorWorld;
-
         auto isFiniteProxyFrameInput = [](const RE::NiTransform& transform) {
             bool rotationFinite = true;
             for (std::uint32_t row = 0; row < 3; ++row) {
@@ -4483,8 +4438,7 @@ namespace rock
         float forceFadeInTime,
         float tauMin,
         float authorityForceScale,
-        bool heldBodyColliding,
-        const grab_motion_controller::HeldAuthorityState& heldAuthority)
+        bool heldBodyColliding)
     {
         if (!_activeConstraint.isValid() || !_activeConstraint.linearMotor || !_activeConstraint.angularMotor) {
             return;
@@ -4502,8 +4456,6 @@ namespace rock
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
         const float looseMaxForceMultiplier =
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier);
-        const float looseAngularForceMultiplier =
-            looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier);
         const float looseLinearRecoveryMultiplier =
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
         const float looseAngularRecoveryMultiplier =
@@ -4516,7 +4468,6 @@ namespace rock
             _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);
         const auto motorInput = grab_motion_controller::MotorInput{
-            .heldBodyColliding = heldBodyColliding,
             .baseLinearTau = scaleDriveValue(g_rockConfig.rockGrabLinearTau, looseLinearTauMultiplier),
             .baseAngularTau = scaleDriveValue(g_rockConfig.rockGrabAngularTau, looseAngularTauMultiplier),
             .collisionTau = scaleDriveValue(tauMin, looseCollisionTauMultiplier),
@@ -4532,7 +4483,7 @@ namespace rock
             .physicsRateMaxForceScale = g_rockConfig.rockGrabPhysicsRateMaxForceScale,
             .baseMaxForce = sharedBaseMaxForce,
             .authorityForceScale = authorityForceScale,
-            .angularForceMultiplier = looseAngularForceMultiplier,
+            .angularToLinearForceRatio = grabAngularToLinearForceRatio(_heldObjectIsLooseWeapon),
             .mass = massSummary.motorMass(),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
             .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
@@ -4541,7 +4492,7 @@ namespace rock
             .fadeElapsed = _grabStartTime,
             .fadeDuration = forceFadeInTime,
         };
-        const auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
+        const auto output = grab_motion_controller::solveMotorTargets(motorInput, heldBodyColliding);
         _lastGrabPhysicsHz.store(output.physicsHz, std::memory_order_relaxed);
         _lastGrabPhysicsRateForceScale.store(output.physicsRateForceScale, std::memory_order_relaxed);
 
@@ -4604,12 +4555,6 @@ namespace rock
 
     bool Hand::promoteHeldObjectToConstraintDrive(RE::bhkWorld* bhkWorld,
         RE::hknpWorld* world,
-        const RE::NiTransform& handWorldTransform,
-        float tau,
-        float damping,
-        float maxForce,
-        float proportionalRecovery,
-        float constantRecovery,
         const char* reason)
     {
         /*
@@ -4620,13 +4565,6 @@ namespace rock
         if (!isHolding() || !bhkWorld || !world || !_savedObjectState.isValid()) {
             return false;
         }
-        (void)handWorldTransform;
-        (void)tau;
-        (void)damping;
-        (void)maxForce;
-        (void)proportionalRecovery;
-        (void)constantRecovery;
-
         if (_activeConstraint.isValid() && _grabAuthorityProxy.isValid()) {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             _grabAuthorityPendingTarget.authorityForceScale =
@@ -5441,8 +5379,6 @@ namespace rock
         outPreparation.proxyFrameWorldAtGrab = outPreparation.handBodyWorldAtGrab;
         if (!resolveGrabAuthorityProxyFrame(
                 world,
-                handWorldTransform,
-                &outPreparation.handBodyWorldAtGrab,
                 outPreparation.proxyFrameWorldAtGrab,
                 outPreparation.proxyFrameSourceAtGrab,
                 GrabAuthorityProxyFramePolicy::LivePalmOnly)) {
@@ -6639,9 +6575,6 @@ namespace rock
             !_grabFrame.localMeshTriangles.empty() ||
             !_grabFrame.fingerPoseLocalMeshTriangles.empty();
         _grabFrame.pivotAuthority.source = pivotAuthoritySource;
-        _grabFrame.pivotAuthority.positionOnly = false;
-        _grabFrame.pivotAuthority.normalTrusted = lengthSquared(gripNormalWorld) > 0.000001f;
-        _grabFrame.pivotAuthority.positionConfidence = 1.0f;
         _grabFrame.pivotAuthority.pocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
         _grabFrame.pivotAuthority.selectionDistanceGameUnits =
             sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, seatHit.position) : std::numeric_limits<float>::max();
@@ -6884,7 +6817,7 @@ namespace rock
                     const auto traceDesiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(frozenAuthorityFrame.desiredBodyWorld);
 
                     ROCK_LOG_INFO(Hand,
-                        "{} GRAB_TRACE stage=capture trace={} hand={} formID={:08X} name='{}' body={} mode={} pivotAuthority={} frozenSource={} resolverSource={} resolverReason={} seat={} pinch={} shapeKey=0x{:08X} triangle=0x{:08X} pivotA=({:.2f},{:.2f},{:.2f}) grip=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu pocket={:.2f}gu selection={:.2f}gu longLever={:.2f}gu positionOnly={} normalTrusted={} confidence={:.2f}",
+                        "{} GRAB_TRACE stage=capture trace={} hand={} formID={:08X} name='{}' body={} mode={} pivotAuthority={} frozenSource={} resolverSource={} resolverReason={} seat={} pinch={} shapeKey=0x{:08X} triangle=0x{:08X} pivotA=({:.2f},{:.2f},{:.2f}) grip=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu pocket={:.2f}gu selection={:.2f}gu longLever={:.2f}gu",
                         handName(),
                         _grabFrame.traceId,
                         _isLeft ? "left" : "right",
@@ -6919,10 +6852,7 @@ namespace rock
                         tracePivotBRelationDeltaGameUnits,
                         _grabFrame.pivotAuthority.pocketDistanceGameUnits,
                         _grabFrame.pivotAuthority.selectionDistanceGameUnits,
-                        _grabFrame.pivotAuthority.longLeverGameUnits,
-                        _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
-                        _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                        _grabFrame.pivotAuthority.positionConfidence);
+                        _grabFrame.pivotAuthority.longLeverGameUnits);
 
                     ROCK_LOG_INFO(Hand,
                         "{} GRAB_TRACE stage=capture_frames trace={} rawPos=({:.2f},{:.2f},{:.2f}) proxyPos=({:.2f},{:.2f},{:.2f}) objectPos=({:.2f},{:.2f},{:.2f}) bodyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) rawProxyRot={:.2f}deg rawProxyAxisMax={:.2f}deg objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
@@ -7158,7 +7088,6 @@ namespace rock
                 _grabVisualHandLerpStartTransform = handWorldTransform;
                 _grabVisualHandLerpElapsedSeconds = 0.0f;
                 _grabVisualHandLerpDurationSeconds = 0.0f;
-                _grabVisualDeviationExceededSeconds = 0.0f;
                 _grabDeviationExceededSeconds = 0.0f;
                 const RE::NiPoint3 initialGrabDelta = grabPivotAWorld - grabGripPoint;
                 const float initialGrabDistance =
@@ -7219,7 +7148,7 @@ namespace rock
                         "rawProxyDelta={:.2f}deg/{:.2f}gu motionDiagVsGrab={:.2f}deg/{:.2f}gu proxyBodyFrame={} rotRef={} proxyFrame={} rootPalm={} pivotALocal=({:.2f},{:.2f},{:.2f}) meshMode={} meshTris={} "
                         "pocketGrip={:.1f}gu selectionGripEvidence={:.1f}gu "
                         "shapeKey=0x{:08X} shapeFilter=0x{:08X} hitFraction={:.4f} "
-                        "activePoint={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} positionConfidence={:.2f} palmSeatPoint={} "
+                        "activePoint={} pivotAuthoritySource={} palmSeatPoint={} "
                         "poseTargets={} motorFade={} motorFadeReason={} bodyReason={} "
                         "fingerPoseAim={} fingerPoseAimReason={}",
                         handName(), vrScale, handWorldTransform.scale, handBodyWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
@@ -7236,9 +7165,6 @@ namespace rock
                         _grabFrame.gripEvidence.gripEvidenceShapeKey, _grabFrame.gripEvidence.gripEvidenceShapeCollisionFilterInfo, _grabFrame.gripEvidence.gripEvidenceHitFraction,
                         _grabFrame.seat.activeGrabPointMode,
                         grabPivotAuthoritySourceName(_grabFrame.pivotAuthority.source),
-                        _grabFrame.pivotAuthority.positionOnly ? "yes" : "no",
-                        _grabFrame.pivotAuthority.normalTrusted ? "yes" : "no",
-                        _grabFrame.pivotAuthority.positionConfidence,
                         _grabFrame.seat.palmSeatPointMode,
                         _grabFrame.fingerPoseTargetCount, _grabFrame.fadeInGrabConstraint ? "yes" : "no",
                         _grabFrame.motorFadeReason, _grabFrame.bodyResolutionReason,
@@ -7746,9 +7672,10 @@ namespace rock
                 /*
                  * One finger solve at commit against the frozen commanded seat.
                  * The seat is final for every acquisition path (pinch, palm
-                 * pocket, loose-weapon attach, forced-arrival warp); the next held
-                 * frame only finalizes the local-transform layer after FRIK has
-                 * published the joint values.
+                 * pocket, loose-weapon attach, forced-arrival warp).
+                 * finalizeHeldObjectUpdate publishes this pose every held frame
+                 * and starts the local-transform layer one update after the
+                 * first joint publish.
                  */
                 const bool pinchFingerPose = _grabFrame.seat.mode == GrabSeatMode::PinchPocket;
                 const RE::NiTransform& targetObjectWorld = pinchFingerPose ? objectWorldTransform : _grabFrame.authority.desiredObjectWorldAtGrab;
@@ -7813,8 +7740,8 @@ namespace rock
                 _grabFingerProbeStart = fingerPose.probeStart;
                 _grabFingerProbeEnd = fingerPose.probeEnd;
                 _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
-                auto publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, targetObjectWorld);
                 if (g_rockConfig.rockDebugShowGrabFingerProbes) {
+                    auto publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, targetObjectWorld);
                     std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
                     (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(publishFingerPose, targetFingerPoseWorldTriangles, targetFingerPoseTargets,
                         liveFingerSnapshotAtGrab, targetObjectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padEvidence, false);
@@ -7831,9 +7758,6 @@ namespace rock
                     _hasGrabFingerPadProbeDebug = false;
                     _hasGrabFingerSurfaceTargetDebug = false;
                 }
-                applyRockGrabHandPose(_isLeft, publishFingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, _grabFingerLocalTransforms, _grabFingerLocalTransformMask,
-                    _hasGrabFingerLocalTransforms, 0.0f, /*publishLocalTransforms=*/false, /*snapJointPoseToTarget=*/true);
-                _grabFingerPosePublished = true;
                 _grabFingerLocalTransformFinalizePending = _grabFingerPose.solved;
                 ROCK_LOG_DEBUG(Hand, "{} GRAB POSE TARGET: seat={} solved={} hits={} triangles={} spatial={} nodes={} tests={} commandedAnchors={}",
                     handName(), grabSeatModeName(_grabFrame.seat.mode), _grabFingerPose.solved ? "yes" : "no", _grabFingerPose.hitCount,
@@ -8604,8 +8528,6 @@ namespace rock
         update.proxyAuthorityWorld = handWorldTransform;
         update.hasProxyAuthorityFrame = resolveGrabAuthorityProxyFrame(
             world,
-            handWorldTransform,
-            nullptr,
             update.proxyAuthorityWorld,
             update.proxyAuthoritySource,
             GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget);
@@ -8747,11 +8669,10 @@ namespace rock
         return true;
     }
 
-    bool Hand::updateHeldVisualPresentation(RE::hknpWorld* world,
+    void Hand::updateHeldVisualPresentation(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float deltaTime,
-        bool hasPivotTrackingError,
-        const GrabReleaseContext& releaseContext)
+        bool hasPivotTrackingError)
     {
         tickHeldBodyContact();
         /*
@@ -8817,38 +8738,6 @@ namespace rock
 
                 const float visualHandDeviationGameUnits =
                     pointDistanceGameUnits(nextVisualHandWorld.translate, handWorldTransform.translate);
-                if (held_object_physics_math::instantDeviationExceeded(visualHandDeviationGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand release: visual held-object hand target instant deviation exceeded ({:.1f}gu > {:.1f}gu)",
-                        handName(),
-                        visualHandDeviationGameUnits,
-                        held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
-                    return false;
-                }
-                const float averageVisualHandDeviationGameUnits = recordDeviationAverage(
-                    _grabVisualDeviationHistory,
-                    _grabVisualDeviationHistoryCount,
-                    _grabVisualDeviationHistoryNext,
-                    visualHandDeviationGameUnits);
-                _grabVisualDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
-                    _grabVisualDeviationExceededSeconds,
-                    averageVisualHandDeviationGameUnits,
-                    g_rockConfig.rockGrabMaxDeviation,
-                    deltaTime);
-                if (held_object_physics_math::deviationExceeded(_grabVisualDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand release: visual held-object hand target exceeded max deviation average ({:.1f}gu > {:.1f}gu for {:.2f}s)",
-                        handName(),
-                        averageVisualHandDeviationGameUnits,
-                        g_rockConfig.rockGrabMaxDeviation,
-                        _grabVisualDeviationExceededSeconds);
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
-                    return false;
-                }
-
                 _grabVisualHandTransform = nextVisualHandWorld;
                 if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform)) {
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
@@ -8858,7 +8747,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND: relation=heldRelative visualOnly=yes lerpAlpha={:.2f} lerpDuration={:.3f}s target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu",
+                    "{} GRAB VISUAL HAND: relation=heldRelative visualOnly=yes lerpAlpha={:.2f} lerpDuration={:.3f}s target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu",
                     handName(),
                     visualHandLerpAlpha,
                     _grabVisualHandLerpDurationSeconds,
@@ -8871,13 +8760,8 @@ namespace rock
                     handWorldTransform.translate.x,
                     handWorldTransform.translate.y,
                     handWorldTransform.translate.z,
-                    visualHandDeviationGameUnits,
-                    averageVisualHandDeviationGameUnits);
+                    visualHandDeviationGameUnits);
             } else {
-                _grabVisualDeviationExceededSeconds = 0.0f;
-                _grabVisualDeviationHistory = {};
-                _grabVisualDeviationHistoryCount = 0;
-                _grabVisualDeviationHistoryNext = 0;
                 if (_hasGrabVisualHandTransform) {
                     clearGrabExternalHandWorldTransform(_isLeft);
                     _hasGrabVisualHandTransform = false;
@@ -8889,10 +8773,6 @@ namespace rock
                 _grabVisualHandLerpDurationSeconds = 0.0f;
             }
         } else {
-            _grabVisualDeviationExceededSeconds = 0.0f;
-            _grabVisualDeviationHistory = {};
-            _grabVisualDeviationHistoryCount = 0;
-            _grabVisualDeviationHistoryNext = 0;
             if (_hasGrabVisualHandTransform) {
                 clearGrabExternalHandWorldTransform(_isLeft);
                 _hasGrabVisualHandTransform = false;
@@ -8903,8 +8783,6 @@ namespace rock
             _grabVisualHandLerpElapsedSeconds = 0.0f;
             _grabVisualHandLerpDurationSeconds = 0.0f;
         }
-
-        return true;
     }
 
     void Hand::finalizeHeldObjectUpdate(RE::hknpWorld* world,
@@ -8927,27 +8805,32 @@ namespace rock
         const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
 
         /*
-         * FRIK publishes joint values before the root-flattened scene reflects
-         * them. Surface-local corrections built in that same update would use
-         * the previous finger skeleton and can lock a closed or displaced pose.
-         * Finish the local-transform layer once, on the next held update, after
-         * the solved joint pose is the live skeleton source.
+         * One finger publish path: the pose solved at commit animates toward
+         * its target every held frame. FRIK publishes joint values before the
+         * root-flattened scene reflects them, so the local-transform layer
+         * starts one held update after the first joint publish; surface-local
+         * corrections built in the same update would read the previous finger
+         * skeleton and could lock a closed or displaced pose. An unsolved pose
+         * publishes its fallback once.
          */
-        if (_grabFingerLocalTransformFinalizePending && _grabFingerPosePublished && _grabFingerPose.solved) {
-            const auto finalFingerPose =
+        if (_hasGrabFingerPose && (_grabFingerPose.solved || !_grabFingerPosePublished)) {
+            const bool publishLocalTransforms = _grabFingerPosePublished;
+            const auto heldFingerPose =
                 grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, driveUpdate.desiredObjectWorld);
             applyRockGrabHandPose(_isLeft,
-                finalFingerPose,
+                heldFingerPose,
                 _grabFingerJointPose,
                 _hasGrabFingerJointPose,
                 _grabFingerLocalTransforms,
                 _grabFingerLocalTransformMask,
                 _hasGrabFingerLocalTransforms,
                 deltaTime,
-                /*publishLocalTransforms=*/true,
-                /*snapJointPoseToTarget=*/false);
-            _grabFingerLocalTransformFinalizePending = false;
-            ROCK_LOG_DEBUG(Hand, "{} GRAB FINAL POSE: local transforms finalized after settled joint publication", handName());
+                publishLocalTransforms);
+            _grabFingerPosePublished = true;
+            if (publishLocalTransforms && _grabFingerLocalTransformFinalizePending) {
+                _grabFingerLocalTransformFinalizePending = false;
+                ROCK_LOG_DEBUG(Hand, "{} GRAB FINAL POSE: local transforms finalized after settled joint publication", handName());
+            }
         }
 
         const float fadeDuration = std::max(forceFadeInTime, 0.0001f);
@@ -9243,14 +9126,7 @@ namespace rock
             return;
         }
         const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
-        if (!updateHeldVisualPresentation(
-                world,
-                handWorldTransform,
-                deltaTime,
-                hasPivotTrackingError,
-                releaseContext)) {
-            return;
-        }
+        updateHeldVisualPresentation(world, handWorldTransform, deltaTime, hasPivotTrackingError);
         finalizeHeldObjectUpdate(world, handWorldTransform, deltaTime, forceFadeInTime, driveUpdate);
     }
 
@@ -9417,17 +9293,13 @@ namespace rock
                     ++_grabAuthorityProxyFailedFlushes;
                     _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
                 } else {
-                    const auto pendingHeldAuthority = evaluateRuntimeHeldAuthority(
-                        _grabFrame,
-                        pending.heldBodyColliding);
                     updateConstraintGrabDriveMotors(
                         world,
                         driveDelta,
                         pending.forceFadeInTime,
                         pending.tauMin,
                         pending.authorityForceScale,
-                        pending.heldBodyColliding,
-                        pendingHeldAuthority);
+                        pending.heldBodyColliding);
                     angularDriveOk =
                         _activeConstraint.isValid() &&
                         _activeConstraint.usesRagdollAngularMotorAtom() &&
@@ -10702,9 +10574,7 @@ namespace rock
             RE::NiPoint3 releaseCenterOfMassHavok{};
             bool hasReleaseCenterOfMass = false;
             RE::NiTransform releaseBodyWorld{};
-            bool hasReleaseBodyWorld = false;
             if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, releaseBodyWorld)) {
-                hasReleaseBodyWorld = true;
                 releaseLeverOriginHavok =
                     gamePointToHavokPoint(transform_math::localPointToWorld(releaseBodyWorld, activeProxyConstraintPivotBLocalGame()));
                 hasReleaseLeverOrigin = true;
@@ -10746,15 +10616,6 @@ namespace rock
                     .angularVelocityScale = g_rockConfig.rockGrabThrowAngularVelocityScale,
                     .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
                 });
-            RE::NiPoint3 releaseAngularVelocity = rawReleaseAngularVelocity;
-            const auto releaseContactSnapshot = readHeldBodyContactSnapshot();
-            const bool releaseContactSoftening =
-                releaseContactSnapshot.recent &&
-                classifyHeldContactOtherMotion(world, releaseContactSnapshot.otherBodyId) != held_object_contact_policy::HeldContactOtherMotion::Dynamic;
-            const auto releaseAuthority = evaluateRuntimeHeldAuthority(
-                _grabFrame,
-                releaseContactSoftening);
-            const auto& angularAuthority = releaseAuthority.angular;
             const float releaseLongObjectAngularScale = grab_motion_controller::computeLongObjectAngularSpeedScale(
                 g_rockConfig.rockGrabLongObjectAngularScalingEnabled,
                 _grabFrame.pivotAuthority.longLeverGameUnits,
@@ -10762,33 +10623,9 @@ namespace rock
                 g_rockConfig.rockGrabLongObjectMinAngularScale);
             const float releaseAngularVelocityCap = grab_motion_controller::computeAuthorityScaledAngularVelocityCap(
                 g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
-                releaseAuthority.releaseAngularVelocityScale,
                 releaseLongObjectAngularScale);
-            if ((angularAuthority.axisLimited || angularAuthority.weakPivotTwistScale < 0.999f) && hasReleaseLeverOrigin) {
-                if (!hasReleaseCenterOfMass) {
-                    float comX = 0.0f;
-                    float comY = 0.0f;
-                    float comZ = 0.0f;
-                    if (havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
-                        releaseCenterOfMassHavok = RE::NiPoint3{ comX, comY, comZ };
-                        hasReleaseCenterOfMass = true;
-                    }
-                }
-                if (hasReleaseCenterOfMass) {
-                    RE::NiPoint3 releaseContactNormalWorld{};
-                    if (_grabFrame.pivotAuthority.normalTrusted && hasReleaseBodyWorld) {
-                        const RE::NiTransform releaseNodeWorld =
-                            _grabFrame.heldNode ? _grabFrame.heldNode->world : deriveNodeWorldFromBodyWorld(releaseBodyWorld, _grabFrame.authority.bodyLocal);
-                        releaseContactNormalWorld = gripEvidenceNormalWorld(_grabFrame, releaseNodeWorld);
-                    }
-                    releaseAngularVelocity = grab_motion_controller::scaleAngularVelocityByHeldAuthorityAxes(
-                        rawReleaseAngularVelocity,
-                        releaseCenterOfMassHavok - releaseLeverOriginHavok,
-                        releaseContactNormalWorld,
-                        angularAuthority);
-                }
-            }
-            releaseAngularVelocity = clampAngularVelocityVector(releaseAngularVelocity, releaseAngularVelocityCap);
+            const RE::NiPoint3 releaseAngularVelocity =
+                clampAngularVelocityVector(rawReleaseAngularVelocity, releaseAngularVelocityCap);
             const bool overrideAngularVelocity =
                 g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled && lengthSquared(releaseAngularVelocity) > 0.000001f;
             outcome.velocity.available = true;
@@ -10819,15 +10656,12 @@ namespace rock
                     _heldDriveDecision.includeConnectedAngularVelocity);
             }
             ROCK_LOG_DEBUG(Hand,
-                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} authority={} shape={} angularScale={:.2f} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
+                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
                 handName(),
                 applyReleaseVelocity ? "yes" : "no",
                 held_object_drive_policy::modeName(_heldDriveDecision.mode),
                 _heldDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
                 _heldDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
-                releaseAuthority.reason,
-                grab_motion_controller::contactSupportShapeName(angularAuthority.contactSupportShape),
-                releaseAuthority.releaseAngularVelocityScale,
                 releaseAngularVelocityCap,
                 releaseLongObjectAngularScale,
                 handLocalReleaseVelocity.x,
@@ -10982,10 +10816,6 @@ namespace rock
         _grabVisualHandLerpStartTransform = {};
         _grabVisualHandLerpElapsedSeconds = 0.0f;
         _grabVisualHandLerpDurationSeconds = 0.0f;
-        _grabVisualDeviationExceededSeconds = 0.0f;
-        _grabVisualDeviationHistory = {};
-        _grabVisualDeviationHistoryCount = 0;
-        _grabVisualDeviationHistoryNext = 0;
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;

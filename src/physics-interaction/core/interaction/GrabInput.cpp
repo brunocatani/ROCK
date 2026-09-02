@@ -1165,15 +1165,8 @@ namespace rock
             if (outcome == Hand::GrabAttemptOutcome::Grabbed) {
                 if (sharedContext.joiningPeerHeldObject) {
                     Hand& peer = isLeft ? _rightHand : _leftHand;
-                    const auto& peerInput = isLeft ? frame.right : frame.left;
                     if (!peer.promoteHeldObjectToConstraintDrive(frame.bhkWorld,
                             hknp,
-                            peerInput.rawHandWorld,
-                            g_rockConfig.rockGrabLinearTau,
-                            g_rockConfig.rockGrabLinearDamping,
-                            g_rockConfig.rockGrabConstraintMaxForce,
-                            g_rockConfig.rockGrabLinearProportionalRecovery,
-                            g_rockConfig.rockGrabLinearConstantRecovery,
                             "peer-hand-joined-loose-object")) {
                         auto* joinedRef = hand.getHeldRef();
                         ROCK_LOG_WARN(Hand,

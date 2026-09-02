@@ -173,7 +173,7 @@ namespace rock
         return true;
     }
 
-    bool Hand::getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const
+    bool Hand::getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, GrabForceTorqueDebugSnapshot& out) const
     {
         /*
          * This view is intentionally built from the same BODY-local pivot and
@@ -197,8 +197,6 @@ namespace rock
         const char* proxySource = "none";
         bool proxyFrameOk = resolveGrabAuthorityProxyFrame(
             world,
-            rawHandWorld,
-            nullptr,
             proxyWorld,
             proxySource,
             GrabAuthorityProxyFramePolicy::LivePalmOnly);
@@ -439,7 +437,6 @@ namespace rock
         out.pocketDistanceGameUnits = _grabFrame.pivotAuthority.pocketDistanceGameUnits;
         out.selectionDistanceGameUnits = _grabFrame.pivotAuthority.selectionDistanceGameUnits;
         out.longLeverGameUnits = _grabFrame.pivotAuthority.longLeverGameUnits;
-        out.positionConfidence = _grabFrame.pivotAuthority.positionConfidence;
         out.pivotAuthoritySource = grab_authority_frame_math::grabAuthorityPivotSourceName(
             _grabFrame.pivotAuthority.source);
         out.activeGrabPointMode = _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none";
@@ -449,8 +446,6 @@ namespace rock
                 _grabFrame.captureTelemetry.pivotAuthority.source);
         out.captureGrabPointMode =
             _grabFrame.captureTelemetry.seat.activeGrabPointMode ? _grabFrame.captureTelemetry.seat.activeGrabPointMode : "none";
-        out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
-        out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 
         if (torqueWitnessLength > 0.001f) {
             const RE::NiPoint3 torqueAxis = torqueWitness * (1.0f / torqueWitnessLength);

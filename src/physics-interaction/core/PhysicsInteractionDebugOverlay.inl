@@ -1661,9 +1661,8 @@
                 }
 
                 const bool isLeft = hand.isLeft();
-                const RE::NiTransform& rawHandWorld = isLeft ? context.left.rawHandWorld : context.right.rawHandWorld;
                 GrabForceTorqueDebugSnapshot snapshot{};
-                if (!hand.getGrabForceTorqueDebugSnapshot(hknp, rawHandWorld, snapshot)) {
+                if (!hand.getGrabForceTorqueDebugSnapshot(hknp, snapshot)) {
                     return;
                 }
 
@@ -4002,7 +4001,6 @@
 
         if (frame.drawTargetBodies || drawWorldOriginDiagnostics) {
             auto addHandTarget = [&](const Hand& hand) {
-                const auto& handInput = hand.isLeft() ? context.left : context.right;
                 if (hand.isHolding()) {
                     const auto& savedState = hand.getSavedObjectState();
                     if (frame.drawTargetBodies) {
@@ -4011,7 +4009,6 @@
                             drawColliderPhaseDiagnostics &&
                             hand.getGrabForceTorqueDebugSnapshot(
                                 hknp,
-                                handInput.rawHandWorld,
                                 targetSnapshot);
                         addBodyWithTarget(
                             savedState.bodyId,

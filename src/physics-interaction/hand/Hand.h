@@ -10,7 +10,6 @@
 #include "physics-interaction/grab/GrabAuthoritySourceClockResampler.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
-#include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
@@ -202,7 +201,6 @@ namespace rock
         float pocketDistanceGameUnits = 0.0f;
         float selectionDistanceGameUnits = 0.0f;
         float longLeverGameUnits = 0.0f;
-        float positionConfidence = 0.0f;
         const char* pivotAuthoritySource = "none";
         const char* activeGrabPointMode = "none";
         const char* authorityFrameSource = "none";
@@ -220,8 +218,6 @@ namespace rock
         bool hasActivePivotBVisualNode = false;
         bool hasCaptureMeshGripPoint = false;
         bool gripPointMutatedAfterCapture = false;
-        bool positionOnlyPivot = false;
-        bool normalTrusted = false;
     };
 
     enum class GrabReleaseCollisionRestoreMode : std::uint8_t
@@ -418,7 +414,7 @@ namespace rock
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabPresentationNodeDebugSnapshot(GrabPresentationNodeDebugSnapshot& out) const;
-        bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
+        bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, GrabForceTorqueDebugSnapshot& out) const;
         bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,
             grab_transform_telemetry::RuntimeSample& out) const;
@@ -501,12 +497,6 @@ namespace rock
 
         bool promoteHeldObjectToConstraintDrive(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
-            const RE::NiTransform& handWorldTransform,
-            float tau,
-            float damping,
-            float maxForce,
-            float proportionalRecovery,
-            float constantRecovery,
             const char* reason);
 
         void updateHeldObject(RE::hknpWorld* world,
@@ -721,11 +711,10 @@ namespace rock
             float tauMin,
             const GrabReleaseContext& releaseContext,
             HeldDriveUpdate& outUpdate);
-        bool updateHeldVisualPresentation(RE::hknpWorld* world,
+        void updateHeldVisualPresentation(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
-            bool hasPivotTrackingError,
-            const GrabReleaseContext& releaseContext);
+            bool hasPivotTrackingError);
         void finalizeHeldObjectUpdate(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
@@ -823,8 +812,6 @@ namespace rock
             PreferQueuedPalmTarget
         };
         bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
-            const RE::NiTransform& rawHandWorld,
-            const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource,
             GrabAuthorityProxyFramePolicy policy = GrabAuthorityProxyFramePolicy::LivePalmOnly) const;
@@ -836,8 +823,7 @@ namespace rock
             float forceFadeInTime,
             float tauMin,
             float authorityForceScale,
-            bool heldBodyColliding,
-            const grab_motion_controller::HeldAuthorityState& heldAuthority);
+            bool heldBodyColliding);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
             const char* proxyFrameSource,
@@ -1283,10 +1269,6 @@ namespace rock
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;
         float _grabVisualHandLerpDurationSeconds = 0.0f;
-        float _grabVisualDeviationExceededSeconds = 0.0f;
-        std::array<float, 5> _grabVisualDeviationHistory{};
-        std::size_t _grabVisualDeviationHistoryCount = 0;
-        std::size_t _grabVisualDeviationHistoryNext = 0;
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;

@@ -104,33 +104,33 @@ int main()
     singleHand.fadeInEnabled = false;
     singleHand.authorityForceScale = 1.0f;
 
-    const auto single = solveMotorTargets(singleHand);
+    const auto single = solveMotorTargets(singleHand, false);
     ok &= expectNear("single hand mass cap", single.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("single hand angular matches linear authority", single.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput shared = singleHand;
     shared.authorityForceScale = 0.5f;
-    const auto twoHand = solveMotorTargets(shared);
+    const auto twoHand = solveMotorTargets(shared, false);
     ok &= expectNear("two hands share mass-capped linear authority", twoHand.linearMaxForce, 500.0f, 0.001f);
     ok &= expectNear("two hands share angular authority", twoHand.angularMaxForce, 500.0f, 0.001f);
 
     MotorInput mediumMass = singleHand;
     mediumMass.mass = 10.0f;
-    const auto mediumMassOutput = solveMotorTargets(mediumMass);
+    const auto mediumMassOutput = solveMotorTargets(mediumMass, false);
     ok &= expectNear("medium generic object keeps fixed HIGGS-style force", mediumMassOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("medium generic object angular force follows full fixed force", mediumMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
     MotorInput heavyMass = singleHand;
     heavyMass.mass = 50.0f;
-    const auto heavyMassOutput = solveMotorTargets(heavyMass);
+    const auto heavyMassOutput = solveMotorTargets(heavyMass, false);
     ok &= expectNear("heavy generic object does not receive loose-weapon force", heavyMassOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("heavy generic object angular force follows full generic force", heavyMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
     MotorInput looseWeapon = singleHand;
     looseWeapon.baseMaxForce = 9000.0f;
-    looseWeapon.angularForceMultiplier = 2.0f;
+    looseWeapon.angularToLinearForceRatio = 2.0f;
     looseWeapon.mass = 1000.0f;
-    const auto looseWeaponOutput = solveMotorTargets(looseWeapon);
+    const auto looseWeaponOutput = solveMotorTargets(looseWeapon, false);
     ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
     ok &= expectNear("loose weapon angular force can exceed linear pull authority", looseWeaponOutput.angularMaxForce, 18000.0f, 0.001f);
 
@@ -166,19 +166,19 @@ int main()
     scaledAt60Hz.physicsRateForceScalingEnabled = true;
     scaledAt60Hz.physicsDeltaSeconds = 1.0f / 60.0f;
     scaledAt60Hz.mass = 100.0f;
-    const auto scaledAt60HzOutput = solveMotorTargets(scaledAt60Hz);
+    const auto scaledAt60HzOutput = solveMotorTargets(scaledAt60Hz, false);
     ok &= expectNear("60hz motor output records physics hz", scaledAt60HzOutput.physicsHz, 60.0f, 0.001f);
     ok &= expectNear("60hz force scale applies before mass cap", scaledAt60HzOutput.linearMaxForce, 2449.49f, 0.02f);
     ok &= expectNear("60hz angular force follows scaled linear force", scaledAt60HzOutput.angularMaxForce, 2449.49f, 0.02f);
 
     MotorInput massCappedScaled = scaledAt60Hz;
     massCappedScaled.mass = 2.0f;
-    const auto massCappedScaledOutput = solveMotorTargets(massCappedScaled);
+    const auto massCappedScaledOutput = solveMotorTargets(massCappedScaled, false);
     ok &= expectNear("physics-rate scaling still obeys mass cap", massCappedScaledOutput.linearMaxForce, 1000.0f, 0.001f);
 
     MotorInput authorityScaled = scaledAt60Hz;
     authorityScaled.authorityForceScale = 0.5f;
-    const auto authorityScaledOutput = solveMotorTargets(authorityScaled);
+    const auto authorityScaledOutput = solveMotorTargets(authorityScaled, false);
     ok &= expectNear("authority scale applies after physics-rate force scale", authorityScaledOutput.linearMaxForce, 1224.745f, 0.02f);
 
     MotorInput angularFixedTau = singleHand;
@@ -187,38 +187,27 @@ int main()
     angularFixedTau.currentAngularTau = 0.8f;
     angularFixedTau.deltaTime = 1.0f;
     angularFixedTau.tauLerpSpeed = 1.0f;
-    const auto angularFixedTauOutput = solveMotorTargets(angularFixedTau);
+    const auto angularFixedTauOutput = solveMotorTargets(angularFixedTau, false);
     ok &= expectNear("angular follow does not boost linear force", angularFixedTauOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("linear follow keeps HIGGS-style tau fixed", angularFixedTauOutput.linearTau, 0.03f, 0.001f);
     ok &= expectNear("angular follow keeps HIGGS-style tau fixed", angularFixedTauOutput.angularTau, 0.03f, 0.001f);
 
-    MotorInput positionOnlyPivot = singleHand;
-    const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
-    ok &= expectNear("position-only small weak pivot does not reduce held linear force", positionOnlyOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("position-only small weak pivot does not reduce held angular force", positionOnlyOutput.angularMaxForce, 1000.0f, 0.001f);
-
-    MotorInput weakAngularFixedTau = positionOnlyPivot;
-    weakAngularFixedTau.deltaTime = 1.0f;
-    weakAngularFixedTau.tauLerpSpeed = 1.0f;
-    const auto weakAngularFixedTauOutput = solveMotorTargets(weakAngularFixedTau);
-    ok &= expectNear("weak support still leaves angular tau fixed", weakAngularFixedTauOutput.angularTau, 0.03f, 0.001f);
-
-    MotorInput longHandleMotor = singleHand;
-    const auto longHandleMotorOutput = solveMotorTargets(longHandleMotor);
-    ok &= expectNear("long-handle patch shape does not reduce held linear force", longHandleMotorOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("long-handle patch shape does not reduce held angular force", longHandleMotorOutput.angularMaxForce, 1000.0f, 0.001f);
+    const auto contactSoftenedOutput = solveMotorTargets(angularFixedTau, true);
+    ok &= expectNear("contact softening drives linear tau to collision tau", contactSoftenedOutput.linearTau, 0.01f, 0.001f);
+    ok &= expectNear("contact softening drives angular tau to collision tau", contactSoftenedOutput.angularTau, 0.01f, 0.001f);
+    ok &= expectNear("contact softening keeps the force budget", contactSoftenedOutput.linearMaxForce, 2000.0f, 0.001f);
 
     MotorInput tinyMassFloor = singleHand;
     tinyMassFloor.mass = 0.02f;
     tinyMassFloor.effectiveMotorMassFloorEnabled = true;
     tinyMassFloor.effectiveMotorMassFloor = 2.0f;
-    const auto tinyMassFloorOutput = solveMotorTargets(tinyMassFloor);
+    const auto tinyMassFloorOutput = solveMotorTargets(tinyMassFloor, false);
     ok &= expectNear("tiny loose object uses motor-only effective mass floor", tinyMassFloorOutput.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("tiny loose object angular force follows floored linear force", tinyMassFloorOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput tinyMassRaw = tinyMassFloor;
     tinyMassRaw.effectiveMotorMassFloorEnabled = false;
-    const auto tinyMassRawOutput = solveMotorTargets(tinyMassRaw);
+    const auto tinyMassRawOutput = solveMotorTargets(tinyMassRaw, false);
     ok &= expectNear("disabled effective mass floor preserves raw mass cap", tinyMassRawOutput.linearMaxForce, 10.0f, 0.001f);
     ok &= expectNear("disabled effective mass floor preserves raw angular cap", tinyMassRawOutput.angularMaxForce, 10.0f, 0.001f);
 
@@ -241,129 +230,8 @@ int main()
     ok &= expectTrue("large generic object mass does not request weapon normalization",
         !rock::grab_mass_policy::shouldNormalizeLooseWeaponGrabMass(g3DecodedMass, false));
 
-    const auto trustedAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
-        .enabled = true,
-        .positionOnlyPivot = false,
-        .normalTrusted = true,
-        .contactPatchEvidence = true,
-        .contactPatchSampleCount = 4,
-        .longObjectLeverGameUnits = 8.0f,
-    });
-    ok &= expectNear("trusted small sphere-like support softens release orientation safety", trustedAuthority.authorityScale, 0.65f, 0.001f);
-    ok &= expectTrue("trusted small support classifies as sphere-like", trustedAuthority.contactSupportShape == ContactSupportShape::SphereLike);
-    ok &= expectNear("sphere-like support limits contact-normal spin", trustedAuthority.contactNormalScale, 0.30f, 0.001f);
-
-    const auto lowSupportAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
-        .enabled = true,
-        .positionOnlyPivot = false,
-        .normalTrusted = true,
-        .contactPatchEvidence = true,
-        .contactPatchSampleCount = 1,
-        .longObjectLeverGameUnits = 8.0f,
-    });
-    ok &= expectNear("small low-support contact softens release angular safety", lowSupportAuthority.authorityScale, 0.4225f, 0.001f);
-    ok &= expectTrue("single-hit small support is sphere-like not surface-authoritative", lowSupportAuthority.contactSupportShape == ContactSupportShape::SphereLike);
-
-    const auto rejectedPatchAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
-        .enabled = true,
-        .positionOnlyPivot = false,
-        .normalTrusted = true,
-        .contactPatchEvidence = false,
-        .contactPatchSampleCount = 1,
-        .longObjectLeverGameUnits = 8.0f,
-    });
-    ok &= expectNear("trusted non-patch pivot ignores rejected patch support", rejectedPatchAuthority.authorityScale, 1.0f, 0.001f);
-
-    const auto trustedPointAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
-        .enabled = true,
-        .positionOnlyPivot = false,
-        .normalTrusted = true,
-        .contactPatchEvidence = true,
-        .contactPatchSampleCount = 1,
-        .longObjectLeverGameUnits = 20.0f,
-    });
-    ok &= expectTrue("trusted single-point support classifies as point", trustedPointAuthority.contactSupportShape == ContactSupportShape::Point);
-    ok &= expectNear("trusted point limits twist around grab point", trustedPointAuthority.twistScale, 0.35f, 0.001f);
-
-    const Vec3 twistLimited = scaleWeakPivotTwistAngularVelocity(Vec3{ 1.0f, 2.0f, 3.0f }, Vec3{ 0.0f, 0.0f, 2.0f }, true, 0.25f);
-    ok &= expectNear("weak pivot twist preserves swing x", twistLimited.x, 1.0f, 0.001f);
-    ok &= expectNear("weak pivot twist preserves swing y", twistLimited.y, 2.0f, 0.001f);
-    ok &= expectNear("weak pivot twist scales twist z", twistLimited.z, 0.75f, 0.001f);
-
-    const auto longHandleAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
-        .enabled = true,
-        .positionOnlyPivot = false,
-        .normalTrusted = true,
-        .contactPatchEvidence = true,
-        .contactPatchSampleCount = 2,
-        .longObjectLeverGameUnits = 72.0f,
-        .longObjectReferenceLeverGameUnits = 24.0f,
-    });
-    ok &= expectTrue("two-hit long object classifies as long handle", longHandleAuthority.contactSupportShape == ContactSupportShape::LongHandle);
-    ok &= expectNear("long handle applies line-support authority", longHandleAuthority.authorityScale, 0.75f, 0.001f);
-    ok &= expectNear("long handle does not fake twist damping", longHandleAuthority.twistScale, 1.0f, 0.001f);
-    ok &= expectFalse("long handle alone is not axis-limited", longHandleAuthority.axisLimited);
-
-    const auto unsupportedLongHandleAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
-        .enabled = true,
-        .positionOnlyPivot = false,
-        .normalTrusted = true,
-        .contactPatchEvidence = false,
-        .contactPatchSampleCount = 0,
-        .longObjectLeverGameUnits = 72.0f,
-        .longObjectReferenceLeverGameUnits = 24.0f,
-    });
-    ok &= expectTrue("unsupported long object still reports long handle shape", unsupportedLongHandleAuthority.contactSupportShape == ContactSupportShape::LongHandle);
-    ok &= expectNear("long object length alone does not reduce authority", unsupportedLongHandleAuthority.authorityScale, 1.0f, 0.001f);
-
-    const Vec3 axisLimited = scaleAngularVelocityByHeldAuthorityAxes(
-        Vec3{ 10.0f, 6.0f, 4.0f },
-        Vec3{ 0.0f, 0.0f, 1.0f },
-        Vec3{ 1.0f, 0.0f, 0.0f },
-        AngularAuthorityOutput{
-            .authorityScale = 1.0f,
-            .swingScale = 1.0f,
-            .twistScale = 0.50f,
-            .contactNormalScale = 0.25f,
-            .axisLimited = true,
-        });
-    ok &= expectNear("axis authority scales contact-normal spin x", axisLimited.x, 2.5f, 0.001f);
-    ok &= expectNear("axis authority preserves tangent spin y", axisLimited.y, 6.0f, 0.001f);
-    ok &= expectNear("axis authority scales pivot twist z", axisLimited.z, 2.0f, 0.001f);
-
-    const auto weakHeldAuthority = evaluateHeldAuthority(HeldAuthorityInput{
-        .angular = AngularAuthorityInput{
-            .enabled = true,
-            .positionOnlyPivot = true,
-            .normalTrusted = false,
-            .contactPatchEvidence = true,
-            .contactPatchSampleCount = 1,
-            .longObjectLeverGameUnits = 8.0f,
-        },
-        .heldBodyColliding = false,
-    });
-    ok &= expectNear("weak held authority gates release angular velocity", weakHeldAuthority.releaseAngularVelocityScale, 0.30f, 0.001f);
-    ok &= expectNear("weak held authority keeps twist safety for release only",
-        weakHeldAuthority.angular.weakPivotTwistScale,
-        0.35f,
-        0.001f);
-
-    const auto contactHeldAuthority = evaluateHeldAuthority(HeldAuthorityInput{
-        .angular = AngularAuthorityInput{
-            .enabled = true,
-            .positionOnlyPivot = false,
-            .normalTrusted = true,
-            .contactPatchEvidence = true,
-            .contactPatchSampleCount = 4,
-            .contactSupportShape = ContactSupportShape::Surface,
-        },
-        .heldBodyColliding = true,
-    });
-    ok &= expectTrue("contact held authority marks softening", contactHeldAuthority.softenForContact);
-    ok &= expectNear("contact held authority caps release angular scale", contactHeldAuthority.releaseAngularVelocityScale, 0.75f, 0.001f);
-
-    const float authorityCap = computeAuthorityScaledAngularVelocityCap(18.0f, 0.30f, 0.50f);
-    ok &= expectNear("release angular cap composes support and long-object scale", authorityCap, 2.70f, 0.001f);
+    const float longObjectCap = computeAuthorityScaledAngularVelocityCap(18.0f, 0.50f);
+    ok &= expectNear("release angular cap applies the long-object scale", longObjectCap, 9.0f, 0.001f);
 
     ok &= expectNear("visual hand lerp below minimum distance is immediate",
         rock::hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(0.5f, 0.12f, 0.20f, 1.0f, 14.0f),
