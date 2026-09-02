@@ -85,9 +85,9 @@ namespace rock
             }
             break;
 
-        case HandInteractionEvent::LockFarSelection:
-            if (current == HandState::SelectedFar) {
-                return accept(HandState::SelectionLocked, transitionEffectMask(HandTransitionEffect::LockSelection), "lockFarSelection");
+        case HandInteractionEvent::LockSelectionForPull:
+            if (current == HandState::SelectedClose || current == HandState::SelectedFar) {
+                return accept(HandState::SelectionLocked, transitionEffectMask(HandTransitionEffect::LockSelection), "lockSelectionForPull");
             }
             break;
 

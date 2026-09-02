@@ -375,8 +375,6 @@ namespace rock
         float rockGrabHeldMassMovementMassExponent = 1.0f;
         float rockGrabHeldMassMovementMaxReduction = 75.0f;
         float rockGrabHeldMassMovementFadeOutSeconds = 5.0f;
-        float rockGrabTouchAcquireDistanceGameUnits = 4.0f;
-        float rockGrabNearConvergeDistanceGameUnits = 28.0f;
         float rockGrabPocketDepthGameUnits = 7.0f;
         float rockGrabPocketRadiusGameUnits = 9.0f;
         float rockGrabSeatDepthMaxGameUnits = 30.0f;
@@ -388,12 +386,6 @@ namespace rock
         float rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         float rockGrabSeatDepthSkinGameUnits = 0.5f;
         float rockGrabGripInsetGameUnits = 2.0f;
-        float rockGrabConvergeMaxTimeSeconds = 0.35f;
-        // Elapsed stable dwell inside the grab pocket before convergence
-        // promotes (historical 3-frame tuning at 90 Hz).
-        float rockGrabConvergeStableSeconds = 3.0f / 90.0f;
-        float rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
-        float rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
         bool rockGrabMultiFingerContactValidationEnabled = true;
         int rockGrabContactQualityMode = 1;
         int rockGrabMinFingerContactGroups = 3;

@@ -18,7 +18,7 @@ namespace rock
         SelectionFoundClose,
         SelectionFoundFar,
         SelectionLost,
-        LockFarSelection,
+        LockSelectionForPull,
         BeginPreGrabItem,
         BeginPrePullItem,
         BeginExternalGrab,

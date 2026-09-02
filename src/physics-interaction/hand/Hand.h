@@ -235,12 +235,9 @@ namespace rock
         const char* pivotAuthoritySource = "none";
         const char* activeGrabPointMode = "none";
         const char* authorityFrameSource = "none";
-        const char* acquisitionPhase = "none";
         const char* capturePivotAuthoritySource = "none";
         const char* captureGrabPointMode = "none";
-        const char* lastSeatedPivotReacquireReason = "none";
         std::uint32_t contactSampleCount = 0;
-        std::uint32_t seatedPivotReacquireCount = 0;
         bool hasTorqueAxis = false;
         bool hasMotorConstraintFrames = false;
         bool hasMotorRelationFrames = false;
@@ -504,7 +501,20 @@ namespace rock
             return true;
         }
 
-        bool grabSelectedObject(RE::hknpWorld* world,
+        /*
+         * Grabbed: the constraint exists and the hand holds the object.
+         * OutsidePocket: every check passed except the palm-pocket gate; the
+         * caller may pull the object in and retry. Refused: anything else.
+         */
+        enum class GrabAttemptOutcome : std::uint8_t
+        {
+            Grabbed,
+            Refused,
+            OutsidePocket,
+        };
+        bool isCloseSelectionClearlyOutsidePocket(RE::hknpWorld* world) const;
+
+        GrabAttemptOutcome grabSelectedObject(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float tau,
             float damping,
@@ -553,22 +563,13 @@ namespace rock
         void abandonHavokStateAfterWorldLoss();
         void updateDelayedGrabHandCollisionRestore(RE::hknpWorld* world, float deltaTime);
 
-        bool lockFarSelection();
+        bool lockSelectionForPull();
         bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform);
         bool updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void finishPullPrepAsPhysicalDropIfActive(const char* context);
         bool hasActivePullCatchIntent() const;
         bool hasArrivedPullCatchIntent() const;
-        bool hasPendingPullCatchCommit() const;
-        bool advancePullCatchCommit(float deltaTime, float maxCommitSeconds);
-        void notePullCatchCommitAttemptFailed();
         RE::TESObjectREFR* getPullCatchIntentRef() const;
-        bool reacquirePullCatchCloseSelection(RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            const RE::NiPoint3& selectionOrigin,
-            const RE::NiPoint3& palmNormal,
-            float radiusGameUnits,
-            float maxBodyDistanceGameUnits);
         bool beginActorEquipmentDropHandoff(
             const actor_equipment_grab::DropResult& dropResult,
             const RE::NiPoint3& sourceHitPointWorld);
@@ -758,18 +759,11 @@ namespace rock
         bool updateHeldVisualPresentation(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
-            float pivotTrackingErrorGameUnits,
             bool hasPivotTrackingError,
-            bool heldMotorContactSoftening,
-            const GrabReleaseContext& releaseContext,
-            bool& outConvergingAcquisitionPhase);
-        void updateHeldAcquisition(RE::hknpWorld* world,
-            const RE::NiTransform& handWorldTransform,
-            float deltaTime,
-            const HeldDriveUpdate& driveUpdate,
-            bool convergingAcquisitionPhase);
+            const GrabReleaseContext& releaseContext);
         void finalizeHeldObjectUpdate(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
+            float deltaTime,
             float forceFadeInTime,
             const HeldDriveUpdate& driveUpdate);
         void prepareSelectedGrabBodies(
@@ -927,22 +921,18 @@ namespace rock
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
         /*
-         * Far-pull arrival needs explicit ownership separate from button edges.
-         * ROCK keeps a held grab request alive while the object moves into the
-         * hand, but release still cancels and arrival retries only the close
-         * commit, not the dynamic pull itself. This prevents one failed arrival
-         * frame from forcing a second grip press.
+         * Pull arrival keeps ownership of the pulled ref/body separate from
+         * button edges: the arrived intent identifies the object the grab
+         * commit is for, and the commit is attempted exactly once on arrival.
          */
         struct PullCatchIntent
         {
             bool active = false;
-            bool commitPending = false;
+            bool arrived = false;
             RE::TESObjectREFR* refr = nullptr;
             std::uint32_t formId = 0;
             std::uint32_t primaryBodyId = INVALID_BODY_ID;
             grab_target::Kind targetKind = grab_target::Kind::LooseObject;
-            float commitElapsedSeconds = 0.0f;
-            std::uint32_t failedCommitAttempts = 0;
         };
 
         /*
@@ -1337,14 +1327,10 @@ namespace rock
         int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
-        grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-        grab_three_phase::ObjectGripArea _grabObjectGripAtGrab{};
         held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         bool _heldObjectIsLooseWeapon = false;
         bool _grabFingerPosePublished = false;
-        float _grabConvergeStableInsidePocketSeconds = 0.0f;
-        float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         nearby_grab_damping::NearbyGrabDampingState _nearbyGrabDamping;
         float _grabDeviationExceededSeconds = 0.0f;
         std::array<float, 5> _grabDeviationHistory{};
@@ -1427,6 +1413,10 @@ namespace rock
         RE::NiPoint3 _pullPresentationAxisBodyLocal{};
         float _pullPresentationElongationRatio = 0.0f;
         bool _pullPresentationValid = false;
+        // Pulled mesh in primary-body local space, captured once at pull start
+        // and bounded (kMaxPullArrivalTriangles); the arrival test reads it
+        // against the live body pose every pull frame.
+        std::vector<GrabLocalTriangle> _pullLocalMeshTriangles;
         PullCatchIntent _pullCatchIntent{};
         ActorEquipmentDropHandoff _actorEquipmentDropHandoff{};
 

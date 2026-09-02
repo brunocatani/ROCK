@@ -12,7 +12,6 @@
 
 #include "rock_support/ResourceUtils.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
-#include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -1228,21 +1227,6 @@ namespace rock
             5.0f,
             0.0f,
             60.0f);
-        rockGrabTouchAcquireDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTouchAcquireDistanceGameUnits", rockGrabTouchAcquireDistanceGameUnits));
-        if (!std::isfinite(rockGrabTouchAcquireDistanceGameUnits) || rockGrabTouchAcquireDistanceGameUnits <= 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabTouchAcquireDistanceGameUnits={} -- using 4.0", rockGrabTouchAcquireDistanceGameUnits);
-            rockGrabTouchAcquireDistanceGameUnits = 4.0f;
-        }
-        rockGrabNearConvergeDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearConvergeDistanceGameUnits", rockGrabNearConvergeDistanceGameUnits));
-        if (!std::isfinite(rockGrabNearConvergeDistanceGameUnits) || rockGrabNearConvergeDistanceGameUnits < rockGrabTouchAcquireDistanceGameUnits) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fGrabNearConvergeDistanceGameUnits={} -- using touch distance {}",
-                rockGrabNearConvergeDistanceGameUnits,
-                rockGrabTouchAcquireDistanceGameUnits);
-            rockGrabNearConvergeDistanceGameUnits = rockGrabTouchAcquireDistanceGameUnits;
-        }
         rockGrabPocketDepthGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPocketDepthGameUnits", rockGrabPocketDepthGameUnits));
         if (!std::isfinite(rockGrabPocketDepthGameUnits) || rockGrabPocketDepthGameUnits < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabPocketDepthGameUnits={} -- using 7.0", rockGrabPocketDepthGameUnits);
@@ -1287,43 +1271,6 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabGripInsetGameUnits={} -- using 2.0", rockGrabGripInsetGameUnits);
             rockGrabGripInsetGameUnits = 2.0f;
         }
-        rockGrabConvergeMaxTimeSeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConvergeMaxTimeSeconds", rockGrabConvergeMaxTimeSeconds));
-        if (!std::isfinite(rockGrabConvergeMaxTimeSeconds) || rockGrabConvergeMaxTimeSeconds < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabConvergeMaxTimeSeconds={} -- using 0.35", rockGrabConvergeMaxTimeSeconds);
-            rockGrabConvergeMaxTimeSeconds = 0.35f;
-        }
-        rockGrabConvergeStableSeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConvergeStableSeconds", rockGrabConvergeStableSeconds));
-        if (!std::isfinite(rockGrabConvergeStableSeconds) || rockGrabConvergeStableSeconds <= 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabConvergeStableSeconds={} -- using {}", rockGrabConvergeStableSeconds, 3.0f / 90.0f);
-            rockGrabConvergeStableSeconds = 3.0f / 90.0f;
-        }
-        // Bounds are the historical 1..12-frame tuning range at 90 Hz.
-        rockGrabConvergeStableSeconds = std::clamp(rockGrabConvergeStableSeconds, 0.0111f, 12.0f / 90.0f);
-        rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond =
-            static_cast<float>(ini.GetDoubleValue(
-                SECTION,
-                "fGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond",
-                rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond));
-        if (!std::isfinite(rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond) || rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond < 0.0f) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond={} -- using 40.0",
-                rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond);
-            rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
-        }
-        rockGrabAcquisitionVisualStartDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(
-                SECTION,
-                "fGrabAcquisitionVisualStartDistanceGameUnits",
-                rockGrabAcquisitionVisualStartDistanceGameUnits));
-        if (!std::isfinite(rockGrabAcquisitionVisualStartDistanceGameUnits) || rockGrabAcquisitionVisualStartDistanceGameUnits <= 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabAcquisitionVisualStartDistanceGameUnits={} -- using 28.0", rockGrabAcquisitionVisualStartDistanceGameUnits);
-            rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
-        }
-        rockGrabAcquisitionVisualStartDistanceGameUnits =
-            grab_three_phase::computeAcquisitionVisualEnvelopeGameUnits(
-                rockGrabTouchAcquireDistanceGameUnits,
-                rockGrabNearConvergeDistanceGameUnits,
-                rockGrabAcquisitionVisualStartDistanceGameUnits);
         rockGrabMultiFingerContactValidationEnabled =
             ini.GetBoolValue(SECTION, "bGrabMultiFingerContactValidationEnabled", rockGrabMultiFingerContactValidationEnabled);
         rockGrabContactQualityMode = static_cast<int>(ini.GetLongValue(SECTION, "iGrabContactQualityMode", rockGrabContactQualityMode));

@@ -651,18 +651,10 @@ namespace rock
         RE::NiPoint3 pinchAxisWorldAtGrab{ 1.0f, 0.0f, 0.0f };
         GrabSeatDiagnostics diagnostics{};
         GrabSeatMode mode = GrabSeatMode::None;
-        float lastPivotReacquireLocalDeltaGameUnits = 0.0f;
-        std::uint32_t pivotReacquireCount = 0;
         const char* activeGrabPointMode = "none";
         const char* palmSeatPointMode = "none";
-        const char* lastPivotReacquireReason = "none";
-        const char* lastPivotReacquirePhase = "none";
         bool hasPalmSeatPoint = false;
         bool hasPinchPocket = false;
-        bool programmaticArrival = false;
-        bool requiresSettledVisualHandRelation = false;
-        bool hasSettledVisualHandRelation = false;
-        bool hasPivotReacquire = false;
     };
 
     struct GrabSupportFrameState
@@ -1355,14 +1347,9 @@ namespace rock::pull_motion_math
     inline constexpr float kDurationB = -0.415619f;
     inline constexpr float kDurationC = 0.656256f;
     inline constexpr float kMaximumVelocityHavok = 10.0f;
-    inline constexpr float kAutoGrabDistanceGameUnits = 18.0f;
-    inline constexpr float kCatchRetryMaximumTimeSeconds = 0.65f;
-    // Actor-equipment materialization is a separate lifecycle even though its
-    // current timeout matches pull-catch retry tuning.
+    // Actor-equipment materialization waits for the dropped reference to become
+    // scannable; this bounds that wait.
     inline constexpr float kActorEquipmentHandoffMaximumTimeSeconds = 0.65f;
-    inline constexpr bool kCatchWideReacquireEnabled = true;
-    inline constexpr float kCatchWideReacquireRadiusGameUnits = 32.0f;
-    inline constexpr float kCatchWideReacquireMaximumBodyDistanceGameUnits = 42.0f;
     inline constexpr float kAngularDamping = 8.0f;
 
     template <class Vec3>

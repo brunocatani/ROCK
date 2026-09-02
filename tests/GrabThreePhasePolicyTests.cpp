@@ -28,22 +28,6 @@ namespace
         return false;
     }
 
-    bool expectPhase(
-        const char* label,
-        rock::grab_three_phase::AcquisitionPhase actual,
-        rock::grab_three_phase::AcquisitionPhase expected)
-    {
-        if (actual == expected) {
-            return true;
-        }
-
-        std::printf("%s expected %s got %s\n",
-            label,
-            rock::grab_three_phase::phaseName(expected),
-            rock::grab_three_phase::phaseName(actual));
-        return false;
-    }
-
     bool expectReason(const char* label, const char* actual, const char* expected)
     {
         if (actual && std::strcmp(actual, expected) == 0) {
@@ -197,207 +181,36 @@ int main()
         0.0f,
         0.001f);
 
-    const auto closeSelection = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
-        .hasFreshTouchContact = false,
-        .isFarSelection = false,
-        .requireEvidenceForTouchHeld = false,
-        .hasTouchHeldAuthorityEvidence = false,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .touchContactMaxDistanceGameUnits = 9.0f,
-        .nearConvergeDistanceGameUnits = 28.0f,
-    });
-    ok &= expectTrue("normal close selection remains accepted", closeSelection.accepted);
-    ok &= expectPhase("normal close selection can touch-hold from touch envelope", closeSelection.phase, AcquisitionPhase::TouchHeld);
-    ok &= expectReason("normal close selection reason", closeSelection.reason, "insideTouchEnvelope");
+    const auto pocket = makePocket();
+    const auto insideGate = evaluatePocketGate(pocket, RE::NiPoint3{ 3.0f, 0.0f, 2.0f }, 1.5f);
+    ok &= expectTrue("pocket gate accepts a grip point inside the radius in front of the palm", insideGate.inside);
+    ok &= expectReason("pocket gate inside reason", insideGate.reason, "insidePocket");
+    ok &= expectNear("pocket gate reports the palm distance", insideGate.gripToPalmDistanceGameUnits, std::sqrt(13.0f), 0.001f);
+    ok &= expectNear("pocket gate reports the signed palm distance", insideGate.signedPalmDistanceGameUnits, 2.0f, 0.001f);
 
-    const auto pullArrivalWithoutEvidence = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
-        .hasFreshTouchContact = false,
-        .isFarSelection = false,
-        .requireEvidenceForTouchHeld = true,
-        .hasTouchHeldAuthorityEvidence = false,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .touchContactMaxDistanceGameUnits = 9.0f,
-        .nearConvergeDistanceGameUnits = 28.0f,
-    });
-    ok &= expectTrue("pull arrival without evidence remains accepted", pullArrivalWithoutEvidence.accepted);
-    ok &= expectPhase("pull arrival without evidence waits near", pullArrivalWithoutEvidence.phase, AcquisitionPhase::NearConverging);
-    ok &= expectReason("pull arrival without evidence reason", pullArrivalWithoutEvidence.reason, "touchEnvelopeAwaitingAuthorityEvidence");
+    const auto behindGate = evaluatePocketGate(pocket, RE::NiPoint3{ 0.0f, 0.0f, -2.0f }, 1.5f);
+    ok &= expectFalse("pocket gate rejects a grip point behind the palm tolerance", behindGate.inside);
+    ok &= expectReason("pocket gate behind reason", behindGate.reason, "behindPalm");
 
-    const auto pullArrivalFreshTouchWithoutAuthority = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
-        .hasFreshTouchContact = true,
-        .isFarSelection = false,
-        .requireEvidenceForTouchHeld = true,
-        .hasTouchHeldAuthorityEvidence = false,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .touchContactMaxDistanceGameUnits = 9.0f,
-        .nearConvergeDistanceGameUnits = 28.0f,
-    });
-    ok &= expectPhase("pull arrival fresh touch still needs explicit evidence", pullArrivalFreshTouchWithoutAuthority.phase, AcquisitionPhase::NearConverging);
-    ok &= expectReason("pull arrival fresh touch without authority reason", pullArrivalFreshTouchWithoutAuthority.reason, "touchEnvelopeAwaitingAuthorityEvidence");
+    const auto toleratedGate = evaluatePocketGate(pocket, RE::NiPoint3{ 0.0f, 0.0f, -1.0f }, 1.5f);
+    ok &= expectTrue("pocket gate tolerates a grip point slightly behind the palm plane", toleratedGate.inside);
 
-    const auto pullArrivalFreshTouchWithAuthority = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
-        .hasFreshTouchContact = true,
-        .isFarSelection = false,
-        .requireEvidenceForTouchHeld = true,
-        .hasTouchHeldAuthorityEvidence = true,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .touchContactMaxDistanceGameUnits = 9.0f,
-        .nearConvergeDistanceGameUnits = 28.0f,
-    });
-    ok &= expectPhase("pull arrival fresh touch with authority can touch-hold", pullArrivalFreshTouchWithAuthority.phase, AcquisitionPhase::TouchHeld);
-    ok &= expectReason("pull arrival fresh touch with authority reason", pullArrivalFreshTouchWithAuthority.reason, "freshTouchContactInPocketEnvelope");
+    const auto outsideGate = evaluatePocketGate(pocket, RE::NiPoint3{ 9.5f, 0.0f, 1.0f }, 1.5f);
+    ok &= expectFalse("pocket gate rejects a grip point outside the radius", outsideGate.inside);
+    ok &= expectReason("pocket gate outside reason", outsideGate.reason, "outsidePocketRadius");
 
-    const auto pullArrivalWithEvidence = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
-        .hasFreshTouchContact = false,
-        .isFarSelection = false,
-        .requireEvidenceForTouchHeld = true,
-        .hasTouchHeldAuthorityEvidence = true,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .touchContactMaxDistanceGameUnits = 9.0f,
-        .nearConvergeDistanceGameUnits = 28.0f,
-    });
-    ok &= expectPhase("pull arrival with evidence can touch-hold", pullArrivalWithEvidence.phase, AcquisitionPhase::TouchHeld);
+    const auto marginGate = evaluatePocketGate(pocket, RE::NiPoint3{ 8.0f, 0.0f, 1.0f }, 1.5f, 1.5f);
+    ok &= expectFalse("pocket gate margin shrinks the radius for pull arrival", marginGate.inside);
+    const auto marginBehindGate = evaluatePocketGate(pocket, RE::NiPoint3{ 0.0f, 0.0f, -0.5f }, 1.5f, 1.5f);
+    ok &= expectFalse("pocket gate margin shrinks the behind-palm tolerance for pull arrival", marginBehindGate.inside);
+    const auto marginInsideGate = evaluatePocketGate(pocket, RE::NiPoint3{ 5.0f, 0.0f, 1.0f }, 1.5f, 1.5f);
+    ok &= expectTrue("pocket gate margin keeps a well-seated point inside", marginInsideGate.inside);
 
-    const auto behindPalm = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 0.0f, 0.0f, -3.0f },
-        .requireEvidenceForTouchHeld = true,
-        .hasTouchHeldAuthorityEvidence = true,
-        .behindPalmToleranceGameUnits = 1.0f,
-    });
-    ok &= expectFalse("behind palm remains rejected even with authority evidence", behindPalm.accepted);
-    ok &= expectReason("behind palm reason", behindPalm.reason, "behindPalm");
+    GrabPocketFrame invalidPocket{};
+    const auto invalidGate = evaluatePocketGate(invalidPocket, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, 1.5f);
+    ok &= expectFalse("pocket gate fails closed without a pocket frame", invalidGate.inside);
+    ok &= expectReason("pocket gate invalid reason", invalidGate.reason, "invalidPocketOrGripPoint");
 
-    const auto programmaticBehindPalm = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 0.0f, 0.0f, -30.0f },
-        .programmaticArrival = true,
-        .behindPalmToleranceGameUnits = 1.0f,
-    });
-    ok &= expectTrue("programmatic behind-palm arrival remains accepted", programmaticBehindPalm.accepted);
-    ok &= expectFalse("programmatic arrival retains behind-palm telemetry", programmaticBehindPalm.frontHemisphere);
-    ok &= expectPhase("programmatic arrival converges dynamically", programmaticBehindPalm.phase, AcquisitionPhase::NearConverging);
-    ok &= expectReason("programmatic arrival reason", programmaticBehindPalm.reason, "programmaticArrivalBehindPalm");
-
-    const auto programmaticFrontTouch = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
-        .programmaticArrival = true,
-        .requireEvidenceForTouchHeld = true,
-        .hasTouchHeldAuthorityEvidence = false,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .nearConvergeDistanceGameUnits = 28.0f,
-    });
-    ok &= expectTrue("front-side programmatic arrival remains accepted", programmaticFrontTouch.accepted);
-    ok &= expectTrue("front-side programmatic arrival retains hemisphere telemetry", programmaticFrontTouch.frontHemisphere);
-    ok &= expectPhase("programmatic arrival without stable contact converges", programmaticFrontTouch.phase, AcquisitionPhase::NearConverging);
-    ok &= expectReason("programmatic arrival without stable contact reason", programmaticFrontTouch.reason, "touchEnvelopeAwaitingAuthorityEvidence");
-
-    const auto programmaticFrontTouchWithEvidence = classifyAcquisitionPhase(PhaseClassificationInput{
-        .pocket = makePocket(),
-        .gripSeedWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
-        .programmaticArrival = true,
-        .requireEvidenceForTouchHeld = true,
-        .hasTouchHeldAuthorityEvidence = true,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .nearConvergeDistanceGameUnits = 28.0f,
-    });
-    ok &= expectPhase("programmatic arrival with stable contact can touch-hold", programmaticFrontTouchWithEvidence.phase, AcquisitionPhase::TouchHeld);
-
-    const auto normalCloseSeat = evaluateProgrammaticArrivalSeatSafety(ProgrammaticArrivalSeatSafetyInput{
-        .programmaticArrival = false,
-        .usingPinchPocket = false,
-        .capturePhase = AcquisitionPhase::TouchHeld,
-        .pocketValid = true,
-        .pivotAuthorityNormalTrusted = false,
-        .pivotAuthorityPositionOnly = true,
-        .gripToPocketDistanceGameUnits = 1.0f,
-        .signedPalmDistanceGameUnits = 1.0f,
-        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-    });
-    ok &= expectTrue("normal close grabs ignore arrival seat gate", normalCloseSeat.allowImmediateTouchHeld);
-    ok &= expectReason("normal close seat reason", normalCloseSeat.reason, "notProgrammaticArrival");
-
-    const auto pinchPullSeat = evaluateProgrammaticArrivalSeatSafety(ProgrammaticArrivalSeatSafetyInput{
-        .programmaticArrival = true,
-        .usingPinchPocket = true,
-        .capturePhase = AcquisitionPhase::TouchHeld,
-        .pocketValid = true,
-        .pivotAuthorityNormalTrusted = false,
-        .gripToPocketDistanceGameUnits = 1.0f,
-        .signedPalmDistanceGameUnits = 1.0f,
-        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-    });
-    ok &= expectTrue("pinch pocket pull-catch keeps immediate touch-held", pinchPullSeat.allowImmediateTouchHeld);
-    ok &= expectReason("pinch pocket seat reason", pinchPullSeat.reason, "pinchPocket");
-
-    const auto unsafeNormalPullSeat = evaluateProgrammaticArrivalSeatSafety(ProgrammaticArrivalSeatSafetyInput{
-        .programmaticArrival = true,
-        .usingPinchPocket = false,
-        .capturePhase = AcquisitionPhase::TouchHeld,
-        .pocketValid = true,
-        .stablePocketTouchContact = true,
-        .pivotAuthorityNormalTrusted = true,
-        .pivotAuthorityPositionOnly = false,
-        .gripToPocketDistanceGameUnits = 3.0f,
-        .signedPalmDistanceGameUnits = 1.0f,
-        .behindPalmToleranceGameUnits = 1.5f,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .pocketRadiusGameUnits = 9.0f,
-        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-    });
-    ok &= expectFalse("unsafe programmatic normal defers touch-held", unsafeNormalPullSeat.allowImmediateTouchHeld);
-    ok &= expectTrue("unsafe programmatic normal requires settled visual relation", unsafeNormalPullSeat.requireSettledVisualRelation);
-    ok &= expectReason("unsafe programmatic normal reason", unsafeNormalPullSeat.reason, "arrivalSeatNormalWrongSide");
-
-    const auto safeStablePullSeat = evaluateProgrammaticArrivalSeatSafety(ProgrammaticArrivalSeatSafetyInput{
-        .programmaticArrival = true,
-        .usingPinchPocket = false,
-        .capturePhase = AcquisitionPhase::TouchHeld,
-        .pocketValid = true,
-        .stablePocketTouchContact = true,
-        .pivotAuthorityNormalTrusted = true,
-        .pivotAuthorityPositionOnly = false,
-        .gripToPocketDistanceGameUnits = 6.0f,
-        .signedPalmDistanceGameUnits = 1.0f,
-        .behindPalmToleranceGameUnits = 1.5f,
-        .touchAcquireDistanceGameUnits = 4.0f,
-        .pocketRadiusGameUnits = 9.0f,
-        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f },
-    });
-    ok &= expectTrue("safe stable programmatic arrival preserves immediate touch-held", safeStablePullSeat.allowImmediateTouchHeld);
-    ok &= expectFalse("safe stable programmatic arrival does not require settled relation", safeStablePullSeat.requireSettledVisualRelation);
-    ok &= expectNear("safe stable programmatic normal faces palm", safeStablePullSeat.normalDotPalm, -1.0f, 0.001f);
-    ok &= expectReason("safe stable programmatic reason", safeStablePullSeat.reason, "arrivalSeatSafe");
-
-    const auto behindPullSeat = evaluateProgrammaticArrivalSeatSafety(ProgrammaticArrivalSeatSafetyInput{
-        .programmaticArrival = true,
-        .capturePhase = AcquisitionPhase::TouchHeld,
-        .pocketValid = true,
-        .stablePocketTouchContact = true,
-        .pivotAuthorityNormalTrusted = true,
-        .gripToPocketDistanceGameUnits = 3.0f,
-        .signedPalmDistanceGameUnits = -2.0f,
-        .behindPalmToleranceGameUnits = 1.0f,
-        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
-        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f },
-    });
-    ok &= expectFalse("behind-palm programmatic arrival defers touch-held", behindPullSeat.allowImmediateTouchHeld);
-    ok &= expectReason("behind-palm programmatic reason", behindPullSeat.reason, "arrivalSeatBehindPalm");
 
     return ok ? 0 : 1;
 }

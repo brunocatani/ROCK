@@ -536,15 +536,11 @@ namespace rock
             _grabFrame.pivotAuthority.source);
         out.activeGrabPointMode = _grabFrame.seat.activeGrabPointMode ? _grabFrame.seat.activeGrabPointMode : "none";
         out.authorityFrameSource = proxySource ? proxySource : "none";
-        out.acquisitionPhase = grab_three_phase::phaseName(_grabAcquisitionPhase);
         out.capturePivotAuthoritySource =
             grab_authority_frame_math::grabAuthorityPivotSourceName(
                 _grabFrame.captureTelemetry.pivotAuthority.source);
         out.captureGrabPointMode =
             _grabFrame.captureTelemetry.seat.activeGrabPointMode ? _grabFrame.captureTelemetry.seat.activeGrabPointMode : "none";
-        out.lastSeatedPivotReacquireReason =
-            _grabFrame.seat.lastPivotReacquireReason ? _grabFrame.seat.lastPivotReacquireReason : "none";
-        out.seatedPivotReacquireCount = _grabFrame.seat.pivotReacquireCount;
         out.positionOnlyPivot = _grabFrame.pivotAuthority.positionOnly;
         out.normalTrusted = _grabFrame.pivotAuthority.normalTrusted;
 
