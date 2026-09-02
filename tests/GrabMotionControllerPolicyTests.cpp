@@ -477,6 +477,44 @@ int main()
         seatedProgrammaticArrival.reason,
         "seatedProgrammaticArrivalPromotion");
 
+    const auto seatedProgrammaticArrivalNoSupport = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateNormalTrusted = true,
+        .supportPatchValid = false,
+        .supportPatchNormalTrusted = false,
+        .programmaticArrival = true,
+        .supportPatchSampleCount = 0,
+        .candidateLocalDeltaGameUnits = 20.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectTrue("programmatic arrival promotes a trusted mesh pivot without a support patch",
+        seatedProgrammaticArrivalNoSupport.promotePivot);
+    ok &= expectTrue("programmatic arrival without support completes the seated relation",
+        seatedProgrammaticArrivalNoSupport.completeSeatedRelation);
+    ok &= expectReason("programmatic arrival without support reason",
+        seatedProgrammaticArrivalNoSupport.reason,
+        "seatedProgrammaticArrivalPromotion");
+
+    const auto seatedProgrammaticArrivalUntrusted = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateNormalTrusted = false,
+        .supportPatchValid = false,
+        .programmaticArrival = true,
+        .candidateLocalDeltaGameUnits = 20.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectFalse("programmatic arrival keeps the frozen seat without a trusted pivot or support",
+        seatedProgrammaticArrivalUntrusted.promotePivot);
+    ok &= expectReason("programmatic arrival untrusted reason",
+        seatedProgrammaticArrivalUntrusted.reason,
+        "seatedSupportGroupPromotionMissingSupport");
+
     const auto seatedNotWeak = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = false,
         .hasSeatedCandidate = true,

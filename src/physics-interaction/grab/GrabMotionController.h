@@ -486,6 +486,29 @@ namespace rock::grab_motion_controller
             return decision;
         }
 
+        /*
+         * A pull or force-grab starts from a ray-selected object point. Once
+         * the object reaches the hand, that old point is not a local seat
+         * authority: a normal-trusted mesh point under the palm pocket is the
+         * stronger evidence even when it is far across a large object from
+         * the original ray hit, and it does not wait for the seated support
+         * patch. The reacquire is evaluated against the frozen target pose,
+         * so a missing patch is a geometric verdict no later frame changes;
+         * holding the flight seat for it kept pulled objects on the far-ray
+         * point for the whole hold. Organic close grabs keep the support gate
+         * and the bounded local-delta rule below.
+         */
+        if (input.programmaticArrival &&
+            input.reachedTouchRange &&
+            input.candidateNormalTrusted) {
+            decision.promotePivot = true;
+            decision.completeSeatedRelation = true;
+            decision.enrichSupport = false;
+            decision.pivotBlend = 1.0f;
+            decision.reason = "seatedProgrammaticArrivalPromotion";
+            return decision;
+        }
+
         if (!input.supportPatchValid ||
             !input.supportPatchNormalTrusted ||
             input.supportPatchSampleCount < 4) {
@@ -501,25 +524,6 @@ namespace rock::grab_motion_controller
             decision.enrichSupport = false;
             decision.pivotBlend = 1.0f;
             decision.reason = "seatedPalmPocketPromotionImmediate";
-            return decision;
-        }
-
-        /*
-         * A pull or force-grab starts from a ray-selected object point. Once
-         * the object reaches the hand, that old point is not a local seat
-         * authority. A current, normal-trusted support patch inside the palm
-         * pocket is the stronger evidence even when it is far across a large
-         * object from the original ray hit. Organic close grabs keep the
-         * bounded local-delta rule above.
-         */
-        if (input.programmaticArrival &&
-            input.reachedTouchRange &&
-            input.candidateNormalTrusted) {
-            decision.promotePivot = true;
-            decision.completeSeatedRelation = true;
-            decision.enrichSupport = false;
-            decision.pivotBlend = 1.0f;
-            decision.reason = "seatedProgrammaticArrivalPromotion";
             return decision;
         }
 
