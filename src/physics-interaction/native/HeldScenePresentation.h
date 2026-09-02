@@ -52,4 +52,13 @@ namespace rock::held_scene_presentation
         std::uint64_t traceId,
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld) noexcept;
+    /*
+     * True when the scene writer would present THIS hand's published target
+     * transport for the body. A body published by both hands resolves to the
+     * earlier grab trace, exactly as the writer selects it.
+     */
+    [[nodiscard]] bool ownsPublishedTargetTransport(
+        bool isLeft,
+        RE::hknpWorld* world,
+        std::uint32_t bodyId) noexcept;
 }

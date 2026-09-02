@@ -821,4 +821,16 @@ namespace rock::held_scene_presentation
             .presentedBodyWorld = decision.presentedWorld,
         };
     }
+
+    bool ownsPublishedTargetTransport(
+        bool isLeft,
+        RE::hknpWorld* world,
+        std::uint32_t bodyId) noexcept
+    {
+        if (!world || bodyId == 0x7FFF'FFFFu) {
+            return false;
+        }
+        TargetTransportMatch match{};
+        return findTargetTransport(world, bodyId, match) && match.isLeft == isLeft;
+    }
 }

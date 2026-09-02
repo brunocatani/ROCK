@@ -11986,6 +11986,9 @@ namespace rock
             update.solvedBodyWorld);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;
+        if (update.hasPresentedBodyWorld) {
+            presentHeldNodeNow(world, update);
+        }
 
         update.heldBodyColliding = isHeldBodyColliding();
         const auto heldContactSnapshot = readHeldBodyContactSnapshot();
@@ -12067,6 +12070,41 @@ namespace rock
         }
 
         return true;
+    }
+
+    void Hand::presentHeldNodeNow(RE::hknpWorld* world, const HeldDriveUpdate& driveUpdate)
+    {
+        /*
+         * The engine scene writer stores the presented pose into the held node
+         * about 9 ms after this game-frame hook, 2 ms before the next hook,
+         * after this frame's render has already consumed node transforms
+         * (HELD_RENDER_CLOCK / HELD_SCENE_TARGET timing, 2026-09-02). The hand
+         * is posed here, so the mesh was drawn one locomotion step behind it.
+         * Store the identical pose now, on the game thread, into the writer's
+         * own owner node so this frame's render sees it; the later engine write
+         * repeats the same pose through the target transport. Scale, physics
+         * bodies, and the engine's reference bookkeeping are untouched.
+         */
+        if (!world || !driveUpdate.hasPresentedBodyWorld ||
+            !held_scene_presentation::ownsPublishedTargetTransport(_isLeft, world, _savedObjectState.bodyId.value)) {
+            return;
+        }
+        auto* collisionObject = havok_runtime::getCollisionObjectFromBody(world, _savedObjectState.bodyId);
+        RE::NiAVObject* node = collisionObject ? collisionObject->sceneObject : nullptr;
+        if (!node) {
+            return;
+        }
+
+        RE::NiTransform nodeWorld = driveUpdate.presentedBodyWorld;
+        nodeWorld.scale = node->world.scale;
+        if (!isUsableGrabVisualTransform(nodeWorld)) {
+            return;
+        }
+        node->world = nodeWorld;
+        node->local = node->parent ?
+            transform_math::composeTransforms(transform_math::invertTransform(node->parent->world), nodeWorld) :
+            nodeWorld;
+        f4vr::updateTransformsDown(node, false);
     }
 
     void Hand::logHeldRenderClockProbe(
