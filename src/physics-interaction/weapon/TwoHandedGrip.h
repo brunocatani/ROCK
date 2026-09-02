@@ -123,10 +123,19 @@ namespace rock
         EquippedWeaponHandGripOccupancy right{};
     };
 
+    // Hands whose open-hand release was refused during this update because
+    // they are the weapon's last carrier and the last-grip drop is disabled.
+    struct EquippedWeaponGripReleaseRetention
+    {
+        bool left{ false };
+        bool right{ false };
+    };
+
     struct TwoHandedGripUpdateResult
     {
         EquippedWeaponGripOccupancy before{};
         EquippedWeaponGripOccupancy after{};
+        EquippedWeaponGripReleaseRetention releaseRetained{};
     };
 
     struct AuthoredSupportGripIndicatorFrame
@@ -1325,6 +1334,9 @@ namespace rock
             const WeaponCollision& weaponCollision);
 
         void recordFiringGripDetachedHaptic() noexcept;
+        // Marks a refused last-carrier release for this update and logs the
+        // first refusal of each open-hand episode.
+        void recordGripReleaseRetained(bool isLeft, const char* reason);
         void requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
 
         void updatePrimaryOnlyGrip(
@@ -2148,6 +2160,13 @@ namespace rock
         // Outbound one-shot queues consumed by PhysicsInteraction each frame.
         EquippedWeaponManualDropRequest _equippedWeaponDropRequest{};
         TwoHandedGripHapticEvents _hapticEvents{};
+
+        // Refused last-carrier releases: rebuilt every update() and returned
+        // in the update result. The logged flags (index 0 right, 1 left)
+        // mark one open-hand episode and clear when that hand's logical grip
+        // closes again.
+        EquippedWeaponGripReleaseRetention _gripReleaseRetained{};
+        std::array<bool, 2> _gripReleaseRetainedLogged{};
 
         // Per-update snapshot of the configured handling settings.
         EquippedWeaponHandlingSettings _handlingSettings{};

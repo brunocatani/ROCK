@@ -70,6 +70,9 @@ namespace rock
         // physical hand currently occupies the firing grip.
         bool rockFiringGripDetachEnabled = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
+        // Whether the last carrying hand may drop the weapon by letting go.
+        // With false that grip is retained under either input mode.
+        bool rockLastGripReleaseDropEnabled = true;
         float rockFiringGripReattachRadiusGameUnits = 12.0f;
         float rockFiringGripReattachCylinderRadiusGameUnits = 2.0f;
         float rockFiringGripHapticDurationSeconds = 0.10f;

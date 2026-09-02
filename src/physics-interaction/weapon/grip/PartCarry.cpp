@@ -373,7 +373,18 @@ namespace rock
 
         bool lastReleaseWasSupportHand = true;
 
+        /*
+         * Open-hand releases are evaluated support hand first, so a same-frame
+         * double release honors the support hand and the free hand becomes
+         * the last carrier. A last carry grip releases only when that release
+         * may drop the weapon; otherwise the hand keeps its grip.
+         */
+        const auto gripCarries = [](const WeaponPartGrip& grip) {
+            return weapon_part_grip_report_policy::partGripCountsAsCarry(grip.active, grip.attachOnly);
+        };
+
         WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
+        WeaponPartGrip& freeHandGrip = partGrip(firingHandIsLeft);
         if (supportGrip.active) {
             if (!providerPartAuthorityStillCurrent(supportGrip, currentWeaponGenerationKey) || !supportRuntimeState.supportGripAllowed) {
                 /*
@@ -386,19 +397,32 @@ namespace rock
                 return;
             }
             if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
-                releasePartGrip(supportHandIsLeft, "support-grip-released", true);
-                lastReleaseWasSupportHand = true;
+                if (weapon_two_handed_grip_math::canReleaseCarryGrip(
+                        gripCarries(supportGrip),
+                        gripCarries(freeHandGrip),
+                        _handlingSettings.lastGripReleaseDropEnabled)) {
+                    releasePartGrip(supportHandIsLeft, "support-grip-released", true);
+                    lastReleaseWasSupportHand = true;
+                } else {
+                    recordGripReleaseRetained(supportHandIsLeft, "part-carry-last-carrier");
+                }
             }
         }
 
-        WeaponPartGrip& freeHandGrip = partGrip(firingHandIsLeft);
         if (freeHandGrip.active) {
             if (!providerPartAuthorityStillCurrent(freeHandGrip, currentWeaponGenerationKey)) {
                 releasePartGrip(firingHandIsLeft, "provider-part-authority-lost");
                 lastReleaseWasSupportHand = false;
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(frameInput.primaryGripInput.held, firingHandHoldingObject)) {
-                releasePartGrip(firingHandIsLeft, "free-hand-grip-released", true);
-                lastReleaseWasSupportHand = false;
+                if (weapon_two_handed_grip_math::canReleaseCarryGrip(
+                        gripCarries(freeHandGrip),
+                        gripCarries(supportGrip),
+                        _handlingSettings.lastGripReleaseDropEnabled)) {
+                    releasePartGrip(firingHandIsLeft, "free-hand-grip-released", true);
+                    lastReleaseWasSupportHand = false;
+                } else {
+                    recordGripReleaseRetained(firingHandIsLeft, "part-carry-last-carrier");
+                }
             }
         }
 
@@ -532,10 +556,22 @@ namespace rock
          * authority (never upgrade), so it releases with the carry and the
          * normal manual-drop request proceeds (fail closed).
          */
-        if (!weapon_part_grip_report_policy::partGripCountsAsCarry(supportGrip.active, supportGrip.attachOnly) &&
-            !weapon_part_grip_report_policy::partGripCountsAsCarry(freeHandGrip.active, freeHandGrip.attachOnly)) {
+        if (!gripCarries(supportGrip) && !gripCarries(freeHandGrip)) {
             releasePartGrip(supportHandIsLeft, "carry-authority-lost", true);
             releasePartGrip(firingHandIsLeft, "carry-authority-lost", true);
+            if (!_handlingSettings.lastGripReleaseDropEnabled) {
+                /*
+                 * Player releases of the last carrier are refused above, so
+                 * this is a provider revocation or an attach-only remainder.
+                 * Without a carrier and without a drop, the weapon returns to
+                 * FRIK-native carry like a revoked support grip.
+                 */
+                ROCK_LOG_INFO(Weapon,
+                    "TwoHandedGrip: part-carry lost every carry grip without a player release; returning to native carry because the last-grip drop is disabled generation={:016X}",
+                    _session.weaponGenerationKey);
+                transitionToInactive(false);
+                return;
+            }
             requestEquippedWeaponDrop(
                 "part-carry-all-grips-released",
                 lastReleaseWasSupportHand ?

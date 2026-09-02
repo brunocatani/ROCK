@@ -11,6 +11,10 @@ namespace rock
         bool authoredOnlySupportGrabsEnabled{ true };
         bool toggleGrabEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
+        // Whether the last hand carrying the weapon may drop it by letting go.
+        // With false that grip is retained; releases are honored only while
+        // the other hand still carries the weapon.
+        bool lastGripReleaseDropEnabled{ true };
         immersive_weapon_policy::Config immersiveWeapon{};
         float firingGripReattachCylinderRadiusGameUnits{ 2.0f };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
@@ -34,6 +38,7 @@ namespace rock
         bool ambidextrousHandoffEnabled{ false };
         bool authoredOnlySupportGrabsEnabled{ true };
         bool toggleGrabEnabled{ false };
+        bool lastGripReleaseDropEnabled{ true };
         bool gripZoneEquipEnabled{ false };
         bool gripZoneHoverHapticsEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
@@ -81,6 +86,11 @@ namespace rock
         // Toggle grab is a ROCK input preference. A handling-provider lease
         // can add weapon capabilities, but it cannot replace this input mode.
         settings.toggleGrabEnabled = rockBaseline.toggleGrabEnabled;
+        // Like toggle grab, the last-grip drop is a ROCK release preference
+        // that applies under either detach authority; a handling-provider
+        // lease cannot re-enable dropping for the player's last carrying hand.
+        settings.lastGripReleaseDropEnabled =
+            rockBaseline.lastGripReleaseDropEnabled;
         settings.equippedWeaponShoulderStashEnabled =
             rockBaseline.equippedWeaponShoulderStashEnabled;
         settings.immersiveWeapon = rockBaseline.immersiveWeapon;

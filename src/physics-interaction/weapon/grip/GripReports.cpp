@@ -101,6 +101,23 @@ namespace rock
         _hapticEvents.firingGripDetachedHandIsLeft = isFiringHandLeft();
     }
 
+    void TwoHandedGrip::recordGripReleaseRetained(const bool isLeft, const char* reason)
+    {
+        (isLeft ? _gripReleaseRetained.left : _gripReleaseRetained.right) = true;
+        bool& logged = _gripReleaseRetainedLogged[isLeft ? 1u : 0u];
+        if (logged) {
+            return;
+        }
+        logged = true;
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: open-hand release refused hand={} reason={} generation={:016X} detachSource={} -- last carrier keeps the weapon because the last-grip drop is disabled",
+            isLeft ? "left" : "right",
+            reason ? reason : "unknown",
+            _session.weaponGenerationKey,
+            immersive_weapon_policy::authorityName(
+                _handlingSettings.detachAuthority));
+    }
+
     void TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand)
     {
         if (_equippedWeaponDropRequest.requested) {

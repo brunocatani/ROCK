@@ -398,9 +398,19 @@ namespace rock
                 .primaryGripRetained = equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership(
                     primaryDetachEnabled,
                     _handlingSettings.toggleGrabEnabled,
-                    primaryGripInput.held),
+                    primaryGripInput.held,
+                    _handlingSettings.lastGripReleaseDropEnabled),
                 .supportGripRetained = false,
             });
+
+        if (manualDecision.active &&
+            primaryDetachEnabled &&
+            !_handlingSettings.lastGripReleaseDropEnabled &&
+            !primaryGripInput.held) {
+            // The only carrier's open hand was refused a drop; the carry
+            // continues unchanged below.
+            recordGripReleaseRetained(isFiringHandLeft(), "primary-only");
+        }
 
         if (manualDecision.dropRequested) {
             beginHandVisualReturn(isFiringHandLeft(), "primary-only-drop");

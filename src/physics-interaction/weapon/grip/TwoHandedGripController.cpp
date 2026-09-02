@@ -144,6 +144,7 @@ namespace rock
             return TwoHandedGripUpdateResult{
                 .before = occupancyBefore,
                 .after = occupancyAfter,
+                .releaseRetained = _gripReleaseRetained,
             };
         };
         _leftCarry.recoilReadyThisUpdate =
@@ -174,6 +175,7 @@ namespace rock
         _firing.reattachHoverHandIsLeft = isFiringHandLeft();
         _firing.reattachIndicatorFrame = {};
         _firing.reattachDebugSnapshot = {};
+        _gripReleaseRetained = {};
         if (g_rockConfig.rockDebugDrawNativeScopeActivation &&
             _scope.cameraDebugSnapshot.framesSinceApply != (std::numeric_limits<std::uint32_t>::max)()) {
             ++_scope.cameraDebugSnapshot.framesSinceApply;
@@ -238,6 +240,16 @@ namespace rock
             stableFrameInput.primaryGripInput.held);
         stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
         stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
+
+        // A closed logical grip ends that hand's refused-release episode so
+        // the next refusal logs again.
+        if (stableFrameInput.primaryGripInput.held) {
+            _gripReleaseRetainedLogged[isFiringHandLeft() ? 1u : 0u] = false;
+        }
+        if (isSupportHandLeft() ? stableFrameInput.leftGripHeld :
+                                  stableFrameInput.rightGripHeld) {
+            _gripReleaseRetainedLogged[isSupportHandLeft() ? 1u : 0u] = false;
+        }
 
         recordGripFailureFrame(
             weaponNode,
@@ -487,6 +499,8 @@ namespace rock
                         .firingGripOwnershipEnabled = handlingSettings.firingGripOwnershipEnabled,
                         .primaryDetachEnabled = handlingSettings.primaryDetachEnabled,
                         .primaryGripHeld = primaryGripInput.held,
+                        .lastGripReleaseDropEnabled =
+                            handlingSettings.lastGripReleaseDropEnabled,
                     });
                 if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::KeepPrimaryOwnership) {
                     beginHandVisualReturn(supportHandIsLeft, "support-released-primary-held");
@@ -578,6 +592,17 @@ namespace rock
                             leftRuntimeState,
                             rightRuntimeState);
                     }
+                } else if (!weapon_two_handed_grip_math::canReleaseCarryGrip(
+                               true,
+                               false,
+                               handlingSettings.lastGripReleaseDropEnabled)) {
+                    // Visual-only support cannot carry, so the firing grip is
+                    // the weapon's only carrier: the open firing hand keeps
+                    // the two-hand hold instead of dropping the weapon.
+                    recordGripReleaseRetained(
+                        isFiringHandLeft(),
+                        "two-hand-noncarry-support");
+                    updateGripping(_session.weaponNode, dt);
                 } else {
                     beginHandVisualReturn(
                         supportHandIsLeft,
@@ -694,6 +719,8 @@ namespace rock
         clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
         _hapticEvents = {};
+        _gripReleaseRetained = {};
+        _gripReleaseRetainedLogged = {};
         _firing.reattachHoverInsideZone = false;
         _firing.reattachIndicatorFrame = {};
         _firing.reattachDebugSnapshot = {};

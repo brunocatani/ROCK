@@ -983,6 +983,10 @@ namespace rock
                     equipped_weapon_toggle_grab_policy::GripOccupancy{
                         .left = toggleOccupancyAfter.left.weaponEngaged(),
                         .right = toggleOccupancyAfter.right.weaponEngaged(),
+                    },
+                    equipped_weapon_toggle_grab_policy::GripReleaseRetention{
+                        .left = gripUpdateResult.releaseRetained.left,
+                        .right = gripUpdateResult.releaseRetained.right,
                     });
             const auto consumeToggleAcquisitionPress =
                 [this](const bool isLeft, const bool acquired) {
@@ -1659,6 +1663,8 @@ namespace rock
                 g_rockConfig.rockEquippedWeaponToggleGrabEnabled,
             .equippedWeaponShoulderStashEnabled =
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
+            .lastGripReleaseDropEnabled =
+                g_rockConfig.rockLastGripReleaseDropEnabled,
             .immersiveWeapon = {
                 .firingGripDetachEnabled =
                     g_rockConfig.

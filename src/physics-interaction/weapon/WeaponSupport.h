@@ -342,8 +342,16 @@ namespace rock::equipped_weapon_manual_ownership_policy
     [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(
         bool primaryDetachEnabled,
         bool toggleGrabEnabled,
-        bool primaryGripHeld) noexcept
+        bool primaryGripHeld,
+        bool lastGripReleaseDropEnabled) noexcept
     {
+        // In PrimaryOnly the firing grip is the weapon's only carrier, so a
+        // detach release here can only drop the weapon. With the last-grip
+        // drop disabled that release is refused under either input mode.
+        if (primaryDetachEnabled && !lastGripReleaseDropEnabled) {
+            return true;
+        }
+
         // Physical hold-to-release remains governed by detach authority. A
         // toggle latch is different: its second press is an explicit logical
         // release and must never strand manual PrimaryOnly ownership when a
@@ -504,6 +512,7 @@ namespace rock::weapon_two_handed_grip_math
         bool firingGripOwnershipEnabled{ false };
         bool primaryDetachEnabled{ false };
         bool primaryGripHeld{ false };
+        bool lastGripReleaseDropEnabled{ true };
     };
 
     /*
@@ -599,11 +608,29 @@ namespace rock::weapon_two_handed_grip_math
             return SupportReleaseManualAction::EndSupportOnly;
         }
 
-        if (input.primaryGripHeld || !input.primaryDetachEnabled) {
+        // An open firing grip left alone by the support release would drop
+        // the weapon; with the last-grip drop disabled it keeps the weapon.
+        if (input.primaryGripHeld || !input.primaryDetachEnabled ||
+            !input.lastGripReleaseDropEnabled) {
             return SupportReleaseManualAction::KeepPrimaryOwnership;
         }
 
         return SupportReleaseManualAction::DropEquippedWeapon;
+    }
+
+    /*
+     * Open-hand release contract for one equipped-weapon grip. A grip that
+     * does not carry the weapon (attach-only glue) always releases, as does a
+     * carry grip whose peer still carries. The LAST carry grip may release
+     * only when that release is allowed to drop the weapon; otherwise the
+     * hand keeps the grip until the peer takes the weapon or it is unequipped.
+     */
+    [[nodiscard]] inline constexpr bool canReleaseCarryGrip(
+        bool gripCarries,
+        bool peerGripCarries,
+        bool lastGripReleaseDropEnabled) noexcept
+    {
+        return !gripCarries || peerGripCarries || lastGripReleaseDropEnabled;
     }
 
     /*

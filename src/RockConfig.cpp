@@ -337,6 +337,10 @@ namespace rock
                 IMMERSIVE_WEAPONS_SECTION,
                 "bFiringGripDetachPosePreservationEnabled",
                 rockFiringGripDetachPosePreservationEnabled);
+        rockLastGripReleaseDropEnabled = ini.GetBoolValue(
+            IMMERSIVE_WEAPONS_SECTION,
+            "bLastGripReleaseDropEnabled",
+            rockLastGripReleaseDropEnabled);
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,

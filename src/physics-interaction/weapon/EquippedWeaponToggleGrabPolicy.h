@@ -55,6 +55,15 @@ namespace rock::equipped_weapon_toggle_grab_policy
         bool rightReleasePressConsumed{ false };
     };
 
+    struct GripReleaseRetention
+    {
+        // The weapon state machine refused this hand's logical release this
+        // update because the hand is the weapon's last carrier and the
+        // last-grip drop is disabled. The release press is spent.
+        bool left{ false };
+        bool right{ false };
+    };
+
     struct ReconcileDecision
     {
         // The caller must drain the acquisition press for each newly engaged
@@ -150,7 +159,8 @@ namespace rock::equipped_weapon_toggle_grab_policy
 
         [[nodiscard]] inline constexpr bool reconcileHand(
             HandState& state,
-            const bool occupied) noexcept
+            const bool occupied,
+            const bool releaseRetained) noexcept
         {
             if (occupied) {
                 if (state == HandState::Open) {
@@ -158,6 +168,13 @@ namespace rock::equipped_weapon_toggle_grab_policy
                     return true;
                 } else if (state == HandState::BlockedUntilRelease) {
                     state = HandState::ReleasePending;
+                } else if (state == HandState::ReleasePending &&
+                           releaseRetained) {
+                    // A refused last-carrier release re-latches in place: the
+                    // next press is again a release request, never a
+                    // re-acquisition, and the pending open state cannot leak
+                    // into a later detach or reattach decision.
+                    state = HandState::Latched;
                 }
                 return false;
             }
@@ -214,7 +231,8 @@ namespace rock::equipped_weapon_toggle_grab_policy
         RuntimeState& state,
         const bool enabled,
         const std::uint64_t weaponOwnershipKey,
-        const GripOccupancy& occupancy) noexcept
+        const GripOccupancy& occupancy,
+        const GripReleaseRetention& releaseRetained) noexcept
     {
         if (!enabled || weaponOwnershipKey == 0 ||
             state.weaponOwnershipKey != weaponOwnershipKey) {
@@ -225,10 +243,12 @@ namespace rock::equipped_weapon_toggle_grab_policy
         return ReconcileDecision{
             .leftGripAcquired = detail::reconcileHand(
                 state.hands[handIndex(true)],
-                occupancy.left),
+                occupancy.left,
+                releaseRetained.left),
             .rightGripAcquired = detail::reconcileHand(
                 state.hands[handIndex(false)],
-                occupancy.right),
+                occupancy.right,
+                releaseRetained.right),
         };
     }
 }

@@ -2153,6 +2153,7 @@ int main()
         .authoredOnlySupportGrabsEnabled = true,
         .toggleGrabEnabled = true,
         .equippedWeaponShoulderStashEnabled = true,
+        .lastGripReleaseDropEnabled = false,
         .immersiveWeapon = {
             .firingGripDetachEnabled = true,
             .firingGripDetachPosePreservationEnabled = true,
@@ -2189,6 +2190,8 @@ int main()
         coreWeaponHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectTrue("base ROCK enables configured equipped-weapon toggle grab",
         coreWeaponHandling.toggleGrabEnabled);
+    ok &= expectFalse("base ROCK applies the configured last-grip drop preference",
+        coreWeaponHandling.lastGripReleaseDropEnabled);
     ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
         coreWeaponHandling.primaryDetachEnabled);
     const auto integratedDetach =
@@ -2324,6 +2327,8 @@ int main()
         externalHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectTrue("an addon lease cannot suppress ROCK toggle grab",
         externalHandling.toggleGrabEnabled);
+    ok &= expectFalse("an addon lease cannot re-enable the last-grip drop",
+        externalHandling.lastGripReleaseDropEnabled);
     ok &= expectTrue("an addon handling lease cannot suppress authored-only support",
         externalHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectFalse("ROCK stash cannot add detach to a non-detach addon lease",
@@ -2497,7 +2502,8 @@ int main()
             toggleState,
             true,
             toggleInput.weaponOwnershipKey,
-            toggle_grab::GripOccupancy{ .left = true, .right = true });
+            toggle_grab::GripOccupancy{ .left = true, .right = true },
+            toggle_grab::GripReleaseRetention{});
         ok &= expectTrue("new left weapon occupancy owns its acquisition press",
             toggleAcquisition.leftGripAcquired);
         ok &= expectTrue("new right weapon occupancy owns its acquisition press",
@@ -2526,7 +2532,8 @@ int main()
             toggleState,
             true,
             toggleInput.weaponOwnershipKey,
-            toggle_grab::GripOccupancy{ .left = true, .right = true }));
+            toggle_grab::GripOccupancy{ .left = true, .right = true },
+            toggle_grab::GripReleaseRetention{}));
         toggleInput.occupancy = { .left = true, .right = true };
         toggleInput.left = { .held = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
@@ -2537,7 +2544,8 @@ int main()
             toggleState,
             true,
             toggleInput.weaponOwnershipKey,
-            toggle_grab::GripOccupancy{ .left = false, .right = true }));
+            toggle_grab::GripOccupancy{ .left = false, .right = true },
+            toggle_grab::GripReleaseRetention{}));
         toggleInput.occupancy = { .left = false, .right = true };
         toggleInput.left = { .held = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
@@ -2563,6 +2571,74 @@ int main()
         ok &= expectEqual("disabled toggle mode clears weapon identity",
             toggleState.weaponOwnershipKey,
             std::uint64_t{ 0 });
+    }
+
+    {
+        toggle_grab::RuntimeState retainedState{};
+        toggle_grab::Input retainedInput{
+            .enabled = true,
+            .inputAllowed = true,
+            .weaponOwnershipKey = 0x1235u,
+            .occupancy = {},
+            .left = {},
+            .right = {
+                .held = true,
+                .pressed = true,
+                .released = false,
+            },
+        };
+        auto retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
+        static_cast<void>(toggle_grab::reconcile(
+            retainedState,
+            true,
+            retainedInput.weaponOwnershipKey,
+            toggle_grab::GripOccupancy{ .right = true },
+            toggle_grab::GripReleaseRetention{}));
+        retainedInput.occupancy = { .right = true };
+        retainedInput.right = { .held = true, .pressed = true };
+        retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
+        ok &= expectTrue("latched right grip press requests a logical release",
+            !retainedDecision.right.held && retainedDecision.right.released);
+        static_cast<void>(toggle_grab::reconcile(
+            retainedState,
+            true,
+            retainedInput.weaponOwnershipKey,
+            toggle_grab::GripOccupancy{ .right = true },
+            toggle_grab::GripReleaseRetention{}));
+        ok &= expectEqual("an unresolved release stays pending while the grip is still occupied",
+            retainedState.hands[toggle_grab::handIndex(false)],
+            toggle_grab::HandState::ReleasePending);
+        static_cast<void>(toggle_grab::reconcile(
+            retainedState,
+            true,
+            retainedInput.weaponOwnershipKey,
+            toggle_grab::GripOccupancy{ .right = true },
+            toggle_grab::GripReleaseRetention{ .right = true }));
+        ok &= expectEqual("a refused last-carrier release re-latches the hand",
+            retainedState.hands[toggle_grab::handIndex(false)],
+            toggle_grab::HandState::Latched);
+        retainedInput.right = { .held = true };
+        retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
+        ok &= expectTrue("the re-latched hand reports a closed grip while the press tail is still held",
+            retainedDecision.right.held && !retainedDecision.right.pressed);
+        retainedInput.right = { .released = true };
+        retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
+        ok &= expectTrue("physical release keeps the re-latched grip closed",
+            retainedDecision.right.held && !retainedDecision.right.released);
+        retainedInput.right = { .held = true, .pressed = true };
+        retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
+        ok &= expectTrue("the next press is again a release request",
+            retainedDecision.right.released &&
+                retainedDecision.rightReleasePressConsumed);
+        static_cast<void>(toggle_grab::reconcile(
+            retainedState,
+            true,
+            retainedInput.weaponOwnershipKey,
+            toggle_grab::GripOccupancy{ .right = false },
+            toggle_grab::GripReleaseRetention{ .right = true }));
+        ok &= expectEqual("retention never re-latches a vacated grip",
+            retainedState.hands[toggle_grab::handIndex(false)],
+            toggle_grab::HandState::BlockedUntilRelease);
     }
 
     using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
@@ -2743,6 +2819,24 @@ int main()
     ok &= expectEqual("support release ends support when firing-grip ownership is disabled",
         resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}),
         SupportReleaseManualAction::EndSupportOnly);
+    ok &= expectEqual("support release keeps an open detaching firing grip when the last-grip drop is disabled",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
+            .firingGripOwnershipEnabled = true,
+            .primaryDetachEnabled = true,
+            .primaryGripHeld = false,
+            .lastGripReleaseDropEnabled = false,
+        }),
+        SupportReleaseManualAction::KeepPrimaryOwnership);
+
+    using rock::weapon_two_handed_grip_math::canReleaseCarryGrip;
+    ok &= expectTrue("a carry grip releases while its peer still carries",
+        canReleaseCarryGrip(true, true, false));
+    ok &= expectTrue("the last carry grip releases when the last-grip drop is enabled",
+        canReleaseCarryGrip(true, false, true));
+    ok &= expectFalse("the last carry grip is retained when the last-grip drop is disabled",
+        canReleaseCarryGrip(true, false, false));
+    ok &= expectTrue("attach-only glue releases regardless of the last-grip drop",
+        canReleaseCarryGrip(false, false, false));
 
     using rock::weapon_two_handed_grip_math::canStartFreeHandPartGrip;
     using rock::weapon_two_handed_grip_math::canAttemptFiringGripReattach;
@@ -2974,11 +3068,11 @@ int main()
     ok &= expectFalse("held weapon skips grip-frame work when no consumer is active",
         shouldTrackHeldWeaponGripFrame(true, false, false));
     ok &= expectTrue("non-detaching ownership ignores an open firing grip",
-        shouldRetainPrimaryOnlyOwnership(false, false, false));
+        shouldRetainPrimaryOnlyOwnership(false, false, false, true));
     ok &= expectTrue("toggle ownership remains while its logical firing grip is closed",
-        shouldRetainPrimaryOnlyOwnership(false, true, true));
+        shouldRetainPrimaryOnlyOwnership(false, true, true, true));
     ok &= expectFalse("toggle ownership releases on an explicit logical open without physical detach authority",
-        shouldRetainPrimaryOnlyOwnership(false, true, false));
+        shouldRetainPrimaryOnlyOwnership(false, true, false, true));
     RuntimeState togglePrimaryOnlyState{
         .active = true,
         .ownershipKey = 0x20u,
@@ -2989,14 +3083,35 @@ int main()
             .weaponEquipped = true,
             .ownershipKey = 0x20u,
             .primaryGripRetained =
-                shouldRetainPrimaryOnlyOwnership(false, true, false),
+                shouldRetainPrimaryOnlyOwnership(false, true, false, true),
         });
     ok &= expectTrue("toggle-open primary-only ownership requests the equipped weapon drop",
         togglePrimaryOnlyRelease.dropRequested);
     ok &= expectTrue("detaching ownership remains while the firing grip is held",
-        shouldRetainPrimaryOnlyOwnership(true, false, true));
+        shouldRetainPrimaryOnlyOwnership(true, false, true, true));
     ok &= expectFalse("detaching ownership releases when the firing grip opens",
-        shouldRetainPrimaryOnlyOwnership(true, false, false));
+        shouldRetainPrimaryOnlyOwnership(true, false, false, true));
+    ok &= expectTrue("disabled last-grip drop keeps the open detaching firing grip under hold input",
+        shouldRetainPrimaryOnlyOwnership(true, false, false, false));
+    ok &= expectTrue("disabled last-grip drop keeps the logically open detaching firing grip under toggle input",
+        shouldRetainPrimaryOnlyOwnership(true, true, false, false));
+    ok &= expectFalse("disabled last-grip drop does not change toggle release without detach authority",
+        shouldRetainPrimaryOnlyOwnership(false, true, false, false));
+    RuntimeState retainedPrimaryOnlyState{
+        .active = true,
+        .ownershipKey = 0x23u,
+    };
+    const auto retainedPrimaryOnlyRelease = update(
+        retainedPrimaryOnlyState,
+        Input{
+            .weaponEquipped = true,
+            .ownershipKey = 0x23u,
+            .primaryGripRetained =
+                shouldRetainPrimaryOnlyOwnership(true, false, false, false),
+        });
+    ok &= expectTrue("refused last-carrier release keeps primary-only ownership active",
+        retainedPrimaryOnlyRelease.active &&
+            !retainedPrimaryOnlyRelease.dropRequested);
     RuntimeState ambidextrousLifecycleState{
         .active = true,
         .ownershipKey = 0x21u,
@@ -3005,7 +3120,7 @@ int main()
         Input{
             .weaponEquipped = true,
             .ownershipKey = 0x22u,
-            .primaryGripRetained = shouldRetainPrimaryOnlyOwnership(false, false, false),
+            .primaryGripRetained = shouldRetainPrimaryOnlyOwnership(false, false, false, true),
         });
     ok &= expectTrue("ambidextrous-only ownership still clears when equipped identity changes",
         ambidextrousWeaponChanged.cleared);
