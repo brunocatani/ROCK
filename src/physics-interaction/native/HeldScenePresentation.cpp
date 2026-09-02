@@ -738,7 +738,7 @@ namespace rock::held_scene_presentation
         publishHeldBodies(isLeft, empty);
     }
 
-    void publishTargetTransport(
+    TargetTransportPublication publishTargetTransport(
         bool isLeft,
         RE::hknpWorld* world,
         std::uint32_t bodyId,
@@ -749,7 +749,7 @@ namespace rock::held_scene_presentation
         const std::size_t handIndex = isLeft ? 1u : 0u;
         if (!world || bodyId == 0x7FFF'FFFFu || traceId == 0) {
             resetTargetTransport(handIndex);
-            return;
+            return {};
         }
 
         held_scene_presentation_policy::TargetTransportDecision<
@@ -813,7 +813,12 @@ namespace rock::held_scene_presentation
                     decision.physicalResidualGameUnits,
                     decision.transportAdvanceGameUnits);
             }
-            return;
+            return {};
         }
+
+        return TargetTransportPublication{
+            .applied = true,
+            .presentedBodyWorld = decision.presentedWorld,
+        };
     }
 }

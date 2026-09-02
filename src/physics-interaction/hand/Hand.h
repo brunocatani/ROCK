@@ -758,11 +758,15 @@ namespace rock
         bool updateHeldVisualPresentation(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
-            float pivotTrackingErrorGameUnits,
-            bool hasPivotTrackingError,
-            bool heldMotorContactSoftening,
+            const HeldDriveUpdate& driveUpdate,
             const GrabReleaseContext& releaseContext,
             bool& outConvergingAcquisitionPhase);
+        void logHeldRenderClockProbe(
+            const HeldDriveUpdate& driveUpdate,
+            const RE::NiTransform& rawHandWorld,
+            const RE::NiTransform& heldVisualNodeWorld,
+            bool heldVisualNodeFromPresentedPose,
+            float deltaTime);
         void updateHeldAcquisition(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
@@ -1354,6 +1358,12 @@ namespace rock
         bool _hasGrabVisualHandTransform = false;
         RE::NiTransform _lastPublishedGrabVisualHandTransform{};
         bool _hasLastPublishedGrabVisualHandTransform = false;
+        // HELD_RENDER_CLOCK probe (diagnostic only): previous frame's presented
+        // node pose and presentation residual, keyed by grab trace.
+        std::uint64_t _heldRenderClockProbeTraceId = 0;
+        RE::NiTransform _heldRenderClockProbePresentedNode{};
+        RE::NiTransform _heldRenderClockProbeResidual{};
+        bool _hasHeldRenderClockProbeSample = false;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;

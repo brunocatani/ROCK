@@ -29,10 +29,23 @@ namespace rock::held_scene_presentation
         std::uint64_t traceId = 0;
     };
 
+    /*
+     * Result of one game-frame target-transport publication. When applied,
+     * presentedBodyWorld is the exact BODY-frame pose the scene writer will
+     * hand the held node during this frame's post-physics update, so the
+     * game-frame hand visual can be posed on the same clock instead of on the
+     * node's previous-frame value.
+     */
+    struct TargetTransportPublication
+    {
+        bool applied = false;
+        RE::NiTransform presentedBodyWorld{};
+    };
+
     [[nodiscard]] bool install() noexcept;
     void publishHeldBodies(bool isLeft, const Registration& registration) noexcept;
     void clearHeldBodies(bool isLeft) noexcept;
-    void publishTargetTransport(
+    TargetTransportPublication publishTargetTransport(
         bool isLeft,
         RE::hknpWorld* world,
         std::uint32_t bodyId,

@@ -11890,6 +11890,12 @@ namespace rock
         RE::NiTransform desiredObjectWorld{};
         RE::NiTransform desiredBodyWorld{};
         RE::NiTransform solvedBodyWorld{};
+        /*
+         * BODY-frame pose the scene writer presents for the held node this
+         * frame (current target composed with the previous solved residual).
+         * Valid only when the target transport accepted this frame's sample.
+         */
+        RE::NiTransform presentedBodyWorld{};
         RE::NiPoint3 activePivotBBodyLocalGame{};
         RE::NiPoint3 desiredTargetPointWorld{};
         RE::NiPoint3 liveGripWorldForAuthority{};
@@ -11901,6 +11907,7 @@ namespace rock
         float averageGrabDeviationGameUnits = 0.0f;
         bool hasProxyAuthorityFrame = false;
         bool hasPivotTrackingError = false;
+        bool hasPresentedBodyWorld = false;
         bool heldBodyColliding = false;
         bool heldMotorContactSoftening = false;
     };
@@ -11970,13 +11977,15 @@ namespace rock
             return false;
         }
 
-        held_scene_presentation::publishTargetTransport(
+        const auto presentation = held_scene_presentation::publishTargetTransport(
             _isLeft,
             world,
             _savedObjectState.bodyId.value,
             _grabFrame.traceId,
             update.desiredBodyWorld,
             update.solvedBodyWorld);
+        update.hasPresentedBodyWorld = presentation.applied;
+        update.presentedBodyWorld = presentation.presentedBodyWorld;
 
         update.heldBodyColliding = isHeldBodyColliding();
         const auto heldContactSnapshot = readHeldBodyContactSnapshot();
@@ -12060,15 +12069,113 @@ namespace rock
         return true;
     }
 
+    void Hand::logHeldRenderClockProbe(
+        const HeldDriveUpdate& driveUpdate,
+        const RE::NiTransform& rawHandWorld,
+        const RE::NiTransform& heldVisualNodeWorld,
+        bool heldVisualNodeFromPresentedPose,
+        float deltaTime)
+    {
+        /*
+         * Per-game-frame render-clock witness (2026-09-02 stick-locomotion
+         * stutter hunt). Every earlier probe measured physics-side state; the
+         * player compares the rendered hand and held mesh against the room.
+         * This row records, for one game frame: the room basis and its step,
+         * the raw hand, the drive target, the pose the scene writer will
+         * present, the hand ROCK published to FRIK, the residual riding on the
+         * presented pose, and the engine physics schedule that will consume
+         * the same frame. Offline: room-relative steps of presentedNode and
+         * visualHand are the perceived jitter; residualStep is the motor
+         * ripple; dtGame/havokRaw is the velocity-pulse ratio;
+         * nodeVsPrevPresented verifies the writer landed last frame's pose.
+         */
+        const auto& runtime = runtime_state::currentFrame();
+        const auto physicsTiming = havok_physics_timing::sampleCurrentTiming();
+        const bool sameTrace =
+            _hasHeldRenderClockProbeSample && _heldRenderClockProbeTraceId == _grabFrame.traceId;
+
+        RE::NiTransform residual = makeIdentityTransform();
+        if (driveUpdate.hasPresentedBodyWorld) {
+            residual = multiplyTransforms(invertTransform(driveUpdate.desiredBodyWorld), driveUpdate.presentedBodyWorld);
+        }
+        const float residualGameUnits = driveUpdate.hasPresentedBodyWorld ?
+            pointDistanceGameUnits(residual.translate, RE::NiPoint3{}) :
+            -1.0f;
+        const float residualDegrees = driveUpdate.hasPresentedBodyWorld ?
+            rotationDeltaDegrees(residual.rotate, makeIdentityTransform().rotate) :
+            -1.0f;
+        float residualStepGameUnits = -1.0f;
+        float residualStepDegrees = -1.0f;
+        float nodeVsPrevPresentedGameUnits = -1.0f;
+        if (sameTrace) {
+            if (driveUpdate.hasPresentedBodyWorld) {
+                residualStepGameUnits = pointDistanceGameUnits(residual.translate, _heldRenderClockProbeResidual.translate);
+                residualStepDegrees = rotationDeltaDegrees(residual.rotate, _heldRenderClockProbeResidual.rotate);
+            }
+            if (_grabFrame.heldNode) {
+                nodeVsPrevPresentedGameUnits =
+                    pointDistanceGameUnits(_grabFrame.heldNode->world.translate, _heldRenderClockProbePresentedNode.translate);
+            }
+        }
+        const RE::NiPoint3 nodeNow = _grabFrame.heldNode ? _grabFrame.heldNode->world.translate : RE::NiPoint3{};
+        const float roomStepGameUnits = pointDistanceGameUnits(runtime.playerSpace.deltaGameUnits, RE::NiPoint3{});
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} HELD_RENDER_CLOCK: trace={} frame={} dtGame={:.6f} havokRaw={:.6f} havokSub={:.6f} substeps={} room=({:.3f},{:.3f},{:.3f}) roomStep={:.4f} moving={} rawHand=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) presented={} presentedNode=({:.3f},{:.3f},{:.3f}) nodeNow=({:.3f},{:.3f},{:.3f}) nodeVsPrevPresented={:.4f}gu visualHand=({:.3f},{:.3f},{:.3f}) residual={:.4f}gu/{:.3f}deg residualStep={:.4f}gu/{:.3f}deg",
+            handName(),
+            _grabFrame.traceId,
+            runtime.frameIndex,
+            deltaTime,
+            physicsTiming.rawDeltaSeconds,
+            physicsTiming.substepDeltaSeconds,
+            physicsTiming.substepCount,
+            runtime.playerSpace.world.translate.x,
+            runtime.playerSpace.world.translate.y,
+            runtime.playerSpace.world.translate.z,
+            roomStepGameUnits,
+            runtime.playerSpace.moving ? "yes" : "no",
+            rawHandWorld.translate.x,
+            rawHandWorld.translate.y,
+            rawHandWorld.translate.z,
+            driveUpdate.desiredBodyWorld.translate.x,
+            driveUpdate.desiredBodyWorld.translate.y,
+            driveUpdate.desiredBodyWorld.translate.z,
+            heldVisualNodeFromPresentedPose ? "yes" : "no",
+            heldVisualNodeWorld.translate.x,
+            heldVisualNodeWorld.translate.y,
+            heldVisualNodeWorld.translate.z,
+            nodeNow.x,
+            nodeNow.y,
+            nodeNow.z,
+            nodeVsPrevPresentedGameUnits,
+            _grabVisualHandTransform.translate.x,
+            _grabVisualHandTransform.translate.y,
+            _grabVisualHandTransform.translate.z,
+            residualGameUnits,
+            residualDegrees,
+            residualStepGameUnits,
+            residualStepDegrees);
+
+        if (heldVisualNodeFromPresentedPose) {
+            _heldRenderClockProbeTraceId = _grabFrame.traceId;
+            _heldRenderClockProbePresentedNode = heldVisualNodeWorld;
+            _heldRenderClockProbeResidual = residual;
+            _hasHeldRenderClockProbeSample = true;
+        } else {
+            _hasHeldRenderClockProbeSample = false;
+        }
+    }
+
     bool Hand::updateHeldVisualPresentation(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float deltaTime,
-        float pivotTrackingErrorGameUnits,
-        bool hasPivotTrackingError,
-        bool heldMotorContactSoftening,
+        const HeldDriveUpdate& driveUpdate,
         const GrabReleaseContext& releaseContext,
         bool& outConvergingAcquisitionPhase)
     {
+        const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
+        const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
+        const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
         tickHeldBodyContact();
         outConvergingAcquisitionPhase =
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||
@@ -12111,7 +12218,21 @@ namespace rock
             visualPublishDecision.apply) {
             RE::NiTransform heldVisualNodeWorld{};
             bool hasHeldVisualNodeWorld = false;
-            if (_grabFrame.heldNode) {
+            bool heldVisualNodeFromPresentedPose = false;
+            if (driveUpdate.hasPresentedBodyWorld) {
+                /*
+                 * Pose the hand on the pose the scene writer presents THIS
+                 * frame. heldNode->world still holds the previous frame's
+                 * presented pose here (the writer runs after physics), so
+                 * reading it would put the rendered hand one locomotion step
+                 * behind the held mesh and the skeleton -- the per-hand arm
+                 * stutter measured during stick locomotion.
+                 */
+                heldVisualNodeWorld =
+                    deriveNodeWorldFromBodyWorld(driveUpdate.presentedBodyWorld, _grabFrame.authority.bodyLocal);
+                hasHeldVisualNodeWorld = true;
+                heldVisualNodeFromPresentedPose = true;
+            } else if (_grabFrame.heldNode) {
                 heldVisualNodeWorld = _grabFrame.heldNode->world;
                 hasHeldVisualNodeWorld = true;
             } else {
@@ -12220,6 +12341,14 @@ namespace rock
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
                     _hasLastPublishedGrabVisualHandTransform = true;
                     clearGrabVisualReturn("active-grab-authority-acquired", false);
+                }
+                if (g_rockConfig.rockDebugGrabFrameLogging) {
+                    logHeldRenderClockProbe(
+                        driveUpdate,
+                        handWorldTransform,
+                        heldVisualNodeWorld,
+                        heldVisualNodeFromPresentedPose,
+                        deltaTime);
                 }
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
@@ -13216,17 +13345,12 @@ namespace rock
                 driveUpdate)) {
             return;
         }
-        const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
-        const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
-        const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
         bool convergingAcquisitionPhase = false;
         if (!updateHeldVisualPresentation(
                 world,
                 handWorldTransform,
                 deltaTime,
-                pivotTrackingErrorGameUnits,
-                hasPivotTrackingError,
-                heldMotorContactSoftening,
+                driveUpdate,
                 releaseContext,
                 convergingAcquisitionPhase)) {
             return;
