@@ -1976,6 +1976,10 @@ namespace rock
                 supportGrip.supportInputBaseline.weaponWorldAtCapture;
         }
 
+        // Firing-grip reattach: ease the rendered part-carry pose into this
+        // two-hand solve; both locked hands ride the eased weapon.
+        appliedWeaponWorld = resolveWeaponPoseHandoffBlend(appliedWeaponWorld, dt);
+
         if (!applyWeaponVisualAuthority(weaponNode, appliedWeaponWorld)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK visual weapon authority failed");

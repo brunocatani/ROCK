@@ -350,6 +350,28 @@ namespace rock::hand_visual_lerp_math
         return result;
     }
 
+    /*
+     * Handoff residual: a replacement solve takes over a rendered pose (the
+     * firing grip detaches into part carry, or reattaches into the two-hand
+     * solve). The residual is the rendered pose expressed in the solved
+     * frame. Decaying it to identity while the solve keeps moving starts the
+     * presentation exactly on the last rendered pose, rides the live hands
+     * during the blend, and ends exactly on the live solve.
+     */
+    template <class Transform>
+    inline Transform captureHandoffResidualLocal(const Transform& solvedWorld, const Transform& renderedWorld)
+    {
+        return transform_math::composeTransforms(transform_math::invertTransform(solvedWorld), renderedWorld);
+    }
+
+    template <class Transform>
+    inline Transform applyHandoffResidual(const Transform& solvedWorld, const Transform& residualLocal, float alpha)
+    {
+        return transform_math::composeTransforms(
+            solvedWorld,
+            interpolateTransform(residualLocal, transform_math::makeIdentityTransform<Transform>(), alpha));
+    }
+
     enum class VisualReturnDriveStatus : std::uint8_t
     {
         Inactive,

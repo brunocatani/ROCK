@@ -979,6 +979,20 @@ namespace rock
             bool followsAuthoredPrimaryGrip{ false };
         };
 
+        /*
+         * Residual blend from the last rendered weapon pose into a replacement
+         * solve (firing-grip detach into part carry, reattach into the
+         * two-hand solve). Armed by the transition, captured by the first
+         * solved publication, value-only: the generation witness fails it
+         * closed when the weapon changes underneath.
+         */
+        struct WeaponPoseHandoffBlendState
+        {
+            hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> residual{};
+            std::uint64_t weaponGenerationKey{ 0 };
+            bool armed{ false };
+        };
+
         struct ScopeSafeHandFrameDiagnostic
         {
             RE::NiTransform rootHandWorld{};
@@ -1711,6 +1725,18 @@ namespace rock
             bool restoreBlockers,
             bool preserveAuthoredPrimaryPose = false);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
+        /*
+         * Weapon pose handoff blend. Arm at the grip transition; the solve
+         * that publishes next resolves its pose through the blend, which
+         * captures the residual against the last rendered pose on that first
+         * call and slerps it out over the shared equipped-weapon return
+         * timing. A residual inside the exact-handoff tolerance never blends.
+         */
+        void armWeaponPoseHandoffBlend(const char* reason);
+        [[nodiscard]] RE::NiTransform resolveWeaponPoseHandoffBlend(
+            const RE::NiTransform& solvedWeaponWorld,
+            float dt);
+        void clearWeaponPoseHandoffBlend(const char* reason, bool logCancellation);
         bool tryResolveAuthoredPrimaryWeaponReturnTargetLocal(
             RE::NiNode* weaponNode,
             RE::NiNode* nativeParent,
@@ -2036,6 +2062,7 @@ namespace rock
             // include the previous render interval's collision presentation.
             std::array<bool, 2> weaponCollisionHandPresentationFromPreviousFrame{};
             ReturningWeaponVisualState returningWeapon{};
+            WeaponPoseHandoffBlendState weaponHandoff{};
             RE::NiTransform lastRenderedWeaponWorld{};
             bool hasLastRenderedWeaponWorld{ false };
             LockedHandVisualLerpState primaryHandLerp{};

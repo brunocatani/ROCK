@@ -520,6 +520,98 @@ int main()
     }
 
     {
+        // Weapon pose handoff residual: firing-grip detach into part carry
+        // and reattach into the two-hand solve ease from the rendered pose.
+        const TestTransform identity =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        TestTransform renderedWeapon = identity;
+        renderedWeapon.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(TestVector3{ 0.3f, 0.2f, -0.9f }),
+            40.0f);
+        renderedWeapon.translate = { 10.0f, -5.0f, 30.0f };
+        TestTransform solvedWeapon = identity;
+        solvedWeapon.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(TestVector3{ -0.5f, 0.7f, 0.4f }),
+            -25.0f);
+        solvedWeapon.translate = { 14.0f, -1.0f, 27.0f };
+
+        const TestTransform residual =
+            rock::hand_visual_lerp_math::captureHandoffResidualLocal(
+                solvedWeapon,
+                renderedWeapon);
+        ok &= expectTransformNear(
+            "handoff residual alpha zero reproduces the rendered pose",
+            rock::hand_visual_lerp_math::applyHandoffResidual(
+                solvedWeapon,
+                residual,
+                0.0f),
+            renderedWeapon);
+        ok &= expectTransformNear(
+            "handoff residual alpha one lands on the solve",
+            rock::hand_visual_lerp_math::applyHandoffResidual(
+                solvedWeapon,
+                residual,
+                1.0f),
+            solvedWeapon);
+
+        TestTransform movedSolvedWeapon = identity;
+        movedSolvedWeapon.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(TestVector3{ 0.1f, 0.9f, 0.3f }),
+            15.0f);
+        movedSolvedWeapon.translate = { 20.0f, 3.0f, 26.0f };
+        ok &= expectTransformNear(
+            "handoff residual rides the moved solve",
+            rock::hand_visual_lerp_math::applyHandoffResidual(
+                movedSolvedWeapon,
+                residual,
+                0.0f),
+            rock::transform_math::composeTransforms(
+                movedSolvedWeapon,
+                residual));
+
+        const float fullResidualDegrees =
+            rock::hand_visual_lerp_math::rotationDistanceDegrees(
+                residual,
+                identity);
+        ok &= expectTrue(
+            "handoff residual carries a measurable rotation",
+            fullResidualDegrees > 10.0f);
+        const TestTransform halfBlended =
+            rock::hand_visual_lerp_math::applyHandoffResidual(
+                solvedWeapon,
+                residual,
+                0.5f);
+        ok &= expectNear(
+            "handoff residual half alpha slerps half the rotation",
+            rock::hand_visual_lerp_math::rotationDistanceDegrees(
+                halfBlended,
+                solvedWeapon),
+            fullResidualDegrees * 0.5f,
+            0.01f);
+
+        const float residualDuration =
+            rock::hand_visual_lerp_math::computeVisualReturnDuration(
+                residual,
+                identity,
+                rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+        ok &= expectTrue(
+            "handoff residual outside tolerance blends within the return window",
+            residualDuration >= 0.12f && residualDuration <= 0.20f);
+        TestTransform exactResidual = identity;
+        exactResidual.translate = { 0.2f, -0.1f, 0.3f };
+        exactResidual.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(TestVector3{ 0.0f, 0.0f, 1.0f }),
+            2.0f);
+        ok &= expectNear(
+            "handoff residual inside tolerance needs no blend",
+            rock::hand_visual_lerp_math::computeVisualReturnDuration(
+                exactResidual,
+                identity,
+                rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig),
+            0.0f);
+    }
+
+    {
         TestTransform supportInputAtAttach =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         supportInputAtAttach.rotate = makeAxisAngleRotation(

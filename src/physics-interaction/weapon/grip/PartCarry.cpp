@@ -160,6 +160,10 @@ namespace rock
         _partCarry.pivotIsLeft = carryHandIsLeft;
         _partCarry.detachAuthority = _handlingSettings.detachAuthority;
         _partCarry.gripSeparationWorld = 0.0f;
+        // The calibrated pose handoff yields a zero residual and no blend;
+        // the legacy relation eases from the rendered two-hand pose instead
+        // of jumping to the support hand's captured relation.
+        armWeaponPoseHandoffBlend("primary-detach-part-carry");
         _session.state = TwoHandedState::PartCarry;
         recordFiringGripDetachedHaptic();
         if (poseHandoffReady) {
@@ -353,6 +357,7 @@ namespace rock
                         transitionToInactive(false);
                         return;
                     }
+                    armWeaponPoseHandoffBlend("firing-grip-reattach");
                     updateFullWeaponAuthorityGrip(weaponNode, dt);
                 } else {
                     if (usesNativeRightCarry() && ownsWeaponTransform()) {
@@ -730,6 +735,7 @@ namespace rock
             // the solved transform becomes next frame's base.
             RE::NiTransform stabilizedWeaponWorld = solved.weaponWorldTransform;
             stabilizedWeaponWorld.rotate = orthonormalizeStoredRotation(stabilizedWeaponWorld.rotate);
+            stabilizedWeaponWorld = resolveWeaponPoseHandoffBlend(stabilizedWeaponWorld, dt);
 
             if (!applyWeaponVisualAuthority(weaponNode, stabilizedWeaponWorld)) {
                 _hasSolvedWeaponTransform = false;
@@ -767,6 +773,9 @@ namespace rock
                 transitionToInactive(false);
                 return false;
             }
+            // Firing-grip detach: ease the rendered two-hand pose into the
+            // support hand's carry relation.
+            solvedWeaponWorld = resolveWeaponPoseHandoffBlend(solvedWeaponWorld, dt);
 
             if (!applyWeaponVisualAuthority(weaponNode, solvedWeaponWorld)) {
                 _hasSolvedWeaponTransform = false;

@@ -449,6 +449,134 @@ namespace rock
         clearHandVisualReturn(true, reason, logCancellation);
         clearHandVisualReturn(false, reason, logCancellation);
         clearWeaponVisualReturn(reason, logCancellation, restoreBlockers);
+        clearWeaponPoseHandoffBlend(reason, logCancellation);
+    }
+
+    void TwoHandedGrip::armWeaponPoseHandoffBlend(const char* reason)
+    {
+        auto& state = _visuals.weaponHandoff;
+        state = {};
+        if (!hand_visual_lerp_math::kEquippedWeaponReturnEnabled ||
+            _session.weaponGenerationKey == 0 ||
+            !_visuals.hasLastRenderedWeaponWorld ||
+            !isInvertibleTransform(_visuals.lastRenderedWeaponWorld)) {
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: weapon handoff blend not armed reason={} renderedFrame={}",
+                reason ? reason : "unknown",
+                _visuals.hasLastRenderedWeaponWorld ? "available" : "missing");
+            return;
+        }
+        state.armed = true;
+        state.weaponGenerationKey = _session.weaponGenerationKey;
+        ROCK_LOG_DEBUG(Weapon,
+            "TwoHandedGrip: weapon handoff blend armed reason={} generation={:016X}",
+            reason ? reason : "unknown",
+            state.weaponGenerationKey);
+    }
+
+    RE::NiTransform TwoHandedGrip::resolveWeaponPoseHandoffBlend(
+        const RE::NiTransform& solvedWeaponWorld,
+        const float dt)
+    {
+        auto& state = _visuals.weaponHandoff;
+        if (!state.armed && !state.residual.active) {
+            return solvedWeaponWorld;
+        }
+        if (state.weaponGenerationKey != _session.weaponGenerationKey ||
+            !isInvertibleTransform(solvedWeaponWorld)) {
+            clearWeaponPoseHandoffBlend("weapon-identity-or-solve-invalid", true);
+            return solvedWeaponWorld;
+        }
+
+        const RE::NiTransform identity =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
+        if (state.armed) {
+            state.armed = false;
+            const RE::NiTransform residualLocal =
+                hand_visual_lerp_math::captureHandoffResidualLocal(
+                    solvedWeaponWorld,
+                    _visuals.lastRenderedWeaponWorld);
+            if (!isFiniteTransform(residualLocal)) {
+                clearWeaponPoseHandoffBlend("non-finite-residual", true);
+                return solvedWeaponWorld;
+            }
+            const float residualDistance =
+                hand_visual_lerp_math::distanceGameUnits(
+                    residualLocal.translate,
+                    identity.translate);
+            const float residualAngle =
+                hand_visual_lerp_math::rotationDistanceDegrees(
+                    residualLocal,
+                    identity);
+            state.residual.begin(residualLocal);
+            state.residual.durationSeconds =
+                hand_visual_lerp_math::computeVisualReturnDuration(
+                    residualLocal,
+                    identity,
+                    hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+            state.residual.durationInitialized = true;
+            if (state.residual.durationSeconds <= 0.0f) {
+                // Inside the exact-handoff tolerance (the calibrated detach
+                // pose handoff): publish the solve unchanged.
+                ROCK_LOG_DEBUG(Weapon,
+                    "TwoHandedGrip: weapon handoff blend skipped residual=({:.3f}gu,{:.2f}deg)",
+                    residualDistance,
+                    residualAngle);
+                state = {};
+                return solvedWeaponWorld;
+            }
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: weapon handoff blend started residual=({:.2f}gu,{:.1f}deg) duration={:.3f}s",
+                residualDistance,
+                residualAngle,
+                state.residual.durationSeconds);
+            // First publication continues the rendered pose exactly; the
+            // residual starts decaying on the next update.
+            const RE::NiTransform continued =
+                hand_visual_lerp_math::applyHandoffResidual(
+                    solvedWeaponWorld,
+                    residualLocal,
+                    0.0f);
+            if (!isFiniteTransform(continued)) {
+                clearWeaponPoseHandoffBlend("non-finite-continued-pose", true);
+                return solvedWeaponWorld;
+            }
+            return continued;
+        }
+
+        const auto advanced = hand_visual_lerp_math::advanceVisualReturn(
+            state.residual,
+            identity,
+            dt,
+            hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+        if (advanced.reachedTarget) {
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: weapon handoff blend completed duration={:.3f}s",
+                state.residual.durationSeconds);
+            state = {};
+            return solvedWeaponWorld;
+        }
+        const RE::NiTransform blended =
+            transform_math::composeTransforms(
+                solvedWeaponWorld,
+                advanced.transform);
+        if (!isFiniteTransform(blended)) {
+            clearWeaponPoseHandoffBlend("non-finite-blended-pose", true);
+            return solvedWeaponWorld;
+        }
+        return blended;
+    }
+
+    void TwoHandedGrip::clearWeaponPoseHandoffBlend(const char* reason, const bool logCancellation)
+    {
+        auto& state = _visuals.weaponHandoff;
+        const bool wasPending = state.armed || state.residual.active;
+        state = {};
+        if (wasPending && logCancellation) {
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: weapon handoff blend cancelled reason={}",
+                reason ? reason : "unknown");
+        }
     }
 
     bool TwoHandedGrip::tryResolveAuthoredPrimaryWeaponReturnTargetLocal(
@@ -544,15 +672,24 @@ namespace rock
 
         if (!state.initialized) {
             const RE::NiTransform startWorld = (liveHandWorld && isFiniteTransform(*liveHandWorld)) ? *liveHandWorld : targetWorld;
-            const float initialDistance =
-                hand_visual_lerp_math::distanceGameUnits(startWorld.translate, targetWorld.translate);
+            /*
+             * The INI keys map the seat distance. The angle mapping shares the
+             * equipped-weapon return bounds so a hand that is already at the
+             * grip point but twisted (a firing-grip reattach with the palm on
+             * the grip) still slerps into the seat instead of snapping.
+             */
             const float durationSeconds =
-                hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(
-                    initialDistance,
-                    g_rockConfig.rockWeaponSupportGripHandLerpTimeMin,
-                    g_rockConfig.rockWeaponSupportGripHandLerpTimeMax,
-                    g_rockConfig.rockWeaponSupportGripHandLerpMinDistance,
-                    g_rockConfig.rockWeaponSupportGripHandLerpMaxDistance);
+                hand_visual_lerp_math::computeVisualReturnDuration(
+                    startWorld,
+                    targetWorld,
+                    hand_visual_lerp_math::VisualReturnConfig{
+                        .minSeconds = g_rockConfig.rockWeaponSupportGripHandLerpTimeMin,
+                        .maxSeconds = g_rockConfig.rockWeaponSupportGripHandLerpTimeMax,
+                        .minDistanceGameUnits = g_rockConfig.rockWeaponSupportGripHandLerpMinDistance,
+                        .maxDistanceGameUnits = g_rockConfig.rockWeaponSupportGripHandLerpMaxDistance,
+                        .minAngleDegrees = hand_visual_lerp_math::kEquippedWeaponReturnConfig.minAngleDegrees,
+                        .maxAngleDegrees = hand_visual_lerp_math::kEquippedWeaponReturnConfig.maxAngleDegrees,
+                    });
             if (durationSeconds <= 0.0f) {
                 state = {};
                 state.lastAlpha = 1.0f;

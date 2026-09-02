@@ -352,6 +352,7 @@ namespace rock
         _partCarry.detachAuthority =
             immersive_weapon_policy::DetachAuthority::None;
         _partCarry.gripSeparationWorld = 0.0f;
+        clearWeaponPoseHandoffBlend("transition-to-primary-only", true);
         _hasSolvedWeaponTransform = _visuals.returningWeapon.localTransition.active && _visuals.hasLastRenderedWeaponWorld;
         if (_hasSolvedWeaponTransform) {
             _lastSolvedWeaponTransform = _visuals.lastRenderedWeaponWorld;
@@ -1777,6 +1778,19 @@ namespace rock
             recordFiringGripDetachedHaptic();
         }
         setFiringHand(supportHandIsLeft, "support-grip-promotion");
+        if (ownsWeaponTransform()) {
+            /*
+             * The promoted hand leaves the two-hand solve for one-hand carry.
+             * Ease the rendered two-hand pose into that carry the same way a
+             * support release does: the native right baseline return, or the
+             * left carry's wand-aimed return.
+             */
+            if (usesNativeRightCarry()) {
+                beginWeaponVisualReturn("support-grip-promotion");
+            } else {
+                beginLeftFiringSupportReleaseReturn("support-grip-promotion");
+            }
+        }
         if (!transitionToPrimaryOnly(weaponNode, _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey, "firing-grip-hand-promotion")) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: firing-grip promotion failed to enter primary-only; clearing authority");
             transitionToInactive(false);

@@ -811,6 +811,7 @@ namespace rock
         _visuals.hasLastPublishedHandWorld = {};
         _visuals.lastRenderedWeaponWorld = {};
         _visuals.hasLastRenderedWeaponWorld = false;
+        _visuals.weaponHandoff = {};
         _leftCarry.recoilWorldDelta =
             transform_math::makeIdentityTransform<RE::NiTransform>();
         _leftCarry.observedRecoilSampleSequence =
@@ -922,6 +923,7 @@ namespace rock
         clearDynamicSupportAcquisition(
             "transition-to-inactive",
             true);
+        clearWeaponPoseHandoffBlend("transition-to-inactive", true);
         const bool weaponReturnActive = _visuals.returningWeapon.localTransition.active;
         // Weapon-node topology always returns to native immediately. A visual
         // return owns only ROCK's later transform publication, never hFRIK's
