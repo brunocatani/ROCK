@@ -744,7 +744,8 @@ namespace rock
         const std::uint32_t providerGeneration,
         const std::uint32_t collisionGeneration,
         const TargetClass targetClass,
-        const ContactSource contactSource)
+        const ContactSource contactSource,
+        const bool closeObjectCandidate)
     {
         _lastAttemptReport = {
             .failure = AttemptFailure::InvalidInput,
@@ -807,11 +808,16 @@ namespace rock
                 match);
         if (!providerMatched) {
             if (!global_surface_grab_policy::shouldUseFallback(
-                    _globalSurfaceGrabEnabled,
-                    providerMatched,
-                    targetClass == TargetClass::Wildcard,
-                    contactSource == ContactSource::DynamicSurface,
-                    layer)) {
+                    global_surface_grab_policy::FallbackContext{
+                        .enabled = _globalSurfaceGrabEnabled,
+                        .providerMatched = providerMatched,
+                        .wildcardPass =
+                            targetClass == TargetClass::Wildcard,
+                        .dynamicSurfaceContact =
+                            contactSource == ContactSource::DynamicSurface,
+                        .closeObjectCandidate = closeObjectCandidate,
+                        .collisionLayer = layer,
+                    })) {
                 _lastAttemptReport.failure =
                     AttemptFailure::TargetUnavailable;
                 return false;

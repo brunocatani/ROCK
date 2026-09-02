@@ -700,6 +700,17 @@ namespace rock
             handState == HandState::SelectedFar;
         const bool touchGrabPhysicsWritesAllowed =
             physicsWritesAllowedForWorld(frame.hknpWorld);
+        /*
+         * One grip edge has a strict candidate order: provider touch targets,
+         * an eligible close-selected object, then the built-in world-surface
+         * fallback. The close selection was classified as grabbable by the
+         * selection path; a far selection does not suppress an
+         * intentional surface grab at the hand.
+         */
+        const bool closeObjectCandidate =
+            handState == HandState::SelectedClose &&
+            hand.hasSelection() &&
+            !hand.getSelection().isFarSelection;
         const bool canTryTouchGrab =
             rawGrabInput.pressed &&
             rawGrabInput.held &&
@@ -766,7 +777,8 @@ namespace rock
                                         providerGeneration,
                                         collisionGeneration,
                                         targetClass,
-                                        source)) {
+                                        source,
+                                        closeObjectCandidate)) {
                                     return true;
                                 }
                             }

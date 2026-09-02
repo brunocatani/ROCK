@@ -12,19 +12,26 @@ namespace rock::global_surface_grab_policy
     inline constexpr std::uint64_t kLeftTargetId = 0x474C'4F42'4C45'4654ULL;
     inline constexpr std::uint32_t kTargetGeneration = 1;
 
-    [[nodiscard]] inline constexpr bool shouldUseFallback(
-        const bool enabled,
-        const bool providerMatched,
-        const bool wildcardPass,
-        const bool dynamicSurfaceContact,
-        const std::uint32_t collisionLayer) noexcept
+    struct FallbackContext
     {
-        return enabled &&
-               !providerMatched &&
-               wildcardPass &&
-               dynamicSurfaceContact &&
+        bool enabled = false;
+        bool providerMatched = false;
+        bool wildcardPass = false;
+        bool dynamicSurfaceContact = false;
+        bool closeObjectCandidate = false;
+        std::uint32_t collisionLayer = 0xFFFF'FFFFu;
+    };
+
+    [[nodiscard]] inline constexpr bool shouldUseFallback(
+        const FallbackContext& context) noexcept
+    {
+        return context.enabled &&
+               !context.providerMatched &&
+               !context.closeObjectCandidate &&
+               context.wildcardPass &&
+               context.dynamicSurfaceContact &&
                collision_layer_policy::isDynamicHandProxySurfaceLayer(
-                   collisionLayer);
+                   context.collisionLayer);
     }
 
     /*

@@ -89,54 +89,45 @@ int main()
 
     using namespace rock::collision_layer_policy;
     using namespace rock::global_surface_grab_policy;
-    assert(shouldUseFallback(
-        true,
-        false,
-        true,
-        true,
-        FO4_LAYER_STATIC));
-    assert(shouldUseFallback(
-        true,
-        false,
-        true,
-        true,
-        FO4_LAYER_ANIMSTATIC));
-    assert(shouldUseFallback(
-        true,
-        false,
-        true,
-        true,
-        FO4_LAYER_TREES));
-    assert(!shouldUseFallback(
-        false,
-        false,
-        true,
-        true,
-        FO4_LAYER_STATIC));
-    assert(!shouldUseFallback(
-        true,
-        true,
-        true,
-        true,
-        FO4_LAYER_STATIC));
-    assert(!shouldUseFallback(
-        true,
-        false,
-        false,
-        true,
-        FO4_LAYER_STATIC));
-    assert(!shouldUseFallback(
-        true,
-        false,
-        true,
-        false,
-        FO4_LAYER_STATIC));
-    assert(!shouldUseFallback(
-        true,
-        false,
-        true,
-        true,
-        FO4_LAYER_CLUTTER));
+    const FallbackContext validSurfaceFallback{
+        .enabled = true,
+        .wildcardPass = true,
+        .dynamicSurfaceContact = true,
+        .collisionLayer = FO4_LAYER_STATIC,
+    };
+    assert(shouldUseFallback(validSurfaceFallback));
+
+    auto animatedSurfaceFallback = validSurfaceFallback;
+    animatedSurfaceFallback.collisionLayer = FO4_LAYER_ANIMSTATIC;
+    assert(shouldUseFallback(animatedSurfaceFallback));
+
+    auto treeSurfaceFallback = validSurfaceFallback;
+    treeSurfaceFallback.collisionLayer = FO4_LAYER_TREES;
+    assert(shouldUseFallback(treeSurfaceFallback));
+
+    auto disabledFallback = validSurfaceFallback;
+    disabledFallback.enabled = false;
+    assert(!shouldUseFallback(disabledFallback));
+
+    auto providerOwnedTarget = validSurfaceFallback;
+    providerOwnedTarget.providerMatched = true;
+    assert(!shouldUseFallback(providerOwnedTarget));
+
+    auto explicitTargetPass = validSurfaceFallback;
+    explicitTargetPass.wildcardPass = false;
+    assert(!shouldUseFallback(explicitTargetPass));
+
+    auto semanticContact = validSurfaceFallback;
+    semanticContact.dynamicSurfaceContact = false;
+    assert(!shouldUseFallback(semanticContact));
+
+    auto clutterContact = validSurfaceFallback;
+    clutterContact.collisionLayer = FO4_LAYER_CLUTTER;
+    assert(!shouldUseFallback(clutterContact));
+
+    auto closeObjectWins = validSurfaceFallback;
+    closeObjectWins.closeObjectCandidate = true;
+    assert(!shouldUseFallback(closeObjectWins));
     assert(canFollowUnclassifiedMotion(true, true));
     assert(!canFollowUnclassifiedMotion(false, true));
     assert(!canFollowUnclassifiedMotion(true, false));

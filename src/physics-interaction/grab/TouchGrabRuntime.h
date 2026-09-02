@@ -25,8 +25,9 @@ namespace rock
 
     /*
      * TouchGrabRuntime is intentionally separate from Hand's loose-object
-     * state machine. Provider targets retain first authority; the optional
-     * built-in surface policy supplies only a FixedAnchor wildcard fallback.
+     * state machine. Provider targets retain first authority, then a selected
+     * close object, while the optional built-in surface policy supplies only a
+     * FixedAnchor wildcard fallback.
      * Mechanisms receive one stock limited joint plus finite hand attachment,
      * while FixedAnchor latches the rendered hand and dynamic hand twins
      * relative to the touched target without changing that target. This keeps
@@ -132,7 +133,8 @@ namespace rock
             std::uint32_t providerGeneration,
             std::uint32_t collisionGeneration,
             TargetClass targetClass,
-            ContactSource contactSource);
+            ContactSource contactSource,
+            bool closeObjectCandidate);
 
         void service(
             RE::bhkWorld* bhkWorld,
