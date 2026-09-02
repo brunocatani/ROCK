@@ -1409,9 +1409,7 @@ namespace rock::debug
                    role == BodyOverlayRole::DynamicWeaponProxy ||
                    role == BodyOverlayRole::FocusedWeaponPart ||
                    role == BodyOverlayRole::RightGrabAuthorityProxy ||
-                   role == BodyOverlayRole::LeftGrabAuthorityProxy ||
-                   role == BodyOverlayRole::RightGrabPivotSourceCollider ||
-                   role == BodyOverlayRole::LeftGrabPivotSourceCollider;
+                   role == BodyOverlayRole::LeftGrabAuthorityProxy;
         }
 
         OverlayRenderSettings captureOverlayRenderSettings()
@@ -1441,7 +1439,7 @@ namespace rock::debug
             settings.pipelineLimits.maxCompletedJobs = settings.limits.maxShapeCompletedJobs;
             settings.pipelineLimits.maxCacheEntries = settings.limits.maxShapeCacheEntries;
             settings.pipelineLimits.maxGpuBytes = settings.limits.maxShapeCacheBytes;
-            settings.duplicateTextPerEye = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
+            settings.duplicateTextPerEye = true;
             settings.verboseLogging = g_rockConfig.rockDebugVerboseLogging;
             return settings;
         }
@@ -2499,18 +2497,6 @@ namespace rock::debug
                 color[2] = 0.95f;
                 color[3] = 0.92f;
                 break;
-            case BodyOverlayRole::RightGrabPivotSourceCollider:
-                color[0] = 0.05f;
-                color[1] = 0.95f;
-                color[2] = 1.0f;
-                color[3] = 0.42f;
-                break;
-            case BodyOverlayRole::LeftGrabPivotSourceCollider:
-                color[0] = 1.0f;
-                color[1] = 0.25f;
-                color[2] = 0.95f;
-                color[3] = 0.42f;
-                break;
             case BodyOverlayRole::Target:
                 color[0] = 1.0f;
                 color[1] = 0.85f;
@@ -2546,14 +2532,8 @@ namespace rock::debug
             case AxisOverlayRole::LeftWeaponSupportGrip:
             case AxisOverlayRole::RightFrikAppliedHand:
             case AxisOverlayRole::LeftFrikAppliedHand:
-            case AxisOverlayRole::RightGrabHeldRelativeHandTarget:
-            case AxisOverlayRole::LeftGrabHeldRelativeHandTarget:
             case AxisOverlayRole::RightGrabRockVisualTarget:
             case AxisOverlayRole::LeftGrabRockVisualTarget:
-            case AxisOverlayRole::RightGrabDesiredObject:
-            case AxisOverlayRole::LeftGrabDesiredObject:
-            case AxisOverlayRole::RightGrabHeldNode:
-            case AxisOverlayRole::LeftGrabHeldNode:
                 return kColliderAxisLength;
             case AxisOverlayRole::NativeScopeLiveCamera:
                 return 14.0f;
@@ -2562,43 +2542,12 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabPalmGeneratedDirect:
             case AxisOverlayRole::LeftGrabPalmGeneratedDirect:
                 return 7.0f;
-            case AxisOverlayRole::RightGrabPalmAuthorityFrame:
-            case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
-                return 11.0f;
             case AxisOverlayRole::RightGrabAuthorityProxyTarget:
             case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
                 return 13.0f;
-            case AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget:
-            case AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
-                return 9.0f;
-            case AxisOverlayRole::RightGrabProxyReadback:
-            case AxisOverlayRole::LeftGrabProxyReadback:
-                return 15.0f;
-            case AxisOverlayRole::RightGrabForceTorqueLiveBody:
-            case AxisOverlayRole::LeftGrabForceTorqueLiveBody:
-            case AxisOverlayRole::RightGrabForceTorqueDesiredBody:
-            case AxisOverlayRole::LeftGrabForceTorqueDesiredBody:
-                return 10.0f;
-            case AxisOverlayRole::RightGrabMotorConstraintA:
-            case AxisOverlayRole::LeftGrabMotorConstraintA:
-            case AxisOverlayRole::RightGrabMotorConstraintB:
-            case AxisOverlayRole::LeftGrabMotorConstraintB:
-                return 8.0f;
-            case AxisOverlayRole::RightGrabMotorAtomTargetBody:
-            case AxisOverlayRole::LeftGrabMotorAtomTargetBody:
-                return 12.0f;
             case AxisOverlayRole::RightGrabMotorColumnTargetBody:
             case AxisOverlayRole::LeftGrabMotorColumnTargetBody:
                 return 9.0f;
-            case AxisOverlayRole::RightGrabMotorRelationInputBody:
-            case AxisOverlayRole::LeftGrabMotorRelationInputBody:
-                return 7.0f;
-            case AxisOverlayRole::RightGrabMotorRelationInverseBody:
-            case AxisOverlayRole::LeftGrabMotorRelationInverseBody:
-                return 13.0f;
-            case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
-            case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
-                return 16.0f;
             case AxisOverlayRole::TargetBody:
                 return kTargetAxisLength;
             }
@@ -2618,57 +2567,18 @@ namespace rock::debug
             case AxisOverlayRole::LeftWeaponSupportGrip:
             case AxisOverlayRole::RightFrikAppliedHand:
             case AxisOverlayRole::LeftFrikAppliedHand:
-            case AxisOverlayRole::RightGrabHeldRelativeHandTarget:
-            case AxisOverlayRole::LeftGrabHeldRelativeHandTarget:
             case AxisOverlayRole::RightGrabRockVisualTarget:
             case AxisOverlayRole::LeftGrabRockVisualTarget:
-            case AxisOverlayRole::RightGrabDesiredObject:
-            case AxisOverlayRole::LeftGrabDesiredObject:
-            case AxisOverlayRole::RightGrabHeldNode:
-            case AxisOverlayRole::LeftGrabHeldNode:
                 return 0.92f;
             case AxisOverlayRole::RightGrabPalmGeneratedDirect:
             case AxisOverlayRole::LeftGrabPalmGeneratedDirect:
                 return 0.42f;
-            case AxisOverlayRole::RightGrabPalmAuthorityFrame:
-            case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
-                return 0.98f;
             case AxisOverlayRole::RightGrabAuthorityProxyTarget:
             case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
-                return 0.88f;
-            case AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget:
-            case AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
-                return 0.98f;
-            case AxisOverlayRole::RightGrabProxyReadback:
-            case AxisOverlayRole::LeftGrabProxyReadback:
-                return 0.72f;
-            case AxisOverlayRole::RightGrabForceTorqueLiveBody:
-            case AxisOverlayRole::LeftGrabForceTorqueLiveBody:
-                return 0.88f;
-            case AxisOverlayRole::RightGrabForceTorqueDesiredBody:
-            case AxisOverlayRole::LeftGrabForceTorqueDesiredBody:
-                return 0.52f;
-            case AxisOverlayRole::RightGrabMotorConstraintA:
-            case AxisOverlayRole::LeftGrabMotorConstraintA:
-                return 0.96f;
-            case AxisOverlayRole::RightGrabMotorConstraintB:
-            case AxisOverlayRole::LeftGrabMotorConstraintB:
-                return 0.72f;
-            case AxisOverlayRole::RightGrabMotorAtomTargetBody:
-            case AxisOverlayRole::LeftGrabMotorAtomTargetBody:
                 return 0.88f;
             case AxisOverlayRole::RightGrabMotorColumnTargetBody:
             case AxisOverlayRole::LeftGrabMotorColumnTargetBody:
                 return 0.38f;
-            case AxisOverlayRole::RightGrabMotorRelationInputBody:
-            case AxisOverlayRole::LeftGrabMotorRelationInputBody:
-                return 0.30f;
-            case AxisOverlayRole::RightGrabMotorRelationInverseBody:
-            case AxisOverlayRole::LeftGrabMotorRelationInverseBody:
-                return 0.78f;
-            case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
-            case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
-                return 0.98f;
             default:
                 return 1.0f;
             }
@@ -2767,123 +2677,6 @@ namespace rock::debug
                 color[1] = 0.08f;
                 color[2] = 0.04f;
                 break;
-            case MarkerOverlayRole::RightGrabSurfacePoint:
-                color[0] = 0.10f;
-                color[1] = 1.0f;
-                color[2] = 0.90f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::LeftGrabSurfacePoint:
-                color[0] = 1.0f;
-                color[1] = 0.25f;
-                color[2] = 0.95f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightGrabSurfaceNormal:
-            case MarkerOverlayRole::LeftGrabSurfaceNormal:
-                color[0] = 1.0f;
-                color[1] = 0.90f;
-                color[2] = 0.05f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightGrabForceTorqueTargetPivot:
-            case MarkerOverlayRole::LeftGrabForceTorqueTargetPivot:
-                color[0] = 0.05f;
-                color[1] = 1.0f;
-                color[2] = 0.95f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabForceTorqueLivePivot:
-            case MarkerOverlayRole::LeftGrabForceTorqueLivePivot:
-                color[0] = 1.0f;
-                color[1] = 0.92f;
-                color[2] = 0.05f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabForceTorqueCorrection:
-            case MarkerOverlayRole::LeftGrabForceTorqueCorrection:
-                color[0] = 1.0f;
-                color[1] = 0.08f;
-                color[2] = 0.04f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::RightGrabForceTorqueLever:
-            case MarkerOverlayRole::LeftGrabForceTorqueLever:
-                color[0] = 0.92f;
-                color[1] = 0.92f;
-                color[2] = 0.92f;
-                color[3] = 0.78f;
-                break;
-            case MarkerOverlayRole::RightGrabForceTorqueAxis:
-            case MarkerOverlayRole::LeftGrabForceTorqueAxis:
-                color[0] = 1.0f;
-                color[1] = 0.15f;
-                color[2] = 0.95f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::RightGrabMotorAnchorA:
-            case MarkerOverlayRole::LeftGrabMotorAnchorA:
-                color[0] = 0.10f;
-                color[1] = 1.0f;
-                color[2] = 0.95f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabMotorAnchorB:
-            case MarkerOverlayRole::LeftGrabMotorAnchorB:
-                color[0] = 1.0f;
-                color[1] = 0.85f;
-                color[2] = 0.05f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabMotorAtomTargetPivot:
-            case MarkerOverlayRole::LeftGrabMotorAtomTargetPivot:
-                color[0] = 0.25f;
-                color[1] = 0.85f;
-                color[2] = 1.0f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::RightGrabMotorAngularCommand:
-            case MarkerOverlayRole::LeftGrabMotorAngularCommand:
-                color[0] = 1.0f;
-                color[1] = 0.25f;
-                color[2] = 1.0f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::RightGrabMotorTargetBodyDelta:
-            case MarkerOverlayRole::LeftGrabMotorTargetBodyDelta:
-                color[0] = 1.0f;
-                color[1] = 0.28f;
-                color[2] = 0.05f;
-                color[3] = 0.90f;
-                break;
-            case MarkerOverlayRole::RightGrabActivePivotBLiveBody:
-            case MarkerOverlayRole::LeftGrabActivePivotBLiveBody:
-                color[0] = 1.0f;
-                color[1] = 0.72f;
-                color[2] = 0.05f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabActivePivotBDesiredBody:
-            case MarkerOverlayRole::LeftGrabActivePivotBDesiredBody:
-                color[0] = 0.05f;
-                color[1] = 1.0f;
-                color[2] = 0.95f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabActivePivotBVisualNode:
-            case MarkerOverlayRole::LeftGrabActivePivotBVisualNode:
-                color[0] = 0.25f;
-                color[1] = 0.45f;
-                color[2] = 1.0f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabActivePivotBVisualLock:
-            case MarkerOverlayRole::LeftGrabActivePivotBVisualLock:
-                color[0] = 1.0f;
-                color[1] = 0.18f;
-                color[2] = 0.02f;
-                color[3] = 0.96f;
-                break;
             case MarkerOverlayRole::RightGrabAuthorityProxyTarget:
             case MarkerOverlayRole::LeftGrabAuthorityProxyTarget:
                 color[0] = 1.0f;
@@ -2891,94 +2684,12 @@ namespace rock::debug
                 color[2] = 0.05f;
                 color[3] = 0.98f;
                 break;
-            case MarkerOverlayRole::RightGrabAuthorityProxyAppliedTarget:
-            case MarkerOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
-                color[0] = 1.0f;
-                color[1] = 0.42f;
-                color[2] = 0.02f;
-                color[3] = 1.0f;
-                break;
-            case MarkerOverlayRole::RightGrabAuthorityProxyClockDelta:
-            case MarkerOverlayRole::LeftGrabAuthorityProxyClockDelta:
-                color[0] = 1.0f;
-                color[1] = 1.0f;
-                color[2] = 1.0f;
-                color[3] = 0.96f;
-                break;
             case MarkerOverlayRole::RightGrabAuthorityProxyOffset:
             case MarkerOverlayRole::LeftGrabAuthorityProxyOffset:
                 color[0] = 1.0f;
                 color[1] = 0.92f;
                 color[2] = 0.10f;
                 color[3] = 0.90f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceTriangle:
-            case MarkerOverlayRole::LeftGrabPivotSourceTriangle:
-                color[0] = 0.30f;
-                color[1] = 0.90f;
-                color[2] = 1.0f;
-                color[3] = 0.78f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceMeshPoint:
-            case MarkerOverlayRole::LeftGrabPivotSourceMeshPoint:
-                color[0] = 0.12f;
-                color[1] = 1.0f;
-                color[2] = 0.45f;
-                color[3] = 0.98f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceVisualMeshPoint:
-            case MarkerOverlayRole::LeftGrabPivotSourceVisualMeshPoint:
-                color[0] = 0.20f;
-                color[1] = 0.55f;
-                color[2] = 1.0f;
-                color[3] = 0.98f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceCapturePoint:
-            case MarkerOverlayRole::LeftGrabPivotSourceCapturePoint:
-                color[0] = 0.98f;
-                color[1] = 0.98f;
-                color[2] = 0.98f;
-                color[3] = 0.92f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceBodyVisualLock:
-            case MarkerOverlayRole::LeftGrabPivotSourceBodyVisualLock:
-                color[0] = 1.0f;
-                color[1] = 0.38f;
-                color[2] = 0.05f;
-                color[3] = 0.92f;
-                break;
-            case MarkerOverlayRole::RightGrabPivotSourceCaptureMutation:
-            case MarkerOverlayRole::LeftGrabPivotSourceCaptureMutation:
-                color[0] = 0.75f;
-                color[1] = 0.35f;
-                color[2] = 1.0f;
-                color[3] = 0.88f;
-                break;
-            case MarkerOverlayRole::RightGrabFingerProbe:
-                color[0] = 0.45f;
-                color[1] = 1.0f;
-                color[2] = 0.45f;
-                color[3] = 0.75f;
-                break;
-            case MarkerOverlayRole::LeftGrabFingerProbe:
-                color[0] = 1.0f;
-                color[1] = 0.45f;
-                color[2] = 0.95f;
-                color[3] = 0.75f;
-                break;
-            case MarkerOverlayRole::RightGrabFingerPadProbe:
-            case MarkerOverlayRole::LeftGrabFingerPadProbe:
-                color[0] = 1.0f;
-                color[1] = 0.72f;
-                color[2] = 0.08f;
-                color[3] = 0.82f;
-                break;
-            case MarkerOverlayRole::RightGrabFingerSurfaceTarget:
-            case MarkerOverlayRole::LeftGrabFingerSurfaceTarget:
-                color[0] = 1.0f;
-                color[1] = 0.24f;
-                color[2] = 0.05f;
-                color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::GrabFingerSweepTip:
                 color[0] = 0.05f;
@@ -3231,32 +2942,11 @@ namespace rock::debug
                 color[2] = 0.05f;
                 color[3] = 0.95f;
                 break;
-            case MarkerOverlayRole::RightGrabHeldRelativeHandTargetError:
-            case MarkerOverlayRole::LeftGrabHeldRelativeHandTargetError:
-                color[0] = 0.15f;
-                color[1] = 1.0f;
-                color[2] = 0.25f;
-                color[3] = 0.95f;
-                break;
             case MarkerOverlayRole::RightGrabRockVisualError:
             case MarkerOverlayRole::LeftGrabRockVisualError:
                 color[0] = 1.0f;
                 color[1] = 0.75f;
                 color[2] = 0.05f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightGrabHeldDesiredError:
-            case MarkerOverlayRole::LeftGrabHeldDesiredError:
-                color[0] = 1.0f;
-                color[1] = 0.35f;
-                color[2] = 0.90f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightGrabTelemetryLabelAnchor:
-            case MarkerOverlayRole::LeftGrabTelemetryLabelAnchor:
-                color[0] = 0.95f;
-                color[1] = 1.0f;
-                color[2] = 0.20f;
                 color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::RightDynamicHandRequestedDeviation:

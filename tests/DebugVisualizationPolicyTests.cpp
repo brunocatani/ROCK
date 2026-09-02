@@ -15,8 +15,7 @@ namespace
                !state.weaponColliders &&
                !state.grabbedWeaponPartCollider &&
                !state.dynamicWeaponColliders &&
-               !state.grabAuthorityProxyCollider &&
-               !state.grabPivotSourceCollider;
+               !state.grabAuthorityProxyCollider;
     }
 
     constexpr auto disabledColliderMaster = resolve({
@@ -29,12 +28,9 @@ namespace
         .weaponColliders = true,
         .grabbedWeaponPartCollider = true,
         .dynamicWeaponColliders = true,
-        .grabForceTorque = true,
-        .grabPivotSourceCollider = true,
         .grabAuthorityProxy = true,
     });
     static_assert(colliderChildrenDisabled(disabledColliderMaster));
-    static_assert(disabledColliderMaster.grabForceTorque);
     static_assert(disabledColliderMaster.grabAuthorityProxy);
 
     constexpr auto emptyEnabledColliderMaster = resolve({
@@ -54,8 +50,6 @@ namespace
         .weaponColliders = true,
         .grabbedWeaponPartCollider = true,
         .dynamicWeaponColliders = true,
-        .grabForceTorque = true,
-        .grabPivotSourceCollider = true,
         .grabAuthorityProxy = true,
     });
     static_assert(selectedColliderChildren.targetColliders);
@@ -68,7 +62,6 @@ namespace
     static_assert(selectedColliderChildren.grabbedWeaponPartCollider);
     static_assert(selectedColliderChildren.dynamicWeaponColliders);
     static_assert(selectedColliderChildren.grabAuthorityProxyCollider);
-    static_assert(selectedColliderChildren.grabPivotSourceCollider);
 
     constexpr auto disabledSuiteMasters = resolve({
         .fingerSweptArcText = true,
@@ -76,33 +69,22 @@ namespace
         .skeletonBoneAxes = true,
         .skeletonBoneLogging = true,
         .skeletonBoneTruncationLogging = true,
-        .grabForceTorqueText = true,
-        .grabPivotSourceEvidence = true,
-        .grabTransformTelemetryAxes = true,
-        .grabTransformTelemetryText = true,
     });
     static_assert(!disabledSuiteMasters.fingerSweptArcText);
     static_assert(!disabledSuiteMasters.fingerSweptArcLiveSkeleton);
     static_assert(!disabledSuiteMasters.skeletonBoneAxes);
     static_assert(!disabledSuiteMasters.skeletonBoneLogging);
     static_assert(!disabledSuiteMasters.skeletonBoneTruncationLogging);
-    static_assert(!disabledSuiteMasters.grabForceTorqueText);
-    static_assert(!disabledSuiteMasters.grabPivotSourceEvidence);
-    static_assert(!disabledSuiteMasters.grabTransformTelemetryAxes);
-    static_assert(!disabledSuiteMasters.grabTransformTelemetryText);
 
     constexpr auto unrelatedGenericVisuals = resolve({
         .handAxes = true,
         .grabPivots = true,
-        .grabPocketNormal = true,
     });
     static_assert(unrelatedGenericVisuals.handAxes);
     static_assert(unrelatedGenericVisuals.grabPivots);
-    static_assert(unrelatedGenericVisuals.grabPocketNormal);
     static_assert(!unrelatedGenericVisuals.weaponAuthority);
     static_assert(!unrelatedGenericVisuals.looseWeaponGripZones);
     static_assert(!unrelatedGenericVisuals.authoredGripActivationZones);
-    static_assert(!unrelatedGenericVisuals.grabPocketNormal);
 }
 
 int main()

@@ -690,7 +690,6 @@ namespace rock
         std::uint32_t fingerPoseTargetCount = 0;
         float handScaleAtGrab = 1.0f;
         std::uint64_t traceId = 0;
-        std::uint64_t traceTargetWriteSequence = 0;
         const char* bodyResolutionReason = "none";
         const char* fingerPoseAimReason = "none";
         /*
@@ -740,7 +739,6 @@ namespace rock
             fingerPoseTargetCount = 0;
             handScaleAtGrab = 1.0f;
             traceId = 0;
-            traceTargetWriteSequence = 0;
             bodyResolutionReason = "none";
             fingerPoseAimReason = "none";
             motorFadeReason = "none";

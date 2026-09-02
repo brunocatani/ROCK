@@ -270,8 +270,6 @@ namespace rock
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _grabStartTime = 0.0f;
-        _heldLogCounter = 0;
-        _notifCounter = 0;
         _heldBodyIds.clear();
         clearPullRuntimeState(false, "reset");
         clearPullCatchIntent("reset");
@@ -292,20 +290,9 @@ namespace rock
         _lastPublishedGrabVisualHandTransform = {};
         _hasLastPublishedGrabVisualHandTransform = false;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
-        _grabFingerProbeStart = {};
-        _grabFingerProbeEnd = {};
-        _hasGrabFingerProbeDebug = false;
         _grabFingerSweepDebugCapture = {};
         _grabFingerSweepDebugObjectWorld = {};
         _hasGrabFingerSweepDebug = false;
-        _grabFingerPadProbeStart = {};
-        _grabFingerPadProbeEnd = {};
-        _grabFingerPadProbeHit = {};
-        _grabFingerPadProbeHitValid = {};
-        _hasGrabFingerPadProbeDebug = false;
-        _grabFingerSurfaceTarget = {};
-        _grabFingerSurfaceTargetValid = {};
-        _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
@@ -1595,36 +1582,6 @@ namespace rock
         out.palmSource = palmReference.source;
         out.palmMotionIndex = palmReference.motionIndex;
         return true;
-    }
-
-    bool Hand::tryGetGrabAuthorityProxyClockDebugSnapshot(
-        RE::hknpWorld* world,
-        GrabAuthorityProxyClockDebugSnapshot& out)
-    {
-        out = {};
-        if (!world) {
-            return false;
-        }
-
-        std::scoped_lock lock(_grabAuthorityProxyMutex);
-        if (!_grabAuthorityProxy.isValid() || _grabAuthorityProxyHknpWorld != world) {
-            return false;
-        }
-
-        out.proxyBodyId = _grabAuthorityProxy.getBodyId();
-        out.queuedSequence = _grabAuthorityProxyQueuedSequence;
-        out.flushSequence = _grabAuthorityProxyFlushSequence;
-        if (_grabAuthorityPendingTarget.valid) {
-            out.queuedProxyTargetWorld = _grabAuthorityPendingTarget.proxyWorld;
-            out.queuedRawHandWorld = _grabAuthorityPendingTarget.rawHandWorld;
-            out.hasQueuedTarget = true;
-        }
-        if (_hasLastAppliedGrabAuthorityProxyWorld) {
-            out.appliedProxyTargetWorld = _lastAppliedGrabAuthorityProxyWorld;
-            out.appliedRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
-            out.hasAppliedTarget = true;
-        }
-        return out.hasQueuedTarget || out.hasAppliedTarget;
     }
 
     void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata,
