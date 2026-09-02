@@ -12620,10 +12620,22 @@ namespace rock
                                 _grabObjectGripAtGrab.confidence = _grabFrame.pivotAuthority.positionConfidence;
                                 _grabObjectGripAtGrab.valid = true;
 
+                                /*
+                                 * The live constraint's transform-A is written once at
+                                 * creation and never rewritten, so the proxy-local pivot A
+                                 * handed to the target writer must stay the creation value:
+                                 * the writer folds the seated relation into transform-B
+                                 * against that pivot. The reacquired seat moves ROCK's own
+                                 * pivot A (_grabFrame.authority.pivotAHandBodyLocalGame)
+                                 * only. Overwriting the writer copy with the new seat pivot
+                                 * made the solver hold the promoted point at the old pivot
+                                 * while target and visual math assumed the new one, leaving
+                                 * the object and rendered hand offset from the controller by
+                                 * the seat-depth difference (4-8 gu on pulled objects).
+                                 */
                                 {
                                     std::scoped_lock lock(_grabAuthorityProxyMutex);
                                     if (_grabAuthorityProxyFrameValid) {
-                                        _grabAuthorityPivotAProxyLocalGame = frozenSeatAuthorityFrame.pivotAHandBodyLocalGame;
                                         _grabAuthorityPivotBConstraintLocalGame = frozenSeatAuthorityFrame.pivotBConstraintLocalGame;
                                     }
                                 }
