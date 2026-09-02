@@ -2012,12 +2012,17 @@ namespace rock
          * scan is bounded by the extracted surface set and runs once at
          * capture. Facing uses the mesh winding; its global sign is voted
          * once against the mesh centroid so a mirrored or inside-out export
-         * cannot flip every face, and the per-triangle threshold keeps
-         * edge-on faces (plate edges) grabbable. Owner filtering keeps the
-         * seat on the resolved body of a multi-body object; a mesh with no
+         * cannot flip every face. Facing runs two passes: the strict pass
+         * keeps only surfaces within 60 degrees of facing the palm, so a
+         * side face never beats the face that will lie on the palm; the
+         * relaxed pass (perpendicular or better) keeps edge-on plates
+         * grabbable. The face alignment in resolveGrabSeat lays whichever
+         * surface won flat on the palm. Owner filtering keeps the seat on
+         * the resolved body of a multi-body object; a mesh with no
          * acceptable point fails closed.
          */
-        constexpr float kPalmSeatMaxFacingDot = 0.3f;
+        constexpr float kPalmSeatFacingDotStrict = -0.5f;
+        constexpr float kPalmSeatFacingDotRelaxed = 0.0f;
 
         struct PalmSeatPointSelection
         {
@@ -2100,37 +2105,45 @@ namespace rock
             RE::NiPoint3 bestPoint{};
             RE::NiPoint3 bestNormal{};
             RE::NiAVObject* bestOwner = nullptr;
-            for (int i = 0; i < static_cast<int>(surfaceTriangles.size()); ++i) {
-                const auto& surfaceTriangle = surfaceTriangles[static_cast<std::size_t>(i)];
-                const auto& tri = surfaceTriangle.triangle;
-                float distSq = 0.0f;
-                const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(pocket.pocketCenterWorld, tri, distSq);
-                if (distSq >= bestDistSq) {
-                    continue;
+            auto selectClosestFacing = [&](float maxFacingDot) {
+                bestDistSq = (std::numeric_limits<float>::max)();
+                bestIndex = -1;
+                result.evaluatedCandidates = 0;
+                result.rejectedFacing = 0;
+                result.rejectedOwner = 0;
+                for (int i = 0; i < static_cast<int>(surfaceTriangles.size()); ++i) {
+                    const auto& surfaceTriangle = surfaceTriangles[static_cast<std::size_t>(i)];
+                    const auto& tri = surfaceTriangle.triangle;
+                    float distSq = 0.0f;
+                    const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(pocket.pocketCenterWorld, tri, distSq);
+                    if (distSq >= bestDistSq) {
+                        continue;
+                    }
+                    ++result.evaluatedCandidates;
+                    RE::NiPoint3 normal = normalizeOrZero(crossProduct(tri.v1 - tri.v0, tri.v2 - tri.v0));
+                    if (lengthSquared(normal) <= 0.000001f) {
+                        continue;
+                    }
+                    normal = scalePoint(normal, windingSign);
+                    if (dotProduct(normal, palmNormal) > maxFacingDot) {
+                        ++result.rejectedFacing;
+                        continue;
+                    }
+                    RE::NiAVObject* ownerNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, candidate);
+                    if (!palmSeatOwnerAccepts(ownerFilter, surfaceTriangle, ownerNode)) {
+                        ++result.rejectedOwner;
+                        continue;
+                    }
+                    bestDistSq = distSq;
+                    bestIndex = i;
+                    bestPoint = candidate;
+                    bestNormal = normal;
+                    bestOwner = ownerNode;
                 }
-                ++result.evaluatedCandidates;
-                RE::NiPoint3 normal = normalizeOrZero(crossProduct(tri.v1 - tri.v0, tri.v2 - tri.v0));
-                if (lengthSquared(normal) <= 0.000001f) {
-                    continue;
-                }
-                normal = scalePoint(normal, windingSign);
-                if (dotProduct(normal, palmNormal) > kPalmSeatMaxFacingDot) {
-                    ++result.rejectedFacing;
-                    continue;
-                }
-                RE::NiAVObject* ownerNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, candidate);
-                if (!palmSeatOwnerAccepts(ownerFilter, surfaceTriangle, ownerNode)) {
-                    ++result.rejectedOwner;
-                    continue;
-                }
-                bestDistSq = distSq;
-                bestIndex = i;
-                bestPoint = candidate;
-                bestNormal = normal;
-                bestOwner = ownerNode;
-            }
-
-            if (bestIndex < 0) {
+                return bestIndex >= 0;
+            };
+            const bool strictFacing = selectClosestFacing(kPalmSeatFacingDotStrict);
+            if (!strictFacing && !selectClosestFacing(kPalmSeatFacingDotRelaxed)) {
                 result.reason = result.rejectedOwner > 0 ? "noOwnerMatchedPalmFacingPoint" : "noPalmFacingPoint";
                 return result;
             }
@@ -2152,7 +2165,7 @@ namespace rock
             const RE::NiPoint3 lateral = toCandidate - scalePoint(palmNormal, hit.signedAlongPalmDistanceGameUnits);
             hit.lateralPalmDistanceGameUnits = std::sqrt((std::max)(0.0f, lengthSquared(lateral)));
             hit.valid = true;
-            result.reason = "closestPalmFacingPoint";
+            result.reason = strictFacing ? "closestPalmFacingPoint" : "closestPalmFacingPointRelaxed";
             result.valid = true;
             return result;
         }
@@ -5150,7 +5163,7 @@ namespace rock
         outEvidence.pointAuthoritySource = GrabPivotAuthoritySource::PalmPocketMeshPoint;
         ROCK_LOG_DEBUG(Hand,
             "{} hand PALM SEAT provisional: point=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) tri={} source={} owner='{}' shape='{}' "
-            "pocket=({:.1f},{:.1f},{:.1f}) signedPalm={:.2f}gu lateral={:.2f}gu selectionDelta={:.1f}gu evaluated={} rejectedFacing={} tris={}",
+            "pocket=({:.1f},{:.1f},{:.1f}) signedPalm={:.2f}gu lateral={:.2f}gu selectionDelta={:.1f}gu evaluated={} rejectedFacing={} tris={} facing={}",
             handName(),
             palmSeat.hit.position.x,
             palmSeat.hit.position.y,
@@ -5170,7 +5183,8 @@ namespace rock
             sel.hasHitPoint ? outEvidence.selectionToMeshDistanceGameUnits : -1.0f,
             palmSeat.evaluatedCandidates,
             palmSeat.rejectedFacing,
-            mesh.surfaceTriangles.size());
+            mesh.surfaceTriangles.size(),
+            palmSeat.reason);
     }
 
     struct Hand::GrabBodyResolution
@@ -5853,6 +5867,67 @@ namespace rock
         }
 
         /*
+         * Face alignment: the seat surface lies flat on the palm. A compact
+         * object rotates about the seat point until the surface normal points
+         * straight into the palm; a rod keeps its aligned long axis and only
+         * rolls about it, as far as the roll can turn the surface toward the
+         * palm. Rotating about the seat point keeps the captured grip evidence
+         * where it is, and the depth stop below then measures geometry that
+         * really protrudes toward the palm instead of arrival tilt.
+         */
+        float faceAlignmentAngleDegrees = 0.0f;
+        const char* faceAlignmentReason = "inactive";
+        if (palmSeatApplied) {
+            const RE::NiPoint3 seatNormalWorld = grabSurfaceHit.valid ?
+                normalizeOrZero(transform_math::localVectorToWorld(
+                    seatObjectWorld,
+                    transform_math::worldVectorToLocal(objectWorldTransform, grabSurfaceHit.normal))) :
+                RE::NiPoint3{};
+            const RE::NiPoint3 palmNormalWorld = normalizeOrZero(pocket.palmNormalWorld);
+            RE::NiPoint3 fromDirection = seatNormalWorld;
+            RE::NiPoint3 toDirection = scalePoint(palmNormalWorld, -1.0f);
+            RE::NiPoint3 rollAxisWorld{};
+            if (seatRodShape) {
+                rollAxisWorld = normalizeOrZero(transform_math::localVectorToWorld(
+                    seatObjectWorld,
+                    transform_math::worldVectorToLocal(objectWorldTransform, seatLongAxis.axisWorld)));
+                fromDirection = normalizeOrZero(fromDirection - scalePoint(rollAxisWorld, dotProduct(fromDirection, rollAxisWorld)));
+                toDirection = normalizeOrZero(toDirection - scalePoint(rollAxisWorld, dotProduct(toDirection, rollAxisWorld)));
+            }
+            if (lengthSquared(seatNormalWorld) <= 0.000001f || lengthSquared(palmNormalWorld) <= 0.000001f) {
+                faceAlignmentReason = "noSeatNormal";
+            } else if (lengthSquared(fromDirection) <= 0.000001f || lengthSquared(toDirection) <= 0.000001f ||
+                       (seatRodShape && lengthSquared(rollAxisWorld) <= 0.000001f)) {
+                faceAlignmentReason = "degenerateRollPlane";
+            } else {
+                const RE::NiPoint3 rotationAxisRaw = crossProduct(fromDirection, toDirection);
+                const float cosAngle = std::clamp(dotProduct(fromDirection, toDirection), -1.0f, 1.0f);
+                RE::NiPoint3 rotationAxis = rollAxisWorld;
+                float angleRadians = 0.0f;
+                if (seatRodShape) {
+                    angleRadians = std::atan2(dotProduct(rotationAxisRaw, rollAxisWorld), cosAngle);
+                } else {
+                    const float sinAngle = std::sqrt((std::max)(0.0f, lengthSquared(rotationAxisRaw)));
+                    angleRadians = std::atan2(sinAngle, cosAngle);
+                    rotationAxis = sinAngle > 0.000001f ? scalePoint(rotationAxisRaw, 1.0f / sinAngle) : RE::NiPoint3{};
+                }
+                if (std::fabs(angleRadians) > 0.01f && lengthSquared(rotationAxis) > 0.000001f) {
+                    seatBodyWorld = rotateTransformWorldAboutPoint(seatBodyWorld, rotationAxis, angleRadians, grabGripPoint);
+                    seatObjectWorld = rotateTransformWorldAboutPoint(seatObjectWorld, rotationAxis, angleRadians, grabGripPoint);
+                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                        seatBodyWorld,
+                        grabPivotAWorld,
+                        grabGripPoint);
+                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                    faceAlignmentAngleDegrees = angleRadians * 57.29577951308232f;
+                    faceAlignmentReason = seatRodShape ? "rolledAboutRodAxis" : "faceLaidOnPalm";
+                } else {
+                    faceAlignmentReason = "alreadyFlat";
+                }
+            }
+        }
+
+        /*
          * Seat depth stop: the freeze re-aligns the seat point exactly onto
          * pivot A, which pulls any mesh behind the seat point through the
          * palm. Push pivot A out along the palm normal by the mesh support
@@ -6053,7 +6128,7 @@ namespace rock
 
         ROCK_LOG_DEBUG(Hand,
             "{} GRAB SEAT: mode={} seat={} reason={} grip=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.2f} source={} "
-            "shape={} seatAlign={:.1f}deg/{} seatDepth={:.2f}/{} warped={} looseWeaponPrimaryAttach={}/{}",
+            "shape={} seatAlign={:.1f}deg/{} faceAlign={:.1f}deg/{} seatDepth={:.2f}/{} warped={} looseWeaponPrimaryAttach={}/{}",
             handName(),
             surface.pointMode,
             grabSeatModeName(_grabFrame.seat.mode),
@@ -6069,6 +6144,8 @@ namespace rock
             seatShapeClass,
             seatAlignmentAngleDegrees,
             seatAlignmentReason,
+            faceAlignmentAngleDegrees,
+            faceAlignmentReason,
             seatDepthStop.depthGameUnits,
             seatDepthStop.reason,
             warpToSeat ? "yes" : "no",
@@ -6255,11 +6332,12 @@ namespace rock
                 /*
                  * Fade the motors in only when the commit still has to move the
                  * object onto its seat: a grip point farther from pivot A than
-                 * the hand-lerp minimum, or a seat rotation the object did not
+                 * the fade distance, or a seat rotation the object did not
                  * arrive with. A warped forced arrival already sits on its seat.
                  */
                 constexpr float kSeatRotationFadeDegrees = 15.0f;
-                const bool largeInitialSync = initialGrabDistance >= g_rockConfig.rockGrabHandLerpMinDistance;
+                constexpr float kMotorFadeInitialSyncDistanceGameUnits = 7.0f;
+                const bool largeInitialSync = initialGrabDistance >= kMotorFadeInitialSyncDistanceGameUnits;
                 const bool seatRotationSync = seatRotationDegrees >= kSeatRotationFadeDegrees;
                 _grabFrame.fadeInGrabConstraint = !seatCapture.warpedToSeat && (largeInitialSync || seatRotationSync);
                 _heldLocalLinearVelocityHistory = {};

@@ -373,7 +373,7 @@ namespace rock
         bool rockGrabHandLerpEnabled = true;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;
-        float rockGrabHandLerpMinDistance = 7.0f;
+        float rockGrabHandLerpMinDistance = 2.0f;
         float rockGrabHandLerpMaxDistance = 14.0f;
         bool rockGrabHandReturnEnabled = true;
         float rockGrabHandReturnTimeMin = 0.10f;

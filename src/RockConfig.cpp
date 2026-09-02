@@ -1277,7 +1277,7 @@ namespace rock
             SECTION,
             "fGrabHandLerpMinDistance",
             rockGrabHandLerpMinDistance,
-            7.0f,
+            2.0f,
             0.0f,
             80.0f);
         rockGrabHandLerpMaxDistance = readClampedFloat(ini,
