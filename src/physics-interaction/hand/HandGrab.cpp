@@ -2646,6 +2646,39 @@ namespace rock
             return result;
         }
 
+        /*
+         * World-side rigid rotation of an NiTransform about a world pivot
+         * point. Stored NiMatrix3 rows are the world images of the local axes
+         * (hand_frame::transformHandspaceLocalToWorld documents the engine
+         * convention), so a world rotation applies vector Rodrigues to each
+         * stored row and to the pivot-relative translation. The pivot point
+         * itself is the fixed point: worldPointToLocal(rotated, pivotWorld)
+         * equals worldPointToLocal(original, pivotWorld).
+         */
+        RE::NiTransform rotateTransformWorldAboutPoint(
+            const RE::NiTransform& transform,
+            const RE::NiPoint3& unitAxisWorld,
+            float angleRadians,
+            const RE::NiPoint3& pivotWorld)
+        {
+            RE::NiTransform rotated = transform;
+            for (int row = 0; row < 3; ++row) {
+                const RE::NiPoint3 rowWorld{
+                    transform.rotate.entry[row][0],
+                    transform.rotate.entry[row][1],
+                    transform.rotate.entry[row][2],
+                };
+                const RE::NiPoint3 rotatedRow = grab_finger_pose_math::rotateAroundUnitAxis(rowWorld, unitAxisWorld, angleRadians);
+                rotated.rotate.entry[row][0] = rotatedRow.x;
+                rotated.rotate.entry[row][1] = rotatedRow.y;
+                rotated.rotate.entry[row][2] = rotatedRow.z;
+            }
+            const RE::NiPoint3 pivotOffset = transform.translate - pivotWorld;
+            const RE::NiPoint3 rotatedOffset = grab_finger_pose_math::rotateAroundUnitAxis(pivotOffset, unitAxisWorld, angleRadians);
+            rotated.translate = pivotWorld + rotatedOffset;
+            return rotated;
+        }
+
         struct HeldMotionCompensationResult
         {
             RE::NiPoint3 primaryLocalLinearVelocity{};
@@ -5127,8 +5160,9 @@ namespace rock
 
         /*
          * Long-object presentation (flight only): servo the mesh principal
-         * axis toward the hand's cross-palm (thumb->pinky) line while the pull
-         * drive owns the object, so long props arrive oriented for the grab.
+         * axis toward the hand Weapon node handle axis while the pull drive
+         * owns the object, so long props arrive oriented the way a weapon
+         * sits in the hand; the seat then finishes the same alignment.
          * The angular velocity is SET each frame from the remaining angle
          * (kinematic servo with exponential decay), so it cannot overshoot.
          * This path ends at pull arrival, before capture freezes the relation;
@@ -5141,19 +5175,10 @@ namespace rock
             if (tryGetBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, pulledBodyWorld)) {
                 const RE::NiPoint3 currentAxisWorld =
                     normalizeOrZero(transform_math::localVectorToWorld(pulledBodyWorld, _pullPresentationAxisBodyLocal));
-                /*
-                 * The grip line is not pure cross-palm Z: the thumb sits in the
-                 * way, so the natural long-object hold tilts a few degrees
-                 * toward the fingers-forward X axis (Bruno-tuned via INI).
-                 */
-                const RE::NiPoint3 crossPalmWorld =
-                    transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, _isLeft);
-                const RE::NiPoint3 fingerForwardWorld =
-                    transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
-                RE::NiPoint3 targetAxisWorld = grab_three_phase::buildGripPresentationAxisTowardFingertips(
-                    crossPalmWorld,
-                    fingerForwardWorld,
-                    g_rockConfig.rockPullPresentationGripAxisTiltDegrees);
+                RE::NiPoint3 targetAxisWorld{};
+                if (!tryGetWeaponHandleAxisWorld(targetAxisWorld)) {
+                    targetAxisWorld = RE::NiPoint3{};
+                }
                 if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
                     // The mesh axis has no sign: always rotate toward the nearest hemisphere.
                     if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
@@ -6373,11 +6398,66 @@ namespace rock
         const char* seatShapeClass = seatRodShape ? "rod" : (seatLongAxis.valid ? "compact" : "none");
 
         /*
+         * Rod alignment: an elongated object seats the way a weapon sits in
+         * the hand. Rotate the seat pose about the seat point so the mesh
+         * long axis meets the hand Weapon node handle axis (nearest
+         * hemisphere; the PCA axis has no sign). Close grabs align too; the
+         * pull flight only pre-aligns so the object arrives near this pose.
+         * The rotation survives the freeze (pivot alignment rewrites
+         * translation only) and a large one fades the motor in. The axis is
+         * the latest published collider-frame value, the same game frame as
+         * the pocket read; the pocket itself still reads the live palm body.
+         */
+        RE::NiTransform seatBodyWorld = grabBodyWorldAtGrab;
+        RE::NiTransform seatObjectWorld = objectWorldTransform;
+        float seatAlignmentAngleDegrees = 0.0f;
+        const char* seatAlignmentReason = "inactive";
+        if (seatRodShape) {
+            RE::NiPoint3 targetAxisWorld{};
+            const RE::NiPoint3 currentAxisWorld = normalizeOrZero(seatLongAxis.axisWorld);
+            if (!tryGetWeaponHandleAxisWorld(targetAxisWorld)) {
+                seatAlignmentReason = "noWeaponHandleAxis";
+            } else if (lengthSquared(currentAxisWorld) <= 0.000001f || lengthSquared(targetAxisWorld) <= 0.000001f) {
+                seatAlignmentReason = "degenerateAxes";
+            } else {
+                if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
+                    targetAxisWorld = RE::NiPoint3{ -targetAxisWorld.x, -targetAxisWorld.y, -targetAxisWorld.z };
+                }
+                const RE::NiPoint3 rotationAxisRaw = crossProduct(currentAxisWorld, targetAxisWorld);
+                const float sinAngle = std::sqrt((std::max)(0.0f, lengthSquared(rotationAxisRaw)));
+                const float cosAngle = std::clamp(dotProduct(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
+                const float angleRadians = std::atan2(sinAngle, cosAngle);
+                if (sinAngle > 0.000001f && angleRadians > 0.01f) {
+                    const float invSin = 1.0f / sinAngle;
+                    const RE::NiPoint3 rotationAxis{
+                        rotationAxisRaw.x * invSin,
+                        rotationAxisRaw.y * invSin,
+                        rotationAxisRaw.z * invSin,
+                    };
+                    seatBodyWorld = rotateTransformWorldAboutPoint(grabBodyWorldAtGrab, rotationAxis, angleRadians, grabGripPoint);
+                    seatObjectWorld = rotateTransformWorldAboutPoint(objectWorldTransform, rotationAxis, angleRadians, grabGripPoint);
+                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                        seatBodyWorld,
+                        grabPivotAWorld,
+                        grabGripPoint);
+                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                    seatAlignmentAngleDegrees = angleRadians * 57.29577951308232f;
+                    seatAlignmentReason = "rodAlignedToWeaponHandleAxis";
+                } else {
+                    seatAlignmentReason = "alreadyAligned";
+                }
+            }
+        } else if (seatLongAxis.valid) {
+            seatAlignmentReason = "belowElongationGate";
+        }
+
+        /*
          * Seat depth stop: the freeze re-aligns the seat point exactly onto
          * pivot A, which pulls any mesh behind the seat point through the
          * palm. Push pivot A out along the palm normal by the mesh support
          * depth so the object's surface rests ON the palm instead of its
-         * interior. Weapon attach frames and pinch pockets keep their own
+         * interior. Measured against the SEAT orientation, after the rod
+         * alignment. Weapon attach frames and pinch pockets keep their own
          * seat authority and are excluded.
          */
         GrabSeatDepthStopResult seatDepthStop{};
@@ -6385,7 +6465,7 @@ namespace rock
         if (palmSeatApplied) {
             seatDepthStop = computeGrabSeatDepthStop(
                 grabLocalMeshTriangles,
-                objectWorldTransform,
+                seatObjectWorld,
                 grabGripPoint,
                 pocket.palmNormalWorld,
                 g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
@@ -6395,7 +6475,7 @@ namespace rock
                     seatDepthStop.depthGameUnits + (std::max)(0.0f, g_rockConfig.rockGrabSeatDepthSkinGameUnits);
                 grabPivotAWorld = grabPivotAWorld + pocket.palmNormalWorld * seatDepthOffsetGameUnits;
                 desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
-                    grabBodyWorldAtGrab,
+                    seatBodyWorld,
                     grabPivotAWorld,
                     grabGripPoint);
                 desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
@@ -6510,6 +6590,8 @@ namespace rock
             .shapeClass = seatShapeClass,
             .elongationRatio = seatLongAxis.elongationRatio,
             .secondElongationRatio = seatLongAxis.secondElongationRatio,
+            .alignmentAngleDegrees = seatAlignmentAngleDegrees,
+            .alignmentReason = seatAlignmentReason,
             .depthGameUnits = seatDepthStop.depthGameUnits,
             .depthOffsetGameUnits = seatDepthOffsetGameUnits,
             .depthReason = seatDepthStop.reason,
@@ -6586,7 +6668,7 @@ namespace rock
         ROCK_LOG_DEBUG(Hand,
             "{} GRAB SEAT: mode={} seat={} reason={} pocket=({:.1f},{:.1f},{:.1f}) palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) "
             "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.2f} signedPalm={:.2f} "
-            "source={} owner='{}' tri={} evaluated={} rejectedFacing={} rejectedOwner={} shape={} ratio12={:.2f} ratio23={:.2f} "
+            "source={} owner='{}' tri={} evaluated={} rejectedFacing={} rejectedOwner={} shape={} ratio12={:.2f} ratio23={:.2f} seatAlignDeg={:.1f} seatAlignReason={} "
             "seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} pinchCenter={:.2f} warped={} "
             "looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
             handName(),
@@ -6622,6 +6704,8 @@ namespace rock
             seatShapeClass,
             seatLongAxis.elongationRatio,
             seatLongAxis.secondElongationRatio,
+            seatAlignmentAngleDegrees,
+            seatAlignmentReason,
             seatDepthStop.depthGameUnits,
             seatDepthOffsetGameUnits,
             seatDepthStop.footprintSampleCount,

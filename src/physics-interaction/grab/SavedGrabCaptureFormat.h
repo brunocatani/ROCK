@@ -169,7 +169,6 @@ namespace rock::saved_grab_capture
         float seatDepthFootprintRadiusGameUnits{ 0.0f };
         float seatDepthSkinGameUnits{ 0.0f };
         float pullPresentationMinElongationRatio{ 0.0f };
-        float pullPresentationGripAxisTiltDegrees{ 0.0f };
         float pocketDepthGameUnits{ 0.0f };
         float pocketRadiusGameUnits{ 0.0f };
     };

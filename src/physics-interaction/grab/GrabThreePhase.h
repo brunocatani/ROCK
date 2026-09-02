@@ -98,34 +98,6 @@ namespace rock::grab_three_phase
         return dot(value, reference) < 0.0f ? RE::NiPoint3{ -value.x, -value.y, -value.z } : value;
     }
 
-    /*
-     * The mesh long axis is an unoriented line. Authored cross-palm Z reverses
-     * anatomical direction between the hands, but authored +X points toward
-     * the fingertips on both. Resolve those live axes first, then add the +X
-     * component directly. Mirroring the angle sign would instead send one
-     * hand's line toward -X.
-     */
-    inline RE::NiPoint3 buildGripPresentationAxisTowardFingertips(
-        const RE::NiPoint3& crossPalmWorld,
-        const RE::NiPoint3& fingerForwardWorld,
-        float tiltDegrees)
-    {
-        if (!std::isfinite(tiltDegrees) || tiltDegrees < 0.0f || tiltDegrees > 45.0f) {
-            return RE::NiPoint3{};
-        }
-
-        const RE::NiPoint3 crossPalm = normalizeOrZero(crossPalmWorld);
-        const RE::NiPoint3 fingerForward = normalizeOrZero(rejectFromAxis(fingerForwardWorld, crossPalm));
-        if (lengthSquared(crossPalm) <= 0.000001f || lengthSquared(fingerForward) <= 0.000001f) {
-            return RE::NiPoint3{};
-        }
-
-        constexpr float kDegreesToRadians = 0.01745329252f;
-        const float tiltRadians = tiltDegrees * kDegreesToRadians;
-        return normalizeOrZero(
-            crossPalm * std::cos(tiltRadians) + fingerForward * std::sin(tiltRadians));
-    }
-
     struct GrabPocketFrame
     {
         RE::NiTransform basisWorld{};

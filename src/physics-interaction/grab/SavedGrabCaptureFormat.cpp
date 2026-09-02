@@ -121,7 +121,6 @@ namespace rock::saved_grab_capture
                 { "seatDepthFootprintRadiusGameUnits", tuning.seatDepthFootprintRadiusGameUnits },
                 { "seatDepthSkinGameUnits", tuning.seatDepthSkinGameUnits },
                 { "pullPresentationMinElongationRatio", tuning.pullPresentationMinElongationRatio },
-                { "pullPresentationGripAxisTiltDegrees", tuning.pullPresentationGripAxisTiltDegrees },
                 { "pocketDepthGameUnits", tuning.pocketDepthGameUnits },
                 { "pocketRadiusGameUnits", tuning.pocketRadiusGameUnits },
             };

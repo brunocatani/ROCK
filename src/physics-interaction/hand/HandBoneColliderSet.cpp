@@ -9,6 +9,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "RockConfig.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>
 #include <array>
@@ -424,6 +425,98 @@ namespace rock
         return true;
     }
 
+    /*
+     * The Weapon node (WeaponLeft on the left hand) is the skeleton's own
+     * statement of how a held weapon sits in the hand. Its child weapon mesh
+     * fires along the node's local +Y: FRIK's scope alignment reads that
+     * bullet direction as row 1 of the node's world rotation, which is the
+     * stored-column read rotateNiLocalToWorld performs for local +Y. That
+     * direction in hand-bone space is the handle axis rods present and seat
+     * along. Only the node's authored local transform under the hand bone is
+     * read, once per collider build, so a later per-weapon FRIK position
+     * adjustment never leaks into the axis. Missing node or wrong parent
+     * fails closed: no axis, no rod alignment.
+     */
+    bool HandBoneColliderSet::captureWeaponHandleAxis(bool isLeft)
+    {
+        _weaponHandleAxisHandLocal = {};
+        _hasWeaponHandleAxisHandLocal = false;
+        const char* nodeName = isLeft ? "WeaponLeft" : "Weapon";
+        const char* handBoneName = isLeft ? "LArm_Hand" : "RArm_Hand";
+        auto* skeleton = f4vr::getFirstPersonSkeleton();
+        auto* weaponNode = skeleton ? f4vr::findNode(skeleton, nodeName) : nullptr;
+        if (!weaponNode) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand WEAPON HANDLE AXIS unavailable: node '{}' not found under the first-person skeleton",
+                isLeft ? "Left" : "Right",
+                nodeName);
+            return false;
+        }
+        const char* parentName = weaponNode->parent ? weaponNode->parent->name.c_str() : nullptr;
+        if (!parentName || std::string_view(parentName) != handBoneName) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand WEAPON HANDLE AXIS unavailable: node '{}' parent is '{}', expected '{}'",
+                isLeft ? "Left" : "Right",
+                nodeName,
+                parentName ? parentName : "(none)",
+                handBoneName);
+            return false;
+        }
+
+        const auto& local = weaponNode->local;
+        const RE::NiPoint3 axisX = normalizeOr(debug_axis_math::rotateNiLocalToWorld(local.rotate, RE::NiPoint3(1.0f, 0.0f, 0.0f)), RE::NiPoint3{});
+        const RE::NiPoint3 axisY = normalizeOr(debug_axis_math::rotateNiLocalToWorld(local.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f)), RE::NiPoint3{});
+        const RE::NiPoint3 axisZ = normalizeOr(debug_axis_math::rotateNiLocalToWorld(local.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)), RE::NiPoint3{});
+        const bool handleAxisUsable =
+            std::isfinite(axisY.x) && std::isfinite(axisY.y) && std::isfinite(axisY.z) &&
+            hand_bone_collider_geometry_math::dot(axisY, axisY) > 0.5f;
+        if (!handleAxisUsable) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand WEAPON HANDLE AXIS unavailable: node '{}' local rotation is degenerate",
+                isLeft ? "Left" : "Right",
+                nodeName);
+            return false;
+        }
+        _weaponHandleAxisHandLocal = axisY;
+        _hasWeaponHandleAxisHandLocal = true;
+        ROCK_LOG_INFO(Hand,
+            "{} hand WEAPON HANDLE AXIS: node='{}' parent='{}' handSpace X=({:.3f},{:.3f},{:.3f}) Y=({:.3f},{:.3f},{:.3f}) Z=({:.3f},{:.3f},{:.3f}) offset=({:.2f},{:.2f},{:.2f}) handleAxis=+Y",
+            isLeft ? "Left" : "Right",
+            nodeName,
+            parentName,
+            axisX.x,
+            axisX.y,
+            axisX.z,
+            axisY.x,
+            axisY.y,
+            axisY.z,
+            axisZ.x,
+            axisZ.y,
+            axisZ.z,
+            local.translate.x,
+            local.translate.y,
+            local.translate.z);
+        return true;
+    }
+
+    void HandBoneColliderSet::publishWeaponHandleAxis(const BoneFrameLookup& lookup)
+    {
+        _latestWeaponHandleAxisWorld = {};
+        _hasLatestWeaponHandleAxisWorld = false;
+        if (!_hasWeaponHandleAxisHandLocal || !lookup.valid) {
+            return;
+        }
+        const RE::NiPoint3 axisWorld = normalizeOr(
+            debug_axis_math::rotateNiLocalToWorld(lookup.hand.rotate, _weaponHandleAxisHandLocal),
+            RE::NiPoint3{});
+        if (!std::isfinite(axisWorld.x) || !std::isfinite(axisWorld.y) || !std::isfinite(axisWorld.z) ||
+            hand_bone_collider_geometry_math::dot(axisWorld, axisWorld) <= 0.5f) {
+            return;
+        }
+        _latestWeaponHandleAxisWorld = axisWorld;
+        _hasLatestWeaponHandleAxisWorld = true;
+    }
+
     bool HandBoneColliderSet::makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, HandColliderRole role, RoleFrameResult& outFrame) const
     {
         (void)isLeft;
@@ -697,6 +790,7 @@ namespace rock
         if (!captureBoneLookup(isLeft, rollAuthorityWorld, lookup)) {
             return false;
         }
+        captureWeaponHandleAxis(isLeft);
         const auto tuningSignature = handColliderTuningSignature(_lastCapturedPowerArmor);
         dynamic_hand_twin::TwinTargets canonicalTwinTargets{};
         const auto publishCanonicalTwinSlot = [](dynamic_hand_twin::TwinSlotFrame& slot, const RoleFrameResult& frame) {
@@ -739,6 +833,7 @@ namespace rock
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
         _latestPalmAnchorTarget = anchorFrame.transform;
         _hasLatestPalmAnchorTarget = true;
+        publishWeaponHandleAxis(lookup);
 
         std::size_t createdCount = 0;
         for (const auto role : hand_collider_semantics::kHandNonAnchorColliderRoles) {
@@ -822,6 +917,10 @@ namespace rock
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
+        _weaponHandleAxisHandLocal = {};
+        _hasWeaponHandleAxisHandLocal = false;
+        _latestWeaponHandleAxisWorld = {};
+        _hasLatestWeaponHandleAxisWorld = false;
         _dynamicTwinTargets = {};
         _segmentFrames = {};
         _canonicalDynamicTwinDimensions = {};
@@ -850,6 +949,10 @@ namespace rock
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
+        _weaponHandleAxisHandLocal = {};
+        _hasWeaponHandleAxisHandLocal = false;
+        _latestWeaponHandleAxisWorld = {};
+        _hasLatestWeaponHandleAxisWorld = false;
         _dynamicTwinTargets = {};
         _segmentFrames = {};
         _canonicalDynamicTwinDimensions = {};
@@ -933,6 +1036,7 @@ namespace rock
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
             _hasLatestPalmAnchorTarget = true;
+            publishWeaponHandleAxis(lookup);
             publishTwinSlot(twinTargets.palm, anchorFrame);
             queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
         }
@@ -1031,6 +1135,15 @@ namespace rock
             return false;
         }
         outTarget = _latestPalmAnchorTarget;
+        return true;
+    }
+
+    bool HandBoneColliderSet::tryGetWeaponHandleAxisWorld(RE::NiPoint3& outAxisWorld) const
+    {
+        if (!_hasLatestWeaponHandleAxisWorld) {
+            return false;
+        }
+        outAxisWorld = _latestWeaponHandleAxisWorld;
         return true;
     }
 

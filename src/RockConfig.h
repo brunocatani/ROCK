@@ -435,7 +435,6 @@ namespace rock
         float rockPullPresentationMinElongationRatio = 2.0f;
         float rockPullPresentationAngularGainPerSecond = 6.0f;
         float rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
-        float rockPullPresentationGripAxisTiltDegrees = 10.0f;
 
         RE::NiPoint3 rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         RE::NiPoint3 rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);

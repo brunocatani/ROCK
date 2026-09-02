@@ -62,6 +62,12 @@ namespace rock
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
+        /*
+         * Handle axis of the hand Weapon node (the direction a held weapon
+         * fires along), published with the palm anchor target from the same
+         * bone snapshot. Rods present and seat along it.
+         */
+        bool tryGetWeaponHandleAxisWorld(RE::NiPoint3& outAxisWorld) const;
         // Main-thread debug publication only. Returns the exact pending target
         // that the next generated-body physics callback will consume.
         bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;
@@ -135,6 +141,8 @@ namespace rock
             bool isLeft,
             const RE::NiTransform& rollAuthorityWorld,
             BoneFrameLookup& outLookup);
+        bool captureWeaponHandleAxis(bool isLeft);
+        void publishWeaponHandleAxis(const BoneFrameLookup& lookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
@@ -152,6 +160,10 @@ namespace rock
         GeneratedKeyframedBodyDriveState _palmAnchorDriveState{};
         RE::NiTransform _latestPalmAnchorTarget{};
         bool _hasLatestPalmAnchorTarget = false;
+        RE::NiPoint3 _weaponHandleAxisHandLocal{};
+        bool _hasWeaponHandleAxisHandLocal = false;
+        RE::NiPoint3 _latestWeaponHandleAxisWorld{};
+        bool _hasLatestWeaponHandleAxisWorld = false;
         dynamic_hand_twin::TwinTargets _dynamicTwinTargets{};
         PublishedSegmentFrames _segmentFrames{};
         dynamic_hand_twin::TwinTargets _canonicalDynamicTwinDimensions{};

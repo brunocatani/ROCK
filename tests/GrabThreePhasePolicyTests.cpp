@@ -86,31 +86,6 @@ int main()
     ok &= expectNear("proxy-basis pocket projects cross-palm off palm normal", pointDot(identityPocket.crossPalmWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
     ok &= expectNear("proxy-basis pocket keeps tangent and bitangent orthogonal", pointDot(identityPocket.fingerForwardWorld, identityPocket.crossPalmWorld), 0.0f, 0.001f);
 
-    constexpr float kTiltDegrees = 15.0f;
-    constexpr float kExpectedFingerComponent = 0.2588190451f;
-    constexpr float kExpectedCrossPalmComponent = 0.9659258263f;
-    const RE::NiPoint3 fingerForward{ 1.0f, 0.0f, 0.0f };
-    const auto rightPresentationAxis = buildGripPresentationAxisTowardFingertips(
-        RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, fingerForward, kTiltDegrees);
-    const auto leftPresentationAxis = buildGripPresentationAxisTowardFingertips(
-        RE::NiPoint3{ 0.0f, 0.0f, -1.0f }, fingerForward, kTiltDegrees);
-    ok &= expectNear("right grip tilt points toward fingertips", rightPresentationAxis.x, kExpectedFingerComponent, 0.001f);
-    ok &= expectNear("right grip tilt keeps signed cross-palm Z", rightPresentationAxis.z, kExpectedCrossPalmComponent, 0.001f);
-    ok &= expectNear("left grip tilt points toward fingertips", leftPresentationAxis.x, kExpectedFingerComponent, 0.001f);
-    ok &= expectNear("left grip tilt keeps reversed cross-palm Z", leftPresentationAxis.z, -kExpectedCrossPalmComponent, 0.001f);
-    ok &= expectNear(
-        "grip tilt keeps the same fingertip angle across hands",
-        pointDot(rightPresentationAxis, fingerForward),
-        pointDot(leftPresentationAxis, fingerForward),
-        0.001f);
-    const auto rejectedSignedPresentationAxis = buildGripPresentationAxisTowardFingertips(
-        RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, fingerForward, -kTiltDegrees);
-    ok &= expectNear(
-        "grip tilt rejects the retired signed-angle convention",
-        lengthSquared(rejectedSignedPresentationAxis),
-        0.0f,
-        0.001f);
-
     const auto pocket = makePocket();
     const auto insideGate = evaluatePocketGate(pocket, RE::NiPoint3{ 3.0f, 0.0f, 2.0f }, 1.5f);
     ok &= expectTrue("pocket gate accepts a grip point inside the radius in front of the palm", insideGate.inside);

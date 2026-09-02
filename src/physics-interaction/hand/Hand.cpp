@@ -1566,7 +1566,6 @@ namespace rock
         tuning.seatDepthFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits;
         tuning.seatDepthSkinGameUnits = g_rockConfig.rockGrabSeatDepthSkinGameUnits;
         tuning.pullPresentationMinElongationRatio = g_rockConfig.rockPullPresentationMinElongationRatio;
-        tuning.pullPresentationGripAxisTiltDegrees = g_rockConfig.rockPullPresentationGripAxisTiltDegrees;
         tuning.pocketDepthGameUnits = g_rockConfig.rockGrabPocketDepthGameUnits;
         tuning.pocketRadiusGameUnits = g_rockConfig.rockGrabPocketRadiusGameUnits;
         return true;
