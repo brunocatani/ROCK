@@ -70,6 +70,20 @@ namespace rock
         return resolved;
     }
 
+    void PhysicsInteraction::presentClaimedHands()
+    {
+        if (!_handBoneCache.isReady()) {
+            return;
+        }
+        for (const bool isLeft : { false, true }) {
+            RE::NiTransform delta{};
+            if (!frik_hand_world_authority::tryPlanHandPresentation(isLeft, delta)) {
+                continue;
+            }
+            frik_hand_world_authority::recordHandPresentation(isLeft, delta, _handBoneCache.presentChain(isLeft, delta));
+        }
+    }
+
     RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
     {
         RE::NiTransform rawHandWorld{};

@@ -26,6 +26,9 @@
  *   3. resolveRawHands (ROCK frame, after the bone cache refresh): isolate the
  *      controller hand (TrackedHandIsolationPolicy) and detect FRIK's silent
  *      fallback to the tracked hand for an unreachable claim.
+ *   4. tryPlanHandPresentation (end of ROCK's frame): carry each claimed
+ *      hand's rendered chain by the change ROCK made to its target since
+ *      FRIK consumed it, so the hand draws on this frame's seat.
  *
  * Publication is gated on the outer hook: until ROCK has verified that its
  * pre-FRIK pass runs, publish() returns false and no claim is stored, so a
@@ -116,6 +119,19 @@ namespace rock::frik_hand_world_authority
     using HandChainTransport = rendered_bone_transport_policy::HandTransport;
     [[nodiscard]] bool tryGetHandChainTransport(bool isLeft, HandChainTransport& outTransport);
     [[nodiscard]] RE::NiTransform transportHandChainWorld(bool isLeft, const RE::NiTransform& renderedWorld);
+
+    // ---- Presentation (PhysicsInteraction, end of ROCK's frame) ----
+
+    /*
+     * The rigid delta that carries this hand's rendered chain from the target
+     * FRIK consumed this frame to the target ROCK holds now. False when no
+     * claim was consumed, the target is unchanged, FRIK did not render the
+     * consumed target, or the change exceeds a rigid carry (see
+     * HandWorldClaimRegistryPolicy::planPresentation).
+     */
+    [[nodiscard]] bool tryPlanHandPresentation(bool isLeft, RE::NiTransform& outDelta);
+    // The caller carried the chain by delta, or failed to: keeps the presented hand and the probe counters honest.
+    void recordHandPresentation(bool isLeft, const RE::NiTransform& delta, bool applied);
 
     // ---- Lifecycle ----
 

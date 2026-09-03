@@ -40,6 +40,9 @@ namespace rock::frik_hand_world_authority
             isolation_policy::FrameResult result{};
             RE::NiTransform presentedHandWorld{};
             bool presentedHandValid = false;
+            // The wrist FRIK solved this frame (refNode, before the palm blend).
+            RE::NiTransform renderedHandNodeWorld{};
+            bool renderedHandNodeValid = false;
             transport_policy::HandTransport chainTransport{};
         };
 
@@ -58,6 +61,12 @@ namespace rock::frik_hand_world_authority
             // A claim was rendered but the chain could not be carried: every
             // controller-space consumer read ROCK's previous target that frame.
             std::array<std::uint32_t, 2> claimedFramesWithoutTransport{};
+            std::array<std::uint32_t, 2> presentedFrames{};
+            std::array<float, 2> presentTranslationMax{};
+            std::array<float, 2> presentRotationMax{};
+            std::array<std::uint32_t, 2> presentSkippedNotFollowing{};
+            std::array<std::uint32_t, 2> presentSkippedTooLarge{};
+            std::array<std::uint32_t, 2> presentWriteFailures{};
             std::uint32_t rebasePublishes = 0;
             std::uint32_t rebaseKeepOrderPublishes = 0;
             std::uint32_t rebaseRejected = 0;
@@ -77,6 +86,10 @@ namespace rock::frik_hand_world_authority
             // same frame see no new kick and must not calibrate on it.
             bool recoilKickThisFrame = false;
             std::array<bool, 2> claimConsumedThisFrame{};
+            // The winner per hand when FRIK's frame began: what it solved to.
+            std::array<registry_policy::ConsumedTarget, 2> consumedTargets{};
+            // Skeleton ready and no scope/config state that suspends the solve.
+            bool presentationAllowed = false;
             std::array<IsolationState, 2> isolation{};
             SchedulerState scheduler = SchedulerState::Unverified;
             ProbeCounters probes{};
@@ -186,7 +199,7 @@ namespace rock::frik_hand_world_authority
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const auto& relation = g_service.isolation[hand].relation;
                 ROCK_LOG_INFO(Hand,
-                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={} transportFrames={} transportMax={:.2f}gu/{:.2f}deg claimedWithoutTransport={}",
+                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={} transportFrames={} transportMax={:.2f}gu/{:.2f}deg claimedWithoutTransport={} presented={} presentMax={:.2f}gu/{:.2f}deg presentNotFollowing={} presentTooLarge={} presentWriteFailed={}",
                     handName(hand == handIndex(true)),
                     probes.frames,
                     probes.reconstructedFrames[hand],
@@ -201,7 +214,13 @@ namespace rock::frik_hand_world_authority
                     probes.transportActiveFrames[hand],
                     probes.transportTranslationMax[hand],
                     probes.transportRotationMax[hand],
-                    probes.claimedFramesWithoutTransport[hand]);
+                    probes.claimedFramesWithoutTransport[hand],
+                    probes.presentedFrames[hand],
+                    probes.presentTranslationMax[hand],
+                    probes.presentRotationMax[hand],
+                    probes.presentSkippedNotFollowing[hand],
+                    probes.presentSkippedTooLarge[hand],
+                    probes.presentWriteFailures[hand]);
             }
             ROCK_LOG_INFO(Hand,
                 "HandWorldAuthority rebase frames={} claims={} rebasePublishes={} keepOrderPublishes={} rejected={} driverSamplesMissing={} refusedByGate={} refusedRotation={} scheduler={}",
@@ -311,10 +330,13 @@ namespace rock::frik_hand_world_authority
         for (std::size_t hand = 0; hand < 2; ++hand) {
             const bool isLeft = hand == handIndex(true);
             g_service.claimConsumedThisFrame[hand] = registry_policy::hasClaim(g_service.registry, isLeft);
+            g_service.consumedTargets[hand] = registry_policy::snapshotConsumedTarget(g_service.registry, isLeft);
             g_service.isolation[hand].result = {};
             g_service.isolation[hand].presentedHandValid = false;
+            g_service.isolation[hand].renderedHandNodeValid = false;
             g_service.isolation[hand].chainTransport = {};
         }
+        g_service.presentationAllowed = false;
     }
 
     bool publish(const char* tag, const bool isLeft, const RE::NiTransform& requestedTarget, const int priority, const RebaseDriver driver)
@@ -450,6 +472,7 @@ namespace rock::frik_hand_world_authority
         g_service.observedFrameIndex = g_service.rockFrameIndex;
         if (firstResolveThisFrame) {
             g_service.recoilKickThisFrame = samples.recoilKickThisFrame;
+            g_service.presentationAllowed = samples.fallbackObservationAllowed;
         }
         const bool recoilKickThisFrame = g_service.recoilKickThisFrame || samples.recoilKickThisFrame;
 
@@ -460,6 +483,10 @@ namespace rock::frik_hand_world_authority
 
             state.presentedHandWorld = sample.flattenedHandWorld;
             state.presentedHandValid = sample.flattenedHandValid;
+            if (firstResolveThisFrame) {
+                state.renderedHandNodeWorld = sample.bodyHandNodeWorld;
+                state.renderedHandNodeValid = sample.bodyHandNodeValid;
+            }
 
             isolation_policy::FrameInput input{};
             input.firstPersonHandValid = frik_visual_authority::tryGetHandWorldTransform(
@@ -574,6 +601,59 @@ namespace rock::frik_hand_world_authority
         return transport_policy::transportWorld(g_service.isolation[handIndex(isLeft)].chainTransport, renderedWorld);
     }
 
+    bool tryPlanHandPresentation(const bool isLeft, RE::NiTransform& outDelta)
+    {
+        outDelta = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const std::size_t hand = handIndex(isLeft);
+        if (!g_service.presentationAllowed || !g_service.claimConsumedThisFrame[hand]) {
+            return false;
+        }
+        const auto& state = g_service.isolation[hand];
+        const auto plan = registry_policy::planPresentation(
+            g_service.consumedTargets[hand],
+            registry_policy::winner(g_service.registry, isLeft),
+            state.renderedHandNodeWorld,
+            state.renderedHandNodeValid);
+        auto& probes = g_service.probes;
+        switch (plan.decision) {
+        case registry_policy::PresentationDecision::Present:
+            outDelta = plan.delta;
+            probes.presentTranslationMax[hand] = (std::max)(probes.presentTranslationMax[hand], plan.translationGameUnits);
+            probes.presentRotationMax[hand] = (std::max)(probes.presentRotationMax[hand], plan.rotationDegrees);
+            return true;
+        case registry_policy::PresentationDecision::NotFollowing:
+            ++probes.presentSkippedNotFollowing[hand];
+            return false;
+        case registry_policy::PresentationDecision::TooLarge:
+            ++probes.presentSkippedTooLarge[hand];
+            return false;
+        default:
+            return false;
+        }
+    }
+
+    void recordHandPresentation(const bool isLeft, const RE::NiTransform& delta, const bool applied)
+    {
+        const std::size_t hand = handIndex(isLeft);
+        if (!applied) {
+            ++g_service.probes.presentWriteFailures[hand];
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                5000,
+                "HandWorldAuthority could not carry the rendered {} hand chain to this frame's claim; the hand shows last frame's target",
+                handName(isLeft));
+            return;
+        }
+        ++g_service.probes.presentedFrames[hand];
+        auto& state = g_service.isolation[hand];
+        const transport_policy::HandTransport transport{ .delta = delta, .active = true };
+        if (state.presentedHandValid) {
+            state.presentedHandWorld = transport_policy::transportWorld(transport, state.presentedHandWorld);
+        }
+        if (state.renderedHandNodeValid) {
+            state.renderedHandNodeWorld = transport_policy::transportWorld(transport, state.renderedHandNodeWorld);
+        }
+    }
+
     void clearAllClaims()
     {
         for (const auto& claim : g_service.registry.claims) {
@@ -583,12 +663,15 @@ namespace rock::frik_hand_world_authority
         }
         registry_policy::clearAll(g_service.registry);
         g_service.claimConsumedThisFrame = {};
+        g_service.consumedTargets = {};
     }
 
     void resetForSkeletonRelease()
     {
         registry_policy::clearAll(g_service.registry);
         g_service.claimConsumedThisFrame = {};
+        g_service.consumedTargets = {};
+        g_service.presentationAllowed = false;
         for (auto& state : g_service.isolation) {
             state = {};
         }

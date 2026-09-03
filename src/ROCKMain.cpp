@@ -779,6 +779,11 @@ namespace
             s_physicsInteraction->publishGripZoneIndicatorRenderFrame(
                 runtime_state::currentFrame().frameIndex);
         }
+        // Last in the frame: every claim of this frame is published, and the
+        // rendered chain is not read again before FRIK's next solve.
+        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->presentClaimedHands();
+        }
     }
 
     bool hookMainLoop()

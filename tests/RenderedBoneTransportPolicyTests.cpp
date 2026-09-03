@@ -114,6 +114,10 @@ int main()
             rock::transform_math::invertTransform(transportWorld(transport, renderedRoot)),
             transportWorld(transport, renderedFinger));
         ok &= expectSameTransform("relative pose preserved", relative, fingerLocal);
+        // The carried top bone re-expressed under its unmoved parent.
+        const RE::NiTransform parentWorld = yawed(-15.0f, 90.0f, -30.0f, 70.0f);
+        const RE::NiTransform carriedForearm = transportWorld(transport, renderedForearm);
+        ok &= expectSameTransform("local under parent", compose(parentWorld, localUnderParent(parentWorld, carriedForearm)), carriedForearm);
     }
 
     // Missing or broken roots fall back to the rendered bones.

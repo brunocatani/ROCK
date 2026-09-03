@@ -345,4 +345,94 @@ namespace rock
         outSnapshot.valid = !outSnapshot.bones.empty();
         return outSnapshot.valid;
     }
+
+    bool DirectSkeletonBoneReader::presentCachedChain(const rendered_bone_transport_policy::HandChainSide side, const RE::NiTransform& delta)
+    {
+        namespace transport_policy = rendered_bone_transport_policy;
+        auto* tree = static_cast<BSFlattenedBoneTree*>(_cachedBoneTree);
+        if (side == transport_policy::HandChainSide::None || !validTree(tree) ||
+            !tracked_hand_isolation_policy::isFiniteTransform(delta)) {
+            return false;
+        }
+
+        struct ChainWrite
+        {
+            int treeIndex = -1;
+            int parentTreeIndex = -1;
+            bool parentInChain = false;
+            bool nodeValid = false;
+            bool refParentValid = false;
+            RE::NiNode* refNode = nullptr;
+            RE::NiNode* refParent = nullptr;
+            RE::NiTransform world{};
+            RE::NiTransform nodeWorld{};
+            RE::NiTransform refParentWorld{};
+        };
+        // Hand, three forearm bones and fifteen finger bones per side.
+        constexpr std::size_t kMaxChainBones = 24;
+        std::array<ChainWrite, kMaxChainBones> writes{};
+        std::size_t count = 0;
+
+        // Validate the whole chain before the first write so a torn tree
+        // cannot leave a half-carried hand.
+        for (const auto& cached : _cachedBones) {
+            if (cached.chainSide != side) {
+                continue;
+            }
+            if (count >= kMaxChainBones || cached.treeIndex < 0 || cached.treeIndex >= tree->numTransforms) {
+                return false;
+            }
+            ChainWrite& write = writes[count++];
+            write.treeIndex = cached.treeIndex;
+            write.parentTreeIndex = cached.parentTreeIndex;
+            const auto& entry = tree->transforms[cached.treeIndex];
+            write.world = entry.world;
+            if (!tracked_hand_isolation_policy::isFiniteTransform(write.world)) {
+                return false;
+            }
+            if (RE::NiNode* refNode = entry.refNode) {
+                if (!native_memory::tryReadValue(&refNode->world, write.nodeWorld) ||
+                    !native_memory::tryReadValue(&refNode->parent, write.refParent) ||
+                    !tracked_hand_isolation_policy::isFiniteTransform(write.nodeWorld)) {
+                    return false;
+                }
+                write.refNode = refNode;
+                write.nodeValid = true;
+                if (write.refParent) {
+                    write.refParentValid = native_memory::tryReadValue(&write.refParent->world, write.refParentWorld);
+                }
+            }
+        }
+        if (count == 0) {
+            return false;
+        }
+        for (std::size_t i = 0; i < count; ++i) {
+            for (std::size_t j = 0; j < count; ++j) {
+                if (writes[i].parentTreeIndex == writes[j].treeIndex) {
+                    writes[i].parentInChain = true;
+                    break;
+                }
+            }
+        }
+
+        const transport_policy::HandTransport transport{ .delta = delta, .active = true };
+        for (std::size_t i = 0; i < count; ++i) {
+            const ChainWrite& write = writes[i];
+            auto& entry = tree->transforms[write.treeIndex];
+            const RE::NiTransform world = transport_policy::transportWorld(transport, write.world);
+            entry.world = world;
+            if (!write.parentInChain && write.parentTreeIndex >= 0 && write.parentTreeIndex < tree->numTransforms) {
+                entry.local = transport_policy::localUnderParent(tree->transforms[write.parentTreeIndex].world, world);
+            }
+            if (!write.nodeValid) {
+                continue;
+            }
+            const RE::NiTransform nodeWorld = transport_policy::transportWorld(transport, write.nodeWorld);
+            (void)native_memory::tryWriteValue(&write.refNode->world, nodeWorld);
+            if (!write.parentInChain && write.refParentValid) {
+                (void)native_memory::tryWriteValue(&write.refNode->local, transport_policy::localUnderParent(write.refParentWorld, nodeWorld));
+            }
+        }
+        return true;
+    }
 }

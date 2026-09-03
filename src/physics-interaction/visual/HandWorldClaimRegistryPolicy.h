@@ -504,4 +504,104 @@ namespace rock::hand_world_claim_registry_policy
         }
         return FallbackObservation::Suspected;
     }
+
+    // ---- Presentation at the end of ROCK's frame ----
+
+    /*
+     * FRIK solved this hand at its frame start to the claim it held then.
+     * ROCK's frame republished the target from this frame's inputs: the
+     * weapon it just posed, the object it just stepped. The rendered chain is
+     * carried by that change at the end of ROCK's frame so the hand draws on
+     * this frame's seat, as Experimental's immediate solve did, instead of
+     * one frame behind it. The pre-FRIK rebase cannot cover this part: it
+     * moves the claim by the wand, and the seat also depends on what ROCK
+     * writes after FRIK (the two-handed weapon local, the held body).
+     * Bounded: a larger change is a new seat FRIK must solve the arm to.
+     */
+    inline constexpr float kMaxPresentationTranslationGameUnits = 10.0f;
+    inline constexpr float kMaxPresentationRotationDegrees = 30.0f;
+
+    struct ConsumedTarget
+    {
+        RE::NiTransform target{};
+        bool valid = false;
+    };
+
+    // The target FRIK is about to solve to: the winner before ROCK's frame.
+    [[nodiscard]] inline ConsumedTarget snapshotConsumedTarget(const Registry& registry, const bool isLeft) noexcept
+    {
+        const Claim* top = winner(registry, isLeft);
+        if (!top) {
+            return {};
+        }
+        return ConsumedTarget{ .target = top->target, .valid = true };
+    }
+
+    enum class PresentationDecision : std::uint8_t
+    {
+        // No claim was consumed, none is held now, or the wrist is unreadable.
+        NoClaim,
+        // The target did not change this frame.
+        Unchanged,
+        // FRIK did not render the consumed target (fallback, recoil kick).
+        NotFollowing,
+        // The change exceeds a rigid carry; FRIK solves it next frame.
+        TooLarge,
+        Present,
+    };
+
+    struct PresentationPlan
+    {
+        RE::NiTransform delta{};
+        PresentationDecision decision = PresentationDecision::NoClaim;
+        // Displacement of the target itself, not of the delta about the origin.
+        float translationGameUnits = 0.0f;
+        float rotationDegrees = 0.0f;
+    };
+
+    /*
+     * delta = current * inverse(consumed), applied to the rendered chain. The
+     * rendered wrist must be on the consumed target: a hand FRIK solved to
+     * the tracked controller instead, or kicked by recoil, is left as FRIK
+     * drew it.
+     */
+    [[nodiscard]] inline PresentationPlan planPresentation(
+        const ConsumedTarget& consumed,
+        const Claim* current,
+        const RE::NiTransform& renderedHandNodeWorld,
+        const bool renderedHandNodeValid) noexcept
+    {
+        PresentationPlan plan{};
+        if (!consumed.valid || !current || !current->valid || !renderedHandNodeValid ||
+            !isFiniteTransform(consumed.target) || !isFiniteTransform(current->target) || !isFiniteTransform(renderedHandNodeWorld)) {
+            return plan;
+        }
+        if (translationDeltaGameUnits(renderedHandNodeWorld, consumed.target) > kFallbackTranslationGameUnits ||
+            rotationDeltaDegrees(renderedHandNodeWorld, consumed.target) > kFallbackRotationDegrees) {
+            plan.decision = PresentationDecision::NotFollowing;
+            return plan;
+        }
+        plan.translationGameUnits = translationDeltaGameUnits(current->target, consumed.target);
+        plan.rotationDegrees = rotationDeltaDegrees(current->target, consumed.target);
+        if (plan.translationGameUnits <= kRepublishTranslationEpsilonGameUnits &&
+            plan.rotationDegrees <= kRepublishRotationEpsilonDegrees) {
+            plan.decision = PresentationDecision::Unchanged;
+            return plan;
+        }
+        if (plan.translationGameUnits > kMaxPresentationTranslationGameUnits ||
+            plan.rotationDegrees > kMaxPresentationRotationDegrees) {
+            plan.decision = PresentationDecision::TooLarge;
+            return plan;
+        }
+        // Rendered scene bases: orthonormalize before the transpose inverse.
+        const RE::NiTransform delta = transform_math::orthonormalizedTransform(transform_math::composeTransforms(
+            transform_math::orthonormalizedTransform(current->target),
+            transform_math::invertTransform(transform_math::orthonormalizedTransform(consumed.target))));
+        if (!isFiniteTransform(delta)) {
+            return plan;
+        }
+        plan.delta = delta;
+        plan.decision = PresentationDecision::Present;
+        return plan;
+    }
 }

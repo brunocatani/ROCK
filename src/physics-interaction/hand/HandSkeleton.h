@@ -67,6 +67,13 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneSource source,
             SkeletonBoneCaptureSpace space,
             DirectSkeletonBoneSnapshot& outSnapshot);
+        /*
+         * Carry one hand's cached chain (forearm, hand, fingers) rigidly by
+         * delta in the tree and its refNodes: worlds for every chain bone,
+         * locals only where the parent stays. The whole chain is validated
+         * before the first write. False when nothing was written.
+         */
+        bool presentCachedChain(rendered_bone_transport_policy::HandChainSide side, const RE::NiTransform& delta);
         void resetCache();
 
     private:
@@ -186,6 +193,18 @@ namespace rock
             const bool valid = isLeft ? _leftHandNodeWorldValid : _rightHandNodeWorldValid;
             outWorld = valid ? (isLeft ? _leftHandNodeWorld : _rightHandNodeWorld) : RE::NiTransform{};
             return _ready && valid;
+        }
+
+        /*
+         * End of ROCK's frame: carry the rendered hand chain by the change the
+         * hand world authority made to its claim since FRIK consumed it.
+         */
+        bool presentChain(bool isLeft, const RE::NiTransform& delta)
+        {
+            return isReady() &&
+                   _reader.presentCachedChain(
+                       isLeft ? rendered_bone_transport_policy::HandChainSide::Left : rendered_bone_transport_policy::HandChainSide::Right,
+                       delta);
         }
 
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }

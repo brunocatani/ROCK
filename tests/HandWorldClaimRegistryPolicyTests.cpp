@@ -277,6 +277,49 @@ int main()
         ok &= expectEnum("drifted target accepted", commit(rotationRegistry, "ROCK_S", false, 100, drifted, RebaseDriver::Static, sample(identity())), CommitResult::Inserted);
     }
 
+    // End-of-frame presentation: carry the rendered chain by the change ROCK
+    // made to its target since FRIK consumed it.
+    {
+        Registry registry{};
+        const RE::NiTransform consumedTarget = translated(10.0f, 0.0f, 0.0f);
+        const RE::NiTransform newTarget = yawed(5.0f, 12.0f, 0.0f, 0.0f);
+        ok &= expectEnum("presentation claim", commit(registry, "ROCK_P", false, 100, consumedTarget, RebaseDriver::RightHand, sample(identity())), CommitResult::Inserted);
+        const ConsumedTarget consumed = snapshotConsumedTarget(registry, false);
+        ok &= expectTrue("consumed snapshot valid", consumed.valid);
+        ok &= expectFalse("no consumed for left", snapshotConsumedTarget(registry, true).valid);
+
+        PresentationPlan plan = planPresentation(consumed, winner(registry, false), consumedTarget, true);
+        ok &= expectEnum("unchanged", plan.decision, PresentationDecision::Unchanged);
+
+        // ROCK republished the seat 2 gu further and 5 deg turned.
+        ok &= expectEnum("presentation republish", commit(registry, "ROCK_P", false, 100, newTarget, RebaseDriver::RightHand, sample(identity())), CommitResult::Updated);
+        plan = planPresentation(consumed, winner(registry, false), consumedTarget, true);
+        ok &= expectEnum("present", plan.decision, PresentationDecision::Present);
+        ok &= expectNear("present translation", plan.translationGameUnits, 2.0f, 0.001f);
+        ok &= expectNear("present rotation", plan.rotationDegrees, 5.0f, 0.01f);
+        const RE::NiTransform carried = rock::transform_math::composeTransforms(plan.delta, consumedTarget);
+        ok &= expectNear("carried wrist lands on the new target", translationDeltaGameUnits(carried, newTarget), 0.0f, 0.002f);
+        ok &= expectNear("carried wrist rotation", rotationDeltaDegrees(carried, newTarget), 0.0f, 0.02f);
+        ok &= expectTrue("presentation delta orthonormal", rock::transform_math::storedRotationOrthonormalityError(plan.delta.rotate) < 1e-5);
+
+        // FRIK rendered the tracked hand instead (fallback or kick): left as drawn.
+        plan = planPresentation(consumed, winner(registry, false), translated(20.0f, 0.0f, 0.0f), true);
+        ok &= expectEnum("not following", plan.decision, PresentationDecision::NotFollowing);
+        plan = planPresentation(consumed, winner(registry, false), consumedTarget, false);
+        ok &= expectEnum("wrist unreadable", plan.decision, PresentationDecision::NoClaim);
+
+        // A seat change beyond a rigid carry is left to FRIK's next solve.
+        ok &= expectEnum("presentation jump", commit(registry, "ROCK_P", false, 100, translated(40.0f, 0.0f, 0.0f), RebaseDriver::RightHand, sample(identity())), CommitResult::Updated);
+        plan = planPresentation(consumed, winner(registry, false), consumedTarget, true);
+        ok &= expectEnum("too large", plan.decision, PresentationDecision::TooLarge);
+
+        // Claim cleared during ROCK's frame, or never consumed: nothing to present.
+        ok &= expectTrue("presentation remove", remove(registry, "ROCK_P", false));
+        plan = planPresentation(consumed, winner(registry, false), consumedTarget, true);
+        ok &= expectEnum("cleared", plan.decision, PresentationDecision::NoClaim);
+        ok &= expectEnum("never consumed", planPresentation(ConsumedTarget{}, winner(registry, false), consumedTarget, true).decision, PresentationDecision::NoClaim);
+    }
+
     if (!ok) {
         std::printf("HandWorldClaimRegistryPolicyTests FAILED\n");
         return 1;
