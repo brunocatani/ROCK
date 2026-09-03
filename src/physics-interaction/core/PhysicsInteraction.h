@@ -109,6 +109,11 @@ namespace rock
 
         void update();
 
+        // Publishes mode-2 grip indicators after every animation phase has
+        // committed, immediately before the frame's later VR render submit.
+        void publishGripZoneIndicatorRenderFrame(
+            std::uint64_t gameFrameIndex);
+
         // Observes and repairs native equipped-weapon presentation before any
         // weapon-relative ROCK authority reads the first-person graph.
         void updateEquippedWeaponTransition();

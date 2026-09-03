@@ -28,6 +28,7 @@
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
 namespace rock
 {
@@ -186,6 +187,11 @@ namespace rock
         bool rockDebugDrawWeaponColliders = false;
         bool rockDebugDrawGrabbedWeaponPartCollider = false;
         bool rockDebugDrawNativeScopeActivation = false;
+        grip_zone_indicator_policy::Mode rockGripZoneIndicatorMode{
+            grip_zone_indicator_policy::Mode::Nif
+        };
+        float rockDebugGripZoneIndicatorDiameterGameUnits =
+            grip_zone_indicator_policy::kDefaultDebugDiameterGameUnits;
         bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawWeaponAuthority = false;
         bool rockDebugGripFailureTelemetry = false;

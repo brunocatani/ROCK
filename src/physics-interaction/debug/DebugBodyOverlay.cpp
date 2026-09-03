@@ -36,6 +36,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSGraphics.h"
@@ -383,6 +384,7 @@ namespace rock::debug
             Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencil;
             Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
             GpuShape aabbProxy;
+            GpuShape gripZoneIndicatorSphere;
             std::unique_ptr<RenderScratch> scratch;
             debug_overlay_gpu_timer::TimestampQueryRing gpuTimer;
 
@@ -391,7 +393,10 @@ namespace rock::debug
                 return device && bodyVertexShader && stereoColorVertexShader && screenTextVertexShader && pixelShader && bodyInputLayout && coloredInputLayout &&
                        cameraCB && bodyInstanceVB && axisLineVB && textVB && scratch &&
                        wireRasterizer && solidRasterizer && depthStencil && blendState &&
-                       aabbProxy.vertexBuffer && aabbProxy.indexBuffer && aabbProxy.indexCount > 0;
+                       aabbProxy.vertexBuffer && aabbProxy.indexBuffer && aabbProxy.indexCount > 0 &&
+                       gripZoneIndicatorSphere.vertexBuffer &&
+                       gripZoneIndicatorSphere.indexBuffer &&
+                       gripZoneIndicatorSphere.indexCount > 0;
             }
         };
 
@@ -423,7 +428,19 @@ namespace rock::debug
         constexpr std::size_t kPublishedFramePoolCapacity = 4;
         static debug_overlay_snapshot::SnapshotPool<PublishedOverlayFrame, kPublishedFramePoolCapacity> s_framePool{};
         static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_publishedFrame{};
+        static debug_overlay_snapshot::SnapshotPool<
+            GripZoneIndicatorOverlayFrame,
+            kPublishedFramePoolCapacity>
+            s_gripZoneIndicatorFramePool{};
+        static std::atomic<std::shared_ptr<const GripZoneIndicatorOverlayFrame>>
+            s_publishedGripZoneIndicatorFrame{};
         static std::atomic<bool> s_enabled{ false };
+        static std::atomic<bool> s_standardFrameEnabled{ false };
+        static std::atomic<bool> s_gripZoneIndicatorFrameEnabled{ false };
+        // Advanced before each marker publication. The submit hook rejects an
+        // older snapshot instead of rendering the previous weapon pose.
+        static std::atomic<std::uint64_t>
+            s_latestGripZoneIndicatorGameFrameIndex{ 0 };
         static std::atomic<bool> s_initialized{ false };
         static std::atomic<bool> s_submitHookInstalled{ false };
         static bool s_installAttemptedWithoutDevice = false;
@@ -466,8 +483,10 @@ namespace rock::debug
         static std::atomic<bool> s_bodyInstanceUploadFailureReported{ false };
         static std::atomic<bool> s_lineUploadFailureReported{ false };
         static std::atomic<bool> s_textUploadFailureReported{ false };
+        static std::atomic<bool> s_gripZoneIndicatorUploadFailureReported{ false };
         static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
+        static std::atomic<bool> s_gripZoneIndicatorSnapshotPoolExhaustionReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
         static std::atomic<bool> s_gpuTimerInitFailureReported{ false };
         static CachedRenderTargetView s_submittedTextureRtv{};
@@ -476,6 +495,15 @@ namespace rock::debug
         {
             static debug_overlay_shape::ShapePipeline pipeline;
             return pipeline;
+        }
+
+        void refreshOverlayEnabled() noexcept
+        {
+            s_enabled.store(
+                s_standardFrameEnabled.load(std::memory_order_acquire) ||
+                    s_gripZoneIndicatorFrameEnabled.load(
+                        std::memory_order_acquire),
+                std::memory_order_release);
         }
 
         using VRSubmit_t = vr::EVRCompositorError(__thiscall*)(vr::IVRCompositor*, vr::EVREye, const vr::Texture_t*, const vr::VRTextureBounds_t*, vr::EVRSubmitFlags);
@@ -2212,6 +2240,23 @@ namespace rock::debug
             }
 
             if (!createStaticGpuShape(device, debug_overlay_shape::makeUnitBoxMesh(), resources.aabbProxy)) {
+                return false;
+            }
+
+            debug_overlay_shape::ShapeRecipe gripIndicatorRecipe{};
+            gripIndicatorRecipe.kind =
+                debug_overlay_shape::ShapeRecipe::Kind::Sphere;
+            gripIndicatorRecipe.settings.havokToGameScale = 1.0f;
+            gripIndicatorRecipe.convexRadius = 1.0f;
+            gripIndicatorRecipe.canonicalUnitSphere = true;
+            gripIndicatorRecipe.valid = true;
+            const auto gripIndicatorShape =
+                debug_overlay_shape::buildMeshFromRecipe(
+                    gripIndicatorRecipe);
+            if (!createStaticGpuShape(
+                    device,
+                    gripIndicatorShape.mesh,
+                    resources.gripZoneIndicatorSphere)) {
                 return false;
             }
 
@@ -4126,6 +4171,98 @@ namespace rock::debug
             ++stats.textDrawCalls;
         }
 
+        void drawGripZoneIndicatorBatch(
+            ID3D11DeviceContext* context,
+            const GripZoneIndicatorOverlayFrame& frame)
+        {
+            const std::uint32_t count = (std::min)(
+                frame.count,
+                static_cast<std::uint32_t>(frame.positions.size()));
+            if (!context || count == 0 ||
+                !std::isfinite(frame.diameterGameUnits) ||
+                frame.diameterGameUnits <= 0.0f ||
+                !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout ||
+                !s_d3d.bodyVertexShader || !s_d3d.pixelShader ||
+                !s_d3d.solidRasterizer ||
+                !s_d3d.gripZoneIndicatorSphere.vertexBuffer ||
+                !s_d3d.gripZoneIndicatorSphere.indexBuffer ||
+                s_d3d.gripZoneIndicatorSphere.indexCount == 0) {
+                return;
+            }
+
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context->Map(
+                    s_d3d.bodyInstanceVB.Get(),
+                    0,
+                    D3D11_MAP_WRITE_DISCARD,
+                    0,
+                    &mapped)) ||
+                !mapped.pData) {
+                if (!s_gripZoneIndicatorUploadFailureReported.exchange(
+                        true,
+                        std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(
+                        Hand,
+                        "Debug overlay: grip-zone indicator instance-buffer map failed; marker batch skipped");
+                }
+                return;
+            }
+
+            const float radius = frame.diameterGameUnits * 0.5f;
+            auto* instances = static_cast<BodyInstanceData*>(mapped.pData);
+            for (std::uint32_t index = 0; index < count; ++index) {
+                const auto& position = frame.positions[index];
+                const auto model =
+                    DirectX::XMMatrixScaling(radius, radius, radius) *
+                    DirectX::XMMatrixTranslation(
+                        position.x,
+                        position.y,
+                        position.z);
+                DirectX::XMStoreFloat4x4(&instances[index].model, model);
+                instances[index].color[0] = 1.0f;
+                instances[index].color[1] = 1.0f;
+                instances[index].color[2] = 1.0f;
+                instances[index].color[3] = 1.0f;
+            }
+            context->Unmap(s_d3d.bodyInstanceVB.Get(), 0);
+            s_gripZoneIndicatorUploadFailureReported.store(
+                false,
+                std::memory_order_relaxed);
+
+            context->IASetInputLayout(s_d3d.bodyInputLayout.Get());
+            context->VSSetShader(s_d3d.bodyVertexShader.Get(), nullptr, 0);
+            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
+            context->RSSetState(s_d3d.solidRasterizer.Get());
+            context->IASetPrimitiveTopology(
+                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+            ID3D11Buffer* vertexBuffers[2] = {
+                s_d3d.gripZoneIndicatorSphere.vertexBuffer.Get(),
+                s_d3d.bodyInstanceVB.Get()
+            };
+            const UINT strides[2] = {
+                sizeof(Vertex),
+                sizeof(BodyInstanceData)
+            };
+            constexpr UINT offsets[2] = { 0, 0 };
+            context->IASetVertexBuffers(
+                0,
+                2,
+                vertexBuffers,
+                strides,
+                offsets);
+            context->IASetIndexBuffer(
+                s_d3d.gripZoneIndicatorSphere.indexBuffer.Get(),
+                DXGI_FORMAT_R16_UINT,
+                0);
+            context->DrawIndexedInstanced(
+                s_d3d.gripZoneIndicatorSphere.indexCount,
+                count * 2,
+                0,
+                0,
+                0);
+        }
+
         void drawBodyBatch(
             ID3D11DeviceContext* context,
             const PublishedOverlayFrame& frame,
@@ -4340,24 +4477,48 @@ namespace rock::debug
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayRender);
 
             const auto frame = s_publishedFrame.load(std::memory_order_acquire);
-            if (!frame) {
+            const auto gripZoneIndicatorFrame =
+                s_publishedGripZoneIndicatorFrame.load(
+                    std::memory_order_acquire);
+            const auto latestGripZoneIndicatorGameFrame =
+                s_latestGripZoneIndicatorGameFrameIndex.load(
+                    std::memory_order_acquire);
+            const bool hasGripZoneIndicatorsToDraw =
+                gripZoneIndicatorFrame &&
+                grip_zone_indicator_policy::isCurrentRenderFrame(
+                    gripZoneIndicatorFrame->gameFrameIndex,
+                    latestGripZoneIndicatorGameFrame) &&
+                gripZoneIndicatorFrame->count > 0;
+            if (!frame && !hasGripZoneIndicatorsToDraw) {
                 return;
             }
 
             CompletedBodyPhaseFrame completedPhaseFrame{};
             const bool hasCompletedPhaseFrame =
-                frame->phaseDiagnosticsEnabled &&
+                frame && frame->phaseDiagnosticsEnabled &&
                 tryCopyCompletedBodyPhaseFrame(
                     *frame,
                     completedPhaseFrame);
 
-            const bool hasBodiesToDraw = (frame->drawRockBodies || frame->drawTargetBodies) && !frame->bodies.empty();
-            const bool hasAxesToDraw = frame->drawAxes && !frame->axes.empty();
-            const bool hasMarkersToDraw = frame->drawMarkers && !frame->markers.empty();
-            const bool hasSkeletonToDraw = frame->drawSkeleton && !frame->skeleton.empty();
-            const bool hasColoredLinesToDraw = frame->drawColoredLines && !frame->coloredLines.empty();
-            const bool hasTextToDraw = frame->drawText && !frame->text.empty();
-            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw && !hasSkeletonToDraw && !hasColoredLinesToDraw && !hasTextToDraw) || !frame->worldIdentity) {
+            const bool hasBodiesToDraw = frame &&
+                (frame->drawRockBodies || frame->drawTargetBodies) &&
+                !frame->bodies.empty();
+            const bool hasAxesToDraw =
+                frame && frame->drawAxes && !frame->axes.empty();
+            const bool hasMarkersToDraw =
+                frame && frame->drawMarkers && !frame->markers.empty();
+            const bool hasSkeletonToDraw =
+                frame && frame->drawSkeleton && !frame->skeleton.empty();
+            const bool hasColoredLinesToDraw = frame &&
+                frame->drawColoredLines && !frame->coloredLines.empty();
+            const bool hasTextToDraw =
+                frame && frame->drawText && !frame->text.empty();
+            const bool hasStandardOverlayToDraw =
+                hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw ||
+                hasSkeletonToDraw || hasColoredLinesToDraw || hasTextToDraw;
+            if ((!hasStandardOverlayToDraw &&
+                    !hasGripZoneIndicatorsToDraw) ||
+                (hasStandardOverlayToDraw && !frame->worldIdentity)) {
                 return;
             }
 
@@ -4373,14 +4534,19 @@ namespace rock::debug
             submittedTexture->GetDesc(&textureDesc);
 
             OverlayRuntimeStats stats{};
-            stats.bodyExtractFailures = frame->bodyExtractFailures;
-            stats.shapeCaptures = frame->shapeCaptures;
-            stats.shapeCaptureDeferrals = frame->shapeCaptureDeferrals;
-            const auto uploadResult = shapePipeline().processCompletedUploads(
-                device, frame->settings.limits.maxShapeUploadsPerFrame, frame->settings.pipelineLimits);
-            stats.shapeUploadsProcessed = uploadResult.processed;
-            stats.shapeUploadsCompleted = uploadResult.uploaded;
-            stats.shapeUploadFailures = uploadResult.failed;
+            if (frame) {
+                stats.bodyExtractFailures = frame->bodyExtractFailures;
+                stats.shapeCaptures = frame->shapeCaptures;
+                stats.shapeCaptureDeferrals = frame->shapeCaptureDeferrals;
+                const auto uploadResult =
+                    shapePipeline().processCompletedUploads(
+                        device,
+                        frame->settings.limits.maxShapeUploadsPerFrame,
+                        frame->settings.pipelineLimits);
+                stats.shapeUploadsProcessed = uploadResult.processed;
+                stats.shapeUploadsCompleted = uploadResult.uploaded;
+                stats.shapeUploadFailures = uploadResult.failed;
+            }
             ID3D11RenderTargetView* rtv = getSubmittedTextureRtv(device, submittedTexture, textureDesc, stats);
             if (!rtv) {
                 return;
@@ -4411,32 +4577,43 @@ namespace rock::debug
                         stats);
                 }
 
-                auto& lineBatch = s_d3d.scratch->lines;
-                lineBatch.beginFrame(frame->settings.limits.maxLineVertices);
-                // Owner-published diagnostics are already hard-bounded by the
-                // provider API. Admit them first so an enabled addon view is
-                // not silently starved by unrelated high-cardinality probes.
-                collectColoredLineOverlays(lineBatch, *frame);
-                collectAxisOverlays(lineBatch, *frame);
-                collectMarkerOverlays(lineBatch, *frame);
-                collectSkeletonOverlays(lineBatch, *frame);
-                drawLineBatch(context, lineBatch, stats);
-                drawTextOverlays(
-                    context,
-                    static_cast<float>(textureDesc.Width),
-                    static_cast<float>(textureDesc.Height),
-                    *frame,
-                    eye0,
-                    eye1,
-                    adjust0,
-                    adjust1,
-                    hasCompletedPhaseFrame ?
-                        &completedPhaseFrame :
-                        nullptr,
-                    stats);
+                if (hasGripZoneIndicatorsToDraw) {
+                    drawGripZoneIndicatorBatch(
+                        context,
+                        *gripZoneIndicatorFrame);
+                }
+
+                if (frame) {
+                    auto& lineBatch = s_d3d.scratch->lines;
+                    lineBatch.beginFrame(
+                        frame->settings.limits.maxLineVertices);
+                    // Owner-published diagnostics are already hard-bounded by
+                    // the provider API. Admit them first so an enabled addon
+                    // view is not silently starved by unrelated
+                    // high-cardinality probes.
+                    collectColoredLineOverlays(lineBatch, *frame);
+                    collectAxisOverlays(lineBatch, *frame);
+                    collectMarkerOverlays(lineBatch, *frame);
+                    collectSkeletonOverlays(lineBatch, *frame);
+                    drawLineBatch(context, lineBatch, stats);
+                    drawTextOverlays(
+                        context,
+                        static_cast<float>(textureDesc.Width),
+                        static_cast<float>(textureDesc.Height),
+                        *frame,
+                        eye0,
+                        eye1,
+                        adjust0,
+                        adjust1,
+                        hasCompletedPhaseFrame ?
+                            &completedPhaseFrame :
+                            nullptr,
+                        stats);
+                }
             }
 
-            if (frame->settings.verboseLogging && ++s_overlayStatsLogCounter >= 90) {
+            if (frame && frame->settings.verboseLogging &&
+                ++s_overlayStatsLogCounter >= 90) {
                 s_overlayStatsLogCounter = 0;
                 const auto pipelineStats = shapePipeline().stats();
                 const auto gpuStats = s_d3d.gpuTimer.stats();
@@ -4673,11 +4850,30 @@ namespace rock::debug
 
     void PublishFrame(const BodyOverlayFrame& frame)
     {
+        s_latestGripZoneIndicatorGameFrameIndex.store(
+            frame.gameFrameIndex,
+            std::memory_order_release);
+        const auto previousGripZoneIndicatorFrame =
+            s_publishedGripZoneIndicatorFrame.load(
+                std::memory_order_acquire);
+        if (previousGripZoneIndicatorFrame &&
+            previousGripZoneIndicatorFrame->gameFrameIndex !=
+                frame.gameFrameIndex) {
+            s_publishedGripZoneIndicatorFrame.store(
+                {},
+                std::memory_order_release);
+            s_gripZoneIndicatorFrameEnabled.store(
+                false,
+                std::memory_order_release);
+        }
+
         auto next = s_framePool.acquire();
         if (!next) {
             if (!s_snapshotPoolExhaustionReported.exchange(true, std::memory_order_relaxed)) {
                 ROCK_LOG_WARN(Hand, "Debug body overlay: immutable snapshot pool exhausted; retaining the last safe publication");
             }
+            refreshOverlayEnabled();
+            (void)s_frameAdmission.publish();
             return;
         }
 
@@ -4715,8 +4911,97 @@ namespace rock::debug
         std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
         s_publishedFrame.store(std::move(immutable), std::memory_order_release);
         s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
-        s_enabled.store(enabled, std::memory_order_release);
+        s_standardFrameEnabled.store(enabled, std::memory_order_release);
+        refreshOverlayEnabled();
         (void)s_frameAdmission.publish();
+    }
+
+    void PublishGripZoneIndicators(
+        const GripZoneIndicatorOverlayFrame& frame)
+    {
+        s_latestGripZoneIndicatorGameFrameIndex.store(
+            frame.gameFrameIndex,
+            std::memory_order_release);
+
+        const std::uint32_t sourceCount = (std::min)(
+            frame.count,
+            static_cast<std::uint32_t>(frame.positions.size()));
+        if (frame.gameFrameIndex == 0 || sourceCount == 0 ||
+            !std::isfinite(frame.diameterGameUnits) ||
+            frame.diameterGameUnits <
+                grip_zone_indicator_policy::kMinimumDebugDiameterGameUnits ||
+            frame.diameterGameUnits >
+                grip_zone_indicator_policy::kMaximumDebugDiameterGameUnits) {
+            ClearGripZoneIndicators();
+            return;
+        }
+
+        auto next = s_gripZoneIndicatorFramePool.acquire();
+        if (!next) {
+            s_publishedGripZoneIndicatorFrame.store(
+                {},
+                std::memory_order_release);
+            s_gripZoneIndicatorFrameEnabled.store(
+                false,
+                std::memory_order_release);
+            refreshOverlayEnabled();
+            (void)s_frameAdmission.publish();
+            if (!s_gripZoneIndicatorSnapshotPoolExhaustionReported.exchange(
+                    true,
+                    std::memory_order_relaxed)) {
+                ROCK_LOG_WARN(
+                    Hand,
+                    "Debug overlay: grip-zone indicator snapshot pool exhausted; current marker frame skipped");
+            }
+            return;
+        }
+
+        *next = {};
+        next->gameFrameIndex = frame.gameFrameIndex;
+        next->diameterGameUnits = frame.diameterGameUnits;
+        for (std::uint32_t index = 0; index < sourceCount; ++index) {
+            const auto& position = frame.positions[index];
+            if (!std::isfinite(position.x) ||
+                !std::isfinite(position.y) ||
+                !std::isfinite(position.z)) {
+                continue;
+            }
+            next->positions[next->count++] = position;
+        }
+
+        if (next->count == 0) {
+            ClearGripZoneIndicators();
+            return;
+        }
+
+        std::shared_ptr<const GripZoneIndicatorOverlayFrame> immutable =
+            std::move(next);
+        s_publishedGripZoneIndicatorFrame.store(
+            std::move(immutable),
+            std::memory_order_release);
+        s_gripZoneIndicatorSnapshotPoolExhaustionReported.store(
+            false,
+            std::memory_order_relaxed);
+        s_gripZoneIndicatorFrameEnabled.store(
+            true,
+            std::memory_order_release);
+        refreshOverlayEnabled();
+        (void)s_frameAdmission.publish();
+    }
+
+    void ClearGripZoneIndicators()
+    {
+        const bool wasEnabled =
+            s_gripZoneIndicatorFrameEnabled.exchange(
+                false,
+                std::memory_order_acq_rel);
+        const auto previous = s_publishedGripZoneIndicatorFrame.exchange(
+            {},
+            std::memory_order_acq_rel);
+        refreshOverlayEnabled();
+        if (wasEnabled || previous) {
+            (void)s_frameAdmission.publish();
+        }
     }
 
     void CapturePostSolveBodyPhases(
@@ -4876,7 +5161,17 @@ namespace rock::debug
     {
         clearPhysicsPhaseCapture();
         s_publishedFrame.store({}, std::memory_order_release);
-        s_enabled.store(false, std::memory_order_release);
+        s_publishedGripZoneIndicatorFrame.store(
+            {},
+            std::memory_order_release);
+        s_standardFrameEnabled.store(false, std::memory_order_release);
+        s_gripZoneIndicatorFrameEnabled.store(
+            false,
+            std::memory_order_release);
+        s_latestGripZoneIndicatorGameFrameIndex.store(
+            0,
+            std::memory_order_release);
+        refreshOverlayEnabled();
         (void)s_frameAdmission.publish();
     }
 

@@ -1,4 +1,5 @@
 #include "physics-interaction/debug/DebugVisualizationPolicy.h"
+#include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
 using namespace rock::debug_visualization_policy;
 
@@ -103,6 +104,38 @@ namespace
     static_assert(!unrelatedGenericVisuals.looseWeaponGripZones);
     static_assert(!unrelatedGenericVisuals.authoredGripActivationZones);
     static_assert(!unrelatedGenericVisuals.grabPocketNormal);
+
+    using rock::grip_zone_indicator_policy::Mode;
+    static_assert(
+        rock::grip_zone_indicator_policy::modeFromIni(0) == Mode::Off);
+    static_assert(
+        rock::grip_zone_indicator_policy::modeFromIni(1) == Mode::Nif);
+    static_assert(
+        rock::grip_zone_indicator_policy::modeFromIni(2) ==
+        Mode::DebugOverlay);
+    static_assert(
+        rock::grip_zone_indicator_policy::modeFromIni(-1) == Mode::Nif);
+    static_assert(
+        rock::grip_zone_indicator_policy::modeFromIni(3) == Mode::Nif);
+    static_assert(rock::grip_zone_indicator_policy::usesNif(Mode::Nif));
+    static_assert(!rock::grip_zone_indicator_policy::usesNif(Mode::Off));
+    static_assert(
+        !rock::grip_zone_indicator_policy::usesDebugOverlay(Mode::Off));
+    static_assert(
+        rock::grip_zone_indicator_policy::usesDebugOverlay(
+            Mode::DebugOverlay));
+    static_assert(
+        rock::grip_zone_indicator_policy::isCurrentRenderFrame(42, 42));
+    static_assert(
+        !rock::grip_zone_indicator_policy::isCurrentRenderFrame(41, 42));
+    static_assert(
+        !rock::grip_zone_indicator_policy::isCurrentRenderFrame(0, 0));
+    static_assert(
+        rock::grip_zone_indicator_policy::kDefaultDebugDiameterGameUnits >=
+        rock::grip_zone_indicator_policy::kMinimumDebugDiameterGameUnits);
+    static_assert(
+        rock::grip_zone_indicator_policy::kDefaultDebugDiameterGameUnits <=
+        rock::grip_zone_indicator_policy::kMaximumDebugDiameterGameUnits);
 }
 
 int main()

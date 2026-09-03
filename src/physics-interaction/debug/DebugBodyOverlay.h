@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "api/ROCKProviderApi.h"
@@ -338,6 +339,16 @@ namespace rock::debug
         float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
     };
 
+    struct GripZoneIndicatorOverlayFrame
+    {
+        static constexpr std::size_t kCapacity = 2;
+
+        std::array<RE::NiPoint3, kCapacity> positions{};
+        std::uint64_t gameFrameIndex{ 0 };
+        float diameterGameUnits{ 0.0f };
+        std::uint32_t count{ 0 };
+    };
+
     struct BodyOverlayFrame
     {
         RE::hknpWorld* world{ nullptr };
@@ -373,6 +384,11 @@ namespace rock::debug
     void Install();
     bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
+    // Final main-thread presentation snapshot, published after all animation
+    // phases and consumed directly by the next OpenVR Submit render pass.
+    void PublishGripZoneIndicators(
+        const GripZoneIndicatorOverlayFrame& frame);
+    void ClearGripZoneIndicators();
     // Physics-step-thread callback. Captures only bounded body matrices for the
     // final substep. The implementation is non-blocking and does no allocation,
     // logging, shape inspection, or rendering work.

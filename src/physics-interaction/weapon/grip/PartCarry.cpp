@@ -291,14 +291,30 @@ namespace rock
                 _firing.reattachHoverHandIsLeft = candidate.isLeft;
                 // Marker on the side the palm sits on, mirroring the authored
                 // support seat indicator.
+                const RE::NiPoint3 indicatorWorld{
+                    reattachZone.indicatorWorld.x,
+                    reattachZone.indicatorWorld.y,
+                    reattachZone.indicatorWorld.z,
+                };
+                RE::NiPoint3 indicatorWeaponLocal{};
+                bool indicatorWeaponLocalValid = false;
+                if (reattachZone.indicatorValid &&
+                    isInvertibleTransform(weaponNode->world)) {
+                    indicatorWeaponLocal = transform_math::worldPointToLocal(
+                        weaponNode->world,
+                        indicatorWorld);
+                    indicatorWeaponLocalValid =
+                        std::isfinite(indicatorWeaponLocal.x) &&
+                        std::isfinite(indicatorWeaponLocal.y) &&
+                        std::isfinite(indicatorWeaponLocal.z);
+                }
                 _firing.reattachIndicatorFrame =
                     FiringGripReattachIndicatorFrame{
-                        .positionWorld = RE::NiPoint3{
-                            reattachZone.indicatorWorld.x,
-                            reattachZone.indicatorWorld.y,
-                            reattachZone.indicatorWorld.z,
-                        },
+                        .positionWorld = indicatorWorld,
+                        .positionWeaponLocal = indicatorWeaponLocal,
+                        .weaponGenerationKey = currentWeaponGenerationKey,
                         .handIsLeft = candidate.isLeft,
+                        .weaponLocalValid = indicatorWeaponLocalValid,
                         .visible = reattachZone.indicatorValid,
                     };
             }

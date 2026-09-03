@@ -498,8 +498,11 @@ namespace rock
 
         _rightHand.preloadSelectionBeam();
         _leftHand.preloadSelectionBeam();
-        (void)_authoredSupportGripIndicator.preload();
-        (void)_firingGripReattachIndicator.preload();
+        if (grip_zone_indicator_policy::usesNif(
+                g_rockConfig.rockGripZoneIndicatorMode)) {
+            (void)_authoredSupportGripIndicator.preload();
+            (void)_firingGripReattachIndicator.preload();
+        }
 
         _frame.hasPrevPositions = false;
         _diagnostics.deltaLogCounter = 0;

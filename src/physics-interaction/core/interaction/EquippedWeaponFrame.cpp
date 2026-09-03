@@ -1526,6 +1526,12 @@ namespace rock
 
     void PhysicsInteraction::updateAuthoredSupportGripIndicator()
     {
+        if (!grip_zone_indicator_policy::usesNif(
+                g_rockConfig.rockGripZoneIndicatorMode)) {
+            _authoredSupportGripIndicator.hide();
+            return;
+        }
+
         const auto frame =
             _twoHandedGrip.getAuthoredSupportGripIndicatorFrame();
         const Hand& supportHand =
@@ -1539,6 +1545,12 @@ namespace rock
 
     void PhysicsInteraction::updateFiringGripReattachIndicator()
     {
+        if (!grip_zone_indicator_policy::usesNif(
+                g_rockConfig.rockGripZoneIndicatorMode)) {
+            _firingGripReattachIndicator.hide();
+            return;
+        }
+
         const auto frame =
             _twoHandedGrip.getFiringGripReattachIndicatorFrame();
         const Hand& hoverHand = frame.handIsLeft ? _leftHand : _rightHand;
@@ -1547,6 +1559,80 @@ namespace rock
             return;
         }
         (void)_firingGripReattachIndicator.update(frame.positionWorld);
+    }
+
+    void PhysicsInteraction::publishGripZoneIndicatorRenderFrame(
+        const std::uint64_t gameFrameIndex)
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        if (!grip_zone_indicator_policy::usesDebugOverlay(
+                g_rockConfig.rockGripZoneIndicatorMode) ||
+            !_lifecycle.initialized.load(std::memory_order_acquire) ||
+            !runtime.visualAuthorityAvailable ||
+            !runtime.localSkeletonReady || runtime.localMenuBlocking ||
+            runtime.compatibilityConfigBlocking || gameFrameIndex == 0 ||
+            gameFrameIndex != runtime.frameIndex) {
+            debug::ClearGripZoneIndicators();
+            return;
+        }
+
+        debug::GripZoneIndicatorOverlayFrame overlayFrame{};
+        overlayFrame.gameFrameIndex = gameFrameIndex;
+        overlayFrame.diameterGameUnits =
+            g_rockConfig.rockDebugGripZoneIndicatorDiameterGameUnits;
+
+        auto* weaponNode = resolveEquippedWeaponInteractionNode();
+        const std::uint64_t currentWeaponGenerationKey =
+            _weaponCollision.getCurrentWeaponGenerationKey();
+        if (!weaponNode || !f4vr::isNodeVisible(weaponNode) ||
+            currentWeaponGenerationKey == 0 ||
+            !dynamic_weapon_collision_policy::isFiniteTransform(
+                weaponNode->world) ||
+            std::abs(weaponNode->world.scale) <= 0.0001f) {
+            debug::PublishGripZoneIndicators(overlayFrame);
+            return;
+        }
+
+        const auto appendIndicator = [&](const auto& indicatorFrame,
+                                         const Hand& hand) {
+            if (!indicatorFrame.visible || hand.isHolding() ||
+                !indicatorFrame.weaponLocalValid ||
+                indicatorFrame.weaponGenerationKey !=
+                    currentWeaponGenerationKey ||
+                overlayFrame.count >= overlayFrame.positions.size()) {
+                return;
+            }
+
+            const RE::NiPoint3 positionWorld =
+                transform_math::localPointToWorld(
+                    weaponNode->world,
+                    indicatorFrame.positionWeaponLocal);
+            if (!std::isfinite(positionWorld.x) ||
+                !std::isfinite(positionWorld.y) ||
+                !std::isfinite(positionWorld.z)) {
+                return;
+            }
+            overlayFrame.positions[overlayFrame.count++] = positionWorld;
+        };
+
+        const auto authoredSupportFrame =
+            _twoHandedGrip.getAuthoredSupportGripIndicatorFrame();
+        appendIndicator(
+            authoredSupportFrame,
+            authoredSupportFrame.supportHandIsLeft ?
+                _leftHand :
+                _rightHand);
+
+        const auto firingReattachFrame =
+            _twoHandedGrip.getFiringGripReattachIndicatorFrame();
+        appendIndicator(
+            firingReattachFrame,
+            firingReattachFrame.handIsLeft ? _leftHand : _rightHand);
+
+        if (overlayFrame.count > 0) {
+            debug::Install();
+        }
+        debug::PublishGripZoneIndicators(overlayFrame);
     }
 
     void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()

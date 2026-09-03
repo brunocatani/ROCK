@@ -116,11 +116,17 @@ namespace rock
             getGripOccupancy();
         authored_weapon_grip_activation_policy::IndicatorInput
             authoredIndicatorInput{};
+        RE::NiTransform authoredIndicatorWeaponWorld{};
+        std::uint64_t authoredIndicatorWeaponGenerationKey = 0;
         bool authoredIndicatorSupportHandIsLeft = true;
+        bool authoredIndicatorWeaponWorldValid = false;
         const auto finishUpdate = [this,
                                       &occupancyBefore,
                                       &authoredIndicatorInput,
-                                      &authoredIndicatorSupportHandIsLeft]() {
+                                      &authoredIndicatorWeaponWorld,
+                                      &authoredIndicatorWeaponGenerationKey,
+                                      &authoredIndicatorSupportHandIsLeft,
+                                      &authoredIndicatorWeaponWorldValid]() {
             const EquippedWeaponGripOccupancy occupancyAfter =
                 getGripOccupancy();
             authoredIndicatorInput.supportHandWeaponEngaged =
@@ -130,15 +136,31 @@ namespace rock
             const auto indicator =
                 authored_weapon_grip_activation_policy::evaluateIndicator(
                     authoredIndicatorInput);
+            const RE::NiPoint3 indicatorWorld{
+                indicator.markerWorld.x,
+                indicator.markerWorld.y,
+                indicator.markerWorld.z,
+            };
+            RE::NiPoint3 indicatorWeaponLocal{};
+            bool indicatorWeaponLocalValid = false;
+            if (indicator.visible && authoredIndicatorWeaponWorldValid) {
+                indicatorWeaponLocal = transform_math::worldPointToLocal(
+                    authoredIndicatorWeaponWorld,
+                    indicatorWorld);
+                indicatorWeaponLocalValid =
+                    std::isfinite(indicatorWeaponLocal.x) &&
+                    std::isfinite(indicatorWeaponLocal.y) &&
+                    std::isfinite(indicatorWeaponLocal.z);
+            }
             _support.authoredIndicatorFrame =
                 AuthoredSupportGripIndicatorFrame{
-                    .positionWorld = RE::NiPoint3{
-                        indicator.markerWorld.x,
-                        indicator.markerWorld.y,
-                        indicator.markerWorld.z,
-                    },
+                    .positionWorld = indicatorWorld,
+                    .positionWeaponLocal = indicatorWeaponLocal,
+                    .weaponGenerationKey =
+                        authoredIndicatorWeaponGenerationKey,
                     .supportHandIsLeft =
                         authoredIndicatorSupportHandIsLeft,
+                    .weaponLocalValid = indicatorWeaponLocalValid,
                     .visible = indicator.visible,
                 };
             return TwoHandedGripUpdateResult{
@@ -429,6 +451,11 @@ namespace rock
                     supportRuntimeState.providerPartAuthority.active,
                 .supportHandHoldingObject = supportHandHoldingObject,
             };
+        authoredIndicatorWeaponWorld = authoredActivation.weaponWorld;
+        authoredIndicatorWeaponGenerationKey = currentWeaponGenerationKey;
+        authoredIndicatorWeaponWorldValid =
+            authoredActivationStateMatches &&
+            isInvertibleTransform(authoredIndicatorWeaponWorld);
 
         switch (_session.state) {
         case TwoHandedState::Inactive:

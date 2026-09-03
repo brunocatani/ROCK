@@ -591,6 +591,10 @@ namespace
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::Complete,
             frameTiming);
+        if (s_physicsInteraction) {
+            s_physicsInteraction->publishGripZoneIndicatorRenderFrame(
+                runtime_state::currentFrame().frameIndex);
+        }
     }
 
     bool hookMainLoop()

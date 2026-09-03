@@ -141,14 +141,23 @@ namespace rock
     struct AuthoredSupportGripIndicatorFrame
     {
         RE::NiPoint3 positionWorld{};
+        // Generation-bound anchor for mode 2. The final presentation pass
+        // resolves it through the weapon transform that will actually render.
+        RE::NiPoint3 positionWeaponLocal{};
+        std::uint64_t weaponGenerationKey{ 0 };
         bool supportHandIsLeft{ true };
+        bool weaponLocalValid{ false };
         bool visible{ false };
     };
 
     struct FiringGripReattachIndicatorFrame
     {
         RE::NiPoint3 positionWorld{};
+        // Same render-current contract as the support-seat marker above.
+        RE::NiPoint3 positionWeaponLocal{};
+        std::uint64_t weaponGenerationKey{ 0 };
         bool handIsLeft{ false };
+        bool weaponLocalValid{ false };
         bool visible{ false };
     };
 
