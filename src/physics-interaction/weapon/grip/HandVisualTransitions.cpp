@@ -1136,13 +1136,63 @@ namespace rock
         }
 
         const bool supportHandIsLeft = isSupportHandLeft();
+        const bool leftCarryStageProbe =
+            g_rockConfig.rockDebugGrabFrameLogging &&
+            usesLeftFiringCarry() &&
+            applyPrimaryHand &&
+            applySupportHand;
         bool primaryApplied = true;
         bool supportApplied = true;
         if (applyPrimaryHand) {
             primaryApplied = applyFiringHandLockedVisual(weaponNode, dt, livePrimaryHandWorld);
         }
+        const LeftCarryProbeSample afterPrimary =
+            leftCarryStageProbe ? sampleLeftCarryProbe() : LeftCarryProbeSample{};
         if (applySupportHand) {
             supportApplied = applyPartGripLockedVisual(supportHandIsLeft, weaponNode, dt, liveSupportHandWorld);
+        }
+        if (leftCarryStageProbe) {
+            const LeftCarryProbeSample afterSupport = sampleLeftCarryProbe();
+            const auto distance = [](const RE::NiTransform& lhs, const RE::NiTransform& rhs) {
+                return weaponSolverLength(weaponSolverSub(lhs.translate, rhs.translate));
+            };
+            ROCK_LOG_DEBUG(Weapon,
+                "LEFT_CARRY_STAGE: frame={} valid={}{}/{}{} s1Array=({:.3f},{:.3f},{:.3f}) s1Node=({:.3f},{:.3f},{:.3f}) s1ElbowArray=({:.3f},{:.3f},{:.3f}) s1ElbowNode=({:.3f},{:.3f},{:.3f}) s2Array=({:.3f},{:.3f},{:.3f}) s2Node=({:.3f},{:.3f},{:.3f}) s2ElbowArray=({:.3f},{:.3f},{:.3f}) s2ElbowNode=({:.3f},{:.3f},{:.3f}) s1ArrayVsNode={:.3f} s2ArrayVsNode={:.3f} s1ToS2Array={:.3f} s1ToS2Node={:.3f} s1ToS2ElbowArray={:.3f} s1ToS2ElbowNode={:.3f}",
+                runtime_state::currentFrame().frameIndex,
+                afterPrimary.arrayValid ? "A" : "-",
+                afterPrimary.nodeValid ? "N" : "-",
+                afterSupport.arrayValid ? "A" : "-",
+                afterSupport.nodeValid ? "N" : "-",
+                afterPrimary.handArray.translate.x,
+                afterPrimary.handArray.translate.y,
+                afterPrimary.handArray.translate.z,
+                afterPrimary.handNode.translate.x,
+                afterPrimary.handNode.translate.y,
+                afterPrimary.handNode.translate.z,
+                afterPrimary.forearmArray.translate.x,
+                afterPrimary.forearmArray.translate.y,
+                afterPrimary.forearmArray.translate.z,
+                afterPrimary.forearmNode.translate.x,
+                afterPrimary.forearmNode.translate.y,
+                afterPrimary.forearmNode.translate.z,
+                afterSupport.handArray.translate.x,
+                afterSupport.handArray.translate.y,
+                afterSupport.handArray.translate.z,
+                afterSupport.handNode.translate.x,
+                afterSupport.handNode.translate.y,
+                afterSupport.handNode.translate.z,
+                afterSupport.forearmArray.translate.x,
+                afterSupport.forearmArray.translate.y,
+                afterSupport.forearmArray.translate.z,
+                afterSupport.forearmNode.translate.x,
+                afterSupport.forearmNode.translate.y,
+                afterSupport.forearmNode.translate.z,
+                distance(afterPrimary.handArray, afterPrimary.handNode),
+                distance(afterSupport.handArray, afterSupport.handNode),
+                distance(afterSupport.handArray, afterPrimary.handArray),
+                distance(afterSupport.handNode, afterPrimary.handNode),
+                distance(afterSupport.forearmArray, afterPrimary.forearmArray),
+                distance(afterSupport.forearmNode, afterPrimary.forearmNode));
         }
         if (primaryApplied && supportApplied) {
             return true;

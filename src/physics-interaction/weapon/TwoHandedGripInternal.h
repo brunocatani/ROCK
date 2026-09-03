@@ -1220,6 +1220,54 @@ namespace rock
         }
 
         /*
+         * LEFT_CARRY_CLOCK / LEFT_CARRY_STAGE probe sample (debug grab-frame
+         * logging only): the left hand and elbow read from the game's root
+         * flattened bone array (what the renderer skins) and from the body
+         * skeleton nodes, so a stage whose array diverges from its nodes is
+         * visible.
+         */
+        struct LeftCarryProbeSample
+        {
+            RE::NiTransform handArray{};
+            RE::NiTransform forearmArray{};
+            RE::NiTransform handNode{};
+            RE::NiTransform forearmNode{};
+            bool arrayValid = false;
+            bool nodeValid = false;
+        };
+
+        inline LeftCarryProbeSample sampleLeftCarryProbe()
+        {
+            LeftCarryProbeSample sample{};
+            DirectSkeletonBoneSnapshot snapshot{};
+            if (rootFlattenedTwoHandedReader().capture(
+                    skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    snapshot)) {
+                const auto* handBone = findSnapshotBone(snapshot, "LArm_Hand");
+                const auto* forearmBone = findSnapshotBone(snapshot, "LArm_ForeArm1");
+                if (handBone && forearmBone &&
+                    isUsableHandAuthorityTransform(handBone->world) &&
+                    isFiniteTransform(forearmBone->world)) {
+                    sample.handArray = handBone->world;
+                    sample.forearmArray = forearmBone->world;
+                    sample.arrayValid = true;
+                }
+            }
+            auto* const rootNode = f4vr::getRootNode();
+            const auto* const handNode = rootNode ? f4vr::findNode(rootNode, "LArm_Hand") : nullptr;
+            const auto* const forearmNode = rootNode ? f4vr::findNode(rootNode, "LArm_ForeArm1") : nullptr;
+            if (handNode && forearmNode &&
+                isUsableHandAuthorityTransform(handNode->world) &&
+                isFiniteTransform(forearmNode->world)) {
+                sample.handNode = handNode->world;
+                sample.forearmNode = forearmNode->world;
+                sample.nodeValid = true;
+            }
+            return sample;
+        }
+
+        /*
          * Conjugates a transform across the lateral mirror: M o X o M with
          * M = diag(-1, 1, 1). Reflections are involutions with symmetric
          * matrices, so the diagonal form is convention-proof and composed in
