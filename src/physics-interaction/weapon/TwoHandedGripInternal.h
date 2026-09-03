@@ -31,9 +31,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <limits>
 #include <span>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 /*
@@ -1265,6 +1268,83 @@ namespace rock
                 sample.nodeValid = true;
             }
             return sample;
+        }
+
+        /*
+         * Left-carry solver probe: the body-skeleton left arm chain hFRIK
+         * solves toward ROCK's external hand target. Rows X and Y of each
+         * world rotation are that bone's local axes in world space (hFRIK
+         * composes world vectors as rotate^T * local), so a roll of a twist
+         * bone about its own axis shows as row Y turning while row X holds.
+         */
+        inline constexpr std::array<std::pair<const char*, const char*>, 6> LEFT_CARRY_ARM_BONES{ {
+            { "LArm_UpperArm", "upper" },
+            { "LArm_UpperTwist1", "upT1" },
+            { "LArm_ForeArm1", "fa1" },
+            { "LArm_ForeArm2", "fa2" },
+            { "LArm_ForeArm3", "fa3" },
+            { "LArm_Hand", "hand" },
+        } };
+
+        struct LeftCarryArmSample
+        {
+            std::array<RE::NiTransform, LEFT_CARRY_ARM_BONES.size()> bones{};
+            bool valid = false;
+        };
+
+        inline LeftCarryArmSample sampleLeftCarryArm()
+        {
+            LeftCarryArmSample sample{};
+            auto* const rootNode = f4vr::getRootNode();
+            if (!rootNode) {
+                return sample;
+            }
+            for (std::size_t index = 0; index < LEFT_CARRY_ARM_BONES.size(); ++index) {
+                const auto* const node = f4vr::findNode(rootNode, LEFT_CARRY_ARM_BONES[index].first);
+                if (!node || !isFiniteTransform(node->world)) {
+                    return sample;
+                }
+                sample.bones[index] = node->world;
+            }
+            sample.valid = true;
+            return sample;
+        }
+
+        inline std::string formatLeftCarryArmFrame(const RE::NiTransform& world)
+        {
+            const auto& rows = world.rotate.entry;
+            return std::format(
+                "({:.3f},{:.3f},{:.3f}|{:.4f},{:.4f},{:.4f}|{:.4f},{:.4f},{:.4f})",
+                world.translate.x,
+                world.translate.y,
+                world.translate.z,
+                rows[0][0],
+                rows[0][1],
+                rows[0][2],
+                rows[1][0],
+                rows[1][1],
+                rows[1][2]);
+        }
+
+        inline std::string formatLeftCarryArmSample(const char* stage, const LeftCarryArmSample& sample)
+        {
+            std::string out;
+            if (!sample.valid) {
+                out += stage;
+                out += ".valid=0";
+                return out;
+            }
+            for (std::size_t index = 0; index < LEFT_CARRY_ARM_BONES.size(); ++index) {
+                if (index != 0) {
+                    out += ' ';
+                }
+                out += stage;
+                out += '.';
+                out += LEFT_CARRY_ARM_BONES[index].second;
+                out += '=';
+                out += formatLeftCarryArmFrame(sample.bones[index]);
+            }
+            return out;
         }
 
         /*
