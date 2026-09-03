@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "api/FRIKApi.h"
+#include "api/FRIKApiV2.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
@@ -919,8 +919,8 @@ namespace rock
         struct FingerPoseSolveScratch;
 
         static bool FRIK_CALL controlWeaponHandRecoil(
-            const frik::api::FRIKApi::RecoilSample* sample,
-            frik::api::FRIKApi::RecoilResponse* outResponse,
+            const frik::api::FRIKApiV2::RecoilSample* sample,
+            frik::api::FRIKApiV2::RecoilResponse* outResponse,
             void* userData) noexcept;
 
         [[nodiscard]] bool hasVisualOnlySupportRecoilAssist() const noexcept;

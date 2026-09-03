@@ -41,7 +41,7 @@ namespace rock
 
         void clearGrabExternalHandWorldTransform(bool isLeft)
         {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearHandWorld(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
         }
 
         RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
@@ -2760,7 +2760,7 @@ namespace rock
 
         const float value = std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
         const auto hand = handFromBool(_isLeft);
-        if (frik_visual_authority::setHandPoseCustomWithPriority(
+        if (frik_visual_authority::setHandPoseCustom(
                 SELECTED_CLOSE_FINGER_TAG,
                 hand,
                 frik_visual_authority::makeUniformHandPoseData(value, value, value, value, value),

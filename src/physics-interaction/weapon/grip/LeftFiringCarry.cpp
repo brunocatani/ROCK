@@ -29,14 +29,14 @@ namespace rock
     }
 
     bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(
-        const frik::api::FRIKApi::RecoilSample* const sample,
-        frik::api::FRIKApi::RecoilResponse* const outResponse,
+        const frik::api::FRIKApiV2::RecoilSample* const sample,
+        frik::api::FRIKApiV2::RecoilResponse* const outResponse,
         void* const userData) noexcept
     {
         auto* const self = static_cast<TwoHandedGrip*>(userData);
         if (!self ||
             !sample ||
-            sample->structSize < sizeof(frik::api::FRIKApi::RecoilSample) ||
+            sample->structSize < sizeof(frik::api::FRIKApiV2::RecoilSample) ||
             !outResponse) {
             return false;
         }
@@ -65,10 +65,10 @@ namespace rock
         }
 
         *outResponse = {};
-        outResponse->structSize = sizeof(frik::api::FRIKApi::RecoilResponse);
+        outResponse->structSize = sizeof(frik::api::FRIKApiV2::RecoilResponse);
         outResponse->handMask = static_cast<std::uint32_t>(
-            frik::api::FRIKApi::RecoilHandMask::Primary);
-        outResponse->delivery = frik::api::FRIKApi::RecoilDelivery::Direct;
+            frik::api::FRIKApiV2::RecoilHandMask::Primary);
+        outResponse->delivery = frik::api::FRIKApiV2::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = controlledKickLocal;
         return true;
     }
@@ -256,7 +256,7 @@ namespace rock
                     _scope.menuOpenThisFrame)) {
             (void)publishAuthoredPrimaryFiringGripFingerPose(true);
             if (!frik_visual_authority::
-                    applyExternalHandWorldTransform(
+                    publishHandWorld(
                         PRIMARY_GRIP_TAG,
                         frik_visual_authority::Hand::Left,
                         presentedHandWorld,

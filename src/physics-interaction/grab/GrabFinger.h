@@ -4443,7 +4443,7 @@ namespace rock::grab_finger_local_transform_runtime
         }
 
         frik_visual_authority::FingerLocalTransformOverride clearData{};
-        (void)frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, hand, &clearData, priority);
+        (void)frik_visual_authority::setHandPoseCustomLocalTransforms(tag, hand, &clearData, priority);
         state = {};
     }
 
@@ -4465,7 +4465,7 @@ namespace rock::grab_finger_local_transform_runtime
                 fingerPose.solved,
                 true,
                 api && api->getHandPoseLocalTransformsForPose != nullptr,
-                api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
+                api && api->setHandPoseCustomLocalTransforms != nullptr);
         if (!canPublish) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
@@ -4505,7 +4505,7 @@ namespace rock::grab_finger_local_transform_runtime
             return false;
         }
 
-        if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, hand, &smoothed, priority)) {
+        if (!frik_visual_authority::setHandPoseCustomLocalTransforms(tag, hand, &smoothed, priority)) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
         }

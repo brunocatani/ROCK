@@ -347,7 +347,7 @@ namespace rock
             _handPoseBlockEngaged = true;
         }
 
-        if (!frik_visual_authority::setHandPoseCustomWithPriority(
+        if (!frik_visual_authority::setHandPoseCustom(
                 kHandPoseHandoffTag,
                 hand,
                 frik_visual_authority::HandPoseData{},
@@ -360,7 +360,7 @@ namespace rock
         for (std::size_t index = 0; index < _handoffFingerLocalTransforms.size(); ++index) {
             exactPose.localTransforms[index] = _handoffFingerLocalTransforms[index];
         }
-        return frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
+        return frik_visual_authority::setHandPoseCustomLocalTransforms(
             kHandPoseHandoffTag,
             hand,
             &exactPose,
@@ -690,7 +690,7 @@ namespace rock
         const char* blockTag = _isLeftHand ? kLeftHandPoseBlockTag : kRightHandPoseBlockTag;
         if (_handPoseHandoffActive || _handPoseBlockEngaged) {
             (void)frik_visual_authority::clearHandPose(kHandPoseHandoffTag, hand);
-            (void)frik_visual_authority::clearExternalHandWorldTransform(kHandPoseHandoffTag, hand);
+            (void)frik_visual_authority::clearHandWorld(kHandPoseHandoffTag, hand);
         }
         if (_handPoseBlockEngaged) {
             (void)frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, false);

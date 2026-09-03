@@ -428,7 +428,7 @@ namespace rock
             break;
         }
 
-        if (!tag || !frik_visual_authority::clearExternalHandWorldTransform(tag, handFromBool(isLeft))) {
+        if (!tag || !frik_visual_authority::clearHandWorld(tag, handFromBool(isLeft))) {
             return false;
         }
 

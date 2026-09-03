@@ -119,13 +119,13 @@ namespace rock
         }
 
         state.begin(_visuals.lastPublishedHandWorld[index]);
-        if (!frik_visual_authority::applyExternalHandWorldTransform(
+        if (!frik_visual_authority::publishHandWorld(
                 RETURN_HAND_TAG,
                 handFromBool(isLeft),
                 state.start,
                 RETURN_HAND_VISUAL_PRIORITY)) {
             state.clear();
-            (void)frik_visual_authority::clearExternalHandWorldTransform(RETURN_HAND_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: hand return start failed hand={}", isLeft ? "left" : "right");
             return;
         }
@@ -188,7 +188,7 @@ namespace rock
                     return isUsableHandAuthorityTransform(transform);
                 },
                 [isLeft](const RE::NiTransform& transform) {
-                    return frik_visual_authority::applyExternalHandWorldTransform(
+                    return frik_visual_authority::publishHandWorld(
                         RETURN_HAND_TAG,
                         handFromBool(isLeft),
                         transform,
@@ -210,7 +210,7 @@ namespace rock
 
             if (result.status == hand_visual_lerp_math::VisualReturnDriveStatus::Completed) {
                 const float completedDuration = result.durationSeconds;
-                (void)frik_visual_authority::clearExternalHandWorldTransform(RETURN_HAND_TAG, handFromBool(isLeft));
+                (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
                 state.clear();
                 _visuals.hasLastPublishedHandWorld[index] = false;
                 ROCK_LOG_DEBUG(Weapon,
@@ -226,7 +226,7 @@ namespace rock
         const std::size_t index = isLeft ? 0u : 1u;
         auto& state = _visuals.returningHands[index].transition;
         const bool wasActive = state.active;
-        (void)frik_visual_authority::clearExternalHandWorldTransform(RETURN_HAND_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
         state.clear();
         _visuals.hasLastPublishedHandWorld[index] = false;
         if (wasActive && logCancellation) {
@@ -812,7 +812,7 @@ namespace rock
             return true;
         }
         if (!frik_visual_authority::isAvailable() ||
-            !frik_visual_authority::clearExternalHandWorldTransform(
+            !frik_visual_authority::clearHandWorld(
                 WEAPON_COLLISION_HAND_TAG,
                 handFromBool(isLeft))) {
             return false;
@@ -912,7 +912,7 @@ namespace rock
                 }
                 const auto hand = handFromBool(pulse.isLeft);
                 pulse.applied =
-                    frik_visual_authority::applyExternalHandWorldTransform(
+                    frik_visual_authority::publishHandWorld(
                         WEAPON_COLLISION_HAND_TAG,
                         hand,
                         pulse.targetWorld,
@@ -1035,7 +1035,7 @@ namespace rock
             }
         }
         const bool applied =
-            frik_visual_authority::applyExternalHandWorldTransform(
+            frik_visual_authority::publishHandWorld(
                 PRIMARY_GRIP_TAG,
                 handFromBool(isFiringHandLeft()),
                 requestedFiringHandWorld,
@@ -1091,7 +1091,7 @@ namespace rock
                 dt,
                 grip.visualLerp);
         const bool applied =
-            frik_visual_authority::applyExternalHandWorldTransform(
+            frik_visual_authority::publishHandWorld(
                 SUPPORT_GRIP_TAG,
                 handFromBool(isLeft),
                 appliedHandWorld,
@@ -1203,7 +1203,7 @@ namespace rock
             const auto handPose = grip.hasFingerSplay ?
                 frik_visual_authority::makeHandPoseDataFromJointValues(grip.fingerPose, grip.fingerSplayRadians) :
                 frik_visual_authority::makeHandPoseDataFromJointValues(grip.fingerPose);
-            (void)frik_visual_authority::setHandPoseCustomWithPriority(
+            (void)frik_visual_authority::setHandPoseCustom(
                 SUPPORT_GRIP_TAG,
                 handFromBool(isLeft),
                 handPose,
@@ -1216,7 +1216,7 @@ namespace rock
             for (std::size_t i = 0; i < grip.fingerLocalTransforms.size(); ++i) {
                 overrideData.localTransforms[i] = grip.fingerLocalTransforms[i];
             }
-            (void)frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(SUPPORT_GRIP_TAG, handFromBool(isLeft), &overrideData, GRIP_HAND_POSE_PRIORITY);
+            (void)frik_visual_authority::setHandPoseCustomLocalTransforms(SUPPORT_GRIP_TAG, handFromBool(isLeft), &overrideData, GRIP_HAND_POSE_PRIORITY);
         }
     }
 

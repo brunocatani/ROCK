@@ -932,7 +932,7 @@ namespace rock
         handSlots.appliedDeviation = {};
         handSlots.teleportRecoverySecondsRemaining = 0.0f;
         if (handSlots.visualActive) {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(
+            (void)frik_visual_authority::clearHandWorld(
                 dynamicHandTag(isLeft),
                 frik_visual_authority::handFromBool(isLeft));
             handSlots.visualActive = false;
@@ -1335,7 +1335,7 @@ namespace rock
         if (!handSlots.visualActive) {
             return;
         }
-        (void)frik_visual_authority::clearExternalHandWorldTransform(dynamicHandTag(isLeft), frik_visual_authority::handFromBool(isLeft));
+        (void)frik_visual_authority::clearHandWorld(dynamicHandTag(isLeft), frik_visual_authority::handFromBool(isLeft));
         handSlots.visualActive = false;
     }
 
@@ -1758,7 +1758,7 @@ namespace rock
         const auto jointValues =
             grab_finger_pose_math::expandFingerCurlsToJointValues(
                 response.currentOpenValues);
-        if (!frik_visual_authority::setHandPoseCustomWithPriority(
+        if (!frik_visual_authority::setHandPoseCustom(
                 SURFACE_FINGER_POSE_TAG,
                 frik_visual_authority::handFromBool(isLeft),
                 frik_visual_authority::makeHandPoseDataFromJointValues(
@@ -2428,7 +2428,7 @@ namespace rock
                 auto& latch = handSlots.surfaceLatch;
                 if (latch.meshAuthoritative &&
                     latch.meshFingerPoseValid) {
-                    if (frik_visual_authority::setHandPoseCustomWithPriority(
+                    if (frik_visual_authority::setHandPoseCustom(
                             SURFACE_MESH_GRAB_POSE_TAG,
                             frik_visual_authority::handFromBool(isLeft),
                             frik_visual_authority::
@@ -2444,7 +2444,7 @@ namespace rock
                             isLeft ? "Left" : "Right");
                     }
                 }
-                if (frik_visual_authority::applyExternalHandWorldTransform(
+                if (frik_visual_authority::publishHandWorld(
                         dynamicHandTag(isLeft),
                         frik_visual_authority::handFromBool(isLeft),
                         latchTarget,
@@ -2545,7 +2545,7 @@ namespace rock
             handSlots.lastPresentedHandWorld = target;
             handSlots.lastPresentedHandWorldValid = true;
 
-            if (frik_visual_authority::applyExternalHandWorldTransform(
+            if (frik_visual_authority::publishHandWorld(
                     dynamicHandTag(isLeft),
                     frik_visual_authority::handFromBool(isLeft),
                     target,

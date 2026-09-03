@@ -1014,7 +1014,7 @@ namespace
             cleared = frik_visual_authority::clearHandPose(slot.tag, hand) && cleared;
         }
         if ((slot.publishedFlags & worldFlag) != 0) {
-            cleared = frik_visual_authority::clearExternalHandWorldTransform(slot.tag, hand) && cleared;
+            cleared = frik_visual_authority::clearHandWorld(slot.tag, hand) && cleared;
         }
 
         if (cleared || !frik_visual_authority::isSkeletonReadyHint() || releaseSlot) {
@@ -3575,19 +3575,19 @@ namespace
                         toNiTransform(request->fingerLocalTransforms[index]);
                 }
             }
-            published = frik_visual_authority::setHandPoseCustomWithPriority(
+            published = frik_visual_authority::setHandPoseCustom(
                             slot->tag,
                             hand,
                             frik_visual_authority::HandPoseData{},
                             request->priority) &&
-                        frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
+                        frik_visual_authority::setHandPoseCustomLocalTransforms(
                             slot->tag,
                             hand,
                             &fingerLocals,
                             request->priority);
         }
         if (published && (request->flags & worldFlag) != 0) {
-            published = frik_visual_authority::applyExternalHandWorldTransform(
+            published = frik_visual_authority::publishHandWorld(
                 slot->tag,
                 hand,
                 toNiTransform(request->worldTransform),

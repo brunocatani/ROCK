@@ -3,7 +3,7 @@
 #include <atomic>
 #include <cstdint>
 
-#include "api/FRIKApi.h"
+#include "api/FRIKApiV2.h"
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
 #include "api/ROCKProviderApiInternal.h"
@@ -622,7 +622,7 @@ namespace
             return;
         }
 
-        using LE = frik::api::FRIKApi::LifecycleEvent;
+        using LE = frik::api::FRIKApiV2::LifecycleEvent;
 
         switch (static_cast<LE>(msg->type)) {
         case LE::kSkeletonReady:
@@ -677,57 +677,45 @@ namespace
                     rock::provider::RockProviderLifecycleReason::GameLoaded);
             }
 
-            const int frikErr = frik::api::FRIKApi::initialize(frik::api::FRIK_API_VERSION);
+            /*
+             * FRIK API v2 is a fixed table with an exact struct-size check, so a
+             * successful initialize() already proves every entry this build
+             * calls exists. The error codes are the header's own contract.
+             */
+            const int frikErr = frik::api::FRIKApiV2::initialize(frik::api::FRIK_API_V2_VERSION);
             if (frikErr != 0) {
                 switch (frikErr) {
                 case 1:
-                    logger::critical("ROCK: FRIKApi initialization FAILED (error 1). FRIK.dll is not loaded. ROCK is now DISABLED.");
+                    logger::critical("ROCK: FRIK API v2 initialization FAILED (error 1). FRIK.dll is not loaded. ROCK is now DISABLED.");
                     break;
                 case 2:
-                    logger::critical("ROCK: FRIKApi initialization FAILED (error 2). FRIKAPI_GetApi export was not found. ROCK is now DISABLED.");
+                    logger::critical(
+                        "ROCK: FRIK API v2 initialization FAILED (error 2). "
+                        "FRIKAPI_V2_GetApi export was not found; the loaded FRIK.dll predates API v2. Deploy a FRIK.dll built from hFRIK main. ROCK is now DISABLED.");
                     break;
                 case 3:
-                    logger::critical("ROCK: FRIKApi initialization FAILED (error 3). FRIKAPI_GetApi returned null. ROCK is now DISABLED.");
+                    logger::critical("ROCK: FRIK API v2 initialization FAILED (error 3). FRIKAPI_V2_GetApi returned null. ROCK is now DISABLED.");
                     break;
                 case 4:
                     logger::critical(
-                        "ROCK: FRIKApi initialization FAILED (error 4). "
-                        "Loaded FRIK API is older than required API v{}. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
-                        frik::api::FRIK_API_VERSION);
+                        "ROCK: FRIK API v2 initialization FAILED (error 4). "
+                        "Loaded FRIK API v2 is older than required v{}. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
+                        frik::api::FRIK_API_V2_VERSION);
                     break;
                 case 5:
                     logger::critical(
-                        "ROCK: FRIKApi initialization FAILED (error 5). "
-                        "Loaded additive FRIK API v5 contract does not exactly match this ROCK build. "
-                        "Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
+                        "ROCK: FRIK API v2 initialization FAILED (error 5). "
+                        "Loaded FRIK API v2 table size does not match this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
                     break;
                 default:
-                    logger::critical("ROCK: FRIKApi initialization FAILED (error {}). ROCK is now DISABLED.", frikErr);
+                    logger::critical("ROCK: FRIK API v2 initialization FAILED (error {}). ROCK is now DISABLED.", frikErr);
                     break;
                 }
                 s_frikAvailable = false;
                 return;
             }
 
-            logger::info("ROCK: FRIKApi v{} (API v{}) initialized successfully.", frik::api::FRIKApi::inst->getModVersion(), frik::api::FRIKApi::inst->getVersion());
-
-            const auto* frikApi = frik::api::FRIKApi::inst;
-            const bool hasRequiredFrikContract =
-                frikApi &&
-                frikApi->setHandPoseCustomWithPriority != nullptr &&
-                frikApi->getHandPoseLocalTransformsForPose != nullptr &&
-                frikApi->setHandPoseCustomLocalTransformsWithPriority != nullptr &&
-                frikApi->applyExternalHandWorldTransform != nullptr &&
-                frikApi->clearExternalHandWorldTransform != nullptr &&
-                frikApi->blockOffHandWeaponGripping != nullptr &&
-                frikApi->registerWeaponHandRecoilController != nullptr &&
-                frikApi->unregisterWeaponHandRecoilController != nullptr;
-            if (!hasRequiredFrikContract) {
-                logger::critical(
-                    "ROCK: FRIKApi v5 contract mismatch. Loaded FRIK.dll does not expose the canonical hand-pose, visual-authority, and recoil-controller contract required by this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
-                s_frikAvailable = false;
-                return;
-            }
+            logger::info("ROCK: FRIK v{} API v2 (v{}) initialized successfully.", frik::api::FRIKApiV2::inst->getModVersion(), frik::api::FRIKApiV2::inst->getVersion());
 
             g_rockConfig.load();
             rock::frik_weapon_offset_cache::preload();
@@ -745,8 +733,8 @@ namespace
 
             s_frikAvailable = true;
 
-            s_messaging->RegisterListener(onFRIKMessage, frik::api::FRIKApi::FRIK_F4SE_MOD_NAME);
-            logger::info("ROCK: Registered FRIK lifecycle event listener on '{}'.", frik::api::FRIKApi::FRIK_F4SE_MOD_NAME);
+            s_messaging->RegisterListener(onFRIKMessage, frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
+            logger::info("ROCK: Registered FRIK lifecycle event listener on '{}'.", frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
 
             logger::info("ROCK: Initialization complete. Waiting for skeleton...");
         }

@@ -723,10 +723,10 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
-        (void)frik_visual_authority::clearExternalHandWorldTransform(
+        (void)frik_visual_authority::clearHandWorld(
             WEAPON_COLLISION_HAND_TAG,
             frik_visual_authority::Hand::Left);
-        (void)frik_visual_authority::clearExternalHandWorldTransform(
+        (void)frik_visual_authority::clearHandWorld(
             WEAPON_COLLISION_HAND_TAG,
             frik_visual_authority::Hand::Right);
         _visuals.weaponCollisionHandAuthorityLive = {};

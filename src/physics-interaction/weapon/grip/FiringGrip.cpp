@@ -866,7 +866,7 @@ namespace rock
 
         const auto hand = handFromBool(isLeft);
         _firing.publishedFingerPoseIsLeft = isLeft;
-        if (!frik_visual_authority::setHandPoseCustomWithPriority(PRIMARY_GRIP_TAG, hand, frik_visual_authority::HandPoseData{}, GRIP_HAND_POSE_PRIORITY)) {
+        if (!frik_visual_authority::setHandPoseCustom(PRIMARY_GRIP_TAG, hand, frik_visual_authority::HandPoseData{}, GRIP_HAND_POSE_PRIORITY)) {
             clearAuthoredPrimaryFiringGripFingerPose();
             return false;
         }
@@ -876,7 +876,7 @@ namespace rock
         for (std::size_t index = 0; index < transforms.size(); ++index) {
             overrideData.localTransforms[index] = transforms[index];
         }
-        if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+        if (!frik_visual_authority::setHandPoseCustomLocalTransforms(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
             clearAuthoredPrimaryFiringGripFingerPose();
             return false;
         }
@@ -959,7 +959,7 @@ namespace rock
         }
 
         if (!isUsableHandAuthorityTransform(solvedFiringHandWorld) ||
-            !frik_visual_authority::applyExternalHandWorldTransform(
+            !frik_visual_authority::publishHandWorld(
                 PRIMARY_GRIP_TAG,
                 frik_visual_authority::Hand::Right,
                 solvedFiringHandWorld,

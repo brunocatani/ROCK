@@ -873,9 +873,9 @@ namespace rock
                         const char* blockTag = isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight";
                         const bool blockedNativePose = frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, true);
                         const bool scalarPublished =
-                            blockedNativePose && frik_visual_authority::setHandPoseCustomWithPriority(tag, handFromBool(isLeft), frik_visual_authority::HandPoseData{}, priority);
+                            blockedNativePose && frik_visual_authority::setHandPoseCustom(tag, handFromBool(isLeft), frik_visual_authority::HandPoseData{}, priority);
                         const bool localsPublished =
-                            scalarPublished && frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, handFromBool(isLeft), &exactPose, priority);
+                            scalarPublished && frik_visual_authority::setHandPoseCustomLocalTransforms(tag, handFromBool(isLeft), &exactPose, priority);
                         if (localsPublished) {
                             ROCK_LOG_INFO(Hand, "{} hand loose weapon attach: applying exact native-idle firing pose source={} mask=0x{:04X}", isLeft ? "left" : "right",
                                 authored.reason, exactPose.enabledMask);
@@ -890,7 +890,7 @@ namespace rock
                 }
             }
 
-            return frik_visual_authority::setHandPoseWithPriority(
+            return frik_visual_authority::setHandPose(
                 "ROCK_Grab",
                 handFromBool(isLeft),
                 looseWeaponPrimaryAttachPoseKind(weapon),
@@ -4409,7 +4409,7 @@ namespace rock
                 std::array<float, 5> currentSplayRadians{};
                 (void)grab_finger_pose_runtime::resolveSurfaceContactSplayValues(isLeft, fingerPose, currentSplayRadians);
                 const auto currentHandPose = frik_visual_authority::makeHandPoseDataFromJointValues(currentJointPose, currentSplayRadians);
-                if (!frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, currentHandPose, 100)) {
+                if (!frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, currentHandPose, 100)) {
                     hasCurrentJointPose = false;
                     grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
                     syncLocalTransformState();
@@ -4458,7 +4458,7 @@ namespace rock
                     fingerPose.values[3],
                     fingerPose.values[4],
                     currentSplayRadians);
-                const bool published = frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, handPose, 100);
+                const bool published = frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, handPose, 100);
                 if (published && g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
                         "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={}",
@@ -4483,7 +4483,7 @@ namespace rock
                 fallbackValue,
                 fallbackValue,
                 fallbackValue);
-            (void)frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, fallbackPose, 100);
+            (void)frik_visual_authority::setHandPoseCustom("ROCK_Grab", hand, fallbackPose, 100);
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand FINGER POSE: using selected-close fallback value={:.2f} solved={} hits={} candidateTris={}",
@@ -4533,7 +4533,7 @@ namespace rock
 
         bool applyGrabExternalHandWorldTransform(bool isLeft, const RE::NiTransform& adjustedHandTransform)
         {
-            return frik_visual_authority::applyExternalHandWorldTransform(
+            return frik_visual_authority::publishHandWorld(
                 GRAB_EXTERNAL_HAND_TAG,
                 handFromBool(isLeft),
                 adjustedHandTransform,
@@ -4542,12 +4542,12 @@ namespace rock
 
         void clearGrabExternalHandWorldTransform(bool isLeft)
         {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearHandWorld(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
         }
 
         bool applyGrabReturnHandWorldTransform(bool isLeft, const RE::NiTransform& handTransform)
         {
-            return frik_visual_authority::applyExternalHandWorldTransform(
+            return frik_visual_authority::publishHandWorld(
                 GRAB_RETURN_HAND_TAG,
                 handFromBool(isLeft),
                 handTransform,
@@ -4556,7 +4556,7 @@ namespace rock
 
         void clearGrabReturnHandWorldTransform(bool isLeft)
         {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(GRAB_RETURN_HAND_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearHandWorld(GRAB_RETURN_HAND_TAG, handFromBool(isLeft));
         }
 
         bool isUsableGrabVisualTransform(const RE::NiTransform& transform)

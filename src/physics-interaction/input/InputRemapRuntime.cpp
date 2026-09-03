@@ -11,7 +11,7 @@
 #include "RockConfig.h"
 
 #include "api/ROCKProviderApiInternal.h"
-#include "api/FRIKApi.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -411,10 +411,7 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool isCompatibilityConfigInputActive()
         {
-            const auto* frikApi = frik::api::FRIKApi::inst;
-            return frikApi &&
-                   ((frikApi->isConfigOpen && frikApi->isConfigOpen()) ||
-                       (frikApi->isWristPipboyOpen && frikApi->isWristPipboyOpen()));
+            return frik_visual_authority::isCompatibilityConfigBlocking();
         }
 
         void refreshTrackedMenuState(const RE::UI& ui)

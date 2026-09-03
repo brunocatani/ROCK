@@ -1153,7 +1153,7 @@ namespace rock
                     meshFingerPose.solved,
                     true,
                     api && api->getHandPoseLocalTransformsForPose != nullptr,
-                    api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
+                    api && api->setHandPoseCustomLocalTransforms != nullptr);
             if (!canPublish) {
                 ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: full-hand local transform override skipped hand={} enabled={} api={} baselineApi={} publishApi={}",
@@ -1161,7 +1161,7 @@ namespace rock
                     g_rockConfig.rockGrabMeshLocalTransformPoseEnabled ? "yes" : "no",
                     api ? "yes" : "no",
                     (api && api->getHandPoseLocalTransformsForPose) ? "yes" : "no",
-                    (api && api->setHandPoseCustomLocalTransformsWithPriority) ? "yes" : "no");
+                    (api && api->setHandPoseCustomLocalTransforms) ? "yes" : "no");
                 return false;
             }
 
