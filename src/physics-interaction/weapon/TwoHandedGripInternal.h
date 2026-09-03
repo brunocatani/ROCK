@@ -1259,9 +1259,11 @@ namespace rock
         {
             LeftCarryProbeSample sample{};
             DirectSkeletonBoneSnapshot snapshot{};
+            // The probe compares the rendered array against the applied target.
             if (rootFlattenedTwoHandedReader().capture(
                     skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                     skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    SkeletonBoneCaptureSpace::Rendered,
                     snapshot)) {
                 const auto* handBone = findSnapshotBone(snapshot, "LArm_Hand");
                 const auto* forearmBone = findSnapshotBone(snapshot, "LArm_ForeArm1");

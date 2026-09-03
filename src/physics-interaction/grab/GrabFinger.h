@@ -4171,6 +4171,7 @@ namespace rock::grab_finger_local_transform_runtime
         if (!rootFlattenedFingerReader().capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Controller,
                 snapshot)) {
             outNodes = {};
             setTransformFailure(outFailureReason, outFailureIndex, "live-snapshot-capture", kInvalidFingerLocalTransformIndex);

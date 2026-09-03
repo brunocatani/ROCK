@@ -12,11 +12,24 @@
 #include <vector>
 
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
+#include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
 namespace rock
 {
+    /*
+     * Rendered: the root flattened tree as FRIK left it, its solve to a ROCK
+     * claim included. Controller: each hand chain (forearm, hand, fingers)
+     * carried to the isolated controller hand, which is what every consumer
+     * measuring against the controller read before FRIK API v2 deferred claims.
+     */
+    enum class SkeletonBoneCaptureSpace : std::uint8_t
+    {
+        Rendered,
+        Controller,
+    };
+
     struct DirectSkeletonBoneEntry
     {
         std::string name;
@@ -37,6 +50,7 @@ namespace rock
         bool inPowerArmor = false;
         skeleton_bone_debug_math::DebugSkeletonBoneMode mode = skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
         skeleton_bone_debug_math::SkeletonBoneSnapshotSource source = skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
+        SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Rendered;
         const void* skeleton = nullptr;
         const void* boneTree = nullptr;
         int totalBoneCount = 0;
@@ -51,6 +65,7 @@ namespace rock
         bool capture(
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             skeleton_bone_debug_math::DebugSkeletonBoneSource source,
+            SkeletonBoneCaptureSpace space,
             DirectSkeletonBoneSnapshot& outSnapshot);
         void resetCache();
 
@@ -61,6 +76,7 @@ namespace rock
             int treeIndex = -1;
             int parentTreeIndex = -1;
             int drawableParentSnapshotIndex = -1;
+            rendered_bone_transport_policy::HandChainSide chainSide = rendered_bone_transport_policy::HandChainSide::None;
             bool included = false;
         };
 
@@ -71,7 +87,7 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             bool inPowerArmor);
 
-        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot);
+        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space);
 
         const void* _cachedSkeleton = nullptr;
         void* _cachedBoneTree = nullptr;
@@ -107,9 +123,11 @@ namespace rock
          */
         bool resolve()
         {
+            // Rendered on purpose: this cache is the controller-hand isolation's input.
             DirectSkeletonBoneSnapshot snapshot{};
             if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                     skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    SkeletonBoneCaptureSpace::Rendered,
                     snapshot)) {
                 clearResolvedState();
                 return false;

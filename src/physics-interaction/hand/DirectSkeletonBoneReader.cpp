@@ -8,6 +8,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -120,6 +121,7 @@ namespace rock
     bool DirectSkeletonBoneReader::capture(
         DebugSkeletonBoneMode mode,
         DebugSkeletonBoneSource source,
+        const SkeletonBoneCaptureSpace space,
         DirectSkeletonBoneSnapshot& outSnapshot)
     {
         outSnapshot = DirectSkeletonBoneSnapshot{};
@@ -165,7 +167,7 @@ namespace rock
                 return false;
             }
         }
-        return captureFromCachedTree(outSnapshot);
+        return captureFromCachedTree(outSnapshot, space);
     }
 
     bool DirectSkeletonBoneReader::rebuildTreeCache(void* skeleton, void* boneTree, SkeletonBoneSnapshotSource source, DebugSkeletonBoneMode mode, bool inPowerArmor)
@@ -220,6 +222,7 @@ namespace rock
                 .treeIndex = i,
                 .parentTreeIndex = parentIndices[static_cast<std::size_t>(i)],
                 .drawableParentSnapshotIndex = -1,
+                .chainSide = rendered_bone_transport_policy::chainSideForBone(name),
                 .included = true,
             });
         }
@@ -267,7 +270,7 @@ namespace rock
         return !_cachedBones.empty();
     }
 
-    bool DirectSkeletonBoneReader::captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot)
+    bool DirectSkeletonBoneReader::captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, const SkeletonBoneCaptureSpace space)
     {
         auto* tree = static_cast<BSFlattenedBoneTree*>(_cachedBoneTree);
         if (!validTree(tree)) {
@@ -275,10 +278,42 @@ namespace rock
             return false;
         }
 
+        /*
+         * Controller space carries each hand chain by the delta between the
+         * isolated controller root and the rendered root of this frame (both
+         * from the hand world authority's per-frame resolve). On claim-free
+         * frames the two coincide and the transport is inactive; when the
+         * isolation has no result yet the bones stay rendered, which the
+         * authority already reports as contaminated on claimed frames.
+         */
+        namespace transport_policy = rendered_bone_transport_policy;
+        std::array<transport_policy::HandTransport, 2> transports{};
+        if (space == SkeletonBoneCaptureSpace::Controller) {
+            for (std::size_t hand = 0; hand < transports.size(); ++hand) {
+                const bool isLeft = hand == 1;
+                RE::NiTransform controllerRoot{};
+                RE::NiTransform renderedRoot{};
+                const bool controllerValid = frik_hand_world_authority::tryGetRawHandWorld(isLeft, controllerRoot);
+                const bool renderedValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, renderedRoot);
+                transports[hand] = transport_policy::makeHandTransport(controllerRoot, controllerValid, renderedRoot, renderedValid);
+            }
+        }
+        const auto transportFor = [&transports](const transport_policy::HandChainSide side) -> const transport_policy::HandTransport* {
+            switch (side) {
+            case transport_policy::HandChainSide::Right:
+                return &transports[0];
+            case transport_policy::HandChainSide::Left:
+                return &transports[1];
+            default:
+                return nullptr;
+            }
+        };
+
         outSnapshot.valid = true;
         outSnapshot.inPowerArmor = _cachedInPowerArmor;
         outSnapshot.mode = _cachedMode;
         outSnapshot.source = _cachedSource;
+        outSnapshot.space = space;
         outSnapshot.skeleton = _cachedSkeleton;
         outSnapshot.boneTree = _cachedBoneTree;
         outSnapshot.totalBoneCount = _cachedTotalBoneCount;
@@ -303,6 +338,12 @@ namespace rock
             // keeps a torn tree from faulting the frame.
             if (const RE::NiNode* refNode = tree->transforms[cached.treeIndex].refNode) {
                 entry.nodeWorldValid = native_memory::tryReadValue(&refNode->world, entry.nodeWorld);
+            }
+            if (const transport_policy::HandTransport* transport = transportFor(cached.chainSide); transport && transport->active) {
+                entry.world = transport_policy::transportWorld(*transport, entry.world);
+                if (entry.nodeWorldValid) {
+                    entry.nodeWorld = transport_policy::transportWorld(*transport, entry.nodeWorld);
+                }
             }
             outSnapshot.bones.push_back(std::move(entry));
         }

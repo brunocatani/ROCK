@@ -1284,6 +1284,7 @@
         if (_providerDrives.presentedPoseReader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Rendered,
                 skeleton)) {
             const auto findBone = [&skeleton](const char* name) ->
                 const DirectSkeletonBoneEntry* {

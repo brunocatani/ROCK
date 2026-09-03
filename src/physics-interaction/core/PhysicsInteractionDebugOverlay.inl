@@ -1472,7 +1472,7 @@
 
         if (drawSkeletonBones) {
             DirectSkeletonBoneSnapshot snapshot{};
-            if (s_directSkeletonBoneReader.capture(skeletonBoneMode, skeletonBoneSource, snapshot)) {
+            if (s_directSkeletonBoneReader.capture(skeletonBoneMode, skeletonBoneSource, SkeletonBoneCaptureSpace::Rendered, snapshot)) {
                 const std::size_t drawCap =
                     static_cast<std::size_t>(skeleton_bone_debug_math::sanitizeMaxSkeletonBonesDrawn(g_rockConfig.rockDebugMaxSkeletonBonesDrawn));
                 const std::size_t axisCap =

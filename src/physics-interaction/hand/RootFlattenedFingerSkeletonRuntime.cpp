@@ -95,6 +95,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
         if (!rootFlattenedFingerReader().capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Controller,
                 boneSnapshot)) {
             outSnapshot = Snapshot{};
             if (outMissingBoneName) {

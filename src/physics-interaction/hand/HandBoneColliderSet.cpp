@@ -376,6 +376,7 @@ namespace rock
         DirectSkeletonBoneSnapshot snapshot{};
         if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Controller,
                 snapshot)) {
             return false;
         }

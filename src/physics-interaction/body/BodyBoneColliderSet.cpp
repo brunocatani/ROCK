@@ -688,8 +688,11 @@ namespace rock
 
     bool BodyBoneColliderSet::captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot)
     {
+        // Controller space so the forearm twins share the dynamic hand
+        // compound's frame; only the hand chains move, the body stays rendered.
         if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::AllFlattenedBones,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Controller,
                 outSnapshot)) {
             return false;
         }

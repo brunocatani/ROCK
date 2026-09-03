@@ -38,6 +38,7 @@ namespace rock
                     HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::
                     GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Controller,
                 capturedFingerBoneSnapshot);
         root_flattened_finger_skeleton_runtime::Snapshot
             capturedFingerSnapshot{};
