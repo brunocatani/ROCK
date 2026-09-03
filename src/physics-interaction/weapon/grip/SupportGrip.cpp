@@ -1561,6 +1561,48 @@ namespace rock
             return;
         }
 
+        /*
+         * LEFT_CARRY_CLOCK probe (debug grab-frame logging, left-firing carry
+         * with a support hand only): the rendered left arm in this topology is
+         * the only pose hFRIK solves from ROCK's driver-based physical frame
+         * rather than the root-flattened hand, so the row keeps the tracked
+         * left hand and elbow before any publication this frame and compares
+         * them with the presented target and the final root pose below.
+         */
+        struct LeftCarryProbeBones
+        {
+            RE::NiTransform hand{};
+            RE::NiTransform forearm{};
+            bool valid = false;
+        };
+        const auto sampleLeftCarryProbeBones = []() {
+            LeftCarryProbeBones bones{};
+            DirectSkeletonBoneSnapshot snapshot{};
+            if (!rootFlattenedTwoHandedReader().capture(
+                    skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    snapshot)) {
+                return bones;
+            }
+            const auto* handBone = findSnapshotBone(snapshot, "LArm_Hand");
+            const auto* forearmBone = findSnapshotBone(snapshot, "LArm_ForeArm1");
+            if (!handBone || !forearmBone ||
+                !isUsableHandAuthorityTransform(handBone->world) ||
+                !isFiniteTransform(forearmBone->world)) {
+                return bones;
+            }
+            bones.hand = handBone->world;
+            bones.forearm = forearmBone->world;
+            bones.valid = true;
+            return bones;
+        };
+        const bool leftCarryProbeEnabled =
+            g_rockConfig.rockDebugGrabFrameLogging &&
+            primaryHandIsLeft &&
+            usesLeftFiringCarry();
+        const LeftCarryProbeBones leftBonesBefore =
+            leftCarryProbeEnabled ? sampleLeftCarryProbeBones() : LeftCarryProbeBones{};
+
         RE::NiTransform calibratedPrimaryTransform = primaryTransform;
         RE::NiTransform calibratedSupportTransform = supportTransform;
         bool inputBaselineResolved = true;
@@ -2142,6 +2184,77 @@ namespace rock
                 _visuals.primaryHandLerp.durationSeconds,
                 supportGrip.visualLerp.lastAlpha,
                 supportGrip.visualLerp.durationSeconds);
+        }
+
+        if (leftCarryProbeEnabled) {
+            const LeftCarryProbeBones leftBonesAfter = sampleLeftCarryProbeBones();
+            RE::NiTransform rightRootAfter{};
+            const bool rightRootAfterValid =
+                tryGetRootFlattenedHandBoneTransform(false, rightRootAfter);
+            const RE::NiTransform presentedLeftTarget =
+                transform_math::composeTransforms(
+                    weaponNode->world,
+                    _firing.primaryHandWeaponLocal);
+            const auto& frame = runtime_state::currentFrame();
+            ROCK_LOG_DEBUG(Weapon,
+                "LEFT_CARRY_CLOCK: frame={} dt={:.6f} bones={}/{} driver=({:.2f},{:.2f},{:.2f}) physL=({:.2f},{:.2f},{:.2f}) rootBefore=({:.2f},{:.2f},{:.2f}) rootAfter=({:.2f},{:.2f},{:.2f}) physVsRootBefore={:.3f}gu/{:.2f}deg rootStep={:.3f}gu/{:.2f}deg target=({:.2f},{:.2f},{:.2f}) physVsTarget={:.3f}gu/{:.2f}deg targetVsRootAfter={:.3f}gu/{:.2f}deg elbowBefore=({:.2f},{:.2f},{:.2f}) elbowAfter=({:.2f},{:.2f},{:.2f}) elbowStep={:.3f}gu rightRoot=({:.2f},{:.2f},{:.2f}) rightRootAfter=({:.2f},{:.2f},{:.2f}) supportTarget=({:.2f},{:.2f},{:.2f}) weaponPre=({:.2f},{:.2f},{:.2f}) weaponPost=({:.2f},{:.2f},{:.2f}) weaponStep={:.3f}gu/{:.2f}deg axisRot={:.2f}deg pulsePrev={}/{} lerp={:.2f}/{:.2f} blend={:.3f}",
+                frame.frameIndex,
+                dt,
+                leftBonesBefore.valid ? "ok" : "miss",
+                leftBonesAfter.valid ? "ok" : "miss",
+                primaryDriverWorld.translate.x,
+                primaryDriverWorld.translate.y,
+                primaryDriverWorld.translate.z,
+                primaryTransform.translate.x,
+                primaryTransform.translate.y,
+                primaryTransform.translate.z,
+                leftBonesBefore.hand.translate.x,
+                leftBonesBefore.hand.translate.y,
+                leftBonesBefore.hand.translate.z,
+                leftBonesAfter.hand.translate.x,
+                leftBonesAfter.hand.translate.y,
+                leftBonesAfter.hand.translate.z,
+                transformTranslationDistance(primaryTransform, leftBonesBefore.hand),
+                transformRotationDistanceDegrees(primaryTransform, leftBonesBefore.hand),
+                transformTranslationDistance(leftBonesAfter.hand, leftBonesBefore.hand),
+                transformRotationDistanceDegrees(leftBonesAfter.hand, leftBonesBefore.hand),
+                presentedLeftTarget.translate.x,
+                presentedLeftTarget.translate.y,
+                presentedLeftTarget.translate.z,
+                transformTranslationDistance(primaryTransform, presentedLeftTarget),
+                transformRotationDistanceDegrees(primaryTransform, presentedLeftTarget),
+                transformTranslationDistance(presentedLeftTarget, leftBonesAfter.hand),
+                transformRotationDistanceDegrees(presentedLeftTarget, leftBonesAfter.hand),
+                leftBonesBefore.forearm.translate.x,
+                leftBonesBefore.forearm.translate.y,
+                leftBonesBefore.forearm.translate.z,
+                leftBonesAfter.forearm.translate.x,
+                leftBonesAfter.forearm.translate.y,
+                leftBonesAfter.forearm.translate.z,
+                transformTranslationDistance(leftBonesAfter.forearm, leftBonesBefore.forearm),
+                supportTransform.translate.x,
+                supportTransform.translate.y,
+                supportTransform.translate.z,
+                rightRootAfterValid ? rightRootAfter.translate.x : 0.0f,
+                rightRootAfterValid ? rightRootAfter.translate.y : 0.0f,
+                rightRootAfterValid ? rightRootAfter.translate.z : 0.0f,
+                solverInput.supportTargetWorld.x,
+                solverInput.supportTargetWorld.y,
+                solverInput.supportTargetWorld.z,
+                solverInput.weaponWorldTransform.translate.x,
+                solverInput.weaponWorldTransform.translate.y,
+                solverInput.weaponWorldTransform.translate.z,
+                weaponNode->world.translate.x,
+                weaponNode->world.translate.y,
+                weaponNode->world.translate.z,
+                transformTranslationDistance(weaponNode->world, solverInput.weaponWorldTransform),
+                transformRotationDistanceDegrees(weaponNode->world, solverInput.weaponWorldTransform),
+                weapon_support_acquisition_math::rotationAngleRadians(solved.rotationDelta) * RADIANS_TO_DEGREES,
+                _visuals.weaponCollisionHandPresentationFromPreviousFrame[0] ? "L" : "-",
+                _visuals.weaponCollisionHandPresentationFromPreviousFrame[1] ? "R" : "-",
+                _visuals.primaryHandLerp.lastAlpha,
+                supportGrip.visualLerp.lastAlpha,
+                _support.rotationBlend);
         }
     }
 
