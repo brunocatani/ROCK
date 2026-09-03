@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
@@ -104,6 +105,17 @@ namespace rock::frik_hand_world_authority
     void resolveRawHands(const FrameHandSamples& samples);
     [[nodiscard]] bool tryGetRawHandWorld(bool isLeft, RE::NiTransform& outWorld);
     [[nodiscard]] bool tryGetPresentedHandWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] const char* rawHandSourceName(bool isLeft);
+
+    /*
+     * The rigid delta that carries this frame's rendered hand chain (forearm,
+     * hand, fingers) to the isolated controller hand. Inactive on claim-free
+     * frames and whenever the isolation has no result. Computed once per
+     * resolve so every consumer moves the chain by the same delta.
+     */
+    using HandChainTransport = rendered_bone_transport_policy::HandTransport;
+    [[nodiscard]] bool tryGetHandChainTransport(bool isLeft, HandChainTransport& outTransport);
+    [[nodiscard]] RE::NiTransform transportHandChainWorld(bool isLeft, const RE::NiTransform& renderedWorld);
 
     // ---- Lifecycle ----
 

@@ -9,6 +9,7 @@
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
 #include <algorithm>
 #include <array>
@@ -644,8 +645,11 @@ namespace rock
                 return;
             }
 
+            // The twin belongs to the dynamic hand compound, which is built in
+            // controller space: carry it with the hand chain so its shape and
+            // its palm and finger twins share one frame under a ROCK claim.
             slot.valid = true;
-            slot.target = mergedFrame.transform;
+            slot.target = frik_hand_world_authority::transportHandChainWorld(isLeft, mergedFrame.transform);
             slot.length = mergedFrame.length;
             slot.radius = mergedFrame.radius;
             slot.convexRadius = mergedFrame.convexRadius;
@@ -688,11 +692,12 @@ namespace rock
 
     bool BodyBoneColliderSet::captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot)
     {
-        // Controller space so the forearm twins share the dynamic hand
-        // compound's frame; only the hand chains move, the body stays rendered.
+        // Body colliders collide where the body draws, so the whole snapshot
+        // stays rendered; the forearm twin handed to the dynamic hand compound
+        // is carried to the controller hand on its own below.
         if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::AllFlattenedBones,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                SkeletonBoneCaptureSpace::Controller,
+                SkeletonBoneCaptureSpace::Rendered,
                 outSnapshot)) {
             return false;
         }

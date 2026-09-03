@@ -373,6 +373,8 @@ namespace rock
             std::uint64_t compoundGeometryGeneration = 0;
             RE::NiPoint3 appliedDeviation{};
             bool visualActive = false;
+            // Lines emitted for the current contact episode (debug trace).
+            std::uint32_t debugTraceLines = 0;
             RE::NiTransform lastPresentedHandWorld{};
             bool lastPresentedHandWorldValid = false;
             SurfaceLatch surfaceLatch{};

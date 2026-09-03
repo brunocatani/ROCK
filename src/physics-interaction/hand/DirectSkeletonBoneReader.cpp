@@ -279,23 +279,17 @@ namespace rock
         }
 
         /*
-         * Controller space carries each hand chain by the delta between the
-         * isolated controller root and the rendered root of this frame (both
-         * from the hand world authority's per-frame resolve). On claim-free
-         * frames the two coincide and the transport is inactive; when the
-         * isolation has no result yet the bones stay rendered, which the
-         * authority already reports as contaminated on claimed frames.
+         * Controller space carries each hand chain by the hand world
+         * authority's per-frame transport (isolated controller root versus
+         * rendered root). On claim-free frames it is inactive; without an
+         * isolation result the bones stay rendered, which the authority
+         * counts as a claimed frame without transport.
          */
         namespace transport_policy = rendered_bone_transport_policy;
         std::array<transport_policy::HandTransport, 2> transports{};
         if (space == SkeletonBoneCaptureSpace::Controller) {
             for (std::size_t hand = 0; hand < transports.size(); ++hand) {
-                const bool isLeft = hand == 1;
-                RE::NiTransform controllerRoot{};
-                RE::NiTransform renderedRoot{};
-                const bool controllerValid = frik_hand_world_authority::tryGetRawHandWorld(isLeft, controllerRoot);
-                const bool renderedValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, renderedRoot);
-                transports[hand] = transport_policy::makeHandTransport(controllerRoot, controllerValid, renderedRoot, renderedValid);
+                (void)frik_hand_world_authority::tryGetHandChainTransport(hand == 1, transports[hand]);
             }
         }
         const auto transportFor = [&transports](const transport_policy::HandChainSide side) -> const transport_policy::HandTransport* {

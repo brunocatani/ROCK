@@ -32,12 +32,15 @@ namespace rock::frik_hand_world_authority
         constexpr std::size_t kMaxOffsetChainDepth = 6;
         constexpr std::uint32_t kProbeSummaryFrames = 600;
 
+        namespace transport_policy = rendered_bone_transport_policy;
+
         struct IsolationState
         {
             isolation_policy::RelationState relation{};
             isolation_policy::FrameResult result{};
             RE::NiTransform presentedHandWorld{};
             bool presentedHandValid = false;
+            transport_policy::HandTransport chainTransport{};
         };
 
         struct ProbeCounters
@@ -49,6 +52,12 @@ namespace rock::frik_hand_world_authority
             std::array<std::uint32_t, 2> probeFrames{};
             std::array<float, 2> probeTranslationMax{};
             std::array<float, 2> probeRotationMax{};
+            std::array<std::uint32_t, 2> transportActiveFrames{};
+            std::array<float, 2> transportTranslationMax{};
+            std::array<float, 2> transportRotationMax{};
+            // A claim was rendered but the chain could not be carried: every
+            // controller-space consumer read ROCK's previous target that frame.
+            std::array<std::uint32_t, 2> claimedFramesWithoutTransport{};
             std::uint32_t rebasePublishes = 0;
             std::uint32_t rebaseKeepOrderPublishes = 0;
             std::uint32_t rebaseRejected = 0;
@@ -176,7 +185,7 @@ namespace rock::frik_hand_world_authority
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const auto& relation = g_service.isolation[hand].relation;
                 ROCK_LOG_INFO(Hand,
-                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={}",
+                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={} transportFrames={} transportMax={:.2f}gu/{:.2f}deg claimedWithoutTransport={}",
                     handName(hand == handIndex(true)),
                     probes.frames,
                     probes.reconstructedFrames[hand],
@@ -187,7 +196,11 @@ namespace rock::frik_hand_world_authority
                     probes.probeRotationMax[hand],
                     relation.valid ? "valid" : "missing",
                     relation.acceptedSamples,
-                    relation.rejectedSamples);
+                    relation.rejectedSamples,
+                    probes.transportActiveFrames[hand],
+                    probes.transportTranslationMax[hand],
+                    probes.transportRotationMax[hand],
+                    probes.claimedFramesWithoutTransport[hand]);
             }
             ROCK_LOG_INFO(Hand,
                 "HandWorldAuthority rebase frames={} claims={} rebasePublishes={} keepOrderPublishes={} rejected={} driverSamplesMissing={} refusedByGate={} scheduler={}",
@@ -298,6 +311,7 @@ namespace rock::frik_hand_world_authority
             g_service.claimConsumedThisFrame[hand] = registry_policy::hasClaim(g_service.registry, isLeft);
             g_service.isolation[hand].result = {};
             g_service.isolation[hand].presentedHandValid = false;
+            g_service.isolation[hand].chainTransport = {};
         }
     }
 
@@ -439,11 +453,26 @@ namespace rock::frik_hand_world_authority
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
             input.calibrationAllowed = !recoilKickThisFrame;
             state.result = isolation_policy::resolveFrame(state.relation, input);
+            state.chainTransport = transport_policy::makeHandTransport(
+                state.result.rawHandWorld,
+                state.result.valid,
+                sample.flattenedHandWorld,
+                sample.flattenedHandValid);
 
             if (!firstResolveThisFrame) {
                 continue;
             }
             auto& probes = g_service.probes;
+            if (state.chainTransport.active) {
+                const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+                ++probes.transportActiveFrames[hand];
+                probes.transportTranslationMax[hand] = (std::max)(probes.transportTranslationMax[hand],
+                    isolation_policy::translationGameUnits(state.chainTransport.delta, identity));
+                probes.transportRotationMax[hand] = (std::max)(probes.transportRotationMax[hand],
+                    isolation_policy::rotationDegrees(state.chainTransport.delta, identity));
+            } else if (input.claimConsumed) {
+                ++probes.claimedFramesWithoutTransport[hand];
+            }
             switch (state.result.source) {
             case isolation_policy::RawHandSource::Reconstructed:
                 ++probes.reconstructedFrames[hand];
@@ -497,6 +526,31 @@ namespace rock::frik_hand_world_authority
         }
         outWorld = state.presentedHandWorld;
         return true;
+    }
+
+    const char* rawHandSourceName(const bool isLeft)
+    {
+        switch (g_service.isolation[handIndex(isLeft)].result.source) {
+        case isolation_policy::RawHandSource::Flattened:
+            return "flattened";
+        case isolation_policy::RawHandSource::Reconstructed:
+            return "reconstructed";
+        case isolation_policy::RawHandSource::FlattenedContaminated:
+            return "contaminated";
+        default:
+            return "none";
+        }
+    }
+
+    bool tryGetHandChainTransport(const bool isLeft, HandChainTransport& outTransport)
+    {
+        outTransport = g_service.isolation[handIndex(isLeft)].chainTransport;
+        return outTransport.active;
+    }
+
+    RE::NiTransform transportHandChainWorld(const bool isLeft, const RE::NiTransform& renderedWorld)
+    {
+        return transport_policy::transportWorld(g_service.isolation[handIndex(isLeft)].chainTransport, renderedWorld);
     }
 
     void clearAllClaims()
