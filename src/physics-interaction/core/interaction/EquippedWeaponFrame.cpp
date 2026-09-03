@@ -1579,7 +1579,7 @@ namespace rock
         debug::GripZoneIndicatorOverlayFrame overlayFrame{};
         overlayFrame.gameFrameIndex = gameFrameIndex;
         overlayFrame.diameterGameUnits =
-            g_rockConfig.rockDebugGripZoneIndicatorDiameterGameUnits;
+            g_rockConfig.rockGripZoneIndicatorDiameterGameUnits;
 
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         const std::uint64_t currentWeaponGenerationKey =

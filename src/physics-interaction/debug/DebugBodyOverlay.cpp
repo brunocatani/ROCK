@@ -4929,9 +4929,9 @@ namespace rock::debug
         if (frame.gameFrameIndex == 0 || sourceCount == 0 ||
             !std::isfinite(frame.diameterGameUnits) ||
             frame.diameterGameUnits <
-                grip_zone_indicator_policy::kMinimumDebugDiameterGameUnits ||
+                grip_zone_indicator_policy::kMinimumDiameterGameUnits ||
             frame.diameterGameUnits >
-                grip_zone_indicator_policy::kMaximumDebugDiameterGameUnits) {
+                grip_zone_indicator_policy::kMaximumDiameterGameUnits) {
             ClearGripZoneIndicators();
             return;
         }

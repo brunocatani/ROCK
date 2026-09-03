@@ -76,6 +76,11 @@ namespace rock
         bool rockLastGripReleaseDropEnabled = true;
         float rockFiringGripReattachRadiusGameUnits = 12.0f;
         float rockFiringGripReattachCylinderRadiusGameUnits = 2.0f;
+        grip_zone_indicator_policy::Mode rockGripZoneIndicatorMode{
+            grip_zone_indicator_policy::Mode::Nif
+        };
+        float rockGripZoneIndicatorDiameterGameUnits =
+            grip_zone_indicator_policy::kDefaultDiameterGameUnits;
         float rockFiringGripHapticDurationSeconds = 0.10f;
         float rockFiringGripAttachHapticIntensity = 0.85f;
         float rockFiringGripDetachHapticIntensity = 0.30f;
@@ -187,11 +192,6 @@ namespace rock
         bool rockDebugDrawWeaponColliders = false;
         bool rockDebugDrawGrabbedWeaponPartCollider = false;
         bool rockDebugDrawNativeScopeActivation = false;
-        grip_zone_indicator_policy::Mode rockGripZoneIndicatorMode{
-            grip_zone_indicator_policy::Mode::Nif
-        };
-        float rockDebugGripZoneIndicatorDiameterGameUnits =
-            grip_zone_indicator_policy::kDefaultDebugDiameterGameUnits;
         bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawWeaponAuthority = false;
         bool rockDebugGripFailureTelemetry = false;

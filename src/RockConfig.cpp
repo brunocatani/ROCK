@@ -357,6 +357,28 @@ namespace rock
             2.0f,
             0.1f,
             30.0f);
+        const long configuredGripZoneIndicatorMode = ini.GetLongValue(
+            IMMERSIVE_WEAPONS_SECTION,
+            "iGripZoneIndicatorMode",
+            static_cast<long>(rockGripZoneIndicatorMode));
+        if (!grip_zone_indicator_policy::isSupportedMode(
+                configuredGripZoneIndicatorMode)) {
+            ROCK_LOG_WARN(
+                Config,
+                "Invalid iGripZoneIndicatorMode={} -- using 1 (NIF)",
+                configuredGripZoneIndicatorMode);
+        }
+        rockGripZoneIndicatorMode =
+            grip_zone_indicator_policy::modeFromIni(
+                configuredGripZoneIndicatorMode);
+        rockGripZoneIndicatorDiameterGameUnits = readClampedFloat(
+            ini,
+            IMMERSIVE_WEAPONS_SECTION,
+            "fGripZoneIndicatorDiameterGameUnits",
+            rockGripZoneIndicatorDiameterGameUnits,
+            grip_zone_indicator_policy::kDefaultDiameterGameUnits,
+            grip_zone_indicator_policy::kMinimumDiameterGameUnits,
+            grip_zone_indicator_policy::kMaximumDiameterGameUnits);
         rockFiringGripHapticDurationSeconds = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
@@ -708,28 +730,6 @@ namespace rock
             rockDebugDrawGrabbedWeaponPartCollider);
         rockDebugDrawNativeScopeActivation =
             ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
-        const long configuredGripZoneIndicatorMode = ini.GetLongValue(
-            SECTION,
-            "iGripZoneIndicatorMode",
-            static_cast<long>(rockGripZoneIndicatorMode));
-        if (!grip_zone_indicator_policy::isSupportedMode(
-                configuredGripZoneIndicatorMode)) {
-            ROCK_LOG_WARN(
-                Config,
-                "Invalid iGripZoneIndicatorMode={} -- using 1 (NIF)",
-                configuredGripZoneIndicatorMode);
-        }
-        rockGripZoneIndicatorMode =
-            grip_zone_indicator_policy::modeFromIni(
-                configuredGripZoneIndicatorMode);
-        rockDebugGripZoneIndicatorDiameterGameUnits = readClampedFloat(
-            ini,
-            SECTION,
-            "fDebugGripZoneIndicatorDiameterGameUnits",
-            rockDebugGripZoneIndicatorDiameterGameUnits,
-            grip_zone_indicator_policy::kDefaultDebugDiameterGameUnits,
-            grip_zone_indicator_policy::kMinimumDebugDiameterGameUnits,
-            grip_zone_indicator_policy::kMaximumDebugDiameterGameUnits);
         rockDebugDrawAuthoredGripActivationZones =
             ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
         rockDebugDrawWeaponAuthority =

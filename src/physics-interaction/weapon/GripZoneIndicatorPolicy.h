@@ -14,9 +14,9 @@ namespace rock::grip_zone_indicator_policy
         DebugOverlay = 2,
     };
 
-    inline constexpr float kDefaultDebugDiameterGameUnits = 0.70f;
-    inline constexpr float kMinimumDebugDiameterGameUnits = 0.10f;
-    inline constexpr float kMaximumDebugDiameterGameUnits = 5.00f;
+    inline constexpr float kDefaultDiameterGameUnits = 0.70f;
+    inline constexpr float kMinimumDiameterGameUnits = 0.10f;
+    inline constexpr float kMaximumDiameterGameUnits = 5.00f;
 
     [[nodiscard]] constexpr bool isSupportedMode(const long value) noexcept
     {

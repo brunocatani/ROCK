@@ -131,11 +131,11 @@ namespace
     static_assert(
         !rock::grip_zone_indicator_policy::isCurrentRenderFrame(0, 0));
     static_assert(
-        rock::grip_zone_indicator_policy::kDefaultDebugDiameterGameUnits >=
-        rock::grip_zone_indicator_policy::kMinimumDebugDiameterGameUnits);
+        rock::grip_zone_indicator_policy::kDefaultDiameterGameUnits >=
+        rock::grip_zone_indicator_policy::kMinimumDiameterGameUnits);
     static_assert(
-        rock::grip_zone_indicator_policy::kDefaultDebugDiameterGameUnits <=
-        rock::grip_zone_indicator_policy::kMaximumDebugDiameterGameUnits);
+        rock::grip_zone_indicator_policy::kDefaultDiameterGameUnits <=
+        rock::grip_zone_indicator_policy::kMaximumDiameterGameUnits);
 }
 
 int main()
