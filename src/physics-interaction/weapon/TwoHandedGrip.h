@@ -713,6 +713,25 @@ namespace rock
         bool isTouching() const { return _session.state == TwoHandedState::Touching; }
 
         bool isFiringHandLeft() const { return _session.firingHandIsLeft; }
+
+        /*
+         * The physical hand whose wand moves the weapon node this frame: the
+         * firing hand while it occupies the firing grip, the carry anchor of
+         * a part carry once it has detached. Every hand seat on the weapon
+         * is rebased between ROCK frames by this wand; rebasing the support
+         * seat by a detached firing hand drags it with a free hand.
+         */
+        bool weaponCarrierIsLeft() const
+        {
+            if (_session.state == TwoHandedState::PartCarry) {
+                const bool leftCarries = isHandPartCarryGripping(true);
+                const bool rightCarries = isHandPartCarryGripping(false);
+                if (leftCarries != rightCarries) {
+                    return leftCarries;
+                }
+            }
+            return isFiringHandLeft();
+        }
         [[nodiscard]] std::uint64_t nativeRecoilKickSequence() const noexcept { return _leftCarry.nativeRecoilKickSequence; }
 
         /*

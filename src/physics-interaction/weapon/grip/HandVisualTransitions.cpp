@@ -930,7 +930,7 @@ namespace rock
                         hand,
                         pulse.targetWorld,
                         WEAPON_COLLISION_HAND_PRIORITY,
-                        frik_visual_authority::physicalHandDriver(isFiringHandLeft()));
+                        frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()));
                 /*
                  * Retain the high-priority result through rendering. Clearing
                  * it here synchronously reselects the live priority-100 firing
@@ -1054,7 +1054,7 @@ namespace rock
                 handFromBool(isFiringHandLeft()),
                 requestedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY,
-                frik_visual_authority::physicalHandDriver(isFiringHandLeft()));
+                frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()));
         recordLockedHandAuthorityAttempt(
             isFiringHandLeft(),
             LockedHandAuthorityRole::PrimaryGrip,
@@ -1111,7 +1111,7 @@ namespace rock
                 handFromBool(isLeft),
                 appliedHandWorld,
                 GRIP_HAND_POSE_PRIORITY,
-                frik_visual_authority::physicalHandDriver(isFiringHandLeft()));
+                frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()));
         recordLockedHandAuthorityAttempt(
             isLeft,
             LockedHandAuthorityRole::SupportGrip,
