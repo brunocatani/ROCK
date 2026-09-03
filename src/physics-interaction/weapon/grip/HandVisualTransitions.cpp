@@ -96,6 +96,13 @@ namespace rock
             weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_session.authorityMode);
     }
 
+    frik_visual_authority::RebaseDriver TwoHandedGrip::weaponSeatDriver(const bool seatHandIsLeft) const
+    {
+        return weaponSeatFollowsCarrier(seatHandIsLeft) ?
+            frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()) :
+            frik_visual_authority::RebaseDriver::Static;
+    }
+
     void TwoHandedGrip::recordPublishedHandWorld(const bool isLeft, const RE::NiTransform& appliedWorld)
     {
         if (!isUsableHandAuthorityTransform(appliedWorld)) {
@@ -930,7 +937,7 @@ namespace rock
                         hand,
                         pulse.targetWorld,
                         WEAPON_COLLISION_HAND_PRIORITY,
-                        frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()));
+                        weaponSeatDriver(pulse.isLeft));
                 /*
                  * Retain the high-priority result through rendering. Clearing
                  * it here synchronously reselects the live priority-100 firing
@@ -1054,7 +1061,7 @@ namespace rock
                 handFromBool(isFiringHandLeft()),
                 requestedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY,
-                frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()));
+                weaponSeatDriver(isFiringHandLeft()));
         recordLockedHandAuthorityAttempt(
             isFiringHandLeft(),
             LockedHandAuthorityRole::PrimaryGrip,
@@ -1111,7 +1118,7 @@ namespace rock
                 handFromBool(isLeft),
                 appliedHandWorld,
                 GRIP_HAND_POSE_PRIORITY,
-                frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()));
+                weaponSeatDriver(isLeft));
         recordLockedHandAuthorityAttempt(
             isLeft,
             LockedHandAuthorityRole::SupportGrip,

@@ -18,6 +18,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 #include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
@@ -731,6 +732,21 @@ namespace rock
                 }
             }
             return isFiringHandLeft();
+        }
+
+        /*
+         * Whether a hand seat on the weapon moves rigidly with the carrier's
+         * wand between ROCK frames. The carrier's own seat does. The other
+         * hand of a two-hand hold sits where the two-handed aim puts it: the
+         * weapon turns between the hands, so that seat neither turns with
+         * the carrier's wrist nor moves with its perpendicular motion. Its
+         * claim is left static between frames and the frame-end presentation
+         * moves it by what it actually did (ROCK.log PRESENT: 0.2 gu per
+         * frame against 0.6 gu rebased, 6-15 deg on collision pulses).
+         */
+        bool weaponSeatFollowsCarrier(const bool seatHandIsLeft) const
+        {
+            return seatHandIsLeft == weaponCarrierIsLeft();
         }
         [[nodiscard]] std::uint64_t nativeRecoilKickSequence() const noexcept { return _leftCarry.nativeRecoilKickSequence; }
 
@@ -1739,6 +1755,8 @@ namespace rock
             bool primaryHand,
             LockedHandVisualLerpState& visualState);
         void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
+        // The rebase driver for a hand seat on the weapon (see weaponSeatFollowsCarrier).
+        [[nodiscard]] hand_world_claim_registry_policy::RebaseDriver weaponSeatDriver(bool seatHandIsLeft) const;
         void beginHandVisualReturn(bool isLeft, const char* reason);
         void updateHandVisualReturns(float dt);
         void clearHandVisualReturn(bool isLeft, const char* reason, bool logCancellation);
