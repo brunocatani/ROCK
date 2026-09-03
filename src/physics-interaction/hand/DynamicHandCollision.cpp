@@ -2587,7 +2587,6 @@ namespace rock
                 }
                 frik_hand_world_authority::HandChainTransport transport{};
                 (void)frik_hand_world_authority::tryGetHandChainTransport(isLeft, transport);
-                const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
                 RE::NiTransform rendered{};
                 const bool renderedValid = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, rendered);
                 const auto& palm = handTelemetry.twins[kPalmSlot];
@@ -2598,8 +2597,8 @@ namespace rock
                     frik_hand_world_authority::wasClaimConsumedThisFrame(isLeft) ? 1 : 0,
                     frik_hand_world_authority::rawHandSourceName(isLeft),
                     transport.active ? 1 : 0,
-                    transport.active ? tracked_hand_isolation_policy::translationGameUnits(transport.delta, identity) : 0.0f,
-                    transport.active ? tracked_hand_isolation_policy::rotationDegrees(transport.delta, identity) : 0.0f,
+                    transport.active && renderedValid ? tracked_hand_isolation_policy::translationGameUnits(handInput.rawHandWorld, rendered) : 0.0f,
+                    transport.active && renderedValid ? tracked_hand_isolation_policy::rotationDegrees(handInput.rawHandWorld, rendered) : 0.0f,
                     handInput.rawHandWorld.translate.x,
                     handInput.rawHandWorld.translate.y,
                     handInput.rawHandWorld.translate.z,

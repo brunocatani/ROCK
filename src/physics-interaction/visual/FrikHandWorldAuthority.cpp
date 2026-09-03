@@ -483,12 +483,14 @@ namespace rock::frik_hand_world_authority
             }
             auto& probes = g_service.probes;
             if (state.chainTransport.active) {
-                const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
+                // Measured at the hand root. The delta's own translation is
+                // taken about the world origin and grows with the world
+                // coordinate (140000 gu was logged for a 138 deg carry).
                 ++probes.transportActiveFrames[hand];
                 probes.transportTranslationMax[hand] = (std::max)(probes.transportTranslationMax[hand],
-                    isolation_policy::translationGameUnits(state.chainTransport.delta, identity));
+                    isolation_policy::translationGameUnits(state.result.rawHandWorld, sample.flattenedHandWorld));
                 probes.transportRotationMax[hand] = (std::max)(probes.transportRotationMax[hand],
-                    isolation_policy::rotationDegrees(state.chainTransport.delta, identity));
+                    isolation_policy::rotationDegrees(state.result.rawHandWorld, sample.flattenedHandWorld));
             } else if (input.claimConsumed) {
                 ++probes.claimedFramesWithoutTransport[hand];
             }
