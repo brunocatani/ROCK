@@ -229,8 +229,8 @@ namespace rock
 
         /*
          * End of ROCK's frame, after every claim of the frame was published:
-         * carry each claimed hand's rendered chain to this frame's claim so
-         * the hand draws on the seat ROCK computed this frame.
+         * move each claimed hand to this frame's claim and re-solve the arm
+         * behind it, so the hand draws on the seat ROCK computed this frame.
          */
         void presentClaimedHands();
 

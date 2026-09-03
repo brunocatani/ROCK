@@ -784,6 +784,7 @@ namespace
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->presentClaimedHands();
         }
+        frik_hand_world_authority::endRockFrame();
     }
 
     bool hookMainLoop()
@@ -906,6 +907,18 @@ namespace
             }
 
             logger::info("ROCK: FRIK v{} API v2 (v{}) initialized successfully.", frik::api::FRIKApiV2::inst->getModVersion(), frik::api::FRIKApiV2::inst->getVersion());
+            if (frik::api::FRIKApiV2::inst->getConfigValue) {
+                // FRIK smooths the first-person hands the weapon and ROCK's hand
+                // seats follow; the session log must say so when seats are read.
+                const auto* frikApi = frik::api::FRIKApiV2::inst;
+                std::array<char, 16> dampen{};
+                std::array<char, 16> translation{};
+                std::array<char, 16> rotation{};
+                (void)frikApi->getConfigValue("Fallout4VRBody", "DampenHands", dampen.data(), static_cast<int>(dampen.size()), "?");
+                (void)frikApi->getConfigValue("Fallout4VRBody", "DampenHandsTranslation", translation.data(), static_cast<int>(translation.size()), "?");
+                (void)frikApi->getConfigValue("Fallout4VRBody", "DampenHandsRotation", rotation.data(), static_cast<int>(rotation.size()), "?");
+                logger::info("ROCK: FRIK hand dampening DampenHands={} translation={} rotation={}.", dampen.data(), translation.data(), rotation.data());
+            }
 
             g_rockConfig.load();
             rock::frik_weapon_offset_cache::preload();

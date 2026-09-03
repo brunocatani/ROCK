@@ -130,8 +130,14 @@ namespace rock::frik_hand_world_authority
      * HandWorldClaimRegistryPolicy::planPresentation).
      */
     [[nodiscard]] bool tryPlanHandPresentation(bool isLeft, RE::NiTransform& outDelta);
-    // The caller carried the chain by delta, or failed to: keeps the presented hand and the probe counters honest.
-    void recordHandPresentation(bool isLeft, const RE::NiTransform& delta, bool applied);
+    /*
+     * The caller moved the hand by delta and re-solved the arm behind it
+     * (elbowMoveGameUnits from FRIK's elbow), or failed to: keeps the
+     * presented hand, the probe counters and the debug trace honest.
+     */
+    void recordHandPresentation(bool isLeft, const RE::NiTransform& delta, bool applied, float elbowMoveGameUnits);
+    // Last call of ROCK's frame: remembers this frame's targets for the next frame's trace.
+    void endRockFrame();
 
     // ---- Lifecycle ----
 

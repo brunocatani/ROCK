@@ -223,6 +223,8 @@ namespace rock
                 .parentTreeIndex = parentIndices[static_cast<std::size_t>(i)],
                 .drawableParentSnapshotIndex = -1,
                 .chainSide = rendered_bone_transport_policy::chainSideForBone(name),
+                .armSide = arm_presentation_policy::armSideForBone(name),
+                .armSegment = arm_presentation_policy::armSegmentForBone(name),
                 .included = true,
             });
         }
@@ -346,20 +348,26 @@ namespace rock
         return outSnapshot.valid;
     }
 
-    bool DirectSkeletonBoneReader::presentCachedChain(const rendered_bone_transport_policy::HandChainSide side, const RE::NiTransform& delta)
+    bool DirectSkeletonBoneReader::presentCachedArm(
+        const rendered_bone_transport_policy::HandChainSide side,
+        const RE::NiTransform& handDelta,
+        float& outElbowMoveGameUnits)
     {
+        namespace arm_policy = arm_presentation_policy;
         namespace transport_policy = rendered_bone_transport_policy;
+        outElbowMoveGameUnits = 0.0f;
         auto* tree = static_cast<BSFlattenedBoneTree*>(_cachedBoneTree);
         if (side == transport_policy::HandChainSide::None || !validTree(tree) ||
-            !tracked_hand_isolation_policy::isFiniteTransform(delta)) {
+            !tracked_hand_isolation_policy::isFiniteTransform(handDelta)) {
             return false;
         }
 
-        struct ChainWrite
+        struct BoneWrite
         {
             int treeIndex = -1;
             int parentTreeIndex = -1;
-            bool parentInChain = false;
+            int parentWrite = -1;
+            arm_policy::ArmSegment segment = arm_policy::ArmSegment::None;
             bool nodeValid = false;
             bool refParentValid = false;
             RE::NiNode* refNode = nullptr;
@@ -367,24 +375,30 @@ namespace rock
             RE::NiTransform world{};
             RE::NiTransform nodeWorld{};
             RE::NiTransform refParentWorld{};
+            RE::NiTransform newWorld{};
+            RE::NiTransform newNodeWorld{};
         };
-        // Hand, three forearm bones and fifteen finger bones per side.
-        constexpr std::size_t kMaxChainBones = 24;
-        std::array<ChainWrite, kMaxChainBones> writes{};
+        // Upper arm and two twists, three forearm bones, the hand, fifteen fingers.
+        constexpr std::size_t kMaxArmBones = 32;
+        std::array<BoneWrite, kMaxArmBones> writes{};
         std::size_t count = 0;
+        int shoulder = -1;
+        int elbow = -1;
+        int wrist = -1;
 
-        // Validate the whole chain before the first write so a torn tree
-        // cannot leave a half-carried hand.
+        // Validate the whole arm before the first write so a torn tree cannot
+        // leave a half-carried arm.
         for (const auto& cached : _cachedBones) {
-            if (cached.chainSide != side) {
+            if (cached.armSide != side || cached.armSegment == arm_policy::ArmSegment::None) {
                 continue;
             }
-            if (count >= kMaxChainBones || cached.treeIndex < 0 || cached.treeIndex >= tree->numTransforms) {
+            if (count >= kMaxArmBones || cached.treeIndex < 0 || cached.treeIndex >= tree->numTransforms) {
                 return false;
             }
-            ChainWrite& write = writes[count++];
+            BoneWrite& write = writes[count];
             write.treeIndex = cached.treeIndex;
             write.parentTreeIndex = cached.parentTreeIndex;
+            write.segment = cached.armSegment;
             const auto& entry = tree->transforms[cached.treeIndex];
             write.world = entry.world;
             if (!tracked_hand_isolation_policy::isFiniteTransform(write.world)) {
@@ -402,37 +416,71 @@ namespace rock
                     write.refParentValid = native_memory::tryReadValue(&write.refParent->world, write.refParentWorld);
                 }
             }
+            const std::string_view tail = std::string_view(cached.name).substr(5);
+            if (tail == "UpperArm") {
+                shoulder = static_cast<int>(count);
+            } else if (tail == "ForeArm1") {
+                elbow = static_cast<int>(count);
+            } else if (tail == "Hand") {
+                wrist = static_cast<int>(count);
+            }
+            ++count;
         }
-        if (count == 0) {
+        if (shoulder < 0 || elbow < 0 || wrist < 0) {
             return false;
         }
+        const arm_policy::ArmCarry carry = arm_policy::planArmCarry(
+            writes[shoulder].world.translate,
+            writes[elbow].world.translate,
+            writes[wrist].world.translate,
+            handDelta);
+        if (!carry.valid) {
+            return false;
+        }
+
         for (std::size_t i = 0; i < count; ++i) {
+            BoneWrite& write = writes[i];
+            const transport_policy::HandTransport transport{ .delta = arm_policy::carryForSegment(carry, write.segment), .active = true };
+            write.newWorld = transport_policy::transportWorld(transport, write.world);
+            if (write.nodeValid) {
+                write.newNodeWorld = transport_policy::transportWorld(transport, write.nodeWorld);
+            }
             for (std::size_t j = 0; j < count; ++j) {
-                if (writes[i].parentTreeIndex == writes[j].treeIndex) {
-                    writes[i].parentInChain = true;
+                if (writes[j].treeIndex == write.parentTreeIndex) {
+                    write.parentWrite = static_cast<int>(j);
                     break;
                 }
             }
         }
 
-        const transport_policy::HandTransport transport{ .delta = delta, .active = true };
         for (std::size_t i = 0; i < count; ++i) {
-            const ChainWrite& write = writes[i];
+            const BoneWrite& write = writes[i];
             auto& entry = tree->transforms[write.treeIndex];
-            const RE::NiTransform world = transport_policy::transportWorld(transport, write.world);
-            entry.world = world;
-            if (!write.parentInChain && write.parentTreeIndex >= 0 && write.parentTreeIndex < tree->numTransforms) {
-                entry.local = transport_policy::localUnderParent(tree->transforms[write.parentTreeIndex].world, world);
+            entry.world = write.newWorld;
+            // A bone whose parent moved with it keeps its local; the others are
+            // re-expressed under their parent's new, or unmoved, world.
+            const bool parentCarriedAlong = write.parentWrite >= 0 && writes[write.parentWrite].segment == write.segment;
+            if (!parentCarriedAlong) {
+                if (write.parentWrite >= 0) {
+                    entry.local = transport_policy::localUnderParent(writes[write.parentWrite].newWorld, write.newWorld);
+                } else if (write.parentTreeIndex >= 0 && write.parentTreeIndex < tree->numTransforms) {
+                    entry.local = transport_policy::localUnderParent(tree->transforms[write.parentTreeIndex].world, write.newWorld);
+                }
             }
             if (!write.nodeValid) {
                 continue;
             }
-            const RE::NiTransform nodeWorld = transport_policy::transportWorld(transport, write.nodeWorld);
-            (void)native_memory::tryWriteValue(&write.refNode->world, nodeWorld);
-            if (!write.parentInChain && write.refParentValid) {
-                (void)native_memory::tryWriteValue(&write.refNode->local, transport_policy::localUnderParent(write.refParentWorld, nodeWorld));
+            (void)native_memory::tryWriteValue(&write.refNode->world, write.newNodeWorld);
+            if (parentCarriedAlong) {
+                continue;
+            }
+            if (write.parentWrite >= 0 && writes[write.parentWrite].nodeValid) {
+                (void)native_memory::tryWriteValue(&write.refNode->local, transport_policy::localUnderParent(writes[write.parentWrite].newNodeWorld, write.newNodeWorld));
+            } else if (write.refParentValid) {
+                (void)native_memory::tryWriteValue(&write.refNode->local, transport_policy::localUnderParent(write.refParentWorld, write.newNodeWorld));
             }
         }
+        outElbowMoveGameUnits = carry.elbowMoveGameUnits;
         return true;
     }
 }

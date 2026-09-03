@@ -44,6 +44,11 @@ namespace rock::frik_hand_world_authority
             RE::NiTransform renderedHandNodeWorld{};
             bool renderedHandNodeValid = false;
             transport_policy::HandTransport chainTransport{};
+            // This frame's presentation plan, for the trace.
+            float presentTranslationGameUnits = 0.0f;
+            float presentRotationDegrees = 0.0f;
+            bool presentedThisFrame = false;
+            std::uint32_t presentTraceLines = 0;
         };
 
         struct ProbeCounters
@@ -64,6 +69,7 @@ namespace rock::frik_hand_world_authority
             std::array<std::uint32_t, 2> presentedFrames{};
             std::array<float, 2> presentTranslationMax{};
             std::array<float, 2> presentRotationMax{};
+            std::array<float, 2> presentElbowMax{};
             std::array<std::uint32_t, 2> presentSkippedNotFollowing{};
             std::array<std::uint32_t, 2> presentSkippedTooLarge{};
             std::array<std::uint32_t, 2> presentWriteFailures{};
@@ -79,6 +85,10 @@ namespace rock::frik_hand_world_authority
         {
             registry_policy::Registry registry{};
             DriverFrame driverFrame{};
+            // The pass before: the driver's motion over the frame, for the trace.
+            DriverFrame previousDriverFrame{};
+            // The winner per hand at the end of the previous ROCK frame, for the trace.
+            std::array<registry_policy::ConsumedTarget, 2> lastFrameTargets{};
             std::uint64_t rockFrameSequence = 0;
             std::uint64_t rockFrameIndex = 0;
             std::uint64_t observedFrameIndex = 0;
@@ -199,7 +209,7 @@ namespace rock::frik_hand_world_authority
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const auto& relation = g_service.isolation[hand].relation;
                 ROCK_LOG_INFO(Hand,
-                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={} transportFrames={} transportMax={:.2f}gu/{:.2f}deg claimedWithoutTransport={} presented={} presentMax={:.2f}gu/{:.2f}deg presentNotFollowing={} presentTooLarge={} presentWriteFailed={}",
+                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={} transportFrames={} transportMax={:.2f}gu/{:.2f}deg claimedWithoutTransport={} presented={} presentMax={:.2f}gu/{:.2f}deg presentElbowMax={:.2f}gu presentNotFollowing={} presentTooLarge={} presentWriteFailed={}",
                     handName(hand == handIndex(true)),
                     probes.frames,
                     probes.reconstructedFrames[hand],
@@ -218,6 +228,7 @@ namespace rock::frik_hand_world_authority
                     probes.presentedFrames[hand],
                     probes.presentTranslationMax[hand],
                     probes.presentRotationMax[hand],
+                    probes.presentElbowMax[hand],
                     probes.presentSkippedNotFollowing[hand],
                     probes.presentSkippedTooLarge[hand],
                     probes.presentWriteFailures[hand]);
@@ -284,6 +295,7 @@ namespace rock::frik_hand_world_authority
 
     void runPreFrikPass(const std::uint64_t sequence)
     {
+        g_service.previousDriverFrame = g_service.driverFrame;
         g_service.driverFrame = sampleDriverFrame(sequence);
         if (registry_policy::claimCount(g_service.registry) == 0) {
             return;
@@ -335,6 +347,9 @@ namespace rock::frik_hand_world_authority
             g_service.isolation[hand].presentedHandValid = false;
             g_service.isolation[hand].renderedHandNodeValid = false;
             g_service.isolation[hand].chainTransport = {};
+            g_service.isolation[hand].presentedThisFrame = false;
+            g_service.isolation[hand].presentTranslationGameUnits = 0.0f;
+            g_service.isolation[hand].presentRotationDegrees = 0.0f;
         }
         g_service.presentationAllowed = false;
     }
@@ -608,7 +623,7 @@ namespace rock::frik_hand_world_authority
         if (!g_service.presentationAllowed || !g_service.claimConsumedThisFrame[hand]) {
             return false;
         }
-        const auto& state = g_service.isolation[hand];
+        auto& state = g_service.isolation[hand];
         const auto plan = registry_policy::planPresentation(
             g_service.consumedTargets[hand],
             registry_policy::winner(g_service.registry, isLeft),
@@ -618,6 +633,8 @@ namespace rock::frik_hand_world_authority
         switch (plan.decision) {
         case registry_policy::PresentationDecision::Present:
             outDelta = plan.delta;
+            state.presentTranslationGameUnits = plan.translationGameUnits;
+            state.presentRotationDegrees = plan.rotationDegrees;
             probes.presentTranslationMax[hand] = (std::max)(probes.presentTranslationMax[hand], plan.translationGameUnits);
             probes.presentRotationMax[hand] = (std::max)(probes.presentRotationMax[hand], plan.rotationDegrees);
             return true;
@@ -632,25 +649,87 @@ namespace rock::frik_hand_world_authority
         }
     }
 
-    void recordHandPresentation(const bool isLeft, const RE::NiTransform& delta, const bool applied)
+    void recordHandPresentation(const bool isLeft, const RE::NiTransform& delta, const bool applied, const float elbowMoveGameUnits)
     {
         const std::size_t hand = handIndex(isLeft);
+        auto& state = g_service.isolation[hand];
         if (!applied) {
             ++g_service.probes.presentWriteFailures[hand];
             ROCK_LOG_SAMPLE_WARN(Hand,
                 5000,
-                "HandWorldAuthority could not carry the rendered {} hand chain to this frame's claim; the hand shows last frame's target",
+                "HandWorldAuthority could not re-solve the rendered {} arm onto this frame's claim; the hand shows last frame's target",
                 handName(isLeft));
             return;
         }
         ++g_service.probes.presentedFrames[hand];
-        auto& state = g_service.isolation[hand];
+        g_service.probes.presentElbowMax[hand] = (std::max)(g_service.probes.presentElbowMax[hand], elbowMoveGameUnits);
+        state.presentedThisFrame = true;
         const transport_policy::HandTransport transport{ .delta = delta, .active = true };
         if (state.presentedHandValid) {
             state.presentedHandWorld = transport_policy::transportWorld(transport, state.presentedHandWorld);
         }
         if (state.renderedHandNodeValid) {
             state.renderedHandNodeWorld = transport_policy::transportWorld(transport, state.renderedHandNodeWorld);
+        }
+
+        if (!debugEnabled()) {
+            state.presentTraceLines = 0;
+            return;
+        }
+        /*
+         * Per-frame trace of a presentation episode (dense, then every 30th
+         * frame). seat = how far this hand's target moved since the previous
+         * ROCK frame; rebase = how far the pre-FRIK pass moved it; driver =
+         * the driver chain's motion over the frame; delta = seat versus
+         * rebase, the residual the arm was re-solved by.
+         */
+        constexpr std::uint32_t kDenseTraceLines = 240;
+        const std::uint32_t line = state.presentTraceLines++;
+        if (line >= kDenseTraceLines && (line - kDenseTraceLines) % 30 != 0) {
+            return;
+        }
+        const registry_policy::Claim* top = registry_policy::winner(g_service.registry, isLeft);
+        const auto& last = g_service.lastFrameTargets[hand];
+        const auto& consumed = g_service.consumedTargets[hand];
+        float seatMotion = 0.0f;
+        float rebaseMotion = 0.0f;
+        float driverMotion = 0.0f;
+        if (top && last.valid) {
+            seatMotion = registry_policy::translationDeltaGameUnits(top->target, last.target);
+            if (consumed.valid) {
+                rebaseMotion = registry_policy::translationDeltaGameUnits(consumed.target, last.target);
+            }
+        }
+        if (top) {
+            const DriverSample* now = registry_policy::sampleForDriver(g_service.driverFrame, top->driver);
+            const DriverSample* before = registry_policy::sampleForDriver(g_service.previousDriverFrame, top->driver);
+            if (now && before && now->valid && before->valid) {
+                driverMotion = isolation_policy::translationGameUnits(now->world, before->world);
+            }
+        }
+        ROCK_LOG_DEBUG(Hand,
+            "PRESENT hand={} line={} tag='{}' driver={} delta={:.2f}gu/{:.2f}deg elbow={:.2f}gu seat={:.2f}gu rebase={:.2f}gu driverMotion={:.2f}gu src={}",
+            isLeft ? "L" : "R",
+            line,
+            top ? top->tag.data() : "-",
+            top ? driverName(top->driver) : "-",
+            state.presentTranslationGameUnits,
+            state.presentRotationDegrees,
+            elbowMoveGameUnits,
+            seatMotion,
+            rebaseMotion,
+            driverMotion,
+            rawHandSourceName(isLeft));
+    }
+
+    void endRockFrame()
+    {
+        for (std::size_t hand = 0; hand < 2; ++hand) {
+            const bool isLeft = hand == handIndex(true);
+            g_service.lastFrameTargets[hand] = registry_policy::snapshotConsumedTarget(g_service.registry, isLeft);
+            if (!g_service.isolation[hand].presentedThisFrame) {
+                g_service.isolation[hand].presentTraceLines = 0;
+            }
         }
     }
 
@@ -664,6 +743,7 @@ namespace rock::frik_hand_world_authority
         registry_policy::clearAll(g_service.registry);
         g_service.claimConsumedThisFrame = {};
         g_service.consumedTargets = {};
+        g_service.lastFrameTargets = {};
     }
 
     void resetForSkeletonRelease()
@@ -671,6 +751,7 @@ namespace rock::frik_hand_world_authority
         registry_policy::clearAll(g_service.registry);
         g_service.claimConsumedThisFrame = {};
         g_service.consumedTargets = {};
+        g_service.lastFrameTargets = {};
         g_service.presentationAllowed = false;
         for (auto& state : g_service.isolation) {
             state = {};

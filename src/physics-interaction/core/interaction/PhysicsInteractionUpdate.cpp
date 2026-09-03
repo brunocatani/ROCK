@@ -80,7 +80,9 @@ namespace rock
             if (!frik_hand_world_authority::tryPlanHandPresentation(isLeft, delta)) {
                 continue;
             }
-            frik_hand_world_authority::recordHandPresentation(isLeft, delta, _handBoneCache.presentChain(isLeft, delta));
+            float elbowMoveGameUnits = 0.0f;
+            const bool applied = _handBoneCache.presentArm(isLeft, delta, elbowMoveGameUnits);
+            frik_hand_world_authority::recordHandPresentation(isLeft, delta, applied, elbowMoveGameUnits);
         }
     }
 

@@ -753,6 +753,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKRenderedBoneTransportPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKRenderedBoneTransportPolicyTests)
 
+  add_executable(ROCKArmPresentationPolicyTests
+    "${ROOT_DIR}/tests/ArmPresentationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKArmPresentationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKArmPresentationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKArmPresentationPolicyTests)
+
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
@@ -819,6 +826,7 @@ if(BUILD_ROCK_TESTS)
     ROCKHandWorldClaimRegistryPolicyTests
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
+    ROCKArmPresentationPolicyTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and
   # config stub. Build those once, then reuse the PCH artifact and support library
@@ -1034,6 +1042,7 @@ if(BUILD_ROCK_TESTS)
     ROCKHandWorldClaimRegistryPolicyTests
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
+    ROCKArmPresentationPolicyTests
   )
 
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
