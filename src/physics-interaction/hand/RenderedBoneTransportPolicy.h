@@ -67,26 +67,32 @@ namespace rock::rendered_bone_transport_policy
      * is missing or when the two coincide, so claim-free frames pass through.
      */
     [[nodiscard]] inline HandTransport makeHandTransport(
-        const RE::NiTransform& controllerRoot,
+        const RE::NiTransform& controllerRootInput,
         const bool controllerRootValid,
-        const RE::NiTransform& renderedRoot,
+        const RE::NiTransform& renderedRootInput,
         const bool renderedRootValid) noexcept
     {
         namespace isolation = tracked_hand_isolation_policy;
         HandTransport transport{};
         if (!controllerRootValid || !renderedRootValid ||
-            !isolation::isFiniteTransform(controllerRoot) || !isolation::isFiniteTransform(renderedRoot)) {
+            !isolation::isFiniteTransform(controllerRootInput) || !isolation::isFiniteTransform(renderedRootInput)) {
+            return transport;
+        }
+        // Both roots are scene bases with float drift; the transpose inverse
+        // below only cancels for an orthonormal basis.
+        const RE::NiTransform controllerRoot = transform_math::orthonormalizedTransform(controllerRootInput);
+        const RE::NiTransform renderedRoot = transform_math::orthonormalizedTransform(renderedRootInput);
+        // Coincidence is judged on the roots themselves: the delta's translation
+        // carries float rounding of the world coordinate (thousandths of a unit
+        // at 46000 gu), which would read as motion.
+        if (isolation::translationGameUnits(controllerRoot, renderedRoot) <= kIdentityTranslationEpsilonGameUnits &&
+            isolation::rotationDegrees(controllerRoot, renderedRoot) <= kIdentityRotationEpsilonDegrees) {
             return transport;
         }
         const RE::NiTransform delta = transform_math::composeTransforms(
             controllerRoot,
             transform_math::invertTransform(renderedRoot));
         if (!isolation::isFiniteTransform(delta)) {
-            return transport;
-        }
-        const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
-        if (isolation::translationGameUnits(delta, identity) <= kIdentityTranslationEpsilonGameUnits &&
-            isolation::rotationDegrees(delta, identity) <= kIdentityRotationEpsilonDegrees) {
             return transport;
         }
         transport.delta = delta;
@@ -99,6 +105,6 @@ namespace rock::rendered_bone_transport_policy
         if (!transport.active) {
             return renderedWorld;
         }
-        return transform_math::composeTransforms(transport.delta, renderedWorld);
+        return transform_math::composeTransforms(transport.delta, transform_math::orthonormalizedTransform(renderedWorld));
     }
 }

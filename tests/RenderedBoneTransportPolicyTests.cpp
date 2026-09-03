@@ -126,6 +126,27 @@ int main()
         ok &= expectTrue("non-finite rendered", !makeHandTransport(renderedRoot, true, broken, true).active);
     }
 
+    // Identical roots with scale drift far from the origin stay inactive: a
+    // transpose inverse of a drifted basis would otherwise report tens of
+    // game units of delta on every claim-free frame.
+    {
+        RE::NiTransform far = yawed(35.0f, -32000.0f, 32000.0f, 4800.0f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                far.rotate.entry[row][column] *= 1.0003f;
+            }
+        }
+        const HandTransport transport = makeHandTransport(far, true, far, true);
+        ok &= expectTrue("drifted identical roots inactive", !transport.active);
+        RE::NiTransform moved = far;
+        moved.translate.x += 4.0f;
+        const HandTransport active = makeHandTransport(moved, true, far, true);
+        ok &= expectTrue("drifted moved roots active", active.active);
+        ok &= expectNear("drifted delta translation", isolation::translationGameUnits(active.delta, identity()), 4.0f, 0.05f);
+        ok &= expectNear("drifted delta rotation", isolation::rotationDegrees(active.delta, identity()), 0.0f, 0.05f);
+        ok &= expectTrue("delta orthonormal", rock::transform_math::storedRotationOrthonormalityError(active.delta.rotate) < 1e-5);
+    }
+
     if (!ok) {
         std::printf("RenderedBoneTransportPolicyTests FAILED\n");
         return 1;

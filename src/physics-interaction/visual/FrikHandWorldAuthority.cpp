@@ -63,6 +63,7 @@ namespace rock::frik_hand_world_authority
             std::uint32_t rebaseRejected = 0;
             std::uint32_t driverSamplesMissing = 0;
             std::uint32_t claimsRefusedByGate = 0;
+            std::uint32_t claimsRefusedRotation = 0;
         };
 
         struct Service
@@ -203,7 +204,7 @@ namespace rock::frik_hand_world_authority
                     probes.claimedFramesWithoutTransport[hand]);
             }
             ROCK_LOG_INFO(Hand,
-                "HandWorldAuthority rebase frames={} claims={} rebasePublishes={} keepOrderPublishes={} rejected={} driverSamplesMissing={} refusedByGate={} scheduler={}",
+                "HandWorldAuthority rebase frames={} claims={} rebasePublishes={} keepOrderPublishes={} rejected={} driverSamplesMissing={} refusedByGate={} refusedRotation={} scheduler={}",
                 probes.frames,
                 registry_policy::claimCount(g_service.registry),
                 probes.rebasePublishes,
@@ -211,6 +212,7 @@ namespace rock::frik_hand_world_authority
                 probes.rebaseRejected,
                 probes.driverSamplesMissing,
                 probes.claimsRefusedByGate,
+                probes.claimsRefusedRotation,
                 g_service.scheduler == SchedulerState::Verified ? "verified" : g_service.scheduler == SchedulerState::Refused ? "refused" : "unverified");
             probes = {};
         }
@@ -315,11 +317,28 @@ namespace rock::frik_hand_world_authority
         }
     }
 
-    bool publish(const char* tag, const bool isLeft, const RE::NiTransform& worldTarget, const int priority, const RebaseDriver driver)
+    bool publish(const char* tag, const bool isLeft, const RE::NiTransform& requestedTarget, const int priority, const RebaseDriver driver)
     {
         if (!tag) {
             return false;
         }
+        /*
+         * FRIK copies the target rotation into the arm, so a basis that is
+         * not a rotation would stretch the rendered hand and come back as
+         * this frame's bone input. Small drift is renormalized; anything
+         * larger is a broken owner and fails closed.
+         */
+        if (!registry_policy::isUsableTargetRotation(requestedTarget)) {
+            ++g_service.probes.claimsRefusedRotation;
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                2000,
+                "HandWorldAuthority refused claim '{}' hand={}: target rotation is not a rotation (orthonormality error {:.4f}); the owner runs its failure path",
+                tag,
+                handName(isLeft),
+                transform_math::storedRotationOrthonormalityError(requestedTarget.rotate));
+            return false;
+        }
+        const RE::NiTransform worldTarget = transform_math::orthonormalizedTransform(requestedTarget);
         if (g_service.scheduler != SchedulerState::Verified) {
             ++g_service.probes.claimsRefusedByGate;
             ROCK_LOG_SAMPLE_WARN(Hand,

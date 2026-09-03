@@ -109,6 +109,91 @@ namespace rock::transform_math
         return result;
     }
 
+    /*
+     * Largest deviation of a stored rotation from an orthonormal basis: the
+     * worst |row.row - 1| or |row_i.row_j| over its rows. Scene bone worlds
+     * drift ~1e-4 from orthonormal after long float chains.
+     */
+    template <class Matrix>
+    inline double storedRotationOrthonormalityError(const Matrix& matrix)
+    {
+        double worst = 0.0;
+        for (int a = 0; a < 3; ++a) {
+            for (int b = a; b < 3; ++b) {
+                double dot = 0.0;
+                for (int k = 0; k < 3; ++k) {
+                    dot += static_cast<double>(matrix.entry[a][k]) * static_cast<double>(matrix.entry[b][k]);
+                }
+                worst = (std::max)(worst, std::abs(dot - (a == b ? 1.0 : 0.0)));
+            }
+        }
+        return worst;
+    }
+
+    /*
+     * Gram-Schmidt on the stored rows in double precision, keeping the
+     * input's handedness. Required before any transform is inverted as a
+     * transpose or fed back through a renderer: a basis with scale drift
+     * does not cancel against its transpose, and a product that returns
+     * one frame later as an input squares the drift every frame.
+     */
+    template <class Matrix>
+    inline Matrix orthonormalizeStoredRotation(const Matrix& matrix)
+    {
+        double rows[3][3]{};
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                rows[row][column] = static_cast<double>(matrix.entry[row][column]);
+            }
+        }
+        const auto dot = [&rows](int a, int b) {
+            return rows[a][0] * rows[b][0] + rows[a][1] * rows[b][1] + rows[a][2] * rows[b][2];
+        };
+        const auto normalize = [&rows, &dot](int row) {
+            const double length = std::sqrt(dot(row, row));
+            if (!(length > 1e-9)) {
+                return false;
+            }
+            rows[row][0] /= length;
+            rows[row][1] /= length;
+            rows[row][2] /= length;
+            return true;
+        };
+        const auto subtractProjection = [&rows, &dot](int row, int onto) {
+            const double amount = dot(row, onto);
+            rows[row][0] -= amount * rows[onto][0];
+            rows[row][1] -= amount * rows[onto][1];
+            rows[row][2] -= amount * rows[onto][2];
+        };
+        if (!normalize(0)) {
+            return matrix;
+        }
+        subtractProjection(1, 0);
+        if (!normalize(1)) {
+            return matrix;
+        }
+        subtractProjection(2, 0);
+        subtractProjection(2, 1);
+        if (!normalize(2)) {
+            return matrix;
+        }
+        Matrix result{};
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                detail::setMatrixEntry(result, row, column, rows[row][column]);
+            }
+        }
+        return result;
+    }
+
+    template <class Transform>
+    inline Transform orthonormalizedTransform(const Transform& transform)
+    {
+        Transform result = transform;
+        result.rotate = orthonormalizeStoredRotation(transform.rotate);
+        return result;
+    }
+
     template <class Matrix>
     inline Matrix multiplyStoredRotations(const Matrix& lhs, const Matrix& rhs)
     {

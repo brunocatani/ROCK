@@ -198,6 +198,64 @@ int main()
         ok &= expectNear("blend translation", translationGameUnits(blend, identity()), 0.0f, 0.001f);
     }
 
+    // FRIK echo loop with drifted bases: the rendered hand is ROCK's own
+    // previous target, its basis carries ~1e-4 of scale drift, and the
+    // reconstruction must not square that drift frame after frame.
+    {
+        const auto drift = [](RE::NiTransform t, float factor) {
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    t.rotate.entry[row][column] *= factor;
+                }
+            }
+            return t;
+        };
+        constexpr float kDrift = 1.0003f;
+        const RE::NiTransform fp = yawed(25.0f, -32000.0f, 32000.0f, 4800.0f);
+        const RE::NiTransform node = compose(fp, yawed(0.5f, 0.4f, -0.2f, 0.1f));
+        RelationState loopState{};
+        FrameInput freeFrame{
+            .firstPersonHandWorld = drift(fp, kDrift),
+            .firstPersonHandValid = true,
+            .bodyHandNodeWorld = drift(node, kDrift),
+            .bodyHandNodeValid = true,
+            .flattenedHandWorld = drift(node, kDrift),
+            .flattenedHandValid = true,
+            .claimConsumed = false,
+        };
+        const FrameResult freeResult = resolveFrame(loopState, freeFrame);
+        ok &= expectTrue("drift calibration accepted", loopState.valid && loopState.acceptedSamples == 1);
+        ok &= expectTrue("drift free frame orthonormal", rock::transform_math::storedRotationOrthonormalityError(freeResult.rawHandWorld.rotate) < 1e-5);
+
+        RE::NiTransform rendered = node;
+        float firstX = 0.0f;
+        for (int frame = 0; frame < 60; ++frame) {
+            FrameInput claimed{
+                .firstPersonHandWorld = drift(fp, kDrift),
+                .firstPersonHandValid = true,
+                .bodyHandNodeWorld = drift(rendered, kDrift),
+                .bodyHandNodeValid = true,
+                .flattenedHandWorld = drift(rendered, kDrift),
+                .flattenedHandValid = true,
+                .claimConsumed = true,
+            };
+            const FrameResult claimedResult = resolveFrame(loopState, claimed);
+            ok &= expectEnum("echo frame reconstructed", claimedResult.source, RawHandSource::Reconstructed);
+            ok &= expectTrue("echo frame orthonormal", rock::transform_math::storedRotationOrthonormalityError(claimedResult.rawHandWorld.rotate) < 1e-5);
+            if (frame == 0) {
+                firstX = claimedResult.rawHandWorld.translate.x;
+            } else {
+                ok &= expectNear("echo frame stable", claimedResult.rawHandWorld.translate.x, firstX, 0.01f);
+            }
+            // FRIK renders ROCK's target: the raw hand plus a claim offset, rotation copied.
+            rendered = claimedResult.rawHandWorld;
+            rendered.translate.z += 3.0f;
+            if (!ok) {
+                break;
+            }
+        }
+    }
+
     if (!ok) {
         std::printf("TrackedHandIsolationPolicyTests FAILED\n");
         return 1;

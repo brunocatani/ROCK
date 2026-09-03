@@ -191,9 +191,9 @@ namespace rock::tracked_hand_isolation_policy
         const RE::NiTransform controllerBodyHand = transform_math::composeTransforms(
             input.firstPersonHandWorld,
             state.firstPersonToBodyHand);
-        const RE::NiTransform raw = transform_math::composeTransforms(
+        const RE::NiTransform raw = transform_math::orthonormalizedTransform(transform_math::composeTransforms(
             controllerBodyHand,
-            makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld));
+            makePalmBlend(input.bodyHandNodeWorld, input.flattenedHandWorld)));
         if (!isFiniteTransform(raw)) {
             return false;
         }
@@ -201,8 +201,19 @@ namespace rock::tracked_hand_isolation_policy
         return true;
     }
 
-    [[nodiscard]] inline FrameResult resolveFrame(RelationState& state, const FrameInput& input) noexcept
+    /*
+     * Every input basis is orthonormalized first. The rendered bones carry
+     * float drift from FRIK's matrix chains, and on claimed frames the body
+     * bones are ROCK's own previous target: a drifted basis that is inverted
+     * as a transpose here and rendered again next frame squares the drift
+     * every frame until the hand stretches and flies off.
+     */
+    [[nodiscard]] inline FrameResult resolveFrame(RelationState& state, const FrameInput& rawInput) noexcept
     {
+        FrameInput input = rawInput;
+        input.firstPersonHandWorld = transform_math::orthonormalizedTransform(rawInput.firstPersonHandWorld);
+        input.bodyHandNodeWorld = transform_math::orthonormalizedTransform(rawInput.bodyHandNodeWorld);
+        input.flattenedHandWorld = transform_math::orthonormalizedTransform(rawInput.flattenedHandWorld);
         FrameResult result{};
         if (!input.claimConsumed) {
             if (input.flattenedHandValid && isFiniteTransform(input.flattenedHandWorld)) {

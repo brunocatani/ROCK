@@ -258,6 +258,25 @@ int main()
         ok &= expectEnum("rotation fallback suspected", observeFallback(rotatedClaim, yawed(40.0f), true, false), FallbackObservation::Suspected);
     }
 
+    // A target whose basis is not a rotation is refused; drift is accepted.
+    {
+        Registry rotationRegistry{};
+        RE::NiTransform stretched = translated(1.0f, 2.0f, 3.0f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                stretched.rotate.entry[row][column] *= 1.2f;
+            }
+        }
+        ok &= expectEnum("stretched target refused", commit(rotationRegistry, "ROCK_S", false, 100, stretched, RebaseDriver::Static, sample(identity())), CommitResult::InvalidTarget);
+        RE::NiTransform drifted = translated(1.0f, 2.0f, 3.0f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                drifted.rotate.entry[row][column] *= 1.0003f;
+            }
+        }
+        ok &= expectEnum("drifted target accepted", commit(rotationRegistry, "ROCK_S", false, 100, drifted, RebaseDriver::Static, sample(identity())), CommitResult::Inserted);
+    }
+
     if (!ok) {
         std::printf("HandWorldClaimRegistryPolicyTests FAILED\n");
         return 1;

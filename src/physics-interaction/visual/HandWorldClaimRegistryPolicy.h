@@ -41,6 +41,9 @@ namespace rock::hand_world_claim_registry_policy
     inline constexpr float kFallbackTranslationGameUnits = 3.0f;
     inline constexpr float kFallbackRotationDegrees = 15.0f;
     inline constexpr std::uint32_t kFallbackConfirmFrames = 2;
+    // A target whose stored rotation deviates more than this from an
+    // orthonormal basis is not a pose FRIK may render (it stretches the arm).
+    inline constexpr double kMaxTargetRotationError = 0.05;
 
     /*
      * Which physical hand's controller chain a claim follows between ROCK
@@ -140,6 +143,12 @@ namespace rock::hand_world_claim_registry_policy
                std::fabs(transform.scale) > 0.000001f;
     }
 
+    [[nodiscard]] inline bool isUsableTargetRotation(const RE::NiTransform& transform) noexcept
+    {
+        const double error = transform_math::storedRotationOrthonormalityError(transform.rotate);
+        return std::isfinite(error) && error <= kMaxTargetRotationError;
+    }
+
     [[nodiscard]] inline float translationDeltaGameUnits(const RE::NiTransform& lhs, const RE::NiTransform& rhs) noexcept
     {
         const float x = lhs.translate.x - rhs.translate.x;
@@ -221,7 +230,7 @@ namespace rock::hand_world_claim_registry_policy
         if (!isRegistrableTag(tag)) {
             return CommitResult::InvalidTag;
         }
-        if (!isFiniteTransform(target)) {
+        if (!isFiniteTransform(target) || !isUsableTargetRotation(target)) {
             return CommitResult::InvalidTarget;
         }
 
@@ -337,10 +346,12 @@ namespace rock::hand_world_claim_registry_policy
             !isFiniteTransform(claim.driverAtPublish.world) || !isFiniteTransform(driverNow.world)) {
             return plan;
         }
+        // Scene driver bases carry float drift; the transpose inverse only
+        // cancels for orthonormal bases, and the rebased target is rendered.
         const RE::NiTransform delta = transform_math::composeTransforms(
-            driverNow.world,
-            transform_math::invertTransform(claim.driverAtPublish.world));
-        const RE::NiTransform rebased = transform_math::composeTransforms(delta, claim.target);
+            transform_math::orthonormalizedTransform(driverNow.world),
+            transform_math::invertTransform(transform_math::orthonormalizedTransform(claim.driverAtPublish.world)));
+        const RE::NiTransform rebased = transform_math::orthonormalizedTransform(transform_math::composeTransforms(delta, claim.target));
         if (!isFiniteTransform(rebased)) {
             return plan;
         }
