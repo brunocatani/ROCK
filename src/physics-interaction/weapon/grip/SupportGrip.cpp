@@ -2163,7 +2163,7 @@ namespace rock
             const LeftCarryProbeSample leftBonesAfter = sampleLeftCarryProbe();
             RE::NiTransform rightRootAfter{};
             const bool rightRootAfterValid =
-                tryGetRootFlattenedHandBoneTransform(false, rightRootAfter);
+                tryGetPresentedRootFlattenedHandBoneTransform(false, rightRootAfter);
             const RE::NiTransform presentedLeftTarget =
                 transform_math::composeTransforms(
                     weaponNode->world,

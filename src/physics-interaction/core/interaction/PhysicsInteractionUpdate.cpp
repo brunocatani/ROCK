@@ -21,34 +21,61 @@ namespace rock
     bool PhysicsInteraction::tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const
     {
         outTransform = {};
-        if (!_handBoneCache.isReady()) {
-            return false;
-        }
-
-        outTransform = _handBoneCache.getWorldTransform(isLeft);
-        return true;
+        return _handBoneCache.isReady() &&
+               frik_hand_world_authority::tryGetRawHandWorld(isLeft, outTransform);
     }
 
     bool PhysicsInteraction::refreshHandBoneCache()
     {
-        if (_handBoneCache.resolve()) {
+        const bool resolved = _handBoneCache.resolve();
+        if (resolved) {
             _diagnostics.handCacheResolveLogCounter = 0;
-            return true;
-        }
-
-        if (g_rockConfig.rockDebugHandTransformParity) {
+        } else if (g_rockConfig.rockDebugHandTransformParity) {
             if (++_diagnostics.handCacheResolveLogCounter == 1 || _diagnostics.handCacheResolveLogCounter % 90 == 0) {
                 ROCK_LOG_WARN(Hand, "HandBoneCache unresolved; raw parity sampling skipped this frame");
             }
         }
 
-        return false;
+        /*
+         * Isolate the controller hand once per frame, before any consumer
+         * reads it. While a ROCK claim was solved this frame the root
+         * flattened bone is ROCK's own previous target, not the controller;
+         * the service reconstructs the controller hand from FRIK's untouched
+         * first-person hand node. It also watches for FRIK's silent fallback.
+         */
+        frik_hand_world_authority::FrameHandSamples samples{};
+        const auto sampleHand = [this, resolved](bool isLeft, frik_hand_world_authority::RawHandSample& outSample) {
+            if (!resolved) {
+                return;
+            }
+            outSample.flattenedHandWorld = _handBoneCache.getWorldTransform(isLeft);
+            outSample.flattenedHandValid = true;
+            outSample.bodyHandNodeValid = _handBoneCache.tryGetNodeWorldTransform(isLeft, outSample.bodyHandNodeWorld);
+        };
+        sampleHand(false, samples.right);
+        sampleHand(true, samples.left);
+
+        const std::uint64_t kickSequence = _twoHandedGrip.nativeRecoilKickSequence();
+        samples.recoilKickThisFrame = kickSequence != _observedNativeRecoilKickSequence;
+        _observedNativeRecoilKickSequence = kickSequence;
+
+        const auto& runtime = runtime_state::currentFrame();
+        samples.fallbackObservationAllowed =
+            resolved &&
+            runtime.localSkeletonReady &&
+            !runtime.localScopeMenuOpen &&
+            !runtime.compatibilityConfigBlocking;
+        frik_hand_world_authority::resolveRawHands(samples);
+
+        return resolved;
     }
 
     RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
     {
-        const bool cacheReady = _handBoneCache.isReady();
-        const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, cacheReady ? _handBoneCache.getWorldTransform(isLeft) : RE::NiTransform());
+        RE::NiTransform rawHandWorld{};
+        const bool cacheReady = _handBoneCache.isReady() &&
+                                frik_hand_world_authority::tryGetRawHandWorld(isLeft, rawHandWorld);
+        const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, rawHandWorld);
         if (frame.valid) {
             return frame.transform;
         }
@@ -58,8 +85,10 @@ namespace rock
 
     RE::NiNode* PhysicsInteraction::getInteractionHandNode(bool isLeft) const
     {
-        const bool cacheReady = _handBoneCache.isReady();
-        const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, cacheReady ? _handBoneCache.getWorldTransform(isLeft) : RE::NiTransform());
+        RE::NiTransform rawHandWorld{};
+        const bool cacheReady = _handBoneCache.isReady() &&
+                                frik_hand_world_authority::tryGetRawHandWorld(isLeft, rawHandWorld);
+        const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, rawHandWorld);
         if (frame.valid) {
             return frame.node;
         }

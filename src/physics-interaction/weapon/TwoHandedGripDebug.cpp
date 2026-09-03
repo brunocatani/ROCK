@@ -100,9 +100,9 @@ namespace rock
         RE::NiTransform leftRootWorld{};
         RE::NiTransform rightRootWorld{};
         const bool leftRootWorldValid =
-            tryGetRootFlattenedHandBoneTransform(true, leftRootWorld);
+            tryGetPresentedRootFlattenedHandBoneTransform(true, leftRootWorld);
         const bool rightRootWorldValid =
-            tryGetRootFlattenedHandBoneTransform(false, rightRootWorld);
+            tryGetPresentedRootFlattenedHandBoneTransform(false, rightRootWorld);
         const auto* playerCamera = f4vr::getPlayerCamera();
         const bool cameraValuesValid =
             playerCamera &&

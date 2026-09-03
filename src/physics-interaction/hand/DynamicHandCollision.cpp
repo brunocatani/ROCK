@@ -2444,11 +2444,13 @@ namespace rock
                             isLeft ? "Left" : "Right");
                     }
                 }
+                // A surface latch is anchored to the world, not the hand.
                 if (frik_visual_authority::publishHandWorld(
                         dynamicHandTag(isLeft),
                         frik_visual_authority::handFromBool(isLeft),
                         latchTarget,
-                        kSurfaceLatchVisualPriority)) {
+                        kSurfaceLatchVisualPriority,
+                        frik_visual_authority::RebaseDriver::Static)) {
                     handSlots.visualActive = true;
                     handSlots.lastPresentedHandWorld = latchTarget;
                     handSlots.lastPresentedHandWorldValid = true;
@@ -2549,7 +2551,8 @@ namespace rock
                     dynamicHandTag(isLeft),
                     frik_visual_authority::handFromBool(isLeft),
                     target,
-                    dynamic_hand_collision_policy::kVisualPriority)) {
+                    dynamic_hand_collision_policy::kVisualPriority,
+                    frik_visual_authority::physicalHandDriver(isLeft))) {
                 handSlots.visualActive = true;
             } else {
                 ROCK_LOG_SAMPLE_WARN(Hand, 2000, "{} dynamic hand render-follow apply failed", isLeft ? "Left" : "Right");

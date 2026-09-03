@@ -4537,7 +4537,8 @@ namespace rock
                 GRAB_EXTERNAL_HAND_TAG,
                 handFromBool(isLeft),
                 adjustedHandTransform,
-                GRAB_EXTERNAL_HAND_PRIORITY);
+                GRAB_EXTERNAL_HAND_PRIORITY,
+                frik_visual_authority::physicalHandDriver(isLeft));
         }
 
         void clearGrabExternalHandWorldTransform(bool isLeft)
@@ -4551,7 +4552,8 @@ namespace rock
                 GRAB_RETURN_HAND_TAG,
                 handFromBool(isLeft),
                 handTransform,
-                GRAB_RETURN_HAND_PRIORITY);
+                GRAB_RETURN_HAND_PRIORITY,
+                frik_visual_authority::physicalHandDriver(isLeft));
         }
 
         void clearGrabReturnHandWorldTransform(bool isLeft)

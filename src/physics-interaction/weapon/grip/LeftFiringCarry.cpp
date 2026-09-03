@@ -42,6 +42,15 @@ namespace rock
         }
 
         RE::NiTransform controlledKickLocal = sample->nativeKickLocal;
+        if (isFiniteTransform(sample->nativeKickLocal) &&
+            (hand_world_claim_registry_policy::translationDeltaGameUnits(
+                 sample->nativeKickLocal,
+                 transform_math::makeIdentityTransform<RE::NiTransform>()) > 0.05f ||
+             hand_world_claim_registry_policy::rotationDeltaDegrees(
+                 sample->nativeKickLocal,
+                 transform_math::makeIdentityTransform<RE::NiTransform>()) > 0.1f)) {
+            ++self->_leftCarry.nativeRecoilKickSequence;
+        }
         const bool visualOnlySupportRecoilAssist =
             self->hasVisualOnlySupportRecoilAssist() &&
             weapon_recoil_authority_math::tryBuildVisualOnlySupportKick(
@@ -260,7 +269,8 @@ namespace rock
                         PRIMARY_GRIP_TAG,
                         frik_visual_authority::Hand::Left,
                         presentedHandWorld,
-                        GRIP_HAND_POSE_PRIORITY)) {
+                        GRIP_HAND_POSE_PRIORITY,
+                        frik_visual_authority::RebaseDriver::LeftHand)) {
                 _hasSolvedWeaponTransform = false;
                 ROCK_LOG_WARN(
                     Weapon,

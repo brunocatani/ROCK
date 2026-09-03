@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "api/FRIKApiV2.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::frik_visual_authority
@@ -357,6 +358,54 @@ namespace rock::frik_visual_authority
         return isLeft ? Hand::Left : Hand::Right;
     }
 
+    using RebaseDriver = frik_hand_world_authority::RebaseDriver;
+
+    /*
+     * Physical side of an API hand. Primary/Offhand follow the game's
+     * left-handed mode setting; false when that setting is unavailable.
+     */
+    [[nodiscard]] inline bool tryResolveHandIsLeft(Hand hand, bool& outIsLeft)
+    {
+        switch (hand) {
+        case Hand::Left:
+            outIsLeft = true;
+            return true;
+        case Hand::Right:
+            outIsLeft = false;
+            return true;
+        case Hand::Primary:
+        case Hand::Offhand: {
+            const auto* leftHandedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
+            if (!leftHandedMode) {
+                return false;
+            }
+            const bool primaryIsLeft = leftHandedMode->GetBinary();
+            outIsLeft = hand == Hand::Primary ? primaryIsLeft : !primaryIsLeft;
+            return true;
+        }
+        default:
+            return false;
+        }
+    }
+
+    /*
+     * Rebase drivers for hand world claims. A claim that follows the hand it
+     * is published for (grab, return blend, dynamic hand, provider) uses its
+     * own controller chain; a claim attached to the equipped weapon (support
+     * grip, collision pulse) follows the firing hand's chain; a claim latched
+     * to the world stays static.
+     */
+    [[nodiscard]] inline RebaseDriver ownHandDriver(Hand hand)
+    {
+        bool isLeft = false;
+        return tryResolveHandIsLeft(hand, isLeft) ? hand_world_claim_registry_policy::driverForHand(isLeft) : RebaseDriver::Static;
+    }
+
+    [[nodiscard]] inline RebaseDriver physicalHandDriver(bool isLeft)
+    {
+        return isLeft ? RebaseDriver::LeftHand : RebaseDriver::RightHand;
+    }
+
     [[nodiscard]] inline bool isAvailable()
     {
         return api() != nullptr;
@@ -426,16 +475,43 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->setHandPose && frikApi->setHandPose(tag, hand, handPose, priority);
     }
 
-    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
+    /*
+     * Hand world claims go through the hand world authority service: FRIK
+     * consumes them one frame later, and the service rebases them before
+     * FRIK's next frame by the driver's motion. False means the claim is not
+     * held anywhere (gate closed, FRIK rejected it, or FRIK fell back to the
+     * tracked hand for it); the caller runs its failure reaction.
+     */
+    [[nodiscard]] inline bool publishHandWorld(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority, RebaseDriver driver)
     {
-        auto* frikApi = api();
-        return frikApi && frikApi->setHandWorldTransform && frikApi->setHandWorldTransform(tag, hand, worldTarget, priority);
+        bool isLeft = false;
+        if (!tryResolveHandIsLeft(hand, isLeft)) {
+            return false;
+        }
+        return frik_hand_world_authority::publish(tag, isLeft, worldTarget, priority, driver);
     }
 
     [[nodiscard]] inline bool clearHandWorld(const char* tag, Hand hand)
     {
-        auto* frikApi = api();
-        return frikApi && frikApi->clearHandWorldTransform && frikApi->clearHandWorldTransform(tag, hand);
+        bool isLeft = false;
+        if (!tryResolveHandIsLeft(hand, isLeft)) {
+            return false;
+        }
+        return frik_hand_world_authority::clear(tag, isLeft);
+    }
+
+    /*
+     * The target FRIK currently solves this hand to, from ROCK's own claim
+     * registry (no scene read), optionally ignoring one tag.
+     */
+    [[nodiscard]] inline bool tryGetPublishedHandWorld(Hand hand, RE::NiTransform& outWorld, const char* excludedTag = nullptr)
+    {
+        bool isLeft = false;
+        if (!tryResolveHandIsLeft(hand, isLeft)) {
+            outWorld = {};
+            return false;
+        }
+        return frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, outWorld, excludedTag);
     }
 
     [[nodiscard]] inline bool setHandPoseCustomLocalTransforms(
@@ -543,23 +619,7 @@ namespace rock::frik_visual_authority
         }
 
         bool isLeft = false;
-        switch (hand) {
-        case Hand::Left:
-            isLeft = true;
-            break;
-        case Hand::Right:
-            break;
-        case Hand::Primary:
-        case Hand::Offhand: {
-            const auto* leftHandedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
-            if (!leftHandedMode) {
-                return false;
-            }
-            const bool primaryIsLeft = leftHandedMode->GetBinary();
-            isLeft = hand == Hand::Primary ? primaryIsLeft : !primaryIsLeft;
-            break;
-        }
-        default:
+        if (!tryResolveHandIsLeft(hand, isLeft)) {
             return false;
         }
 

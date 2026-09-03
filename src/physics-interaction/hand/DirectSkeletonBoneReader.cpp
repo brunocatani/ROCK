@@ -4,8 +4,10 @@
 #include <array>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeMemory.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -289,14 +291,20 @@ namespace rock
                 continue;
             }
 
-            outSnapshot.bones.push_back(DirectSkeletonBoneEntry{
+            DirectSkeletonBoneEntry entry{
                 .name = cached.name,
                 .treeIndex = cached.treeIndex,
                 .parentTreeIndex = cached.parentTreeIndex,
                 .drawableParentSnapshotIndex = cached.drawableParentSnapshotIndex,
                 .world = tree->transforms[cached.treeIndex].world,
                 .included = cached.included,
-            });
+            };
+            // refNode is an engine scene pointer the tree owns; a guarded copy
+            // keeps a torn tree from faulting the frame.
+            if (const RE::NiNode* refNode = tree->transforms[cached.treeIndex].refNode) {
+                entry.nodeWorldValid = native_memory::tryReadValue(&refNode->world, entry.nodeWorld);
+            }
+            outSnapshot.bones.push_back(std::move(entry));
         }
 
         outSnapshot.valid = !outSnapshot.bones.empty();

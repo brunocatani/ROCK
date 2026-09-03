@@ -963,7 +963,8 @@ namespace rock
                 PRIMARY_GRIP_TAG,
                 frik_visual_authority::Hand::Right,
                 solvedFiringHandWorld,
-                GRIP_HAND_POSE_PRIORITY)) {
+                GRIP_HAND_POSE_PRIORITY,
+                frik_visual_authority::RebaseDriver::RightHand)) {
             if (_firing.authoredHandWorldActive) {
                 clearAuthoredPrimaryFiringHandWorldAuthority();
             }

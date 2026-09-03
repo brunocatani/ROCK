@@ -123,7 +123,8 @@ namespace rock
                 RETURN_HAND_TAG,
                 handFromBool(isLeft),
                 state.start,
-                RETURN_HAND_VISUAL_PRIORITY)) {
+                RETURN_HAND_VISUAL_PRIORITY,
+                frik_visual_authority::physicalHandDriver(isLeft))) {
             state.clear();
             (void)frik_visual_authority::clearHandWorld(RETURN_HAND_TAG, handFromBool(isLeft));
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: hand return start failed hand={}", isLeft ? "left" : "right");
@@ -192,7 +193,8 @@ namespace rock
                         RETURN_HAND_TAG,
                         handFromBool(isLeft),
                         transform,
-                        RETURN_HAND_VISUAL_PRIORITY);
+                        RETURN_HAND_VISUAL_PRIORITY,
+                        frik_visual_authority::physicalHandDriver(isLeft));
                 });
             if (result.timingInitializedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon,
@@ -887,8 +889,19 @@ namespace rock
             if (!pulse.requested) {
                 continue;
             }
+            /*
+             * The hand ROCK requested against the requested weapon is this
+             * frame's grip claim (published by the grip update earlier in
+             * the frame), not the rendered bone: under FRIK API v2 the bone
+             * still shows last frame's target. A hand without a claim is the
+             * controller hand.
+             */
             RE::NiTransform requestedHandWorld{};
             const bool requestedHandValid =
+                frik_visual_authority::tryGetPublishedHandWorld(
+                    handFromBool(pulse.isLeft),
+                    requestedHandWorld,
+                    WEAPON_COLLISION_HAND_TAG) ||
                 tryGetRootFlattenedHandBoneTransform(
                     pulse.isLeft,
                     requestedHandWorld);
@@ -916,7 +929,8 @@ namespace rock
                         WEAPON_COLLISION_HAND_TAG,
                         hand,
                         pulse.targetWorld,
-                        WEAPON_COLLISION_HAND_PRIORITY);
+                        WEAPON_COLLISION_HAND_PRIORITY,
+                        frik_visual_authority::physicalHandDriver(isFiringHandLeft()));
                 /*
                  * Retain the high-priority result through rendering. Clearing
                  * it here synchronously reselects the live priority-100 firing
@@ -1039,7 +1053,8 @@ namespace rock
                 PRIMARY_GRIP_TAG,
                 handFromBool(isFiringHandLeft()),
                 requestedFiringHandWorld,
-                GRIP_HAND_POSE_PRIORITY);
+                GRIP_HAND_POSE_PRIORITY,
+                frik_visual_authority::physicalHandDriver(isFiringHandLeft()));
         recordLockedHandAuthorityAttempt(
             isFiringHandLeft(),
             LockedHandAuthorityRole::PrimaryGrip,
@@ -1095,7 +1110,8 @@ namespace rock
                 SUPPORT_GRIP_TAG,
                 handFromBool(isLeft),
                 appliedHandWorld,
-                GRIP_HAND_POSE_PRIORITY);
+                GRIP_HAND_POSE_PRIORITY,
+                frik_visual_authority::physicalHandDriver(isFiringHandLeft()));
         recordLockedHandAuthorityAttempt(
             isLeft,
             LockedHandAuthorityRole::SupportGrip,

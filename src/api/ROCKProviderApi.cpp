@@ -3591,7 +3591,8 @@ namespace
                 slot->tag,
                 hand,
                 toNiTransform(request->worldTransform),
-                request->priority);
+                request->priority,
+                frik_visual_authority::ownHandDriver(hand));
         }
         if (!published) {
             slot->publishedFlags = request->flags;

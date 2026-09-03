@@ -732,6 +732,20 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicWeaponCollisionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicWeaponCollisionPolicyTests)
 
+  add_executable(ROCKHandWorldClaimRegistryPolicyTests
+    "${ROOT_DIR}/tests/HandWorldClaimRegistryPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHandWorldClaimRegistryPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHandWorldClaimRegistryPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHandWorldClaimRegistryPolicyTests)
+
+  add_executable(ROCKTrackedHandIsolationPolicyTests
+    "${ROOT_DIR}/tests/TrackedHandIsolationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKTrackedHandIsolationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKTrackedHandIsolationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKTrackedHandIsolationPolicyTests)
+
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
@@ -795,6 +809,8 @@ if(BUILD_ROCK_TESTS)
     ROCKDynamicHandCollisionTransitionPolicyTests
     ROCKHavokCompoundShapeKeyPolicyTests
     ROCKDynamicWeaponCollisionPolicyTests
+    ROCKHandWorldClaimRegistryPolicyTests
+    ROCKTrackedHandIsolationPolicyTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and
   # config stub. Build those once, then reuse the PCH artifact and support library
@@ -976,6 +992,13 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKDebugOverlayShaderCompileTests PRIVATE d3dcompiler.lib)
   add_rock_test(ROCKDebugOverlayShaderCompileTests)
 
+  add_executable(ROCKMainLoopHookPolicyTests
+    "${ROOT_DIR}/tests/MainLoopHookPolicyTests.cpp"
+  )
+  target_compile_features(ROCKMainLoopHookPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKMainLoopHookPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKMainLoopHookPolicyTests)
+
   add_dependencies(
     ROCKPolicyTestBinaries
     ROCKSDKExamplePlugins
@@ -999,6 +1022,9 @@ if(BUILD_ROCK_TESTS)
     ROCKDebugOverlayRuntimeSettingsTests
     ROCKDebugOverlaySnapshotPoolTests
     ROCKDebugOverlayShaderCompileTests
+    ROCKMainLoopHookPolicyTests
+    ROCKHandWorldClaimRegistryPolicyTests
+    ROCKTrackedHandIsolationPolicyTests
   )
 
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)

@@ -219,6 +219,14 @@ namespace rock
             ::rock::provider::RockProviderHand hand,
             ::rock::provider::RockProviderHandCollisionAvailabilityV1& outState) const;
 
+        /*
+         * Resolve this frame's hand bone cache and isolated controller hands.
+         * The inner main-loop hook calls it right after FRIK's frame so the
+         * scope sync and provider callbacks that run before update() read
+         * this frame's hands; update() refreshes again (same inputs).
+         */
+        void resolveFrameHands() { (void)refreshHandBoneCache(); }
+
     private:
         struct EquippedWeaponDropMomentumHandoff;
 
@@ -961,6 +969,9 @@ namespace rock
         // ---- Long-lived subsystem objects ----
         HandBoneCache _handBoneCache;
         HandFrameResolver _handFrameResolver;
+        // Last native recoil kick the FRIK recoil controller saw; a change
+        // marks a frame whose rendered hand carries a composed kick.
+        std::uint64_t _observedNativeRecoilKickSequence = 0;
         Hand _rightHand{ false };
         Hand _leftHand{ true };
         TouchGrabRuntime _touchGrabRuntime;

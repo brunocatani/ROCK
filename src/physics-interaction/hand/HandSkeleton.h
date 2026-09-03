@@ -24,6 +24,10 @@ namespace rock
         int parentTreeIndex = -1;
         int drawableParentSnapshotIndex = -1;
         RE::NiTransform world{};
+        // The bone's refNode world: the scene node the array was synced from
+        // (FRIK's arm solve writes it), before FRIK's palm blend on the array.
+        RE::NiTransform nodeWorld{};
+        bool nodeWorldValid = false;
         bool included = false;
     };
 
@@ -111,9 +115,9 @@ namespace rock
                 return false;
             }
 
-            RE::NiTransform rightHand{};
-            RE::NiTransform leftHand{};
-            if (!findBone(snapshot, "RArm_Hand", rightHand) || !findBone(snapshot, "LArm_Hand", leftHand)) {
+            const DirectSkeletonBoneEntry* rightHand = findBone(snapshot, "RArm_Hand");
+            const DirectSkeletonBoneEntry* leftHand = findBone(snapshot, "LArm_Hand");
+            if (!rightHand || !leftHand) {
                 clearResolvedState();
                 return false;
             }
@@ -127,8 +131,12 @@ namespace rock
             _skeleton = snapshot.skeleton;
             _boneTree = snapshot.boneTree;
             _inPowerArmor = snapshot.inPowerArmor;
-            _rightHandWorld = rightHand;
-            _leftHandWorld = leftHand;
+            _rightHandWorld = rightHand->world;
+            _leftHandWorld = leftHand->world;
+            _rightHandNodeWorld = rightHand->nodeWorld;
+            _leftHandNodeWorld = leftHand->nodeWorld;
+            _rightHandNodeWorldValid = rightHand->nodeWorldValid;
+            _leftHandNodeWorldValid = leftHand->nodeWorldValid;
             _ready = true;
 
             if (changed) {
@@ -151,6 +159,17 @@ namespace rock
             return isLeft ? _leftHandWorld : _rightHandWorld;
         }
 
+        /*
+         * The hand bone's refNode world (FRIK's solved body hand, unblended).
+         * False when the tree carries no readable node for the bone.
+         */
+        [[nodiscard]] bool tryGetNodeWorldTransform(bool isLeft, RE::NiTransform& outWorld) const
+        {
+            const bool valid = isLeft ? _leftHandNodeWorldValid : _rightHandNodeWorldValid;
+            outWorld = valid ? (isLeft ? _leftHandNodeWorld : _rightHandNodeWorld) : RE::NiTransform{};
+            return _ready && valid;
+        }
+
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }
         [[nodiscard]] const void* getBoneTree() const { return _boneTree; }
         [[nodiscard]] bool isInPowerArmor() const { return _inPowerArmor; }
@@ -163,18 +182,21 @@ namespace rock
             _inPowerArmor = false;
             _rightHandWorld = {};
             _leftHandWorld = {};
+            _rightHandNodeWorld = {};
+            _leftHandNodeWorld = {};
+            _rightHandNodeWorldValid = false;
+            _leftHandNodeWorldValid = false;
             _ready = false;
         }
 
-        static bool findBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name, RE::NiTransform& outTransform)
+        static const DirectSkeletonBoneEntry* findBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
         {
             for (const auto& bone : snapshot.bones) {
                 if (bone.name == name) {
-                    outTransform = bone.world;
-                    return true;
+                    return &bone;
                 }
             }
-            return false;
+            return nullptr;
         }
 
         DirectSkeletonBoneReader _reader;
@@ -183,6 +205,10 @@ namespace rock
         bool _inPowerArmor = false;
         RE::NiTransform _rightHandWorld{};
         RE::NiTransform _leftHandWorld{};
+        RE::NiTransform _rightHandNodeWorld{};
+        RE::NiTransform _leftHandNodeWorld{};
+        bool _rightHandNodeWorldValid = false;
+        bool _leftHandNodeWorldValid = false;
         bool _ready = false;
     };
 }

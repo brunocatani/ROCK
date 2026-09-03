@@ -820,6 +820,7 @@ namespace rock
             rockDebugWeaponOmodCoverageAuditIntervalFrames = 30;
         }
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
+        rockDebugHandWorldAuthority = ini.GetBoolValue(SECTION, "bDebugHandWorldAuthority", rockDebugHandWorldAuthority);
         rockDebugWorldObjectOriginDiagnostics =
             ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);
         rockDebugWorldObjectOriginLogIntervalFrames =

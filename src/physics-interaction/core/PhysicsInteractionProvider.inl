@@ -83,9 +83,14 @@
             outSnapshot.weaponBodyIds[i] = weaponSnapshot.bodyIds[i];
         }
 
-        if (_handBoneCache.isReady()) {
-            fillProviderTransform(_handBoneCache.getWorldTransform(false), outSnapshot.rightHandTransform);
-            fillProviderTransform(_handBoneCache.getWorldTransform(true), outSnapshot.leftHandTransform);
+        // Providers get the controller hand ROCK interacts with, not the
+        // rendered bone (ROCK's previous claim while a claim is active).
+        RE::NiTransform providerHandWorld{};
+        if (_handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(false, providerHandWorld)) {
+            fillProviderTransform(providerHandWorld, outSnapshot.rightHandTransform);
+        }
+        if (_handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(true, providerHandWorld)) {
+            fillProviderTransform(providerHandWorld, outSnapshot.leftHandTransform);
         }
 
         outSnapshot.rightHandBodyId = _rightHand.getCollisionBodyId().value;

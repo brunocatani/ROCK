@@ -713,6 +713,7 @@ namespace rock
         bool isTouching() const { return _session.state == TwoHandedState::Touching; }
 
         bool isFiringHandLeft() const { return _session.firingHandIsLeft; }
+        [[nodiscard]] std::uint64_t nativeRecoilKickSequence() const noexcept { return _leftCarry.nativeRecoilKickSequence; }
 
         /*
          * True while a manual left-firing carry has published a solved weapon
@@ -2052,6 +2053,10 @@ namespace rock
             bool recoilReadyThisUpdate{ false };
             bool recoilSupportConstrainedThisUpdate{ false };
             bool recoilControllerRegistered{ false };
+            // Advanced by the recoil controller callback whenever FRIK hands
+            // it a non-identity native kick, accepted or not: FRIK composes
+            // that kick onto ROCK's hand claims in the same skeleton frame.
+            std::uint64_t nativeRecoilKickSequence{ 0 };
         };
 
         // State owned by the HandVisualTransitions module: hand and weapon

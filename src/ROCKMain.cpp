@@ -8,6 +8,7 @@
 #include "RockConfig.h"
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
+#include "physics-interaction/core/MainLoopHookPolicy.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -28,6 +29,7 @@
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
@@ -246,6 +248,10 @@ namespace
         delete s_physicsInteraction;
         s_physicsInteraction = nullptr;
 
+        // Every hand world claim belongs to an owner inside PhysicsInteraction;
+        // none may outlive it in FRIK.
+        frik_hand_world_authority::clearAllClaims();
+
         logger::info("ROCK: PhysicsInteraction destroyed.");
     }
 
@@ -335,6 +341,19 @@ namespace
 
     using GameLoopFunc = void (*)(std::uint64_t rcx);
     GameLoopFunc s_originalGameLoopFunc = nullptr;
+
+    /*
+     * Outer main-loop hook state. FRIK hooks the same call site at
+     * kGameLoaded and displaces ROCK's load-time hook; once FRIK owns the
+     * site ROCK wraps it again so one pass runs before FRIK's frame (the
+     * hand world claim rebase). s_frikChainGameLoopFunc is FRIK's hook (or
+     * its CommonLib thunk), displaced by the outer hook.
+     */
+    GameLoopFunc s_frikChainGameLoopFunc = nullptr;
+    bool s_outerFrameHookInstalled = false;
+    std::uint64_t s_schedulerSequence = 0;
+    std::uint64_t s_schedulerSequenceAtInstall = 0;
+    main_loop_hook_policy::OuterHookAttemptState s_outerHookAttemptState{};
 
     using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
     NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
@@ -549,17 +568,182 @@ namespace
         return true;
     }
 
+    void onGameFrameUpdateHook(std::uint64_t rcx);
+
     /*
-     * FRIK installs the outer hook at kGameLoaded and calls this chained hook
-     * after its skeleton/weapon pass. The displaced call is an unrelated
-     * PlayerCharacter flag update; native scope activation ran earlier. Publish
-     * the generation-bound rigid camera/overlay frame here for the later mono
-     * render, then let ROCK apply any final weapon authority in onFrameUpdate.
+     * Runs before FRIK's frame once the outer hook is installed: rebases every
+     * active hand world claim by its controller driver's motion, then hands
+     * the frame to FRIK, whose hook calls onGameFrameUpdateHook afterwards.
+     */
+    void onOuterFrameHook(const std::uint64_t rcx)
+    {
+        s_schedulerSequence = main_loop_hook_policy::nextSchedulerSequence(s_schedulerSequence);
+        if (s_pluginLoaded && s_frikAvailable) {
+            frik_hand_world_authority::runPreFrikPass(s_schedulerSequence);
+        }
+        if (s_frikChainGameLoopFunc) {
+            s_frikChainGameLoopFunc(rcx);
+        }
+    }
+
+    bool describeModuleOwningAddress(const std::uintptr_t address, std::array<char, MAX_PATH>& outPath, bool& outIsFrik)
+    {
+        outPath.fill('\0');
+        outIsFrik = false;
+        HMODULE module = nullptr;
+        if (address == 0 ||
+            GetModuleHandleExA(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCSTR>(address),
+                &module) == FALSE ||
+            !module) {
+            return false;
+        }
+        const auto length = GetModuleFileNameA(module, outPath.data(), static_cast<DWORD>(outPath.size()));
+        if (length == 0 || length >= outPath.size()) {
+            return false;
+        }
+        const char* fileName = outPath.data();
+        for (const char* cursor = outPath.data(); *cursor; ++cursor) {
+            if (*cursor == '\\' || *cursor == '/') {
+                fileName = cursor + 1;
+            }
+        }
+        outIsFrik = _stricmp(fileName, "FRIK.dll") == 0;
+        return true;
+    }
+
+    /*
+     * Bounded per-frame attempt to wrap the main-loop call site above FRIK.
+     * Decode and decision live in MainLoopHookPolicy; this reads the live
+     * bytes, resolves module ownership, and writes the call.
+     */
+    void ensureOuterFrameHook()
+    {
+        using namespace main_loop_hook_policy;
+
+        if (s_outerFrameHookInstalled || s_outerHookAttemptState.refused || !s_pluginLoaded || !s_frikAvailable) {
+            return;
+        }
+
+        REL::Relocation hookCallSite{ REL::Offset(rock::offsets::kHookSite_MainLoop) };
+        const std::uintptr_t siteAddress = hookCallSite.address();
+
+        OuterHookProbe probe{};
+        std::uintptr_t immediateTarget = 0;
+        std::uintptr_t terminalTarget = 0;
+        std::array<std::uint8_t, kRelativeCallSize> callBytes{};
+        probe.readable =
+            native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(siteAddress), callBytes.data(), callBytes.size()) &&
+            decodeRelativeCallTarget(callBytes.data(), siteAddress, immediateTarget);
+
+        std::array<char, MAX_PATH> ownerPath{};
+        if (probe.readable) {
+            terminalTarget = immediateTarget;
+            std::array<std::uint8_t, kCommonLibAbsoluteJumpThunkSize> thunkBytes{};
+            std::uintptr_t thunkTarget = 0;
+            if (native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(immediateTarget), thunkBytes.data(), thunkBytes.size()) &&
+                decodeCommonLibAbsoluteJumpTarget(thunkBytes.data(), thunkTarget)) {
+                terminalTarget = thunkTarget;
+            }
+            const auto outerAddress = reinterpret_cast<std::uintptr_t>(&onOuterFrameHook);
+            const auto innerAddress = reinterpret_cast<std::uintptr_t>(&onGameFrameUpdateHook);
+            probe.immediateIsOuterHook = immediateTarget == outerAddress;
+            probe.terminalIsOuterHook = terminalTarget == outerAddress;
+            probe.terminalIsInnerHook = terminalTarget == innerAddress;
+            bool ownedByFrik = false;
+            if (!probe.terminalIsOuterHook && !probe.terminalIsInnerHook &&
+                describeModuleOwningAddress(terminalTarget, ownerPath, ownedByFrik)) {
+                probe.terminalOwnedByFrik = ownedByFrik;
+            }
+        }
+
+        switch (decideOuterHook(s_outerHookAttemptState, probe)) {
+        case OuterHookDecision::AlreadyInstalled:
+            s_outerFrameHookInstalled = true;
+            s_schedulerSequenceAtInstall = s_schedulerSequence;
+            logger::info("ROCK: Outer main loop hook already present at 0x{:X}.", siteAddress);
+            break;
+        case OuterHookDecision::Install: {
+            auto& trampoline = F4SE::GetTrampoline();
+            const auto displaced = trampoline.write_call<5>(siteAddress, &onOuterFrameHook);
+            if (displaced == 0) {
+                s_outerHookAttemptState.refused = true;
+                frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Refused);
+                logger::critical(
+                    "ROCK: Outer main loop hook write at 0x{:X} returned no displaced target. Hand world claims stay disabled this session.",
+                    siteAddress);
+                break;
+            }
+            s_frikChainGameLoopFunc = reinterpret_cast<GameLoopFunc>(displaced);
+            s_outerFrameHookInstalled = true;
+            s_schedulerSequenceAtInstall = s_schedulerSequence;
+            logger::info(
+                "ROCK: Outer main loop hook installed at 0x{:X} above FRIK ({}), chained target 0x{:X}{}; verifying on the next frame.",
+                siteAddress,
+                ownerPath.data(),
+                displaced,
+                displaced == immediateTarget ? "" : " (differs from the decoded target)");
+            break;
+        }
+        case OuterHookDecision::RetryLater:
+            break;
+        case OuterHookDecision::GiveUp:
+            frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Refused);
+            logger::critical(
+                "ROCK: FRIK never hooked the main loop at 0x{:X} within {} frames. Hand world claims (grab, weapon grip, dynamic hand presentation) stay disabled this session.",
+                siteAddress,
+                kMaxOuterHookAttempts);
+            break;
+        case OuterHookDecision::Refuse:
+        default:
+            frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Refused);
+            if (!probe.readable) {
+                logger::critical(
+                    "ROCK: Main loop call site 0x{:X} is not a readable CALL rel32. Hand world claims stay disabled this session.",
+                    siteAddress);
+            } else {
+                logger::critical(
+                    "ROCK: Main loop call site 0x{:X} resolves to 0x{:X} owned by '{}', not FRIK. ROCK will not wrap an unknown hook; hand world claims stay disabled this session.",
+                    siteAddress,
+                    terminalTarget,
+                    ownerPath[0] ? ownerPath.data() : "<unknown module>");
+            }
+            break;
+        }
+    }
+
+    void verifyOuterFrameHook()
+    {
+        if (!s_outerFrameHookInstalled ||
+            frik_hand_world_authority::schedulerState() != frik_hand_world_authority::SchedulerState::Unverified) {
+            return;
+        }
+        if (s_schedulerSequence != s_schedulerSequenceAtInstall) {
+            frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Verified);
+            logger::info("ROCK: Pre-FRIK pass verified (sequence {}); hand world claims enabled.", s_schedulerSequence);
+        }
+    }
+
+    /*
+     * FRIK installs its hook at kGameLoaded and calls this chained hook after
+     * its skeleton/weapon pass; ROCK's outer hook wraps FRIK's in turn. The
+     * displaced call is an unrelated PlayerCharacter flag update; native scope
+     * activation ran earlier. Publish the generation-bound rigid camera/overlay
+     * frame here for the later mono render, then let ROCK apply any final
+     * weapon authority in onFrameUpdate.
      */
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
+        }
+
+        ensureOuterFrameHook();
+        verifyOuterFrameHook();
+        frik_hand_world_authority::beginRockFrame(s_schedulerSequence);
+        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->resolveFrameHands();
         }
 
         /*
@@ -643,6 +827,7 @@ namespace
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
             frik_visual_authority::resetPresentedHandNodeCache();
+            frik_hand_world_authority::resetForSkeletonRelease();
             bumpGeneration(s_skeletonGeneration);
             authored_weapon_grip_capture::resetTransientState();
             s_physicsCreationRequested.store(false, std::memory_order_release);
@@ -735,6 +920,10 @@ namespace
 
             s_messaging->RegisterListener(onFRIKMessage, frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
             logger::info("ROCK: Registered FRIK lifecycle event listener on '{}'.", frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
+
+            // FRIK hooks the main loop in its own kGameLoaded handler; whichever
+            // order the dispatch used, the per-frame attempt finishes the job.
+            ensureOuterFrameHook();
 
             logger::info("ROCK: Initialization complete. Waiting for skeleton...");
         }

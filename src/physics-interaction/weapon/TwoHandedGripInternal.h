@@ -23,6 +23,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>
@@ -1203,22 +1204,37 @@ namespace rock
             return outMask == grab_finger_local_transform_math::kFullFingerLocalTransformMask;
         }
 
+        /*
+         * The controller hand for this frame. Under FRIK API v2 the root
+         * flattened bone shows ROCK's previous claim while one is active, so
+         * physical-intent readers take the isolated controller hand the
+         * PhysicsInteraction frame resolved before the grip update.
+         */
         inline bool tryGetRootFlattenedHandBoneTransform(bool isLeft, RE::NiTransform& outTransform)
         {
             outTransform = {};
-            DirectSkeletonBoneSnapshot snapshot{};
-            if (!rootFlattenedTwoHandedReader().capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                    snapshot)) {
+            RE::NiTransform rawHandWorld{};
+            if (!frik_hand_world_authority::tryGetRawHandWorld(isLeft, rawHandWorld) ||
+                !isUsableHandAuthorityTransform(rawHandWorld)) {
                 return false;
             }
+            outTransform = rawHandWorld;
+            return true;
+        }
 
-            const auto* handBone = findSnapshotBone(snapshot, isLeft ? "LArm_Hand" : "RArm_Hand");
-            if (!handBone || !isUsableHandAuthorityTransform(handBone->world)) {
+        /*
+         * The root flattened bone as FRIK rendered it this frame (probes and
+         * debug traces only; never physical intent).
+         */
+        inline bool tryGetPresentedRootFlattenedHandBoneTransform(bool isLeft, RE::NiTransform& outTransform)
+        {
+            outTransform = {};
+            RE::NiTransform presentedHandWorld{};
+            if (!frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, presentedHandWorld) ||
+                !isUsableHandAuthorityTransform(presentedHandWorld)) {
                 return false;
             }
-
-            outTransform = handBone->world;
+            outTransform = presentedHandWorld;
             return true;
         }
 
