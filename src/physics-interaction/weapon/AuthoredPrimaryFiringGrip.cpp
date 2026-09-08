@@ -11,6 +11,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -178,6 +179,7 @@ namespace rock
         const AuthoredPrimaryFiringGripFrameInput& input,
         TwoHandedGrip& weaponAuthority)
     {
+        vanilla_weapon_alignment_telemetry::recordInput(input);
         // The published candidate remains frame-scoped. Each eligible frame
         // must republish either a fresh capture or the identity-bound stable
         // snapshot, so every unrelated early return still falls back to the
@@ -1019,6 +1021,11 @@ namespace rock
             endSession("position-only-alignment-invalid");
             return;
         }
+
+        vanilla_weapon_alignment_telemetry::recordSolve(
+            input.weapon ? input.weapon->formID : 0, resolvedCaptureSequence,
+            harvestedRelationAvailable ? "native-idle" : "live-equipped",
+            authoredPrimaryHandInWeapon, trackedHandWorld, solvedWeaponWorld);
 
         // The authored wrist correction belongs to the presented hand: the
         // weapon keeps its native rotation while the right hand seats at the

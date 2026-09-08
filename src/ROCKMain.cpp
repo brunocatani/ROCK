@@ -34,6 +34,7 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -582,6 +583,8 @@ namespace
         s_schedulerSequence = main_loop_hook_policy::nextSchedulerSequence(s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable) {
             frik_hand_world_authority::runPreFrikPass(s_schedulerSequence);
+            vanilla_weapon_alignment_telemetry::capture(
+                vanilla_weapon_alignment_telemetry::Phase::BeforeFrik, s_schedulerSequence);
         }
         if (s_frikChainGameLoopFunc) {
             s_frikChainGameLoopFunc(rcx);
@@ -743,6 +746,8 @@ namespace
 
         ensureOuterFrameHook();
         verifyOuterFrameHook();
+        vanilla_weapon_alignment_telemetry::capture(
+            vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
         frik_hand_world_authority::beginRockFrame(s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->resolveFrameHands();
@@ -787,6 +792,8 @@ namespace
             s_physicsInteraction->presentClaimedHands();
         }
         frik_hand_world_authority::endRockFrame();
+        vanilla_weapon_alignment_telemetry::capture(
+            vanilla_weapon_alignment_telemetry::Phase::AfterRock, s_schedulerSequence);
     }
 
     bool hookMainLoop()
@@ -819,6 +826,7 @@ namespace
         switch (static_cast<LE>(msg->type)) {
         case LE::kSkeletonReady:
             logger::info("ROCK: Received kSkeletonReady from FRIK.");
+            vanilla_weapon_alignment_telemetry::initialize();
             frik_visual_authority::resetPresentedHandNodeCache();
             bumpGeneration(s_skeletonGeneration);
             if (!authored_weapon_grip_capture::installHook()) {
@@ -834,6 +842,7 @@ namespace
 
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
+            vanilla_weapon_alignment_telemetry::shutdown();
             frik_visual_authority::resetPresentedHandNodeCache();
             frik_hand_world_authority::resetForSkeletonRelease();
             bumpGeneration(s_skeletonGeneration);
