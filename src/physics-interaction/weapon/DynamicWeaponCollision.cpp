@@ -4,6 +4,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -34,6 +35,14 @@ namespace rock
         {
             return g_rockConfig.rockDebugShowColliders &&
                    g_rockConfig.rockDebugDrawDynamicWeaponColliders;
+        }
+
+        // Continuous samples on one in four source updates. Gate on the exact
+        // consumed source so the solve and game-frame rows can be joined.
+        bool weaponClockTraceEnabled(std::uint64_t sourceSequence)
+        {
+            return g_rockConfig.rockDebugGrabFrameLogging &&
+                   sourceSequence != 0 && sourceSequence % 4 == 0;
         }
 
         const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
@@ -381,6 +390,7 @@ namespace rock
         const bool suppressDefaultNativeIntent)
     {
         _frameIndex = frameIndex;
+        _clockPresentationFrame = 0;
         _frameWorld = world;
         _frameBhkWorld = bhkWorld;
         _frameWeaponNode = weaponNode;
@@ -664,7 +674,42 @@ namespace rock
             }
         }
         logPipelineStage(correctionVisible ? "publish-requested" : "visibility-gate");
+        if (weaponClockTraceEnabled(snapshot.sourceSequence)) {
+            _clockPresentationFrame = _frameIndex;
+            _clockExpectedWeaponWorld = result.resolvedWeaponWorld;
+            ROCK_LOG_INFO(Weapon,
+                "DWC_CLOCK game: frame={} queued={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg)",
+                _frameIndex, queueResult.queuedSequence, snapshot.sourceSequence, snapshot.solveSequence,
+                snapshot.generationKey, snapshot.bodyId, frame.deltaSeconds, snapshot.contactActive, result.applyVisualCorrection,
+                _frameRequestedWeaponWorld.translate.x, _frameRequestedWeaponWorld.translate.y, _frameRequestedWeaponWorld.translate.z,
+                sampledRequestedWeaponWorld.translate.x, sampledRequestedWeaponWorld.translate.y, sampledRequestedWeaponWorld.translate.z,
+                sampledLiveWeaponWorld.translate.x, sampledLiveWeaponWorld.translate.y, sampledLiveWeaponWorld.translate.z,
+                result.resolvedWeaponWorld.translate.x, result.resolvedWeaponWorld.translate.y, result.resolvedWeaponWorld.translate.z,
+                result.translationCorrectionGameUnits, result.rotationCorrectionDegrees);
+        }
         return result;
+    }
+
+    void DynamicWeaponCollisionRuntime::tracePresentedWeapon(RE::NiNode* weaponNode, std::uint64_t frameIndex)
+    {
+        if (!g_rockConfig.rockDebugGrabFrameLogging || _clockPresentationFrame == 0 ||
+            _clockPresentationFrame != frameIndex || !_frameAcceptingIntent) {
+            return;
+        }
+        _clockPresentationFrame = 0;
+        if (!weaponNode || weaponNode != _frameWeaponNode ||
+            !dynamic_weapon_collision_policy::isFiniteTransform(weaponNode->world)) {
+            ROCK_LOG_INFO(Weapon, "DWC_CLOCK frame-end: frame={} generation={:016X} readable=false", frameIndex, _frameGenerationKey);
+            return;
+        }
+        const auto& actual = weaponNode->world;
+        const auto& room = runtime_state::currentFrame().playerSpace.world.translate;
+        ROCK_LOG_INFO(Weapon,
+            "DWC_CLOCK frame-end: frame={} generation={:016X} readable=true weapon=({:.3f},{:.3f},{:.3f}) room=({:.3f},{:.3f},{:.3f}) presentationError=({:.4f}gu,{:.4f}deg)",
+            frameIndex, _frameGenerationKey, actual.translate.x, actual.translate.y, actual.translate.z,
+            room.x, room.y, room.z,
+            dynamic_weapon_collision_policy::translationDeltaGameUnits(actual, _clockExpectedWeaponWorld),
+            dynamic_weapon_collision_policy::rotationDeltaDegrees(actual, _clockExpectedWeaponWorld));
     }
 
     bool DynamicWeaponCollisionRuntime::queueCompoundChildTransforms(
@@ -1122,6 +1167,11 @@ namespace rock
             driveResult.driven &&
             driveResult.hasRequestedTargetGameTransform;
         _physicsRequestedTargetValid = driveResult.hasRequestedTargetGameTransform;
+        _physicsSourceSequence = driveResult.sourceSequence;
+        if (weaponClockTraceEnabled(_physicsSourceSequence)) {
+            _clockDriveResult = driveResult;
+            _clockDriveTiming = timing;
+        }
         bool contactBodyRecovered = false;
         if (_physicsRequestedTargetValid) {
             _physicsRequestedAuthorityTarget = driveResult.requestedTargetGameTransform;
@@ -1274,10 +1324,41 @@ namespace rock
         snapshot.contactGraceSolves = _contactGraceSolves;
         snapshot.generationKey = _createdGenerationKey;
         snapshot.solveSequence = solveSequence;
+        snapshot.sourceSequence = _physicsSourceSequence;
         snapshot.weaponScale = _createdWeaponScale;
         snapshot.requestedProxyBodyWorld = _physicsRequestedTarget;
         snapshot.liveProxyBodyWorld = liveBodyWorld;
         publishPhysicsSnapshot(snapshot);
+
+        if (weaponClockTraceEnabled(snapshot.sourceSequence) && _clockDriveResult.sourceSequence == snapshot.sourceSequence) {
+            const auto& drive = _clockDriveResult;
+            RE::NiTransform authority{};
+            const bool authorityReadable = havok_runtime::tryResolveLiveBodyWorldTransform(world, _authorityProxy.getBodyId(), authority) &&
+                dynamic_weapon_collision_policy::isFiniteTransform(authority);
+            const auto requested = drive.requestedTargetGameTransform;
+            const auto commanded = drive.commandedTargetGameTransform;
+            const auto contactAtAuthority = authorityReadable ?
+                dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(authority, _createdCenterWeaponLocal, _createdWeaponScale) :
+                RE::NiTransform{};
+            ROCK_LOG_INFO(Weapon,
+                "DWC_CLOCK solve: source={} solve={} step={} substep={}/{} generation={:016X} body={} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} rawDt={:.6f} remainder={:.6f} contact={} teleport={} commandValid={} authorityRead={} limit=({},{},{:.4f}) requested=({:.3f},{:.3f},{:.3f}) commanded=({:.3f},{:.3f},{:.3f}) authority=({:.3f},{:.3f},{:.3f}) contactBody=({:.3f},{:.3f},{:.3f}) limitError=({:.4f}gu,{:.4f}deg) driveError=({:.4f}gu,{:.4f}deg) constraintError=({:.4f}gu,{:.4f}deg)",
+                snapshot.sourceSequence, solveSequence, _clockDriveTiming.stepSequence,
+                _clockDriveTiming.substepIndex, _clockDriveTiming.substepCount, snapshot.generationKey, snapshot.bodyId,
+                drive.sourceDeltaSeconds, drive.sourceAgeSeconds, drive.driveDeltaSeconds,
+                _clockDriveTiming.rawDeltaSeconds, _clockDriveTiming.remainderDeltaSeconds,
+                snapshot.contactActive, snapshot.teleported, drive.hasCommandedTargetGameTransform, authorityReadable,
+                drive.linearLimitExceeded, drive.angularLimitExceeded, drive.targetLimitAlpha,
+                requested.translate.x, requested.translate.y, requested.translate.z,
+                commanded.translate.x, commanded.translate.y, commanded.translate.z,
+                authority.translate.x, authority.translate.y, authority.translate.z,
+                liveBodyWorld.translate.x, liveBodyWorld.translate.y, liveBodyWorld.translate.z,
+                drive.hasCommandedTargetGameTransform ? dynamic_weapon_collision_policy::translationDeltaGameUnits(requested, commanded) : -1.0f,
+                drive.hasCommandedTargetGameTransform ? dynamic_weapon_collision_policy::rotationDeltaDegrees(requested, commanded) : -1.0f,
+                authorityReadable && drive.hasCommandedTargetGameTransform ? dynamic_weapon_collision_policy::translationDeltaGameUnits(commanded, authority) : -1.0f,
+                authorityReadable && drive.hasCommandedTargetGameTransform ? dynamic_weapon_collision_policy::rotationDeltaDegrees(commanded, authority) : -1.0f,
+                authorityReadable ? dynamic_weapon_collision_policy::translationDeltaGameUnits(contactAtAuthority, liveBodyWorld) : -1.0f,
+                authorityReadable ? dynamic_weapon_collision_policy::rotationDeltaDegrees(contactAtAuthority, liveBodyWorld) : -1.0f);
+        }
 
         if (contactEpisodeStarted &&
             dynamicWeaponDebugEnabled()) {
@@ -1547,6 +1628,11 @@ namespace rock
         _physicsRequestedTarget = {};
         _physicsPreviousRequestedTarget = {};
         _physicsPreviousRequestedTargetValid = false;
+        _physicsSourceSequence = 0;
+        _clockDriveResult = {};
+        _clockDriveTiming = {};
+        _clockPresentationFrame = 0;
+        _clockExpectedWeaponWorld = {};
         _divergenceDwellSeconds = 0.0f;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;
@@ -1709,6 +1795,7 @@ namespace rock
         _snapshotContactGraceAtomic.store(snapshot.contactGraceSolves, std::memory_order_relaxed);
         _snapshotGenerationKeyAtomic.store(snapshot.generationKey, std::memory_order_relaxed);
         _snapshotSolveSequenceAtomic.store(snapshot.solveSequence, std::memory_order_relaxed);
+        _snapshotSourceSequenceAtomic.store(snapshot.sourceSequence, std::memory_order_relaxed);
         _snapshotWeaponScaleAtomic.store(snapshot.weaponScale, std::memory_order_relaxed);
         storeAtomicTransform(_snapshotRequestedProxyBodyWorld, snapshot.requestedProxyBodyWorld);
         storeAtomicTransform(_snapshotLiveProxyBodyWorld, snapshot.liveProxyBodyWorld);
@@ -1739,6 +1826,7 @@ namespace rock
             candidate.contactGraceSolves = _snapshotContactGraceAtomic.load(std::memory_order_relaxed);
             candidate.generationKey = _snapshotGenerationKeyAtomic.load(std::memory_order_relaxed);
             candidate.solveSequence = _snapshotSolveSequenceAtomic.load(std::memory_order_relaxed);
+            candidate.sourceSequence = _snapshotSourceSequenceAtomic.load(std::memory_order_relaxed);
             candidate.weaponScale = _snapshotWeaponScaleAtomic.load(std::memory_order_relaxed);
             candidate.requestedProxyBodyWorld = loadAtomicTransform(_snapshotRequestedProxyBodyWorld);
             candidate.liveProxyBodyWorld = loadAtomicTransform(_snapshotLiveProxyBodyWorld);

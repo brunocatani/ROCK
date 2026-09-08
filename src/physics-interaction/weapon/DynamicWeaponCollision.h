@@ -127,6 +127,8 @@ namespace rock
             RE::hknpWorld* world,
             const havok_physics_timing::PhysicsTimingSample& timing);
         void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence);
+        // Game-thread witness after the final claimed-hand presentation.
+        void tracePresentedWeapon(RE::NiNode* weaponNode, std::uint64_t frameIndex);
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
         void recordObstacleContactCallback(
@@ -174,6 +176,7 @@ namespace rock
             std::uint64_t generationKey{ 0 };
             std::uint64_t solveSequence{ 0 };
             float weaponScale{ 1.0f };
+            std::uint64_t sourceSequence{ 0 };
             RE::NiTransform requestedProxyBodyWorld{};
             RE::NiTransform liveProxyBodyWorld{};
         };
@@ -254,6 +257,10 @@ namespace rock
         RE::NiTransform _physicsRequestedTarget{};
         RE::NiTransform _physicsPreviousRequestedTarget{};
         bool _physicsPreviousRequestedTargetValid{ false };
+        // Physics callback values only; no scene pointers cross to this trace.
+        std::uint64_t _physicsSourceSequence{ 0 };
+        GeneratedKeyframedBodyDriveResult _clockDriveResult{};
+        havok_physics_timing::PhysicsTimingSample _clockDriveTiming{};
         // Physics-thread-only persistence timer for the real colliding body.
         // The hidden authority target may jump immediately after a tracking
         // discontinuity, but blocked physical divergence must persist before
@@ -276,6 +283,9 @@ namespace rock
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
         DebugSnapshot _debugSnapshot{};
+        // Current game frame only. Reset at beginFrame and on body retirement.
+        std::uint64_t _clockPresentationFrame{ 0 };
+        RE::NiTransform _clockExpectedWeaponWorld{};
 
         std::atomic<bool> _enabledAtomic{ false };
         std::atomic<float> _gripRecoveryDistanceGameUnitsAtomic{ 210.0f };
@@ -310,6 +320,7 @@ namespace rock
         std::atomic<std::uint32_t> _snapshotContactGraceAtomic{ 0 };
         std::atomic<std::uint64_t> _snapshotGenerationKeyAtomic{ 0 };
         std::atomic<std::uint64_t> _snapshotSolveSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _snapshotSourceSequenceAtomic{ 0 };
         std::atomic<float> _snapshotWeaponScaleAtomic{ 1.0f };
         AtomicTransform _snapshotRequestedProxyBodyWorld{};
         AtomicTransform _snapshotLiveProxyBodyWorld{};
