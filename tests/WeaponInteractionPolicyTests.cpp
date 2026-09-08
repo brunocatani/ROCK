@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponRecoilController.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 
@@ -148,6 +149,98 @@ namespace
 int main()
 {
     bool ok = true;
+
+    {
+        using namespace rock::weapon_recoil_policy;
+        using rock::weapon_recoil_authority_math::tryBuildControlledKick;
+        ok &= expectTrue("ordinary one hand preserves native profile",
+            selectProfile(false, false) == Profile::Native);
+        ok &= expectTrue("close support chooses its own profile",
+            selectProfile(false, true) == Profile::CloseSupport);
+        for (const bool supported : { false, true }) {
+            ok &= expectTrue("armor profile wins independently of support",
+                selectProfile(true, supported) == Profile::PowerArmor);
+        }
+        for (const bool nativeLeft : { false, true }) {
+            for (const bool firingLeft : { false, true }) {
+                const auto nativeMask = deliveryHand(false, firingLeft, nativeLeft);
+                ok &= expectTrue("native recoil selects the physical firing hand",
+                    nativeMask == (firingLeft == nativeLeft ? HandMask::Primary : HandMask::Offhand));
+                ok &= expectTrue("owned weapon/solver has no additional FRIK hand kick",
+                    deliveryHand(true, firingLeft, nativeLeft) == HandMask::None);
+            }
+        }
+        TestTransform shot = rock::transform_math::makeIdentityTransform<TestTransform>();
+        shot.translate = { 10.0f, -4.0f, 2.0f };
+        shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
+        TestTransform armor{};
+        ok &= expectTrue("armor builds a rigid reduced kick",
+            tryBuildControlledKick(shot, gainsFor(Profile::PowerArmor), armor));
+        auto expected = rock::transform_math::makeIdentityTransform<TestTransform>();
+        expected.translate = { 4.5f, -1.8f, 0.9f };
+        expected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 18.0f);
+        ok &= expectTransformNear("armor starts with the requested attenuation", armor, expected);
+        auto independentlyTunedSupport = kCloseSupport;
+        independentlyTunedSupport.translation = 0.2f;
+        independentlyTunedSupport.rotation = 0.1f;
+        TestTransform tuned{};
+        ok &= expectTrue("support profile can be independently tuned",
+            tryBuildControlledKick(shot, independentlyTunedSupport, tuned));
+        ok &= expectTrue("support tuning produces a different impulse",
+            std::abs(tuned.translate.x - armor.translate.x) > 1.0f);
+        TestTransform unchangedArmor{};
+        ok &= expectTrue("armor remains independently selectable",
+            tryBuildControlledKick(shot, gainsFor(Profile::PowerArmor), unchangedArmor));
+        ok &= expectTransformNear("support tuning leaves armor unchanged", unchangedArmor, armor);
+        TestTransform native{};
+        ok &= expectTrue("native profile builds an unchanged rigid sample",
+            tryBuildControlledKick(shot, gainsFor(Profile::Native), native));
+        ok &= expectTransformNear("unassisted native sample is preserved", native, shot);
+        auto invalid = shot;
+        invalid.rotate.entry[0][0] = 0.0f;
+        ok &= expectFalse("non-rigid input cannot become a plausible controlled kick",
+            tryBuildControlledKick(invalid, kPowerArmor, tuned));
+        ok &= expectTransformNear("invalid input outputs identity", tuned,
+            rock::transform_math::makeIdentityTransform<TestTransform>());
+        invalid = rock::transform_math::makeIdentityTransform<TestTransform>();
+        invalid.rotate.entry[0][0] = -1.0f;
+        ok &= expectFalse("reflection is not a rigid recoil rotation",
+            tryBuildControlledKick(invalid, kPowerArmor, tuned));
+
+        const SampleIdentity captured{
+            .weaponNode = 0x1234, .weaponGeneration = 2, .equippedOwnership = 3,
+            .profile = Profile::PowerArmor, .firingHandIsLeft = true,
+            .nativePrimaryIsLeft = false, .fullTwoHanded = false,
+        };
+        SampleTicket ticket{ .identity = captured, .sequence = 1, .valid = true };
+        ticket.beginUpdate();
+        ok &= expectTrue("fresh callback can be consumed", ticket.consume(captured));
+        ok &= expectFalse("one sample cannot kick both carry and solver", ticket.consume(captured));
+        ticket.beginUpdate();
+        ok &= expectFalse("skipped callback never replays a shot", ticket.consume(captured));
+        for (int changed = 0; changed < 7; ++changed) {
+            auto current = captured;
+            switch (changed) {
+            case 0: ++current.weaponNode; break;
+            case 1: ++current.weaponGeneration; break;
+            case 2: ++current.equippedOwnership; break;
+            case 3: current.profile = Profile::Native; break;
+            case 4: current.firingHandIsLeft = false; break;
+            case 5: current.nativePrimaryIsLeft = true; break;
+            case 6: current.fullTwoHanded = true; break;
+            }
+            ++ticket.sequence;
+            ticket.valid = true;
+            ticket.beginUpdate();
+            ok &= expectFalse("owner/profile/role/solver changes discard the old shot", ticket.consume(current));
+            ok &= expectFalse("rejected ticket cannot replay after identity returns", ticket.consume(captured));
+        }
+        ++ticket.sequence;
+        ticket.valid = true;
+        ticket.beginUpdate();
+        ticket.invalidate();
+        ok &= expectFalse("lifecycle reset discards pending recoil", ticket.consume(captured));
+    }
 
     {
         TestTransform rightNativeWeaponInWand =
@@ -1410,8 +1503,9 @@ int main()
         ok &= expectTrue(
             "visual-only support builds a controlled rigid recoil sample",
             rock::weapon_recoil_authority_math::
-                tryBuildVisualOnlySupportKick(
+                tryBuildControlledKick(
                     nativeKickLocal,
+                    rock::weapon_recoil_policy::kCloseSupport,
                     controlledKickLocal));
         TestTransform expectedControlledKick =
             rock::transform_math::makeIdentityTransform<TestTransform>();
@@ -1431,8 +1525,9 @@ int main()
         ok &= expectFalse(
             "visual-only support rejects a non-finite native kick",
             rock::weapon_recoil_authority_math::
-                tryBuildVisualOnlySupportKick(
+                tryBuildControlledKick(
                     invalidKick,
+                    rock::weapon_recoil_policy::kCloseSupport,
                     rejectedKick));
         ok &= expectTransformNear(
             "invalid visual-only recoil fails closed to identity",

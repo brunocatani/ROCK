@@ -1,203 +1,9 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
-// Left-firing equipped carry: position-only carry solve, weapon node ownership/reparenting, feed-forward weapon publish, and the left recoil capture/apply route.
+// Left-firing equipped carry: position-only carry solve, weapon node ownership/reparenting, feed-forward weapon publish, and owned recoil delivery.
 
 namespace rock
 {
-    bool TwoHandedGrip::hasVisualOnlySupportRecoilAssist() const noexcept
-    {
-        if (_session.state != TwoHandedState::Gripping ||
-            !_session.weaponNode ||
-            _session.weaponGenerationKey == 0 ||
-            _session.equippedWeaponOwnershipKey == 0 ||
-            (usesLeftFiringCarry() &&
-                (!_leftCarry.weaponNodeOwnershipBlockEngaged ||
-                    !isManualOwnershipActive()))) {
-            return false;
-        }
-
-        const WeaponPartGrip& supportGrip = supportPartGrip();
-        return supportGrip.weaponGenerationKey ==
-                   _session.weaponGenerationKey &&
-               supportGrip.gripSequence != 0 &&
-               weapon_support_authority_policy::
-                   shouldApplyVisualOnlySupportRecoilAssist(
-                       _session.authorityMode,
-                       supportGrip.active,
-                       supportGrip.providerPartAuthority.active,
-                       supportGrip.attachOnly);
-    }
-
-    bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(
-        const frik::api::FRIKApiV2::RecoilSample* const sample,
-        frik::api::FRIKApiV2::RecoilResponse* const outResponse,
-        void* const userData) noexcept
-    {
-        auto* const self = static_cast<TwoHandedGrip*>(userData);
-        if (!self ||
-            !sample ||
-            sample->structSize < sizeof(frik::api::FRIKApiV2::RecoilSample) ||
-            !outResponse) {
-            return false;
-        }
-
-        RE::NiTransform controlledKickLocal = sample->nativeKickLocal;
-        if (isFiniteTransform(sample->nativeKickLocal) &&
-            (hand_world_claim_registry_policy::translationDeltaGameUnits(
-                 sample->nativeKickLocal,
-                 transform_math::makeIdentityTransform<RE::NiTransform>()) > 0.05f ||
-             hand_world_claim_registry_policy::rotationDeltaDegrees(
-                 sample->nativeKickLocal,
-                 transform_math::makeIdentityTransform<RE::NiTransform>()) > 0.1f)) {
-            ++self->_leftCarry.nativeRecoilKickSequence;
-        }
-        const bool visualOnlySupportRecoilAssist =
-            self->hasVisualOnlySupportRecoilAssist() &&
-            weapon_recoil_authority_math::tryBuildVisualOnlySupportKick(
-                sample->nativeKickLocal,
-                controlledKickLocal);
-
-        /*
-         * Physical-left carry already owns a recoil route because hFRIK's
-         * native right-hand weapon glue is blocked. Close visual support adds
-         * the only physical-right route: it changes the primary recoil sample,
-         * never the support controller or steady weapon authority.
-         */
-        const bool leftFiringCarryAuthority =
-            self->_leftCarry.weaponNodeOwnershipBlockEngaged &&
-            self->usesLeftFiringCarry() &&
-            self->isManualOwnershipActive();
-        self->captureLeftFiringWeaponRecoil(controlledKickLocal);
-        if (!leftFiringCarryAuthority &&
-            !visualOnlySupportRecoilAssist) {
-            return false;
-        }
-
-        *outResponse = {};
-        outResponse->structSize = sizeof(frik::api::FRIKApiV2::RecoilResponse);
-        outResponse->handMask = static_cast<std::uint32_t>(
-            frik::api::FRIKApiV2::RecoilHandMask::Primary);
-        outResponse->delivery = frik::api::FRIKApiV2::RecoilDelivery::Direct;
-        outResponse->controlledKickLocal = controlledKickLocal;
-        return true;
-    }
-
-    void TwoHandedGrip::captureLeftFiringWeaponRecoil(
-        const RE::NiTransform& controlledKickLocal) noexcept
-    {
-        ++_leftCarry.recoilSampleSequence;
-        _leftCarry.recoilSampleValid = false;
-        _leftCarry.recoilWorldDelta =
-            transform_math::makeIdentityTransform<RE::NiTransform>();
-
-        if (!_leftCarry.weaponNodeOwnershipBlockEngaged ||
-            !usesLeftFiringCarry() ||
-            !isManualOwnershipActive() ||
-            !isFiniteTransform(controlledKickLocal)) {
-            return;
-        }
-
-        const auto* const playerNodes = f4vr::getPlayerNodes();
-        const auto* const kickbackNode = playerNodes ?
-            playerNodes->primaryWeaponKickbackRecoilNode :
-            nullptr;
-        const auto* const kickParent = kickbackNode ? kickbackNode->parent : nullptr;
-        const auto* const leftHandedMode =
-            f4vr::getIniSetting("bLeftHandedMode:VR");
-        if (!playerNodes ||
-            !kickParent ||
-            !leftHandedMode ||
-            !isInvertibleTransform(kickParent->world)) {
-            return;
-        }
-
-        const bool leftIsNativeOffhand = !leftHandedMode->GetBinary();
-        if (leftIsNativeOffhand &&
-            (!playerNodes->primaryWandNode ||
-                !playerNodes->SecondaryWandNode ||
-                !isInvertibleTransform(playerNodes->primaryWandNode->world) ||
-                !isInvertibleTransform(playerNodes->SecondaryWandNode->world))) {
-            return;
-        }
-
-        const RE::NiTransform identity =
-            transform_math::makeIdentityTransform<RE::NiTransform>();
-        const RE::NiTransform& primaryWandWorld = leftIsNativeOffhand ?
-            playerNodes->primaryWandNode->world :
-            identity;
-        const RE::NiTransform& offhandWandWorld = leftIsNativeOffhand ?
-            playerNodes->SecondaryWandNode->world :
-            identity;
-        const RE::NiTransform recoilWorldDelta =
-            weapon_recoil_authority_math::resolveWorldDelta(
-                controlledKickLocal,
-                kickParent->world,
-                primaryWandWorld,
-                offhandWandWorld,
-                leftIsNativeOffhand);
-        if (!isFiniteTransform(recoilWorldDelta) ||
-            !isInvertibleTransform(recoilWorldDelta)) {
-            return;
-        }
-
-        _leftCarry.recoilWorldDelta = recoilWorldDelta;
-        _leftCarry.recoilSampleValid = true;
-    }
-
-    bool TwoHandedGrip::applyLeftFiringWeaponRecoil(RE::NiNode* weaponNode)
-    {
-        if (!_leftCarry.recoilReadyThisUpdate) {
-            return true;
-        }
-        _leftCarry.recoilReadyThisUpdate = false;
-
-        if (_leftCarry.recoilSupportConstrainedThisUpdate) {
-            /*
-             * Full two-hand authority already consumed this kick through the
-             * primary-hand target while leaving the support-hand target fixed.
-             * Reapplying the raw delta here would bypass that solve and restore
-             * one-handed recoil for physical-left firing.
-             */
-            _leftCarry.recoilSupportConstrainedThisUpdate = false;
-            return true;
-        }
-
-        if (!weaponNode ||
-            !_leftCarry.weaponNodeOwnershipBlockEngaged ||
-            !usesLeftFiringCarry() ||
-            !isManualOwnershipActive() ||
-            !isFiniteTransform(weaponNode->world) ||
-            !isFiniteTransform(_leftCarry.recoilWorldDelta)) {
-            return true;
-        }
-
-        const RE::NiTransform identity =
-            transform_math::makeIdentityTransform<RE::NiTransform>();
-        if (areTransformsNearlyEqual(
-                _leftCarry.recoilWorldDelta,
-                identity,
-                0.000001f)) {
-            return true;
-        }
-
-        const RE::NiTransform recoiledWeaponWorld =
-            transform_math::composeTransforms(
-                _leftCarry.recoilWorldDelta,
-                weaponNode->world);
-        if (!isFiniteTransform(recoiledWeaponWorld) ||
-            !applyWeaponVisualAuthority(weaponNode, recoiledWeaponWorld)) {
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                1000,
-                "TwoHandedGrip: left-firing weapon recoil publication failed");
-            return false;
-        }
-
-        _lastSolvedWeaponTransform = weaponNode->world;
-        _hasSolvedWeaponTransform = true;
-        return true;
-    }
-
     bool TwoHandedGrip::publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode)
     {
         if (!weaponNode || weaponNode != _session.weaponNode ||
@@ -258,6 +64,12 @@ namespace rock
                 "TwoHandedGrip: clearing left-firing carry because the physical hand, native aim frame, or authored seat is unavailable");
             transitionToInactive(false);
             return false;
+        }
+
+        RE::NiTransform recoilDelta{};
+        if (consumeOwnedWeaponRecoil(recoilDelta)) {
+            solvedWeaponWorld = transform_math::composeTransforms(recoilDelta, solvedWeaponWorld);
+            presentedHandWorld = transform_math::composeTransforms(solvedWeaponWorld, _firing.primaryHandWeaponLocal);
         }
 
         if (scope_safe_hand_frame_math::

@@ -1017,40 +1017,17 @@ namespace rock
                 dt,
                 _visuals.primaryHandLerp);
         (void)publishAuthoredPrimaryFiringGripFingerPose(isFiringHandLeft());
-        RE::NiTransform requestedFiringHandWorld = appliedFiringHandWorld;
-        if (usesLeftFiringCarry() &&
-            _leftCarry.recoilSupportConstrainedThisUpdate) {
-            /*
-             * hFRIK applies the accepted Direct recoil delta to every external
-             * primary-hand target. The full two-hand solver has already
-             * consumed that delta above, so pre-remove it from this request;
-             * hFRIK's publication composes it back to the exact constrained
-             * hand seat instead of kicking the hand a second time.
-             */
-            requestedFiringHandWorld = transform_math::composeTransforms(
-                transform_math::invertTransform(
-                    _leftCarry.recoilWorldDelta),
-                appliedFiringHandWorld);
-            if (!isUsableHandAuthorityTransform(
-                    requestedFiringHandWorld)) {
-                ROCK_LOG_SAMPLE_WARN(
-                    Weapon,
-                    1000,
-                    "TwoHandedGrip: left supported recoil hand precompensation was invalid");
-                return false;
-            }
-        }
         const bool applied =
             frik_visual_authority::publishHandWorld(
                 PRIMARY_GRIP_TAG,
                 handFromBool(isFiringHandLeft()),
-                requestedFiringHandWorld,
+                appliedFiringHandWorld,
                 GRIP_HAND_POSE_PRIORITY,
                 weaponSeatDriver(isFiringHandLeft()));
         recordLockedHandAuthorityAttempt(
             isFiringHandLeft(),
             LockedHandAuthorityRole::PrimaryGrip,
-            requestedFiringHandWorld,
+            appliedFiringHandWorld,
             liveHandWorld,
             true,
             applied);

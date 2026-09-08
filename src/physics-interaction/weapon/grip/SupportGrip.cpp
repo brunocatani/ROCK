@@ -1701,34 +1701,19 @@ namespace rock
             return;
         }
 
-        if (_leftCarry.recoilReadyThisUpdate &&
-            usesLeftFiringCarry() &&
-            _session.state == TwoHandedState::Gripping &&
-            _session.authorityMode == weapon_support_authority_policy::
-                                  WeaponSupportAuthorityMode::
-                                      FullTwoHandedSolver) {
-            /*
-             * Right-firing recoil reaches this solver through hFRIK's physical
-             * primary-hand frame, so the fixed support target constrains the
-             * final weapon kick. Left position-only carry deliberately rebuilds
-             * that physical frame from the damped controller and therefore
-             * excludes hFRIK's controlled recoil. Inject the mirrored world
-             * delta into the LEFT primary target here to preserve the same
-             * two-point solve. One-hand and VisualOnlySupport carry retain the
-             * terminal raw weapon kick in applyLeftFiringWeaponRecoil().
-             */
-            const RE::NiTransform recoiledPrimaryTransform =
-                transform_math::composeTransforms(
-                    _leftCarry.recoilWorldDelta,
-                    calibratedPrimaryTransform);
-            if (isUsableHandAuthorityTransform(recoiledPrimaryTransform)) {
-                calibratedPrimaryTransform = recoiledPrimaryTransform;
-                _leftCarry.recoilSupportConstrainedThisUpdate = true;
+        RE::NiTransform recoilDelta{};
+        if (consumeOwnedWeaponRecoil(recoilDelta)) {
+            // Both solver inputs are isolated physical intent, including the
+            // dynamic driver baseline above. Add recoil once after baseline
+            // selection, then constrain it against the fixed support target.
+            // FRIK does not add recoil to either already-solved hand seat.
+            const auto recoiledPrimary = transform_math::composeTransforms(
+                recoilDelta, calibratedPrimaryTransform);
+            if (isUsableHandAuthorityTransform(recoiledPrimary)) {
+                calibratedPrimaryTransform = recoiledPrimary;
             } else {
-                ROCK_LOG_SAMPLE_WARN(
-                    Weapon,
-                    1000,
-                    "TwoHandedGrip: left supported recoil primary-frame integration was invalid; retaining direct weapon recoil");
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                    "Weapon recoil: invalid two-hand target; holding recoil neutral");
             }
         }
 

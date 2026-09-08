@@ -7,13 +7,13 @@ namespace rock
     TwoHandedGrip::TwoHandedGrip() :
         _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>())
     {
-        _leftCarry.recoilControllerRegistered =
+        _recoil.controllerRegistered =
             frik_visual_authority::registerWeaponHandRecoilController(
                 WEAPON_RECOIL_CONTROLLER_TAG,
                 &TwoHandedGrip::controlWeaponHandRecoil,
                 this,
                 GRIP_HAND_POSE_PRIORITY);
-        if (!_leftCarry.recoilControllerRegistered) {
+        if (!_recoil.controllerRegistered) {
             ROCK_LOG_WARN(
                 Weapon,
                 "TwoHandedGrip: FRIK weapon-hand recoil controller registration failed; regular FRIK recoil remains active");
@@ -22,10 +22,10 @@ namespace rock
 
     TwoHandedGrip::~TwoHandedGrip()
     {
-        if (_leftCarry.recoilControllerRegistered) {
+        if (_recoil.controllerRegistered) {
             (void)frik_visual_authority::unregisterWeaponHandRecoilController(
                 WEAPON_RECOIL_CONTROLLER_TAG);
-            _leftCarry.recoilControllerRegistered = false;
+            _recoil.controllerRegistered = false;
         }
     }
 
@@ -169,13 +169,7 @@ namespace rock
                 .releaseRetained = _gripReleaseRetained,
             };
         };
-        _leftCarry.recoilReadyThisUpdate =
-            _leftCarry.recoilSampleValid &&
-            _leftCarry.recoilSampleSequence !=
-                _leftCarry.observedRecoilSampleSequence;
-        _leftCarry.recoilSupportConstrainedThisUpdate = false;
-        _leftCarry.observedRecoilSampleSequence =
-            _leftCarry.recoilSampleSequence;
+        _recoil.ticket.beginUpdate();
         const bool authoredOnlyModeChanged =
             _handlingSettings.authoredOnlySupportGrabsEnabled !=
             handlingSettings.authoredOnlySupportGrabsEnabled;
@@ -716,7 +710,6 @@ namespace rock
         // before stale scoped roles are removed. This keeps hFRIK under one
         // continuous ROCK authority selection across scope and role edges.
         reconcileDeferredScopeHandAuthority(weaponNode);
-        (void)applyLeftFiringWeaponRecoil(weaponNode);
         traceNativeScopeTransitionFinalState(weaponNode);
         return finishUpdate();
     }
@@ -839,13 +832,7 @@ namespace rock
         _visuals.lastRenderedWeaponWorld = {};
         _visuals.hasLastRenderedWeaponWorld = false;
         _visuals.weaponHandoff = {};
-        _leftCarry.recoilWorldDelta =
-            transform_math::makeIdentityTransform<RE::NiTransform>();
-        _leftCarry.observedRecoilSampleSequence =
-            _leftCarry.recoilSampleSequence;
-        _leftCarry.recoilSampleValid = false;
-        _leftCarry.recoilReadyThisUpdate = false;
-        _leftCarry.recoilSupportConstrainedThisUpdate = false;
+        _recoil.ticket.invalidate();
         resetLockedHandVisualLerp();
     }
 

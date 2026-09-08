@@ -20,6 +20,7 @@
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponRecoilController.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
@@ -750,7 +751,7 @@ namespace rock
         {
             return seatHandIsLeft == weaponCarrierIsLeft();
         }
-        [[nodiscard]] std::uint64_t nativeRecoilKickSequence() const noexcept { return _leftCarry.nativeRecoilKickSequence; }
+        [[nodiscard]] std::uint64_t nativeRecoilKickSequence() const noexcept { return _recoil.nativeKickSequence; }
 
         /*
          * True while a manual left-firing carry has published a solved weapon
@@ -963,9 +964,12 @@ namespace rock
 
         [[nodiscard]] bool hasVisualOnlySupportRecoilAssist() const noexcept;
 
-        void captureLeftFiringWeaponRecoil(
-            const RE::NiTransform& controlledKickLocal) noexcept;
-        bool applyLeftFiringWeaponRecoil(RE::NiNode* weaponNode);
+        [[nodiscard]] weapon_recoil_policy::SampleIdentity recoilSampleIdentity(
+            bool nativePrimaryIsLeft) const noexcept;
+        [[nodiscard]] bool captureOwnedWeaponRecoil(
+            const RE::NiTransform& controlledKickLocal,
+            const weapon_recoil_policy::SampleIdentity& identity) noexcept;
+        [[nodiscard]] bool consumeOwnedWeaponRecoil(RE::NiTransform& outWorldDelta) noexcept;
 
         struct LockedHandVisualLerpState
         {
@@ -2062,7 +2066,7 @@ namespace rock
 
         // State owned by the LeftFiringCarry module: FRIK weapon-node
         // ownership blocking, the LArm_Hand reparent witness, and the
-        // left-firing recoil route.
+        // left-firing node attachment.
         struct LeftFiringCarryState
         {
             // FRIK weapon-node ownership block + reparent bookkeeping for
@@ -2076,28 +2080,18 @@ namespace rock
             hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform>
                 supportReleaseReturn{};
 
-            /*
-             * hFRIK calls the recoil controller before ROCK's update on the
-             * same game thread. The sequence makes a sample valid for one
-             * ROCK update only. It prevents a skipped callback from reusing
-             * an old gun kick. Full two-hand left carry consumes that sample
-             * in the primary-hand solver target; one-hand carry consumes the
-             * native sample in the final direct weapon publication; close
-             * visual support consumes the attenuated sample there. These
-             * routes must remain mutually exclusive or supported left firing
-             * regresses to one-hand recoil.
-             */
-            RE::NiTransform recoilWorldDelta{};
-            std::uint64_t recoilSampleSequence{ 0 };
-            std::uint64_t observedRecoilSampleSequence{ 0 };
-            bool recoilSampleValid{ false };
-            bool recoilReadyThisUpdate{ false };
-            bool recoilSupportConstrainedThisUpdate{ false };
-            bool recoilControllerRegistered{ false };
-            // Advanced by the recoil controller callback whenever FRIK hands
-            // it a non-identity native kick, accepted or not: FRIK composes
-            // that kick onto ROCK's hand claims in the same skeleton frame.
-            std::uint64_t nativeRecoilKickSequence{ 0 };
+        };
+
+        // The recoil controller shares TwoHandedGrip's skeleton lifetime. It
+        // retains values/identity witnesses only, never transient engine nodes.
+        struct WeaponRecoilState
+        {
+            RE::NiTransform worldDelta{};
+            weapon_recoil_policy::SampleTicket ticket{};
+            bool controllerRegistered{ false };
+            // Only actual FRIK hand kicks inhibit raw-hand calibration; owned
+            // carry incorporates its sample into the published seat instead.
+            std::uint64_t nativeKickSequence{ 0 };
         };
 
         // State owned by the HandVisualTransitions module: hand and weapon
@@ -2208,6 +2202,7 @@ namespace rock
         SupportGripState _support{};
         PartCarryState _partCarry{};
         LeftFiringCarryState _leftCarry{};
+        WeaponRecoilState _recoil{};
         HandVisualTransitionState _visuals{};
         ScopePresentationState _scope{};
         GripFailureTelemetryState _telemetry{};
