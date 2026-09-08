@@ -88,8 +88,9 @@ $duplicateExampleKeys = @($exampleKeys | Group-Object | Where-Object Count -gt 1
 if ($duplicateExampleKeys.Count -ne 0) {
     $failures.Add("ROCK_example.ini contains duplicate keys: $($duplicateExampleKeys.Name -join ', ')")
 }
+$loaderSource = Read-Source 'src/RockConfigLoad.cpp'
 $loaderKeys = @(
-    [regex]::Matches($configSource, '"([bifs][A-Z][A-Za-z0-9]*)"') |
+    [regex]::Matches($loaderSource, '"([bifs][A-Z][A-Za-z0-9]*)"') |
         ForEach-Object { $_.Groups[1].Value } |
         Sort-Object -Unique
 )
