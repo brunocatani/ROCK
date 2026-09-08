@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -133,6 +134,65 @@ namespace
 int main()
 {
     bool ok = true;
+
+    {
+        namespace skeleton = rock::skeleton_bone_debug_math;
+        namespace geometry = rock::hand_bone_collider_geometry_math;
+        // Armor-session geometry: ForeArm1/2 coincide, ForeArm3 is 10 gu
+        // farther along the arm, and the wrist span is 16.96 gu. Resolve the
+        // production descriptors against that rig so zero-length dependencies
+        // cannot silently remove a forearm target and the whole dynamic hand.
+        for (const bool armor : { false, true }) {
+            const auto& descriptors = armor ? skeleton::kPowerArmorBodyColliderDescriptors :
+                                              skeleton::kStandardBodyColliderDescriptors;
+            for (const std::size_t first : { 7u, 12u }) {
+                const std::string prefix = first == 7 ? "LArm_" : "RArm_";
+                const std::array<std::string, 4> names{
+                    prefix + "ForeArm1", prefix + "ForeArm2", prefix + "ForeArm3", prefix + "Hand" };
+                const std::array<float, 4> positions{ 0.0f, armor ? 0.0f : 4.0f, 10.0f, 26.96f };
+                auto resolve = [&](std::string_view name, RE::NiTransform& transform) {
+                    for (std::size_t i = 0; i < names.size(); ++i) {
+                        if (name == names[i]) {
+                            transform = identityTransform();
+                            transform.translate = RE::NiPoint3{ 100.0f + positions[i] * 0.6f,
+                                200.0f + positions[i] * 0.8f, 300.0f };
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                float totalLength = 0.0f;
+                RE::NiPoint3 previousEnd{ 100.0f, 200.0f, 300.0f };
+                for (std::size_t segment = 0; segment < 3; ++segment) {
+                    const auto& descriptor = descriptors[first + segment];
+                    geometry::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+                    const bool resolved = resolve(descriptor.startBone, input.start) &&
+                                          resolve(descriptor.endBone, input.end);
+                    ok &= expectNear("forearm endpoints resolve", resolved ? 1.0f : 0.0f, 1.0f);
+                    input.radius = descriptor.radiusGameUnits;
+                    input.convexRadius = descriptor.convexRadiusGameUnits;
+                    skeleton::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
+                    const auto frame = geometry::buildSegmentColliderFrame(input);
+                    ok &= expectNear("every forearm merge source remains valid",
+                        frame.valid && geometry::colliderDimensionsWithinLimits(
+                            frame.length, frame.radius, frame.convexRadius, {}) ? 1.0f : 0.0f, 1.0f);
+                    ok &= expectVectorNear("forearm zones meet without gaps", input.start.translate, previousEnd);
+                    ok &= expectNear("forearm zone length", frame.length,
+                        segment == 2 ? 16.96f : armor ? 5.0f : segment == 0 ? 4.0f : 6.0f);
+                    previousEnd = input.end.translate;
+                    totalLength += frame.length;
+
+                    input.end.translate = input.start.translate;
+                    skeleton::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
+                    const auto collapsed = geometry::buildSegmentColliderFrame(input);
+                    ok &= expectNear("collapsed live arm still fails closed", collapsed.valid ? 1.0f : 0.0f, 0.0f);
+                }
+                ok &= expectNear("merged forearm retains full length", totalLength, 26.96f);
+                ok &= expectVectorNear("forearm reaches hand", previousEnd,
+                    RE::NiPoint3{ 116.176f, 221.568f, 300.0f });
+            }
+        }
+    }
 
     {
         ok &= expectVectorNear("authored palm depth maps to raw palm depth",

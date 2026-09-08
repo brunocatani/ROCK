@@ -73,7 +73,25 @@ namespace rock::skeleton_bone_debug_math
         float convexRadiusGameUnits = 0.25f;
         bool enabled = true;
         BoneColliderEndpointMode endpointMode = BoneColliderEndpointMode::ChildBone;
+        float startFraction = 0.0f;
+        float endFraction = 1.0f;
     };
+
+    template <class Vector>
+    inline void applyColliderEndpointRange(const BoneColliderDescriptor& descriptor, Vector& start, Vector& end)
+    {
+        if (descriptor.startFraction == 0.0f && descriptor.endFraction == 1.0f) {
+            return;
+        }
+        const Vector origin = start;
+        const Vector span{ end.x - origin.x, end.y - origin.y, end.z - origin.z };
+        start = Vector{ origin.x + span.x * descriptor.startFraction,
+            origin.y + span.y * descriptor.startFraction,
+            origin.z + span.z * descriptor.startFraction };
+        end = Vector{ origin.x + span.x * descriptor.endFraction,
+            origin.y + span.y * descriptor.endFraction,
+            origin.z + span.z * descriptor.endFraction };
+    }
 
     struct FingerBoneChain
     {
@@ -158,6 +176,9 @@ namespace rock::skeleton_bone_debug_math
         BoneColliderDescriptor{ BoneColliderRole::FootSegment, body_zone::BodyZoneKind::RightFoot, body_zone::BodyZoneSide::Right, "RLeg_Foot", "RLeg_Toe1", 2.2f, 0.25f }
     };
 
+    // The armor rig has coincident ForeArm1/ForeArm2 positions (runtime 2026-09-08).
+    // Split the nonzero ForeArm1->ForeArm3 span into adjacent upper/lower zones;
+    // keep the wrist segment separate and the merged forearm's total length intact.
     inline constexpr std::array<BoneColliderDescriptor, 23> kPowerArmorBodyColliderDescriptors{
         BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::Pelvis, body_zone::BodyZoneSide::Center, "Pelvis", "SPINE1", 6.5f, 0.65f },
         BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::SpineLower, body_zone::BodyZoneSide::Center, "SPINE1", "SPINE2", 7.0f, 0.65f },
@@ -166,13 +187,13 @@ namespace rock::skeleton_bone_debug_math
         BoneColliderDescriptor{ BoneColliderRole::TorsoSegment, body_zone::BodyZoneKind::NeckHead, body_zone::BodyZoneSide::Center, "Neck", "Head", 4.0f, 0.45f },
         BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::LeftShoulder, body_zone::BodyZoneSide::Left, "LArm_Collarbone", "LArm_UpperArm", 4.2f, 0.45f },
         BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::LeftUpperArm, body_zone::BodyZoneSide::Left, "LArm_UpperArm", "LArm_ForeArm1", 4.5f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmUpper, body_zone::BodyZoneSide::Left, "LArm_ForeArm1", "LArm_ForeArm2", 3.8f, 0.40f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmLower, body_zone::BodyZoneSide::Left, "LArm_ForeArm2", "LArm_ForeArm3", 3.4f, 0.40f },
+        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmUpper, body_zone::BodyZoneSide::Left, "LArm_ForeArm1", "LArm_ForeArm3", 3.8f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.0f, 0.5f },
+        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::LeftForearmLower, body_zone::BodyZoneSide::Left, "LArm_ForeArm1", "LArm_ForeArm3", 3.4f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.5f, 1.0f },
         BoneColliderDescriptor{ BoneColliderRole::HandSegment, body_zone::BodyZoneKind::LeftHand, body_zone::BodyZoneSide::Left, "LArm_ForeArm3", "LArm_Hand", 3.5f, 0.35f },
         BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::RightShoulder, body_zone::BodyZoneSide::Right, "RArm_Collarbone", "RArm_UpperArm", 4.2f, 0.45f },
         BoneColliderDescriptor{ BoneColliderRole::UpperArmSegment, body_zone::BodyZoneKind::RightUpperArm, body_zone::BodyZoneSide::Right, "RArm_UpperArm", "RArm_ForeArm1", 4.5f, 0.45f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmUpper, body_zone::BodyZoneSide::Right, "RArm_ForeArm1", "RArm_ForeArm2", 3.8f, 0.40f },
-        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmLower, body_zone::BodyZoneSide::Right, "RArm_ForeArm2", "RArm_ForeArm3", 3.4f, 0.40f },
+        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmUpper, body_zone::BodyZoneSide::Right, "RArm_ForeArm1", "RArm_ForeArm3", 3.8f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.0f, 0.5f },
+        BoneColliderDescriptor{ BoneColliderRole::ForearmSegment, body_zone::BodyZoneKind::RightForearmLower, body_zone::BodyZoneSide::Right, "RArm_ForeArm1", "RArm_ForeArm3", 3.4f, 0.40f, true, BoneColliderEndpointMode::ChildBone, 0.5f, 1.0f },
         BoneColliderDescriptor{ BoneColliderRole::HandSegment, body_zone::BodyZoneKind::RightHand, body_zone::BodyZoneSide::Right, "RArm_ForeArm3", "RArm_Hand", 3.5f, 0.35f },
         BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftHip, body_zone::BodyZoneSide::Left, "Pelvis", "LLeg_Thigh", 5.2f, 0.50f },
         BoneColliderDescriptor{ BoneColliderRole::LegSegment, body_zone::BodyZoneKind::LeftThigh, body_zone::BodyZoneSide::Left, "LLeg_Thigh", "LLeg_Calf", 4.8f, 0.50f },

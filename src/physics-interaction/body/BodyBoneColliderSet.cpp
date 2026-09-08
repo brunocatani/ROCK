@@ -514,6 +514,7 @@ namespace rock
                 return false;
             }
 
+            skeleton_bone_debug_math::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
             const auto frame = hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
             if (!frame.valid) {
                 return false;
