@@ -8,7 +8,7 @@ namespace rock
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey)
     {
-        if (!_visuals.weaponIntentObserver || !weaponNode || currentWeaponGenerationKey == 0 ||
+        if (!weaponNode || currentWeaponGenerationKey == 0 ||
             usesLeftFiringCarry() || ownsWeaponTransform()) {
             return;
         }
@@ -18,7 +18,13 @@ namespace rock
         if (_firing.authoredHandWorldRefreshed) {
             RE::NiTransform driverWorld{};
             const bool driverValid = tryGetAuthoredPrimaryTrackedFiringHandWorld(driverWorld);
-            if (isFiniteTransform(weaponNode->world)) {
+            _recoil.rightWeaponBase = weaponNode->world;
+            _recoil.rightHandBase = _visuals.lastPublishedHandWorld[1];
+            _recoil.rightBaseValid = _visuals.hasLastPublishedHandWorld[1] &&
+                isFiniteTransform(_recoil.rightWeaponBase) &&
+                isUsableHandAuthorityTransform(_recoil.rightHandBase);
+            _recoil.rightBaseSource = dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary;
+            if (_visuals.weaponIntentObserver && isFiniteTransform(weaponNode->world)) {
                 _visuals.weaponIntentObserver(_visuals.weaponIntentObserverContext, weaponNode,
                     weaponNode->world, currentWeaponGenerationKey,
                     dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary, driverValid ? &driverWorld : nullptr);
@@ -42,9 +48,15 @@ namespace rock
         // This source is identical whether the last collision residual was
         // zero, sub-threshold, or blocked by a wall. Later managed grip/return
         // publications may replace it as part of their existing ownership.
-        _visuals.weaponIntentObserver(_visuals.weaponIntentObserverContext, weaponNode,
-            requestedWeaponWorld, currentWeaponGenerationKey,
-            dynamic_weapon_collision_policy::VisualIntentSource::NativePhysicalHand, &physicalRightHandWorld);
+        _recoil.rightWeaponBase = requestedWeaponWorld;
+        _recoil.rightHandBase = physicalRightHandWorld;
+        _recoil.rightBaseValid = true;
+        _recoil.rightBaseSource = dynamic_weapon_collision_policy::VisualIntentSource::NativePhysicalHand;
+        if (_visuals.weaponIntentObserver) {
+            _visuals.weaponIntentObserver(_visuals.weaponIntentObserverContext, weaponNode,
+                requestedWeaponWorld, currentWeaponGenerationKey,
+                dynamic_weapon_collision_policy::VisualIntentSource::NativePhysicalHand, &physicalRightHandWorld);
+        }
     }
 
     void TwoHandedGrip::resetLockedHandVisualLerp()
@@ -61,7 +73,7 @@ namespace rock
 
     bool TwoHandedGrip::hasVisualAuthorityForHand(const bool isLeft) const
     {
-        if ((!isLeft && _firing.authoredHandWorldActive) ||
+        if ((!isLeft && (_firing.authoredHandWorldActive || _recoil.rightHandClaimActive)) ||
             (isLeft && _firing.leftHandWorldActive) ||
             isHandVisualReturnActive(isLeft) ||
             partGrip(isLeft).active) {

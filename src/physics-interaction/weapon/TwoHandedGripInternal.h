@@ -60,6 +60,7 @@ namespace rock
         inline constexpr const char* WEAPON_COLLISION_HAND_TAG =
             "ROCK_WeaponCollisionHand";
         inline constexpr const char* WEAPON_NODE_OWNERSHIP_TAG = "ROCK_LeftFiringCarry";
+        inline constexpr const char* ONE_HAND_RECOIL_TAG = "ROCK_OneHandRecoil";
         inline constexpr const char* WEAPON_RECOIL_CONTROLLER_TAG = "ROCK_FiringGripRecoil";
         inline constexpr int GRIP_HAND_POSE_PRIORITY = 100;
         inline constexpr int WEAPON_COLLISION_HAND_PRIORITY = 110;

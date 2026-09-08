@@ -22,6 +22,7 @@ namespace rock
 
     TwoHandedGrip::~TwoHandedGrip()
     {
+        clearOneHandRecoilClaim();
         if (_recoil.controllerRegistered) {
             (void)frik_visual_authority::unregisterWeaponHandRecoilController(
                 WEAPON_RECOIL_CONTROLLER_TAG);
@@ -168,6 +169,13 @@ namespace rock
                 .after = occupancyAfter,
                 .releaseRetained = _gripReleaseRetained,
             };
+        };
+        clearOneHandRecoilClaim();
+        _recoil.rightBaseValid = false;
+        _recoil.equippedIdentity = {
+            .weaponNode = reinterpret_cast<std::uintptr_t>(weaponNode),
+            .weaponGeneration = currentWeaponGenerationKey,
+            .equippedOwnership = currentEquippedWeaponOwnershipKey,
         };
         _recoil.ticket.beginUpdate();
         const bool authoredOnlyModeChanged =
@@ -710,12 +718,16 @@ namespace rock
         // before stale scoped roles are removed. This keeps hFRIK under one
         // continuous ROCK authority selection across scope and role edges.
         reconcileDeferredScopeHandAuthority(weaponNode);
+        applyRightOneHandRecoil(weaponNode);
         traceNativeScopeTransitionFinalState(weaponNode);
         return finishUpdate();
     }
 
     void TwoHandedGrip::reset()
     {
+        clearOneHandRecoilClaim();
+        _recoil.equippedIdentity = {};
+        _recoil.rightBaseValid = false;
         (void)frik_visual_authority::clearHandWorld(
             WEAPON_COLLISION_HAND_TAG,
             frik_visual_authority::Hand::Left);

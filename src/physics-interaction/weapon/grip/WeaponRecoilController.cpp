@@ -29,18 +29,18 @@ namespace rock
     weapon_recoil_policy::SampleIdentity TwoHandedGrip::recoilSampleIdentity(
         const bool nativePrimaryIsLeft) const noexcept
     {
-        return {
-            .weaponNode = reinterpret_cast<std::uintptr_t>(_session.weaponNode),
-            .weaponGeneration = _session.weaponGenerationKey,
-            .equippedOwnership = _session.equippedWeaponOwnershipKey,
-            .profile = weapon_recoil_policy::selectProfile(
-                f4vr::isInPowerArmor(), hasVisualOnlySupportRecoilAssist()),
-            .firingHandIsLeft = isFiringHandLeft(),
-            .nativePrimaryIsLeft = nativePrimaryIsLeft,
-            .fullTwoHanded = _session.state == TwoHandedState::Gripping &&
-                _session.authorityMode == weapon_support_authority_policy::
-                    WeaponSupportAuthorityMode::FullTwoHandedSolver,
-        };
+        const bool fullTwoHanded = _session.state == TwoHandedState::Gripping &&
+            _session.authorityMode == weapon_support_authority_policy::
+                WeaponSupportAuthorityMode::FullTwoHandedSolver;
+        auto identity = _recoil.equippedIdentity;
+        identity.profile = weapon_recoil_policy::selectProfile(
+            f4vr::isInPowerArmor(), hasVisualOnlySupportRecoilAssist(), fullTwoHanded);
+        identity.firingHandIsLeft = isFiringHandLeft();
+        identity.nativePrimaryIsLeft = nativePrimaryIsLeft;
+        identity.fullTwoHanded = fullTwoHanded;
+        identity.oneHanded = _session.state != TwoHandedState::Gripping &&
+            _session.state != TwoHandedState::PartCarry;
+        return identity;
     }
 
     bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(
@@ -80,10 +80,11 @@ namespace rock
             return decline();
         }
         const auto context = self->recoilSampleIdentity(handedMode->GetBinary());
-        const bool ownedCarry = self->isManualOwnershipActive() &&
+        const bool directRight = self->canUseRightOneHandRecoil();
+        const bool ownedCarry = directRight || (self->isManualOwnershipActive() &&
             (context.fullTwoHanded || (self->usesLeftFiringCarry() &&
-                self->_leftCarry.weaponNodeOwnershipBlockEngaged));
-        if (!ownedCarry && context.profile == Profile::Native) {
+                self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
+        if (!ownedCarry && (context.profile == Profile::OneHand || context.profile == Profile::FullTwoHand)) {
             return decline();
         }
 
@@ -158,17 +159,86 @@ namespace rock
     {
         outWorldDelta = transform_math::makeIdentityTransform<RE::NiTransform>();
         const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
-        if (!handedMode || !isManualOwnershipActive()) {
+        if (!handedMode || !f4vr::IsWeaponDrawn()) {
             _recoil.ticket.invalidate();
             return false;
         }
         const auto context = recoilSampleIdentity(handedMode->GetBinary());
-        if ((!context.fullTwoHanded && (!usesLeftFiringCarry() ||
-                !_leftCarry.weaponNodeOwnershipBlockEngaged)) ||
-            !_recoil.ticket.consume(context)) {
+        const bool directRight = canUseRightOneHandRecoil();
+        const bool managedCarry = isManualOwnershipActive() &&
+            (context.fullTwoHanded || (usesLeftFiringCarry() && _leftCarry.weaponNodeOwnershipBlockEngaged));
+        if (!directRight && !managedCarry) {
+            _recoil.ticket.invalidate();
+            return false;
+        }
+        if (!_recoil.ticket.consume(context)) {
             return false;
         }
         outWorldDelta = _recoil.worldDelta;
         return true;
     }
+
+    bool TwoHandedGrip::canUseRightOneHandRecoil() const noexcept
+    {
+        return !usesLeftFiringCarry() && !isGripping() &&
+            !_firing.rightHandHoldingObjectForPose &&
+            !isWeaponVisualReturnActive() && !isHandVisualReturnActive(false) &&
+            _recoil.rightBaseValid && _recoil.equippedIdentity.weaponNode != 0 &&
+            _recoil.equippedIdentity.equippedOwnership != 0;
+    }
+
+    void TwoHandedGrip::clearOneHandRecoilClaim()
+    {
+        if (!_recoil.rightHandClaimActive) {
+            return;
+        }
+        if (frik_visual_authority::clearHandWorld(ONE_HAND_RECOIL_TAG,
+                frik_visual_authority::Hand::Right)) {
+            _recoil.rightHandClaimActive = false;
+        } else {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand claim could not be cleared");
+        }
+    }
+
+    void TwoHandedGrip::applyRightOneHandRecoil(RE::NiNode* weaponNode)
+    {
+        if (!weaponNode || !canUseRightOneHandRecoil() || _recoil.rightHandClaimActive ||
+            _recoil.equippedIdentity.weaponNode != reinterpret_cast<std::uintptr_t>(weaponNode)) {
+            return;
+        }
+        RE::NiTransform delta{};
+        if (!consumeOwnedWeaponRecoil(delta)) {
+            return;
+        }
+        RE::NiTransform weaponTarget{};
+        RE::NiTransform handTarget{};
+        weapon_recoil_authority_math::applyOneHandKick(delta,
+            _recoil.rightWeaponBase, _recoil.rightHandBase, weaponTarget, handTarget);
+        if (!isFiniteTransform(weaponTarget) || !isUsableHandAuthorityTransform(handTarget)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid right one-hand target; publication skipped");
+            return;
+        }
+
+        // One bounded claim, renewed after native/authored alignment and before
+        // collision. FRIK consumes it with no additional kick. The current
+        // controller-derived base never contains the preceding frame's recoil.
+        if (scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scope.menuOpenThisFrame)) {
+            if (!frik_visual_authority::publishHandWorld(ONE_HAND_RECOIL_TAG,
+                    frik_visual_authority::Hand::Right, handTarget, GRIP_HAND_POSE_PRIORITY,
+                    frik_visual_authority::RebaseDriver::RightHand)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: right firing-hand publication failed");
+                return;
+            }
+            _recoil.rightHandClaimActive = true;
+        }
+        if (!applyWeaponVisualAuthority(weaponNode, weaponTarget,
+                _recoil.equippedIdentity.weaponGeneration, true, true, _recoil.rightBaseSource)) {
+            clearOneHandRecoilClaim();
+            return;
+        }
+        recordPublishedHandWorld(false, handTarget);
+        _lastSolvedWeaponTransform = weaponTarget;
+        _hasSolvedWeaponTransform = true;
+    }
+
 }

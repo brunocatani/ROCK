@@ -970,6 +970,9 @@ namespace rock
             const RE::NiTransform& controlledKickLocal,
             const weapon_recoil_policy::SampleIdentity& identity) noexcept;
         [[nodiscard]] bool consumeOwnedWeaponRecoil(RE::NiTransform& outWorldDelta) noexcept;
+        [[nodiscard]] bool canUseRightOneHandRecoil() const noexcept;
+        void clearOneHandRecoilClaim();
+        void applyRightOneHandRecoil(RE::NiNode* weaponNode);
 
         struct LockedHandVisualLerpState
         {
@@ -2088,6 +2091,16 @@ namespace rock
         {
             RE::NiTransform worldDelta{};
             weapon_recoil_policy::SampleTicket ticket{};
+            // Current equipped identity also covers native carry without a
+            // manual grip session. The callback sees the previous frame's
+            // identity; consumption compares against the current frame.
+            weapon_recoil_policy::SampleIdentity equippedIdentity{};
+            RE::NiTransform rightWeaponBase{};
+            RE::NiTransform rightHandBase{};
+            dynamic_weapon_collision_policy::VisualIntentSource rightBaseSource{
+                dynamic_weapon_collision_policy::VisualIntentSource::None };
+            bool rightBaseValid{ false };
+            bool rightHandClaimActive{ false };
             bool controllerRegistered{ false };
             // Only actual FRIK hand kicks inhibit raw-hand calibration; owned
             // carry incorporates its sample into the published seat instead.

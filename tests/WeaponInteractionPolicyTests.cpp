@@ -153,13 +153,13 @@ int main()
     {
         using namespace rock::weapon_recoil_policy;
         using rock::weapon_recoil_authority_math::tryBuildControlledKick;
-        ok &= expectTrue("ordinary one hand preserves native profile",
-            selectProfile(false, false) == Profile::Native);
+        ok &= expectTrue("ordinary one hand selects independent profile",
+            selectProfile(false, false, false) == Profile::OneHand);
         ok &= expectTrue("close support chooses its own profile",
-            selectProfile(false, true) == Profile::CloseSupport);
+            selectProfile(false, true, false) == Profile::CloseSupport);
         for (const bool supported : { false, true }) {
             ok &= expectTrue("armor profile wins independently of support",
-                selectProfile(true, supported) == Profile::PowerArmor);
+                selectProfile(true, supported, false) == Profile::PowerArmor);
         }
         for (const bool nativeLeft : { false, true }) {
             for (const bool firingLeft : { false, true }) {
@@ -170,6 +170,12 @@ int main()
                     deliveryHand(true, firingLeft, nativeLeft) == HandMask::None);
             }
         }
+        ok &= expectTrue("full two-hand has a separately tunable profile",
+            selectProfile(false, false, true) == Profile::FullTwoHand);
+        ok &= expectTrue("armor overrides full two-hand profile",
+            selectProfile(true, false, true) == Profile::PowerArmor);
+        ok &= expectTrue("close support remains distinct from one hand",
+            selectProfile(false, true, false) != Profile::OneHand);
         TestTransform shot = rock::transform_math::makeIdentityTransform<TestTransform>();
         shot.translate = { 10.0f, -4.0f, 2.0f };
         shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
@@ -194,8 +200,40 @@ int main()
         ok &= expectTransformNear("support tuning leaves armor unchanged", unchangedArmor, armor);
         TestTransform native{};
         ok &= expectTrue("native profile builds an unchanged rigid sample",
-            tryBuildControlledKick(shot, gainsFor(Profile::Native), native));
+            tryBuildControlledKick(shot, gainsFor(Profile::OneHand), native));
         ok &= expectTransformNear("unassisted native sample is preserved", native, shot);
+        TestTransform fullTwoHand{};
+        ok &= expectTrue("two-hand profile retains unscaled kick",
+            tryBuildControlledKick(shot, gainsFor(Profile::FullTwoHand), fullTwoHand));
+        ok &= expectTransformNear("one-hand and full two-hand start with identical gains", fullTwoHand, native);
+        auto tunedOneHand = kOneHand;
+        tunedOneHand.rotation = 0.5f;
+        TestTransform oneHandTuned{};
+        ok &= expectTrue("one-hand profile accepts independent tuning",
+            tryBuildControlledKick(shot, tunedOneHand, oneHandTuned));
+        ok &= expectTrue("one-hand tuning leaves full two-hand gains intact",
+            gainsFor(Profile::FullTwoHand).rotation == 1.0f);
+
+        // Both baselines (authored and reconstructed native) pass through this
+        // operation. The hand must retain its weapon-local seat as recoil changes.
+        auto weaponBase = rock::transform_math::makeIdentityTransform<TestTransform>();
+        weaponBase.translate = { 12.0f, 28.0f, 7.0f };
+        auto handLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+        handLocal.translate = { 2.0f, -3.0f, 0.5f };
+        handLocal.rotate = makeAxisAngleRotation(TestVector3{ 1.0f, 0.0f, 0.0f }, 15.0f);
+        const auto handBase = rock::transform_math::composeTransforms(weaponBase, handLocal);
+        TestTransform weaponTarget{};
+        TestTransform handTarget{};
+        for (const auto kick : { native, armor,
+                rock::transform_math::makeIdentityTransform<TestTransform>() }) {
+            rock::weapon_recoil_authority_math::applyOneHandKick(
+                kick, weaponBase, handBase, weaponTarget, handTarget);
+            ok &= expectTransformNear("direct recoil preserves the firing-hand seat",
+                rock::transform_math::composeTransforms(
+                    rock::transform_math::invertTransform(weaponTarget), handTarget), handLocal);
+        }
+        ok &= expectTransformNear("identity sample fully removes previous recoil", weaponTarget, weaponBase);
+        ok &= expectTransformNear("firing hand returns to its clean baseline", handTarget, handBase);
         auto invalid = shot;
         invalid.rotate.entry[0][0] = 0.0f;
         ok &= expectFalse("non-rigid input cannot become a plausible controlled kick",
@@ -218,16 +256,17 @@ int main()
         ok &= expectFalse("one sample cannot kick both carry and solver", ticket.consume(captured));
         ticket.beginUpdate();
         ok &= expectFalse("skipped callback never replays a shot", ticket.consume(captured));
-        for (int changed = 0; changed < 7; ++changed) {
+        for (int changed = 0; changed < 8; ++changed) {
             auto current = captured;
             switch (changed) {
             case 0: ++current.weaponNode; break;
             case 1: ++current.weaponGeneration; break;
             case 2: ++current.equippedOwnership; break;
-            case 3: current.profile = Profile::Native; break;
+            case 3: current.profile = Profile::OneHand; break;
             case 4: current.firingHandIsLeft = false; break;
             case 5: current.nativePrimaryIsLeft = true; break;
             case 6: current.fullTwoHanded = true; break;
+            case 7: current.oneHanded = true; break;
             }
             ++ticket.sequence;
             ticket.valid = true;

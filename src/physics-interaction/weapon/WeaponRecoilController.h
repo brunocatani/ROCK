@@ -10,7 +10,8 @@ namespace rock::weapon_recoil_policy
 {
     enum class Profile : std::uint8_t
     {
-        Native,
+        OneHand,
+        FullTwoHand,
         CloseSupport,
         PowerArmor,
     };
@@ -21,15 +22,18 @@ namespace rock::weapon_recoil_policy
         float rotation;
     };
 
-    // Independent profiles: tuning a close support hold must never retune armor.
+    // Independent profiles: tuning one hold must never retune another.
+    inline constexpr ProfileGains kOneHand{ 1.0f, 1.0f };
+    inline constexpr ProfileGains kFullTwoHand{ 1.0f, 1.0f };
     inline constexpr ProfileGains kCloseSupport{ 0.45f, 0.30f };
     inline constexpr ProfileGains kPowerArmor{ 0.45f, 0.30f };
 
     [[nodiscard]] inline constexpr Profile selectProfile(
-        const bool inPowerArmor, const bool closeSupport) noexcept
+        const bool inPowerArmor, const bool closeSupport, const bool fullTwoHanded) noexcept
     {
         return inPowerArmor ? Profile::PowerArmor :
-               closeSupport ? Profile::CloseSupport : Profile::Native;
+               closeSupport ? Profile::CloseSupport :
+               fullTwoHanded ? Profile::FullTwoHand : Profile::OneHand;
     }
 
     [[nodiscard]] inline constexpr ProfileGains gainsFor(const Profile profile) noexcept
@@ -37,7 +41,8 @@ namespace rock::weapon_recoil_policy
         switch (profile) {
         case Profile::PowerArmor: return kPowerArmor;
         case Profile::CloseSupport: return kCloseSupport;
-        default: return { 1.0f, 1.0f };
+        case Profile::FullTwoHand: return kFullTwoHand;
+        default: return kOneHand;
         }
     }
 
@@ -46,7 +51,8 @@ namespace rock::weapon_recoil_policy
         switch (profile) {
         case Profile::PowerArmor: return "power-armor";
         case Profile::CloseSupport: return "close-support";
-        default: return "native";
+        case Profile::FullTwoHand: return "full-two-hand";
+        default: return "one-hand";
         }
     }
 
@@ -68,10 +74,11 @@ namespace rock::weapon_recoil_policy
         std::uintptr_t weaponNode{ 0 };  // Identity only; never dereferenced.
         std::uint64_t weaponGeneration{ 0 };
         std::uint64_t equippedOwnership{ 0 };
-        Profile profile{ Profile::Native };
+        Profile profile{ Profile::OneHand };
         bool firingHandIsLeft{ false };
         bool nativePrimaryIsLeft{ false };
         bool fullTwoHanded{ false };
+        bool oneHanded{ false };
 
         [[nodiscard]] bool operator==(const SampleIdentity&) const = default;
     };
@@ -103,6 +110,14 @@ namespace rock::weapon_recoil_policy
 
 namespace rock::weapon_recoil_authority_math
 {
+    template <class Transform>
+    inline void applyOneHandKick(const Transform& delta, const Transform& weaponBase,
+        const Transform& handBase, Transform& weaponTarget, Transform& handTarget)
+    {
+        weaponTarget = transform_math::composeTransforms(delta, weaponBase);
+        handTarget = transform_math::composeTransforms(delta, handBase);
+    }
+
     template <class Transform>
     [[nodiscard]] inline bool tryBuildControlledKick(
         const Transform& nativeKickLocal,
