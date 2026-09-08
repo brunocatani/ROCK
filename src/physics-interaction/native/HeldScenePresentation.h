@@ -27,10 +27,11 @@ namespace rock::held_scene_presentation
         RegisteredBody bodies[kMaxRegisteredBodies]{};
         std::size_t count = 0;
         std::uint64_t traceId = 0;
+        bool complete = true;
     };
 
     /*
-     * Result of one game-frame target-transport publication. When applied,
+     * Result of one complete assembly publication and immediate scene update. When applied,
      * presentedBodyWorld is the exact BODY-frame pose the scene writer will
      * hand the held node during this frame's post-physics update, so the
      * game-frame hand visual can be posed on the same clock instead of on the
@@ -52,13 +53,7 @@ namespace rock::held_scene_presentation
         std::uint64_t traceId,
         const RE::NiTransform& targetBodyWorld,
         const RE::NiTransform& solvedBodyWorld) noexcept;
-    /*
-     * True when the scene writer would present THIS hand's published target
-     * transport for the body. A body published by both hands resolves to the
-     * earlier grab trace, exactly as the writer selects it.
-     */
-    [[nodiscard]] bool ownsPublishedTargetTransport(
-        bool isLeft,
-        RE::hknpWorld* world,
-        std::uint32_t bodyId) noexcept;
+    // Update the existing owner first so the second hand reads this frame's
+    // assembly publication, even when the two hands selected different bodies.
+    [[nodiscard]] bool leftOwnsSharedAssembly() noexcept;
 }

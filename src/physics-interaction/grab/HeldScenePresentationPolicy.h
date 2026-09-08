@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 namespace rock::held_scene_presentation_policy
 {
@@ -21,6 +22,11 @@ namespace rock::held_scene_presentation_policy
     inline constexpr float kMaxTargetTransportAdvanceGameUnits = 50.0f;
     inline constexpr std::size_t kWriterInputFloatCount = 15;
     inline constexpr std::size_t kPredictionFloatCount = 16;
+
+    inline bool preferEarlierTrace(std::uint64_t candidate, std::uint64_t current) noexcept
+    {
+        return candidate != 0 && (current == 0 || candidate < current);
+    }
 
     enum class TargetTransportRejectReason
     {
@@ -195,6 +201,92 @@ namespace rock::held_scene_presentation_policy
         decision.apply = true;
         decision.reason = TargetTransportRejectReason::None;
         return decision;
+    }
+
+    // Every body keeps its own solved pose. Only the primary target's clock
+    // advance is shared; freezing offsets here would erase articulation.
+    template <class Transform>
+    inline bool transportAssemblyBody(
+        const Transform& solvedPrimary,
+        const Transform& presentedPrimary,
+        const Transform& solvedBody,
+        Transform& presentedBody) noexcept
+    {
+        if (!finiteTransform(solvedPrimary) || !finiteTransform(presentedPrimary) ||
+            !finiteTransform(solvedBody)) {
+            return false;
+        }
+        const auto delta = transform_math::composeTransforms(
+            presentedPrimary, transform_math::invertTransform(solvedPrimary));
+        presentedBody = transform_math::composeTransforms(delta, solvedBody);
+        presentedBody.scale = solvedBody.scale;
+        return finiteTransform(presentedBody) &&
+               pointDistance(solvedBody.translate, presentedBody.translate) <= kMaxTargetTransportAdvanceGameUnits &&
+               matrixRotationDeltaDegrees(solvedBody.rotate, presentedBody.rotate) <= kMaxTargetRotationStepDegrees;
+    }
+
+    // Order independent owner subtrees before their descendants. Bound the walk
+    // and reject cycles before the first scene write. Duplicate owners may only
+    // describe the same pose; one scene node cannot represent two body frames.
+    template <class Node, class Transform>
+    struct ScenePose
+    {
+        Node* node = nullptr;
+        Transform world{};
+        std::size_t depth = 0;
+        bool duplicate = false;
+    };
+
+    template <class Node, class Transform>
+    inline bool prepareScenePoses(ScenePose<Node, Transform>* poses, std::size_t count) noexcept
+    {
+        constexpr std::size_t kMaxParentDepth = 128;
+        for (std::size_t index = 0; index < count; ++index) {
+            auto& pose = poses[index];
+            pose.depth = 0;
+            pose.duplicate = false;
+            if (!pose.node || !finiteTransform(pose.world)) {
+                return false;
+            }
+            for (auto* parent = pose.node->parent; parent; parent = parent->parent) {
+                if (++pose.depth > kMaxParentDepth || !finiteTransform(parent->world) ||
+                    !finiteTransform(parent->local)) {
+                    return false;
+                }
+            }
+            for (std::size_t prior = 0; prior < index; ++prior) {
+                if (poses[prior].node == pose.node) {
+                    if (pointDistance(poses[prior].world.translate, pose.world.translate) > 0.001f ||
+                        matrixRotationDeltaDegrees(poses[prior].world.rotate, pose.world.rotate) > 0.1f ||
+                        std::fabs(poses[prior].world.scale - pose.world.scale) > 0.0001f) {
+                        return false;
+                    }
+                    pose.duplicate = true;
+                    break;
+                }
+            }
+        }
+        std::sort(poses, poses + count, [](const auto& first, const auto& second) {
+            return first.depth < second.depth;
+        });
+        return true;
+    }
+
+    template <class Node, class Transform, class RefreshSubtree>
+    inline void applyScenePoses(
+        const ScenePose<Node, Transform>* poses, std::size_t count, RefreshSubtree refreshSubtree) noexcept
+    {
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto& pose = poses[index];
+            if (pose.duplicate) {
+                continue;
+            }
+            auto* node = pose.node;
+            node->world = pose.world;
+            node->local = node->parent ? transform_math::composeTransforms(
+                transform_math::invertTransform(node->parent->world), pose.world) : pose.world;
+            refreshSubtree(node);
+        }
     }
 
     enum class RejectReason

@@ -761,7 +761,6 @@ namespace rock
             const HeldDriveUpdate& driveUpdate,
             const GrabReleaseContext& releaseContext,
             bool& outConvergingAcquisitionPhase);
-        void presentHeldNodeNow(RE::hknpWorld* world, const HeldDriveUpdate& driveUpdate);
         void logHeldRenderClockProbe(
             const HeldDriveUpdate& driveUpdate,
             const RE::NiTransform& rawHandWorld,

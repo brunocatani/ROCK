@@ -80,6 +80,75 @@ int main()
             excessiveResidual).reason ==
             TargetTransportRejectReason::ExcessivePhysicalResidual);
 
+    RE::NiTransform secondarySolved = previousSolvedBody;
+    secondarySolved.translate.y = 12.0f;
+    RE::NiTransform secondaryPresented{};
+    ok &= expect("sibling body must receive the same translation without losing its offset",
+        transportAssemblyBody(previousSolvedBody, targetTransport.presentedWorld, secondarySolved, secondaryPresented) &&
+        near(secondaryPresented.translate.x, 3.25f) && near(secondaryPresented.translate.y, 12.0f));
+    auto rotatedTarget = previousTarget;
+    // 30 degrees in the stored Ni basis; long parts must orbit the primary.
+    rotatedTarget.rotate.entry[0][0] = rotatedTarget.rotate.entry[1][1] = std::sqrt(3.0f) / 2.0f;
+    rotatedTarget.rotate.entry[0][1] = 0.5f;
+    rotatedTarget.rotate.entry[1][0] = -0.5f;
+    secondarySolved = previousTarget;
+    secondarySolved.translate.x = 10.0f;
+    secondarySolved.scale = 2.0f;
+    ok &= expect("assembly rotation must rotate the part offset and preserve its scale",
+        transportAssemblyBody(previousTarget, rotatedTarget, secondarySolved, secondaryPresented) &&
+        near(secondaryPresented.translate.x, 5.0f * std::sqrt(3.0f)) &&
+        near(secondaryPresented.translate.y, 5.0f) && near(secondaryPresented.scale, 2.0f));
+    secondarySolved.translate.x = 11.0f;
+    ok &= expect("a new solved part offset must remain free to articulate",
+        transportAssemblyBody(previousTarget, rotatedTarget, secondarySolved, secondaryPresented) &&
+        near(secondaryPresented.translate.y, 5.5f));
+    secondarySolved.translate.x = 200.0f;
+    ok &= expect("an excessive distal correction must reject the assembly candidate",
+        !transportAssemblyBody(previousTarget, rotatedTarget, secondarySolved, secondaryPresented));
+
+    struct Node
+    {
+        Node* parent = nullptr;
+        RE::NiTransform world = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        RE::NiTransform local = world;
+    };
+    Node root{}, child{&root}, sibling{};
+    using Pose = ScenePose<Node, RE::NiTransform>;
+    Pose scene[]{ {&child, currentTarget}, {&sibling, previousTarget}, {&root, previousTarget}, {&child, currentTarget} };
+    ok &= expect("nested and sibling owners must produce a valid deduplicated plan", prepareScenePoses(scene, 4));
+    std::size_t rootIndex = 4, childIndex = 4, duplicates = 0;
+    for (std::size_t index = 0; index < 4; ++index) {
+        if (scene[index].node == &root) rootIndex = index;
+        if (scene[index].node == &child && !scene[index].duplicate) childIndex = index;
+        duplicates += scene[index].duplicate ? 1 : 0;
+    }
+    ok &= expect("parent must precede child and duplicate owner must be written once",
+        rootIndex < childIndex && duplicates == 1);
+    int rootWrites = 0, childWrites = 0;
+    applyScenePoses(scene, 4, [&](Node* node) {
+        if (node == &root) {
+            ++rootWrites;
+            child.world = rock::transform_math::composeTransforms(root.world, child.local);
+        }
+        if (node == &child) ++childWrites;
+    });
+    ok &= expect("parent subtree refresh must not overwrite the final child pose",
+        rootWrites == 1 && childWrites == 1 && near(child.world.translate.x, 3.0f));
+    child.world = rock::transform_math::composeTransforms(root.world, child.local);
+    ok &= expect("subsequent native parent refresh must retain the corrected child local",
+        near(child.world.translate.x, 3.0f));
+    Pose conflictingAliases[]{ {&root, previousTarget}, {&root, currentTarget} };
+    ok &= expect("conflicting body frames for one owner must fail before writing",
+        !prepareScenePoses(conflictingAliases, 2));
+    root.parent = &child;
+    Pose cyclic[]{ {&child, currentTarget} };
+    ok &= expect("cyclic ancestry must fail within the bounded traversal", !prepareScenePoses(cyclic, 1));
+    root.parent = nullptr;
+    ok &= expect("earlier grab must own all shared parts, including when left updates second",
+        preferEarlierTrace(4, 8) && !preferEarlierTrace(8, 4));
+    ok &= expect("release must transfer ownership to the remaining registration",
+        preferEarlierTrace(8, 0) && !preferEarlierTrace(0, 8));
+
     const auto normalTiming = evaluateTiming(true, 0.011f, 0.002f);
     ok &= expect(
         "the main scene writer must use raw frame time plus native remainder",

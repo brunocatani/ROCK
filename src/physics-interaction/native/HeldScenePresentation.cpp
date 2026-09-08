@@ -1,6 +1,8 @@
 #include "physics-interaction/native/HeldScenePresentation.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/core/RockRuntimeState.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/grab/HeldScenePresentationPolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/HavokOffsets.h"
@@ -68,7 +70,7 @@ namespace rock::held_scene_presentation
             std::atomic<std::size_t> count{ 0 };
             std::atomic<std::uint64_t> traceId{ 0 };
             std::atomic<std::uint64_t> firstAppliedTraceId{ 0 };
-            std::atomic<std::uint64_t> firstTargetAppliedTraceId{ 0 };
+            std::atomic<bool> complete{ true };
         };
 
         struct TargetTransportHistory
@@ -80,13 +82,28 @@ namespace rock::held_scene_presentation
             bool valid = false;
         };
 
+        struct AtomicBodyPose
+        {
+            std::atomic<std::uint32_t> bodyId{ 0x7FFF'FFFFu };
+            std::array<std::atomic<std::uint32_t>, 16> worldBits{};
+            std::atomic<std::uint64_t> lastLoggedFrame{ 0 };
+            std::atomic<std::uint64_t> firstAppliedTraceId{ 0 };
+        };
+
+        struct BodyPose
+        {
+            std::uint32_t bodyId = 0x7FFF'FFFFu;
+            RE::NiTransform world{};
+        };
+
         struct AtomicTargetTransport
         {
             std::atomic<std::uint64_t> sequence{ 0 };
             std::atomic<RE::hknpWorld*> world{ nullptr };
-            std::atomic<std::uint32_t> bodyId{ 0x7FFF'FFFFu };
             std::atomic<std::uint64_t> traceId{ 0 };
-            std::array<std::atomic<std::uint32_t>, 16> worldBits{};
+            std::array<AtomicBodyPose, kMaxRegisteredBodies> bodies{};
+            std::atomic<std::size_t> count{ 0 };
+            std::atomic<std::uint64_t> frameIndex{ 0 };
             std::atomic<std::uint32_t> targetTranslationStepBits{ 0 };
             std::atomic<std::uint32_t> targetRotationStepBits{ 0 };
             std::atomic<std::uint32_t> physicalResidualBits{ 0 };
@@ -100,6 +117,8 @@ namespace rock::held_scene_presentation
             bool isLeft = false;
             std::uint64_t traceId = 0;
             RE::NiTransform presentedWorld{};
+            std::uint64_t frameIndex = 0;
+            std::size_t bodyIndex = 0;
             float targetTranslationStepGameUnits = 0.0f;
             float targetRotationStepDegrees = 0.0f;
             float physicalResidualGameUnits = 0.0f;
@@ -119,6 +138,8 @@ namespace rock::held_scene_presentation
         std::array<AtomicTargetTransport, 2> s_targetTransport{};
         std::array<TargetTransportHistory, 2> s_targetTransportHistory{};
         std::mutex s_targetTransportHistoryMutex;
+        std::array<std::uint64_t, 2> s_lastAssemblyLogFrame{};
+        std::array<std::uint64_t, 2> s_lastAssemblyLogTrace{};
         std::atomic<bool> s_installed{ false };
         SceneTransformWriter s_originalWriter = nullptr;
 
@@ -133,9 +154,7 @@ namespace rock::held_scene_presentation
             destination.sequence.fetch_add(1, std::memory_order_acq_rel);
             destination.valid.store(false, std::memory_order_relaxed);
             destination.world.store(nullptr, std::memory_order_relaxed);
-            destination.bodyId.store(
-                0x7FFF'FFFFu,
-                std::memory_order_relaxed);
+            destination.count.store(0, std::memory_order_relaxed);
             destination.traceId.store(0, std::memory_order_relaxed);
             destination.sequence.fetch_add(1, std::memory_order_release);
         }
@@ -150,8 +169,10 @@ namespace rock::held_scene_presentation
         void publishTargetTransportDecision(
             std::size_t handIndex,
             RE::hknpWorld* world,
-            std::uint32_t bodyId,
+            const BodyPose* poses,
+            std::size_t count,
             std::uint64_t traceId,
+            std::uint64_t frameIndex,
             const held_scene_presentation_policy::TargetTransportDecision<
                 RE::NiTransform>& decision) noexcept
         {
@@ -159,14 +180,17 @@ namespace rock::held_scene_presentation
             destination.sequence.fetch_add(1, std::memory_order_acq_rel);
             destination.valid.store(false, std::memory_order_relaxed);
             destination.world.store(world, std::memory_order_relaxed);
-            destination.bodyId.store(bodyId, std::memory_order_relaxed);
+            destination.count.store(count, std::memory_order_relaxed);
+            destination.frameIndex.store(frameIndex, std::memory_order_relaxed);
             destination.traceId.store(traceId, std::memory_order_relaxed);
-            const auto* worldFloats = reinterpret_cast<const float*>(
-                &decision.presentedWorld);
-            for (std::size_t index = 0; index < 16; ++index) {
-                destination.worldBits[index].store(
-                    std::bit_cast<std::uint32_t>(worldFloats[index]),
-                    std::memory_order_relaxed);
+            for (std::size_t bodyIndex = 0; bodyIndex < count; ++bodyIndex) {
+                auto& body = destination.bodies[bodyIndex];
+                body.bodyId.store(poses[bodyIndex].bodyId, std::memory_order_relaxed);
+                const auto* worldFloats = reinterpret_cast<const float*>(&poses[bodyIndex].world);
+                for (std::size_t index = 0; index < 16; ++index) {
+                    body.worldBits[index].store(
+                        std::bit_cast<std::uint32_t>(worldFloats[index]), std::memory_order_relaxed);
+                }
             }
             destination.targetTranslationStepBits.store(
                 std::bit_cast<std::uint32_t>(
@@ -203,21 +227,35 @@ namespace rock::held_scene_presentation
                     continue;
                 }
                 if (!source.valid.load(std::memory_order_relaxed) ||
-                    source.world.load(std::memory_order_relaxed) != world ||
-                    source.bodyId.load(std::memory_order_relaxed) != bodyId) {
+                    source.world.load(std::memory_order_relaxed) != world) {
                     return false;
                 }
 
+                const auto count = (std::min)(source.count.load(std::memory_order_relaxed), kMaxRegisteredBodies);
+                std::size_t bodyIndex = 0;
+                for (; bodyIndex < count; ++bodyIndex) {
+                    if (source.bodies[bodyIndex].bodyId.load(std::memory_order_relaxed) == bodyId) {
+                        break;
+                    }
+                }
+                if (bodyIndex == count) {
+                    if (begin != source.sequence.load(std::memory_order_acquire)) {
+                        continue;
+                    }
+                    return false;
+                }
                 TargetTransportMatch snapshot{};
                 snapshot.valid = true;
                 snapshot.isLeft = isLeft;
+                snapshot.frameIndex = source.frameIndex.load(std::memory_order_relaxed);
+                snapshot.bodyIndex = bodyIndex;
                 snapshot.traceId =
                     source.traceId.load(std::memory_order_relaxed);
                 auto* worldFloats = reinterpret_cast<float*>(
                     &snapshot.presentedWorld);
                 for (std::size_t index = 0; index < 16; ++index) {
                     worldFloats[index] = std::bit_cast<float>(
-                        source.worldBits[index].load(
+                        source.bodies[bodyIndex].worldBits[index].load(
                             std::memory_order_relaxed));
                 }
                 snapshot.targetTranslationStepGameUnits =
@@ -244,34 +282,64 @@ namespace rock::held_scene_presentation
             return false;
         }
 
+        bool copyRegistration(bool isLeft, Registration& result) noexcept
+        {
+            const auto& source = registrationFor(isLeft);
+            for (int attempt = 0; attempt < 4; ++attempt) {
+                const auto begin = source.sequence.load(std::memory_order_acquire);
+                if (begin & 1u) {
+                    continue;
+                }
+                result.count = (std::min)(source.count.load(std::memory_order_relaxed), kMaxRegisteredBodies);
+                result.traceId = source.traceId.load(std::memory_order_relaxed);
+                result.complete = source.complete.load(std::memory_order_relaxed);
+                for (std::size_t index = 0; index < result.count; ++index) {
+                    const auto& body = source.bodies[index];
+                    result.bodies[index] = {
+                        body.collisionObject.load(std::memory_order_relaxed),
+                        body.world.load(std::memory_order_relaxed),
+                        body.bodyId.load(std::memory_order_relaxed),
+                    };
+                }
+                if (begin == source.sequence.load(std::memory_order_acquire)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool containsBody(const Registration& registration, RE::hknpWorld* world, std::uint32_t bodyId) noexcept
+        {
+            for (std::size_t index = 0; index < registration.count; ++index) {
+                const auto& body = registration.bodies[index];
+                if (body.world == world && body.bodyId == bodyId) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         bool findTargetTransport(
             RE::hknpWorld* world,
             std::uint32_t bodyId,
             TargetTransportMatch& match) noexcept
         {
-            TargetTransportMatch right{};
-            TargetTransportMatch left{};
-            const bool rightValid = copyTargetTransport(
-                s_targetTransport[0],
-                false,
-                world,
-                bodyId,
-                right);
-            const bool leftValid = copyTargetTransport(
-                s_targetTransport[1],
-                true,
-                world,
-                bodyId,
-                left);
-            if (!rightValid && !leftValid) {
+            Registration right{}, left{};
+            if (!copyRegistration(false, right) || !copyRegistration(true, left)) {
                 return false;
             }
-            if (rightValid && leftValid) {
-                match = right.traceId <= left.traceId ? right : left;
-            } else {
-                match = rightValid ? right : left;
+            const bool rightOwns = containsBody(right, world, bodyId);
+            const bool leftOwns = containsBody(left, world, bodyId);
+            if (!rightOwns && !leftOwns) {
+                return false;
             }
-            return true;
+            // Registration, not publication readiness, owns arbitration. A
+            // warming or rejected older hold must not switch individual parts
+            // onto the other hand's clock.
+            const bool isLeft = leftOwns && (!rightOwns ||
+                held_scene_presentation_policy::preferEarlierTrace(left.traceId, right.traceId));
+            return copyTargetTransport(s_targetTransport[isLeft ? 1u : 0u], isLeft, world, bodyId, match) &&
+                   match.traceId == (isLeft ? left.traceId : right.traceId);
         }
 
         bool registrationContainsCollision(
@@ -481,19 +549,20 @@ namespace rock::held_scene_presentation
             const held_scene_presentation_policy::TransformDecision& transform,
             const float* correctedInput) noexcept
         {
-            auto& registration = registrationFor(target.isLeft);
+            auto& body = s_targetTransport[target.isLeft ? 1u : 0u].bodies[target.bodyIndex];
             std::uint64_t previous =
-                registration.firstTargetAppliedTraceId.load(
+                body.firstAppliedTraceId.load(
                     std::memory_order_acquire);
             if (previous != target.traceId &&
-                registration.firstTargetAppliedTraceId.compare_exchange_strong(
+                body.firstAppliedTraceId.compare_exchange_strong(
                     previous,
                     target.traceId,
                     std::memory_order_acq_rel,
                     std::memory_order_acquire)) {
                 ROCK_LOG_INFO(HeldScenePresentation,
-                    "HELD_SCENE_TARGET first-apply trace={} hand={} body={} targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu writerDelta={:.4f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f}) thread={}",
+                    "HELD_SCENE_TARGET first-apply trace={} frame={} hand={} body={} targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu writerDelta={:.4f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f}) thread={}",
                     target.traceId,
+                    target.frameIndex,
                     target.isLeft ? "left" : "right",
                     bodyId,
                     target.targetTranslationStepGameUnits,
@@ -506,16 +575,24 @@ namespace rock::held_scene_presentation
                     correctedInput[13],
                     correctedInput[14],
                     GetCurrentThreadId());
+                body.lastLoggedFrame.store(target.frameIndex, std::memory_order_relaxed);
+                return;
             }
 
             if (!g_rockConfig.rockDebugGrabFrameLogging &&
                 !g_rockConfig.rockDebugVerboseLogging) {
                 return;
             }
-            ROCK_LOG_SAMPLE_DEBUG(HeldScenePresentation,
-                1000,
-                "HELD_SCENE_TARGET applied trace={} hand={} body={} targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu writerDelta={:.4f}gu/{:.3f}deg",
+            auto& lastFrame = s_targetTransport[target.isLeft ? 1u : 0u].bodies[target.bodyIndex].lastLoggedFrame;
+            auto previousFrame = lastFrame.load(std::memory_order_relaxed);
+            if ((previousFrame != 0 && target.frameIndex - previousFrame < 90) ||
+                !lastFrame.compare_exchange_strong(previousFrame, target.frameIndex, std::memory_order_relaxed)) {
+                return;
+            }
+            ROCK_LOG_DEBUG(HeldScenePresentation,
+                "HELD_SCENE_TARGET applied trace={} frame={} hand={} body={} path=writer-target targetStep={:.4f}gu/{:.3f}deg residual={:.4f}gu advance={:.4f}gu writerDelta={:.4f}gu/{:.3f}deg",
                 target.traceId,
+                target.frameIndex,
                 target.isLeft ? "left" : "right",
                 bodyId,
                 target.targetTranslationStepGameUnits,
@@ -614,6 +691,11 @@ namespace rock::held_scene_presentation
                             targetWriterInput);
                         return;
                     }
+                    ROCK_LOG_SAMPLE_WARN(HeldScenePresentation, 1000,
+                        "HELD_SCENE_ASSEMBLY writer rejected trace={} frame={} body={} reason={} delta={:.3f}gu/{:.3f}deg",
+                        targetTransport.traceId, targetTransport.frameIndex, bodyId.value,
+                        held_scene_presentation_policy::rejectReasonName(targetTransform.reason),
+                        targetTransform.translationDeltaGameUnits, targetTransform.rotationDeltaDegrees);
                 }
             }
 
@@ -726,6 +808,7 @@ namespace rock::held_scene_presentation
         destination.traceId.store(
             registration.traceId,
             std::memory_order_relaxed);
+        destination.complete.store(registration.complete, std::memory_order_relaxed);
         destination.count.store(count, std::memory_order_relaxed);
         destination.sequence.fetch_add(
             1,
@@ -752,12 +835,15 @@ namespace rock::held_scene_presentation
             return {};
         }
 
+        // The existing publication mutex serializes target updates with release
+        // and registration reset. The native writer consumes only atomics and
+        // never waits on this game-side ownership lock.
+        std::scoped_lock publicationLock(s_targetTransportHistoryMutex);
         held_scene_presentation_policy::TargetTransportDecision<
             RE::NiTransform>
             decision{};
         bool rebased = false;
         {
-            std::scoped_lock lock(s_targetTransportHistoryMutex);
             auto& history = s_targetTransportHistory[handIndex];
             const bool sameIdentity =
                 history.valid && history.world == world &&
@@ -786,13 +872,6 @@ namespace rock::held_scene_presentation
 
             if (rebased || !decision.apply) {
                 clearTargetTransportPublication(handIndex);
-            } else {
-                publishTargetTransportDecision(
-                    handIndex,
-                    world,
-                    bodyId,
-                    traceId,
-                    decision);
             }
         }
 
@@ -816,21 +895,100 @@ namespace rock::held_scene_presentation
             return {};
         }
 
+        Registration registration{};
+        using ScenePose = held_scene_presentation_policy::ScenePose<RE::NiAVObject, RE::NiTransform>;
+        std::array<BodyPose, kMaxRegisteredBodies> poses{};
+        std::array<ScenePose, kMaxRegisteredBodies> scenePoses{};
+        const char* failure = nullptr;
+        std::uint32_t failedBody = bodyId;
+        if (!copyRegistration(isLeft, registration) || registration.traceId != traceId ||
+            !registration.complete || !containsBody(registration, world, bodyId)) {
+            failure = "registration-incomplete-or-changed";
+        }
+        const auto frameIndex = runtime_state::currentFrame().frameIndex;
+        const bool firstAssembly = s_lastAssemblyLogTrace[handIndex] != traceId;
+        const bool logBodies = firstAssembly || ((g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging) &&
+            (s_lastAssemblyLogFrame[handIndex] == 0 || frameIndex - s_lastAssemblyLogFrame[handIndex] >= 90));
+        if (logBodies) {
+            s_lastAssemblyLogFrame[handIndex] = frameIndex;
+            s_lastAssemblyLogTrace[handIndex] = traceId;
+        }
+        for (std::size_t index = 0; !failure && index < registration.count; ++index) {
+            const auto& body = registration.bodies[index];
+            failedBody = body.bodyId;
+            RE::NiTransform solved{};
+            auto* collision = havok_runtime::getCollisionObjectFromBody(world, RE::hknpBodyId{body.bodyId});
+            if (body.world != world || !collision || collision != body.collisionObject || !collision->sceneObject ||
+                !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{body.bodyId}, solved)) {
+                failure = "body-or-owner-unavailable";
+                break;
+            }
+            auto& pose = poses[index];
+            pose.bodyId = body.bodyId;
+            if (body.bodyId == bodyId) {
+                pose.world = decision.presentedWorld;
+            } else if (!held_scene_presentation_policy::transportAssemblyBody(
+                           solvedBodyWorld, decision.presentedWorld, solved, pose.world)) {
+                failure = "body-transport-rejected";
+                break;
+            }
+            auto* node = collision->sceneObject;
+            scenePoses[index] = {node, pose.world};
+            scenePoses[index].world.scale = node->world.scale;
+            if (logBodies) {
+                ROCK_LOG_INFO(HeldScenePresentation,
+                    "HELD_SCENE_ASSEMBLY prepared trace={} frame={} hand={} body={} owner='{}' primary={} output=({:.3f},{:.3f},{:.3f})",
+                    traceId, frameIndex, isLeft ? "left" : "right", body.bodyId, node->name.c_str(),
+                    body.bodyId == bodyId, pose.world.translate.x, pose.world.translate.y, pose.world.translate.z);
+            }
+        }
+        if (!failure && !held_scene_presentation_policy::prepareScenePoses(scenePoses.data(), registration.count)) {
+            failure = "scene-hierarchy-or-alias-conflict";
+        }
+        if (failure) {
+            clearTargetTransportPublication(handIndex);
+            ROCK_LOG_SAMPLE_WARN(HeldScenePresentation, 1000,
+                "HELD_SCENE_ASSEMBLY rejected trace={} frame={} hand={} body={} count={} reason={}",
+                traceId, frameIndex, isLeft ? "left" : "right", failedBody, registration.count, failure);
+            return {};
+        }
+        publishTargetTransportDecision(handIndex, world, poses.data(), registration.count, traceId, frameIndex, decision);
+
+        TargetTransportMatch selected{};
+        if (!findTargetTransport(world, bodyId, selected) || selected.frameIndex != frameIndex) {
+            return {};
+        }
+        if (selected.isLeft == isLeft) {
+            // Absolute writes in ancestor order: refreshing a parent cannot
+            // overwrite a child's final pose. Mesh-only descendants follow their
+            // owner, and aliases are written once. No Havok state is changed.
+            held_scene_presentation_policy::applyScenePoses(scenePoses.data(), registration.count,
+                [](RE::NiAVObject* node) noexcept { f4vr::updateTransformsDown(node, false); });
+        }
+        if (logBodies) {
+            ROCK_LOG_INFO(HeldScenePresentation,
+                "HELD_SCENE_ASSEMBLY committed trace={} frame={} hand={} count={} ownerHand={} path={}",
+                traceId, frameIndex, isLeft ? "left" : "right", registration.count,
+                selected.isLeft ? "left" : "right", selected.isLeft == isLeft ? "immediate-and-writer" : "peer-publication");
+        }
         return TargetTransportPublication{
             .applied = true,
-            .presentedBodyWorld = decision.presentedWorld,
+            .presentedBodyWorld = selected.presentedWorld,
         };
     }
 
-    bool ownsPublishedTargetTransport(
-        bool isLeft,
-        RE::hknpWorld* world,
-        std::uint32_t bodyId) noexcept
+    bool leftOwnsSharedAssembly() noexcept
     {
-        if (!world || bodyId == 0x7FFF'FFFFu) {
+        Registration right{}, left{};
+        if (!copyRegistration(false, right) || !copyRegistration(true, left) ||
+            !held_scene_presentation_policy::preferEarlierTrace(left.traceId, right.traceId)) {
             return false;
         }
-        TargetTransportMatch match{};
-        return findTargetTransport(world, bodyId, match) && match.isLeft == isLeft;
+        for (std::size_t index = 0; index < right.count; ++index) {
+            if (containsBody(left, right.bodies[index].world, right.bodies[index].bodyId)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

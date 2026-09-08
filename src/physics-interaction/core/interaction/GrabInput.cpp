@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 
 // Grab input pipeline: hand preludes, touch grab, grab intent and commit, and per-frame grab input update.
 
@@ -2294,10 +2295,19 @@ namespace rock
         publishHandInputOwnership(_leftHand, true);
 
 
-        processGrabInputHand(frame, _rightHand, false, handContext);
-        publishHandInputOwnership(_rightHand, false);
-        processGrabInputHand(frame, _leftHand, true, handContext);
-        publishHandInputOwnership(_leftHand, true);
+        // A shared hold presents the entire assembly on the first grab's
+        // clock. Its update must precede the peer's visual-hand readback.
+        if (held_scene_presentation::leftOwnsSharedAssembly()) {
+            processGrabInputHand(frame, _leftHand, true, handContext);
+            publishHandInputOwnership(_leftHand, true);
+            processGrabInputHand(frame, _rightHand, false, handContext);
+            publishHandInputOwnership(_rightHand, false);
+        } else {
+            processGrabInputHand(frame, _rightHand, false, handContext);
+            publishHandInputOwnership(_rightHand, false);
+            processGrabInputHand(frame, _leftHand, true, handContext);
+            publishHandInputOwnership(_leftHand, true);
+        }
 
         if (_rightHand.isHolding() ||
             _touchGrabRuntime.isHandActive(false)) {
