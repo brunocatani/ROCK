@@ -177,7 +177,7 @@ namespace rock
             .weaponGeneration = currentWeaponGenerationKey,
             .equippedOwnership = currentEquippedWeaponOwnershipKey,
         };
-        _recoil.ticket.beginUpdate();
+        _recoil.ticket.beginUpdate(g_rockConfig.rockImmersiveRecoil);
         const bool authoredOnlyModeChanged =
             _handlingSettings.authoredOnlySupportGrabsEnabled !=
             handlingSettings.authoredOnlySupportGrabsEnabled;

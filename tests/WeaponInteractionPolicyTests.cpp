@@ -251,10 +251,10 @@ int main()
             .nativePrimaryIsLeft = false, .fullTwoHanded = false,
         };
         SampleTicket ticket{ .identity = captured, .sequence = 1, .valid = true };
-        ticket.beginUpdate();
+        ticket.beginUpdate(true);
         ok &= expectTrue("fresh callback can be consumed", ticket.consume(captured));
         ok &= expectFalse("one sample cannot kick both carry and solver", ticket.consume(captured));
-        ticket.beginUpdate();
+        ticket.beginUpdate(true);
         ok &= expectFalse("skipped callback never replays a shot", ticket.consume(captured));
         for (int changed = 0; changed < 8; ++changed) {
             auto current = captured;
@@ -270,15 +270,25 @@ int main()
             }
             ++ticket.sequence;
             ticket.valid = true;
-            ticket.beginUpdate();
+            ticket.beginUpdate(true);
             ok &= expectFalse("owner/profile/role/solver changes discard the old shot", ticket.consume(current));
             ok &= expectFalse("rejected ticket cannot replay after identity returns", ticket.consume(captured));
         }
         ++ticket.sequence;
         ticket.valid = true;
-        ticket.beginUpdate();
+        ticket.beginUpdate(true);
         ticket.invalidate();
         ok &= expectFalse("lifecycle reset discards pending recoil", ticket.consume(captured));
+        ++ticket.sequence;
+        ticket.valid = true;
+        ticket.beginUpdate(false);
+        ok &= expectFalse("disabled immersive recoil discards a captured kick", ticket.consume(captured));
+        ticket.beginUpdate(true);
+        ok &= expectFalse("reenabling recoil cannot replay the pre-disable sample", ticket.consume(captured));
+        ++ticket.sequence;
+        ticket.valid = true;
+        ticket.beginUpdate(true);
+        ok &= expectTrue("reenabled recoil accepts a fresh callback sample", ticket.consume(captured));
     }
 
     {

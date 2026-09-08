@@ -4,7 +4,8 @@ namespace rock
 {
     bool TwoHandedGrip::hasVisualOnlySupportRecoilAssist() const noexcept
     {
-        if (_session.state != TwoHandedState::Gripping ||
+        if (!g_rockConfig.rockImmersiveRecoil ||
+            _session.state != TwoHandedState::Gripping ||
             !_session.weaponNode ||
             _session.weaponGenerationKey == 0 ||
             _session.equippedWeaponOwnershipKey == 0 ||
@@ -75,6 +76,13 @@ namespace rock
             }
             return false;
         };
+        if (!g_rockConfig.rockImmersiveRecoil) {
+            // Hand claims are separate from recoil registration. Release the
+            // prior direct target before FRIK solves this disabled frame, then
+            // decline so FRIK (or another controller) owns native hand recoil.
+            self->clearOneHandRecoilClaim();
+            return decline();
+        }
         const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
         if (!handedMode || !f4vr::IsWeaponDrawn()) {
             return decline();
@@ -159,7 +167,7 @@ namespace rock
     {
         outWorldDelta = transform_math::makeIdentityTransform<RE::NiTransform>();
         const auto* const handedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
-        if (!handedMode || !f4vr::IsWeaponDrawn()) {
+        if (!g_rockConfig.rockImmersiveRecoil || !handedMode || !f4vr::IsWeaponDrawn()) {
             _recoil.ticket.invalidate();
             return false;
         }
@@ -180,7 +188,7 @@ namespace rock
 
     bool TwoHandedGrip::canUseRightOneHandRecoil() const noexcept
     {
-        return !usesLeftFiringCarry() && !isGripping() &&
+        return g_rockConfig.rockImmersiveRecoil && !usesLeftFiringCarry() && !isGripping() &&
             !_firing.rightHandHoldingObjectForPose &&
             !isWeaponVisualReturnActive() && !isHandVisualReturnActive(false) &&
             _recoil.rightBaseValid && _recoil.equippedIdentity.weaponNode != 0 &&

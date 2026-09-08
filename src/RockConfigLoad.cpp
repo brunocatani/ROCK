@@ -328,6 +328,8 @@ namespace rock
         }
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
 
+        rockImmersiveRecoil = ini.GetBoolValue(
+            IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
         rockFiringGripDetachEnabled = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
             "bFiringGripDetachEnabled",

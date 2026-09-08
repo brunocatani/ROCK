@@ -72,6 +72,9 @@ namespace rock
         int rockPerformanceProfilerWarmupFrames = 120;
         bool rockPerformanceProfilerOverlayText = false;
 
+        // Master switch for every ROCK-owned visual recoil profile and delivery.
+        bool rockImmersiveRecoil = true;
+
         // ROCK-native Immersive Weapons firing-role boundary. The same
         // release, part-carry, reattach and haptic contract follows whichever
         // physical hand currently occupies the firing grip.

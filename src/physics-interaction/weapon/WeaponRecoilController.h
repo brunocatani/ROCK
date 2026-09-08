@@ -94,8 +94,11 @@ namespace rock::weapon_recoil_policy
         bool ready{ false };
 
         void invalidate() noexcept { valid = false; ready = false; }
-        void beginUpdate() noexcept
+        void beginUpdate(const bool enabled) noexcept
         {
+            if (!enabled) {
+                invalidate();
+            }
             ready = valid && sequence != observed;
             observed = sequence;
         }
