@@ -351,13 +351,10 @@ namespace rock::dynamic_weapon_collision_policy
             sampledLiveProxyBodyWorld,
             centerWeaponLocal,
             sampledWeaponScale);
-        // Carry the sampled physical deviation on the current target clock.
-        // Applying the new movement through the deflected sample instead would
-        // rotate locomotion translation by the weapon's collision deflection.
-        const RE::NiTransform sampledResidual = transform_math::composeTransforms(
+        const RE::NiTransform currentRelativeToSample = transform_math::composeTransforms(
             transform_math::invertTransform(sampledRequestedWeaponWorld),
-            sampledLiveWeaponWorld);
-        return transform_math::composeTransforms(currentRequestedWeaponWorld, sampledResidual);
+            currentRequestedWeaponWorld);
+        return transform_math::composeTransforms(sampledLiveWeaponWorld, currentRelativeToSample);
     }
 
     inline RE::NiTransform reframeAttachedHand(

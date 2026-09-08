@@ -480,9 +480,6 @@ namespace rock
         float targetLimitAlpha = 1.0f;
         std::uint32_t stepsWithoutSource = 0;
 
-        // Identity of the queued source actually selected under the drive lock.
-        std::uint64_t sourceSequence = 0;
-
         [[nodiscard]] bool shouldRequestRebuild() const
         {
             return attempted && !driven && (missingBody || bodyCollisionObjectMismatch || placementFailed || nativeDriveFailed);

@@ -754,13 +754,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHandWorldClaimRegistryPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHandWorldClaimRegistryPolicyTests)
 
-  add_executable(ROCKDampenedDriverPredictionPolicyTests
-    "${ROOT_DIR}/tests/DampenedDriverPredictionPolicyTests.cpp"
-  )
-  target_compile_features(ROCKDampenedDriverPredictionPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDampenedDriverPredictionPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDampenedDriverPredictionPolicyTests)
-
   add_executable(ROCKTrackedHandIsolationPolicyTests
     "${ROOT_DIR}/tests/TrackedHandIsolationPolicyTests.cpp"
   )
@@ -846,7 +839,6 @@ if(BUILD_ROCK_TESTS)
     ROCKHavokCompoundShapeKeyPolicyTests
     ROCKDynamicWeaponCollisionPolicyTests
     ROCKHandWorldClaimRegistryPolicyTests
-    ROCKDampenedDriverPredictionPolicyTests
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
     ROCKArmPresentationPolicyTests
@@ -1063,7 +1055,6 @@ if(BUILD_ROCK_TESTS)
     ROCKDebugOverlayShaderCompileTests
     ROCKMainLoopHookPolicyTests
     ROCKHandWorldClaimRegistryPolicyTests
-    ROCKDampenedDriverPredictionPolicyTests
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
     ROCKArmPresentationPolicyTests

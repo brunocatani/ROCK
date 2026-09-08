@@ -284,50 +284,6 @@ int main()
         ok &= expectTrue("driver for hand", driverForHand(true) == RebaseDriver::LeftHand && driverForHand(false) == RebaseDriver::RightHand);
     }
 
-    // Re-anchor: a claim rebased by a predicted sample is re-expressed against the actual one and republished next pass.
-    {
-        Registry registry{};
-        ok &= expectEnum("insert P", commit(registry, "ROCK_P", false, 100, translated(12.0f, 1.0f, 0.0f), RebaseDriver::RightHand, sample(translated(10.0f, 0.0f, 0.0f))), CommitResult::Inserted);
-        ok &= expectEnum("insert static", commit(registry, "ROCK_W", true, 100, translated(3.0f, 0.0f, 0.0f), RebaseDriver::Static, {}), CommitResult::Inserted);
-        const DriverFrame predicted{ .sequence = 2, .hands = { sample(translated(15.0f, 0.0f, 0.0f)), DriverSample{} } };
-        RebasePassPlan plan{};
-        planRebasePass(registry, predicted, plan);
-        for (std::size_t i = 0; i < plan.count; ++i) {
-            if (plan.entries[i].moved || plan.entries[i].keepOrder) {
-                commitRebasePassEntry(registry, plan.entries[i], predicted);
-            }
-        }
-        ok &= expectNear("rebased by the prediction", find(registry, "ROCK_P", false)->target.translate.x, 17.0f, 0.001f);
-
-        const DriverFrame actual{ .sequence = 2, .hands = { sample(translated(14.0f, 0.0f, 0.0f)), DriverSample{} } };
-        reanchorClaims(registry, actual);
-        const Claim* reanchored = find(registry, "ROCK_P", false);
-        ok &= expectNear("re-anchored target", reanchored->target.translate.x, 16.0f, 0.001f);
-        ok &= expectNear("re-anchored sample", reanchored->driverAtPublish.world.translate.x, 14.0f, 0.001f);
-        ok &= expectTrue("flagged for publish", reanchored->needsPublish);
-        ok &= expectNear("static claim untouched", find(registry, "ROCK_W", true)->target.translate.x, 3.0f, 0.001f);
-        ok &= expectFalse("static claim not flagged", find(registry, "ROCK_W", true)->needsPublish);
-
-        RebasePassPlan stillPlan{};
-        planRebasePass(registry, actual, stillPlan);
-        const RebasePassEntry* entry = nullptr;
-        for (std::size_t i = 0; i < stillPlan.count; ++i) {
-            if (tagView(registry.claims[stillPlan.entries[i].claimIndex]) == "ROCK_P") {
-                entry = &stillPlan.entries[i];
-            }
-        }
-        ok &= expectTrue("published without driver motion", entry && entry->moved);
-        if (entry) {
-            ok &= expectNear("published target is the re-anchored one", entry->target.translate.x, 16.0f, 0.001f);
-            commitRebasePassEntry(registry, *entry, actual);
-        }
-        ok &= expectFalse("flag cleared by the publish", find(registry, "ROCK_P", false)->needsPublish);
-        reanchorClaims(registry, actual);
-        ok &= expectFalse("re-anchor to the same sample does not flag", find(registry, "ROCK_P", false)->needsPublish);
-        ok &= expectEnum("owner republish clears the flag", commit(registry, "ROCK_P", false, 100, translated(20.0f, 1.0f, 0.0f), RebaseDriver::RightHand, sample(translated(14.0f, 0.0f, 0.0f))), CommitResult::Updated);
-        ok &= expectFalse("fresh publish not flagged", find(registry, "ROCK_P", false)->needsPublish);
-    }
-
     // Rebase pass: oldest first, moved claims republish, and an equal-priority tie keeps its winner.
     {
         Registry registry{};

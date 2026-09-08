@@ -519,7 +519,6 @@ namespace rock
 
         refreshGeneratedKeyframedBodySourceClockForDriveUnlocked(state, result.driveDeltaSeconds);
         result.sourceDeltaSeconds = state.sourceDeltaSeconds;
-        result.sourceSequence = state.queuedSequence;
         result.sourceAgeSeconds = state.secondsSinceSourceSample;
         result.sourceStale = generated_keyframed_body_drive_math::sourceIsStale(state.secondsSinceSourceSample);
         result.stepsWithoutSource = state.stepsWithoutSource;

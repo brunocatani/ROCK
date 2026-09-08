@@ -158,9 +158,6 @@ namespace rock::hand_world_claim_registry_policy
         std::uint64_t publishOrder = 0;
         std::uint32_t fallbackFrames = 0;
         bool fallbackReported = false;
-        // The target moved without a FRIK publish (re-anchored to the actual
-        // driver): the next pass publishes it even without driver motion.
-        bool needsPublish = false;
         bool valid = false;
     };
 
@@ -313,7 +310,6 @@ namespace rock::hand_world_claim_registry_policy
         claim->driver = driver;
         claim->driverAtPublish = driver == RebaseDriver::Static ? DriverSample{} : driverAtPublish;
         claim->otherDriverAtPublish = isAimAxisDriver(driver) ? otherDriverAtPublish : DriverSample{};
-        claim->needsPublish = false;
         claim->publishOrder = registry.nextPublishOrder++;
         if (inserted) {
             claim->fallbackFrames = 0;
@@ -574,7 +570,7 @@ namespace rock::hand_world_claim_registry_policy
                 const DriverSample* other = otherHandSampleForDriver(driverFrame, claim.driver);
                 const RebasePlan plan = planRebase(claim, *sample, other ? *other : DriverSample{});
                 entry.target = plan.target;
-                entry.moved = plan.republish || claim.needsPublish;
+                entry.moved = plan.republish;
             }
             if (!entry.moved) {
                 for (std::size_t i = 0; i < republishedCounts[hand]; ++i) {
@@ -613,41 +609,8 @@ namespace rock::hand_world_claim_registry_policy
             if (const DriverSample* other = otherHandSampleForDriver(driverFrame, claim.driver)) {
                 claim.otherDriverAtPublish = *other;
             }
-            claim.needsPublish = false;
         }
         claim.publishOrder = registry.nextPublishOrder++;
-    }
-
-    /*
-     * The pass rebased every claim by a predicted driver sample. Once the
-     * actual sample is known (after FRIK's frame) each claim is re-expressed
-     * against it: the target moves by actual versus predicted and the samples
-     * are replaced, so prediction error never accumulates on a claim that is
-     * not republished by its owner. FRIK still holds the predicted target, so
-     * a moved claim is flagged for the next pass.
-     */
-    inline void reanchorClaims(Registry& registry, const DriverFrame& actualFrame) noexcept
-    {
-        for (auto& claim : registry.claims) {
-            if (!claim.valid || claim.driver == RebaseDriver::Static || !claim.driverAtPublish.valid) {
-                continue;
-            }
-            const DriverSample* own = sampleForDriver(actualFrame, claim.driver);
-            if (!own || !own->valid || !isFiniteTransform(own->world)) {
-                continue;
-            }
-            const DriverSample* other = otherHandSampleForDriver(actualFrame, claim.driver);
-            const DriverSample otherSample = other ? *other : DriverSample{};
-            const RebasePlan plan = planRebase(claim, *own, otherSample);
-            if (plan.republish) {
-                claim.target = plan.target;
-                claim.needsPublish = true;
-            }
-            claim.driverAtPublish = *own;
-            if (isAimAxisDriver(claim.driver) && otherSample.valid) {
-                claim.otherDriverAtPublish = otherSample;
-            }
-        }
     }
 
     enum class FallbackObservation : std::uint8_t

@@ -247,49 +247,6 @@ int main()
         currentRequested);
     ok &= expectNear("one-way rotation correction", rotationDeltaDegrees(resolvedRotation, sampledLive), 0.0f, 0.05f);
 
-    // Simultaneous locomotion and angular wall deflection must preserve the
-    // world movement direction. The old composition turned this +X step +Y.
-    currentRequested.translate = RE::NiPoint3{4.0f, 0.0f, 0.0f};
-    const auto movingDeflected = resolveCurrentIntentFromSample(
-        makeProxyBodyTarget(sampledRequested, origin), makeProxyBodyTarget(sampledLive, origin),
-        origin, 1.0f, currentRequested);
-    ok &= expectPoint("deflection must not rotate locomotion", movingDeflected.translate, currentRequested.translate);
-    ok &= expectNear("locomotion preserves wall deflection", rotationDeltaDegrees(movingDeflected, sampledLive), 0.0f, 0.05f);
-
-    // Turn and walk with a displaced, scaled weapon and an off-centre collider.
-    // Its sampled local displacement must rotate with the new target, while
-    // the actual deflection remains present for the weapon and both hands.
-    sampledRequested = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    sampledRequested.translate = RE::NiPoint3{100.0f, 200.0f, 300.0f};
-    sampledRequested.scale = 2.0f;
-    sampledLive = sampledRequested;
-    sampledLive.translate.x -= 2.0f;
-    sampledLive.rotate = rotationZ90();
-    currentRequested = sampledRequested;
-    currentRequested.translate.x += 4.0f;
-    currentRequested.rotate = rotationZ90();
-    const RE::NiPoint3 colliderCenter{2.0f, 6.0f, -1.0f};
-    const auto turningDeflected = resolveCurrentIntentFromSample(
-        makeProxyBodyTarget(sampledRequested, colliderCenter), makeProxyBodyTarget(sampledLive, colliderCenter),
-        colliderCenter, sampledRequested.scale, currentRequested);
-    ok &= expectPoint("turn carries local wall displacement", turningDeflected.translate, RE::NiPoint3{104.0f, 198.0f, 300.0f});
-    ok &= expectNear("turn preserves sampled angular residual", turningDeflected.rotate.entry[0][0], -1.0f);
-    ok &= expectNear("transport preserves weapon scale", turningDeflected.scale, 2.0f);
-    for (const auto& handLocal : {RE::NiPoint3{0.0f, 0.0f, 0.0f}, RE::NiPoint3{0.0f, 12.0f, 0.0f}}) {
-        auto local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-        local.translate = handLocal;
-        const auto requestedHand = rock::transform_math::composeTransforms(currentRequested, local);
-        const auto resolvedHand = reframeAttachedHand(currentRequested, turningDeflected, requestedHand);
-        const auto recoveredLocal = rock::transform_math::composeTransforms(
-            rock::transform_math::invertTransform(turningDeflected), resolvedHand);
-        ok &= expectPoint("both attached hand seats survive moving collision correction", recoveredLocal.translate, handLocal);
-    }
-    const auto unchangedIntent = resolveCurrentIntentFromSample(
-        makeProxyBodyTarget(sampledRequested, colliderCenter), makeProxyBodyTarget(sampledLive, colliderCenter),
-        colliderCenter, sampledRequested.scale, sampledRequested);
-    ok &= expectPoint("stationary wall displacement stays exact", unchangedIntent.translate, sampledLive.translate);
-    ok &= expectNear("stationary wall rotation stays exact", rotationDeltaDegrees(unchangedIntent, sampledLive), 0.0f, 0.05f);
-
     const auto nativeOneHand = selectAttachedHands(false, false, true, false, false);
     ok &= !nativeOneHand.left && nativeOneHand.right;
     const auto leftPrimaryOnly = selectAttachedHands(false, true, true, false, false);
