@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
+#include "physics-interaction/weapon/telemetry/WeaponTelemetryTraversal.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
@@ -126,7 +127,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=1 pid={} build={} {} forms=0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-frik,after-frik,after-rock",
+            next->log->info("VWA start version=2 pid={} build={} {} forms=0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-frik,after-frik,after-rock sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -192,37 +193,32 @@ namespace rock::vanilla_weapon_alignment_telemetry
 
         // All pointers are borrowed for this callback only. Both traversal and
         // output are bounded, even with an unexpected replacement scene graph.
-        std::array<RE::NiAVObject*, 512> pending{};
-        std::size_t count = 0, visited = 0, emitted = 0;
-        bool truncated = false;
+        std::size_t emitted = 0;
+        unsigned int sceneMask = 0;
         auto* root = f4vr::getFirstPersonSkeleton();
-        if (root) {
-            pending[count++] = root;
-        }
-        while (count && visited < pending.size() && emitted < 40) {
-            auto* current = pending[--count];
-            ++visited;
+        const auto traversal = visitScene(static_cast<RE::NiAVObject*>(root), [&](RE::NiAVObject* current) {
             if (selected(current)) {
+                if (emitted == 40) {
+                    return false;
+                }
                 node(phaseLabel, "scene", current);
                 ++emitted;
+                const auto name = nodeName(current);
+                if (name == "Weapon") sceneMask |= 1;
+                if (name == "TGunReceiver" || name == "PipeRifleReceiver" || name == "RevolverReceiver") sceneMask |= 2;
+                if (name == "ProjectileNode") sceneMask |= 4;
+                if (name == "RArm_Hand") sceneMask |= 8;
+                if (name == "LArm_Hand") sceneMask |= 16;
             }
-            if (auto* branch = current->IsNode()) {
-                const auto& children = branch->children;
-                const auto limit = (std::min)(static_cast<std::size_t>(children.size()), pending.size());
-                truncated = truncated || children.size() > limit;
-                for (std::size_t i = 0; i < limit; ++i) {
-                    if (auto* child = children[static_cast<decltype(children.size())>(i)].get()) {
-                        if (count == pending.size()) {
-                            truncated = true;
-                            break;
-                        }
-                        pending[count++] = child;
-                    }
-                }
-            }
+            return true;
+        });
+        session->log->info("VWA phase-end seq={} phase={} root={:X} visited={} emitted={} truncated={} sceneMask={:X} weaponSceneComplete={}",
+            schedulerSequence, phaseLabel, reinterpret_cast<std::uintptr_t>(root), traversal.visited, emitted,
+            traversal.truncated, sceneMask, !traversal.truncated && (sceneMask & 7) == 7);
+        if ((sceneMask & 7) != 7 || traversal.truncated) {
+            session->log->warn("VWA incomplete-scene seq={} phase={} sceneMask={:X}; missing weapon/receiver/muzzle or traversal bound reached, do not infer transform ownership from this phase",
+                schedulerSequence, phaseLabel, sceneMask);
         }
-        session->log->info("VWA phase-end seq={} phase={} root={:X} visited={} emitted={} truncated={}",
-            schedulerSequence, phaseLabel, reinterpret_cast<std::uintptr_t>(root), visited, emitted, truncated || count != 0);
         if (phase == Phase::AfterRock) {
             session->sampling = false;
             session->log->flush();

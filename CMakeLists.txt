@@ -1052,6 +1052,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKMainLoopHookPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKMainLoopHookPolicyTests)
 
+  add_executable(ROCKWeaponTelemetryTraversalTests "${ROOT_DIR}/tests/WeaponTelemetryTraversalTests.cpp")
+  target_compile_features(ROCKWeaponTelemetryTraversalTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponTelemetryTraversalTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponTelemetryTraversalTests)
+
   add_dependencies(
     ROCKPolicyTestBinaries
     ROCKSDKExamplePlugins
@@ -1076,6 +1081,7 @@ if(BUILD_ROCK_TESTS)
     ROCKDebugOverlaySnapshotPoolTests
     ROCKDebugOverlayShaderCompileTests
     ROCKMainLoopHookPolicyTests
+    ROCKWeaponTelemetryTraversalTests
     ROCKHandWorldClaimRegistryPolicyTests
     ROCKDampenedDriverPredictionPolicyTests
     ROCKTrackedHandIsolationPolicyTests
