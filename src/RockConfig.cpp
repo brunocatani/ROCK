@@ -28,6 +28,7 @@ namespace
     constexpr auto IMMERSIVE_WEAPONS_SECTION = "ImmersiveWeapons";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
+    constexpr auto VR_SECTION = "VR";
     constexpr float kDefaultWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
     constexpr float kMaxWeaponCollisionVisualStabilizationSeconds = 60.0f / 90.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
@@ -248,6 +249,19 @@ namespace rock
         const bool materializeMissingDefaults)
     {
         RockIniReader ini(storage, materializeMissingDefaults);
+        rockVrUseKickback = ini.GetBoolValue(VR_SECTION, "bUseKickback", rockVrUseKickback);
+        rockVrUseRecoil = ini.GetBoolValue(VR_SECTION, "bUseRecoil", rockVrUseRecoil);
+        rockVrIgnoreConeOfFireCalculationsForPlayer = ini.GetBoolValue(
+            VR_SECTION, "bIgnoreConeOfFireCalculationsForPlayer", rockVrIgnoreConeOfFireCalculationsForPlayer);
+        rockVrLeftHandedMode = ini.GetBoolValue(VR_SECTION, "bLeftHandedMode", rockVrLeftHandedMode);
+        const long rotationType = ini.GetLongValue(VR_SECTION, "iRotationType", rockVrRotationType);
+        if (rotationType < 0 || rotationType > 3) {
+            ROCK_LOG_WARN(Config, "[VR] iRotationType={} is outside 0..3; using compiled default {}",
+                rotationType, rockVrRotationType);
+        } else {
+            rockVrRotationType = static_cast<int>(rotationType);
+        }
+
         auto readVec3 = [&](const char* keyX, const char* keyY, const char* keyZ, RE::NiPoint3& value) {
             value.x = static_cast<float>(ini.GetDoubleValue(SECTION, keyX, value.x));
             value.y = static_cast<float>(ini.GetDoubleValue(SECTION, keyY, value.y));
