@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace rock::dynamic_weapon_collision_policy
 {
@@ -18,11 +19,27 @@ namespace rock::dynamic_weapon_collision_policy
     inline constexpr float kMaximumAngularVelocityRadiansPerSecond = 35.0f;
     inline constexpr float kDivergenceTeleportDistanceGameUnits = 80.0f;
     inline constexpr float kDivergenceTeleportDwellSeconds = 0.3f;
-    inline constexpr float kMinimumVisualCorrectionTranslationGameUnits = 0.05f;
-    inline constexpr float kMinimumVisualCorrectionRotationDegrees = 0.25f;
     inline constexpr float kMinimumBoundingBoxHalfExtentGameUnits = 0.25f;
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;
+
+    enum class VisualIntentSource
+    {
+        None,
+        NativePhysicalHand,
+        AuthoredPrimary,
+        ManagedGrip,
+    };
+
+    inline const char* visualIntentSourceName(VisualIntentSource source) noexcept
+    {
+        switch (source) {
+        case VisualIntentSource::NativePhysicalHand: return "native-physical-hand";
+        case VisualIntentSource::AuthoredPrimary: return "authored-primary";
+        case VisualIntentSource::ManagedGrip: return "managed-grip";
+        default: return "none";
+        }
+    }
 
     struct DivergenceDwellResult
     {
@@ -336,6 +353,33 @@ namespace rock::dynamic_weapon_collision_policy
         return result;
     }
 
+    // Preserve this frame's native local animation, but never take the world
+    // pose of the rendered hand as the physical input. Intermediate animation
+    // nodes are supported; missing or cyclic ancestry fails closed.
+    template <class Node>
+    inline bool reconstructNativeIntent(const Node* weapon, const Node* hand,
+        const RE::NiTransform& physicalHandWorld, RE::NiTransform& result)
+    {
+        result = {};
+        if (!weapon || !hand || weapon == hand || !isFiniteTransform(physicalHandWorld)) {
+            return false;
+        }
+        auto local = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const Node* node = weapon;
+        for (std::size_t depth = 0; node && node != hand && depth < 64; ++depth) {
+            if (!isFiniteTransform(node->local)) {
+                return false;
+            }
+            local = transform_math::composeTransforms(node->local, local);
+            node = node->parent;
+        }
+        if (node != hand) {
+            return false;
+        }
+        result = transform_math::composeTransforms(physicalHandWorld, local);
+        return isFiniteTransform(result);
+    }
+
     inline RE::NiTransform resolveCurrentIntentFromSample(
         const RE::NiTransform& sampledRequestedProxyBodyWorld,
         const RE::NiTransform& sampledLiveProxyBodyWorld,
@@ -434,5 +478,26 @@ namespace rock::dynamic_weapon_collision_policy
         }
         const float cosine = std::clamp((matchingAxisDotSum - 1.0f) * 0.5f, -1.0f, 1.0f);
         return std::acos(cosine) * 57.29577951308232f;
+    }
+
+    struct VisualCorrectionDecision
+    {
+        bool apply = false;
+        float translationGameUnits = 0.0f;
+        float rotationDegrees = 0.0f;
+    };
+
+    inline VisualCorrectionDecision evaluateVisualCorrection(
+        const RE::NiTransform& requested, const RE::NiTransform& solved)
+    {
+        if (!isFiniteTransform(requested) || !isFiniteTransform(solved)) {
+            return {};
+        }
+        VisualCorrectionDecision result{};
+        result.translationGameUnits = translationDeltaGameUnits(requested, solved);
+        result.rotationDegrees = rotationDeltaDegrees(requested, solved);
+        // Valid physics owns presentation continuously, including zero error.
+        result.apply = std::isfinite(result.translationGameUnits) && std::isfinite(result.rotationDegrees);
+        return result;
     }
 }

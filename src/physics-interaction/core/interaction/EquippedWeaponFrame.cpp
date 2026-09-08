@@ -229,8 +229,6 @@ namespace rock
             authored_support_grab_policy::resolveAuthoredGenerationKey(
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey);
-        const bool suppressDefaultNativeWeaponIntent =
-            _twoHandedGrip.previousWeaponCollisionPresentationWasLive();
         _dynamicWeaponCollision.beginFrame(
             runtime.frameIndex,
             hknp,
@@ -240,8 +238,7 @@ namespace rock
             dynamic_weapon_collision_policy::kDynamicCompoundEnabled &&
                 runtime.weaponDrawn &&
                 !frame.menuBlocked &&
-                physicsWritesAllowedForWorld(frame.hknpWorld),
-            suppressDefaultNativeWeaponIntent);
+                physicsWritesAllowedForWorld(frame.hknpWorld));
         reconcileEquippedWeaponHandlingMode();
 
         {

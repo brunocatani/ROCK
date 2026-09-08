@@ -291,6 +291,60 @@ int main()
     ok &= expectNear("stationary wall rotation stays exact", rotationDeltaDegrees(unchangedIntent, sampledLive), 0.0f, 0.05f);
 
     const auto nativeOneHand = selectAttachedHands(false, false, true, false, false);
+    struct NativeNode
+    {
+        NativeNode* parent = nullptr;
+        RE::NiTransform local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        RE::NiTransform world = local;
+    };
+    NativeNode nativeHand{}, animatedParent{&nativeHand}, nativeWeapon{&animatedParent};
+    animatedParent.local.translate = RE::NiPoint3{1.0f, 2.0f, 0.0f};
+    nativeWeapon.local.translate = RE::NiPoint3{0.0f, 3.0f, 0.0f};
+    auto physicalDriver = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    RE::NiTransform nativeIntent{};
+    float step = 0.0f;
+    for (const float residual : {0.04f, 0.06f, 0.03f, 0.0f}) {
+        physicalDriver.translate.x = step;
+        // The rendered parent can carry any previous correction. Neither it
+        // nor a stale descendant world may become the next physical target.
+        nativeHand.world = physicalDriver;
+        nativeHand.world.translate.y += residual;
+        nativeHand.world.rotate = rotationZ90();
+        animatedParent.world.translate.x = -500.0f;
+        nativeWeapon.world.translate.y = 900.0f;
+        ok &= reconstructNativeIntent(&nativeWeapon, &nativeHand, physicalDriver, nativeIntent);
+        ok &= expectPoint("native intent ignores correction cutoff crossings", nativeIntent.translate, RE::NiPoint3{step + 1.0f, 5.0f, 0.0f});
+        ok &= expectNear("native intent ignores rendered parent deflection", rotationDeltaDegrees(nativeIntent, physicalDriver), 0.0f, 0.05f);
+        step += 4.0f;
+    }
+    nativeWeapon.local.translate.z = 2.0f;
+    ok &= reconstructNativeIntent(&nativeWeapon, &nativeHand, physicalDriver, nativeIntent);
+    ok &= expectNear("native animation locals remain live", nativeIntent.translate.z, 2.0f);
+    nativeWeapon.parent = &nativeHand;
+    ok &= reconstructNativeIntent(&nativeWeapon, &nativeHand, physicalDriver, nativeIntent);
+    ok &= expectPoint("direct native attachment stays supported", nativeIntent.translate, RE::NiPoint3{12.0f, 3.0f, 2.0f});
+    nativeWeapon.parent = nullptr;
+    ok &= !reconstructNativeIntent(&nativeWeapon, &nativeHand, physicalDriver, nativeIntent);
+    nativeWeapon.parent = &animatedParent;
+    animatedParent.parent = &nativeWeapon;
+    ok &= !reconstructNativeIntent(&nativeWeapon, &nativeHand, physicalDriver, nativeIntent);
+    animatedParent.parent = &nativeHand;
+    nativeWeapon.local.translate.x = std::numeric_limits<float>::quiet_NaN();
+    ok &= !reconstructNativeIntent(&nativeWeapon, &nativeHand, physicalDriver, nativeIntent);
+
+    auto corrected = physicalDriver;
+    for (const float residual : {0.0f, 0.03f, 0.06f, 0.04f, 5.0f}) {
+        corrected.translate.y = physicalDriver.translate.y + residual;
+        const auto decision = evaluateVisualCorrection(physicalDriver, corrected);
+        ok &= decision.apply;
+        ok &= expectNear("valid correction retains authority through the old cutoff", decision.translationGameUnits, residual);
+    }
+    corrected = physicalDriver;
+    corrected.rotate = rotationZ90();
+    ok &= evaluateVisualCorrection(physicalDriver, corrected).apply;
+    corrected.translate.x = std::numeric_limits<float>::quiet_NaN();
+    ok &= !evaluateVisualCorrection(physicalDriver, corrected).apply;
+
     ok &= !nativeOneHand.left && nativeOneHand.right;
     const auto leftPrimaryOnly = selectAttachedHands(false, true, true, false, false);
     ok &= leftPrimaryOnly.left && !leftPrimaryOnly.right;

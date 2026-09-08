@@ -20,6 +20,7 @@
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
@@ -469,7 +470,9 @@ namespace rock
             void* context,
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey);
+            std::uint64_t weaponGenerationKey,
+            dynamic_weapon_collision_policy::VisualIntentSource source,
+            const RE::NiTransform* physicalDriverWorld);
 
         TwoHandedGrip();
         ~TwoHandedGrip();
@@ -642,17 +645,9 @@ namespace rock
             _visuals.weaponIntentObserver = observer;
         }
 
-        // Captures which hands retained collision presentation through the
-        // previous render interval, then releases those tags. FRIK has already
-        // updated the current skeleton, so input selection uses that witness to
-        // avoid reading the collision-corrected roots back as physical intent.
+        // Releases last frame's collision hand tags before new claims arrive.
+        // Physical weapon intent does not depend on whether these tags existed.
         void beginWeaponCollisionPresentationFrame();
-
-        bool previousWeaponCollisionPresentationWasLive() const
-        {
-            return _visuals.weaponCollisionHandPresentationFromPreviousFrame[0] ||
-                   _visuals.weaponCollisionHandPresentationFromPreviousFrame[1];
-        }
 
         // Republishes a physics-resolved visual pose without feeding that
         // correction back into the next dynamic-weapon drive target.
@@ -1685,7 +1680,9 @@ namespace rock
             const RE::NiTransform& solvedWeaponWorld,
             std::uint64_t authorityGenerationKey = 0,
             bool notifyVisualIntentObserver = true,
-            bool recordRenderedWeaponWorld = true);
+            bool recordRenderedWeaponWorld = true,
+            dynamic_weapon_collision_policy::VisualIntentSource intentSource =
+                dynamic_weapon_collision_policy::VisualIntentSource::ManagedGrip);
 
         [[nodiscard]] bool isDynamicSupportBaselineActive(
             bool supportHandIsLeft,
@@ -1811,7 +1808,7 @@ namespace rock
             std::uint32_t currentEquippedWeaponFormID,
             const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
-        void publishCollisionIsolatedRightNativeWeaponIntent(
+        void publishPhysicalRightNativeWeaponIntent(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
         void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);

@@ -222,7 +222,7 @@ namespace rock
             return finishUpdate();
         }
 
-        publishCollisionIsolatedRightNativeWeaponIntent(
+        publishPhysicalRightNativeWeaponIntent(
             weaponNode,
             currentWeaponGenerationKey);
 

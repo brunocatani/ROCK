@@ -386,8 +386,7 @@ namespace rock
         void* bhkWorld,
         RE::NiNode* weaponNode,
         const std::uint64_t weaponGenerationKey,
-        const bool enabled,
-        const bool suppressDefaultNativeIntent)
+        const bool enabled)
     {
         _frameIndex = frameIndex;
         _clockPresentationFrame = 0;
@@ -397,15 +396,12 @@ namespace rock
         _frameGenerationKey = weaponGenerationKey;
         _frameRequestedWeaponWorld = {};
         _frameAcceptingIntent = enabled && world && bhkWorld && weaponNode && weaponGenerationKey != 0;
-        _frameHasIntent =
-            _frameAcceptingIntent &&
-            !suppressDefaultNativeIntent &&
-            dynamic_weapon_collision_policy::isFiniteTransform(weaponNode->world);
-        if (_frameHasIntent) {
-            // Native/F4SE visual authority is the collision-free intent when
-            // ROCK does not publish a later manual-grip pose.
-            _frameRequestedWeaponWorld = weaponNode->world;
-        }
+        // Only explicit collision-free intent publications can drive the body.
+        // Never alternate between the rendered weapon and a reconstructed hand
+        // according to whether the previous frame had a visible correction.
+        _frameHasIntent = false;
+        _frameIntentSource = dynamic_weapon_collision_policy::VisualIntentSource::None;
+        _frameIntentDriverValid = false;
         _gripRecoveryDistanceGameUnitsAtomic.store(
             g_rockConfig.rockWeaponCollisionGripRecoveryDistanceGameUnits,
             std::memory_order_release);
@@ -416,18 +412,22 @@ namespace rock
         void* context,
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
-        const std::uint64_t weaponGenerationKey)
+        const std::uint64_t weaponGenerationKey,
+        const dynamic_weapon_collision_policy::VisualIntentSource source,
+        const RE::NiTransform* physicalDriverWorld)
     {
         auto* runtime = static_cast<DynamicWeaponCollisionRuntime*>(context);
         if (runtime) {
-            runtime->captureVisualIntent(weaponNode, requestedWeaponWorld, weaponGenerationKey);
+            runtime->captureVisualIntent(weaponNode, requestedWeaponWorld, weaponGenerationKey, source, physicalDriverWorld);
         }
     }
 
     void DynamicWeaponCollisionRuntime::captureVisualIntent(
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
-        const std::uint64_t weaponGenerationKey)
+        const std::uint64_t weaponGenerationKey,
+        const dynamic_weapon_collision_policy::VisualIntentSource source,
+        const RE::NiTransform* physicalDriverWorld)
     {
         if (!_frameAcceptingIntent || weaponNode != _frameWeaponNode || weaponGenerationKey != _frameGenerationKey ||
             !dynamic_weapon_collision_policy::isFiniteTransform(requestedWeaponWorld)) {
@@ -435,6 +435,11 @@ namespace rock
         }
         _frameRequestedWeaponWorld = requestedWeaponWorld;
         _frameHasIntent = true;
+        _frameIntentSource = source;
+        _frameIntentDriverValid = physicalDriverWorld && dynamic_weapon_collision_policy::isFiniteTransform(*physicalDriverWorld);
+        if (_frameIntentDriverValid) {
+            _frameIntentDriverWorld = *physicalDriverWorld;
+        }
     }
 
     DynamicWeaponCollisionRuntime::FrameResult DynamicWeaponCollisionRuntime::finishFrame(
@@ -628,12 +633,9 @@ namespace rock
             return result;
         }
 
-        result.translationCorrectionGameUnits = dynamic_weapon_collision_policy::translationDeltaGameUnits(
-            resolvedWeaponWorld,
-            _frameRequestedWeaponWorld);
-        result.rotationCorrectionDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(
-            resolvedWeaponWorld,
-            _frameRequestedWeaponWorld);
+        const auto correction = dynamic_weapon_collision_policy::evaluateVisualCorrection(_frameRequestedWeaponWorld, resolvedWeaponWorld);
+        result.translationCorrectionGameUnits = correction.translationGameUnits;
+        result.rotationCorrectionDegrees = correction.rotationDegrees;
         if (debugEnabled) {
             _debugSnapshot.contactActive = true;
             _debugSnapshot.otherBodyId = snapshot.otherBodyId;
@@ -648,10 +650,7 @@ namespace rock
                 result.rotationCorrectionDegrees;
         }
 
-        const bool correctionFinite =
-            std::isfinite(result.translationCorrectionGameUnits) &&
-            std::isfinite(result.rotationCorrectionDegrees);
-        if (!correctionFinite) {
+        if (!correction.apply) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
@@ -663,20 +662,46 @@ namespace rock
             return result;
         }
 
-        const bool correctionVisible =
-            result.translationCorrectionGameUnits >= dynamic_weapon_collision_policy::kMinimumVisualCorrectionTranslationGameUnits ||
-            result.rotationCorrectionDegrees >= dynamic_weapon_collision_policy::kMinimumVisualCorrectionRotationDegrees;
-        if (correctionVisible) {
-            result.applyVisualCorrection = true;
-            result.resolvedWeaponWorld = resolvedWeaponWorld;
-            if (debugEnabled) {
-                _debugSnapshot.visualCorrectionActive = true;
+        // Even a zero residual stays on the same presentation/hand authority.
+        // A perceptual cutoff must not switch the next frame's input ownership.
+        result.applyVisualCorrection = correction.apply;
+        result.resolvedWeaponWorld = resolvedWeaponWorld;
+        if (debugEnabled) {
+            _debugSnapshot.visualCorrectionActive = true;
+        }
+        logPipelineStage("publish-requested");
+
+        RE::NiTransform intentDriverLocal{};
+        bool driverLocalValid = false;
+        float driverLocalStep = -1.0f;
+        float driverLocalRotationStep = -1.0f;
+        const bool sameIntentSource = _previousIntentSource == _frameIntentSource &&
+            _previousIntentGeneration == _frameGenerationKey;
+        if (g_rockConfig.rockDebugGrabFrameLogging && _frameIntentDriverValid) {
+            intentDriverLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(_frameIntentDriverWorld), _frameRequestedWeaponWorld);
+            driverLocalValid = dynamic_weapon_collision_policy::isFiniteTransform(intentDriverLocal);
+            if (driverLocalValid && _previousIntentDriverValid && sameIntentSource) {
+                driverLocalStep = dynamic_weapon_collision_policy::translationDeltaGameUnits(intentDriverLocal, _previousIntentDriverLocal);
+                driverLocalRotationStep = dynamic_weapon_collision_policy::rotationDeltaDegrees(intentDriverLocal, _previousIntentDriverLocal);
             }
         }
-        logPipelineStage(correctionVisible ? "publish-requested" : "visibility-gate");
+        _previousIntentDriverValid = driverLocalValid;
+        _previousIntentDriverLocal = intentDriverLocal;
+        _previousIntentSource = _frameIntentSource;
+        _previousIntentGeneration = _frameGenerationKey;
         if (weaponClockTraceEnabled(snapshot.sourceSequence)) {
             _clockPresentationFrame = _frameIndex;
             _clockExpectedWeaponWorld = result.resolvedWeaponWorld;
+            ROCK_LOG_INFO(Weapon,
+                "DWC_INTENT frame={} generation={:016X} source={} sameSource={} driverValid={} driver=({:.3f},{:.3f},{:.3f}) weaponInDriver=({:.3f},{:.3f},{:.3f}) localStep=({:.4f}gu,{:.4f}deg)",
+                _frameIndex, _frameGenerationKey, dynamic_weapon_collision_policy::visualIntentSourceName(_frameIntentSource),
+                sameIntentSource, driverLocalValid,
+                _frameIntentDriverValid ? _frameIntentDriverWorld.translate.x : 0.0f,
+                _frameIntentDriverValid ? _frameIntentDriverWorld.translate.y : 0.0f,
+                _frameIntentDriverValid ? _frameIntentDriverWorld.translate.z : 0.0f,
+                intentDriverLocal.translate.x, intentDriverLocal.translate.y, intentDriverLocal.translate.z,
+                driverLocalStep, driverLocalRotationStep);
             ROCK_LOG_INFO(Weapon,
                 "DWC_CLOCK game: frame={} queued={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg)",
                 _frameIndex, queueResult.queuedSequence, snapshot.sourceSequence, snapshot.solveSequence,
@@ -1633,6 +1658,9 @@ namespace rock
         _clockDriveTiming = {};
         _clockPresentationFrame = 0;
         _clockExpectedWeaponWorld = {};
+        _previousIntentDriverValid = false;
+        _previousIntentGeneration = 0;
+        _previousIntentSource = dynamic_weapon_collision_policy::VisualIntentSource::None;
         _divergenceDwellSeconds = 0.0f;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;

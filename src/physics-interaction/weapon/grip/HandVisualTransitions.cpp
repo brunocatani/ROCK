@@ -4,71 +4,47 @@
 
 namespace rock
 {
-    void TwoHandedGrip::publishCollisionIsolatedRightNativeWeaponIntent(
+    void TwoHandedGrip::publishPhysicalRightNativeWeaponIntent(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey)
     {
-        if (!_visuals.weaponCollisionHandPresentationFromPreviousFrame[1] ||
-            !_visuals.weaponIntentObserver ||
-            !weaponNode ||
-            currentWeaponGenerationKey == 0 ||
-            usesLeftFiringCarry() ||
-            ownsWeaponTransform() ||
-            !isFiniteTransform(weaponNode->local)) {
+        if (!_visuals.weaponIntentObserver || !weaponNode || currentWeaponGenerationKey == 0 ||
+            usesLeftFiringCarry() || ownsWeaponTransform()) {
             return;
         }
 
-        if (_firing.rightCanonicalSource ==
-                RightFiringCanonicalSource::AuthoredAnimation) {
-            /*
-             * The authored pre-pass already rebuilt this frame's clean
-             * position-only intent from the physical driver. Replacing its
-             * presented-hand parent with the physical hand here would rotate
-             * the weapon through the authored hand-in-weapon relation and
-             * violate the position-only contract after a collision pulse.
-             */
+        // Only a successful authored alignment from THIS frame owns this
+        // position-only pose. A retained canonical is not a fresh publication.
+        if (_firing.authoredHandWorldRefreshed) {
+            RE::NiTransform driverWorld{};
+            const bool driverValid = tryGetAuthoredPrimaryTrackedFiringHandWorld(driverWorld);
             if (isFiniteTransform(weaponNode->world)) {
-                _visuals.weaponIntentObserver(
-                    _visuals.weaponIntentObserverContext,
-                    weaponNode,
-                    weaponNode->world,
-                    currentWeaponGenerationKey);
+                _visuals.weaponIntentObserver(_visuals.weaponIntentObserverContext, weaponNode,
+                    weaponNode->world, currentWeaponGenerationKey,
+                    dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary, driverValid ? &driverWorld : nullptr);
             }
             return;
         }
 
-        RE::NiNode* rightHand = resolveFirstPersonHandNode(false);
-        if (!rightHand || weaponNode->parent != rightHand) {
-            return;
-        }
-
         RE::NiTransform physicalRightHandWorld{};
+        RE::NiTransform requestedWeaponWorld{};
+        auto* rightHand = resolveFirstPersonHandNode(false);
         if (!tryGetSolverHandTransform(false, physicalRightHandWorld) ||
-            !isUsableHandAuthorityTransform(physicalRightHandWorld)) {
+            !isUsableHandAuthorityTransform(physicalRightHandWorld) ||
+            !dynamic_weapon_collision_policy::reconstructNativeIntent<RE::NiAVObject>(
+                weaponNode, rightHand, physicalRightHandWorld, requestedWeaponWorld)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "DWC intent unavailable: generation={:016X} source=native-physical-hand reason=driver-or-native-ancestry",
+                currentWeaponGenerationKey);
             return;
         }
 
-        const RE::NiTransform requestedWeaponWorld =
-            transform_math::composeTransforms(
-                physicalRightHandWorld,
-                weaponNode->local);
-        if (!isFiniteTransform(requestedWeaponWorld)) {
-            return;
-        }
-
-        /*
-         * FRIK has already authored this frame's weapon-local animation, but
-         * its parent hand still contains the previous collision presentation.
-         * Preserve the native local animation while replacing only that parent
-         * basis with the collision-isolated physical hand. Later ROCK-owned
-         * grip and return publications naturally supersede this
-         * default intent through the same observer.
-         */
-        _visuals.weaponIntentObserver(
-            _visuals.weaponIntentObserverContext,
-            weaponNode,
-            requestedWeaponWorld,
-            currentWeaponGenerationKey);
+        // This source is identical whether the last collision residual was
+        // zero, sub-threshold, or blocked by a wall. Later managed grip/return
+        // publications may replace it as part of their existing ownership.
+        _visuals.weaponIntentObserver(_visuals.weaponIntentObserverContext, weaponNode,
+            requestedWeaponWorld, currentWeaponGenerationKey,
+            dynamic_weapon_collision_policy::VisualIntentSource::NativePhysicalHand, &physicalRightHandWorld);
     }
 
     void TwoHandedGrip::resetLockedHandVisualLerp()
@@ -725,7 +701,8 @@ namespace rock
         const RE::NiTransform& solvedWeaponWorld,
         const std::uint64_t authorityGenerationKey,
         const bool notifyVisualIntentObserver,
-        const bool recordRenderedWeaponWorld)
+        const bool recordRenderedWeaponWorld,
+        const dynamic_weapon_collision_policy::VisualIntentSource intentSource)
     {
         if (!weaponNode) {
             return false;
@@ -733,11 +710,17 @@ namespace rock
 
         const std::uint64_t effectiveGenerationKey = authorityGenerationKey != 0 ? authorityGenerationKey : _session.weaponGenerationKey;
         if (notifyVisualIntentObserver && _visuals.weaponIntentObserver) {
+            RE::NiTransform driverWorld{};
+            const bool driverValid = intentSource == dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary ?
+                tryGetAuthoredPrimaryTrackedFiringHandWorld(driverWorld) :
+                tryGetSolverHandTransform(weaponCarrierIsLeft(), driverWorld);
             _visuals.weaponIntentObserver(
                 _visuals.weaponIntentObserverContext,
                 weaponNode,
                 solvedWeaponWorld,
-                effectiveGenerationKey);
+                effectiveGenerationKey,
+                intentSource,
+                driverValid ? &driverWorld : nullptr);
         }
         const bool scopeAnchorMatchesAuthority =
             _scope.anchorValid && _scope.anchorWeaponNode == weaponNode && _scope.anchorGenerationKey == effectiveGenerationKey;
@@ -832,6 +815,9 @@ namespace rock
 
     void TwoHandedGrip::beginWeaponCollisionPresentationFrame()
     {
+        // Scope reconstruction and canonical capture still need to know which
+        // rendered roots are contaminated. This witness never selects between
+        // a raw weapon-world input and the collision-free intent publisher.
         _visuals.weaponCollisionHandPresentationFromPreviousFrame =
             _visuals.weaponCollisionHandAuthorityLive;
         const bool leftCleared = clearWeaponCollisionHandAuthority(true);
@@ -942,10 +928,9 @@ namespace rock
                  * Retain the high-priority result through rendering. Clearing
                  * it here synchronously reselects the live priority-100 firing
                  * and support targets, erasing the collision correction. The
-                 * next PhysicsInteraction frame clears this tag, then uses the
-                 * retained witness to reconstruct physical intent from the
-                 * unaffected hand driver. FRIK's current root was produced
-                 * before ROCK's clear and therefore cannot be sampled here.
+                 * next PhysicsInteraction frame clears this tag. Every frame's
+                 * weapon intent comes from its collision-isolated driver;
+                 * rendered hand roots never select that intent source.
                  */
                 pulse.retained = pulse.applied;
                 if (pulse.retained) {

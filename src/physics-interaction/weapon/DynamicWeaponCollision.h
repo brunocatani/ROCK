@@ -5,6 +5,7 @@
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -107,14 +108,15 @@ namespace rock
             void* bhkWorld,
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
-            bool enabled,
-            bool suppressDefaultNativeIntent);
+            bool enabled);
 
         static void observeWeaponVisualIntent(
             void* context,
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey);
+            std::uint64_t weaponGenerationKey,
+            dynamic_weapon_collision_policy::VisualIntentSource source,
+            const RE::NiTransform* physicalDriverWorld);
 
         FrameResult finishFrame(
             const PhysicsFrameContext& frame,
@@ -210,7 +212,9 @@ namespace rock
         void captureVisualIntent(
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey);
+            std::uint64_t weaponGenerationKey,
+            dynamic_weapon_collision_policy::VisualIntentSource source,
+            const RE::NiTransform* physicalDriverWorld);
         bool ensureProxyBody(
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,
@@ -282,6 +286,14 @@ namespace rock
         void* _frameBhkWorld{ nullptr };
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
+        dynamic_weapon_collision_policy::VisualIntentSource _frameIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
+        RE::NiTransform _frameIntentDriverWorld{};
+        bool _frameIntentDriverValid{false};
+        // Game-thread diagnostic baseline; source/generation changes rebase it.
+        RE::NiTransform _previousIntentDriverLocal{};
+        dynamic_weapon_collision_policy::VisualIntentSource _previousIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
+        std::uint64_t _previousIntentGeneration{0};
+        bool _previousIntentDriverValid{false};
         DebugSnapshot _debugSnapshot{};
         // Current game frame only. Reset at beginFrame and on body retirement.
         std::uint64_t _clockPresentationFrame{ 0 };

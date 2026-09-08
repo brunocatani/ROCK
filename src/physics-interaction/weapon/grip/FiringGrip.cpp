@@ -976,7 +976,10 @@ namespace rock
         if (!applyWeaponVisualAuthority(
                 weaponNode,
                 solvedWeaponWorld,
-                currentWeaponGenerationKey)) {
+                currentWeaponGenerationKey,
+                true,
+                true,
+                dynamic_weapon_collision_policy::VisualIntentSource::AuthoredPrimary)) {
             clearAuthoredPrimaryFiringHandWorldAuthority();
             return false;
         }
