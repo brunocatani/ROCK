@@ -34,6 +34,12 @@ namespace rock
 {
     struct RockConfigValues
     {
+        bool rockVrUseKickback = true;
+        bool rockVrUseRecoil = true;
+        bool rockVrIgnoreConeOfFireCalculationsForPlayer = true;
+        bool rockVrLeftHandedMode = false;
+        int rockVrRotationType = 3;
+
         bool rockHavokTimingFixEnabled = true;
         float rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
         int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;

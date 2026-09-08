@@ -6,6 +6,7 @@
 #include "api/FRIKApiV2.h"
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
+#include "rock_support/GameIniOverrides.h"
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/MainLoopHookPolicy.h"
@@ -285,6 +286,7 @@ namespace
         }
 
         g_rockConfig.processPendingConfigReload();
+        game_ini_overrides::update(g_rockConfig);
         advanceNativeRuntimeSettingFrameClock();
         enforceNativeMeleeRuntimeSuppression();
 
@@ -921,6 +923,10 @@ namespace
             }
 
             g_rockConfig.load();
+            if (!game_ini_overrides::install(g_rockConfig)) {
+                logger::critical("ROCK: Required VR INI enforcement is unavailable; initialization stopped.");
+                return;
+            }
             rock::frik_weapon_offset_cache::preload();
             rock::saved_grab_offset::preload();
             rock::authored_weapon_grip_cache::preload();
@@ -964,6 +970,7 @@ namespace
 
             if (s_frikAvailable) {
                 g_rockConfig.reload();
+                game_ini_overrides::update(g_rockConfig);
                 logger::info("ROCK: Config reloaded for new session.");
             }
         }
