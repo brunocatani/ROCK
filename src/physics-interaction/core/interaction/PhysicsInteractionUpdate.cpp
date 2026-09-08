@@ -85,6 +85,9 @@ namespace rock
             const bool applied = _handBoneCache.presentArm(isLeft, delta, elbowMoveGameUnits, reachDeficitGameUnits);
             frik_hand_world_authority::recordHandPresentation(isLeft, delta, applied, elbowMoveGameUnits, reachDeficitGameUnits);
         }
+        if (g_rockConfig.rockDebugGrabFrameLogging) {
+            _dynamicWeaponCollision.tracePresentedWeapon(resolveEquippedWeaponInteractionNode(), runtime_state::currentFrame().frameIndex);
+        }
     }
 
     RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
