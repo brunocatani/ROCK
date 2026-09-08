@@ -406,10 +406,10 @@ namespace rock::frik_visual_authority
         return isLeft ? RebaseDriver::LeftHand : RebaseDriver::RightHand;
     }
 
-    // The hand's wand translation only (see RebaseDriver).
-    [[nodiscard]] inline RebaseDriver physicalHandPositionDriver(bool isLeft)
+    // The hand's wand translation plus the turn of the axis from the other hand's wand (see RebaseDriver).
+    [[nodiscard]] inline RebaseDriver physicalHandAimAxisDriver(bool isLeft)
     {
-        return isLeft ? RebaseDriver::LeftHandPosition : RebaseDriver::RightHandPosition;
+        return hand_world_claim_registry_policy::aimAxisDriverForHand(isLeft);
     }
 
     [[nodiscard]] inline bool isAvailable()

@@ -744,7 +744,12 @@ namespace rock
          * deg on collision pulses). It rides its own hand's wand translation
          * instead: that follows the rig while running (6.7 gu per frame a
          * static claim fell behind by), follows that hand, stays put when
-         * the carrier moves, and never takes the wrist's turn.
+         * the carrier moves, and never takes the wrist's turn. Its
+         * orientation turns with the axis from the carrier's wand to its
+         * own, the two-handed aim, so FRIK solves that arm for the seat's
+         * turn instead of last frame's orientation (the translation-only
+         * driver left up to 5 deg per frame, 9 deg on contacts, for the
+         * end-of-frame presentation, which cannot re-solve FRIK's twist).
          */
         bool weaponSeatFollowsCarrier(const bool seatHandIsLeft) const
         {

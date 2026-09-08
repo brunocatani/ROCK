@@ -49,9 +49,15 @@ namespace rock::hand_world_claim_registry_policy
      * Which physical hand's controller chain a claim follows between ROCK
      * frames. Static claims (a hand latched to a surface) are never moved.
      * The position drivers carry the chain's translation only: a seat that
-     * rides with a hand but is oriented by something else (the support hand
-     * of a two-hand hold, aimed between the hands) follows the hand and the
-     * rig without taking the wrist's turn.
+     * rides with a hand but is oriented by something else follows the hand
+     * and the rig without taking the wrist's turn. The aim-axis drivers add
+     * the turn of the axis from the other hand's chain to this hand's chain:
+     * the support seat of a two-hand hold sits on a weapon aimed from the
+     * carrier toward it, so between ROCK frames its orientation turns with
+     * that axis. With the translation-only driver the whole per-frame weapon
+     * turn was left for the end-of-frame presentation (ROCK.log PRESENT:
+     * p99 5 deg, 9 deg on contacts), and FRIK had solved the arm for last
+     * frame's orientation.
      */
     enum class RebaseDriver : std::uint8_t
     {
@@ -60,12 +66,22 @@ namespace rock::hand_world_claim_registry_policy
         LeftHand,
         RightHandPosition,
         LeftHandPosition,
+        RightHandAimAxis,
+        LeftHandAimAxis,
     };
 
     [[nodiscard]] constexpr bool isPositionDriver(const RebaseDriver driver) noexcept
     {
         return driver == RebaseDriver::RightHandPosition || driver == RebaseDriver::LeftHandPosition;
     }
+
+    [[nodiscard]] constexpr bool isAimAxisDriver(const RebaseDriver driver) noexcept
+    {
+        return driver == RebaseDriver::RightHandAimAxis || driver == RebaseDriver::LeftHandAimAxis;
+    }
+
+    // Two hand chains closer than this do not define an aim axis.
+    inline constexpr float kMinAimAxisLengthGameUnits = 1.0f;
 
     [[nodiscard]] constexpr std::size_t handIndex(const bool isLeft) noexcept
     {
@@ -77,9 +93,9 @@ namespace rock::hand_world_claim_registry_policy
         return isLeft ? RebaseDriver::LeftHand : RebaseDriver::RightHand;
     }
 
-    [[nodiscard]] constexpr RebaseDriver positionDriverForHand(const bool isLeft) noexcept
+    [[nodiscard]] constexpr RebaseDriver aimAxisDriverForHand(const bool isLeft) noexcept
     {
-        return isLeft ? RebaseDriver::LeftHandPosition : RebaseDriver::RightHandPosition;
+        return isLeft ? RebaseDriver::LeftHandAimAxis : RebaseDriver::RightHandAimAxis;
     }
 
     struct DriverSample
@@ -103,10 +119,25 @@ namespace rock::hand_world_claim_registry_policy
         switch (driver) {
         case RebaseDriver::RightHand:
         case RebaseDriver::RightHandPosition:
+        case RebaseDriver::RightHandAimAxis:
             return &frame.hands[handIndex(false)];
         case RebaseDriver::LeftHand:
         case RebaseDriver::LeftHandPosition:
+        case RebaseDriver::LeftHandAimAxis:
             return &frame.hands[handIndex(true)];
+        default:
+            return nullptr;
+        }
+    }
+
+    // The other hand's chain sample, for the drivers that turn with the axis between the hands.
+    [[nodiscard]] inline const DriverSample* otherHandSampleForDriver(const DriverFrame& frame, const RebaseDriver driver) noexcept
+    {
+        switch (driver) {
+        case RebaseDriver::RightHandAimAxis:
+            return &frame.hands[handIndex(true)];
+        case RebaseDriver::LeftHandAimAxis:
+            return &frame.hands[handIndex(false)];
         default:
             return nullptr;
         }
@@ -121,6 +152,8 @@ namespace rock::hand_world_claim_registry_policy
         RE::NiTransform target{};
         RebaseDriver driver = RebaseDriver::Static;
         DriverSample driverAtPublish{};
+        // The other hand's chain at publish; valid for aim-axis drivers only.
+        DriverSample otherDriverAtPublish{};
         // Mirrors FRIK's publish sequence: the highest wins a priority tie.
         std::uint64_t publishOrder = 0;
         std::uint32_t fallbackFrames = 0;
@@ -234,7 +267,8 @@ namespace rock::hand_world_claim_registry_policy
      * re-stamps publishOrder, matching FRIK's "most recently published wins a
      * tie" rule for hand transforms; its fallback episode state survives, since
      * owners republish every frame and the episode spans frames. The driver
-     * sample is the pre-FRIK sample of the frame the target was computed in.
+     * samples are the pre-FRIK samples of the frame the target was computed
+     * in; the other hand's is kept for aim-axis drivers only.
      */
     [[nodiscard]] inline CommitResult commit(
         Registry& registry,
@@ -243,7 +277,8 @@ namespace rock::hand_world_claim_registry_policy
         const int priority,
         const RE::NiTransform& target,
         const RebaseDriver driver,
-        const DriverSample& driverAtPublish) noexcept
+        const DriverSample& driverAtPublish,
+        const DriverSample& otherDriverAtPublish = DriverSample{}) noexcept
     {
         if (!isRegistrableTag(tag)) {
             return CommitResult::InvalidTag;
@@ -274,6 +309,7 @@ namespace rock::hand_world_claim_registry_policy
         claim->target = target;
         claim->driver = driver;
         claim->driverAtPublish = driver == RebaseDriver::Static ? DriverSample{} : driverAtPublish;
+        claim->otherDriverAtPublish = isAimAxisDriver(driver) ? otherDriverAtPublish : DriverSample{};
         claim->publishOrder = registry.nextPublishOrder++;
         if (inserted) {
             claim->fallbackFrames = 0;
@@ -352,12 +388,72 @@ namespace rock::hand_world_claim_registry_policy
     };
 
     /*
+     * The stored form (rows are the local axes in world) of the smallest
+     * world rotation that turns direction a onto direction b. Identity when
+     * either is too short to define a direction or they already agree.
+     */
+    [[nodiscard]] inline RE::NiMatrix3 storedRotationFromTo(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
+    {
+        RE::NiMatrix3 stored = transform_math::makeIdentityRotation<RE::NiMatrix3>();
+        const double ax = a.x, ay = a.y, az = a.z;
+        const double bx = b.x, by = b.y, bz = b.z;
+        const double la = std::sqrt(ax * ax + ay * ay + az * az);
+        const double lb = std::sqrt(bx * bx + by * by + bz * bz);
+        if (!(la > kMinAimAxisLengthGameUnits) || !(lb > kMinAimAxisLengthGameUnits)) {
+            return stored;
+        }
+        const double ux = ax / la, uy = ay / la, uz = az / la;
+        const double vx = bx / lb, vy = by / lb, vz = bz / lb;
+        double cosine = std::clamp(ux * vx + uy * vy + uz * vz, -1.0, 1.0);
+        double kx = uy * vz - uz * vy;
+        double ky = uz * vx - ux * vz;
+        double kz = ux * vy - uy * vx;
+        double sine = std::sqrt(kx * kx + ky * ky + kz * kz);
+        if (sine > 1e-9) {
+            kx /= sine;
+            ky /= sine;
+            kz /= sine;
+        } else if (cosine > 0.0) {
+            return stored;
+        } else {
+            // Antiparallel: half a turn about any axis perpendicular to a.
+            const double hx = std::abs(ux) < 0.9 ? 1.0 : 0.0;
+            const double hy = std::abs(ux) < 0.9 ? 0.0 : 1.0;
+            kx = uy * 0.0 - uz * hy;
+            ky = uz * hx - ux * 0.0;
+            kz = ux * hy - uy * hx;
+            const double lk = std::sqrt(kx * kx + ky * ky + kz * kz);
+            kx /= lk;
+            ky /= lk;
+            kz /= lk;
+            cosine = -1.0;
+            sine = 0.0;
+        }
+        // Rodrigues, math form m (v' = m v); the stored form is its transpose.
+        const double t = 1.0 - cosine;
+        const double m[3][3] = {
+            { cosine + kx * kx * t, kx * ky * t - kz * sine, kx * kz * t + ky * sine },
+            { ky * kx * t + kz * sine, cosine + ky * ky * t, ky * kz * t - kx * sine },
+            { kz * kx * t - ky * sine, kz * ky * t + kx * sine, cosine + kz * kz * t },
+        };
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                stored.entry[row][column] = static_cast<float>(m[column][row]);
+            }
+        }
+        return stored;
+    }
+
+    /*
      * Move a claim by its driver's motion since publish:
      * target' = driverNow * inverse(driverAtPublish) * target.
+     * A position driver moves the target by the chain's translation only; an
+     * aim-axis driver adds the turn of the axis from the other hand's chain
+     * to this one (translation only when the other sample is missing).
      * Not republished when the driver is static, either sample is missing, the
      * result is not finite, or the motion is below the epsilon.
      */
-    [[nodiscard]] inline RebasePlan planRebase(const Claim& claim, const DriverSample& driverNow) noexcept
+    [[nodiscard]] inline RebasePlan planRebase(const Claim& claim, const DriverSample& driverNow, const DriverSample& otherDriverNow) noexcept
     {
         RebasePlan plan{ .target = claim.target, .republish = false };
         if (claim.driver == RebaseDriver::Static || !claim.driverAtPublish.valid || !driverNow.valid ||
@@ -365,12 +461,27 @@ namespace rock::hand_world_claim_registry_policy
             return plan;
         }
         RE::NiTransform rebased = claim.target;
-        if (isPositionDriver(claim.driver)) {
-            // The driver's translation only: the seat keeps its orientation
-            // and its offset from the hand.
+        if (isPositionDriver(claim.driver) || isAimAxisDriver(claim.driver)) {
+            // The driver's translation only: the seat keeps its offset from
+            // the hand, and its orientation unless the aim axis turned.
             rebased.translate.x += driverNow.world.translate.x - claim.driverAtPublish.world.translate.x;
             rebased.translate.y += driverNow.world.translate.y - claim.driverAtPublish.world.translate.y;
             rebased.translate.z += driverNow.world.translate.z - claim.driverAtPublish.world.translate.z;
+            if (isAimAxisDriver(claim.driver) && otherDriverNow.valid && claim.otherDriverAtPublish.valid &&
+                isFiniteTransform(otherDriverNow.world) && isFiniteTransform(claim.otherDriverAtPublish.world)) {
+                const RE::NiPoint3 axisAtPublish{
+                    claim.driverAtPublish.world.translate.x - claim.otherDriverAtPublish.world.translate.x,
+                    claim.driverAtPublish.world.translate.y - claim.otherDriverAtPublish.world.translate.y,
+                    claim.driverAtPublish.world.translate.z - claim.otherDriverAtPublish.world.translate.z,
+                };
+                const RE::NiPoint3 axisNow{
+                    driverNow.world.translate.x - otherDriverNow.world.translate.x,
+                    driverNow.world.translate.y - otherDriverNow.world.translate.y,
+                    driverNow.world.translate.z - otherDriverNow.world.translate.z,
+                };
+                rebased.rotate = transform_math::orthonormalizeStoredRotation(
+                    transform_math::multiplyStoredRotations(claim.target.rotate, storedRotationFromTo(axisAtPublish, axisNow)));
+            }
         } else {
             // Scene driver bases carry float drift; the transpose inverse only
             // cancels for orthonormal bases, and the rebased target is rendered.
@@ -389,14 +500,22 @@ namespace rock::hand_world_claim_registry_policy
         return plan;
     }
 
+    [[nodiscard]] inline RebasePlan planRebase(const Claim& claim, const DriverSample& driverNow) noexcept
+    {
+        return planRebase(claim, driverNow, DriverSample{});
+    }
+
     /*
      * Commit a rebase that FRIK accepted: the claim now describes the target
-     * against the new driver sample.
+     * against the new driver samples.
      */
-    inline void applyRebase(Claim& claim, const RebasePlan& plan, const DriverSample& driverNow) noexcept
+    inline void applyRebase(Claim& claim, const RebasePlan& plan, const DriverSample& driverNow, const DriverSample& otherDriverNow = DriverSample{}) noexcept
     {
         claim.target = plan.target;
         claim.driverAtPublish = driverNow;
+        if (isAimAxisDriver(claim.driver)) {
+            claim.otherDriverAtPublish = otherDriverNow;
+        }
     }
 
     struct RebasePassEntry
@@ -448,7 +567,8 @@ namespace rock::hand_world_claim_registry_policy
 
             RebasePassEntry entry{ .claimIndex = index, .target = claim.target };
             if (const DriverSample* sample = sampleForDriver(driverFrame, claim.driver)) {
-                const RebasePlan plan = planRebase(claim, *sample);
+                const DriverSample* other = otherHandSampleForDriver(driverFrame, claim.driver);
+                const RebasePlan plan = planRebase(claim, *sample, other ? *other : DriverSample{});
                 entry.target = plan.target;
                 entry.moved = plan.republish;
             }
@@ -485,6 +605,9 @@ namespace rock::hand_world_claim_registry_policy
             claim.target = entry.target;
             if (const DriverSample* sample = sampleForDriver(driverFrame, claim.driver)) {
                 claim.driverAtPublish = *sample;
+            }
+            if (const DriverSample* other = otherHandSampleForDriver(driverFrame, claim.driver)) {
+                claim.otherDriverAtPublish = *other;
             }
         }
         claim.publishOrder = registry.nextPublishOrder++;

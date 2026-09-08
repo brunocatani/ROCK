@@ -130,6 +130,10 @@ namespace rock::frik_hand_world_authority
                 return "right-hand-position";
             case RebaseDriver::LeftHandPosition:
                 return "left-hand-position";
+            case RebaseDriver::RightHandAimAxis:
+                return "right-hand-aim-axis";
+            case RebaseDriver::LeftHandAimAxis:
+                return "left-hand-aim-axis";
             default:
                 return "static";
             }
@@ -404,14 +408,19 @@ namespace rock::frik_hand_world_authority
         // The driver sample of this frame's pre-FRIK pass is the base the
         // target was computed against. An older sample would mis-rebase.
         DriverSample driverAtPublish{};
+        DriverSample otherDriverAtPublish{};
         if (driver != RebaseDriver::Static && g_service.driverFrame.sequence != 0 &&
             g_service.driverFrame.sequence == g_service.rockFrameSequence) {
             if (const DriverSample* sample = registry_policy::sampleForDriver(g_service.driverFrame, driver)) {
                 driverAtPublish = *sample;
             }
+            if (const DriverSample* other = registry_policy::otherHandSampleForDriver(g_service.driverFrame, driver)) {
+                otherDriverAtPublish = *other;
+            }
         }
 
-        const auto result = registry_policy::commit(g_service.registry, tagView, isLeft, priority, worldTarget, driver, driverAtPublish);
+        const auto result = registry_policy::commit(
+            g_service.registry, tagView, isLeft, priority, worldTarget, driver, driverAtPublish, otherDriverAtPublish);
         switch (result) {
         case registry_policy::CommitResult::Inserted:
             return true;

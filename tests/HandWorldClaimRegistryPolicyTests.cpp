@@ -191,6 +191,88 @@ int main()
         ok &= expectFalse("invalid publish sample", planRebase(noPublishSample, rotated).republish);
     }
 
+    // Aim-axis driver: the hand's translation, and the turn of the axis from the other hand to this one.
+    {
+        Claim aimClaim{};
+        aimClaim.valid = true;
+        aimClaim.driver = RebaseDriver::RightHandAimAxis;
+        aimClaim.target = translated(12.0f, 1.0f, 0.0f);
+        aimClaim.driverAtPublish = sample(translated(10.0f, 0.0f, 0.0f));
+        aimClaim.otherDriverAtPublish = sample(identity()); // axis at publish: +X
+        // The other hand stays; this hand moves to +Y (axis turns 90 degrees about Z) and twists in place (ignored).
+        const DriverSample ownNow = sample(yawed(30.0f, 0.0f, 10.0f, 0.0f));
+        const DriverSample otherNow = sample(identity());
+        const RebasePlan aimPlan = planRebase(aimClaim, ownNow, otherNow);
+        ok &= expectTrue("aim republishes", aimPlan.republish);
+        ok &= expectNear("aim x", aimPlan.target.translate.x, 2.0f, 0.001f);
+        ok &= expectNear("aim y", aimPlan.target.translate.y, 11.0f, 0.001f);
+        ok &= expectNear("aim z", aimPlan.target.translate.z, 0.0f, 0.001f);
+        ok &= expectNear("aim turned 90 degrees", rotationDeltaDegrees(aimPlan.target, aimClaim.target), 90.0f, 0.01f);
+        const RE::NiPoint3 forward = rock::transform_math::localVectorToWorld(aimPlan.target, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        ok &= expectNear("aim local X follows the axis (x)", forward.x, 0.0f, 0.001f);
+        ok &= expectNear("aim local X follows the axis (y)", forward.y, 1.0f, 0.001f);
+        ok &= expectNear("aim local X follows the axis (z)", forward.z, 0.0f, 0.001f);
+        ok &= expectNear("aim result is a rotation", static_cast<float>(rock::transform_math::storedRotationOrthonormalityError(aimPlan.target.rotate)), 0.0f, 0.0001f);
+
+        // Both hands translate together: the axis is unchanged, no turn.
+        const RebasePlan togetherPlan = planRebase(aimClaim, sample(translated(13.0f, 2.0f, 1.0f)), sample(translated(3.0f, 2.0f, 1.0f)));
+        ok &= expectTrue("together republishes", togetherPlan.republish);
+        ok &= expectNear("together x", togetherPlan.target.translate.x, 15.0f, 0.001f);
+        ok &= expectNear("together y", togetherPlan.target.translate.y, 3.0f, 0.001f);
+        ok &= expectNear("together keeps rotation", rotationDeltaDegrees(togetherPlan.target, aimClaim.target), 0.0f, 0.001f);
+
+        // Without the other hand's sample the driver degrades to translation only.
+        const RebasePlan noOtherPlan = planRebase(aimClaim, ownNow, DriverSample{});
+        ok &= expectNear("no other sample x", noOtherPlan.target.translate.x, 2.0f, 0.001f);
+        ok &= expectNear("no other sample y", noOtherPlan.target.translate.y, 11.0f, 0.001f);
+        ok &= expectNear("no other sample keeps rotation", rotationDeltaDegrees(noOtherPlan.target, aimClaim.target), 0.0f, 0.001f);
+        Claim noOtherAtPublish = aimClaim;
+        noOtherAtPublish.otherDriverAtPublish = {};
+        ok &= expectNear("no other publish sample keeps rotation", rotationDeltaDegrees(planRebase(noOtherAtPublish, ownNow, otherNow).target, aimClaim.target), 0.0f, 0.001f);
+
+        // Hands too close to define an axis: no turn.
+        Claim closeClaim = aimClaim;
+        closeClaim.driverAtPublish = sample(translated(0.5f, 0.0f, 0.0f));
+        ok &= expectNear("degenerate axis keeps rotation", rotationDeltaDegrees(planRebase(closeClaim, sample(translated(0.0f, 0.5f, 0.0f)), otherNow).target, aimClaim.target), 0.0f, 0.001f);
+
+        // Sample lookup: own hand as the driver, the other hand for the axis.
+        DriverFrame frame{};
+        frame.hands[handIndex(false)] = sample(translated(1, 0, 0));
+        frame.hands[handIndex(true)] = sample(translated(2, 0, 0));
+        ok &= expectTrue("right aim driver samples the right hand", sampleForDriver(frame, RebaseDriver::RightHandAimAxis) == &frame.hands[handIndex(false)]);
+        ok &= expectTrue("right aim driver's other is the left hand", otherHandSampleForDriver(frame, RebaseDriver::RightHandAimAxis) == &frame.hands[handIndex(true)]);
+        ok &= expectTrue("left aim driver's other is the right hand", otherHandSampleForDriver(frame, RebaseDriver::LeftHandAimAxis) == &frame.hands[handIndex(false)]);
+        ok &= expectTrue("full driver has no other", otherHandSampleForDriver(frame, RebaseDriver::LeftHand) == nullptr);
+        ok &= expectTrue("aim driver for hand", aimAxisDriverForHand(true) == RebaseDriver::LeftHandAimAxis && aimAxisDriverForHand(false) == RebaseDriver::RightHandAimAxis);
+        ok &= expectTrue("aim drivers are not position drivers", !isPositionDriver(RebaseDriver::LeftHandAimAxis) && isAimAxisDriver(RebaseDriver::LeftHandAimAxis) && !isAimAxisDriver(RebaseDriver::LeftHandPosition));
+
+        // Commit keeps the other sample for aim-axis drivers only; the pass advances both samples.
+        Registry registry{};
+        ok &= expectEnum("insert aim", commit(registry, "ROCK_S", true, 100, translated(2.0f, 10.0f, 0.0f), RebaseDriver::LeftHandAimAxis, sample(translated(0, 10, 0)), sample(identity())), CommitResult::Inserted);
+        ok &= expectEnum("insert full", commit(registry, "ROCK_F", false, 100, translated(1, 0, 0), RebaseDriver::RightHand, sample(identity()), sample(translated(0, 10, 0))), CommitResult::Inserted);
+        ok &= expectTrue("aim claim keeps the other sample", find(registry, "ROCK_S", true)->otherDriverAtPublish.valid);
+        ok &= expectFalse("full claim drops the other sample", find(registry, "ROCK_F", false)->otherDriverAtPublish.valid);
+        DriverFrame passFrame{};
+        passFrame.sequence = 3;
+        passFrame.hands[handIndex(true)] = sample(translated(-10.0f, 0.0f, 0.0f)); // left hand now at -X of the right: axis turned 90 degrees
+        passFrame.hands[handIndex(false)] = sample(identity());
+        RebasePassPlan passPlan{};
+        planRebasePass(registry, passFrame, passPlan);
+        const RebasePassEntry* aimEntry = nullptr;
+        for (std::size_t i = 0; i < passPlan.count; ++i) {
+            if (tagView(registry.claims[passPlan.entries[i].claimIndex]) == "ROCK_S") {
+                aimEntry = &passPlan.entries[i];
+            }
+        }
+        ok &= expectTrue("aim entry planned", aimEntry != nullptr && aimEntry->moved);
+        if (aimEntry) {
+            ok &= expectNear("pass turned the seat", rotationDeltaDegrees(aimEntry->target, find(registry, "ROCK_S", true)->target), 90.0f, 0.01f);
+            commitRebasePassEntry(registry, *aimEntry, passFrame);
+            ok &= expectNear("pass advanced the other sample", find(registry, "ROCK_S", true)->otherDriverAtPublish.world.translate.x, 0.0f, 0.001f);
+            ok &= expectNear("pass advanced the own sample", find(registry, "ROCK_S", true)->driverAtPublish.world.translate.x, -10.0f, 0.001f);
+        }
+    }
+
     // Driver frame lookup.
     {
         DriverFrame frame{};
