@@ -74,9 +74,14 @@ namespace rock
          * with both bone lengths kept (ArmPresentationPolicy), in the tree
          * and its refNodes. The whole arm is validated before the first
          * write. False when nothing was written; outElbowMoveGameUnits is how
-         * far the elbow left FRIK's solve.
+         * far the elbow left FRIK's solve, outReachDeficitGameUnits how far
+         * the wrist lay beyond the straight arm.
          */
-        bool presentCachedArm(rendered_bone_transport_policy::HandChainSide side, const RE::NiTransform& handDelta, float& outElbowMoveGameUnits);
+        bool presentCachedArm(
+            rendered_bone_transport_policy::HandChainSide side,
+            const RE::NiTransform& handDelta,
+            float& outElbowMoveGameUnits,
+            float& outReachDeficitGameUnits);
         void resetCache();
 
     private:
@@ -206,14 +211,16 @@ namespace rock
          * world authority made to its claim since FRIK consumed it, and
          * re-solve the arm behind it.
          */
-        bool presentArm(bool isLeft, const RE::NiTransform& handDelta, float& outElbowMoveGameUnits)
+        bool presentArm(bool isLeft, const RE::NiTransform& handDelta, float& outElbowMoveGameUnits, float& outReachDeficitGameUnits)
         {
             outElbowMoveGameUnits = 0.0f;
+            outReachDeficitGameUnits = 0.0f;
             return isReady() &&
                    _reader.presentCachedArm(
                        isLeft ? rendered_bone_transport_policy::HandChainSide::Left : rendered_bone_transport_policy::HandChainSide::Right,
                        handDelta,
-                       outElbowMoveGameUnits);
+                       outElbowMoveGameUnits,
+                       outReachDeficitGameUnits);
         }
 
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }

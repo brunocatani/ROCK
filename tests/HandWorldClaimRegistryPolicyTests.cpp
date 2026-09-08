@@ -169,6 +169,23 @@ int main()
         staticClaim.driver = RebaseDriver::Static;
         ok &= expectFalse("static never republishes", planRebase(staticClaim, rotated).republish);
         ok &= expectFalse("invalid driver now", planRebase(*claim, DriverSample{}).republish);
+
+        // A position driver carries the translation only: the driver's turn
+        // leaves the target's orientation and its offset from the hand alone.
+        Claim positionClaim = *claim;
+        positionClaim.driver = RebaseDriver::RightHandPosition;
+        positionClaim.target = translated(20.0f, 3.0f, 2.0f);
+        positionClaim.driverAtPublish = moved;
+        const DriverSample turnedAndMoved = sample(yawed(90.0f, 16.0f, 0.0f, 4.0f));
+        const RebasePlan positionPlan = planRebase(positionClaim, turnedAndMoved);
+        ok &= expectTrue("position republishes", positionPlan.republish);
+        ok &= expectNear("position x", positionPlan.target.translate.x, 21.0f, 0.001f);
+        ok &= expectNear("position y", positionPlan.target.translate.y, 3.0f, 0.001f);
+        ok &= expectNear("position z", positionPlan.target.translate.z, 4.0f, 0.001f);
+        ok &= expectNear("position keeps rotation", rotationDeltaDegrees(positionPlan.target, positionClaim.target), 0.0f, 0.001f);
+        const DriverFrame positionFrame{ .sequence = 1, .hands = { moved, DriverSample{} } };
+        ok &= expectTrue("position driver samples the hand", sampleForDriver(positionFrame, RebaseDriver::RightHandPosition) == &positionFrame.hands[0]);
+        ok &= expectTrue("left position driver samples the left hand", sampleForDriver(positionFrame, RebaseDriver::LeftHandPosition) == &positionFrame.hands[1]);
         Claim noPublishSample = *claim;
         noPublishSample.driverAtPublish.valid = false;
         ok &= expectFalse("invalid publish sample", planRebase(noPublishSample, rotated).republish);

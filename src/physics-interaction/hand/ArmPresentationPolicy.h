@@ -79,6 +79,8 @@ namespace rock::arm_presentation_policy
         RE::NiTransform forearm{};
         RE::NiTransform hand{};
         float elbowMoveGameUnits = 0.0f;
+        // How far the wrist lies beyond the straight arm (the wrist joint absorbs it).
+        float reachDeficitGameUnits = 0.0f;
         bool valid = false;
     };
 
@@ -237,11 +239,13 @@ namespace rock::arm_presentation_policy
         carry.forearm = rigidAboutPivot(rotationFromTo(fore, sub(wn, elbowNew)), e, elbowNew);
         carry.hand = transform_math::orthonormalizedTransform(handDelta);
         carry.elbowMoveGameUnits = static_cast<float>(length(sub(elbowNew, e)));
+        carry.reachDeficitGameUnits = static_cast<float>((std::max)(0.0, c - (a + b)));
         carry.valid =
             tracked_hand_isolation_policy::isFiniteTransform(carry.upperArm) &&
             tracked_hand_isolation_policy::isFiniteTransform(carry.forearm) &&
             tracked_hand_isolation_policy::isFiniteTransform(carry.hand) &&
-            std::isfinite(carry.elbowMoveGameUnits);
+            std::isfinite(carry.elbowMoveGameUnits) &&
+            std::isfinite(carry.reachDeficitGameUnits);
         return carry;
     }
 

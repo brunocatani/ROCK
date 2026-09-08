@@ -81,8 +81,9 @@ namespace rock
                 continue;
             }
             float elbowMoveGameUnits = 0.0f;
-            const bool applied = _handBoneCache.presentArm(isLeft, delta, elbowMoveGameUnits);
-            frik_hand_world_authority::recordHandPresentation(isLeft, delta, applied, elbowMoveGameUnits);
+            float reachDeficitGameUnits = 0.0f;
+            const bool applied = _handBoneCache.presentArm(isLeft, delta, elbowMoveGameUnits, reachDeficitGameUnits);
+            frik_hand_world_authority::recordHandPresentation(isLeft, delta, applied, elbowMoveGameUnits, reachDeficitGameUnits);
         }
     }
 

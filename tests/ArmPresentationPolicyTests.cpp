@@ -131,6 +131,7 @@ int main()
         ok &= expectTrue("bend side kept", elbowNew.z > 10.0f);
         ok &= expectNear("elbow move reported", carry.elbowMoveGameUnits, distance(elbowNew, elbow), 0.01f);
         ok &= expectTrue("elbow moves less than the wrist", carry.elbowMoveGameUnits < 2.0f);
+        ok &= expectNear("in reach: no deficit", carry.reachDeficitGameUnits, 0.0f, 1e-4f);
         ok &= expectTrue("upper orthonormal", orthonormal(carry.upperArm));
         ok &= expectTrue("forearm orthonormal", orthonormal(carry.forearm));
         ok &= expectTrue("hand orthonormal", orthonormal(carry.hand));
@@ -159,6 +160,7 @@ int main()
         ok &= expectNear("far upper arm length", distance(elbowNew, shoulder), 25.0f, 0.01f);
         ok &= expectNear("far straight", elbowNew.z, 0.0f, 0.05f);
         ok &= expectNear("far forearm length", distance(moved(carry.forearm, wrist), elbowNew), 25.0f, 0.01f);
+        ok &= expectNear("far reach deficit", carry.reachDeficitGameUnits, 10.0f, 0.05f);
     }
 
     // Degenerate input is refused.

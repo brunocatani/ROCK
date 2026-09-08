@@ -135,7 +135,7 @@ namespace rock::frik_hand_world_authority
      * (elbowMoveGameUnits from FRIK's elbow), or failed to: keeps the
      * presented hand, the probe counters and the debug trace honest.
      */
-    void recordHandPresentation(bool isLeft, const RE::NiTransform& delta, bool applied, float elbowMoveGameUnits);
+    void recordHandPresentation(bool isLeft, const RE::NiTransform& delta, bool applied, float elbowMoveGameUnits, float reachDeficitGameUnits);
     // Last call of ROCK's frame: remembers this frame's targets for the next frame's trace.
     void endRockFrame();
 

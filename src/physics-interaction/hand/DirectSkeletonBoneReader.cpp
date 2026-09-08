@@ -351,11 +351,13 @@ namespace rock
     bool DirectSkeletonBoneReader::presentCachedArm(
         const rendered_bone_transport_policy::HandChainSide side,
         const RE::NiTransform& handDelta,
-        float& outElbowMoveGameUnits)
+        float& outElbowMoveGameUnits,
+        float& outReachDeficitGameUnits)
     {
         namespace arm_policy = arm_presentation_policy;
         namespace transport_policy = rendered_bone_transport_policy;
         outElbowMoveGameUnits = 0.0f;
+        outReachDeficitGameUnits = 0.0f;
         auto* tree = static_cast<BSFlattenedBoneTree*>(_cachedBoneTree);
         if (side == transport_policy::HandChainSide::None || !validTree(tree) ||
             !tracked_hand_isolation_policy::isFiniteTransform(handDelta)) {
@@ -481,6 +483,7 @@ namespace rock
             }
         }
         outElbowMoveGameUnits = carry.elbowMoveGameUnits;
+        outReachDeficitGameUnits = carry.reachDeficitGameUnits;
         return true;
     }
 }

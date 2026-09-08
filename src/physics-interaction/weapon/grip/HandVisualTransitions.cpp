@@ -100,7 +100,7 @@ namespace rock
     {
         return weaponSeatFollowsCarrier(seatHandIsLeft) ?
             frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()) :
-            frik_visual_authority::RebaseDriver::Static;
+            frik_visual_authority::physicalHandPositionDriver(seatHandIsLeft);
     }
 
     void TwoHandedGrip::recordPublishedHandWorld(const bool isLeft, const RE::NiTransform& appliedWorld)

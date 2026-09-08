@@ -70,6 +70,8 @@ namespace rock::frik_hand_world_authority
             std::array<float, 2> presentTranslationMax{};
             std::array<float, 2> presentRotationMax{};
             std::array<float, 2> presentElbowMax{};
+            // The re-solved wrist lay beyond the straight arm by this much.
+            std::array<float, 2> presentStretchMax{};
             std::array<std::uint32_t, 2> presentSkippedNotFollowing{};
             std::array<std::uint32_t, 2> presentSkippedTooLarge{};
             std::array<std::uint32_t, 2> presentWriteFailures{};
@@ -124,6 +126,10 @@ namespace rock::frik_hand_world_authority
                 return "right-hand";
             case RebaseDriver::LeftHand:
                 return "left-hand";
+            case RebaseDriver::RightHandPosition:
+                return "right-hand-position";
+            case RebaseDriver::LeftHandPosition:
+                return "left-hand-position";
             default:
                 return "static";
             }
@@ -209,7 +215,7 @@ namespace rock::frik_hand_world_authority
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const auto& relation = g_service.isolation[hand].relation;
                 ROCK_LOG_INFO(Hand,
-                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={} transportFrames={} transportMax={:.2f}gu/{:.2f}deg claimedWithoutTransport={} presented={} presentMax={:.2f}gu/{:.2f}deg presentElbowMax={:.2f}gu presentNotFollowing={} presentTooLarge={} presentWriteFailed={}",
+                    "HandWorldAuthority probe hand={} frames={} reconstructed={} contaminated={} unavailable={} probeFrames={} probeMaxTranslation={:.3f}gu probeMaxRotation={:.3f}deg relation={} relationAccepted={} relationRejected={} transportFrames={} transportMax={:.2f}gu/{:.2f}deg claimedWithoutTransport={} presented={} presentMax={:.2f}gu/{:.2f}deg presentElbowMax={:.2f}gu presentStretchMax={:.2f}gu presentNotFollowing={} presentTooLarge={} presentWriteFailed={}",
                     handName(hand == handIndex(true)),
                     probes.frames,
                     probes.reconstructedFrames[hand],
@@ -229,6 +235,7 @@ namespace rock::frik_hand_world_authority
                     probes.presentTranslationMax[hand],
                     probes.presentRotationMax[hand],
                     probes.presentElbowMax[hand],
+                    probes.presentStretchMax[hand],
                     probes.presentSkippedNotFollowing[hand],
                     probes.presentSkippedTooLarge[hand],
                     probes.presentWriteFailures[hand]);
@@ -649,7 +656,12 @@ namespace rock::frik_hand_world_authority
         }
     }
 
-    void recordHandPresentation(const bool isLeft, const RE::NiTransform& delta, const bool applied, const float elbowMoveGameUnits)
+    void recordHandPresentation(
+        const bool isLeft,
+        const RE::NiTransform& delta,
+        const bool applied,
+        const float elbowMoveGameUnits,
+        const float reachDeficitGameUnits)
     {
         const std::size_t hand = handIndex(isLeft);
         auto& state = g_service.isolation[hand];
@@ -663,6 +675,7 @@ namespace rock::frik_hand_world_authority
         }
         ++g_service.probes.presentedFrames[hand];
         g_service.probes.presentElbowMax[hand] = (std::max)(g_service.probes.presentElbowMax[hand], elbowMoveGameUnits);
+        g_service.probes.presentStretchMax[hand] = (std::max)(g_service.probes.presentStretchMax[hand], reachDeficitGameUnits);
         state.presentedThisFrame = true;
         const transport_policy::HandTransport transport{ .delta = delta, .active = true };
         if (state.presentedHandValid) {
@@ -708,7 +721,7 @@ namespace rock::frik_hand_world_authority
             }
         }
         ROCK_LOG_DEBUG(Hand,
-            "PRESENT hand={} line={} tag='{}' driver={} delta={:.2f}gu/{:.2f}deg elbow={:.2f}gu seat={:.2f}gu rebase={:.2f}gu driverMotion={:.2f}gu src={}",
+            "PRESENT hand={} line={} tag='{}' driver={} delta={:.2f}gu/{:.2f}deg elbow={:.2f}gu stretch={:.2f}gu seat={:.2f}gu rebase={:.2f}gu driverMotion={:.2f}gu src={}",
             isLeft ? "L" : "R",
             line,
             top ? top->tag.data() : "-",
@@ -716,6 +729,7 @@ namespace rock::frik_hand_world_authority
             state.presentTranslationGameUnits,
             state.presentRotationDegrees,
             elbowMoveGameUnits,
+            reachDeficitGameUnits,
             seatMotion,
             rebaseMotion,
             driverMotion,

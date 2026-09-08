@@ -739,10 +739,12 @@ namespace rock
          * wand between ROCK frames. The carrier's own seat does. The other
          * hand of a two-hand hold sits where the two-handed aim puts it: the
          * weapon turns between the hands, so that seat neither turns with
-         * the carrier's wrist nor moves with its perpendicular motion. Its
-         * claim is left static between frames and the frame-end presentation
-         * moves it by what it actually did (ROCK.log PRESENT: 0.2 gu per
-         * frame against 0.6 gu rebased, 6-15 deg on collision pulses).
+         * the carrier's wrist nor moves with its perpendicular motion
+         * (ROCK.log PRESENT: 0.2 gu per frame against 0.6 gu rebased, 6-15
+         * deg on collision pulses). It rides its own hand's wand translation
+         * instead: that follows the rig while running (6.7 gu per frame a
+         * static claim fell behind by), follows that hand, stays put when
+         * the carrier moves, and never takes the wrist's turn.
          */
         bool weaponSeatFollowsCarrier(const bool seatHandIsLeft) const
         {

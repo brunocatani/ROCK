@@ -48,13 +48,24 @@ namespace rock::hand_world_claim_registry_policy
     /*
      * Which physical hand's controller chain a claim follows between ROCK
      * frames. Static claims (a hand latched to a surface) are never moved.
+     * The position drivers carry the chain's translation only: a seat that
+     * rides with a hand but is oriented by something else (the support hand
+     * of a two-hand hold, aimed between the hands) follows the hand and the
+     * rig without taking the wrist's turn.
      */
     enum class RebaseDriver : std::uint8_t
     {
         Static,
         RightHand,
         LeftHand,
+        RightHandPosition,
+        LeftHandPosition,
     };
+
+    [[nodiscard]] constexpr bool isPositionDriver(const RebaseDriver driver) noexcept
+    {
+        return driver == RebaseDriver::RightHandPosition || driver == RebaseDriver::LeftHandPosition;
+    }
 
     [[nodiscard]] constexpr std::size_t handIndex(const bool isLeft) noexcept
     {
@@ -64,6 +75,11 @@ namespace rock::hand_world_claim_registry_policy
     [[nodiscard]] constexpr RebaseDriver driverForHand(const bool isLeft) noexcept
     {
         return isLeft ? RebaseDriver::LeftHand : RebaseDriver::RightHand;
+    }
+
+    [[nodiscard]] constexpr RebaseDriver positionDriverForHand(const bool isLeft) noexcept
+    {
+        return isLeft ? RebaseDriver::LeftHandPosition : RebaseDriver::RightHandPosition;
     }
 
     struct DriverSample
@@ -86,8 +102,10 @@ namespace rock::hand_world_claim_registry_policy
     {
         switch (driver) {
         case RebaseDriver::RightHand:
+        case RebaseDriver::RightHandPosition:
             return &frame.hands[handIndex(false)];
         case RebaseDriver::LeftHand:
+        case RebaseDriver::LeftHandPosition:
             return &frame.hands[handIndex(true)];
         default:
             return nullptr;
@@ -346,12 +364,21 @@ namespace rock::hand_world_claim_registry_policy
             !isFiniteTransform(claim.driverAtPublish.world) || !isFiniteTransform(driverNow.world)) {
             return plan;
         }
-        // Scene driver bases carry float drift; the transpose inverse only
-        // cancels for orthonormal bases, and the rebased target is rendered.
-        const RE::NiTransform delta = transform_math::composeTransforms(
-            transform_math::orthonormalizedTransform(driverNow.world),
-            transform_math::invertTransform(transform_math::orthonormalizedTransform(claim.driverAtPublish.world)));
-        const RE::NiTransform rebased = transform_math::orthonormalizedTransform(transform_math::composeTransforms(delta, claim.target));
+        RE::NiTransform rebased = claim.target;
+        if (isPositionDriver(claim.driver)) {
+            // The driver's translation only: the seat keeps its orientation
+            // and its offset from the hand.
+            rebased.translate.x += driverNow.world.translate.x - claim.driverAtPublish.world.translate.x;
+            rebased.translate.y += driverNow.world.translate.y - claim.driverAtPublish.world.translate.y;
+            rebased.translate.z += driverNow.world.translate.z - claim.driverAtPublish.world.translate.z;
+        } else {
+            // Scene driver bases carry float drift; the transpose inverse only
+            // cancels for orthonormal bases, and the rebased target is rendered.
+            const RE::NiTransform delta = transform_math::composeTransforms(
+                transform_math::orthonormalizedTransform(driverNow.world),
+                transform_math::invertTransform(transform_math::orthonormalizedTransform(claim.driverAtPublish.world)));
+            rebased = transform_math::orthonormalizedTransform(transform_math::composeTransforms(delta, claim.target));
+        }
         if (!isFiniteTransform(rebased)) {
             return plan;
         }
