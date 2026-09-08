@@ -51,6 +51,10 @@ if(NOT EXISTS "${ROOT_DIR}/devmenu/rock/menu.json")
 endif()
 file(MAKE_DIRECTORY "${PACKAGE_STAGE_DIR}/DevMenu/Mods/rock")
 file(COPY "${ROOT_DIR}/devmenu/rock/menu.json" DESTINATION "${PACKAGE_STAGE_DIR}/DevMenu/Mods/rock")
+if(NOT EXISTS "${BUILD_DIR}/mod/DevMenu/Mods/rock/catalog.json")
+  message(FATAL_ERROR "Compiled DevMenu catalog is missing")
+endif()
+file(COPY "${BUILD_DIR}/mod/DevMenu/Mods/rock/catalog.json" DESTINATION "${PACKAGE_STAGE_DIR}/DevMenu/Mods/rock")
 
 file(COPY "${ROCK_PUBLIC_SDK_DIR}" DESTINATION "${PACKAGE_STAGE_SDK_DIR}")
 

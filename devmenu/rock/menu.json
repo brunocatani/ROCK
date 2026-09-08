@@ -10,7 +10,7 @@
     "root": "documents",
     "path": "ROCK_Config/ROCK.ini",
     "typedPrefixes": true,
-    "applyNote": "ROCK reloads saved configuration. Restart the game for settings consumed at initialization.",
+    "catalog": "catalog.json",
     "controls": [
       {
         "section": "ImmersiveWeapons",

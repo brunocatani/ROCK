@@ -538,6 +538,9 @@ namespace rock
 
         void reload();
 
+        // Enumerates the exact loader catalog in memory, without reading or writing a production INI.
+        static void compiledDefaults(CSimpleIniA& storage);
+
         void processPendingConfigReload();
 
         void stopFileWatch();
