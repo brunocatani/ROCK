@@ -5,7 +5,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
-#include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/grab/SurfaceMeshGrabPolicy.h"
 #include "physics-interaction/grab/TouchGrabJoinPolicy.h"
 #include "physics-interaction/grab/TouchGrabMath.h"
@@ -86,7 +86,6 @@ namespace rock
             };
             BoundedSurfaceMeshExtraction extraction{};
             std::uint32_t sourceTriangleCount = 0;
-            std::uint32_t patchTriangleCount = 0;
         };
 
         [[nodiscard]] bool tryAcquireSurfaceMeshPresentation(
@@ -204,26 +203,6 @@ namespace rock
                 return false;
             }
 
-            std::vector<GrabLocalTriangle> localPatch;
-            if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-                const auto maximumPatchTriangles = static_cast<std::size_t>(
-                    (std::max)(
-                        64,
-                        g_rockConfig.
-                            rockSurfaceMeshGrabMaxPatchTriangles));
-                localPatch = surface_mesh_grab_policy::buildTargetLocalPatch(
-                    worldTriangles,
-                    targetWorld,
-                    projection.meshPointWorld,
-                    maximumPatchTriangles);
-                outAcquisition.patchTriangleCount =
-                    static_cast<std::uint32_t>(localPatch.size());
-                if (localPatch.empty()) {
-                    outAcquisition.failure =
-                        surface_mesh_grab_policy::Failure::PatchEmpty;
-                }
-            }
-
             auto& presentation = outAcquisition.presentation;
             presentation.handWorld = projection.correctedHandWorld;
             presentation.meshAnchorWorld = projection.meshPointWorld;
@@ -231,68 +210,6 @@ namespace rock
             presentation.shellToMeshDistanceGameUnits =
                 projection.shellToMeshDistanceGameUnits;
             presentation.valid = true;
-            if (g_rockConfig.rockGrabMeshFingerPoseEnabled &&
-                !localPatch.empty()) {
-                grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex
-                    spatialIndex;
-                std::vector<TriangleData> fingerWorldTriangles;
-                auto poseTargets =
-                    grab_finger_pose_runtime::makeSharedGripPoseTarget(
-                        projection.meshPointWorld,
-                        projection.meshNormalWorld);
-                poseTargets.useSeatPointForMissingTargets = true;
-                poseTargets.useWholeMeshForMissingTargets = true;
-                const auto fingerSolve =
-                    grab_finger_pose_runtime::solveFrozenMeshFingerPose(
-                        localPatch,
-                        targetWorld,
-                        projection.correctedHandWorld,
-                        isLeft,
-                        projection.meshPointWorld,
-                        poseTargets,
-                        spatialIndex,
-                        fingerWorldTriangles,
-                        grab_finger_pose_runtime::
-                            FrozenMeshFingerPoseSolveOptions{
-                                .minValue =
-                                    g_rockConfig.rockGrabFingerMinValue,
-                                .maxTriangleDistanceSquared =
-                                    g_rockConfig.rockGrabMaxTriangleDistance,
-                                .rejectBacksideHits =
-                                    g_rockConfig.
-                                        rockGrabFingerRejectBacksideHits,
-                                .surfacePlaneToleranceGameUnits =
-                                    g_rockConfig.
-                                        rockGrabFingerSurfacePlaneToleranceGameUnits,
-                                .allowSurfaceAimTargets = true,
-                                .sweepContactRadiusGameUnits =
-                                    g_rockConfig.
-                                        rockGrabFingerSweepContactRadiusGameUnits,
-                                .thumbSweepMaxOpenValue =
-                                    g_rockConfig.
-                                        rockGrabThumbSweepMaxOpenValue,
-                                .fingerSweepMaxOpenValue =
-                                    g_rockConfig.
-                                        rockGrabFingerSweepMaxOpenValue,
-                                .meshFingerPoseEnabled = true,
-                                .captureSweepDebug = false,
-                            });
-                presentation.fingerPoseValid =
-                    fingerSolve.pose.solved &&
-                    fingerSolve.pose.hasJointValues;
-                if (presentation.fingerPoseValid) {
-                    presentation.fingerJointValues =
-                        fingerSolve.pose.jointValues;
-                    presentation.fingerContactMask =
-                        fingerSolve.pose.contactValidMask;
-                }
-            }
-            if (!presentation.fingerPoseValid &&
-                outAcquisition.failure ==
-                    surface_mesh_grab_policy::Failure::None) {
-                outAcquisition.failure = surface_mesh_grab_policy::Failure::
-                    FingerPoseUnavailable;
-            }
             return true;
         }
 
@@ -650,10 +567,6 @@ namespace rock
             outReport.hasSurfaceAnchor = hand.hasContactPoint;
             outReport.surfaceAnchorGame = hand.contactPointGame;
             outReport.surfaceGripMode = hand.surfaceGripMode;
-            outReport.meshFingerPose = hand.meshFingerPose &&
-                _dynamicHandCollision &&
-                _dynamicHandCollision->
-                    isSurfaceLatchMeshFingerPoseActive(isLeft);
             break;
         }
         return true;
@@ -1249,9 +1162,7 @@ namespace rock
 
         std::uint32_t constraintId = kInvalidConstraintId;
         bool surfaceLatch = false;
-        bool meshFingerPose = false;
         float shellToMeshDistanceGameUnits = 0.0f;
-        std::uint8_t meshFingerContactMask = 0;
         SurfaceMeshAcquisition meshAcquisition{};
         auto surfaceGripMode =
             provider::RockProviderSurfaceGripModeV1::CollisionAnchor;
@@ -1324,13 +1235,9 @@ namespace rock
                     meshAcquisition.presentation.meshNormalWorld;
                 hasContactPoint = true;
                 hasContactNormal = true;
-                meshFingerPose =
-                    meshAcquisition.presentation.fingerPoseValid;
                 shellToMeshDistanceGameUnits =
                     meshAcquisition.presentation.
                         shellToMeshDistanceGameUnits;
-                meshFingerContactMask =
-                    meshAcquisition.presentation.fingerContactMask;
             }
         } else {
             RE::NiTransform handBodyWorld{};
@@ -1370,10 +1277,8 @@ namespace rock
         attachment->hasContactNormal = hasContactNormal;
         attachment->contactNormalGame = contactNormal;
         attachment->surfaceGripMode = surfaceGripMode;
-        attachment->meshFingerPose = meshFingerPose;
         attachment->shellToMeshDistanceGameUnits =
             shellToMeshDistanceGameUnits;
-        attachment->meshFingerContactMask = meshFingerContactMask;
         RE::NiTransform targetWorld{};
         if ((hasContactPoint || hasContactNormal) &&
             havok_runtime::tryResolveLiveBodyWorldTransform(
@@ -1396,17 +1301,14 @@ namespace rock
         }
         ROCK_LOG_INFO(
             Hand,
-            "Touch grab hand attached: hand={} body={} surfaceMode={} meshFailure={} anchor={} meshPose={} gap={:.2f}gu triangles={}/{} contactMask=0x{:02X}",
+            "Touch grab hand attached: hand={} body={} surfaceMode={} meshFailure={} anchor={} gap={:.2f}gu triangles={}",
             isLeft ? "left" : "right",
             active.bodyId,
             static_cast<std::uint32_t>(surfaceGripMode),
             _lastAttemptReport.surfaceMeshFailure,
             hasContactPoint ? "yes" : "no",
-            meshFingerPose ? "yes" : "no",
             shellToMeshDistanceGameUnits,
-            meshAcquisition.sourceTriangleCount,
-            meshAcquisition.patchTriangleCount,
-            meshFingerContactMask);
+            meshAcquisition.sourceTriangleCount);
         return true;
     }
 
@@ -1761,13 +1663,8 @@ namespace rock
                     provider::RockProviderTouchGrabStateFlagV1::
                         MeshCollisionFallback);
             }
-            if (hand.meshFingerPose && _dynamicHandCollision &&
-                _dynamicHandCollision->
-                    isSurfaceLatchMeshFingerPoseActive(hand.isLeft)) {
-                state.flags |= static_cast<std::uint32_t>(
-                    provider::RockProviderTouchGrabStateFlagV1::
-                        MeshFingerPose);
-            }
+            // Fixed anchors use an authored climbing pose, so they do not
+            // advertise MeshFingerPose even when the anchor is mesh-derived.
             if (hand.hasContactPoint) {
                 state.contactPointGame = {
                     hand.contactPointGame.x,

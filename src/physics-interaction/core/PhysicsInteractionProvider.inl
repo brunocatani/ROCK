@@ -761,10 +761,6 @@
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::MeshCollisionFallback);
                 }
-                if (touchGrabReport.meshFingerPose) {
-                    state.flags |= static_cast<std::uint32_t>(
-                        Flag::MeshFingerPose);
-                }
             } else if (hand.isHolding()) {
                 auto* heldRef = hand.getHeldRef();
                 state.targetFormId = heldRef ? heldRef->GetFormID() : 0;

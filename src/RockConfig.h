@@ -280,7 +280,6 @@ namespace rock
         bool rockSurfaceMeshGrabEnabled = false;
         float rockSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
         int rockSurfaceMeshGrabMaxTriangles = 20000;
-        int rockSurfaceMeshGrabMaxPatchTriangles = 2048;
         std::string rockHandBoneColliderRadiusScaleOverrides = "";
         std::string rockHandPalmColliderDimensionScaleOverrides = "";
         bool rockHandBoneCollidersRequirePalmAnchor = true;

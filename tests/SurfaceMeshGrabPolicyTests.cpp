@@ -5,7 +5,6 @@
 #endif
 #include <cassert>
 #include <cmath>
-#include <vector>
 
 namespace
 {
@@ -58,30 +57,6 @@ int main()
             .maximumProjectionDistanceGameUnits = 4.0f,
         });
     assert(!rejected.valid);
-
-    auto targetWorld = identityTransform();
-    targetWorld.translate = { 10.0f, 0.0f, 0.0f };
-    const std::vector<rock::TriangleData> triangles{
-        {
-            { 30.0f, 0.0f, 0.0f },
-            { 31.0f, 0.0f, 0.0f },
-            { 30.0f, 1.0f, 0.0f },
-        },
-        {
-            { 11.0f, 0.0f, 0.0f },
-            { 12.0f, 0.0f, 0.0f },
-            { 11.0f, 1.0f, 0.0f },
-        },
-    };
-    const auto patch = policy::buildTargetLocalPatch(
-        triangles,
-        targetWorld,
-        { 11.25f, 0.25f, 0.0f },
-        1);
-    assert(patch.size() == 1);
-    assert(nearlyEqual(patch[0].v0.x, 1.0f));
-    assert(nearlyEqual(patch[0].v0.y, 0.0f));
-    assert(nearlyEqual(patch[0].v0.z, 0.0f));
 
     return 0;
 }

@@ -52,7 +52,6 @@ namespace rock
         {
             bool globalSurface = false;
             bool hasSurfaceAnchor = false;
-            bool meshFingerPose = false;
             provider::RockProviderTouchGrabKindV1 kind{
                 provider::RockProviderTouchGrabKindV1::FixedAnchor
             };
@@ -178,7 +177,6 @@ namespace rock
             bool hasContactPoint = false;
             bool hasContactNormal = false;
             bool surfaceLatch = false;
-            bool meshFingerPose = false;
             bool contactRelativeToTarget = false;
             provider::RockProviderSurfaceGripModeV1 surfaceGripMode{
                 provider::RockProviderSurfaceGripModeV1::CollisionAnchor
@@ -188,7 +186,6 @@ namespace rock
             RE::NiPoint3 contactPointInTargetBody{};
             RE::NiPoint3 contactNormalInTargetBody{};
             float shellToMeshDistanceGameUnits = 0.0f;
-            std::uint8_t meshFingerContactMask = 0;
         };
 
         struct ActiveTarget

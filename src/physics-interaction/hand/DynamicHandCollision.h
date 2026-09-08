@@ -164,11 +164,8 @@ namespace rock
             RE::NiTransform handWorld{};
             RE::NiPoint3 meshAnchorWorld{};
             RE::NiPoint3 meshNormalWorld{};
-            std::array<float, 15> fingerJointValues{};
             float shellToMeshDistanceGameUnits = 0.0f;
-            std::uint8_t fingerContactMask = 0;
             bool valid = false;
-            bool fingerPoseValid = false;
         };
 
         /*
@@ -185,8 +182,6 @@ namespace rock
         void endSurfaceLatch(bool isLeft) noexcept;
         [[nodiscard]] bool isSurfaceLatchActive(bool isLeft) const noexcept;
         [[nodiscard]] bool isSurfaceLatchMeshAuthoritative(
-            bool isLeft) const noexcept;
-        [[nodiscard]] bool isSurfaceLatchMeshFingerPoseActive(
             bool isLeft) const noexcept;
         [[nodiscard]] bool getLastPresentedHandWorld(
             bool isLeft,
@@ -351,12 +346,9 @@ namespace rock
                 RE::NiPoint3 meshNormalWorld{};
                 RE::NiPoint3 meshAnchorInTargetBody{};
                 RE::NiPoint3 meshNormalInTargetBody{};
-                std::array<float, 15> meshFingerJointValues{};
                 float shellToMeshDistanceGameUnits = 0.0f;
-                std::uint8_t meshFingerContactMask = 0;
                 bool meshAuthoritative = false;
-                bool meshFingerPoseValid = false;
-                bool meshPosePublished = false;
+                bool posePublished = false;
             };
 
             std::array<ProxySlot, kBodiesPerHand> bodies{};
@@ -425,7 +417,8 @@ namespace rock
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
         void clearVisual(HandSlots& handSlots, bool isLeft);
         void clearSurfaceFingerResponse(HandSlots& handSlots, bool isLeft);
-        void clearSurfaceMeshPose(HandSlots& handSlots, bool isLeft);
+        void applySurfaceLatchPose(HandSlots& handSlots, bool isLeft);
+        void clearSurfaceLatchPose(HandSlots& handSlots, bool isLeft);
         [[nodiscard]] bool captureSurfaceFingerResponse(
             HandSlots& handSlots,
             bool isLeft,
@@ -439,8 +432,7 @@ namespace rock
             const RE::NiTransform& rawHandWorld,
             const dynamic_hand_twin::TwinTargets& handTwins,
             const dynamic_hand_collision_telemetry::HandSample& handTelemetry,
-            float deltaSeconds,
-            bool freezeCurrentPose);
+            float deltaSeconds);
         void applyWeaponOwnershipCollisionSuppression(
             RE::hknpWorld* world,
             bool rightHandWeaponOwned,

@@ -943,16 +943,6 @@ namespace rock
                 rockSurfaceMeshGrabMaxTriangles)),
             256,
             100000);
-        rockSurfaceMeshGrabMaxPatchTriangles = std::clamp(
-            static_cast<int>(ini.GetLongValue(
-                SECTION,
-                "iSurfaceMeshGrabMaxPatchTriangles",
-                rockSurfaceMeshGrabMaxPatchTriangles)),
-            64,
-            2048);
-        rockSurfaceMeshGrabMaxPatchTriangles = std::min(
-            rockSurfaceMeshGrabMaxPatchTriangles,
-            rockSurfaceMeshGrabMaxTriangles);
         rockHandBoneColliderRadiusScaleOverrides = ini.GetValue(SECTION, "sHandBoneColliderRadiusScaleOverrides", rockHandBoneColliderRadiusScaleOverrides.c_str());
         rockHandPalmColliderDimensionScaleOverrides =
             ini.GetValue(SECTION, "sHandPalmColliderDimensionScaleOverrides", rockHandPalmColliderDimensionScaleOverrides.c_str());
