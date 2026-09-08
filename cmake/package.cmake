@@ -46,6 +46,11 @@ if(EXISTS "${ROOT_DIR}/data/mod")
 endif()
 file(COPY "${TARGET_FILE}" DESTINATION "${PACKAGE_STAGE_PLUGINS_DIR}")
 file(COPY "${TARGET_PDB_FILE}" DESTINATION "${PACKAGE_STAGE_PLUGINS_DIR}")
+if(NOT EXISTS "${ROOT_DIR}/devmenu/rock/menu.json")
+  message(FATAL_ERROR "ROCK-owned DevMenu manifest is missing")
+endif()
+file(MAKE_DIRECTORY "${PACKAGE_STAGE_DIR}/DevMenu/Mods/rock")
+file(COPY "${ROOT_DIR}/devmenu/rock/menu.json" DESTINATION "${PACKAGE_STAGE_DIR}/DevMenu/Mods/rock")
 
 file(COPY "${ROCK_PUBLIC_SDK_DIR}" DESTINATION "${PACKAGE_STAGE_SDK_DIR}")
 

@@ -174,6 +174,17 @@ string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}
 # test executables or archives. Tests and release packages remain explicit paths,
 # while fast local builds can still copy the plugin into the configured mod root.
 option(POST_BUILD_COPY_PLUGIN "Copy ROCK.dll and ROCK.pdb to configured mod root after building." OFF)
+set(ROCK_DEVMENU_MANIFEST "${ROOT_DIR}/devmenu/rock/menu.json")
+if(NOT EXISTS "${ROCK_DEVMENU_MANIFEST}")
+  message(FATAL_ERROR "ROCK-owned DevMenu manifest is missing: ${ROCK_DEVMENU_MANIFEST}")
+endif()
+set(ROCK_DEVMENU_STAGE "${CMAKE_CURRENT_BINARY_DIR}/mod/DevMenu/Mods/rock/menu.json")
+add_custom_command(OUTPUT "${ROCK_DEVMENU_STAGE}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/mod/DevMenu/Mods/rock"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ROCK_DEVMENU_MANIFEST}" "${ROCK_DEVMENU_STAGE}"
+  DEPENDS "${ROCK_DEVMENU_MANIFEST}" VERBATIM)
+add_custom_target(ROCKDevMenuPackage DEPENDS "${ROCK_DEVMENU_STAGE}")
+add_dependencies(${PROJECT_NAME} ROCKDevMenuPackage)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots that contain F4SE/Plugins.")
 option(ROCK_PACKAGE_RELEASE "Package Release builds into a .7z archive after ROCK is built." ON)
 option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
@@ -210,6 +221,10 @@ if(POST_BUILD_COPY_PLUGIN)
 
     message(">>> Create post build command: copy targets to:")
     foreach(copy_path IN LISTS COPY_PLUGIN_PATH_LIST)
+      add_custom_command(TARGET ROCKDevMenuPackage POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${copy_path}/DevMenu/Mods/rock"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ROCK_DEVMENU_STAGE}" "${copy_path}/DevMenu/Mods/rock/menu.json"
+        VERBATIM)
       message("    ${copy_path}/F4SE/Plugins/")
       add_custom_command(
         TARGET ${PROJECT_NAME}
