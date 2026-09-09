@@ -18,7 +18,6 @@ namespace rock::global_surface_grab_policy
         bool providerMatched = false;
         bool wildcardPass = false;
         bool dynamicSurfaceContact = false;
-        bool closeObjectCandidate = false;
         std::uint32_t collisionLayer = 0xFFFF'FFFFu;
     };
 
@@ -27,11 +26,17 @@ namespace rock::global_surface_grab_policy
     {
         return context.enabled &&
                !context.providerMatched &&
-               !context.closeObjectCandidate &&
                context.wildcardPass &&
                context.dynamicSurfaceContact &&
                collision_layer_policy::isDynamicHandProxySurfaceLayer(
                    context.collisionLayer);
+    }
+
+    [[nodiscard]] inline constexpr bool shouldYieldToCloseObject(
+        const bool wildcardTarget,
+        const bool closeObjectCandidate) noexcept
+    {
+        return wildcardTarget && closeObjectCandidate;
     }
 
     /*

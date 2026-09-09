@@ -79,6 +79,7 @@ namespace rock
             CapacityFull,
             MechanismCreationFailed,
             HandAttachmentFailed,
+            CloseObjectPriority,
         };
 
         struct AttemptReport

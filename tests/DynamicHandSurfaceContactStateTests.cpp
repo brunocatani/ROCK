@@ -125,9 +125,9 @@ int main()
     clutterContact.collisionLayer = FO4_LAYER_CLUTTER;
     assert(!shouldUseFallback(clutterContact));
 
-    auto closeObjectWins = validSurfaceFallback;
-    closeObjectWins.closeObjectCandidate = true;
-    assert(!shouldUseFallback(closeObjectWins));
+    // Built-in surfaces share the same acquisition priority as provider wildcards.
+    assert(shouldYieldToCloseObject(true, true));
+    assert(!shouldYieldToCloseObject(true, false));
     assert(canFollowUnclassifiedMotion(true, true));
     assert(!canFollowUnclassifiedMotion(false, true));
     assert(!canFollowUnclassifiedMotion(true, false));

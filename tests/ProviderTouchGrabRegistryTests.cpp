@@ -1,4 +1,5 @@
 #include "api/TouchGrabRegistry.h"
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 
 #include <array>
 #ifdef NDEBUG
@@ -106,6 +107,8 @@ namespace
         assert(match.matched);
         assert(!match.wildcard);
         assert(match.target.targetId == 1);
+        assert(!rock::global_surface_grab_policy::shouldYieldToCloseObject(
+            match.wildcard, true));
 
         match = registry->resolve(
             101,
@@ -119,6 +122,12 @@ namespace
         assert(match.matched);
         assert(match.wildcard);
         assert(match.target.targetId == 2);
+        // A climbing-style registration must yield to a close object, while
+        // remaining available when only a far selection (or no selection) exists.
+        assert(rock::global_surface_grab_policy::shouldYieldToCloseObject(
+            match.wildcard, true));
+        assert(!rock::global_surface_grab_policy::shouldYieldToCloseObject(
+            match.wildcard, false));
 
         match = registry->resolve(
             101,

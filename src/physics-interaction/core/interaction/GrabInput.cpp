@@ -702,10 +702,10 @@ namespace rock
         const bool touchGrabPhysicsWritesAllowed =
             physicsWritesAllowedForWorld(frame.hknpWorld);
         /*
-         * One grip edge has a strict candidate order: provider touch targets,
-         * an eligible close-selected object, then the built-in world-surface
-         * fallback. The close selection was classified as grabbable by the
-         * selection path; a far selection does not suppress an
+         * One grip edge has a strict candidate order: explicit provider touch
+         * targets, an eligible close-selected object, then provider wildcard
+         * or built-in world surfaces. The close selection was classified as
+         * grabbable by the selection path; a far selection does not suppress an
          * intentional surface grab at the hand.
          */
         const bool closeObjectCandidate =

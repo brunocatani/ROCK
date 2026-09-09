@@ -728,7 +728,6 @@ namespace rock
                             targetClass == TargetClass::Wildcard,
                         .dynamicSurfaceContact =
                             contactSource == ContactSource::DynamicSurface,
-                        .closeObjectCandidate = closeObjectCandidate,
                         .collisionLayer = layer,
                     })) {
                 _lastAttemptReport.failure =
@@ -776,6 +775,15 @@ namespace rock
         if (match.wildcard != wildcardRequested) {
             _lastAttemptReport.failure =
                 AttemptFailure::TargetClassMismatch;
+            return false;
+        }
+
+        // Apply close-object priority after resolving either source so provider
+        // wildcard surfaces (including climbing) cannot bypass the fallback rule.
+        if (global_surface_grab_policy::shouldYieldToCloseObject(
+                match.wildcard,
+                closeObjectCandidate)) {
+            _lastAttemptReport.failure = AttemptFailure::CloseObjectPriority;
             return false;
         }
 
