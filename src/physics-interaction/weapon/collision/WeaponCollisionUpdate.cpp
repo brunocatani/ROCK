@@ -18,9 +18,6 @@ namespace rock
         _identity.observedOwnershipKey = 0;
         _identity.observedFormID = 0;
         _identity.observedInstanceContentKey = 0;
-        _omod.prebuildEquippedKey = 0;
-        _omod.prebuildRoot = nullptr;
-        clearOmodCollisionSources();
         resetWeaponBodySetGeneration();
         _identity.bodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -57,8 +54,6 @@ namespace rock
         _identity.observedOwnershipKey = 0;
         _identity.observedFormID = 0;
         _identity.observedInstanceContentKey = 0;
-        _omod.prebuildEquippedKey = 0;
-        _omod.prebuildRoot = nullptr;
         resetWeaponBodySetGeneration();
         _identity.bodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -68,7 +63,6 @@ namespace rock
         _sources.detachedExclusionGroups.clear();
         _diagnostics.generatedRecapture = {};
         clearPendingGeneratedWeaponBuild(_cachedWorld, true);
-        clearOmodCollisionSources();
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         _bodies.usingReplacementBank = false;
@@ -101,7 +95,6 @@ namespace rock
         _bodies.usingReplacementBank = false;
         _cachedWorld = nullptr;
         clearGeneratedSourceCache();
-        clearOmodCollisionSources();
         _cachedBhkWorld = nullptr;
         ROCK_LOG_INFO(Weapon, "Weapon collision wrappers abandoned after Havok world loss");
     }
@@ -141,9 +134,6 @@ namespace rock
             _drive.rebuildRequested.store(false, std::memory_order_release);
             _drive.workbenchExitRebuildRequested.store(false, std::memory_order_release);
             _drive.failureCount.store(0, std::memory_order_release);
-            _omod.prebuildEquippedKey = 0;
-            _omod.prebuildRoot = nullptr;
-            clearOmodCollisionSources();
             clearWeaponEmitterSnapshot();
         };
 
@@ -321,31 +311,6 @@ namespace rock
             const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, visualKeyStats);
             const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _identity.cachedVisualKey;
             const bool generationDrivenRebuild = keyChanged || missingBodies;
-            const bool omodPrebuildReconciliationCurrent =
-                _omod.prebuildEquippedKey == observedKey &&
-                _omod.prebuildRoot == weaponNode;
-            if (generationDrivenRebuild &&
-                !omodPrebuildReconciliationCurrent) {
-                const auto reconciliation = maybeRunWeaponOmodReconciliation(weaponNode, observedKey, true);
-                if (reconciliation.sceneEnriched) {
-                    /*
-                     * New owned collision sources must enter one coherent
-                     * capture/build generation after old body readers retire.
-                     */
-                    clearPendingWeaponVisualRebuild();
-                    ROCK_LOG_INFO(Weapon,
-                        "Generated weapon collision pre-build OMOD enrichment completed key={:016X}; deferring source capture one frame",
-                        observedKey);
-                    return;
-                }
-                if (reconciliation.ran) {
-                    // Cache only a non-mutating pass. A successful attachment
-                    // must be followed by another pre-build pass so batches
-                    // larger than the per-pass cap fully converge.
-                    _omod.prebuildEquippedKey = observedKey;
-                    _omod.prebuildRoot = weaponNode;
-                }
-            }
             const float requiredStableSeconds = (std::max)(0.0f, g_rockConfig.rockWeaponCollisionVisualStabilizationSeconds);
             const float measuredStabilizationDelta =
                 std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
@@ -608,8 +573,6 @@ namespace rock
                 return;
             }
         }
-
-        maybeRunWeaponOmodReconciliation(weaponNode, observedKey);
     }
 
     void WeaponCollision::updateBodiesFromCurrentSourceTransforms(
@@ -653,24 +616,6 @@ namespace rock
                     packageWorld,
                     instance.sourceNode,
                     sourceWorld);
-            if (instance.omodFormId != 0) {
-                bool sourceActive = useSourceNode &&
-                    std::abs(sourceWorld.scale - instance.generatedSourceScale) <= 0.0001f;
-                auto* parent = useSourceNode ? instance.sourceNode->parent : nullptr;
-                // Skip our hidden source container, but obey every live
-                // animated ancestor. Invalid bindings cannot use the ordinary
-                // package-root fallback or leave an old collider colliding.
-                parent = parent ? parent->parent : nullptr;
-                for (int hop = 0; parent && parent != packageDriveNode && hop < 64; ++hop, parent = parent->parent) {
-                    if (!weaponVisualNodeVisible(parent)) { sourceActive = false; break; }
-                }
-                if (!sourceActive || parent != packageDriveNode) {
-                    retireActiveWeaponBodiesForSceneTransition(world, "omod-source-parent-unavailable");
-                    _omod.nativeCensusKey = 0;
-                    _drive.rebuildRequested.store(true, std::memory_order_release);
-                    return;
-                }
-            }
             const RE::NiTransform& driveWorld = useSourceNode ? sourceWorld : packageWorld;
             const RE::NiPoint3& centerGame = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);

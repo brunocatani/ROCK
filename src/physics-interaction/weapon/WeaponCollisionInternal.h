@@ -1067,8 +1067,8 @@ namespace rock
          * BSModelDB's ordinary OMOD demand uses flag 0x2D and may return only
          * the currently selected controller branch. Loading through the same
          * native entry with 0xED preserves the complete model hierarchy. This
-         * is required to see durable housings which are absent from the active
-         * branch (the SR-25 magazine shell is the concrete witness).
+         * lets scope metadata inspection find structural markers outside the
+         * active branch without attaching model geometry to the weapon.
          */
         inline RE::NiPointer<RE::NiNode> loadCompleteOmodModelTemplate(const std::string& modelPath)
         {
@@ -1079,10 +1079,8 @@ namespace rock
          * Fallout4VR.exe 1.2.72 uses BSModelDB flag 0x20 in the geometry-query
          * path at 0x1402824B0. Unlike an ordinary attachment demand, this path
          * does not run the 0x08 model postprocessor which can consume display
-         * geometry owned by a bhkNPCollisionObject. It is used only as a
-         * read/clone template after the guarded receiver-specific comparison
-         * below; native attachment continues to use the engine's own 0x2D
-         * path.
+         * geometry owned by a bhkNPCollisionObject. Collision-sound material
+         * inspection reads this template without attaching it to the weapon.
          */
         inline RE::NiPointer<RE::NiNode> loadGeometryInspectionOmodModelTemplate(const std::string& modelPath)
         {

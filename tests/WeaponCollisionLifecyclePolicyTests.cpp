@@ -6,7 +6,6 @@
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
-#include "physics-interaction/weapon/WeaponOmodCollisionPolicy.h"
 
 namespace
 {
@@ -68,7 +67,6 @@ int main()
     using namespace rock::weapon_generation_identity_policy;
     using namespace rock::weapon_effect_geometry_policy;
     namespace emitter = rock::weapon_emitter_policy;
-    using namespace rock::weapon_omod_collision_policy;
     using rock::WeaponPartKind;
 
     bool ok = true;
@@ -127,46 +125,6 @@ int main()
     ok &= expectTrue("muzzle device preserves permanent barrel-like structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::MuzzleDevice)) != 0);
     ok &= expectTrue("bipod remains durable weapon structure independent of deployment state", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Bipod)) != 0);
     ok &= expectFalse("shell is not permanent gameplay-critical structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Shell)) != 0);
-
-    ok &= expectTrue("missing MK18 stock with a unique live parent is recoverable",
-        decide(true, 1, true, false, false, false) == Coverage::Recoverable);
-    ok &= expectTrue("late native stock geometry replaces owned coverage",
-        decide(true, 1, true, false, true, true) == Coverage::NativeGeometry);
-    ok &= expectTrue("existing owned coverage is idempotent",
-        decide(true, 1, true, false, false, true) == Coverage::OwnedGeometry);
-    ok &= expectTrue("truncated scan cannot authorize recovery",
-        decide(false, 1, true, false, false, false) == Coverage::IncompleteScan);
-    ok &= expectTrue("ambiguous animation parents cannot authorize recovery",
-        decide(true, 2, true, false, false, false) == Coverage::AmbiguousParent);
-    ok &= expectTrue("missing animation parent cannot freeze an authored pose",
-        decide(true, 0, true, false, false, false) == Coverage::AmbiguousParent);
-    ok &= expectTrue("inactive reload twin loses owned collision coverage",
-        decide(true, 1, false, false, false, true) == Coverage::InactiveBranch);
-    ok &= expectTrue("skinned source without a live match fails closed",
-        decide(true, 1, true, true, false, false) == Coverage::UnsupportedSkin);
-    ok &= expectTrue("stock child metadata resolves custom keyword socket",
-        parentPointName("C-Grip") == "P-Grip");
-    ok &= expectTrue("child variant suffix is not part of the socket name",
-        parentPointName("C-Mag|0") == "P-Mag");
-    ok &= expectTrue("child metadata payload is not part of the socket name",
-        parentPointName("C-Mag,variant") == "P-Mag");
-    ok &= expectTrue("non-child metadata cannot guess a socket",
-        parentPointName("WeaponMagazine").empty());
-    ok &= expectTrue("native instance suffix resolves indexed animation parent",
-        instanceName("WeaponExtra|0", 3) == "WeaponExtra|3");
-    ok &= expectTrue("mesh colon suffix remains part of geometry identity",
-        instanceName("Stock:0", 3) == "Stock:0");
-    ok &= expectTrue("zero instance preserves authored suffix",
-        instanceName("WeaponExtra|0", 0) == "WeaponExtra|0");
-    const std::array<std::string_view, 3> stockNames{ "Stock", "Stock:0", "StockTube:0" };
-    const std::array<std::string_view, 3> unnamedClone{ "", "", "" };
-    const std::array<std::string_view, 3> reorderedClone{ "StockTube:0", "Stock", "Stock:0" };
-    const std::array<std::string_view, 3> lostTube{ "Stock", "Stock:0", "Stock:0" };
-    ok &= expectTrue("native clone preserves stock identity", cloneNamesPreserved(stockNames, stockNames));
-    ok &= expectFalse("same node count with erased clone names is invalid", cloneNamesPreserved(stockNames, unnamedClone));
-    ok &= expectTrue("clone identity does not require a fixed child order", cloneNamesPreserved(stockNames, reorderedClone));
-    ok &= expectFalse("clone identity preserves repeated-name multiplicity", cloneNamesPreserved(stockNames, lostTube));
-    ok &= expectFalse("truncated clone cannot preserve source identity", cloneNamesPreserved(stockNames, std::span(stockNames).first(2)));
 
     using rock::native_scope_sight_anchor_policy::PublicationIdentity;
     using rock::native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon;

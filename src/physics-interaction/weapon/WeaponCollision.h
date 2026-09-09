@@ -28,7 +28,6 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
-#include "RE/NetImmerse/NiSmartPointer.h"
 
 namespace RE
 {
@@ -360,7 +359,6 @@ namespace rock
             RE::NiAVObject* sourceRoot{ nullptr };
             RE::NiTransform sourceInWeapon{};
             std::uintptr_t sourceGroupId{ 0 };
-            std::uint32_t omodFormId{ 0 };
             std::string sourceName;
             WeaponPartClassification semantic{};
             // BGSMaterialType::materialID resolved from the authoritative
@@ -404,9 +402,7 @@ namespace rock
             std::vector<TriangleData> generatedSourceLocalTrianglesGame{};
             std::uint32_t generatedPointCount{ 0 };
             std::uintptr_t generatedSourceGroupId{ 0 };
-            std::uint32_t omodFormId{ 0 };
             WeaponPartClassification semantic{};
-            float generatedSourceScale{ 1.0f };
             bool ownsShapeRef{ false };
             GeneratedKeyframedBodyDriveState driveState{};
             std::uint32_t publicationIndex{ INVALID_BODY_ID };
@@ -492,12 +488,6 @@ namespace rock
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
-        struct OmodReconciliationResult
-        {
-            bool ran{ false };
-            bool sceneEnriched{ false };
-        };
-
         WeaponBodyBank& activeWeaponBodies();
         const WeaponBodyBank& activeWeaponBodies() const;
         WeaponBodyBank& inactiveWeaponBodies();
@@ -551,10 +541,6 @@ namespace rock
         void clearWeaponEmitterSnapshot();
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
-        OmodReconciliationResult maybeRunWeaponOmodReconciliation(
-            RE::NiAVObject* weaponNode,
-            std::uint64_t auditedEquippedKey,
-            bool forceBeforeInitialBuild = false);
 
         std::size_t findGeneratedWeaponShapeSources(
             RE::NiAVObject* weaponNode,
@@ -740,45 +726,6 @@ namespace rock
             std::unordered_set<std::uintptr_t> detachedExclusionGroups;
         };
 
-        /*
-         * State owned by the WeaponOmodReconciliation module. Functional
-         * OMOD reconciliation runs before collider capture. A bounded native
-         * census detects later assembly changes; unchanged censuses do not
-         * reload or clone templates. Diagnostics never control this cadence.
-         */
-        struct OmodCollisionSource
-        {
-            // The hidden container owns a rigid cloned shape. Its live parent
-            // owns animation; no native attachment/controller registration is
-            // performed on the rendered weapon. All consumers resolve this
-            // same descendant transform through the ordinary sourceNode path.
-            RE::NiPointer<RE::NiNode> container;
-            RE::NiPointer<RE::NiNode> parent;
-            RE::NiAVObject* shape{ nullptr };
-            std::uint32_t omodFormId{ 0 };
-            std::uint32_t attachPointFormId{ 0 };
-            std::uint32_t modIndex{ 0 };
-            std::uint32_t shapeIndex{ 0 };
-            std::string authoredName;
-            std::string connectPoint;
-        };
-
-        void clearOmodCollisionSources();
-
-        struct OmodReconciliationState
-        {
-            std::uint64_t reconciledBodySetKey{ 0 };
-            int frameCounter{ 0 };
-            int diagnosticFrameCounter{ 0 };
-            // Cache only a non-mutating pre-build pass for an exact equipped
-            // identity and assembled root.
-            std::uint64_t prebuildEquippedKey{ 0 };
-            RE::NiAVObject* prebuildRoot{ nullptr };
-            std::uint64_t sourceEquippedKey{ 0 };
-            std::uint64_t nativeCensusKey{ 0 };
-            std::vector<OmodCollisionSource> collisionSources;
-        };
-
         // Cross-thread rebuild requests and drive-failure accounting
         // consumed by the update module.
         struct DriveControlState
@@ -805,7 +752,6 @@ namespace rock
         AtomicBodyPublicationState _published;
         EvidenceSnapshotState _evidence;
         GeneratedSourceState _sources{};
-        OmodReconciliationState _omod{};
         DriveControlState _drive{};
         CollisionDiagnosticsState _diagnostics{};
 

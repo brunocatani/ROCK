@@ -84,8 +84,8 @@ namespace rock
          * The engine owns the equipped weapon scene graph. Once its identity,
          * instance, or root changes, every cached NiAVObject pointer from the
          * previous graph becomes invalid immediately. Remove the generated body
-         * bank from all collision and publication paths before any deferred OMOD
-         * repair, visual stabilization, or staged body creation can return.
+         * bank from all collision and publication paths before visual
+         * stabilization or staged body creation can return.
          * Native body payloads still use the normal delayed reclamation path.
          */
         clearAtomicBodyIds();
@@ -97,8 +97,6 @@ namespace rock
         resetVisualSourceUnavailableRetention();
         _sources.detachedExclusionEquippedKey = 0;
         _sources.detachedExclusionGroups.clear();
-        _omod.prebuildEquippedKey = 0;
-        _omod.prebuildRoot = nullptr;
 
         ROCK_LOG_INFO(Weapon,
             "Retired generated weapon bodies before scene transition reason={} bodies={} cached(identity/ownership/form)=({:016X}/{:016X}/{:08X}) observed(identity/ownership/form)=({:016X}/{:016X}/{:08X})",
@@ -254,8 +252,6 @@ namespace rock
         _identity.observedOwnershipKey = 0;
         _identity.observedFormID = 0;
         _identity.observedInstanceContentKey = 0;
-        _omod.prebuildEquippedKey = 0;
-        _omod.prebuildRoot = nullptr;
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
@@ -361,8 +357,6 @@ namespace rock
         instance.generatedSourceLocalTrianglesGame.clear();
         instance.generatedPointCount = 0;
         instance.generatedSourceGroupId = 0;
-        instance.omodFormId = 0;
-        instance.generatedSourceScale = 1.0f;
         instance.semantic = {};
         instance.ownsShapeRef = false;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);

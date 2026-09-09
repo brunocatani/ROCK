@@ -454,13 +454,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kData_NativeWorldScopePrimaryVtable = 0x2D68718;
 
     /*
-     * BGSModelMaterialSwap application used by TryAttach3DRecurse immediately
-     * after cloning an OMOD model. Manual physical-housing enrichment calls the
-     * same entry so recovered geometry keeps the equipped instance's skins.
-     */
-    constexpr std::uintptr_t kFunc_ApplyOmodModelCustomization = 0x53CD0;
-
-    /*
      * PlayerCharacter flag storage is independently witnessed in the scope
      * update at 0x140EF84AF and the state transition at 0x140EFAAF7. Bit 0x08
      * is the native force-true branch immediately before the scope decision and

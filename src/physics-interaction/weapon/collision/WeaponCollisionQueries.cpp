@@ -503,7 +503,6 @@ namespace rock
                 currentWeaponRoot->world,
                 instance.sourceNode,
                 localToWorld);
-        if (instance.omodFormId != 0 && !sourceNodeCurrent) return false;
         if (!sourceNodeCurrent) {
             const RE::NiAVObject* fallbackRoot = currentWeaponRoot ?
                 currentWeaponRoot :
@@ -687,7 +686,6 @@ namespace rock
                     currentWeaponRoot->world,
                     instance.sourceNode,
                     surfaceWorld);
-            if (instance.omodFormId != 0 && !sourceNodeCurrent) continue;
             const bool useSourceFrame =
                 sourceNodeCurrent &&
                 !instance.generatedSourceLocalTrianglesGame.empty();
@@ -870,8 +868,7 @@ namespace rock
             };
             descriptor.localMeshPointsGame = copyLocalPoints(instance.generatedLocalPointsGame);
             descriptor.pointCount = instance.generatedPointCount;
-            descriptor.omodFormId = instance.omodFormId;
-            if (descriptor.omodFormId == 0 && instance.semantic.attachPointFormId != 0) {
+            if (instance.semantic.attachPointFormId != 0) {
                 const auto omodIt = omodByAttachPointFormId.find(instance.semantic.attachPointFormId);
                 if (omodIt != omodByAttachPointFormId.end()) {
                     descriptor.omodFormId = omodIt->second;
@@ -1126,7 +1123,6 @@ namespace rock
                     packageDriveRoot->world,
                     instance.sourceNode,
                     probeWorld);
-            if (instance.omodFormId != 0 && !sourceNodeCurrent) continue;
             if (!sourceNodeCurrent) {
                 probeWorld = packageDriveRoot->world;
             }

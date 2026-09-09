@@ -237,8 +237,6 @@ namespace rock
         bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
         bool rockDebugWeaponOmodDumpEnabled = false;
-        bool rockDebugWeaponOmodCoverageAudit = false;
-        int rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
         bool rockDebugHandTransformParity = false;
         bool rockDebugHandWorldAuthority = false;
         bool rockDebugWorldObjectOriginDiagnostics = false;
