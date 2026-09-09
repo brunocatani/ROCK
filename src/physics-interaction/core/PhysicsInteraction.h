@@ -103,6 +103,7 @@ namespace rock
         void init();
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
+        void traceScopeColliderState() const;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(
             std::uint64_t& outWeaponGenerationKey,

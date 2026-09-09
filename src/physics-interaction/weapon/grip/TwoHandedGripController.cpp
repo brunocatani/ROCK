@@ -722,7 +722,6 @@ namespace rock
         // continuous ROCK authority selection across scope and role edges.
         reconcileDeferredScopeHandAuthority(weaponNode);
         applyRightOneHandRecoil(weaponNode);
-        traceNativeScopeTransitionFinalState(weaponNode);
         return finishUpdate();
     }
 
@@ -778,11 +777,6 @@ namespace rock
         _scope.nativeRequestStateValid = false;
         _scope.nativeRequestActive = false;
         _scope.manualActivationRequested = false;
-        _scope.transitionTraceSequence = 0;
-        _scope.transitionTraceFramesRemaining = 0;
-        _scope.transitionFinalTraceSequence = 0;
-        _scope.transitionFinalTraceSample = 0;
-        _scope.transitionFinalTracePending = false;
         _scope.handAuthorityPublishedThisFrame = {};
         if (_firing.authoredHandWorldActive) {
             clearAuthoredPrimaryFiringHandWorldAuthority();

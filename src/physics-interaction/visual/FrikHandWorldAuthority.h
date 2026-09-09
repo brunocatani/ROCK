@@ -89,6 +89,27 @@ namespace rock::frik_hand_world_authority
      */
     void beginRockFrame(std::uint64_t sequence);
 
+    struct ScopeDampenTrace
+    {
+        std::uint64_t driverSequence = 0;
+        std::uint64_t observedSequence = 0;
+        std::uint64_t runtimeFrameUsed = 0;
+        bool menuUsed = false;
+        bool enabled = false;
+        float translationFactor = 0.0f;
+        float rotationFactor = 0.0f;
+        RE::NiPoint3 cameraNow{}, cameraPrevious{};
+        bool cameraNowValid = false, cameraPreviousValid = false;
+        std::array<hand_world_claim_registry_policy::DriverSample, 2> raw{}, driver{}, history{}, presented{};
+        std::array<hand_world_claim_registry_policy::ConsumedTarget, 2> consumed{}, claimed{};
+        std::array<std::uint64_t, 2> historySequence{};
+        std::array<RE::NiPoint3, 2> historyCamera{};
+        std::array<bool, 2> historyCameraValid{};
+    };
+    // Value-only observation; does not advance prediction or refresh inputs.
+    [[nodiscard]] ScopeDampenTrace scopeDampenTrace() noexcept;
+    [[nodiscard]] ScopeDampenTrace scopeDampenTraceBeforeFrik() noexcept;
+
     // ---- Publication (bridge) ----
 
     [[nodiscard]] bool publish(const char* tag, bool isLeft, const RE::NiTransform& worldTarget, int priority, RebaseDriver driver);

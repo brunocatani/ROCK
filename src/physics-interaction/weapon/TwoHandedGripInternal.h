@@ -76,7 +76,6 @@ namespace rock
          */
         inline constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         inline constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
-        inline constexpr std::uint32_t SCOPE_TRANSITION_TRACE_FRAMES = 6;
         inline constexpr float GRIP_FAILURE_DETAILED_LOG_COOLDOWN_SECONDS = 2.0f;
         inline constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS =
             24.0f;

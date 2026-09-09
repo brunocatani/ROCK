@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 
 // ScopeMenu-safe hand frames and deferred scope hand-authority role clears.
 
@@ -6,15 +7,6 @@ namespace rock
 {
     void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
-        // A final trace is valid only for the same update that produced its
-        // pre-solve sample. Early-return frames deliberately remain pre-only.
-        _scope.transitionFinalTracePending = false;
-        const bool activationStateChanged =
-            frameInput.manualScopeActivationRequested !=
-                _scope.manualActivationRequested ||
-            frameInput.nativeScopeRequestStateValid != _scope.nativeRequestStateValid ||
-            (frameInput.nativeScopeRequestStateValid &&
-                frameInput.nativeScopeRequestActive != _scope.nativeRequestActive);
         _scope.manualActivationRequested =
             frameInput.manualScopeActivationRequested;
         _scope.nativeRequestStateValid = frameInput.nativeScopeRequestStateValid;
@@ -29,11 +21,6 @@ namespace rock
             .rendererStateValid = _scope.nativeRequestStateValid,
             .rendererActive = _scope.nativeRequestActive,
         };
-        if (activationStateChanged) {
-            ++_scope.transitionTraceSequence;
-            _scope.transitionTraceFramesRemaining =
-                SCOPE_TRANSITION_TRACE_FRAMES;
-        }
 
         const bool scopeStateChanged = _scope.menuOpenThisFrame != frameInput.scopeMenuOpen;
         _scope.menuOpenThisFrame = frameInput.scopeMenuOpen;
@@ -48,6 +35,10 @@ namespace rock
             driverFrameAuthorityWasActive && !_scope.driverFrameAuthorityActive;
 
         if (scopeStateChanged) {
+            scope_transition_telemetry::write("SCT hand-mode frame={} menuOpen={} button={} driverBefore={} driverAfter={} ownership={} deferredLeft={} deferredRight={}",
+                scope_transition_telemetry::sequence(), _scope.menuOpenThisFrame, _scope.manualActivationRequested,
+                driverFrameAuthorityWasActive, _scope.driverFrameAuthorityActive, isManualOwnershipActive(),
+                _scope.deferredHandAuthorityClears[0], _scope.deferredHandAuthorityClears[1]);
             // Never resume a pre-menu visual interpolation after hFRIK restores
             // its visible body. The weapon solver itself remains continuous.
             resetLockedHandVisualLerp();
@@ -249,7 +240,18 @@ namespace rock
                 state.consecutiveDriverMissFrames;
         }
 
-        if (_scope.transitionTraceFramesRemaining > 0) {
+        if (scope_transition_telemetry::activeLogger()) {
+            for (const bool isLeft : { true, false }) {
+                const auto index = isLeft ? 0u : 1u;
+                const auto& hand = _scope.safeHandFrames[index];
+                const auto& d = hand.diagnostic;
+                scope_transition_telemetry::write("SCT solver-mode frame={} hand={} generation={:X} ownership={:X} form={:08X} mode={} rootAllowed={} driverRelation={} missedDrivers={} rebaseActive={} rebaseElapsed={:.6f} collisionPresented={} physicalOverride={} deferred={} published={}",
+                    scope_transition_telemetry::sequence(), isLeft ? "left" : "right", _scope.anchorGenerationKey,
+                    _scope.anchorOwnershipKey, _scope.anchorWeaponFormID, static_cast<unsigned>(d.resolutionMode),
+                    d.rootSampleAllowed, hand.hasDriverToHandLocal, hand.consecutiveDriverMissFrames,
+                    hand.rootRebaseActive, hand.rootRebaseElapsedSeconds, d.collisionPresentationWasLive,
+                    d.physicalFrameOverrideApplied, _scope.deferredHandAuthorityClears[index], _scope.handAuthorityPublishedThisFrame[index]);
+            }
             struct HandTrace
             {
                 RE::NiTransform rootWorld{};
@@ -325,14 +327,9 @@ namespace rock
                 playerWorldOffsetValid = true;
             }
 
-            const std::uint32_t sampleIndex =
-                SCOPE_TRANSITION_TRACE_FRAMES -
-                _scope.transitionTraceFramesRemaining;
-            ROCK_LOG_INFO(Weapon,
-                "SCOPE-TRANSITION seq={} sample={}/{} buttonRequested={} rendererValid={} rendererActive={} menuOpen={} manual={} state={} driverAuthority={} weaponValid={} weapon=({:.2f},{:.2f},{:.2f}) playerOffsetValid={} playerOffset=({:.2f},{:.2f},{:.2f}) left[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}] right[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}]",
-                _scope.transitionTraceSequence,
-                sampleIndex,
-                SCOPE_TRANSITION_TRACE_FRAMES,
+            scope_transition_telemetry::write(
+                "SCT solver frame={} buttonRequested={} rendererValid={} rendererActive={} menuOpen={} manual={} state={} driverAuthority={} weaponValid={} weapon=({:.2f},{:.2f},{:.2f}) playerOffsetValid={} playerOffset=({:.2f},{:.2f},{:.2f}) left[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}] right[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}]",
+                scope_transition_telemetry::sequence(),
                 _scope.manualActivationRequested ? "yes" : "no",
                 frameInput.nativeScopeRequestStateValid ? "yes" : "no",
                 _scope.nativeRequestActive ? "yes" : "no",
@@ -384,11 +381,6 @@ namespace rock
                 rightTrace.solverWorld.translate.z,
                 rightTrace.rootToReconstructedDistance,
                 rightTrace.rootToSolverDistance);
-            _scope.transitionFinalTraceSequence =
-                _scope.transitionTraceSequence;
-            _scope.transitionFinalTraceSample = sampleIndex;
-            _scope.transitionFinalTracePending = true;
-            --_scope.transitionTraceFramesRemaining;
         }
     }
 
@@ -505,10 +497,11 @@ namespace rock
         if (clearAttempted) {
             restoreScopeHandAuthorityCleanupVisuals(visualSnapshot);
         }
-        ROCK_LOG_DEBUG(Weapon,
-            "TwoHandedGrip: reconciled deferred native-scope hand authority "
+        scope_transition_telemetry::write(
+            "SCT cleanup frame={} "
             "left(clear=0x{:02X},retain=0x{:02X},pending=0x{:02X}) "
             "right(clear=0x{:02X},retain=0x{:02X},pending=0x{:02X})",
+            scope_transition_telemetry::sequence(),
             static_cast<unsigned>(cleared[0]),
             static_cast<unsigned>(retained[0]),
             static_cast<unsigned>(_scope.deferredHandAuthorityClears[0]),

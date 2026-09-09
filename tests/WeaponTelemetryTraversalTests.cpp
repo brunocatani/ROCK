@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/telemetry/WeaponTelemetryTraversal.h"
 #include "physics-interaction/weapon/WeaponSceneChildren.h"
+#include "physics-interaction/weapon/telemetry/ScopeTransitionTracePolicy.h"
 
 #include <array>
 #include <cstddef>
@@ -97,5 +98,42 @@ int main()
     if (completed || callbacks != 1) return 10;
     Node empty;
     if (!rock::visitWeaponChildSlots(empty.children, [&](Node*, auto) { ++callbacks; return true; }) || callbacks != 1) return 11;
+
+    // The real menu can close well after the button/renderer tail expired.
+    // All phases of an observed frame must share its budget and identity.
+    namespace trace = rock::scope_transition_trace_policy;
+    trace::Window window;
+    trace::Signals signal{ .rendererValid = true };
+    if (window.observe(0, 0, signal) || window.observe(1, 0, signal)) return 12;
+    signal.button = true;
+    if (!window.observe(2, 0, signal) || window.observe(2, 0, signal)) return 13;
+    if (!window.observe(2, 1, signal) || !window.observe(2, 2, signal) || window.phaseMask != 7) return 14;
+    signal.menuEvent = 3; // first event: open
+    signal.renderer = true;
+    if (!window.observe(3, 0, signal)) return 15;
+    for (std::uint64_t frame = 4; frame < 15; ++frame) {
+        if (!window.observe(frame, 0, signal)) return 16;
+    }
+    if (window.observe(15, 0, signal) || window.observe(100, 0, signal)) return 17;
+    signal.button = signal.renderer = false;
+    if (!window.observe(101, 2, signal) || window.phaseMask != 4) return 18;
+    if (window.observe(113, 0, signal)) return 19;
+    signal.menuEvent = 4; // actual close arrives after the release tail
+    if (!window.observe(120, 0, signal) || !window.observe(120, 1, signal) || !window.observe(120, 2, signal)) return 20;
+
+    // Continuous UI pulses are bounded; a quiet gap permits a new capture.
+    window = {};
+    signal = {};
+    for (std::uint64_t frame = 1; frame <= trace::kMaximumBurstFrames; ++frame) {
+        signal.menuEvent = frame * 2 + 1;
+        if (!window.observe(frame, 0, signal)) return 21;
+    }
+    ++signal.menuEvent;
+    if (window.observe(49, 0, signal) || !window.capped) return 22;
+    ++signal.menuEvent;
+    if (!window.observe(61, 0, signal) || window.capped) return 23;
+    // A scheduler restart drops old budgets; cold idle does not log startup.
+    signal = {};
+    if (window.observe(1, 0, signal) || window.active || window.observe(2, 3, signal)) return 24;
     return 0;
 }

@@ -1825,7 +1825,6 @@ namespace rock
         void publishPhysicalRightNativeWeaponIntent(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
-        void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
@@ -2160,19 +2159,11 @@ namespace rock
             // hidden-frame clears so a same-frame handoff can publish its
             // replacement first.
             bool menuClosedThisFrame{ false };
-            // Bounded edge trace comparing the UI signal, verified renderer
-            // request, restored root hands, hFRIK drivers, and ROCK solver
-            // frames. This remains low-volume and makes future
-            // scope-transition reports diagnosable from one session without
-            // enabling per-frame telemetry.
+            // Presentation inputs. Diagnostic sampling is owned by
+            // ScopeTransitionTelemetry across all three scheduler phases.
             bool nativeRequestStateValid{ false };
             bool nativeRequestActive{ false };
             bool manualActivationRequested{ false };
-            std::uint64_t transitionTraceSequence{ 0 };
-            std::uint32_t transitionTraceFramesRemaining{ 0 };
-            std::uint64_t transitionFinalTraceSequence{ 0 };
-            std::uint32_t transitionFinalTraceSample{ 0 };
-            bool transitionFinalTracePending{ false };
             // Latched across a manual grip session after its first scoped
             // frame so ScopeMenu presentation edges cannot reselect the
             // weapon-solver basis.
