@@ -135,6 +135,7 @@ namespace rock
         RE::hknpWorld* hknp)
     {
         const auto& runtime = runtime_state::currentFrame();
+        weapon_recoil_policy::WeaponEvidence recoilWeapon{};
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
         /*
@@ -237,6 +238,13 @@ namespace rock
             }
             _weaponCollision.update(hknp, weaponNode, frame.deltaSeconds, runtime.weaponDrawn);
             const auto weaponClassification = _weaponCollision.getEquippedWeaponClassification();
+            recoilWeapon = {
+                .formID = weaponClassification.formID,
+                .keywordFlags = weaponClassification.keywordFlags,
+                .sizeClass = weaponClassification.sizeClass,
+                .source = weaponClassification.classificationSource,
+                .resolved = weaponClassification.hasEquippedWeapon && weaponClassification.classificationResolved,
+            };
             const bool realMeleeWeaponEquipped =
                 weaponClassification.hasEquippedWeapon &&
                 weaponClassification.classificationResolved &&
@@ -946,6 +954,7 @@ namespace rock
                     _equipped.handlingSettings.toggleGrabEnabled,
                 .animationBoundaryActive = frame.reloadBoundaryActive,
                 .hasHmdFrame = frame.hasHmdFrame,
+                .recoilWeapon = recoilWeapon,
             };
             auto effectiveHandlingSettings = _equipped.handlingSettings;
             effectiveHandlingSettings.firingGripOwnershipEnabled =

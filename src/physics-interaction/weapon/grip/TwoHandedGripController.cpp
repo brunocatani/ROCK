@@ -172,7 +172,10 @@ namespace rock
         };
         clearOneHandRecoilClaim();
         _recoil.rightBaseValid = false;
+        _recoil.weaponEvidence = frameInput.recoilWeapon;
         _recoil.equippedIdentity = {
+            .formID = frameInput.recoilWeapon.formID,
+            .family = weapon_recoil_policy::classifyFamily(frameInput.recoilWeapon),
             .weaponNode = reinterpret_cast<std::uintptr_t>(weaponNode),
             .weaponGeneration = currentWeaponGenerationKey,
             .equippedOwnership = currentEquippedWeaponOwnershipKey,

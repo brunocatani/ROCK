@@ -20,7 +20,7 @@
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/weapon/WeaponRecoilController.h"
+#include "physics-interaction/weapon/recoil/RecoilController.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
@@ -107,6 +107,7 @@ namespace rock
         bool toggleGrabEnabled{ false };
         bool animationBoundaryActive{ false };
         bool hasHmdFrame{ false };
+        weapon_recoil_policy::WeaponEvidence recoilWeapon{};
     };
 
     struct EquippedWeaponHandGripOccupancy
@@ -973,6 +974,12 @@ namespace rock
         [[nodiscard]] bool canUseRightOneHandRecoil() const noexcept;
         void clearOneHandRecoilClaim();
         void applyRightOneHandRecoil(RE::NiNode* weaponNode);
+        void traceRecoilSample(const weapon_recoil_policy::SampleIdentity& context,
+            const RE::NiTransform& nativeKick, const RE::NiTransform& controlledKick,
+            bool ownedCarry, std::uint32_t handMask) const;
+        void traceRecoilReadiness() const;
+        void traceRecoilPresentation(const char* route) const;
+
 
         struct LockedHandVisualLerpState
         {
@@ -2095,6 +2102,7 @@ namespace rock
             // manual grip session. The callback sees the previous frame's
             // identity; consumption compares against the current frame.
             weapon_recoil_policy::SampleIdentity equippedIdentity{};
+            weapon_recoil_policy::WeaponEvidence weaponEvidence{};
             RE::NiTransform rightWeaponBase{};
             RE::NiTransform rightHandBase{};
             dynamic_weapon_collision_policy::VisualIntentSource rightBaseSource{

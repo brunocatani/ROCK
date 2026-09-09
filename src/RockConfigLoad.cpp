@@ -330,6 +330,17 @@ namespace rock
 
         rockImmersiveRecoil = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
+        rockPistolRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolRecoilPercent",
+            rockPistolRecoilPercent, 100.0f, 0.0f, 200.0f);
+        rockRifleRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fRifleRecoilPercent",
+            rockRifleRecoilPercent, 100.0f, 0.0f, 200.0f);
+        rockShotgunRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fShotgunRecoilPercent",
+            rockShotgunRecoilPercent, 100.0f, 0.0f, 200.0f);
+        rockHeavyRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fHeavyRecoilPercent",
+            rockHeavyRecoilPercent, 100.0f, 0.0f, 200.0f);
+        rockDefaultRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fDefaultRecoilPercent",
+            rockDefaultRecoilPercent, 100.0f, 0.0f, 200.0f);
+
         rockFiringGripDetachEnabled = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
             "bFiringGripDetachEnabled",

@@ -1,0 +1,102 @@
+#pragma once
+
+#include "physics-interaction/weapon/WeaponTypes.h"
+
+namespace rock::weapon_recoil_policy
+{
+    enum class Profile : std::uint8_t
+    {
+        OneHand,
+        FullTwoHand,
+        CloseSupport,
+        PowerArmor,
+    };
+
+    struct ProfileGains
+    {
+        float translation;
+        float rotation;
+    };
+
+    // Independent profiles: tuning one hold must never retune another.
+    inline constexpr ProfileGains kOneHand{ 1.0f, 1.0f };
+    inline constexpr ProfileGains kFullTwoHand{ 1.0f, 1.0f };
+    inline constexpr ProfileGains kCloseSupport{ 0.45f, 0.30f };
+    inline constexpr ProfileGains kPowerArmor{ 0.45f, 0.30f };
+
+    [[nodiscard]] inline constexpr Profile selectProfile(
+        const bool inPowerArmor, const bool closeSupport, const bool fullTwoHanded) noexcept
+    {
+        return inPowerArmor ? Profile::PowerArmor :
+               closeSupport ? Profile::CloseSupport :
+               fullTwoHanded ? Profile::FullTwoHand : Profile::OneHand;
+    }
+
+    [[nodiscard]] inline constexpr ProfileGains gainsFor(const Profile profile) noexcept
+    {
+        switch (profile) {
+        case Profile::PowerArmor: return kPowerArmor;
+        case Profile::CloseSupport: return kCloseSupport;
+        case Profile::FullTwoHand: return kFullTwoHand;
+        default: return kOneHand;
+        }
+    }
+
+    [[nodiscard]] inline constexpr const char* name(const Profile profile) noexcept
+    {
+        switch (profile) {
+        case Profile::PowerArmor: return "power-armor";
+        case Profile::CloseSupport: return "close-support";
+        case Profile::FullTwoHand: return "full-two-hand";
+        default: return "one-hand";
+        }
+    }
+
+    enum class Family : std::uint8_t { Default, Pistol, Rifle, Shotgun, Heavy };
+
+    struct WeaponEvidence
+    {
+        std::uint32_t formID{ 0 };
+        std::uint64_t keywordFlags{ 0 };
+        WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
+        WeaponClassificationSource source{ WeaponClassificationSource::None };
+        bool resolved{ false };
+    };
+
+    [[nodiscard]] inline constexpr Family classifyFamily(const WeaponEvidence& weapon) noexcept
+    {
+        if (!weapon.resolved || weapon.sizeClass == WeaponSizeClass::Melee) {
+            return Family::Default;
+        }
+        if (weapon.sizeClass == WeaponSizeClass::Heavy) {
+            return Family::Heavy;
+        }
+        if (hasWeaponKeywordFlag(weapon.keywordFlags, WeaponKeywordFlag::Shotgun)) {
+            return Family::Shotgun;
+        }
+        return weapon.sizeClass == WeaponSizeClass::Pistol ? Family::Pistol : Family::Rifle;
+    }
+
+    [[nodiscard]] inline constexpr const char* name(const Family family) noexcept
+    {
+        switch (family) {
+        case Family::Pistol: return "pistol";
+        case Family::Rifle: return "rifle";
+        case Family::Shotgun: return "shotgun";
+        case Family::Heavy: return "heavy";
+        default: return "default";
+        }
+    }
+
+    // Percent has already been validated by ROCK's central INI loader.
+    // Armor is an umbrella override and never inherits a family multiplier.
+    [[nodiscard]] inline constexpr ProfileGains effectiveGains(const Profile profile, const float percent) noexcept
+    {
+        const auto base = gainsFor(profile);
+        if (profile == Profile::PowerArmor) {
+            return base;
+        }
+        const float multiplier = percent * 0.01f;
+        return { base.translation * multiplier, base.rotation * multiplier };
+    }
+}

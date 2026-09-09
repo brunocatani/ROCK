@@ -74,6 +74,12 @@ namespace rock
 
         // Master switch for every ROCK-owned visual recoil profile and delivery.
         bool rockImmersiveRecoil = true;
+        float rockPistolRecoilPercent = 100.0f;
+        float rockRifleRecoilPercent = 100.0f;
+        float rockShotgunRecoilPercent = 100.0f;
+        float rockHeavyRecoilPercent = 100.0f;
+        float rockDefaultRecoilPercent = 100.0f;
+
 
         // ROCK-native Immersive Weapons firing-role boundary. The same
         // release, part-carry, reattach and haptic contract follows whichever

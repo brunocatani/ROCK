@@ -67,7 +67,8 @@ namespace rock
         }
 
         RE::NiTransform recoilDelta{};
-        if (consumeOwnedWeaponRecoil(recoilDelta)) {
+        const bool recoilConsumed = consumeOwnedWeaponRecoil(recoilDelta);
+        if (recoilConsumed) {
             solvedWeaponWorld = transform_math::composeTransforms(recoilDelta, solvedWeaponWorld);
             presentedHandWorld = transform_math::composeTransforms(solvedWeaponWorld, _firing.primaryHandWeaponLocal);
         }
@@ -112,6 +113,9 @@ namespace rock
             return false;
         }
 
+        if (recoilConsumed) {
+            traceRecoilPresentation("one-hand-left");
+        }
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 

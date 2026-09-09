@@ -14,7 +14,7 @@
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/weapon/WeaponRecoilController.h"
+#include "physics-interaction/weapon/recoil/RecoilController.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 
@@ -186,9 +186,56 @@ int main()
         ok &= expectTransformNear("identity recoil stays exact at distant world coordinates",
             rock::weapon_recoil_authority_math::resolveWorldDelta(neutralKick, distantFrame, distantFrame, distantFrame, true),
             neutralKick);
+        const auto flags = [](const rock::WeaponKeywordFlag flag) { return static_cast<std::uint64_t>(flag); };
+        WeaponEvidence evidence{
+            .formID = 0x123u, .keywordFlags = flags(rock::WeaponKeywordFlag::Pistol),
+            .sizeClass = rock::WeaponSizeClass::Pistol,
+            .source = rock::WeaponClassificationSource::Keyword, .resolved = true,
+        };
+        ok &= expectTrue("pistol evidence selects pistol multiplier", classifyFamily(evidence) == Family::Pistol);
+        evidence.keywordFlags |= flags(rock::WeaponKeywordFlag::Rifle);
+        evidence.sizeClass = rock::WeaponSizeClass::Rifle;
+        evidence.source = rock::WeaponClassificationSource::EquipSlot;
+        ok &= expectTrue("converted pistol respects resolved effective rifle slot", classifyFamily(evidence) == Family::Rifle);
+        evidence.keywordFlags |= flags(rock::WeaponKeywordFlag::Shotgun);
+        ok &= expectTrue("shotgun family wins over broad rifle tag", classifyFamily(evidence) == Family::Shotgun);
+        evidence.sizeClass = rock::WeaponSizeClass::Heavy;
+        ok &= expectTrue("heavy family wins over shotgun tag", classifyFamily(evidence) == Family::Heavy);
+        evidence.resolved = false;
+        ok &= expectTrue("unresolved conflicting evidence uses explicit default", classifyFamily(evidence) == Family::Default);
+        evidence.resolved = true;
+        evidence.sizeClass = rock::WeaponSizeClass::Rifle;
+        evidence.keywordFlags = flags(rock::WeaponKeywordFlag::Rifle) | flags(rock::WeaponKeywordFlag::Laser) |
+            flags(rock::WeaponKeywordFlag::Automatic);
+        ok &= expectTrue("laser automatic rifle selects one family only", classifyFamily(evidence) == Family::Rifle);
+        for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport }) {
+            const auto off = effectiveGains(profile, 0.0f);
+            const auto normal = effectiveGains(profile, 100.0f);
+            const auto doubleKick = effectiveGains(profile, 200.0f);
+            const auto base = gainsFor(profile);
+            ok &= expectTrue("zero percent suppresses both kick components", off.translation == 0.0f && off.rotation == 0.0f);
+            ok &= expectTrue("100 percent preserves the hold profile", normal.translation == base.translation && normal.rotation == base.rotation);
+            ok &= expectTrue("200 percent doubles both hold gains", doubleKick.translation == base.translation * 2.0f && doubleKick.rotation == base.rotation * 2.0f);
+        }
+        for (const float percent : { 0.0f, 100.0f, 200.0f }) {
+            const auto armorGains = effectiveGains(Profile::PowerArmor, percent);
+            ok &= expectTrue("armor umbrella ignores weapon percentages",
+                armorGains.translation == kPowerArmor.translation && armorGains.rotation == kPowerArmor.rotation);
+        }
         TestTransform shot = rock::transform_math::makeIdentityTransform<TestTransform>();
         shot.translate = { 10.0f, -4.0f, 2.0f };
         shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
+        TestTransform amplified{};
+        ok &= expectTrue("200 percent produces a rigid amplified transform",
+            tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 200.0f), amplified));
+        auto doubleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
+        doubleExpected.translate = { 20.0f, -8.0f, 4.0f };
+        doubleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 120.0f);
+        ok &= expectTransformNear("200 percent doubles translation and angular displacement", amplified, doubleExpected);
+        ok &= expectTrue("zero percent accepts and neutralizes native recoil",
+            tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 0.0f), amplified));
+        ok &= expectTransformNear("zero percent produces identity rather than native fallback", amplified,
+            rock::transform_math::makeIdentityTransform<TestTransform>());
         TestTransform armor{};
         ok &= expectTrue("armor builds a rigid reduced kick",
             tryBuildControlledKick(shot, gainsFor(Profile::PowerArmor), armor));
@@ -266,7 +313,7 @@ int main()
         ok &= expectFalse("one sample cannot kick both carry and solver", ticket.consume(captured));
         ticket.beginUpdate(true);
         ok &= expectFalse("skipped callback never replays a shot", ticket.consume(captured));
-        for (int changed = 0; changed < 8; ++changed) {
+        for (int changed = 0; changed < 11; ++changed) {
             auto current = captured;
             switch (changed) {
             case 0: ++current.weaponNode; break;
@@ -277,6 +324,9 @@ int main()
             case 5: current.nativePrimaryIsLeft = true; break;
             case 6: current.fullTwoHanded = true; break;
             case 7: current.oneHanded = true; break;
+            case 8: current.familyPercent = 200.0f; break;
+            case 9: current.family = Family::Shotgun; break;
+            case 10: current.formID = 0x234u; break;
             }
             ++ticket.sequence;
             ticket.valid = true;

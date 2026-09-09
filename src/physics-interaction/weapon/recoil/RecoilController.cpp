@@ -41,6 +41,16 @@ namespace rock
         identity.fullTwoHanded = fullTwoHanded;
         identity.oneHanded = _session.state != TwoHandedState::Gripping &&
             _session.state != TwoHandedState::PartCarry;
+        switch (identity.family) {
+        case weapon_recoil_policy::Family::Pistol: identity.familyPercent = g_rockConfig.rockPistolRecoilPercent; break;
+        case weapon_recoil_policy::Family::Rifle: identity.familyPercent = g_rockConfig.rockRifleRecoilPercent; break;
+        case weapon_recoil_policy::Family::Shotgun: identity.familyPercent = g_rockConfig.rockShotgunRecoilPercent; break;
+        case weapon_recoil_policy::Family::Heavy: identity.familyPercent = g_rockConfig.rockHeavyRecoilPercent; break;
+        default: identity.familyPercent = g_rockConfig.rockDefaultRecoilPercent; break;
+        }
+        if (identity.profile == weapon_recoil_policy::Profile::PowerArmor) {
+            identity.familyPercent = 100.0f;
+        }
         return identity;
     }
 
@@ -103,7 +113,7 @@ namespace rock
 
         RE::NiTransform controlled{};
         if (!weapon_recoil_authority_math::tryBuildControlledKick(
-                sample->nativeKickLocal, gainsFor(context.profile), controlled)) {
+                sample->nativeKickLocal, effectiveGains(context.profile, context.familyPercent), controlled)) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 1000, "Weapon recoil: invalid native sample; controlled delivery declined");
             return decline();
         }
@@ -124,16 +134,8 @@ namespace rock
         outResponse->delivery = Api::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = controlled;
 
-        if (g_rockConfig.rockDebugGrabFrameLogging && nativeKick) {
-            ROCK_LOG_SAMPLE_INFO(Weapon, 250,
-                "Weapon recoil: profile={} firingHand={} nativePrimary={} delivery={} handMask={} sample={} generation={:016X} nativeT={:.4f} controlledT={:.4f} nativeR={:.4f} controlledR={:.4f}",
-                name(context.profile), context.firingHandIsLeft ? "left" : "right",
-                context.nativePrimaryIsLeft ? "left" : "right", ownedCarry ? "owned-weapon" : "native-hand",
-                static_cast<std::uint32_t>(mask), state.ticket.sequence, context.weaponGeneration,
-                hand_world_claim_registry_policy::translationDeltaGameUnits(sample->nativeKickLocal, identity),
-                hand_world_claim_registry_policy::translationDeltaGameUnits(controlled, identity),
-                hand_world_claim_registry_policy::rotationDeltaDegrees(sample->nativeKickLocal, identity),
-                hand_world_claim_registry_policy::rotationDeltaDegrees(controlled, identity));
+        if (nativeKick) {
+            self->traceRecoilSample(context, sample->nativeKickLocal, controlled, ownedCarry, static_cast<std::uint32_t>(mask));
         }
         return true;
     }
@@ -218,12 +220,7 @@ namespace rock
 
     void TwoHandedGrip::applyRightOneHandRecoil(RE::NiNode* weaponNode)
     {
-        if (g_rockConfig.rockImmersiveRecoil && _recoil.rightBaseValid &&
-            !frik_hand_world_authority::hasCalibratedRawHandFrame(false)) {
-            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
-                "Weapon recoil: right acquisition deferred; rawSource={} controller/body relation unavailable generation={:016X}",
-                frik_hand_world_authority::rawHandSourceName(false), _recoil.equippedIdentity.weaponGeneration);
-        }
+        traceRecoilReadiness();
         if (!weaponNode || !canUseRightOneHandRecoil() || _recoil.rightHandClaimActive ||
             _recoil.equippedIdentity.weaponNode != reinterpret_cast<std::uintptr_t>(weaponNode)) {
             return;
@@ -258,6 +255,7 @@ namespace rock
             clearOneHandRecoilClaim();
             return;
         }
+        traceRecoilPresentation("one-hand-right");
         _recoil.rightNeedsNeutralFrame = _recoil.controlledKickActive;
         recordPublishedHandWorld(false, handTarget);
         _lastSolvedWeaponTransform = weaponTarget;

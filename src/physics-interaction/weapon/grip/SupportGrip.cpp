@@ -1702,7 +1702,8 @@ namespace rock
         }
 
         RE::NiTransform recoilDelta{};
-        if (consumeOwnedWeaponRecoil(recoilDelta)) {
+        const bool recoilConsumed = consumeOwnedWeaponRecoil(recoilDelta);
+        if (recoilConsumed) {
             // Both solver inputs are isolated physical intent, including the
             // dynamic driver baseline above. Add recoil once after baseline
             // selection, then constrain it against the fixed support target.
@@ -2014,6 +2015,10 @@ namespace rock
                 "final-left-weapon-publication-failed");
             transitionToInactive(false);
             return;
+        }
+
+        if (recoilConsumed) {
+            traceRecoilPresentation("two-hand-solver");
         }
 
         const auto transformTranslationDistance = [](
