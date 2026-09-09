@@ -19,6 +19,11 @@ namespace rock
             return false;
         }
         const auto snapshot = _weaponCollision.getNativeScopeSightAnchorSnapshot();
+        if (!snapshot.scopeEligible) {
+            // Native classification also runs while idle. Ordinary sights
+            // are an expected negative result, not a failed scope anchor.
+            return false;
+        }
         if (expectedWeapon && !manual_scope_target_policy::matchesNativeIdentity(
                 snapshot.scopeWeaponIdentity, snapshot.scopeInstanceIdentity,
                 reinterpret_cast<std::uintptr_t>(expectedWeapon), reinterpret_cast<std::uintptr_t>(expectedInstance))) {
@@ -51,7 +56,7 @@ namespace rock
             !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(
                 resolvedIdentity,
                 currentIdentity) ||
-            !snapshot.scopeEligible || !snapshot.nativeScopeOverlayValid ||
+            !snapshot.nativeScopeOverlayValid ||
             !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(publishedIdentity, currentIdentity)) {
             if (expectedWeapon) {
                 ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,

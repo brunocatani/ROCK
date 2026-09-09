@@ -573,8 +573,11 @@ namespace
 
     bool isManualScopeEligibleForNative(const void* weaponIdentity, const void* instanceIdentity) noexcept
     {
-        if (!weaponIdentity || !s_pluginLoaded || !s_frikAvailable || !s_physicsInteraction ||
-            !input_remap_runtime::isManualScopeActivationRequested()) {
+        // HasScope describes the equipped optic even before activation. If
+        // this follows the button, Bethesda's ordinary aiming path can set
+        // gun state 6 first; the later held transition then returns early
+        // without opening ScopeMenu. The geometry decision owns the button.
+        if (!weaponIdentity || !s_pluginLoaded || !s_frikAvailable || !s_physicsInteraction) {
             return false;
         }
         std::uint64_t generation = 0;
