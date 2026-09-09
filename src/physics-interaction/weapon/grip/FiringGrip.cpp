@@ -704,7 +704,7 @@ namespace rock
             setFiringHand(handIsLeft, "firing-grip-reattach-other-hand");
         }
         _firing.hasPrimaryHandWeaponLocal = true;
-        rememberRightFiringHandCanonicalFrame();
+        rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
         _session.firingGripSequence = ++_session.gripCaptureSequence;
         _visuals.primaryHandLerp = {};
         clearPrimaryDetachVisualAuthority(handIsLeft);
@@ -727,6 +727,7 @@ namespace rock
         const RE::NiTransform& rightHandWeaponLocal,
         const std::uint64_t weaponGenerationKey,
         const std::uint64_t weaponOwnershipKey,
+        const std::uint64_t weaponInstanceContentKey,
         const std::uint64_t captureSequence,
         const authored_weapon_grip_library::FiringFingerPose* rightFingerPose,
         const authored_weapon_grip_library::FiringFingerPose* leftFingerPose)
@@ -780,6 +781,7 @@ namespace rock
         _firing.rightCanonicalWeaponNode = weaponNode;
         _firing.rightCanonicalGenerationKey = weaponGenerationKey;
         _firing.rightCanonicalOwnershipKey = weaponOwnershipKey;
+        _firing.rightCanonicalInstanceContentKey = weaponInstanceContentKey;
         _firing.rightCanonicalCaptureSequence = captureSequence;
         _firing.rightCanonicalSource =
             RightFiringCanonicalSource::AuthoredAnimation;
@@ -1043,6 +1045,7 @@ namespace rock
         _firing.rightCanonicalWeaponNode = nullptr;
         _firing.rightCanonicalGenerationKey = 0;
         _firing.rightCanonicalOwnershipKey = 0;
+        _firing.rightCanonicalInstanceContentKey = 0;
         _firing.rightCanonicalCaptureSequence = 0;
         _firing.rightCanonicalSource = RightFiringCanonicalSource::None;
         _firing.hasRightCanonicalHandWeaponLocal = false;
@@ -1066,7 +1069,8 @@ namespace rock
                _firing.rightCanonicalSource != RightFiringCanonicalSource::None;
     }
 
-    void TwoHandedGrip::rememberRightFiringHandCanonicalFrame()
+    void TwoHandedGrip::rememberRightFiringHandCanonicalFrame(
+        const std::uint64_t weaponInstanceContentKey)
     {
         if (usesLeftFiringCarry() || !_session.weaponNode ||
             !_firing.hasPrimaryHandWeaponLocal || _session.weaponGenerationKey == 0) {
@@ -1085,6 +1089,7 @@ namespace rock
         _firing.rightCanonicalWeaponNode = _session.weaponNode;
         _firing.rightCanonicalGenerationKey = _session.weaponGenerationKey;
         _firing.rightCanonicalOwnershipKey = _session.equippedWeaponOwnershipKey;
+        _firing.rightCanonicalInstanceContentKey = weaponInstanceContentKey;
         _firing.rightCanonicalCaptureSequence = 0;
         _firing.rightCanonicalSource = RightFiringCanonicalSource::NativeCarry;
         _firing.hasRightCanonicalHandWeaponLocal = true;
@@ -1254,7 +1259,8 @@ namespace rock
     void TwoHandedGrip::refreshRightNativeCanonicalFrame(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
-        const std::uint64_t currentEquippedWeaponOwnershipKey)
+        const std::uint64_t currentEquippedWeaponOwnershipKey,
+        const std::uint64_t weaponInstanceContentKey)
     {
         /*
          * Passive canonical capture: whenever the equipped weapon rides the
@@ -1320,6 +1326,7 @@ namespace rock
         _firing.rightCanonicalWeaponNode = weaponNode;
         _firing.rightCanonicalGenerationKey = currentWeaponGenerationKey;
         _firing.rightCanonicalOwnershipKey = currentEquippedWeaponOwnershipKey;
+        _firing.rightCanonicalInstanceContentKey = weaponInstanceContentKey;
         _firing.rightCanonicalCaptureSequence = 0;
         _firing.rightCanonicalSource = RightFiringCanonicalSource::NativeCarry;
         _firing.hasRightCanonicalHandWeaponLocal = true;
@@ -1800,7 +1807,7 @@ namespace rock
 
         _firing.primaryHandWeaponLocal = newFiringHandWeaponLocal;
         _firing.hasPrimaryHandWeaponLocal = true;
-        rememberRightFiringHandCanonicalFrame();
+        rememberRightFiringHandCanonicalFrame(_firing.rightCanonicalInstanceContentKey);
         if (usesLeftFiringCarry() &&
             !solveLeftFiringWeaponCarry(weaponNode, dt)) {
             return true;

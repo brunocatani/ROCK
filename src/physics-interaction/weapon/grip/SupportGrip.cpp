@@ -1175,7 +1175,8 @@ namespace rock
             // A right-hand capture here rides hFRIK's authored carry. Commit
             // the canonical snapshot only after every support baseline is
             // valid, so a failed acquisition cannot replace the prior carry.
-            rememberRightFiringHandCanonicalFrame();
+            rememberRightFiringHandCanonicalFrame(
+                weaponCollision.getCurrentEquippedWeaponInstanceContentKey());
         }
 
         clearLeftFiringSupportReleaseReturn("support-grip-started");
@@ -1472,6 +1473,15 @@ namespace rock
 
         const bool generationChanged = _session.weaponGenerationKey != currentWeaponGenerationKey;
         const bool weaponRootChanged = _session.weaponNode != currentWeaponNode;
+        const bool preserveFiringCanonical =
+            generationChanged && !weaponRootChanged &&
+            hasRightFiringHandCanonicalFrame(
+                currentWeaponNode,
+                _session.weaponGenerationKey,
+                currentEquippedWeaponOwnershipKey) &&
+            _firing.rightCanonicalInstanceContentKey != 0 &&
+            _firing.rightCanonicalInstanceContentKey ==
+                weaponCollision.getCurrentEquippedWeaponInstanceContentKey();
         if (generationChanged || weaponRootChanged) {
             const auto previousGeneration = _session.weaponGenerationKey;
             _session.weaponNode = currentWeaponNode;
@@ -1503,6 +1513,19 @@ namespace rock
                     return false;
                 }
             }
+        }
+        if (preserveFiringCanonical) {
+            // The seat and exact finger poses are weapon-local, independent
+            // of generated bodies. Rebind their generation after the carry
+            // survives the rebuild; recapturing a detached hand would replace
+            // the firing seat with the free hand's current pose.
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: firing canonical rebound across collision rebuild oldGeneration={:016X} newGeneration={:016X} ownership={:016X} content={:016X}",
+                _firing.rightCanonicalGenerationKey,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey,
+                _firing.rightCanonicalInstanceContentKey);
+            _firing.rightCanonicalGenerationKey = currentWeaponGenerationKey;
         }
         return true;
     }

@@ -593,6 +593,7 @@ namespace rock
             const RE::NiTransform& rightHandWeaponLocal,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey,
+            std::uint64_t weaponInstanceContentKey,
             std::uint64_t captureSequence,
             const authored_weapon_grip_library::FiringFingerPose* rightFingerPose = nullptr,
             const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
@@ -1466,11 +1467,12 @@ namespace rock
          * aim comes from the separate native weapon-in-wand frame below; the
          * canonical wrist must never become weapon rotation authority again.
          */
-        void rememberRightFiringHandCanonicalFrame();
+        void rememberRightFiringHandCanonicalFrame(std::uint64_t weaponInstanceContentKey);
         void refreshRightNativeCanonicalFrame(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            std::uint64_t weaponInstanceContentKey);
         bool canCaptureRightNativeWeaponAimFrame() const;
         bool captureRightNativeWeaponAimFrame(
             RE::NiNode* weaponNode,
@@ -1946,6 +1948,9 @@ namespace rock
             RE::NiNode* rightCanonicalWeaponNode{ nullptr };
             std::uint64_t rightCanonicalGenerationKey{ 0 };
             std::uint64_t rightCanonicalOwnershipKey{ 0 };
+            // A collision rebuild may rebind the seat only for known,
+            // unchanged instance content on the same node and ownership.
+            std::uint64_t rightCanonicalInstanceContentKey{ 0 };
             std::uint64_t rightCanonicalCaptureSequence{ 0 };
             RightFiringCanonicalSource rightCanonicalSource{
                 RightFiringCanonicalSource::None

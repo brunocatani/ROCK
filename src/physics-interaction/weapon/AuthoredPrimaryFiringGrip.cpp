@@ -798,6 +798,7 @@ namespace rock
                         selectedRightHandInWeapon,
                         input.weaponGenerationKey,
                         currentWeaponKey,
+                        input.weaponInstanceContentKnown ? input.weaponInstanceContentKey : 0,
                         authoredLookup.captureSequence,
                         rightFingerPose,
                         leftFingerPose)) {
@@ -1062,6 +1063,7 @@ namespace rock
                 authoredPrimaryHandInWeapon,
                 input.weaponGenerationKey,
                 currentWeaponKey,
+                input.weaponInstanceContentKnown ? input.weaponInstanceContentKey : 0,
                 resolvedCaptureSequence,
                 rightFingerPose,
                 leftFingerPose)) {

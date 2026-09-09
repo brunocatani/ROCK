@@ -710,7 +710,8 @@ namespace rock
         refreshRightNativeCanonicalFrame(
             weaponNode,
             currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey);
+            currentEquippedWeaponOwnershipKey,
+            weaponCollision.getCurrentEquippedWeaponInstanceContentKey());
 
         // Enforce the left-firing weapon-node ownership contract after every
         // state/role transition this frame (idempotent; also the parent
