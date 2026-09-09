@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <intrin.h>
 #include <optional>
 #include <string_view>
@@ -226,6 +227,15 @@ namespace rock::input_remap_runtime
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
+        using PipboyRoute = pipboy_pause_gesture_policy::PipboyRoute;
+        PipboyRoute s_pipboyGestureRoute{ PipboyRoute::Unavailable };
+        // Frame/config thread only. Engine settings are registered for the
+        // process lifetime; keep their identity and read their live values.
+        RE::Setting* s_projectedPipboySetting = nullptr;
+        RE::Setting* s_hmdPipboySetting = nullptr;
+        bool s_frikPipboyBindingReady = false;
+        float s_frikPipboyHoldSeconds = 0.0f;
+        bool s_lastFrikPipboyOpen = false;
         native_vats_input_suppression_policy::RuntimeState s_nativeVatsInputSuppressionState{};
         std::atomic<bool> s_manualScopeActivationRequested{ false };
         std::atomic<bool> s_logicalJumpValid{ false };
@@ -409,6 +419,24 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool isCompatibilityConfigInputActive()
         {
             return frik_visual_authority::isCompatibilityConfigBlocking();
+        }
+
+        [[nodiscard]] PipboyRoute currentPipboyRoute()
+        {
+            return pipboy_pause_gesture_policy::selectPipboyRoute(
+                s_projectedPipboySetting && s_hmdPipboySetting,
+                s_projectedPipboySetting && s_projectedPipboySetting->GetBinary(),
+                s_hmdPipboySetting && s_hmdPipboySetting->GetBinary(),
+                f4vr::isInPowerArmor(), s_frikPipboyBindingReady);
+        }
+
+        [[nodiscard]] const char* pipboyRouteName(PipboyRoute route)
+        {
+            switch (route) {
+            case PipboyRoute::Native: return "native";
+            case PipboyRoute::FrikWrist: return "FRIK-wrist";
+            default: return "unavailable";
+            }
         }
 
         void refreshTrackedMenuState(const RE::UI& ui)
@@ -789,6 +817,20 @@ namespace rock::input_remap_runtime
             }
 
             const bool inputBlockingMenuActive = isInputBlockingMenuActive();
+            if (hand == input_remap_policy::Hand::Left) {
+                constexpr auto yMask = input_remap_policy::buttonMask(vr::k_EButton_ApplicationMenu);
+                if ((rawTransition.pressedEdges & yMask) != 0) {
+                    ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                        "Pip-Boy Y raw press: gameplay={} menuInput={} triggerHeld={}",
+                        s_gameplayInputAllowed.load(std::memory_order_acquire), inputBlockingMenuActive,
+                        (rawPressed & input_remap_policy::buttonMask(vr::k_EButton_SteamVR_Trigger)) != 0);
+                }
+                if ((rawTransition.releasedEdges & yMask) != 0) {
+                    ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                        "Pip-Boy Y raw release: gameplay={} menuInput={}",
+                        s_gameplayInputAllowed.load(std::memory_order_acquire), inputBlockingMenuActive);
+                }
+            }
             if (inputBlockingMenuActive) {
                 tracker.rearmPressedMask.fetch_or(rawPressed, std::memory_order_acq_rel);
                 /*
@@ -1149,8 +1191,7 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::shouldSuppressLegacyPipboyTriggerOpen(input_remap_policy::LegacyPipboyTriggerOpenInput{
                 .remapEnabled = true,
-                .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                .menuInputActive = isInputBlockingMenuActive(),
+                .pipboyMenuOpen = s_pipboyMenuOpen.load(std::memory_order_acquire),
                 .eventMatched = eventNameMatches(event, kNativeEventWandTrigger),
                 .secondaryWandEvent = isSecondaryWandInputEvent(event),
             });
@@ -1700,15 +1741,21 @@ namespace rock::input_remap_runtime
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             s_originalPipboyEventHandler(pipboyHandler, &event);
 
+            const auto pressHandled = event.handled;
             event.value = 0.0f;
             event.heldDownSecs = (std::max)(originalHeldDownSecs, 0.001f);
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             s_originalPipboyEventHandler(pipboyHandler, &event);
 
+            const auto releaseHandled = event.handled;
             event.strUserEvent = originalUserEvent;
             event.value = originalValue;
             event.heldDownSecs = originalHeldDownSecs;
             event.handled = originalHandled;
+            ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                "Pip-Boy Y native submission: pressHandled={} releaseHandled={} menuOpen={}; menu event confirms opening",
+                pressHandled.underlying(), releaseHandled.underlying(),
+                s_pipboyMenuOpen.load(std::memory_order_acquire));
             return true;
         }
 
@@ -1827,10 +1874,15 @@ namespace rock::input_remap_runtime
             const bool gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
             const bool menuInputActive = isInputBlockingMenuActive();
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressedAtDispatch();
+            const auto route = currentPipboyRoute();
+            if (button->QJustPressed()) {
+                s_pipboyGestureRoute = route;
+            }
+            const auto previousState = s_pipboyPauseGestureState.state;
             const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
                 pipboy_pause_gesture_policy::Input{
                     .enabled = true,
-                    .eligible = gameplayInputAllowed && !menuInputActive,
+                    .eligible = gameplayInputAllowed && !menuInputActive && route == s_pipboyGestureRoute,
                     .pressed = button->QJustPressed(),
                     .held = button->QPressed(),
                     .released = !button->QPressed(),
@@ -1838,6 +1890,21 @@ namespace rock::input_remap_runtime
                     .heldSeconds = button->QHeldDownSecs(),
                     .holdSeconds = g_rockConfig.rockPipboyPauseHoldSeconds,
                 });
+
+            if (button->QJustPressed() && previousState != pipboy_pause_gesture_policy::State::Idle) {
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "Pip-Boy Y fresh press after missing release: previousState={} reason={}",
+                    static_cast<unsigned>(previousState), decision.reason);
+            }
+            // Raw press has its own trace. Keep this callsite for releases so
+            // sampling cannot hide the decision for an ordinary sub-100ms tap.
+            if (!button->QPressed()) {
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "Pip-Boy Y decision: reason={} state={}->{} route={} gameplay={} menuInput={} providerLease={} heldSeconds={:.3f}",
+                    decision.reason, static_cast<unsigned>(previousState), static_cast<unsigned>(decision.state),
+                    pipboyRouteName(route), gameplayInputAllowed, menuInputActive, providerSuppressed,
+                    button->QHeldDownSecs());
+            }
 
             if (!decision.consume) {
                 if (s_originalMenuOpenEventHandler) {
@@ -1847,11 +1914,19 @@ namespace rock::input_remap_runtime
             }
 
             if (decision.dispatchPipboy) {
-                const bool routed = dispatchNativePipboyTap(*button);
-                ROCK_LOG_DEBUG(Input,
-                    "Pause-button short press routed to Pip-Boy result={} heldSeconds={:.3f}",
-                    routed ? "dispatched" : "unavailable",
-                    button->QHeldDownSecs());
+                if (route == PipboyRoute::Native) {
+                    (void)dispatchNativePipboyTap(*button);
+                } else if (route == PipboyRoute::FrikWrist) {
+                    // FRIK polls physical Y itself through its session binding.
+                    // It owns screen visibility, gaze checks, and its open state.
+                    // A second native trigger submission would bypass that owner.
+                    ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                        "Pip-Boy Y wrist tap: FRIK binding owns opening; heldSeconds={:.3f}",
+                        button->QHeldDownSecs());
+                } else {
+                    ROCK_LOG_SAMPLE_WARN(Input, 1000,
+                        "Pip-Boy Y tap rejected: presentation settings or FRIK binding unavailable");
+                }
             } else if (decision.dispatchPause) {
                 const bool routed = dispatchNativePauseHold(handler, *button);
                 ROCK_LOG_DEBUG(Input,
@@ -2222,9 +2297,54 @@ namespace rock::input_remap_runtime
         return s_hooksInstalled.load(std::memory_order_acquire);
     }
 
+    void configurePipboyInput()
+    {
+        // Initialization and explicit config reload only. FRIK owns this
+        // session override until process exit and reapplies it on its reloads.
+        // Never edit FRIK.ini or publish native trigger input for wrist mode.
+        auto* frikApi = frik_visual_authority::api();
+        const float holdSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(g_rockConfig.rockPipboyPauseHoldSeconds);
+        if (s_frikPipboyBindingReady && s_frikPipboyHoldSeconds == holdSeconds) {
+            return;
+        }
+        s_frikPipboyBindingReady = false;
+        auto* projected = f4vr::getIniSetting("bAlwaysUseProjectedPipboy:VR");
+        auto* hmd = f4vr::getIniSetting("bAttachPipboyToHMD:VR");
+        if (!projected || !hmd || projected->GetType() != RE::Setting::SETTING_TYPE::kBinary ||
+            hmd->GetType() != RE::Setting::SETTING_TYPE::kBinary || !frikApi || !frikApi->setConfigValueOverride) {
+            ROCK_LOG_ERROR(Input, "Cannot configure Pip-Boy Y opening: native settings or FRIK config API unavailable");
+            return;
+        }
+        s_projectedPipboySetting = projected;
+        s_hmdPipboySetting = hmd;
+        try {
+            // FRIK's Tap is fixed at 0.3s; Release accepts an explicit maximum
+            // duration. Match ROCK's threshold so Y-hold cannot also open it.
+            const auto binding = std::format("left release menu {:.9g}", holdSeconds);
+            if (!frikApi->setConfigValueOverride("ROCK", "Fallout4VRBody", "sPipboyOpenButton", binding.c_str())) {
+                ROCK_LOG_ERROR(Input, "FRIK rejected the Pip-Boy Y opening binding");
+                return;
+            }
+            s_frikPipboyHoldSeconds = holdSeconds;
+            s_frikPipboyBindingReady = true;
+            ROCK_LOG_INFO(Input, "Pip-Boy Y opening configured: FRIK wrist binding='{}'; projected/HMD/power-armor use native handler", binding);
+        } catch (const std::exception& error) {
+            ROCK_LOG_ERROR(Input, "Cannot configure FRIK Pip-Boy Y opening: {}", error.what());
+        }
+    }
+
     void setGameplayInputAllowed(bool allowed)
     {
         s_gameplayInputAllowed.store(allowed, std::memory_order_release);
+        // The frame callback runs after FRIK, so this witnesses the owner's
+        // actual state transition rather than claiming an input call opened it.
+        const auto* frikApi = frik_visual_authority::api();
+        const bool wristOpen = frikApi && frikApi->isWristPipboyOpen();
+        if (wristOpen != s_lastFrikPipboyOpen) {
+            s_lastFrikPipboyOpen = wristOpen;
+            ROCK_LOG_DEBUG(Input, "Pip-Boy FRIK wrist state: {} route={}",
+                wristOpen ? "opened" : "closed", pipboyRouteName(currentPipboyRoute()));
+        }
         if (!allowed) {
             if (s_logicalJumpHeld.load(std::memory_order_acquire)) {
                 s_logicalJumpReleaseToRearm.store(

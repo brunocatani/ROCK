@@ -185,8 +185,7 @@ int main()
 
     LegacyPipboyTriggerOpenInput legacyPipboyTrigger{
         .remapEnabled = true,
-        .gameplayInputAllowed = true,
-        .menuInputActive = false,
+        .pipboyMenuOpen = false,
         .eventMatched = true,
         .secondaryWandEvent = true,
     };
@@ -195,8 +194,10 @@ int main()
     legacyPrimaryTrigger.secondaryWandEvent = false;
     ok &= expectFalse("primary trigger remains available to native attack handling", shouldSuppressLegacyPipboyTriggerOpen(legacyPrimaryTrigger));
     auto legacyMenuTrigger = legacyPipboyTrigger;
-    legacyMenuTrigger.menuInputActive = true;
-    ok &= expectFalse("open-menu trigger behavior remains native", shouldSuppressLegacyPipboyTriggerOpen(legacyMenuTrigger));
+    legacyMenuTrigger.pipboyMenuOpen = true;
+    ok &= expectFalse("an already-open Pip-Boy retains native trigger controls", shouldSuppressLegacyPipboyTriggerOpen(legacyMenuTrigger));
+    legacyMenuTrigger.pipboyMenuOpen = false;
+    ok &= expectTrue("closing the Pip-Boy immediately removes trigger opening again", shouldSuppressLegacyPipboyTriggerOpen(legacyMenuTrigger));
     auto legacyDirectPipboy = legacyPipboyTrigger;
     legacyDirectPipboy.eventMatched = false;
     ok &= expectFalse("direct keyboard or gamepad Pipboy binding is not the moved VR trigger", shouldSuppressLegacyPipboyTriggerOpen(legacyDirectPipboy));
@@ -670,6 +671,40 @@ int main()
     pipboyGestureInput.released = true;
     pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
     ok &= expectPipboyGestureState("blocked gesture rearms only on release", pipboyGestureDecision.state, pipboyGesture::State::Idle);
+
+    using PipboyRoute = pipboyGesture::PipboyRoute;
+    ok &= expectTrue("wrist presentation routes through FRIK", pipboyGesture::selectPipboyRoute(true, false, false, false, true) == PipboyRoute::FrikWrist);
+    ok &= expectTrue("projected presentation routes through native handler", pipboyGesture::selectPipboyRoute(true, true, false, false, true) == PipboyRoute::Native);
+    ok &= expectTrue("HMD presentation routes through native handler", pipboyGesture::selectPipboyRoute(true, false, true, false, true) == PipboyRoute::Native);
+    ok &= expectTrue("power armor uses native handler even with wrist preference", pipboyGesture::selectPipboyRoute(true, false, false, true, true) == PipboyRoute::Native);
+    ok &= expectTrue("missing presentation settings cannot fall back to native trigger", pipboyGesture::selectPipboyRoute(false, false, false, false, true) == PipboyRoute::Unavailable);
+    ok &= expectTrue("missing FRIK binding cannot bypass wrist screen owner", pipboyGesture::selectPipboyRoute(true, false, false, false, false) == PipboyRoute::Unavailable);
+    ok &= expectTrue("native presentation does not require wrist binding", pipboyGesture::selectPipboyRoute(true, true, false, false, false) == PipboyRoute::Native);
+
+    // Simulate the native menu consuming the previous gesture's release.
+    // The next real down edge must work on its first tap, without a trigger.
+    for (const auto staleState : { pipboyGesture::State::Pending, pipboyGesture::State::PauseCommitted, pipboyGesture::State::BlockedUntilRelease }) {
+        pipboyGestureState.state = staleState;
+        auto recovered = pipboyGesture::update(pipboyGestureState,
+            pipboyGesture::Input{ .pressed = true, .held = true });
+        ok &= expectPipboyGestureState("fresh Y press replaces gesture whose release was consumed", recovered.state, pipboyGesture::State::Pending);
+        ok &= expectFalse("recovery cannot dispatch either menu on press", recovered.dispatchPipboy || recovered.dispatchPause);
+        recovered = pipboyGesture::update(pipboyGestureState,
+            pipboyGesture::Input{ .released = true, .heldSeconds = 0.1f });
+        ok &= expectTrue("first fresh Y tap opens after a lost release", recovered.dispatchPipboy);
+        ok &= expectFalse("first fresh Y tap after lost release does not open Pause", recovered.dispatchPause);
+    }
+    pipboyGestureState.state = pipboyGesture::State::BlockedUntilRelease;
+    auto stillBlocked = pipboyGesture::update(pipboyGestureState,
+        pipboyGesture::Input{ .held = true, .heldSeconds = 0.1f });
+    ok &= expectPipboyGestureState("holding Y across a menu does not count as a fresh press", stillBlocked.state, pipboyGesture::State::BlockedUntilRelease);
+    stillBlocked = pipboyGesture::update(pipboyGestureState,
+        pipboyGesture::Input{ .released = true, .heldSeconds = 0.2f });
+    ok &= expectFalse("held-through-menu release cannot open either menu", stillBlocked.dispatchPipboy || stillBlocked.dispatchPause);
+    pipboyGestureState.state = pipboyGesture::State::PauseCommitted;
+    stillBlocked = pipboyGesture::update(pipboyGestureState,
+        pipboyGesture::Input{ .eligible = false, .pressed = true, .held = true });
+    ok &= expectPipboyGestureState("fresh press cannot bypass a currently blocking menu", stillBlocked.state, pipboyGesture::State::BlockedUntilRelease);
 
     manual::RuntimeState manualState{};
     manual::Input manualInput{

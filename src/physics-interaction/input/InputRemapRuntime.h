@@ -46,6 +46,10 @@ namespace rock::input_remap_runtime
     bool installInputRemapHooks();
     bool isInputRemapHookInstalled();
 
+    // GameLoaded/config-change boundary only: the FRIK session override
+    // reloads its configuration. Never call from a controller/input hook.
+    void configurePipboyInput();
+
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
     void setRealMeleeWeaponEquipped(bool equipped);

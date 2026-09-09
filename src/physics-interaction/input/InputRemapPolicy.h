@@ -61,8 +61,7 @@ namespace rock::input_remap_policy
     struct LegacyPipboyTriggerOpenInput
     {
         bool remapEnabled{ true };
-        bool gameplayInputAllowed{ true };
-        bool menuInputActive{ false };
+        bool pipboyMenuOpen{ false };
         bool eventMatched{ false };
         bool secondaryWandEvent{ false };
     };
@@ -274,13 +273,14 @@ namespace rock::input_remap_policy
      * ROCK permanently moves gameplay Pip-Boy opening off the secondary-wand
      * trigger. Only the verified VR WandTrigger event is claimed here: direct
      * keyboard/gamepad Pipboy bindings and primary-wand attack events remain
-     * native, and menu input remains native so an open Pip-Boy keeps its
-     * existing controls. Flashlight suppression remains separately governed
+     * native. Only an already-open Pip-Boy retains native trigger handling;
+     * another menu or a gameplay gate must not restore trigger opening.
+     * Flashlight suppression remains separately governed
      * by shouldSuppressNativePipboyAction below.
      */
     [[nodiscard]] constexpr bool shouldSuppressLegacyPipboyTriggerOpen(const LegacyPipboyTriggerOpenInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+        return input.remapEnabled && !input.pipboyMenuOpen &&
                input.eventMatched && input.secondaryWandEvent;
     }
 
