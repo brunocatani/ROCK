@@ -452,6 +452,7 @@ namespace rock
             _identity.cachedFormID,
             evidenceSnapshot);
         const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode);
+        nativeScopeSightAnchorSnapshot.scopeEligible = manualScopeTarget.scopeEligible;
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayValid = manualScopeTarget.overlayValid;
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayIndex = manualScopeTarget.overlayIndex;
         nativeScopeSightAnchorSnapshot.manualDirectTransitionRequired =

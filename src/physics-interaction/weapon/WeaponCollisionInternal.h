@@ -1675,6 +1675,7 @@ namespace rock
 
         struct EquippedManualScopeTarget
         {
+            bool scopeEligible{ false };
             bool directTransitionRequired{ false };
             bool overlayValid{ false };
             std::uint32_t overlayIndex{ 0 };
@@ -1729,10 +1730,10 @@ namespace rock
             return result;
         }
 
-        [[nodiscard]] inline bool attachmentModHasNativeScopeOverlayTarget(std::uint32_t omodFormId)
+        [[nodiscard]] inline bool attachmentModHasScopeFlagProperty(std::uint32_t omodFormId)
         {
             constexpr std::uint8_t kBgsModPropertyBlockId = 1;
-            constexpr std::uint32_t kNativeScopeOverlayTarget = 48;
+            constexpr std::uint32_t kHasScopeTarget = 48;
             using PropertyMod = RE::BGSMod::Property::Mod;
 
             auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(omodFormId);
@@ -1740,7 +1741,9 @@ namespace rock
                 return false;
             }
             for (const auto& property : omod->GetBuffer<PropertyMod>(kBgsModPropertyBlockId)) {
-                if (property.target == kNativeScopeOverlayTarget) {
+                // Declaration evidence for physical part classification only.
+                // Activation must use the final equipped instance's flags.
+                if (property.target == kHasScopeTarget) {
                     return true;
                 }
             }
@@ -1756,11 +1759,10 @@ namespace rock
             auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
                 weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equippedInstanceData) : nullptr;
-            if (!objectInstanceExtra || !objectInstanceExtra->values) {
+            auto* weapon = weaponForm ? weaponForm->As<RE::TESObjectWEAP>() : nullptr;
+            if (!weapon) {
                 return target;
             }
-
-            auto* weapon = weaponForm ? weaponForm->As<RE::TESObjectWEAP>() : nullptr;
             auto* instanceData = weapon && equippedInstanceData ?
                 static_cast<RE::TESObjectWEAP::InstanceData*>(equippedInstanceData) :
                 nullptr;
@@ -1770,58 +1772,73 @@ namespace rock
             }
             if (zoomData) {
                 target.overlayIndex = zoomData->zoomData.overlay;
-                target.overlayValid = manual_scope_target_policy::isValidNativeOverlayIndex(target.overlayIndex);
             }
-
-            bool nativeScopeMetadataAuthored = instanceData && instanceData->flags.all(RE::WEAPON_FLAGS::kHasScope);
-            if (!nativeScopeMetadataAuthored && weapon) {
-                nativeScopeMetadataAuthored = weapon->weaponData.flags.all(RE::WEAPON_FLAGS::kHasScope);
-            }
+            // An instance can explicitly clear a base weapon's HasScope bit.
+            // Neither a base flag nor an OMOD property declaration may undo it.
+            const bool nativeScopeMetadataAuthored = manual_scope_target_policy::nativeHasScope(
+                instanceData != nullptr,
+                instanceData && instanceData->flags.all(RE::WEAPON_FLAGS::kHasScope),
+                weapon->weaponData.flags.all(RE::WEAPON_FLAGS::kHasScope));
             bool explicitScopeModelInstalled = false;
             manual_scope_target_policy::StructuralMarkerEvidence structuralEvidence{};
             std::size_t structuralVisited = 0;
             collectManualScopeStructuralMarkers(assembledWeaponRoot, structuralEvidence, structuralVisited);
 
-            for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
-                if (modIndex.disabled) {
-                    continue;
-                }
-                auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
-                if (!omod) {
-                    continue;
-                }
-                nativeScopeMetadataAuthored = nativeScopeMetadataAuthored || attachmentModHasNativeScopeOverlayTarget(omod->formID);
-                explicitScopeModelInstalled = explicitScopeModelInstalled ||
-                    manual_scope_target_policy::hasExplicitScopeIdentity(
-                        omod->fullName.c_str() ? omod->fullName.c_str() : "",
-                        omod->model.c_str() ? omod->model.c_str() : "");
+            if (objectInstanceExtra && objectInstanceExtra->values) {
+                for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
+                    if (modIndex.disabled) {
+                        continue;
+                    }
+                    auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
+                    if (!omod) {
+                        continue;
+                    }
+                    explicitScopeModelInstalled = explicitScopeModelInstalled ||
+                        manual_scope_target_policy::hasExplicitScopeIdentity(
+                            omod->fullName.c_str() ? omod->fullName.c_str() : "",
+                            omod->model.c_str() ? omod->model.c_str() : "");
 
-                if (!manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence)) {
-                    const RE::BGSKeyword* attachPointKeyword =
-                        RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
-                    const std::string_view recordName = omod->fullName.c_str() ? omod->fullName.c_str() : "";
-                    const std::string modelPath = omod->model.c_str() ? omod->model.c_str() : "";
-                    const bool opticalCandidate =
-                        (attachPointKeyword && attachPointKeyword->formID == weapon_part_record_identity_policy::kAttachPointSight) ||
-                        weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "optic") ||
-                        weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "sight") ||
-                        weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "scope") ||
-                        weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "optic") ||
-                        weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "sight") ||
-                        weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "scope");
-                    if (opticalCandidate) {
-                        auto templateRoot = loadCompleteOmodModelTemplate(modelPath);
-                        std::size_t templateVisited = 0;
-                        collectManualScopeStructuralMarkers(templateRoot.get(), structuralEvidence, templateVisited);
+                    if (!manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence)) {
+                        const RE::BGSKeyword* attachPointKeyword =
+                            RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
+                        const std::string_view recordName = omod->fullName.c_str() ? omod->fullName.c_str() : "";
+                        const std::string modelPath = omod->model.c_str() ? omod->model.c_str() : "";
+                        const bool opticalCandidate =
+                            (attachPointKeyword && attachPointKeyword->formID == weapon_part_record_identity_policy::kAttachPointSight) ||
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "optic") ||
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "sight") ||
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "scope") ||
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "optic") ||
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "sight") ||
+                            weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "scope");
+                        if (opticalCandidate) {
+                            auto templateRoot = loadCompleteOmodModelTemplate(modelPath);
+                            std::size_t templateVisited = 0;
+                            collectManualScopeStructuralMarkers(templateRoot.get(), structuralEvidence, templateVisited);
+                        }
                     }
                 }
             }
-
+            target.scopeEligible = manual_scope_target_policy::isScopeEligible(
+                nativeScopeMetadataAuthored, explicitScopeModelInstalled,
+                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence));
+            target.overlayValid = target.scopeEligible;
+            if (target.scopeEligible) {
+                target.overlayIndex = manual_scope_target_policy::resolveOverlay(target.overlayIndex);
+            }
             target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
                 nativeScopeMetadataAuthored,
                 explicitScopeModelInstalled,
                 manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
                 target.overlayValid);
+            if (target.scopeEligible) {
+                ROCK_LOG_DEBUG(Weapon,
+                    "Native scope target weapon={:08X} nativeHasScope={} named={} structure={} authoredOverlay={} selectedOverlay={} authoredZoom={} direct={}",
+                    weapon->formID, nativeScopeMetadataAuthored, explicitScopeModelInstalled,
+                    manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
+                    zoomData ? zoomData->zoomData.overlay : 0, target.overlayIndex,
+                    zoomData ? zoomData->zoomData.fovMult : 0.0f, target.directTransitionRequired);
+            }
             return target;
         }
 

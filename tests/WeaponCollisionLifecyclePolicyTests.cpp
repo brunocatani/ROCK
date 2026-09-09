@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
@@ -204,12 +205,42 @@ int main()
     rock::manual_scope_target_policy::observeStructuralNodeName(redDotStructure, "Reticle:0");
     ok &= expectFalse("generic red-dot hierarchy is not promoted to a magnified native scope",
         rock::manual_scope_target_policy::hasMagnifiedScopeStructure(redDotStructure));
-    ok &= expectTrue("native overlay zero is a valid authored overlay index",
+    ok &= expectFalse("native overlay zero does not provide a reticle",
         rock::manual_scope_target_policy::isValidNativeOverlayIndex(0));
     ok &= expectTrue("native overlay upper bound is accepted",
         rock::manual_scope_target_policy::isValidNativeOverlayIndex(16));
     ok &= expectFalse("out-of-range native overlay fails closed",
         rock::manual_scope_target_policy::isValidNativeOverlayIndex(17));
+    {
+        namespace scope = rock::manual_scope_target_policy;
+        ok &= expectFalse("an instance may remove its base scope flag", scope::nativeHasScope(true, false, true));
+        ok &= expectTrue("an instance may add a scope", scope::nativeHasScope(true, true, false));
+        ok &= expectTrue("base scope remains usable without extra OMOD data", scope::nativeHasScope(false, false, true));
+        ok &= expectFalse("a generic sight is not a forced scope", scope::isScopeEligible(false, false, false));
+        ok &= expectTrue("structural scope survives missing flags and presentation data", scope::isScopeEligible(false, false, true));
+        ok &= expectFalse("scope text in weapon directory cannot classify its barrel",
+            scope::hasExplicitScopeIdentity("Heavy Barrel", "Weapons/ScopeRifle/Barrel.nif"));
+        ok &= expectTrue("generically named optic in an explicit scope directory is retained",
+            scope::hasExplicitScopeIdentity("ATACR", "Weapons/MCPR/Scope/ATACR416.nif"));
+        ok &= expectTrue("MCPR keeps authored 8x and receives standard overlay",
+            scope::resolveMagnification(8.0f) == 8.0f && scope::resolveOverlay(0) == 6);
+        ok &= expectTrue("working native zoom and overlay remain independent",
+            scope::resolveMagnification(10.0f) == 10.0f && scope::resolveOverlay(8) == 8);
+        ok &= expectTrue("recon overlay is retained when zoom needs a default",
+            scope::resolveMagnification(0.0f) == 4.0f && scope::resolveOverlay(16) == 16);
+        ok &= expectTrue("missing both fields selects the standard 4x presentation",
+            scope::resolveMagnification(0.0f) == 4.0f && scope::resolveOverlay(0) == 6);
+        for (float invalid : { -1.0f, 0.0f, 1.0f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity() }) {
+            ok &= expectTrue("invalid or unmagnified scope zoom uses 4x", scope::resolveMagnification(invalid) == 4.0f);
+        }
+        ok &= expectTrue("out-of-range overlay receives a usable default", scope::resolveOverlay(0xFFFFFFFFu) == 6);
+        // Independent optical expectation: a 90-degree camera at 4x has
+        // tan(FOV/2)=1/4; it must not use the linear 90/4 approximation.
+        ok &= expectTrue("4x scope projection is 28.0725 degrees",
+            std::abs(scope::magnifiedFieldOfView(90.0f, 4.0f) - 28.072487f) < 0.0001f);
+        ok &= expectTrue("8x scope projection is 14.25 degrees",
+            std::abs(scope::magnifiedFieldOfView(90.0f, 8.0f) - 14.250033f) < 0.0001f);
+    }
     ok &= expectTrue("unflagged explicit scope requires the direct native transition",
         rock::manual_scope_target_policy::requiresDirectNativeTransition(false, true, false, true));
     ok &= expectTrue("unflagged structurally verified scope requires the direct native transition",

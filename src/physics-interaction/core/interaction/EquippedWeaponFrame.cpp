@@ -4,12 +4,14 @@
 
 namespace rock
 {
-    bool PhysicsInteraction::tryGetManualScopeDirectTransitionTarget(
+    bool PhysicsInteraction::tryGetManualScopePresentationTarget(
         std::uint64_t& outWeaponGenerationKey,
-        std::uint32_t& outNativeOverlayIndex) const
+        std::uint32_t& outNativeOverlayIndex,
+        bool& outDirectTransitionRequired) const
     {
         outWeaponGenerationKey = 0;
         outNativeOverlayIndex = 0;
+        outDirectTransitionRequired = false;
         if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
             return false;
         }
@@ -37,12 +39,13 @@ namespace rock
             !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(
                 resolvedIdentity,
                 currentIdentity) ||
-            !snapshot.manualDirectTransitionRequired || !snapshot.nativeScopeOverlayValid ||
+            !snapshot.scopeEligible || !snapshot.nativeScopeOverlayValid ||
             !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(publishedIdentity, currentIdentity)) {
             return false;
         }
         outWeaponGenerationKey = snapshot.weaponGenerationKey;
         outNativeOverlayIndex = snapshot.nativeScopeOverlayIndex;
+        outDirectTransitionRequired = snapshot.manualDirectTransitionRequired;
         return true;
     }
 

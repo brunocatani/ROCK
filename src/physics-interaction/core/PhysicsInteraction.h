@@ -104,9 +104,10 @@ namespace rock
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
-        [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
+        [[nodiscard]] bool tryGetManualScopePresentationTarget(
             std::uint64_t& outWeaponGenerationKey,
-            std::uint32_t& outNativeOverlayIndex) const;
+            std::uint32_t& outNativeOverlayIndex,
+            bool& outDirectTransitionRequired) const;
 
         void update();
 

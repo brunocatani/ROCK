@@ -596,7 +596,7 @@ namespace rock
         nativeScopeOverlayOmods.reserve(omodByAttachPointFormId.size());
         for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
             (void)attachPointFormId;
-            if (attachmentModHasNativeScopeOverlayTarget(omodFormId)) {
+            if (attachmentModHasScopeFlagProperty(omodFormId)) {
                 nativeScopeOverlayOmods.insert(omodFormId);
             }
         }

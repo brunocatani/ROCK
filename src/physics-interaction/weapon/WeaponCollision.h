@@ -84,6 +84,7 @@ namespace rock
         struct NativeScopeSightAnchorSnapshot
         {
             bool valid{ false };
+            bool scopeEligible{ false };
             bool manualDirectTransitionRequired{ false };
             bool nativeScopeOverlayValid{ false };
             std::uint64_t weaponGenerationKey{ 0 };

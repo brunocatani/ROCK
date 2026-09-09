@@ -35,6 +35,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
+#include "physics-interaction/weapon/scope/NativeScopeData.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -429,10 +430,9 @@ namespace
             return true;
         }
 
-        using ConfigureNativeWorldScope = void (*)(void*, std::uint32_t);
-        const auto configure = reinterpret_cast<ConfigureNativeWorldScope>(
-            REL::Offset(rock::offsets::kFunc_NativeWorldScopeConfigure).address());
-        configure(reinterpret_cast<void*>(worldScope), overlayIndex);
+        if (!native_scope_data::configureManual(reinterpret_cast<void*>(worldScope), overlayIndex)) {
+            return false;
+        }
         s_manualScopeConfiguredWeaponGeneration = weaponGenerationKey;
         s_manualScopeConfiguredOverlayIndex = overlayIndex;
         s_manualScopeConfiguredWorldScope = worldScope;
@@ -490,15 +490,17 @@ namespace
 
         std::uint64_t targetWeaponGenerationKey = 0;
         std::uint32_t targetOverlayIndex = 0;
+        bool directTransitionRequired = false;
         const bool targetAvailable = s_pluginLoaded && s_frikAvailable &&
             s_physicsInteraction &&
-            s_physicsInteraction->tryGetManualScopeDirectTransitionTarget(targetWeaponGenerationKey, targetOverlayIndex);
+            s_physicsInteraction->tryGetManualScopePresentationTarget(
+                targetWeaponGenerationKey, targetOverlayIndex, directTransitionRequired);
         const bool requested = targetAvailable &&
             input_remap_runtime::isManualScopeActivationRequested() &&
             player &&
             configureNativeWorldScopeForManualTarget(targetWeaponGenerationKey, targetOverlayIndex);
 
-        if (requested) {
+        if (requested && directTransitionRequired) {
             /*
              * Bethesda only reaches the hooked cone call for weapons whose
              * OMOD carries its native scope flag. Explicit scope models from
@@ -521,6 +523,13 @@ namespace
             ROCK_LOG_DEBUG(Input, "Manual scope direct transition released");
         }
         s_manualScopeDirectTransitionActive = false;
+        if (!requested) {
+            // Native equip/menu work can reconfigure the same singleton even
+            // when the next hold uses the same generated weapon identity.
+            s_manualScopeConfiguredWeaponGeneration = 0;
+            s_manualScopeConfiguredOverlayIndex = 0;
+            s_manualScopeConfiguredWorldScope = 0;
+        }
     }
 
     bool hookNativeScopeGeometryDecision()
@@ -550,6 +559,9 @@ namespace
             return false;
         }
 
+        if (!native_scope_data::install()) {
+            return false;
+        }
         auto& trampoline = F4SE::GetTrampoline();
         const auto original = trampoline.write_call<5>(callSiteAddress, &onNativeScopeGeometryDecision);
         s_originalNativeScopeStateTransition = reinterpret_cast<NativeScopeStateTransitionFunc>(original);
@@ -775,6 +787,7 @@ namespace
         // scope level after it so an unflagged scope does not wait for a native
         // cone callback that Bethesda will never issue.
         driveManualScopeTransitionFallback();
+        native_scope_data::reportDiagnostics();
 
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::AfterRock,
