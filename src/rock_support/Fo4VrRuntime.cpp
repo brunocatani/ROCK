@@ -3,10 +3,12 @@
 #include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
 #include "physics-interaction/object/CarInteractionPolicy.h"
+#include "physics-interaction/native/NativeMemory.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <ranges>
@@ -48,6 +50,32 @@ namespace rock::fo4vr
                 reinterpret_cast<std::uint64_t>(&flags));
             return loadedObject;
         }
+    }
+
+    RE::NiNode* cloneNode(const RE::NiNode* node) noexcept
+    {
+        using NativeClone = RE::NiNode* (*)(const RE::NiNode*);
+        static const NativeClone clone = []() noexcept -> NativeClone {
+            if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return nullptr;
+            // Raw VR witnesses: NiObject::Clone at 141C13F10 and OMOD
+            // attachment at 1402D9140 agree on DWORD copyType +60, append
+            // character +64 and XYZ scale +68/+6C/+70. The former also frees
+            // both clone maps via 14019D300 and 14019D240 before returning.
+            // The old packed 0x70-byte declaration mixed '$' into copyType
+            // (0x24000001), discarded names and supplied the wrong scale.
+            constexpr std::array<std::uint8_t, 15> expected{
+                0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x5B, 0x08, 0x57,
+                0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00
+            };
+            const auto address = REL::Offset(0x1C13F10).address();
+            std::array<std::uint8_t, expected.size()> actual{};
+            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(), actual.size()) || actual != expected) {
+                logger::error("Native node clone entry validation failed at 0x{:X}", address);
+                return nullptr;
+            }
+            return reinterpret_cast<NativeClone>(address);
+        }();
+        return node && clone ? clone(node) : nullptr;
     }
 
     RE::PlayerCharacter* getPlayer() noexcept

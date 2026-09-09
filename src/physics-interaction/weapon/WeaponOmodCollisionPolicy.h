@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <algorithm>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -10,6 +12,15 @@ namespace rock::weapon_omod_collision_policy
     inline constexpr std::size_t kMaximumSceneNodes = 4096;
     inline constexpr std::size_t kMaximumTemplateNodes = 512;
     inline constexpr std::size_t kMaximumSources = 256;
+
+    [[nodiscard]] inline bool cloneNamesPreserved(std::span<const std::string_view> original,
+        std::span<const std::string_view> copied)
+    {
+        // Counts alone missed a clone with all names erased. Preserve names
+        // and their multiplicity without depending on child iteration order.
+        return original.size() == copied.size() &&
+            std::is_permutation(original.begin(), original.end(), copied.begin());
+    }
 
     // ConnectChild substitutes the authored |0 suffix; a mesh's :0 is
     // part of its geometry identity and must not be stripped like a bone name.

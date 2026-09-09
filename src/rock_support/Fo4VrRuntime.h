@@ -96,29 +96,6 @@ namespace rock::fo4vr
     static_assert(sizeof(BSFlattenedBoneTree::BoneNodePosition) == 0x18);
     static_assert(sizeof(BSFlattenedBoneTree) == 0x1C0);
 
-    struct NiCloneProcess
-    {
-        std::uint64_t unk00{ 0 };
-        std::uint64_t unk08{ 0 };
-        std::uint64_t unk10{ 0 };
-        std::uint64_t* unk18{ nullptr };
-        std::uint64_t unk20{ 0 };
-        std::uint64_t unk28{ 0 };
-        std::uint64_t unk30{ 0 };
-        std::uint64_t unk38{ 0 };
-        std::uint64_t unk40{ 0 };
-        std::uint64_t* unk48{ nullptr };
-        std::uint64_t unk50{ 0 };
-        std::uint64_t unk58{ 0 };
-        std::uint8_t copyType{ 1 };
-        std::uint8_t affectedNodeRelationBehavior{ 0 };
-        std::uint8_t dynamicEffectRelationBehavior{ 0 };
-        char appendCharacter{ '$' };
-        RE::NiPoint3 scale{ 1.0f, 1.0f, 1.0f };
-    };
-    static_assert(offsetof(NiCloneProcess, scale) == 0x64);
-    static_assert(sizeof(NiCloneProcess) == 0x70);
-
     class MuzzleFlash
     {
     public:
@@ -132,15 +109,14 @@ namespace rock::fo4vr
     using LoadNif = int (*)(std::uint64_t path, std::uint64_t output, std::uint64_t flags);
     inline REL::Relocation<LoadNif> loadNif{ REL::Offset(0x1D0DEE0) };
 
-    using CloneNode = RE::NiNode* (*)(const RE::NiNode* node, NiCloneProcess* process);
-    inline REL::Relocation<CloneNode> cloneNode{ REL::Offset(0x1C13FF0) };
+    // The engine owns initialization and destruction of its clone process,
+    // including both transient maps. Callers own the returned node reference.
+    [[nodiscard]] RE::NiNode* cloneNode(const RE::NiNode* node) noexcept;
 
     using IsActorUsingMelee = bool (*)(RE::Actor* actor);
     inline REL::Relocation<IsActorUsingMelee> CombatUtilities_IsActorUsingMelee{ REL::Offset(0x1133BB0) };
 
     inline REL::Relocation<std::uintptr_t> EquippedWeaponData_vtable{ REL::Offset(0x2D7FCF8) };
-    inline REL::Relocation<std::uint64_t*> cloneAddr1{ REL::Offset(0x36FF560) };
-    inline REL::Relocation<std::uint64_t*> cloneAddr2{ REL::Offset(0x36FF564) };
 
     [[nodiscard]] RE::PlayerCharacter* getPlayer() noexcept;
     [[nodiscard]] PlayerNodes* getPlayerNodes() noexcept;

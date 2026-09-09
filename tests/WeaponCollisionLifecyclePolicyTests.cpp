@@ -158,6 +158,15 @@ int main()
         instanceName("Stock:0", 3) == "Stock:0");
     ok &= expectTrue("zero instance preserves authored suffix",
         instanceName("WeaponExtra|0", 0) == "WeaponExtra|0");
+    const std::array<std::string_view, 3> stockNames{ "Stock", "Stock:0", "StockTube:0" };
+    const std::array<std::string_view, 3> unnamedClone{ "", "", "" };
+    const std::array<std::string_view, 3> reorderedClone{ "StockTube:0", "Stock", "Stock:0" };
+    const std::array<std::string_view, 3> lostTube{ "Stock", "Stock:0", "Stock:0" };
+    ok &= expectTrue("native clone preserves stock identity", cloneNamesPreserved(stockNames, stockNames));
+    ok &= expectFalse("same node count with erased clone names is invalid", cloneNamesPreserved(stockNames, unnamedClone));
+    ok &= expectTrue("clone identity does not require a fixed child order", cloneNamesPreserved(stockNames, reorderedClone));
+    ok &= expectFalse("clone identity preserves repeated-name multiplicity", cloneNamesPreserved(stockNames, lostTube));
+    ok &= expectFalse("truncated clone cannot preserve source identity", cloneNamesPreserved(stockNames, std::span(stockNames).first(2)));
 
     using rock::native_scope_sight_anchor_policy::PublicationIdentity;
     using rock::native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon;

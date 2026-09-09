@@ -75,6 +75,17 @@ namespace rock
             return root && object && tryResolveDescendantLocalTransform(root, object, local);
         }
 
+        bool cloneIdentityMatches(const Census& original, const Census& copied)
+        {
+            if (!original.complete || !copied.complete) return false;
+            std::vector<std::string_view> originalNames, copiedNames;
+            originalNames.reserve(original.nodes.size());
+            copiedNames.reserve(copied.nodes.size());
+            for (const auto* node : original.nodes) originalNames.emplace_back(safeNodeName(node));
+            for (const auto* node : copied.nodes) copiedNames.emplace_back(safeNodeName(node));
+            return policy::cloneNamesPreserved(originalNames, copiedNames);
+        }
+
         Census equippedCensus(RE::NiAVObject* weaponRoot)
         {
             Census result;
@@ -631,20 +642,35 @@ namespace rock
             }
             auto* physicalRoot = rawGeometry ? rawRoot.get() : model.root.get();
 
-            f4vr::NiCloneProcess process{};
-            process.unk18 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr1.address());
-            process.unk48 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr2.address());
             RE::NiPointer<RE::NiNode> clone;
-            clone.reset(f4vr::cloneNode(physicalRoot, &process));
+            clone.reset(f4vr::cloneNode(physicalRoot));
             auto* mod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(model.formId);
-            if (!clone || !applyEquippedOmodModelCustomization(mod, clone.get(), instance)) {
+            if (!clone) {
+                modelsComplete = false;
+                ++unresolved;
+                continue;
+            }
+            const auto& sourceCensus = rawGeometry ? rawCensus : model.census;
+            Census copied;
+            scan(copied, clone.get(), policy::kMaximumTemplateNodes);
+            const bool namesBeforeCustomization = cloneIdentityMatches(sourceCensus, copied);
+            if (!namesBeforeCustomization || !applyEquippedOmodModelCustomization(mod, clone.get(), instance)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds,
+                    "OMOD-COLLISION omod={:08X} stage=clone-identity sourceNodes={} cloneNodes={} namesBeforeCustomization={} recovery=withheld",
+                    model.formId, sourceCensus.nodes.size(), copied.nodes.size(), namesBeforeCustomization);
                 modelsComplete = false;
                 ++unresolved;
                 continue;
             }
             Census physical;
             scan(physical, clone.get(), policy::kMaximumTemplateNodes);
-            if (!physical.complete) { ++unresolved; continue; }
+            const bool namesAfterCustomization = cloneIdentityMatches(sourceCensus, physical);
+            if (emitCoverageDiagnostics || !namesAfterCustomization) {
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-COLLISION clone omod={:08X} sourceNodes={} clonedNodes={} namesBeforeCustomization={} namesAfterCustomization={}",
+                    model.formId, sourceCensus.nodes.size(), physical.nodes.size(), namesBeforeCustomization, namesAfterCustomization);
+            }
+            if (!namesAfterCustomization) { ++unresolved; continue; }
             std::uint32_t shapeIndex = 0;
             for (auto* object : physical.nodes) {
                 if (!physicalShape(object)) continue;

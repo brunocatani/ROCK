@@ -82,10 +82,7 @@ namespace rock
             return nullptr;
         }
 
-        f4vr::NiCloneProcess proc;
-        proc.unk18 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr1.address());
-        proc.unk48 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr2.address());
-        auto* segment = f4vr::cloneNode(_sourceTemplate.get(), &proc);
+        auto* segment = f4vr::cloneNode(_sourceTemplate.get());
         if (!segment) {
             ROCK_LOG_WARN(Hand, "{} selection beam segment clone returned null for '{}'", handName ? handName : "Unknown", segmentName);
             return nullptr;
