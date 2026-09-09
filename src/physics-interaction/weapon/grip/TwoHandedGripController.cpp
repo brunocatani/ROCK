@@ -728,6 +728,7 @@ namespace rock
         clearOneHandRecoilClaim();
         _recoil.equippedIdentity = {};
         _recoil.rightBaseValid = false;
+        _recoil.rightNeedsNeutralFrame = false;
         (void)frik_visual_authority::clearHandWorld(
             WEAPON_COLLISION_HAND_TAG,
             frik_visual_authority::Hand::Left);

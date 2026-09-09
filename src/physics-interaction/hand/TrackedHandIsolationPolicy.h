@@ -85,6 +85,14 @@ namespace rock::tracked_hand_isolation_policy
         float probeRotationDegrees = 0.0f;
     };
 
+    // External hand writers must not acquire the previous rendered output
+    // before a controller-to-body relation has been measured successfully.
+    [[nodiscard]] inline bool canDriveExternalPose(const RelationState& relation, const FrameResult& frame) noexcept
+    {
+        return relation.valid && frame.valid &&
+            (frame.source == RawHandSource::Flattened || frame.source == RawHandSource::Reconstructed);
+    }
+
     [[nodiscard]] inline bool isFiniteTransform(const RE::NiTransform& transform) noexcept
     {
         for (int row = 0; row < 3; ++row) {

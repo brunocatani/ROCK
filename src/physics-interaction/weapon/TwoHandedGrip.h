@@ -2101,6 +2101,8 @@ namespace rock
                 dynamic_weapon_collision_policy::VisualIntentSource::None };
             bool rightBaseValid{ false };
             bool rightHandClaimActive{ false };
+            bool rightNeedsNeutralFrame{ false };
+            bool controlledKickActive{ false };
             bool controllerRegistered{ false };
             // Only actual FRIK hand kicks inhibit raw-hand calibration; owned
             // carry incorporates its sample into the published seat instead.

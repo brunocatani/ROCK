@@ -109,6 +109,7 @@ namespace rock::frik_hand_world_authority
     [[nodiscard]] bool tryGetRawHandWorld(bool isLeft, RE::NiTransform& outWorld);
     [[nodiscard]] bool tryGetPresentedHandWorld(bool isLeft, RE::NiTransform& outWorld);
     [[nodiscard]] const char* rawHandSourceName(bool isLeft);
+    [[nodiscard]] bool hasCalibratedRawHandFrame(bool isLeft);
 
     /*
      * The rigid delta that carries this frame's rendered hand chain (forearm,

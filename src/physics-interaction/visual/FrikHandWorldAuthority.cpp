@@ -843,6 +843,12 @@ namespace rock::frik_hand_world_authority
         return true;
     }
 
+    bool hasCalibratedRawHandFrame(const bool isLeft)
+    {
+        const auto& state = g_service.isolation[handIndex(isLeft)];
+        return isolation_policy::canDriveExternalPose(state.relation, state.result);
+    }
+
     bool tryGetPresentedHandWorld(const bool isLeft, RE::NiTransform& outWorld)
     {
         const auto& state = g_service.isolation[handIndex(isLeft)];

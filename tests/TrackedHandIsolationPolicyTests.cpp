@@ -73,6 +73,21 @@ namespace
 int main()
 {
     bool ok = true;
+    {
+        RelationState startup{};
+        FrameResult raw{};
+        raw.valid = true;
+        raw.source = RawHandSource::Flattened;
+        ok &= expectFalse("startup cannot acquire an uncalibrated hand", canDriveExternalPose(startup, raw));
+        startup.valid = true;
+        ok &= expectTrue("calibrated free hand can acquire recoil", canDriveExternalPose(startup, raw));
+        raw.source = RawHandSource::FlattenedContaminated;
+        ok &= expectFalse("rendered feedback is never recoil input", canDriveExternalPose(startup, raw));
+        raw.source = RawHandSource::Reconstructed;
+        ok &= expectTrue("qualified controller reconstruction can continue recoil", canDriveExternalPose(startup, raw));
+        raw.valid = false;
+        ok &= expectFalse("missing controller frame releases recoil", canDriveExternalPose(startup, raw));
+    }
 
     // A skeleton with a small solver residual and a body scale: relation calibrates on a free frame.
     const RE::NiTransform residual = yawed(0.5f, 0.1f, -0.05f, 0.02f, 1.02f);

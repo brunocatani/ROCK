@@ -176,6 +176,16 @@ int main()
             selectProfile(true, false, true) == Profile::PowerArmor);
         ok &= expectTrue("close support remains distinct from one hand",
             selectProfile(false, true, false) != Profile::OneHand);
+        ok &= expectFalse("idle recoil must not acquire weapon or hand", needsOneHandPresentation(false, false));
+        ok &= expectTrue("active kick acquires direct presentation", needsOneHandPresentation(true, false));
+        ok &= expectTrue("settling publishes one final neutral frame", needsOneHandPresentation(false, true));
+        const auto neutralKick = rock::transform_math::makeIdentityTransform<TestTransform>();
+        auto distantFrame = neutralKick;
+        distantFrame.translate = { -70700.0f, 80000.0f, 7450.0f };
+        distantFrame.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 27.0f);
+        ok &= expectTransformNear("identity recoil stays exact at distant world coordinates",
+            rock::weapon_recoil_authority_math::resolveWorldDelta(neutralKick, distantFrame, distantFrame, distantFrame, true),
+            neutralKick);
         TestTransform shot = rock::transform_math::makeIdentityTransform<TestTransform>();
         shot.translate = { 10.0f, -4.0f, 2.0f };
         shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);

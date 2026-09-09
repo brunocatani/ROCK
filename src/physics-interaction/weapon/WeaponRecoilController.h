@@ -69,6 +69,12 @@ namespace rock::weapon_recoil_policy
                firingHandIsLeft == nativePrimaryIsLeft ? HandMask::Primary : HandMask::Offhand;
     }
 
+    [[nodiscard]] inline constexpr bool needsOneHandPresentation(
+        const bool kickActive, const bool needsNeutralFrame) noexcept
+    {
+        return kickActive || needsNeutralFrame;
+    }
+
     struct SampleIdentity
     {
         std::uintptr_t weaponNode{ 0 };  // Identity only; never dereferenced.
@@ -113,6 +119,25 @@ namespace rock::weapon_recoil_policy
 
 namespace rock::weapon_recoil_authority_math
 {
+    // Numerical identity tolerance, not a recoil strength/dead-zone setting.
+    template <class Transform>
+    [[nodiscard]] inline bool hasKick(const Transform& local) noexcept
+    {
+        constexpr float epsilon = 0.00001f;
+        if (std::abs(local.translate.x) > epsilon || std::abs(local.translate.y) > epsilon ||
+            std::abs(local.translate.z) > epsilon) {
+            return true;
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (std::abs(local.rotate.entry[row][column] - (row == column ? 1.0f : 0.0f)) > epsilon) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     template <class Transform>
     inline void applyOneHandKick(const Transform& delta, const Transform& weaponBase,
         const Transform& handBase, Transform& weaponTarget, Transform& handTarget)
@@ -248,6 +273,11 @@ namespace rock::weapon_recoil_authority_math
         const Transform& nativeOffhandWandWorld,
         const bool targetIsNativeOffhand)
     {
+        // Conjugating identity at distant world coordinates can introduce
+        // cancellation noise. A neutral sample must remain exactly neutral.
+        if (!hasKick(nativeKickLocal)) {
+            return transform_math::makeIdentityTransform<Transform>();
+        }
         Transform kickParentWorld = nativeKickParentWorld;
         Transform kickLocal = nativeKickLocal;
         if (targetIsNativeOffhand) {

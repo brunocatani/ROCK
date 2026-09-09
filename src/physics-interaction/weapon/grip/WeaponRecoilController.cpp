@@ -88,7 +88,12 @@ namespace rock
             return decline();
         }
         const auto context = self->recoilSampleIdentity(handedMode->GetBinary());
-        const bool directRight = self->canUseRightOneHandRecoil();
+        const bool rightCandidate = self->canUseRightOneHandRecoil();
+        const bool directRight = rightCandidate && needsOneHandPresentation(
+            weapon_recoil_authority_math::hasKick(sample->nativeKickLocal), state.rightNeedsNeutralFrame);
+        if (!directRight) {
+            self->clearOneHandRecoilClaim();
+        }
         const bool ownedCarry = directRight || (self->isManualOwnershipActive() &&
             (context.fullTwoHanded || (self->usesLeftFiringCarry() &&
                 self->_leftCarry.weaponNodeOwnershipBlockEngaged)));
@@ -157,6 +162,7 @@ namespace rock
         if (!isFiniteTransform(delta) || !isInvertibleTransform(delta)) {
             return false;
         }
+        _recoil.controlledKickActive = weapon_recoil_authority_math::hasKick(controlledKickLocal);
         _recoil.worldDelta = delta;
         _recoil.ticket.identity = identity;
         _recoil.ticket.valid = true;
@@ -188,7 +194,9 @@ namespace rock
 
     bool TwoHandedGrip::canUseRightOneHandRecoil() const noexcept
     {
-        return g_rockConfig.rockImmersiveRecoil && !usesLeftFiringCarry() && !isGripping() &&
+        return g_rockConfig.rockImmersiveRecoil &&
+            frik_hand_world_authority::hasCalibratedRawHandFrame(false) &&
+            !usesLeftFiringCarry() && !isGripping() &&
             !_firing.rightHandHoldingObjectForPose &&
             !isWeaponVisualReturnActive() && !isHandVisualReturnActive(false) &&
             _recoil.rightBaseValid && _recoil.equippedIdentity.weaponNode != 0 &&
@@ -210,6 +218,12 @@ namespace rock
 
     void TwoHandedGrip::applyRightOneHandRecoil(RE::NiNode* weaponNode)
     {
+        if (g_rockConfig.rockImmersiveRecoil && _recoil.rightBaseValid &&
+            !frik_hand_world_authority::hasCalibratedRawHandFrame(false)) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                "Weapon recoil: right acquisition deferred; rawSource={} controller/body relation unavailable generation={:016X}",
+                frik_hand_world_authority::rawHandSourceName(false), _recoil.equippedIdentity.weaponGeneration);
+        }
         if (!weaponNode || !canUseRightOneHandRecoil() || _recoil.rightHandClaimActive ||
             _recoil.equippedIdentity.weaponNode != reinterpret_cast<std::uintptr_t>(weaponNode)) {
             return;
@@ -244,6 +258,7 @@ namespace rock
             clearOneHandRecoilClaim();
             return;
         }
+        _recoil.rightNeedsNeutralFrame = _recoil.controlledKickActive;
         recordPublishedHandWorld(false, handTarget);
         _lastSolvedWeaponTransform = weaponTarget;
         _hasSolvedWeaponTransform = true;
