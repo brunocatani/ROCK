@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/telemetry/WeaponTelemetryTraversal.h"
+#include "physics-interaction/weapon/WeaponSceneChildren.h"
 
 #include <array>
 #include <cstddef>
@@ -60,5 +61,41 @@ int main()
     oversized.children.slots[519].value = &muzzle;
     const auto bounded = visitScene(&oversized, [](Node*) { return true; });
     if (bounded.visited != 1 || !bounded.truncated) return 6;
+
+    // Production collider capture and visual identity share this slot walk.
+    // A receiver with two populated entries can hold P-Grip at slot seven,
+    // with both stock shapes also beyond that branch's populated count.
+    Node receiver, barrel, stock, housing, tube;
+    receiver.children.slots[0].value = &barrel;
+    receiver.children.slots[7].value = &stock;
+    stock.children.slots[6].value = &housing;
+    stock.children.slots[7].value = &tube;
+    if (receiver.children.size() != 2 || stock.children.size() != 2) return 7;
+    std::size_t captured = 0, slotSignature = 0;
+    const auto capture = [&](Node* node, const auto& self) -> void {
+        captured += node == &housing || node == &tube;
+        rock::visitWeaponChildSlots(node->children, [&](Node* child, std::size_t slot) {
+            slotSignature = slotSignature * 31 + slot + 1;
+            self(child, self);
+            return true;
+        });
+    };
+    capture(&receiver, capture);
+    if (captured != 2) return 8;
+    const auto previousSignature = slotSignature;
+    receiver.children.slots[7].value = nullptr;
+    receiver.children.slots[5].value = &stock;
+    captured = slotSignature = 0;
+    capture(&receiver, capture);
+    if (captured != 2 || slotSignature == previousSignature) return 9;
+
+    std::size_t callbacks = 0;
+    const bool completed = rock::visitWeaponChildSlots(receiver.children, [&](Node*, auto) {
+        ++callbacks;
+        return false;
+    });
+    if (completed || callbacks != 1) return 10;
+    Node empty;
+    if (!rock::visitWeaponChildSlots(empty.children, [&](Node*, auto) { ++callbacks; return true; }) || callbacks != 1) return 11;
     return 0;
 }

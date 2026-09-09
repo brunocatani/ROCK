@@ -1190,21 +1190,25 @@ namespace rock
         auto* niNode = node->IsNode();
         if (niNode) {
             auto& kids = niNode->GetRuntimeData().children;
-            for (std::uint16_t i = 0; i < kids.size(); ++i) {
-                if (auto* kid = kids[i].get()) {
-                    findGeneratedWeaponShapeSourcesRecursive(
-                        kid,
-                        sourceRoot,
-                        weaponRootTransform,
-                        depth + 1,
-                        outSources,
-                        visitedShapes,
-                        extractedTriangles,
-                        claimedSourceGroups,
-                        candidateExtractedSourceGroups,
-                        culledForEffectGeometry);
+            visitWeaponChildSlots(kids, [&](auto* kid, auto slot) {
+                if (slot >= kids.size()) {
+                    ROCK_LOG_DEBUG(Weapon,
+                        "Generated weapon sparse child: parent='{}' child='{}' slot={} populated={} slots={}",
+                        safeNodeName(node), safeNodeName(kid), slot, kids.size(), kids.capacity());
                 }
-            }
+                findGeneratedWeaponShapeSourcesRecursive(
+                    kid,
+                    sourceRoot,
+                    weaponRootTransform,
+                    depth + 1,
+                    outSources,
+                    visitedShapes,
+                    extractedTriangles,
+                    claimedSourceGroups,
+                    candidateExtractedSourceGroups,
+                    culledForEffectGeometry);
+                return true;
+            });
         }
     }
 

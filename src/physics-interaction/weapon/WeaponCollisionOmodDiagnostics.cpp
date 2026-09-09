@@ -76,11 +76,12 @@ namespace rock
             const auto markerIt = evidenceMarkers.find(reinterpret_cast<std::uintptr_t>(node));
             auto* niNode = node->IsNode();
             ROCK_LOG_INFO(Weapon,
-                "OMOD-DUMP tree {}{} addr={:x} children={} localT=({:.2f},{:.2f},{:.2f}){}",
+                "OMOD-DUMP tree {}{} addr={:x} children={} slots={} localT=({:.2f},{:.2f},{:.2f}){}",
                 std::string(static_cast<std::size_t>(depth) * 2, ' '),
                 safeNodeName(node),
                 reinterpret_cast<std::uintptr_t>(node),
                 niNode ? niNode->children.size() : 0,
+                niNode ? niNode->children.capacity() : 0,
                 node->local.translate.x,
                 node->local.translate.y,
                 node->local.translate.z,
@@ -90,11 +91,10 @@ namespace rock
                 return;
             }
             const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                if (auto* child = children[i].get()) {
-                    dumpOmodWeaponTreeRecursive(child, depth + 1, visited, evidenceMarkers);
-                }
-            }
+            visitWeaponChildSlots(children, [&](auto* child, auto) {
+                dumpOmodWeaponTreeRecursive(child, depth + 1, visited, evidenceMarkers);
+                return visited < kMaxDumpNodes;
+            });
         }
     }
 

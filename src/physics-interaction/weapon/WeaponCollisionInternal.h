@@ -23,6 +23,7 @@
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
+#include "physics-interaction/weapon/WeaponSceneChildren.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/TransformMath.h"
@@ -352,7 +353,7 @@ namespace rock
             }
 
             const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+            for (auto i = decltype(children.size()){ 0 }; i < children.capacity(); ++i) {
                 if (auto* child = children[i].get()) {
                     collectWeaponAnimNodeMatchesRecursive(child, targetName, path, depth + 1, visited, outMatches);
                 }
@@ -402,7 +403,7 @@ namespace rock
 
             ++stats.niNodeCount;
             const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+            for (auto i = decltype(children.size()){ 0 }; i < children.capacity(); ++i) {
                 if (auto* child = children[i].get()) {
                     accumulateWeaponAnimNodeSubtreeStats(child, stats, depth + 1, visited);
                 }
@@ -427,7 +428,7 @@ namespace rock
             std::string result;
             const auto& children = niNode->children;
             std::size_t appended = 0;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size() && appended < WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES; ++i) {
+            for (auto i = decltype(children.size()){ 0 }; i < children.capacity() && appended < WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES; ++i) {
                 const auto* child = children[i].get();
                 if (!child) {
                     continue;
@@ -1411,7 +1412,7 @@ namespace rock
                 return {};
             }
             const auto& children = treeNode->GetRuntimeData().children;
-            for (std::uint16_t index = 0; index < children.size(); ++index) {
+            for (std::uint16_t index = 0; index < children.capacity(); ++index) {
                 evidence = firstCollisionSoundMaterialRecursive(
                     children[index].get(),
                     visited,
@@ -1669,7 +1670,7 @@ namespace rock
                 return;
             }
             const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+            for (auto i = decltype(children.size()){ 0 }; i < children.capacity(); ++i) {
                 collectManualScopeStructuralMarkers(children[i].get(), evidence, visited, depth + 1);
             }
         }
@@ -2464,10 +2465,10 @@ namespace rock
             }
 
             auto& kids = niNode->GetRuntimeData().children;
-            for (std::uint16_t i = 0; i < kids.size(); ++i) {
-                auto* kid = kids[i].get();
+            visitWeaponChildSlots(kids, [&](auto* kid, auto i) {
                 accumulateWeaponVisualKey(kid, node, i, depth + 1, key, stats);
-            }
+                return stats.nodeCount <= 512;
+            });
         }
 
         [[nodiscard]] inline bool weaponEmitterNodeEffectivelyVisible(const RE::NiAVObject* node)
@@ -2501,7 +2502,7 @@ namespace rock
                 return false;
             }
             const auto& children = parent->GetRuntimeData().children;
-            const std::uint16_t count = (std::min)(children.size(), static_cast<std::uint16_t>(64));
+            const std::uint16_t count = (std::min)(children.capacity(), static_cast<std::uint16_t>(64));
             for (std::uint16_t i = 0; i < count; ++i) {
                 const auto* sibling = children[i].get();
                 if (sibling && sibling != node && predicate(std::string_view{ safeNodeName(sibling) })) {
@@ -2849,7 +2850,7 @@ namespace rock
                 return;
             }
             const auto& children = niNode->GetRuntimeData().children;
-            for (std::uint16_t i = 0; i < children.size(); ++i) {
+            for (std::uint16_t i = 0; i < children.capacity(); ++i) {
                 collectWeaponEmittersRecursive(
                     children[i].get(),
                     candidateRoot,
@@ -2922,7 +2923,7 @@ namespace rock
                 return;
             }
             const auto& children = niNode->GetRuntimeData().children;
-            for (std::uint16_t i = 0; i < children.size(); ++i) {
+            for (std::uint16_t i = 0; i < children.capacity(); ++i) {
                 refreshWeaponEmittersRecursive(children[i].get(), weaponRoot, depth + 1, visitedNodes, snapshot);
             }
         }
