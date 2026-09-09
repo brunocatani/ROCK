@@ -96,8 +96,8 @@ namespace rock::scope_transition_telemetry
 
         void dampening(const char* phase, const frik_hand_world_authority::ScopeDampenTrace& d)
         {
-            write("SCT dampen frame={} phase={} driverSequence={} observedSequence={} runtimeFrameUsed={} menuUsed={} enabled={} factors=({:.3f},{:.3f}) cameraValid=({},{}) cameraNow=({:.4f},{:.4f},{:.4f}) cameraPrevious=({:.4f},{:.4f},{:.4f})",
-                sequence(), phase, d.driverSequence, d.observedSequence, d.runtimeFrameUsed, d.menuUsed, d.enabled,
+            write("SCT dampen frame={} phase={} driverSequence={} observedSequence={} runtimeFrameObserved={} runtimeMenuSnapshot={} menuUsed={} enabled={} factors=({:.3f},{:.3f}) cameraValid=({},{}) cameraNow=({:.4f},{:.4f},{:.4f}) cameraPrevious=({:.4f},{:.4f},{:.4f})",
+                sequence(), phase, d.driverSequence, d.observedSequence, d.runtimeFrameObserved, d.runtimeMenuSnapshot, d.menuUsed, d.enabled,
                 d.translationFactor, d.rotationFactor, d.cameraNowValid, d.cameraPreviousValid,
                 d.cameraNow.x, d.cameraNow.y, d.cameraNow.z, d.cameraPrevious.x, d.cameraPrevious.y, d.cameraPrevious.z);
             for (std::size_t i = 0; i < 2; ++i) {
@@ -105,6 +105,9 @@ namespace rock::scope_transition_telemetry
                 const auto& camera = d.historyCamera[i];
                 const auto movement = d.cameraNow - camera;
                 const bool historyKnown = d.historySequence[i] != 0 && d.historySequence[i] <= sequence();
+                write("SCT prediction frame={} phase={} hand={} mode={} errorValid={} errorGameUnits={:.4f} errorDegrees={:.4f}",
+                    sequence(), phase, left ? "left" : "right", dampened_driver_prediction_policy::predictionModeName(d.predictionMode[i]),
+                    d.predictionErrorValid[i], d.predictionTranslationError[i], d.predictionRotationError[i]);
                 write("SCT history frame={} phase={} hand={} historySequence={} ageKnown={} ageFrames={} cameraValid={} origin=({:.4f},{:.4f},{:.4f}) accumulatedCamera=({:.4f},{:.4f},{:.4f})",
                     sequence(), phase, left ? "left" : "right", d.historySequence[i], historyKnown,
                     historyKnown ? sequence() - d.historySequence[i] : 0, d.historyCameraValid[i] && d.cameraNowValid,
@@ -138,7 +141,7 @@ namespace rock::scope_transition_telemetry
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
             next->log->set_error_handler([](const std::string&) { writerFailed.store(true, std::memory_order_relaxed); });
             writerFailed.store(false, std::memory_order_relaxed);
-            next->log->info("SCT start version=1 pid={} build={} {} tailFrames={} maximumBurstFrames={} matrices=Ni-stored-rows scopeTraceObservational=true",
+            next->log->info("SCT start version=2 pid={} build={} {} tailFrames={} maximumBurstFrames={} matrices=Ni-stored-rows scopeTraceObservational=true",
                 GetCurrentProcessId(), __DATE__, __TIME__, policy::kTailFrames, policy::kMaximumBurstFrames);
             next->log->flush();
             session = std::move(next);

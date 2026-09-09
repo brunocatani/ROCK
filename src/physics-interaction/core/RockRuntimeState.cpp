@@ -204,7 +204,7 @@ namespace rock::runtime_state
     {
         s_frameMenuSample.valid = true;
         s_frameMenuSample.inputMenuBlocking = menuInputBlocking;
-        s_frameMenuSample.scopeMenuOpen = s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
+        s_frameMenuSample.scopeMenuOpen = isScopeMenuOpenNow();
         s_frameMenuSample.loadingMenuOpen = s_menuHandlerInitialized && s_gameMenus.isLoadingMenuOpen();
         s_frameMenuSample.gameStopped = s_menuHandlerInitialized && s_gameMenus.isGameStopped();
         return game_timing::beginGameFrame(s_frameMenuSample.gameStopped || menuInputBlocking);
@@ -248,6 +248,11 @@ namespace rock::runtime_state
     const RuntimeFrameSnapshot& currentFrame()
     {
         return s_snapshot;
+    }
+
+    bool isScopeMenuOpenNow()
+    {
+        return s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
     }
 
     bool isLocalSkeletonReady()

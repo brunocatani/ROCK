@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include "physics-interaction/hand/HandVisual.h"
 
@@ -39,6 +40,44 @@ namespace rock::dampened_driver_prediction_policy
         DampenFactors normal{};
         DampenFactors vanillaScope{};
         bool valid = false;
+    };
+
+    // One post-FRIK observation and the camera sample from that same pass.
+    // Keep observing while dampening is off: a pre-scope world is not a
+    // previous-frame pose after walking in the scope.
+    struct ObservedDriver
+    {
+        RE::NiTransform world{};
+        RE::NiPoint3 camera{};
+        std::uint64_t sequence = 0;
+        bool dampeningEnabled = false;
+        bool valid = false;
+    };
+
+    enum class PredictionMode : std::uint8_t
+    {
+        RawUnavailable,
+        RawDisabled,
+        RawDiscontinuous,
+        RawResuming,
+        Dampened,
+    };
+
+    [[nodiscard]] inline const char* predictionModeName(const PredictionMode mode) noexcept
+    {
+        switch (mode) {
+        case PredictionMode::RawDisabled: return "raw-disabled";
+        case PredictionMode::RawDiscontinuous: return "raw-discontinuous";
+        case PredictionMode::RawResuming: return "raw-resuming";
+        case PredictionMode::Dampened: return "dampened";
+        default: return "raw-unavailable";
+        }
+    }
+
+    struct Prediction
+    {
+        RE::NiTransform world{};
+        PredictionMode mode = PredictionMode::RawUnavailable;
     };
 
     [[nodiscard]] inline bool isUsableFactor(const float factor) noexcept
@@ -80,5 +119,27 @@ namespace rock::dampened_driver_prediction_policy
                 lerp_math::slerp(lerp_math::matrixToQuaternion(previousDampened.rotate), lerp_math::matrixToQuaternion(raw.rotate), 1.0f - rotationFactor));
         }
         return result;
+    }
+
+    // Inputs must be finite. Only an immediately preceding observation can
+    // supply filter history. September 9 runtime traces show the resumed
+    // driver following raw input on the first frame with dampening enabled.
+    [[nodiscard]] inline Prediction predictFromObservation(
+        const RE::NiTransform& raw,
+        const RE::NiPoint3& camera,
+        const std::uint64_t sequence,
+        const DampenFactors& factors,
+        const ObservedDriver& previous)
+    {
+        if (!factors.enabled) {
+            return { raw, PredictionMode::RawDisabled };
+        }
+        if (!previous.valid || previous.sequence == 0 || sequence <= previous.sequence || sequence - previous.sequence != 1) {
+            return { raw, PredictionMode::RawDiscontinuous };
+        }
+        if (!previous.dampeningEnabled) {
+            return { raw, PredictionMode::RawResuming };
+        }
+        return { predictDampened(raw, previous.world, camera - previous.camera, factors), PredictionMode::Dampened };
     }
 }

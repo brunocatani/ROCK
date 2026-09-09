@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
+#include "physics-interaction/visual/DampenedDriverPredictionPolicy.h"
 #include "physics-interaction/visual/HandWorldClaimRegistryPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
@@ -93,7 +94,8 @@ namespace rock::frik_hand_world_authority
     {
         std::uint64_t driverSequence = 0;
         std::uint64_t observedSequence = 0;
-        std::uint64_t runtimeFrameUsed = 0;
+        std::uint64_t runtimeFrameObserved = 0;
+        bool runtimeMenuSnapshot = false;
         bool menuUsed = false;
         bool enabled = false;
         float translationFactor = 0.0f;
@@ -105,6 +107,9 @@ namespace rock::frik_hand_world_authority
         std::array<std::uint64_t, 2> historySequence{};
         std::array<RE::NiPoint3, 2> historyCamera{};
         std::array<bool, 2> historyCameraValid{};
+        std::array<dampened_driver_prediction_policy::PredictionMode, 2> predictionMode{};
+        std::array<float, 2> predictionTranslationError{}, predictionRotationError{};
+        std::array<bool, 2> predictionErrorValid{};
     };
     // Value-only observation; does not advance prediction or refresh inputs.
     [[nodiscard]] ScopeDampenTrace scopeDampenTrace() noexcept;

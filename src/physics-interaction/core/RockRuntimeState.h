@@ -67,6 +67,9 @@ namespace rock::runtime_state
     void updateFrame(const RuntimeFrameInput& input);
 
     [[nodiscard]] const RuntimeFrameSnapshot& currentFrame();
+    // Pre-FRIK prediction runs before this frame's runtime snapshot exists.
+    // Read the existing menu sink at that phase without advancing the snapshot.
+    [[nodiscard]] bool isScopeMenuOpenNow();
     [[nodiscard]] bool isLocalSkeletonReady();
     [[nodiscard]] bool isPhysicsMenuBlocked();
     [[nodiscard]] bool isCompatibilityConfigBlocked();

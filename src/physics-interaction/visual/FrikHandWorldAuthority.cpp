@@ -72,14 +72,9 @@ namespace rock::frik_hand_world_authority
         struct DampenState
         {
             prediction_policy::FrikDampenConfig config{};
-            // The dampened node as read after FRIK's last frame; frozen while
-            // FRIK does not dampen, as FRIK's own previous frame is.
-            std::array<DriverSample, 2> previousDampened{};
-            // Diagnostic witnesses follow the exact history write below.
-            std::array<std::uint64_t, 2> historySequence{};
-            std::array<RE::NiPoint3, 2> historyCamera{};
-            std::array<bool, 2> historyCameraValid{};
-            std::uint64_t runtimeFrameUsed = 0;
+            std::array<prediction_policy::ObservedDriver, 2> history{};
+            std::uint64_t runtimeFrameObserved = 0;
+            bool runtimeMenuSnapshot = false;
             bool menuUsed = false;
             RE::NiPoint3 cameraNow{};
             RE::NiPoint3 cameraPrev{};
@@ -87,7 +82,7 @@ namespace rock::frik_hand_world_authority
             bool cameraPrevValid = false;
             // The factors this pass predicted with (off: the raw chain was published).
             prediction_policy::DampenFactors factorsThisPass{};
-            std::array<bool, 2> predictedThisPass{};
+            std::array<prediction_policy::PredictionMode, 2> predictionMode{};
             std::uint32_t configRefreshFrames = 0;
             bool configQueried = false;
         };
@@ -345,34 +340,33 @@ namespace rock::frik_hand_world_authority
             refreshDampenConfig();
             dampen.cameraPrev = dampen.cameraNow;
             dampen.cameraPrevValid = dampen.cameraNowValid;
-            dampen.cameraNow = f4vr::getCameraPosition();
-            dampen.cameraNowValid = std::isfinite(dampen.cameraNow.x) && std::isfinite(dampen.cameraNow.y) && std::isfinite(dampen.cameraNow.z);
-            dampen.factorsThisPass = prediction_policy::selectFactors(dampen.config, runtime_state::currentFrame().localScopeMenuOpen);
-            dampen.runtimeFrameUsed = runtime_state::currentFrame().frameIndex;
-            dampen.menuUsed = runtime_state::currentFrame().localScopeMenuOpen;
-            dampen.predictedThisPass = {};
+            const auto* camera = f4vr::getPlayerCamera();
+            const auto* cameraRoot = camera ? camera->cameraRoot.get() : nullptr;
+            dampen.cameraNow = cameraRoot ? cameraRoot->world.translate : RE::NiPoint3{};
+            dampen.cameraNowValid = cameraRoot && std::isfinite(dampen.cameraNow.x) && std::isfinite(dampen.cameraNow.y) && std::isfinite(dampen.cameraNow.z);
+            dampen.menuUsed = runtime_state::isScopeMenuOpenNow();
+            dampen.factorsThisPass = prediction_policy::selectFactors(dampen.config, dampen.menuUsed);
+            dampen.runtimeFrameObserved = runtime_state::currentFrame().frameIndex;
+            dampen.runtimeMenuSnapshot = runtime_state::currentFrame().localScopeMenuOpen;
+            dampen.predictionMode = {};
+            g_service.predictionErrors = {};
 
             DriverFrame frame = rawFrame;
-            if (!dampen.factorsThisPass.enabled || !dampen.cameraNowValid || !dampen.cameraPrevValid) {
+            if (!dampen.cameraNowValid) {
                 return frame;
             }
-            const RE::NiPoint3 cameraDelta{
-                dampen.cameraNow.x - dampen.cameraPrev.x,
-                dampen.cameraNow.y - dampen.cameraPrev.y,
-                dampen.cameraNow.z - dampen.cameraPrev.z,
-            };
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const DriverSample& raw = rawFrame.hands[hand];
-                const DriverSample& previous = dampen.previousDampened[hand];
-                if (!raw.valid || !previous.valid) {
+                if (!raw.valid) {
                     continue;
                 }
-                const RE::NiTransform predicted = prediction_policy::predictDampened(raw.world, previous.world, cameraDelta, dampen.factorsThisPass);
-                if (!registry_policy::isFiniteTransform(predicted)) {
+                const auto predicted = prediction_policy::predictFromObservation(
+                    raw.world, dampen.cameraNow, rawFrame.sequence, dampen.factorsThisPass, dampen.history[hand]);
+                if (!registry_policy::isFiniteTransform(predicted.world)) {
                     continue;
                 }
-                frame.hands[hand].world = predicted;
-                dampen.predictedThisPass[hand] = true;
+                frame.hands[hand].world = predicted.world;
+                dampen.predictionMode[hand] = predicted.mode;
             }
             return frame;
         }
@@ -380,7 +374,8 @@ namespace rock::frik_hand_world_authority
         /*
          * Post-FRIK: the dampened node FRIK actually wrote replaces the
          * prediction in the driver frame, becomes the next prediction's
-         * previous value while FRIK dampens, and scores the prediction.
+         * previous value in every mode, and scores the prediction. Pose and
+         * camera history always describe the same scheduler pass.
          */
         void observeActualDrivers()
         {
@@ -391,15 +386,16 @@ namespace rock::frik_hand_world_authority
                 g_service.predictionErrors[hand] = {};
                 RE::NiTransform actual{};
                 if (!readOffsetNodeWorld(isLeft, actual)) {
+                    dampen.history[hand] = {};
                     continue;
                 }
                 DriverSample& sample = g_service.driverFrame.hands[hand];
-                if (dampen.predictedThisPass[hand] && sample.valid) {
+                if (sample.valid) {
                     PredictionError& error = g_service.predictionErrors[hand];
                     error.translationGameUnits = registry_policy::translationDeltaGameUnits(actual, sample.world);
                     error.rotationDegrees = registry_policy::rotationDeltaDegrees(actual, sample.world);
                     error.valid = std::isfinite(error.translationGameUnits) && std::isfinite(error.rotationDegrees);
-                    if (error.valid && debugEnabled()) {
+                    if (error.valid && dampen.predictionMode[hand] == prediction_policy::PredictionMode::Dampened && debugEnabled()) {
                         ++probes.predictedFrames[hand];
                         probes.predictionTranslationSum[hand] += error.translationGameUnits;
                         probes.predictionRotationSum[hand] += error.rotationDegrees;
@@ -407,7 +403,7 @@ namespace rock::frik_hand_world_authority
                         probes.predictionRotationMax[hand] = (std::max)(probes.predictionRotationMax[hand], error.rotationDegrees);
                         constexpr std::uint32_t kDenseTraceLines = 120;
                         const std::uint32_t line = probes.predictionTraceLines[hand]++;
-                        const DriverSample& previous = dampen.previousDampened[hand];
+                        const auto& previous = dampen.history[hand];
                         if (line < kDenseTraceLines || (line - kDenseTraceLines) % 30 == 0) {
                             ROCK_LOG_DEBUG(Hand,
                                 "DAMPEN hand={} line={} predErr={:.3f}gu/{:.3f}deg predStep={:.2f}gu actualStep={:.2f}gu rawStep={:.2f}gu f={:.2f}/{:.2f}",
@@ -425,13 +421,13 @@ namespace rock::frik_hand_world_authority
                 }
                 sample.world = actual;
                 sample.valid = true;
-                // FRIK keeps its previous frame while it does not dampen.
-                if (dampen.factorsThisPass.enabled || !dampen.previousDampened[hand].valid) {
-                    dampen.previousDampened[hand] = DriverSample{ .world = actual, .valid = true };
-                    dampen.historySequence[hand] = g_service.driverFrame.sequence;
-                    dampen.historyCamera[hand] = dampen.cameraNow;
-                    dampen.historyCameraValid[hand] = dampen.cameraNowValid;
-                }
+                dampen.history[hand] = prediction_policy::ObservedDriver{
+                    .world = actual,
+                    .camera = dampen.cameraNow,
+                    .sequence = g_service.driverFrame.sequence,
+                    .dampeningEnabled = dampen.factorsThisPass.enabled,
+                    .valid = dampen.cameraNowValid && g_service.driverFrame.sequence == g_service.rockFrameSequence,
+                };
             }
         }
 
@@ -1039,7 +1035,8 @@ namespace rock::frik_hand_world_authority
         ScopeDampenTrace result{};
         result.driverSequence = g_service.driverFrame.sequence;
         result.observedSequence = g_service.rockFrameSequence;
-        result.runtimeFrameUsed = d.runtimeFrameUsed;
+        result.runtimeFrameObserved = d.runtimeFrameObserved;
+        result.runtimeMenuSnapshot = d.runtimeMenuSnapshot;
         result.menuUsed = d.menuUsed;
         result.enabled = d.factorsThisPass.enabled;
         result.translationFactor = d.factorsThisPass.translation;
@@ -1050,12 +1047,16 @@ namespace rock::frik_hand_world_authority
         result.cameraPreviousValid = d.cameraPrevValid;
         result.raw = g_service.rawFrame.hands;
         result.driver = g_service.driverFrame.hands;
-        result.history = d.previousDampened;
-        result.historySequence = d.historySequence;
-        result.historyCamera = d.historyCamera;
-        result.historyCameraValid = d.historyCameraValid;
         result.consumed = g_service.consumedTargets;
         for (std::size_t i = 0; i < 2; ++i) {
+            result.history[i] = { d.history[i].world, d.history[i].valid };
+            result.historySequence[i] = d.history[i].sequence;
+            result.historyCamera[i] = d.history[i].camera;
+            result.historyCameraValid[i] = d.history[i].valid;
+            result.predictionMode[i] = d.predictionMode[i];
+            result.predictionTranslationError[i] = g_service.predictionErrors[i].translationGameUnits;
+            result.predictionRotationError[i] = g_service.predictionErrors[i].rotationDegrees;
+            result.predictionErrorValid[i] = g_service.predictionErrors[i].valid;
             result.presented[i] = { g_service.isolation[i].presentedHandWorld, g_service.isolation[i].presentedHandValid };
             result.claimed[i] = registry_policy::snapshotConsumedTarget(g_service.registry, i == handIndex(true));
         }
