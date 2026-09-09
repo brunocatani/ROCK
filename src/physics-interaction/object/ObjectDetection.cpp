@@ -262,43 +262,27 @@ namespace rock
             return motionType == physics_body_classifier::BodyMotionType::Dynamic;
         }
 
-        bool hasDynamicActorBodyEvidence(RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
+        grab_target::Kind classifyDeadActorPhysics(RE::TESObjectREFR* ref, RE::NiAVObject* hitNode,
+            RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
-            if (!hknpWorld || bodyId.value == kInvalidBodyId) {
-                return false;
-            }
-
-            auto* body = havok_runtime::getBody(hknpWorld, bodyId);
-            if (!body) {
-                return false;
-            }
-
-            const auto layer = body->collisionFilterInfo & 0x7F;
-            if (!collision_layer_policy::isActorOrBipedLayer(layer)) {
-                return false;
-            }
-
+            auto* body = world && bodyId.value != kInvalidBodyId ? havok_runtime::getBody(world, bodyId) : nullptr;
+            if (!body) return grab_target::Kind::BlockedWholeActorBody;
+            const auto layer = body->collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
             auto motionType = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
             if (motionType == physics_body_classifier::BodyMotionType::Unknown) {
                 motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
             }
-            return motionType == physics_body_classifier::BodyMotionType::Dynamic;
-        }
-
-        bool hasDetachedGoreEvidence(RE::TESObjectREFR* ref, RE::NiAVObject* hitNode, RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
-        {
-            if (!hasDynamicDeadBipedBodyEvidence(hknpWorld, bodyId)) {
-                return false;
+            auto* root = ref ? ref->Get3D() : nullptr;
+            const bool outsideRoot = grab_target::isDetachedGoreLayer(layer) && hitNode && root &&
+                !actor_equipment_grab::nodeContainsNode(root, hitNode, 64);
+            const auto kind = grab_target::classifyDeadActorPhysicalTarget(
+                motionType == physics_body_classifier::BodyMotionType::Dynamic, layer, outsideRoot);
+            if (kind == grab_target::Kind::DetachedGore) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
+                    "Detached actor part admitted: actor={:08X} body={} layer={} owner='{}' outsideRoot={}",
+                    ref ? ref->GetFormID() : 0, bodyId.value, layer, hitNode ? hitNode->name.c_str() : "none", outsideRoot);
             }
-
-            /*
-             * Whole dead actor bodies can expose dynamic DEADBIP bodies after
-             * ragdolling. Detached gore is only accepted when the hit node is no
-             * longer owned by the actor 3D tree; this keeps the earlier invariant
-             * that a normal NPC body is not a pull target.
-             */
-            auto* root3D = ref ? ref->Get3D() : nullptr;
-            return hitNode && root3D && !actor_equipment_grab::nodeContainsNode(root3D, hitNode, 64);
+            return kind;
         }
 
         bool readSelectionBodyInteractionState(
@@ -378,11 +362,12 @@ namespace rock
                 }
             }
 
-            if (hasDetachedGoreEvidence(ref, hitNode, hknpWorld, bodyId)) {
-                return { .kind = grab_target::Kind::DetachedGore, .reason = "detached-deadbip-gore", .grabbable = true };
+            const auto physicalKind = classifyDeadActorPhysics(ref, hitNode, hknpWorld, bodyId);
+            if (physicalKind == grab_target::Kind::DetachedGore) {
+                return { .kind = physicalKind, .reason = "detached-actor-part-dynamic", .grabbable = true };
             }
 
-            if (hasDynamicActorBodyEvidence(hknpWorld, bodyId)) {
+            if (physicalKind == grab_target::Kind::DeadActorBody) {
                 return { .kind = grab_target::Kind::DeadActorBody, .reason = "dead-actor-body-dynamic", .grabbable = true };
             }
 
@@ -743,8 +728,35 @@ namespace rock
                 insertRankedSelectionCandidate(rankedCandidates, rankedCandidateCount, candidate, candidateScore);
             }
 
-            if (rankedCandidateCount > 0) {
-                result = rankedCandidates[0].selection;
+            for (std::size_t index = 0; index < rankedCandidateCount; ++index) {
+                auto& candidate = rankedCandidates[index].selection;
+                auto* ref = candidate.refr;
+                const auto hitBodyId = candidate.bodyId;
+                const auto& hitPoint = candidate.hitPointWorld;
+                const auto hmdConeDot = candidate.hmdConeDot;
+                if (candidate.targetKind == grab_target::Kind::ActorEquipment) {
+                    auto* owner = havok_runtime::getCollisionObjectFromBody(hknpWorld, hitBodyId);
+                    RE::hknpWorld* ownerWorld = nullptr;
+                    RE::hknpBodyId ownerBody{kInvalidBodyId};
+                    RE::NiTransform bodyWorld{};
+                    if (!owner || !havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerBody) ||
+                        ownerWorld != hknpWorld || ownerBody.value != hitBodyId.value ||
+                        !tryResolveLiveBodyWorldTransform(hknpWorld, hitBodyId, bodyWorld) ||
+                        !candidate.equipmentAnchor.capture(bodyWorld, hitPoint)) {
+                        ++outRejectedNotGrabbable;
+                        ROCK_LOG_SAMPLE_WARN(Hand, 2000, "Actor equipment selection rejected: unreadable hit-body anchor actor={:08X} body={}",
+                            ref->GetFormID(), hitBodyId.value);
+                        continue;
+                    }
+                    candidate.equipmentAnchorOwner = reinterpret_cast<std::uintptr_t>(owner);
+                    ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
+                        "Actor equipment anchor: actor={:08X} item={:08X} body={} point=({:.2f},{:.2f},{:.2f}) local=({:.2f},{:.2f},{:.2f}) hmdDot={:.3f}",
+                        ref->GetFormID(), candidate.actorEquipment.itemFormId, hitBodyId.value,
+                        hitPoint.x, hitPoint.y, hitPoint.z, candidate.equipmentAnchor.localPoint.x,
+                        candidate.equipmentAnchor.localPoint.y, candidate.equipmentAnchor.localPoint.z, hmdConeDot);
+                }
+                result = candidate;
+                break;
             }
             return result;
         }

@@ -711,15 +711,7 @@ namespace rock
         }
 
         // Verify the live image before using the corrected native skin layout.
-        static const bool skinLayoutVerified = [] {
-            constexpr std::array<std::uint8_t, 6> countCode{0x48, 0x8B, 0xC1, 0x8B, 0x49, 0x10};
-            std::array<std::uint8_t, countCode.size()> live{};
-            const auto* code = reinterpret_cast<const void*>(REL::Module::get().base() + 0x2888E0);
-            const bool valid = native_memory::guardedCopyFromMemory(code, live.data(), live.size()) && live == countCode;
-            if (!valid) ROCK_LOG_ERROR(MeshGrab, "Native skin count ABI mismatch; skinned extraction disabled");
-            return valid;
-        }();
-        if (!skinLayoutVerified) return 0;
+        if (!nativeSkinLayoutVerified()) return 0;
 
         std::uint32_t boneCount = 0, nodeCount = 0, bindCount = 0;
         RE::NiAVObject** boneNodes = nullptr;

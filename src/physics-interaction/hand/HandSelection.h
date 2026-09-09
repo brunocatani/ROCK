@@ -15,9 +15,36 @@
 #include <string_view>
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/TransformMath.h"
 
 namespace rock::selection_query_policy
 {
+    // Worn skin has no useful rigid visual-node origin. Keep the query's
+    // contact in its hit body's frame so cached cone checks follow that point.
+    struct BodyLocalSelectionAnchor
+    {
+        RE::NiPoint3 localPoint{};
+        bool valid = false;
+
+        template <class Transform>
+        bool capture(const Transform& bodyWorld, const RE::NiPoint3& hitPoint)
+        {
+            valid = false;
+            if (!std::isfinite(bodyWorld.scale) || bodyWorld.scale <= 0.0f) return false;
+            localPoint = transform_math::worldPointToLocal(bodyWorld, hitPoint);
+            valid = std::isfinite(localPoint.x) && std::isfinite(localPoint.y) && std::isfinite(localPoint.z);
+            return valid;
+        }
+
+        template <class Transform>
+        bool resolve(const Transform& bodyWorld, RE::NiPoint3& outPoint) const
+        {
+            if (!valid || !std::isfinite(bodyWorld.scale) || bodyWorld.scale <= 0.0f) return false;
+            outPoint = transform_math::localPointToWorld(bodyWorld, localPoint);
+            return std::isfinite(outPoint.x) && std::isfinite(outPoint.y) && std::isfinite(outPoint.z);
+        }
+    };
+
     constexpr float kNearDetectionRangeGameUnits = 25.0f;
     constexpr float kFarDetectionRangeGameUnits = 350.0f;
     constexpr float kNearCastRadiusGameUnits = 3.5f;

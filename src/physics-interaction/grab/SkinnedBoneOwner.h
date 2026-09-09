@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "RE/Fallout.h"
 #include "REL/Relocation.h"
 
@@ -8,6 +9,21 @@
 
 namespace rock
 {
+    inline bool nativeSkinLayoutVerified()
+    {
+        // Native iterator 1402888E0 reads array live count at +10; resize
+        // 141C358D0 distinguishes it from capacity at +8. Instance bones start +10.
+        static const bool verified = [] {
+            constexpr std::array<std::uint8_t, 6> expected{0x48, 0x8B, 0xC1, 0x8B, 0x49, 0x10};
+            std::array<std::uint8_t, expected.size()> live{};
+            const bool valid = native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Module::get().base() + 0x2888E0), live.data(), live.size()) && live == expected;
+            if (!valid) ROCK_LOG_ERROR(MeshGrab, "Native skin count ABI mismatch; skin reads disabled");
+            return valid;
+        }();
+        return verified;
+    }
+
     inline RE::NiAVObject* resolveFlattenedSkinBoneOwner(RE::NiAVObject* skinRoot, const RE::NiTransform* worldTransform)
     {
         if (!skinRoot || !worldTransform || !native_memory::pointerRangeLooksReadable(skinRoot, sizeof(RE::NiAVObject))) return nullptr;

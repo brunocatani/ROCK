@@ -66,6 +66,40 @@ int main()
     bool ok = true;
 
     {
+        struct TestTransform {
+            struct Rotation { float entry[3][3] = {{1,0,0},{0,1,0},{0,0,1}}; } rotate;
+            RE::NiPoint3 translate{10,20,30};
+            float scale = 1.0f;
+        } body;
+        BodyLocalSelectionAnchor anchor;
+        RE::NiPoint3 point{};
+        ok &= expectFalse("uncaptured clothing anchor cannot validate a selection", anchor.resolve(body, point));
+        const RE::NiPoint3 hit{12,70,30};
+        ok &= expectTrue("clothing captures the actual hit point", anchor.capture(body, hit));
+        ok &= expectTrue("same-frame clothing anchor matches acquisition", anchor.resolve(body, point) &&
+            std::abs(point.x-hit.x)<0.001f && std::abs(point.y-hit.y)<0.001f && std::abs(point.z-hit.z)<0.001f);
+
+        rock::FarSelectionHmdConeGate cone{
+            .enabled=true, .hasHmdFrame=true, .hmdPositionWorld={12,20,30}, .hmdForwardWorld={0,1,0}};
+        ok &= expectTrue("acquired clothing point stays inside viewing cone", cone.acceptsHitPoint(point));
+        ok &= expectFalse("old skin root can be outside despite visible clothing", cone.acceptsHitPoint({100,0,30}));
+        body.translate.y += 25;
+        ok &= expectTrue("cached clothing anchor follows corpse translation", anchor.resolve(body, point) &&
+            std::abs(point.y-95)<0.001f && cone.acceptsHitPoint(point));
+        body.rotate.entry[0][0] = -1;
+        body.rotate.entry[1][1] = -1;
+        ok &= expectTrue("cached clothing anchor follows limb rotation", anchor.resolve(body, point) &&
+            std::abs(point.x-8)<0.001f && std::abs(point.y+5)<0.001f);
+        ok &= expectFalse("clothing that physically moves behind the HMD is rejected", cone.acceptsHitPoint(point));
+        body.scale = 0;
+        ok &= expectFalse("invalid live body transform invalidates clothing anchor", anchor.resolve(body, point));
+        body.scale = 1;
+        ok &= expectFalse("invalid query point cannot seed a clothing anchor",
+            anchor.capture(body, {(std::numeric_limits<float>::quiet_NaN)(),0,0}));
+        ok &= expectFalse("failed capture removes the previous anchor", anchor.resolve(body, point));
+    }
+
+    {
         ok &= expectEqual("selection angle allows 0", sanitizeSelectionAimAngleDegrees(0), 0);
         ok &= expectEqual("selection angle allows 20", sanitizeSelectionAimAngleDegrees(20), 20);
         ok &= expectEqual("selection angle allows 45", sanitizeSelectionAimAngleDegrees(45), 45);

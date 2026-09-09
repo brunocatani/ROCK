@@ -1,4 +1,5 @@
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/grab/SkinnedBoneOwner.h"
 
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -182,13 +183,19 @@ namespace rock::actor_equipment_grab
             }
 
             auto* skinInstance = geometry->GetRuntimeData().skinInstance.get();
-            if (!skinInstance || !skinInstance->bonesData || skinInstance->bonesCount == 0 || skinInstance->bonesCount > kMaxSkinBoneCount) {
+            RE::NiAVObject** boneNodes = nullptr;
+            std::uint32_t boneCount = 0;
+            if (!skinInstance || !nativeSkinLayoutVerified() ||
+                !native_memory::tryReadField(skinInstance, 0x10, boneNodes) ||
+                !native_memory::tryReadField(skinInstance, 0x20, boneCount) ||
+                !boneNodes || boneCount == 0 || boneCount > kMaxSkinBoneCount) {
                 return false;
             }
 
-            auto** boneNodes = reinterpret_cast<RE::NiAVObject**>(skinInstance->bonesData);
-            for (std::uint32_t i = 0; i < skinInstance->bonesCount; ++i) {
-                auto* bone = boneNodes[i];
+            std::array<RE::NiAVObject*, kMaxSkinBoneCount> bones{};
+            if (!native_memory::guardedCopyFromMemory(boneNodes, bones.data(), boneCount * sizeof(bones[0]))) return false;
+            for (std::uint32_t i = 0; i < boneCount; ++i) {
+                auto* bone = bones[i];
                 if (bone && targetNodes.find(bone) != targetNodes.end()) {
                     return true;
                 }
@@ -378,7 +385,7 @@ namespace rock::actor_equipment_grab
         }
 
         if (best.valid) {
-            ROCK_LOG_DEBUG(Hand,
+            ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
                 "Resolved far actor equipment: actor={:08X} item={:08X} slot={} stack={} count={} visual='{}' hit='{}' disconnected={} skinned={}",
                 best.actorFormId,
                 best.itemFormId,

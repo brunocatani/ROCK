@@ -195,6 +195,26 @@ int main()
             InteractionMode::ActiveGrab),
         BodyRejectReason::StaticMotion);
 
+    for (auto layer : {collision_layer_policy::FO4_LAYER_DEBRIS_SMALL, collision_layer_policy::FO4_LAYER_DEBRIS_LARGE}) {
+        for (bool outsideRoot : {false, true}) {
+            const auto partKind = grab_target::classifyDeadActorPhysicalTarget(true, layer, outsideRoot);
+            ok &= expectTrue("dynamic NPC debris is a detached part regardless of actor ancestry", partKind == grab_target::Kind::DetachedGore);
+            ok &= expectAccepted("detached NPC debris reaches active grab admission",
+                physics_body_classifier::classifyBody(makeInput(partKind, layer, BodyMotionType::Dynamic), InteractionMode::ActiveGrab));
+            ok &= expectFalse("NPC debris does not become a whole-actor far pull", grab_target::canUseRockDynamicPull(partKind));
+        }
+        ok &= expectTrue("non-dynamic NPC debris remains blocked",
+            grab_target::classifyDeadActorPhysicalTarget(false, layer, false) == grab_target::Kind::BlockedWholeActorBody);
+    }
+    ok &= expectTrue("connected dead-biped retains corpse handling",
+        grab_target::classifyDeadActorPhysicalTarget(true, collision_layer_policy::FO4_LAYER_DEADBIP, false) == grab_target::Kind::DeadActorBody);
+    ok &= expectTrue("detached dead-biped retains detached-part handling",
+        grab_target::classifyDeadActorPhysicalTarget(true, collision_layer_policy::FO4_LAYER_DEADBIP, true) == grab_target::Kind::DetachedGore);
+    ok &= expectTrue("actor character-controller is not a detached physical part",
+        grab_target::classifyDeadActorPhysicalTarget(true, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, true) == grab_target::Kind::BlockedWholeActorBody);
+    ok &= expectTrue("unrelated actor projectile is not admitted as gore",
+        grab_target::classifyDeadActorPhysicalTarget(true, collision_layer_policy::FO4_LAYER_PROJECTILE, false) == grab_target::Kind::BlockedWholeActorBody);
+
     ok &= expectTrue("dynamic movable statics require hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DynamicMovableStatic));
     ok &= expectTrue("detached gore requires hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DetachedGore));
     ok &= expectTrue("dead actor bodies require hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DeadActorBody));

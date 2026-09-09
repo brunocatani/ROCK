@@ -68,6 +68,8 @@ namespace rock
         // authored PROJECTILE-layer body through active-grab admission.
         bool allowProjectileLayerForExactTarget = false;
         actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
+        selection_query_policy::BodyLocalSelectionAnchor equipmentAnchor{};
+        std::uintptr_t equipmentAnchorOwner = 0;
 
         void setReference(RE::TESObjectREFR* value)
         {
@@ -103,6 +105,8 @@ namespace rock
             forcedArrival = false;
             allowProjectileLayerForExactTarget = false;
             actorEquipment = {};
+            equipmentAnchor = {};
+            equipmentAnchorOwner = 0;
         }
 
         bool isValid() const { return refr != nullptr && retainedRef.get() == refr; }
@@ -121,18 +125,18 @@ namespace rock
         }
 
         if (selection.targetKind == grab_target::Kind::ActorEquipment) {
-            if (selection.actorEquipment.visualNode) {
-                outAnchor = selection.actorEquipment.visualNode->world.translate;
-                return true;
-            }
-            if (selection.actorEquipment.hitNode) {
-                outAnchor = selection.actorEquipment.hitNode->world.translate;
-                return true;
-            }
-            if (selection.actorEquipment.hasHitPoint) {
-                outAnchor = selection.actorEquipment.hitPointWorld;
-                return true;
-            }
+            // A skinned garment's origin can remain at the old actor position
+            // after its visible mesh moves with the ragdoll. Use the same hit
+            // point as acquisition, transported by its verified native body.
+            auto* owner = hknpWorld ? havok_runtime::getCollisionObjectFromBody(hknpWorld, selection.bodyId) : nullptr;
+            RE::hknpWorld* ownerWorld = nullptr;
+            RE::hknpBodyId ownerBody{0x7FFF'FFFF};
+            RE::NiTransform bodyWorld{};
+            return owner && reinterpret_cast<std::uintptr_t>(owner) == selection.equipmentAnchorOwner &&
+                havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerBody) &&
+                ownerWorld == hknpWorld && ownerBody.value == selection.bodyId.value &&
+                tryResolveLiveBodyWorldTransform(hknpWorld, selection.bodyId, bodyWorld) &&
+                selection.equipmentAnchor.resolve(bodyWorld, outAnchor);
         }
 
         if (hknpWorld && selection.bodyId.value != 0x7FFF'FFFF) {
@@ -184,7 +188,15 @@ namespace rock
             return false;
         }
 
-        return hmdConeGate.acceptsHitPoint(anchorWorld, outDot);
+        const bool accepted = hmdConeGate.acceptsHitPoint(anchorWorld, outDot);
+        if (!accepted && selection.targetKind == grab_target::Kind::ActorEquipment) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
+                "Actor equipment cone rejected live anchor: actor={:08X} item={:08X} body={} anchor=({:.2f},{:.2f},{:.2f}) hmd=({:.2f},{:.2f},{:.2f})",
+                selection.refr->GetFormID(), selection.actorEquipment.itemFormId, selection.bodyId.value,
+                anchorWorld.x, anchorWorld.y, anchorWorld.z,
+                hmdConeGate.hmdPositionWorld.x, hmdConeGate.hmdPositionWorld.y, hmdConeGate.hmdPositionWorld.z);
+        }
+        return accepted;
     }
 
     inline bool selectedObjectPassesFarHmdCone(const SelectedObject& selection, const FarSelectionHmdConeGate& hmdConeGate, float* outDot = nullptr)
