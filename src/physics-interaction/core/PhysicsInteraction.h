@@ -107,7 +107,9 @@ namespace rock
         [[nodiscard]] bool tryGetManualScopePresentationTarget(
             std::uint64_t& outWeaponGenerationKey,
             std::uint32_t& outNativeOverlayIndex,
-            bool& outDirectTransitionRequired) const;
+            bool& outDirectTransitionRequired,
+            const void* expectedWeapon = nullptr,
+            const void* expectedInstance = nullptr) const;
 
         void update();
 

@@ -1675,6 +1675,8 @@ namespace rock
 
         struct EquippedManualScopeTarget
         {
+            std::uintptr_t weaponIdentity{ 0 };
+            std::uintptr_t instanceIdentity{ 0 };
             bool scopeEligible{ false };
             bool directTransitionRequired{ false };
             bool overlayValid{ false };
@@ -1763,6 +1765,8 @@ namespace rock
             if (!weapon) {
                 return target;
             }
+            target.weaponIdentity = reinterpret_cast<std::uintptr_t>(weapon);
+            target.instanceIdentity = reinterpret_cast<std::uintptr_t>(equippedInstanceData);
             auto* instanceData = weapon && equippedInstanceData ?
                 static_cast<RE::TESObjectWEAP::InstanceData*>(equippedInstanceData) :
                 nullptr;

@@ -502,13 +502,11 @@ namespace
 
         if (requested && directTransitionRequired) {
             /*
-             * Bethesda only reaches the hooked cone call for weapons whose
-             * OMOD carries its native scope flag. Explicit scope models from
-             * imperfect ports (the OMEN Watchman) still have a valid ROCK
-             * sight anchor and world_scope presentation, but otherwise never
-             * receive a state transition. This path is gated to explicit
-             * scope models without native metadata, and drives the same
-             * verified native transition while the hold is active.
+             * The native scope update precedes ROCK's input classification
+             * and current sight-anchor publication. Drive its same transition
+             * after those are ready so a new hold can begin in this frame.
+             * The native admission hooks then preserve geometry and open
+             * ScopeMenu for this verified target on the normal native path.
              */
             s_originalNativeScopeStateTransition(player, true);
             if (!s_manualScopeDirectTransitionActive) {
@@ -530,6 +528,19 @@ namespace
             s_manualScopeConfiguredOverlayIndex = 0;
             s_manualScopeConfiguredWorldScope = 0;
         }
+    }
+
+    bool isManualScopeEligibleForNative(const void* weaponIdentity, const void* instanceIdentity) noexcept
+    {
+        if (!weaponIdentity || !s_pluginLoaded || !s_frikAvailable || !s_physicsInteraction ||
+            !input_remap_runtime::isManualScopeActivationRequested()) {
+            return false;
+        }
+        std::uint64_t generation = 0;
+        std::uint32_t overlay = 0;
+        bool direct = false;
+        return s_physicsInteraction->tryGetManualScopePresentationTarget(
+                   generation, overlay, direct, weaponIdentity, instanceIdentity) && direct;
     }
 
     bool hookNativeScopeGeometryDecision()
@@ -559,7 +570,7 @@ namespace
             return false;
         }
 
-        if (!native_scope_data::install()) {
+        if (!native_scope_data::install(&isManualScopeEligibleForNative)) {
             return false;
         }
         auto& trampoline = F4SE::GetTrampoline();
@@ -752,6 +763,7 @@ namespace
      */
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
+        native_scope_data::beginGameFrame();
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
         }

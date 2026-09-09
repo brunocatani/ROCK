@@ -213,6 +213,11 @@ int main()
         rock::manual_scope_target_policy::isValidNativeOverlayIndex(17));
     {
         namespace scope = rock::manual_scope_target_policy;
+        ok &= expectTrue("native admission matches the published weapon instance", scope::matchesNativeIdentity(0x100, 0x200, 0x100, 0x200));
+        ok &= expectFalse("native admission rejects another weapon before publication", scope::matchesNativeIdentity(0x100, 0x200, 0x101, 0x200));
+        ok &= expectFalse("native admission rejects another instance of the same weapon", scope::matchesNativeIdentity(0x100, 0x200, 0x100, 0x201));
+        ok &= expectFalse("empty publication cannot admit a native scope", scope::matchesNativeIdentity(0, 0, 0, 0));
+        ok &= expectTrue("base-only weapon identity remains representable", scope::matchesNativeIdentity(0x100, 0, 0x100, 0));
         ok &= expectFalse("an instance may remove its base scope flag", scope::nativeHasScope(true, false, true));
         ok &= expectTrue("an instance may add a scope", scope::nativeHasScope(true, true, false));
         ok &= expectTrue("base scope remains usable without extra OMOD data", scope::nativeHasScope(false, false, true));

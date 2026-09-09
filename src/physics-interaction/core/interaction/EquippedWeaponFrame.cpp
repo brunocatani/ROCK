@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 
 // Equipped-weapon frame: transitions, the per-frame equipped weapon update, authored primary grip runtime, handling settings, and shoulder sheath/retrieve.
 
@@ -7,7 +8,9 @@ namespace rock
     bool PhysicsInteraction::tryGetManualScopePresentationTarget(
         std::uint64_t& outWeaponGenerationKey,
         std::uint32_t& outNativeOverlayIndex,
-        bool& outDirectTransitionRequired) const
+        bool& outDirectTransitionRequired,
+        const void* expectedWeapon,
+        const void* expectedInstance) const
     {
         outWeaponGenerationKey = 0;
         outNativeOverlayIndex = 0;
@@ -16,6 +19,15 @@ namespace rock
             return false;
         }
         const auto snapshot = _weaponCollision.getNativeScopeSightAnchorSnapshot();
+        if (expectedWeapon && !manual_scope_target_policy::matchesNativeIdentity(
+                snapshot.scopeWeaponIdentity, snapshot.scopeInstanceIdentity,
+                reinterpret_cast<std::uintptr_t>(expectedWeapon), reinterpret_cast<std::uintptr_t>(expectedInstance))) {
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
+                "Native scope admission identity rejected: publishedWeapon=0x{:X} instance=0x{:X} nativeWeapon=0x{:X} instance=0x{:X}",
+                snapshot.scopeWeaponIdentity, snapshot.scopeInstanceIdentity,
+                reinterpret_cast<std::uintptr_t>(expectedWeapon), reinterpret_cast<std::uintptr_t>(expectedInstance));
+            return false;
+        }
         const native_scope_sight_anchor_policy::PublicationIdentity publishedIdentity{
             .weaponGenerationKey = snapshot.weaponGenerationKey,
             .equippedWeaponOwnershipKey = snapshot.equippedWeaponOwnershipKey,
@@ -41,6 +53,12 @@ namespace rock
                 currentIdentity) ||
             !snapshot.scopeEligible || !snapshot.nativeScopeOverlayValid ||
             !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(publishedIdentity, currentIdentity)) {
+            if (expectedWeapon) {
+                ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
+                    "Native scope admission target rejected: anchorValid={} eligible={} overlayValid={} publishedGeneration={:016X} resolvedGeneration={:016X} currentGeneration={:016X}",
+                    resolvedAnchor.valid, snapshot.scopeEligible, snapshot.nativeScopeOverlayValid,
+                    snapshot.weaponGenerationKey, resolvedAnchor.weaponGenerationKey, currentIdentity.weaponGenerationKey);
+            }
             return false;
         }
         outWeaponGenerationKey = snapshot.weaponGenerationKey;

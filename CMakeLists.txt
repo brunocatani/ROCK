@@ -591,6 +591,14 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponCollisionLifecyclePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponCollisionLifecyclePolicyTests)
 
+  add_executable(ROCKNativeScopeAdmissionTests
+    "${ROOT_DIR}/tests/NativeScopeAdmissionTests.cpp"
+  )
+  target_compile_features(ROCKNativeScopeAdmissionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeScopeAdmissionTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKNativeScopeAdmissionTests PRIVATE CommonLibF4::CommonLibF4)
+  add_rock_test(ROCKNativeScopeAdmissionTests)
+
   add_executable(ROCKActiveGrabBodyLifecyclePolicyTests
     "${ROOT_DIR}/tests/ActiveGrabBodyLifecyclePolicyTests.cpp"
   )

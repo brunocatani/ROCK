@@ -14,6 +14,13 @@ namespace rock::manual_scope_target_policy
     inline constexpr std::uint32_t kDefaultOverlayIndex = 6;
     inline constexpr float kDefaultMagnification = 4.0f;
 
+    [[nodiscard]] inline constexpr bool matchesNativeIdentity(
+        std::uintptr_t publishedWeapon, std::uintptr_t publishedInstance,
+        std::uintptr_t nativeWeapon, std::uintptr_t nativeInstance) noexcept
+    {
+        return publishedWeapon != 0 && publishedWeapon == nativeWeapon && publishedInstance == nativeInstance;
+    }
+
     struct StructuralMarkerEvidence
     {
         bool scopeAiming{ false };

@@ -91,6 +91,9 @@ namespace rock
             std::uint64_t equippedWeaponOwnershipKey{ 0 };
             std::uint32_t weaponFormID{ 0 };
             std::uint32_t nativeScopeOverlayIndex{ 0 };
+            // Opaque identity witnesses only, never dereferenced by readers.
+            std::uintptr_t scopeWeaponIdentity{ 0 };
+            std::uintptr_t scopeInstanceIdentity{ 0 };
             RE::NiPoint3 anchorWeaponLocal{};
             RE::NiPoint3 sightBoundsMinWeaponLocal{};
             RE::NiPoint3 sightBoundsMaxWeaponLocal{};
