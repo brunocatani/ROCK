@@ -147,11 +147,13 @@ namespace rock::grab_target
 
     // Caller must already have verified a dead NPC reference. Dismembered
     // chunks can retain that actor's scene ancestry while using debris physics.
+    // Creature chunks such as the mongrel's Dome/Snoot use CLUTTER instead.
     [[nodiscard]] inline constexpr Kind classifyDeadActorPhysicalTarget(
         bool dynamicBody, std::uint32_t layer, bool hitOutsideActorRoot) noexcept
     {
         if (!dynamicBody) return Kind::BlockedWholeActorBody;
-        if (layer == collision_layer_policy::FO4_LAYER_DEBRIS_SMALL ||
+        if (layer == collision_layer_policy::FO4_LAYER_CLUTTER ||
+            layer == collision_layer_policy::FO4_LAYER_DEBRIS_SMALL ||
             layer == collision_layer_policy::FO4_LAYER_DEBRIS_LARGE ||
             (isDetachedGoreLayer(layer) && hitOutsideActorRoot)) return Kind::DetachedGore;
         if (collision_layer_policy::isActorOrBipedLayer(layer)) return Kind::DeadActorBody;

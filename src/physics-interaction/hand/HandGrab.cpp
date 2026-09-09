@@ -11548,6 +11548,17 @@ namespace rock
         collidableNode = resolvedBodyCapture.collidableNode;
         objectWorldTransform = resolvedBodyCapture.objectWorldTransform;
         grabLocalMeshTriangles = std::move(resolvedBodyCapture.localMeshTriangles);
+        if (grab_target::isRagdoll(sel.targetKind)) {
+            // Skin weights may resolve to a different bone than the cast hit.
+            // Later frame/constraint capture reads this setup, so it must use
+            // the resolved owner's frame just like the local mesh cache above.
+            meshCaptureSetup.collidableNode = collidableNode;
+            meshCaptureSetup.objectWorldTransform = objectWorldTransform;
+            ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
+                "{} ragdoll resolved frame: selectedBody={} resolvedBody={} selectedNode='{}' captureNode='{}' surfaceNode='{}'",
+                handName(), sel.bodyId.value, objectBodyId.value, nodeDebugName(sel.hitNode),
+                nodeDebugName(collidableNode), nodeDebugName(surfaceEvidence.surfaceOwnerNode));
+        }
 
         GrabPivotEvidence pivotEvidence{};
         resolveGrabPivotEvidence(
