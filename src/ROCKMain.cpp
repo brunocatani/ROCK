@@ -36,6 +36,7 @@
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -472,6 +473,46 @@ namespace
         return buttonDecisionApplied ? true : finalGeometryDecision;
     }
 
+    void applyManualScopeTransition(RE::PlayerCharacter* player, bool requested)
+    {
+        // One observation per hold edge. The renderer can open even if the
+        // aiming setter returns early or another plugin replaces its vtable
+        // entry; distinguish these before changing native UI ownership.
+        const bool trace = requested != s_manualScopeDirectTransitionActive;
+        std::uint32_t gunBefore = 0;
+        std::uintptr_t aimingVtable = 0;
+        std::uintptr_t aimingTarget = 0;
+        std::uint32_t readStage = 0;
+        bool nativeEntryReadable = false;
+        bool nativeEntryIntact = false;
+        if (trace) {
+            gunBefore = f4vr::getNativeGunState(player);
+            // Player constructor 0x140EED807 writes ActorState +0x128;
+            // scope transition 0x140EFAA8F calls its vtable slot +0x130.
+            if (native_memory::tryReadField(player, 0x128, aimingVtable) && aimingVtable != 0) {
+                readStage = 1;
+                if (native_memory::tryReadField(reinterpret_cast<const void*>(aimingVtable), 0x130, aimingTarget)) {
+                    readStage = 2;
+                }
+            }
+            // An unchanged vtable target does not exclude an inline detour.
+            constexpr std::array<std::uint8_t, 15> nativePrefix{
+                0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x30
+            };
+            std::array<std::uint8_t, nativePrefix.size()> actualPrefix{};
+            nativeEntryReadable = native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(REL::Offset(0xF30020).address()), actualPrefix.data(), actualPrefix.size());
+            nativeEntryIntact = nativeEntryReadable && actualPrefix == nativePrefix;
+        }
+        s_originalNativeScopeStateTransition(player, requested);
+        if (trace) {
+            ROCK_LOG_DEBUG(Input,
+                "Manual scope aiming transition requested={} gunBefore={} gunAfter={} aimingVtable=0x{:X} aimingTarget=0x{:X} nativeAimingTarget={} readStage={} nativeEntryReadable={} nativeEntryIntact={}",
+                requested, gunBefore, f4vr::getNativeGunState(player), aimingVtable, aimingTarget,
+                aimingTarget == REL::Offset(0xF30020).address(), readStage, nativeEntryReadable, nativeEntryIntact);
+        }
+    }
+
     void driveManualScopeTransitionFallback()
     {
         if (!s_originalNativeScopeStateTransition) {
@@ -508,7 +549,7 @@ namespace
              * The native admission hooks then preserve geometry and open
              * ScopeMenu for this verified target on the normal native path.
              */
-            s_originalNativeScopeStateTransition(player, true);
+            applyManualScopeTransition(player, true);
             if (!s_manualScopeDirectTransitionActive) {
                 ROCK_LOG_DEBUG(Input, "Manual scope direct transition engaged for explicit scope target");
             }
@@ -517,7 +558,7 @@ namespace
         }
 
         if (s_manualScopeDirectTransitionActive && player) {
-            s_originalNativeScopeStateTransition(player, false);
+            applyManualScopeTransition(player, false);
             ROCK_LOG_DEBUG(Input, "Manual scope direct transition released");
         }
         s_manualScopeDirectTransitionActive = false;

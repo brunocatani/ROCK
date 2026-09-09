@@ -38,6 +38,8 @@ namespace rock::native_scope_data
         ManualScopeQuery s_manualScopeQuery = nullptr;
         ProcessScopeMessage s_processScopeMessage = nullptr;
         std::atomic<DWORD> s_gameThread{ 0 };
+        std::atomic<std::uint32_t> s_geometryQueries{ 0 };
+        std::atomic<std::uint32_t> s_menuQueries{ 0 };
         std::atomic<std::uint32_t> s_geometryAdmissions{ 0 };
         std::atomic<std::uint32_t> s_menuAdmissions{ 0 };
         std::atomic<std::uint32_t> s_wrongThreadQueries{ 0 };
@@ -59,6 +61,8 @@ namespace rock::native_scope_data
         bool nativeHasScope(std::uint32_t nativeFlag, const void* weapon, const void* instance,
             native_scope_admission::Site site) noexcept
         {
+            auto& queries = site == native_scope_admission::Site::Geometry ? s_geometryQueries : s_menuQueries;
+            queries.fetch_add(1, std::memory_order_relaxed);
             if (nativeFlag != 0) {
                 return true;
             }
@@ -87,9 +91,12 @@ namespace rock::native_scope_data
             bool payloadValid = false;
             if (message.type == RE::UI_MESSAGE_TYPE::kShow || message.type == RE::UI_MESSAGE_TYPE::kUpdate) {
                 const auto* data = message.QData();
+                std::uintptr_t dataVtable = 0;
                 // BSUIMessageData payload: native sender 0x1420D93F0 writes
-                // +0x28; ScopeMenu 0x140BC7F00 reads it for begin/end fades.
-                payloadValid = data && native_memory::tryReadField(data, 0x28, payload);
+                // vtable 0x142D56B40 and +0x28. Other Update payload classes
+                // must not be interpreted as the scope begin/end enum.
+                payloadValid = data && native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(data), dataVtable) &&
+                    dataVtable == REL::Offset(0x2D56B40).address() && native_memory::tryReadField(data, 0x28, payload);
             }
             const bool movieBefore = menu->uiMovie != nullptr;
             const bool rootBefore = menu->menuObj.IsObject();
@@ -322,12 +329,14 @@ namespace rock::native_scope_data
         const auto geometryAdmissions = s_geometryAdmissions.load(std::memory_order_relaxed);
         const auto menuAdmissions = s_menuAdmissions.load(std::memory_order_relaxed);
         const auto wrongThread = s_wrongThreadQueries.load(std::memory_order_relaxed);
-        static std::array<std::uint32_t, 3> lastAdmissions{};
-        const std::array<std::uint32_t, 3> admissions{ geometryAdmissions, menuAdmissions, wrongThread };
+        const auto geometryQueries = s_geometryQueries.load(std::memory_order_relaxed);
+        const auto menuQueries = s_menuQueries.load(std::memory_order_relaxed);
+        static std::array<std::uint32_t, 4> lastAdmissions{};
+        const std::array<std::uint32_t, 4> admissions{ geometryAdmissions, menuAdmissions, wrongThread, menuQueries };
         if (admissions != lastAdmissions) {
             lastAdmissions = admissions;
-            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000, "Native scope admission geometry={} menu={} rejectedThread={}",
-                geometryAdmissions, menuAdmissions, wrongThread);
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000, "Native scope admission geometry={} menu={} rejectedThread={} geometryQueries={} menuQueries={}",
+                geometryAdmissions, menuAdmissions, wrongThread, geometryQueries, menuQueries);
         }
         static std::uint32_t lastMessages = 0;
         const auto messages = s_scopeMessageCount.load(std::memory_order_acquire);
