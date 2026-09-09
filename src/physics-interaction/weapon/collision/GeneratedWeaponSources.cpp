@@ -578,6 +578,40 @@ namespace rock
             }
         }
 
+        // Only sources retained by this equipped reconciliation may bypass
+        // their own hidden container. Native app-culled branches stay excluded.
+        for (const auto& owned : _omod.collisionSources) {
+            RE::NiTransform sourceInWeapon{};
+            if (!owned.shape || !owned.container ||
+                !tryResolveDescendantLocalTransform(packageDriveRoot, owned.shape, sourceInWeapon)) continue;
+            bool active = true;
+            auto* parent = owned.parent.get();
+            for (int hop = 0; parent && parent != packageDriveRoot && hop < 64; ++hop, parent = parent->parent) {
+                if (!weaponVisualNodeVisible(parent)) { active = false; break; }
+            }
+            if (!active || parent != packageDriveRoot) continue;
+            const auto first = outSources.size();
+            std::unordered_set<std::uintptr_t> extracted;
+            findGeneratedWeaponShapeSourcesRecursive(owned.shape, packageDriveRoot, packageDriveRootTransform, 0,
+                outSources, totalVisitedShapes, totalExtractedTriangles, claimedSourceGroups, extracted, totalCulledForEffectGeometry);
+            claimedSourceGroups.insert(extracted.begin(), extracted.end());
+            for (std::size_t i = first; i < outSources.size(); ++i) {
+                auto& source = outSources[i];
+                source.omodFormId = owned.omodFormId;
+                const auto clusterSuffix = source.sourceName.find('#');
+                source.sourceName = owned.authoredName + (clusterSuffix == std::string::npos ? "" : source.sourceName.substr(clusterSuffix));
+                source.semantic = classifyWeaponPartName(owned.authoredName.c_str());
+                source.semantic.attachPointFormId = owned.attachPointFormId;
+                source.semantic.classificationSource = WeaponPartClassificationSource::AttachmentEvidence;
+                // The authored socket supplies semantic ownership even for
+                // custom keywords such as MK18's ap_MK18_Grip.
+                const auto anchor = weapon_part_record_identity_policy::resolveStructureAnchor(owned.connectPoint);
+                const auto resolved = weapon_part_record_identity_policy::applyStructureAnchor(source.semantic, anchor);
+                source.semantic = resolved;
+                source.semantic.attachPointFormId = owned.attachPointFormId;
+            }
+        }
+
         if (outSources.empty()) {
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: all {} candidates produced zero hulls", candidates.size());
             return 0;
@@ -608,8 +642,8 @@ namespace rock
             equippedWeaponKey,
             makeWeaponEmitterRootSetKey(weaponNode));
         for (auto& source : outSources) {
-            std::uint32_t sourceOmodFormId = 0;
-            if (source.semantic.attachPointFormId != 0) {
+            std::uint32_t sourceOmodFormId = source.omodFormId;
+            if (sourceOmodFormId == 0 && source.semantic.attachPointFormId != 0) {
                 const auto omod = omodByAttachPointFormId.find(source.semantic.attachPointFormId);
                 if (omod != omodByAttachPointFormId.end()) {
                     sourceOmodFormId = omod->second;
@@ -1340,6 +1374,8 @@ namespace rock
             instance.generatedPointCount = static_cast<std::uint32_t>(
                 (std::min)(source.localPointsGame.size(), static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
             instance.generatedSourceGroupId = source.sourceGroupId;
+            instance.omodFormId = source.omodFormId;
+            instance.generatedSourceScale = source.sourceNodeScale;
             instance.semantic = source.semantic;
             instance.ownsShapeRef = true;
             clearGeneratedKeyframedBodyDriveState(instance.driveState);

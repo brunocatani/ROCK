@@ -6,7 +6,7 @@
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
-#include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
+#include "physics-interaction/weapon/WeaponOmodCollisionPolicy.h"
 
 namespace
 {
@@ -68,7 +68,7 @@ int main()
     using namespace rock::weapon_generation_identity_policy;
     using namespace rock::weapon_effect_geometry_policy;
     namespace emitter = rock::weapon_emitter_policy;
-    using namespace rock::weapon_omod_audit_policy;
+    using namespace rock::weapon_omod_collision_policy;
     using rock::WeaponPartKind;
 
     bool ok = true;
@@ -128,55 +128,36 @@ int main()
     ok &= expectTrue("bipod remains durable weapon structure independent of deployment state", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Bipod)) != 0);
     ok &= expectFalse("shell is not permanent gameplay-critical structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Shell)) != 0);
 
-    ok &= expectTrue("OMOD audit accepts body evidence from its audited equipped generation",
-        publishedBodyEvidenceMatchesAudit(0xAA, 0xAA, true));
-    ok &= expectFalse("OMOD prebuild rejects previous equipped generation body evidence",
-        publishedBodyEvidenceMatchesAudit(0xBB, 0xAA, true));
-    ok &= expectFalse("OMOD audit rejects an absent published body set",
-        publishedBodyEvidenceMatchesAudit(0xAA, 0xAA, false));
-
-    ok &= expectTrue("single-mesh OMOD requires its one mesh",
-        requiredTemplateSignatureMatches(1) == 1);
-    ok &= expectTrue("two-mesh OMOD requires both meshes",
-        requiredTemplateSignatureMatches(2) == 2);
-    ok &= expectTrue("six-mesh scope requires a strict majority",
-        requiredTemplateSignatureMatches(6) == 4);
-    ok &= expectFalse("one reused scope mesh does not prove a six-mesh scope is installed",
-        templateSignatureIsPresent(1, 6));
-    ok &= expectFalse("two reused iron-sight meshes do not prove a six-mesh scope is installed",
-        templateSignatureIsPresent(2, 6));
-    ok &= expectTrue("coherent majority proves a six-mesh scope is installed",
-        templateSignatureIsPresent(4, 6));
-    ok &= expectFalse("cartridge majority without the durable magazine shell is incomplete",
-        physicalTemplateSignatureIsPresent(4, 6, false));
-    ok &= expectTrue("coherent signature with its durable housing is physically complete",
-        physicalTemplateSignatureIsPresent(4, 6, true));
-    ok &= expectTrue("partial cartridge branch without its housing requires anchor recovery",
-        requiresDurableAnchorRecovery(false));
-    ok &= expectFalse("existing durable housing forbids duplicate anchor recovery",
-        requiresDurableAnchorRecovery(true));
-    ok &= expectTrue("fully absent attachment may use the native whole-model attach",
-        shouldAttemptWholeModelAttach(0, 6, false));
-    ok &= expectTrue("RU556 incidental one-of-six match retains native whole-model recovery",
-        shouldAttemptWholeModelAttach(1, 6, false));
-    ok &= expectTrue("sub-majority matches do not masquerade as a coherent partial attachment",
-        shouldAttemptWholeModelAttach(3, 6, false));
-    ok &= expectFalse("coherent partial attachment bypasses native whole-model duplication",
-        shouldAttemptWholeModelAttach(4, 6, false));
-    ok &= expectFalse("existing durable housing forbids native whole-model duplication",
-        shouldAttemptWholeModelAttach(1, 1, true));
-    ok &= expectFalse("empty template signature fails closed",
-        templateSignatureIsPresent(0, 0));
-    ok &= expectTrue("physics-bearing receiver may use a strict-superset raw geometry template",
-        shouldPreferRawReceiverGeometryTemplate(true, true, true, 1, 4));
-    ok &= expectFalse("raw receiver geometry cannot replace names from the normal template",
-        shouldPreferRawReceiverGeometryTemplate(true, true, false, 1, 4));
-    ok &= expectFalse("raw receiver geometry requires an authored native collision object",
-        shouldPreferRawReceiverGeometryTemplate(true, false, true, 1, 4));
-    ok &= expectFalse("raw geometry fallback never changes sight attachment templates",
-        shouldPreferRawReceiverGeometryTemplate(false, true, true, 1, 4));
-    ok &= expectFalse("an equal raw receiver signature is not a recovery authority",
-        shouldPreferRawReceiverGeometryTemplate(true, true, true, 4, 4));
+    ok &= expectTrue("missing MK18 stock with a unique live parent is recoverable",
+        decide(true, 1, true, false, false, false) == Coverage::Recoverable);
+    ok &= expectTrue("late native stock geometry replaces owned coverage",
+        decide(true, 1, true, false, true, true) == Coverage::NativeGeometry);
+    ok &= expectTrue("existing owned coverage is idempotent",
+        decide(true, 1, true, false, false, true) == Coverage::OwnedGeometry);
+    ok &= expectTrue("truncated scan cannot authorize recovery",
+        decide(false, 1, true, false, false, false) == Coverage::IncompleteScan);
+    ok &= expectTrue("ambiguous animation parents cannot authorize recovery",
+        decide(true, 2, true, false, false, false) == Coverage::AmbiguousParent);
+    ok &= expectTrue("missing animation parent cannot freeze an authored pose",
+        decide(true, 0, true, false, false, false) == Coverage::AmbiguousParent);
+    ok &= expectTrue("inactive reload twin loses owned collision coverage",
+        decide(true, 1, false, false, false, true) == Coverage::InactiveBranch);
+    ok &= expectTrue("skinned source without a live match fails closed",
+        decide(true, 1, true, true, false, false) == Coverage::UnsupportedSkin);
+    ok &= expectTrue("stock child metadata resolves custom keyword socket",
+        parentPointName("C-Grip") == "P-Grip");
+    ok &= expectTrue("child variant suffix is not part of the socket name",
+        parentPointName("C-Mag|0") == "P-Mag");
+    ok &= expectTrue("child metadata payload is not part of the socket name",
+        parentPointName("C-Mag,variant") == "P-Mag");
+    ok &= expectTrue("non-child metadata cannot guess a socket",
+        parentPointName("WeaponMagazine").empty());
+    ok &= expectTrue("native instance suffix resolves indexed animation parent",
+        instanceName("WeaponExtra|0", 3) == "WeaponExtra|3");
+    ok &= expectTrue("mesh colon suffix remains part of geometry identity",
+        instanceName("Stock:0", 3) == "Stock:0");
+    ok &= expectTrue("zero instance preserves authored suffix",
+        instanceName("WeaponExtra|0", 0) == "WeaponExtra|0");
 
     using rock::native_scope_sight_anchor_policy::PublicationIdentity;
     using rock::native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon;
@@ -235,30 +216,6 @@ int main()
     ok &= expectTrue("AddOnNode transform outranks laser dot geometry",
         emitter::transformPriority(emitter::Kind::Laser, emitter::Source::AddOnNode, "AddOnNode130") >
             emitter::transformPriority(emitter::Kind::Laser, emitter::Source::EffectGeometry, "LaserSightDot:0"));
-
-    const auto enabledMissingOmod = decideCoverage(CoverageInput{
-        .resolved = true,
-        .hasModelToken = true,
-    });
-    ok &= expectTrue("enabled missing OMOD is eligible for guarded self-heal", enabledMissingOmod.selfHealCandidate);
-    const auto misleadingVisibleTokenMatch = decideCoverage(CoverageInput{
-        .resolved = true,
-        .hasModelToken = true,
-        .hasNodeMatch = true,
-        .anyNodeMatchVisible = true,
-    });
-    ok &= expectTrue("uncovered OMOD with a misleading visible token match still receives template verification",
-        misleadingVisibleTokenMatch.selfHealCandidate);
-    ok &= expectTrue("visible token-only coverage keeps its diagnostic verdict",
-        misleadingVisibleTokenMatch.verdict == CoverageVerdict::NodePresentNoCollider);
-    const auto disabledMissingOmod = decideCoverage(CoverageInput{
-        .disabled = true,
-        .resolved = true,
-        .hasModelToken = true,
-    });
-    ok &= expectFalse("disabled missing OMOD is excluded from self-heal", disabledMissingOmod.selfHealCandidate);
-    ok &= expectTrue("disabled OMOD has an explicit audit verdict",
-        disabledMissingOmod.verdict == CoverageVerdict::Disabled);
 
     using rock::manual_scope_target_policy::hasExplicitScopeIdentity;
     ok &= expectTrue("Watchman scope path recovers manual native-scope eligibility",

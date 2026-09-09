@@ -28,6 +28,7 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
 
 namespace RE
 {
@@ -359,6 +360,7 @@ namespace rock
             RE::NiAVObject* sourceRoot{ nullptr };
             RE::NiTransform sourceInWeapon{};
             std::uintptr_t sourceGroupId{ 0 };
+            std::uint32_t omodFormId{ 0 };
             std::string sourceName;
             WeaponPartClassification semantic{};
             // BGSMaterialType::materialID resolved from the authoritative
@@ -402,7 +404,9 @@ namespace rock
             std::vector<TriangleData> generatedSourceLocalTrianglesGame{};
             std::uint32_t generatedPointCount{ 0 };
             std::uintptr_t generatedSourceGroupId{ 0 };
+            std::uint32_t omodFormId{ 0 };
             WeaponPartClassification semantic{};
+            float generatedSourceScale{ 1.0f };
             bool ownsShapeRef{ false };
             GeneratedKeyframedBodyDriveState driveState{};
             std::uint32_t publicationIndex{ INVALID_BODY_ID };
@@ -738,28 +742,41 @@ namespace rock
 
         /*
          * State owned by the WeaponOmodReconciliation module. Functional
-         * OMOD reconciliation runs before initial collider capture and once
-         * after publication. Coverage diagnostics may repeat on their
-         * configured interval without owning self-heal scheduling.
+         * OMOD reconciliation runs before collider capture. A bounded native
+         * census detects later assembly changes; unchanged censuses do not
+         * reload or clone templates. Diagnostics never control this cadence.
          */
+        struct OmodCollisionSource
+        {
+            // The hidden container owns a rigid cloned shape. Its live parent
+            // owns animation; no native attachment/controller registration is
+            // performed on the rendered weapon. All consumers resolve this
+            // same descendant transform through the ordinary sourceNode path.
+            RE::NiPointer<RE::NiNode> container;
+            RE::NiPointer<RE::NiNode> parent;
+            RE::NiAVObject* shape{ nullptr };
+            std::uint32_t omodFormId{ 0 };
+            std::uint32_t attachPointFormId{ 0 };
+            std::uint32_t modIndex{ 0 };
+            std::uint32_t shapeIndex{ 0 };
+            std::string authoredName;
+            std::string connectPoint;
+        };
+
+        void clearOmodCollisionSources();
+
         struct OmodReconciliationState
         {
             std::uint64_t reconciledBodySetKey{ 0 };
             int frameCounter{ 0 };
-            std::uint32_t runIndex{ 0 };
+            int diagnosticFrameCounter{ 0 };
             // Cache only a non-mutating pre-build pass for an exact equipped
             // identity and assembled root.
             std::uint64_t prebuildEquippedKey{ 0 };
             RE::NiAVObject* prebuildRoot{ nullptr };
-            /*
-             * Self-heal attempts are keyed by (weapon update root address ^
-             * OMOD formID). The first-person update root is persistent and can
-             * be reused across engine reassemblies, so lifecycle code clears
-             * this set when the equipped scene ends or transitions. Within one
-             * live scene, a failed or name-unmatchable heal is never retried so
-             * it cannot stack duplicate geometry across audits.
-             */
-            std::unordered_set<std::uint64_t> selfHealAttempted;
+            std::uint64_t sourceEquippedKey{ 0 };
+            std::uint64_t nativeCensusKey{ 0 };
+            std::vector<OmodCollisionSource> collisionSources;
         };
 
         // Cross-thread rebuild requests and drive-failure accounting

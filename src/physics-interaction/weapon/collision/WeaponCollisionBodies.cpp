@@ -361,6 +361,8 @@ namespace rock
         instance.generatedSourceLocalTrianglesGame.clear();
         instance.generatedPointCount = 0;
         instance.generatedSourceGroupId = 0;
+        instance.omodFormId = 0;
+        instance.generatedSourceScale = 1.0f;
         instance.semantic = {};
         instance.ownsShapeRef = false;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);

@@ -21,8 +21,6 @@
 #include "physics-interaction/weapon/WeaponClassificationPolicy.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
-#include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
-#include "physics-interaction/weapon/WeaponOmodSceneScan.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
