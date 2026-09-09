@@ -82,6 +82,8 @@ namespace rock
             float length = 0.0f;
             float radius = 0.0f;
             float convexRadius = 0.0f;
+            // Bounds of the palm hull actually created, including dimension overrides.
+            RE::NiPoint3 palmHalfExtents{};
         };
         using PublishedSegmentFrames =
             std::array<PublishedSegmentFrame, hand_collider_semantics::kHandSegmentColliderBodyCountPerHand>;
@@ -105,6 +107,7 @@ namespace rock
             const RE::hknpShape* shape = nullptr;
             hand_collider_semantics::HandColliderRole role = hand_collider_semantics::HandColliderRole::PalmFace;
             bool ownsShapeRef = false;
+            RE::NiPoint3 palmHalfExtents{};
             GeneratedKeyframedBodyDriveState driveState{};
             std::uint32_t publicationIndex = kInvalidPublicationIndex;
         };
@@ -136,7 +139,8 @@ namespace rock
             const RE::NiTransform& rollAuthorityWorld,
             BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
-        RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
+        RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
+            RE::NiPoint3* outPalmHalfExtents = nullptr) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
         void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState, std::uint32_t publicationIndex);
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);

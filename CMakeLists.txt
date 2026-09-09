@@ -463,6 +463,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabThreePhasePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabThreePhasePolicyTests)
 
+  add_executable(ROCKGrabPalmSeatPolicyTests
+    "${ROOT_DIR}/tests/GrabPalmSeatPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabPalmSeatPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabPalmSeatPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGrabPalmSeatPolicyTests)
+
   add_executable(ROCKGrabPinchPocketPolicyTests
     "${ROOT_DIR}/tests/GrabPinchPocketPolicyTests.cpp"
   )
@@ -840,6 +847,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabAuthorityFramePolicyTests
     ROCKTransformMathDoublePrecisionPolicyTests
     ROCKGrabThreePhasePolicyTests
+    ROCKGrabPalmSeatPolicyTests
     ROCKGrabPinchPocketPolicyTests
     ROCKGeneratedKeyframedBodyDrivePolicyTests
     ROCKGeneratedBodyContactRegistryPolicyTests

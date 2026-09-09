@@ -21,6 +21,7 @@
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/GrabPalmSeat.h"
 #include "physics-interaction/grab/GrabPoseCandidateSelector.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
@@ -3547,26 +3548,78 @@ namespace rock
             return result;
         }
 
-        struct GrabSeatDepthStopResult
+        using GrabSeatDepthStopResult = grab_palm_seat::DepthResult;
+
+        GrabSeatDepthStopResult computeGrabPalmSeatDepthStop(
+            const std::vector<GrabLocalTriangle>& localTriangles,
+            const RE::NiTransform& objectNodeWorld,
+            const RE::NiPoint3& depthOriginWorld,
+            const grab_three_phase::GrabPocketFrame& pocket,
+            const HandBoneColliderSet::PublishedSegmentFrames& segments,
+            float maxFootprintRadiusGameUnits,
+            float maxDepthGameUnits)
         {
-            float depthGameUnits = 0.0f;
-            std::uint32_t footprintSampleCount = 0;
-            const char* reason = "notEvaluated";
-            bool valid = false;
-        };
+            GrabSeatDepthStopResult invalid{};
+            invalid.reason = "missingPalmFootprint";
+            if (!pocket.valid || !isFiniteNiTransform(objectNodeWorld) ||
+                !grab_three_phase::isFinite(depthOriginWorld) ||
+                !std::isfinite(maxFootprintRadiusGameUnits) || maxFootprintRadiusGameUnits <= 0.0f) {
+                invalid.reason = "invalidPalmSeatFrame";
+                return invalid;
+            }
+            for (const auto& segment : segments) {
+                if (segment.role != hand_collider_semantics::HandColliderRole::PalmFace || !segment.valid ||
+                    !isFiniteNiTransform(segment.target) || !grab_three_phase::isFinite(segment.palmHalfExtents) ||
+                    segment.palmHalfExtents.x <= 0.0f || segment.palmHalfExtents.y <= 0.0f || segment.palmHalfExtents.z <= 0.0f ||
+                    !std::isfinite(segment.convexRadius) || segment.convexRadius < 0.0f) {
+                    continue;
+                }
+                // Project the created palm hull onto the pocket plane. Its
+                // generated-body axes are columns; mesh axes use Ni row storage.
+                const auto axisX = hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(segment.target, RE::NiPoint3{ 1, 0, 0 });
+                const auto axisY = hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(segment.target, RE::NiPoint3{ 0, 1, 0 });
+                const auto axisZ = hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(segment.target, RE::NiPoint3{ 0, 0, 1 });
+                auto projectedHalfExtent = [&](const RE::NiPoint3& axis) {
+                    return std::abs(dotProduct(axisX, axis)) * segment.palmHalfExtents.x +
+                           std::abs(dotProduct(axisY, axis)) * segment.palmHalfExtents.y +
+                           std::abs(dotProduct(axisZ, axis)) * segment.palmHalfExtents.z +
+                           segment.convexRadius * std::abs(segment.target.scale);
+                };
+                float halfAlong = projectedHalfExtent(pocket.fingerForwardWorld);
+                float halfAcross = projectedHalfExtent(pocket.crossPalmWorld);
+                const float footprintRadius = std::hypot(halfAlong, halfAcross);
+                if (footprintRadius > maxFootprintRadiusGameUnits) {
+                    const float scale = maxFootprintRadiusGameUnits / footprintRadius;
+                    halfAlong *= scale;
+                    halfAcross *= scale;
+                }
+                // The mesh will translate from depthOrigin to the palm anchor.
+                // Carry only that translation into the footprint so side tabs
+                // are tested against the palm they would actually overlap.
+                const auto footprintCenterWorld = depthOriginWorld + (segment.target.translate - pocket.palmCenterWorld);
+                const auto centerLocal = transform_math::worldPointToLocal(objectNodeWorld, footprintCenterWorld);
+                const auto originLocal = transform_math::worldPointToLocal(objectNodeWorld, depthOriginWorld);
+                const auto alongLocal = transform_math::worldVectorToLocal(objectNodeWorld, pocket.fingerForwardWorld);
+                const auto acrossLocal = transform_math::worldVectorToLocal(objectNodeWorld, pocket.crossPalmWorld);
+                const auto inwardLocal = transform_math::worldVectorToLocal(objectNodeWorld, pocket.palmNormalWorld * -1.0f);
+                const float objectScale = std::abs(objectNodeWorld.scale);
+                return grab_palm_seat::computeDepth(localTriangles, halfAlong, halfAcross, maxDepthGameUnits,
+                    [&](const RE::NiPoint3& vertex) {
+                        const auto lateralDelta = vertex - centerLocal;
+                        return grab_palm_seat::Point{
+                            dotProduct(lateralDelta, alongLocal) * objectScale,
+                            dotProduct(lateralDelta, acrossLocal) * objectScale,
+                            dotProduct(vertex - originLocal, inwardLocal) * objectScale,
+                        };
+                    });
+            }
+            return invalid;
+        }
 
         /*
-         * Seat depth stop: the frozen authority frame seats pivot B exactly onto
-         * pivot A, so any mesh that extends past the grip point toward the palm
-         * ends up inside the hand. Measure that extent as a support distance:
-         * the farthest the cached object-local mesh reaches along -palmNormal
-         * from the grip point, counting only geometry inside a lateral footprint
-         * around the palm axis (mesh far to the side clears the palm and must
-         * not push the seat out). Pushing pivot A out by this distance seats the
-         * object's SURFACE on the palm. Triangle vertices alone under-sample
-         * coarse meshes (a crate face keeps its vertices at corners, outside the
-         * footprint), so each triangle is also probed with closest-point queries
-         * against samples along the palm axis.
+         * Pinch thickness uses the existing circular pad footprint on both
+         * sides of the pinch axis. Palm seating uses the created palm hull
+         * footprint above; finger reach must not widen that support area.
          */
         GrabSeatDepthStopResult computeGrabSeatDepthStop(
             const std::vector<GrabLocalTriangle>& localTriangles,
@@ -8585,6 +8638,20 @@ namespace rock
         auto& desiredBodyWorld = outCapture.desiredBodyWorld;
         auto& resolvedAuthorityPivotSourceForFreeze = outCapture.resolvedAuthoritySource;
         auto& resolvedAuthorityPivotReasonForFreeze = outCapture.resolvedAuthorityReason;
+        auto abortCapture = [&]() {
+            _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
+            _grabObjectGripAtGrab = {};
+            _heldObjectIsLooseWeapon = false;
+            _grabFrame.clear();
+            _heldBodyIds.clear();
+            _heldDriveDecision = {};
+            _heldBodyIdsCount.store(0, std::memory_order_release);
+            _grabFingerPosePublished = false;
+            (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+            clearGrabExternalHandWorldTransform(_isLeft);
+            input.rollback.rollback();
+            return false;
+        };
                 desiredObjectWorld = objectWorldTransform;
                 desiredBodyWorld = grabBodyWorldAtGrab;
                 bool looseWeaponPrimaryAttachApplied = false;
@@ -8849,18 +8916,7 @@ namespace rock
                                     grab_support_model_math::gripSupportKindName(gripSupportRuntime.model.kind),
                                     gripSupportRuntime.model.reason ? gripSupportRuntime.model.reason : "none",
                                     pinchPocketCandidate.decision.reason ? pinchPocketCandidate.decision.reason : "none");
-                                _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-                                _grabObjectGripAtGrab = {};
-                                _heldObjectIsLooseWeapon = false;
-                                _grabFrame.clear();
-                                _heldBodyIds.clear();
-                                _heldDriveDecision = {};
-                                _heldBodyIdsCount.store(0, std::memory_order_release);
-                                _grabFingerPosePublished = false;
-                                (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-                                clearGrabExternalHandWorldTransform(_isLeft);
-                                input.rollback.rollback();
-                                return false;
+                                return abortCapture();
                             }
                             if (g_rockConfig.rockDebugGrabFrameLogging) {
                                 for (const auto& candidate : authorityCandidates) {
@@ -9426,13 +9482,18 @@ namespace rock
                         float seatPenetrationBackstopGameUnits = 0.0f;
                         const char* seatPenetrationBackstopReason = "inactive";
                         if (!looseWeaponPrimaryAttachApplied && !usingPinchPocket && pocket.valid) {
-                            seatDepthStop = computeGrabSeatDepthStop(
+                            seatDepthStop = computeGrabPalmSeatDepthStop(
                                 grabLocalMeshTriangles,
                                 seatObjectWorld,
                                 grabGripPoint,
-                                pocket.palmNormalWorld,
+                                pocket,
+                                _boneColliders.segmentColliderFrames(),
                                 g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
                                 g_rockConfig.rockGrabSeatDepthMaxGameUnits);
+                            if (!seatDepthStop.valid) {
+                                ROCK_LOG_WARN(Hand, "{} hand GRAB aborted: palm seat unavailable reason={}", handName(), seatDepthStop.reason);
+                                return abortCapture();
+                            }
                             if (seatDepthStop.valid && seatDepthStop.depthGameUnits > 0.01f) {
                                 seatDepthOffsetGameUnits =
                                     seatDepthStop.depthGameUnits + (std::max)(0.0f, g_rockConfig.rockGrabSeatDepthSkinGameUnits);
@@ -9463,31 +9524,25 @@ namespace rock
                              * failed, and the root cause still needs the capture
                              * line's seatDepthReason evidence.
                              *
-                             * Footprint width is shape-selected. The primary stop's
-                             * radius is tuned small for seating precision, which
-                             * bounds how much penetration a TILTED face can even
-                             * express: inside radius r a face tilted by theta shows
-                             * at most r*sin(theta), so a large plate cutting deep
-                             * through the fingers registers a fraction of a unit at
-                             * the palm axis and commits. Plates - where the near
-                             * surface is flat and one rigid push-out is therefore
-                             * exactly right everywhere - get a hand-sized footprint
-                             * instead. Every other shape keeps the tuned radius:
-                             * widening it for irregular geometry would let lobes
-                             * that merely pass BESIDE the palm start pushing seats
-                             * out (mug bodies, shell rims) and reintroduce the
-                             * floaty seats that radius was tuned to remove.
+                             * Both passes are bounded by the created palm hull.
+                             * The configured radii are upper limits; neither a
+                             * fingertip nor an off-palm tab can widen the seat.
                              */
                             const float backstopFootprintRadiusGameUnits =
                                 seatPlateShape ? g_rockConfig.rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits
                                                : g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits;
-                            const auto palmPlaneOvershoot = computeGrabSeatDepthStop(
+                            const auto palmPlaneOvershoot = computeGrabPalmSeatDepthStop(
                                 grabLocalMeshTriangles,
                                 desiredObjectWorld,
                                 pocket.palmCenterWorld,
-                                pocket.palmNormalWorld,
+                                pocket,
+                                _boneColliders.segmentColliderFrames(),
                                 backstopFootprintRadiusGameUnits,
                                 g_rockConfig.rockGrabSeatDepthMaxGameUnits);
+                            if (!palmPlaneOvershoot.valid) {
+                                ROCK_LOG_WARN(Hand, "{} hand GRAB aborted: final palm seat unavailable reason={}", handName(), palmPlaneOvershoot.reason);
+                                return abortCapture();
+                            }
                             seatPenetrationBackstopReason = palmPlaneOvershoot.reason;
                             constexpr float kSeatPenetrationBackstopThresholdGameUnits = 1.0f;
                             if (palmPlaneOvershoot.valid &&
@@ -9796,17 +9851,6 @@ namespace rock
                             looseWeaponPrimaryAttachReason,
                             looseWeaponPrimaryAttachSourceVisible ? "yes" : "no");
                     } else {
-                        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-                        _grabObjectGripAtGrab = {};
-                        _heldObjectIsLooseWeapon = false;
-                        _grabFrame.clear();
-                        _heldBodyIds.clear();
-                        _heldDriveDecision = {};
-                        _heldBodyIdsCount.store(0, std::memory_order_release);
-                        _grabFingerPosePublished = false;
-                        (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-                        clearGrabExternalHandWorldTransform(_isLeft);
-                        input.rollback.rollback();
                         ROCK_LOG_WARN(Hand,
                             "{} THREE-PHASE GRAB ABORT: pocketValid={} gripValid={} accepted={} reason={} dist={:.2f}gu stableTouch={}",
                             handName(),
@@ -9816,7 +9860,7 @@ namespace rock
                             phaseDecision.reason,
                             gripToPocketDistance,
                             hasStablePocketTouchContact ? "yes" : "no");
-                        return false;
+                        return abortCapture();
                     }
                 }
 
@@ -12885,11 +12929,12 @@ namespace rock
                              * toward the palm. Same pivot-A push as the capture path so
                              * a reacquire can never undo the capture-time correction.
                              */
-                            const auto seatDepthStop = computeGrabSeatDepthStop(
+                            const auto seatDepthStop = computeGrabPalmSeatDepthStop(
                                 _grabFrame.localMeshTriangles,
                                 seatNodeWorld,
                                 promotedPointWorld,
-                                palmNormalWorld,
+                                seatedPocket,
+                                _boneColliders.segmentColliderFrames(),
                                 g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
                                 g_rockConfig.rockGrabSeatDepthMaxGameUnits);
                             RE::NiPoint3 seatPivotAWorld = livePivotAWorld;
@@ -12905,7 +12950,7 @@ namespace rock
                                 deriveNodeWorldFromBodyWorld(desiredBodyWorldAtSeat, _grabFrame.authority.bodyLocal);
                             const RE::NiTransform proxyAuthorityFrameWorld =
                                 makeGeneratedProxyAuthorityRelationFrame(proxyAuthorityWorld);
-                            const auto frozenSeatAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
+                            const auto frozenSeatAuthorityFrame = seatDepthStop.valid ? grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
                                 grab_authority_frame_math::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
                                     .rawHandWorld = handWorldTransform,
                                     .proxyWorld = proxyAuthorityWorld,
@@ -12924,10 +12969,10 @@ namespace rock
                                     .hasDesiredObjectWorld = true,
                                     .hasDesiredBodyWorld = true,
                                     .visualNormalValid = promotedNormalTrusted,
-                                });
+                                }) : grab_authority_frame_math::FrozenGrabAuthorityFrame<RE::NiTransform>{};
                             if (!frozenSeatAuthorityFrame.valid) {
                                 seatedRetargetRejectedKeepFrozen = true;
-                                timeoutReacquireReason = "seatedPalmPocketFreezeFailedKeepFrozen";
+                                timeoutReacquireReason = seatDepthStop.valid ? "seatedPalmPocketFreezeFailedKeepFrozen" : seatDepthStop.reason;
                             } else {
                                 applyFrozenGrabAuthorityFrameToGrabFrame(_grabFrame, frozenSeatAuthorityFrame);
                                 _grabFrame.gripEvidence.gripEvidenceLocal = promotedPointNodeLocal;

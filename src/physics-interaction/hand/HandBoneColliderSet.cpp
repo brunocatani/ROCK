@@ -569,8 +569,12 @@ namespace rock
         return true;
     }
 
-    RE::hknpShape* HandBoneColliderSet::buildShapeForRole(const RoleFrameResult& frame, HandColliderRole role) const
+    RE::hknpShape* HandBoneColliderSet::buildShapeForRole(const RoleFrameResult& frame, HandColliderRole role,
+        RE::NiPoint3* outPalmHalfExtents) const
     {
+        if (outPalmHalfExtents) {
+            *outPalmHalfExtents = {};
+        }
         if (!frame.valid) {
             return nullptr;
         }
@@ -606,6 +610,13 @@ namespace rock
                 return nullptr;
             }
             const auto gamePoints = hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(length, scaledPalmDepth, scaledCrossPalmWidth);
+            if (outPalmHalfExtents) {
+                for (const auto& point : gamePoints) {
+                    outPalmHalfExtents->x = (std::max)(outPalmHalfExtents->x, std::abs(point.x));
+                    outPalmHalfExtents->y = (std::max)(outPalmHalfExtents->y, std::abs(point.y));
+                    outPalmHalfExtents->z = (std::max)(outPalmHalfExtents->z, std::abs(point.z));
+                }
+            }
             return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
         }
 
@@ -637,7 +648,7 @@ namespace rock
 
     bool HandBoneColliderSet::createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance)
     {
-        auto* shape = buildShapeForRole(frame, role);
+        auto* shape = buildShapeForRole(frame, role, &instance.palmHalfExtents);
         if (!shape) {
             ROCK_LOG_WARN(Hand, "{} {} collider shape build failed", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
             return false;
@@ -964,6 +975,7 @@ namespace rock
                     published.length = frame.length;
                     published.radius = frame.radius;
                     published.convexRadius = frame.convexRadius;
+                    published.palmHalfExtents = instance.palmHalfExtents;
                 }
                 queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
             }
@@ -1115,6 +1127,7 @@ namespace rock
         instance.shape = nullptr;
         instance.role = HandColliderRole::PalmFace;
         instance.ownsShapeRef = false;
+        instance.palmHalfExtents = {};
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
         instance.publicationIndex = kInvalidPublicationIndex;
     }
