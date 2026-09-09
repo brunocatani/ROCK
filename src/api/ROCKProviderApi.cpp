@@ -5148,6 +5148,14 @@ namespace
         return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
     }
 
+    bool ROCK_PROVIDER_CALL apiGetRawWandThumbstickV1(RockProviderHand hand, float* outX, float* outY)
+    {
+        if (outX) *outX = 0.0f;
+        if (outY) *outY = 0.0f;
+        if (!outX || !outY || (hand != RockProviderHand::Left && hand != RockProviderHand::Right)) return false;
+        return rock::input_remap_runtime::peekRawThumbstick(hand == RockProviderHand::Left, *outX, *outY);
+    }
+
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1()
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
@@ -5458,6 +5466,7 @@ namespace
             &apiGetPlayerControllerStateV1,
         .requestPlayerControllerJumpV1 =
             &apiRequestPlayerControllerJumpV1,
+        .getRawWandThumbstickV1 = &apiGetRawWandThumbstickV1,
     };
 
     constexpr RockProviderApiDescriptorV1 ROCK_PROVIDER_API_DESCRIPTOR{

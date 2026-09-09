@@ -107,10 +107,11 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderBodyContactV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabTargetV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabStateV1, 136, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderApi, 744, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderApi, 752, 8);
 #undef ROCK_EXPECT_LAYOUT
 
-    ok = ok && sizeof(RockProviderApi) == 93 * sizeof(void*);
+    ok = ok && sizeof(RockProviderApi) == 94 * sizeof(void*);
+    ok = ok && offsetof(RockProviderApi, getRawWandThumbstickV1) == 93 * sizeof(void*);
     ok = ok && alignof(RockProviderApi) == alignof(void*);
     ok = ok && offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) == 81 * sizeof(void*);
@@ -189,7 +190,8 @@ int main()
     ok = ok && ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES == 90 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_LOGICAL_INPUT_ACTION_STATE_TABLE_BYTES == 91 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_STATE_TABLE_BYTES == 92 * sizeof(void*);
-    ok = ok && ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES == sizeof(RockProviderApi);
+    ok = ok && ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES == 93 * sizeof(void*);
+    ok = ok && ROCK_PROVIDER_API_V1_RAW_WAND_THUMBSTICK_TABLE_BYTES == sizeof(RockProviderApi);
     ok = ok &&
         static_cast<std::uint32_t>(
             RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) ==

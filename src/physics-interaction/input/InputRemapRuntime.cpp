@@ -200,6 +200,8 @@ namespace rock::input_remap_runtime
             // fire remap which presents it on the other wand's state.
             std::atomic<float> triggerAxisX{ 0.0f };
             std::atomic<float> triggerAxisY{ 0.0f };
+            // Publish the pair atomically: UI readers may run between controller polls.
+            std::atomic<std::uint64_t> thumbstickAxes{ 0 };
             std::atomic<std::uint64_t> sampleSequence{ 0 };
             std::atomic<std::uint64_t> sampleTickMilliseconds{ 0 };
             std::atomic<bool> valid{ false };
@@ -759,6 +761,10 @@ namespace rock::input_remap_runtime
             auto& tracker = s_controllers[controllerIndex(hand)];
             const std::uint64_t rawPressed = state->ulButtonPressed;
             const std::uint64_t rawTouched = state->ulButtonTouched;
+            std::uint64_t axes{};
+            static_assert(sizeof(state->rAxis[0]) == sizeof(axes));
+            std::memcpy(&axes, &state->rAxis[0], sizeof(axes));
+            tracker.thumbstickAxes.store(axes, std::memory_order_release);
             constexpr std::size_t triggerAxisIndex =
                 static_cast<std::size_t>(input_remap_policy::kOpenVrSteamVrTriggerButtonId - input_remap_policy::kOpenVrAxisButtonBase);
             tracker.triggerAxisX.store(state->rAxis[triggerAxisIndex].x, std::memory_order_release);
@@ -2466,6 +2472,23 @@ namespace rock::input_remap_runtime
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)
     {
         return readRawButtonState(isLeft, buttonId, false);
+    }
+
+    bool peekRawThumbstick(bool isLeft, float& x, float& y)
+    {
+        x = y = 0.0f;
+        const auto raw = peekRawButtonState(isLeft, 32);
+        if (!raw.available || raw.availabilityReason != RawButtonAvailabilityReason::Available ||
+            raw.sampleAgeMilliseconds > 100) {
+            return false;
+        }
+        const auto bits = s_controllers[isLeft ? 0u : 1u].thumbstickAxes.load(std::memory_order_acquire);
+        vr::VRControllerAxis_t axes{};
+        std::memcpy(&axes, &bits, sizeof(axes));
+        if (!std::isfinite(axes.x) || !std::isfinite(axes.y)) return false;
+        x = std::clamp(axes.x, -1.0f, 1.0f);
+        y = std::clamp(axes.y, -1.0f, 1.0f);
+        return true;
     }
 
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId)

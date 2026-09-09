@@ -86,6 +86,8 @@ namespace rock::input_remap_runtime
     // V.A.N.S. hold threshold during eligible gameplay. Frame thread only.
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
+    // Physical Axis0, sampled before game-input suppression. False returns zero axes.
+    bool peekRawThumbstick(bool isLeft, float& x, float& y);
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId);
     // Physical level only: bypasses menu edge rearming so equipped-weapon
     // ownership can reconcile the player's actual hand state after menu exit.

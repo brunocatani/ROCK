@@ -3176,6 +3176,11 @@ namespace rock::provider
             std::uint64_t ownerToken,
             const RockProviderPlayerControllerJumpRequestV1* request);
 
+        // Raw physical Axis0 before native game-input suppression, range [-1, 1].
+        // False (missing/stale sample or blocking menu) zeroes both outputs.
+        // Query table size before using this appended V1 entry; no prefix ABI changes.
+        bool(ROCK_PROVIDER_CALL* getRawWandThumbstickV1)(RockProviderHand hand, float* outX, float* outY);
+
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
             const std::uint32_t minProviderApiByteSize = 0)
@@ -3258,6 +3263,8 @@ namespace rock::provider
     ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi();
     ROCK_PROVIDER_API const RockProviderApiDescriptorV1* ROCK_PROVIDER_CALL ROCKAPI_GetDescriptorV1();
 
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_RAW_WAND_THUMBSTICK_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getRawWandThumbstickV1) + sizeof(std::declval<RockProviderApi>().getRawWandThumbstickV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_FORCE_GRAB_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, getInteractionCommandResultV1) + sizeof(std::declval<RockProviderApi>().getInteractionCommandResultV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_FORCE_RELEASE_TABLE_BYTES = static_cast<std::uint32_t>(
@@ -3983,7 +3990,8 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 744);
+    static_assert(sizeof(RockProviderApi) == 752);
+    static_assert(offsetof(RockProviderApi, getRawWandThumbstickV1) == 744);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(
         offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
