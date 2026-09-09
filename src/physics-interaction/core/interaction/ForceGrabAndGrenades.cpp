@@ -1,6 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
-// Force-grab commits and loose grenade handling: quick-draw, fuse service, and held-grenade arming.
+// Provider force-grab commits, fuse service, and held-grenade arming.
 
 namespace rock
 {
@@ -29,36 +29,22 @@ namespace rock
         _forceGrab.pendingGrenadeImpactPair.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
     }
 
-    void PhysicsInteraction::clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin origin)
+    void PhysicsInteraction::clearPendingForceGrabCommits()
     {
         for (auto& commit : _forceGrab.pendingCommits) {
-            if (commit.active && commit.origin == origin) {
-                if (origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand &&
-                    provider::isInteractionCommandActiveV1(
-                        commit.providerResultTemplate.ownerToken,
-                        commit.providerResultTemplate.commandId)) {
-                    commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Cancelled;
-                    commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::ProviderNotReady;
-                    provider::completeInteractionCommandV1(commit.providerResultTemplate);
-                } else if (origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw) {
-                    const auto targetRefPtr = commit.targetHandle.get();
-                    auto* targetRef = targetRefPtr.get();
-                    if (targetRef && !loose_grenade_runtime::returnDroppedReferenceToInventory(targetRef)) {
-                        ROCK_LOG_WARN(Hand,
-                            "Loose throwable shutdown cleanup left the physical drop in world: ref={:08X} request={}",
-                            targetRef->GetFormID(),
-                            commit.grenadeRequestId);
-                    }
-                }
-                rollbackInventoryTransfer(commit);
-                commit = {};
+            if (!commit.active) continue;
+            if (provider::isInteractionCommandActiveV1(commit.providerResultTemplate.ownerToken,commit.providerResultTemplate.commandId)) {
+                commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Cancelled;
+                commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::ProviderNotReady;
+                provider::completeInteractionCommandV1(commit.providerResultTemplate);
             }
+            rollbackInventoryTransfer(commit);
+            commit = {};
         }
     }
 
     void PhysicsInteraction::clearLooseGrenadeRuntimeState()
     {
-        clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw);
         _forceGrab.grenadeFuses = {};
         clearLooseGrenadeImpactWatches();
     }
@@ -135,7 +121,6 @@ namespace rock
     {
         for (auto& commit : _forceGrab.pendingCommits) {
             if (commit.active &&
-                commit.origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand &&
                 !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
@@ -143,112 +128,6 @@ namespace rock
                 commit = {};
             }
         }
-    }
-
-    void PhysicsInteraction::serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame)
-    {
-        constexpr float kLooseGrenadeQuickDrawMaxDistanceGame = 96.0f;
-
-        // The MenuControls gesture owner publishes only the held action. Drain
-        // raw edges so a prior B press/release can never replay into a future
-        // consumer, but never use the press edge to draw a throwable.
-        (void)input_remap_runtime::consumeRawButtonState(
-            false,
-            input_remap_policy::kOpenVrGrenadeQuickDrawButtonId);
-        if (!input_remap_runtime::consumeGrenadeQuickDrawHoldRequest()) {
-            return;
-        }
-
-        if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
-            ROCK_LOG_WARN(Hand, "Ignored throwable quick draw because the physics world is unavailable");
-            return;
-        }
-
-        pruneInactiveProviderForceGrabCommits();
-
-        if (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) ||
-            hasActiveLooseGrenadeCommit()) {
-            ROCK_LOG_INFO(Hand, "Ignored throwable quick draw because a loose throwable is already held or attaching");
-            return;
-        }
-
-        loose_grenade_runtime::EquippedGrenadeSelection equippedSelection{};
-        const auto equippedStatus =
-            loose_grenade_runtime::resolveEquippedGrenadeSelection(equippedSelection);
-        if (equippedStatus != loose_grenade_runtime::EquippedGrenadeSelectionStatus::Selected) {
-            f4vr::showNotification(
-                equippedStatus == loose_grenade_runtime::EquippedGrenadeSelectionStatus::NoneEquipped ?
-                    "ROCK: No grenade or throwable is selected." :
-                    "ROCK: The selected throwable cannot be drawn.");
-            ROCK_LOG_WARN(Hand,
-                "Throwable quick draw could not resolve one native equipped stack: status={}",
-                loose_grenade_runtime::selectionStatusName(equippedStatus));
-            return;
-        }
-
-        const std::uint32_t rightBlockers = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true);
-        const std::uint32_t leftBlockers = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true);
-        const auto handSelection = force_grab_policy::selectGrenadeHand(
-            false,
-            rightBlockers == 0,
-            leftBlockers == 0);
-        if (handSelection.failure == force_grab_policy::GrenadeSelectionFailure::HandsBlocked) {
-            f4vr::showNotification("ROCK: Cannot draw throwable - both hands are occupied.");
-            ROCK_LOG_WARN(Hand,
-                "Blocked throwable quick draw before inventory removal: request={} rightBlockers=0x{:02X} leftBlockers=0x{:02X}",
-                equippedSelection.requestId,
-                rightBlockers,
-                leftBlockers);
-            return;
-        }
-
-        const bool isLeft = handSelection.hand == force_grab_policy::HandChoice::Left;
-        auto& commit = _forceGrab.pendingCommits[isLeft ? 1u : 0u];
-        const auto& handInput = isLeft ? frame.left : frame.right;
-
-        /*
-         * Spawn pose is irrelevant: the force-grab commit snaps the
-         * grenade to a canonical attach pose, so the drop only needs a
-         * location with enough clearance that the spawned body does not
-         * start intersecting the hand collider and get ejected before
-         * the grab commits.
-         */
-        constexpr float kLooseGrenadeSpawnHandClearanceGameUnits = 3.0f;
-        RE::NiPoint3 dropLocation = handInput.grabAnchorWorld;
-        dropLocation.z -= kLooseGrenadeSpawnHandClearanceGameUnits;
-
-        const auto dropResult = loose_grenade_runtime::dropEquippedGrenadeSelectionToWorld(
-            equippedSelection,
-            dropLocation);
-        if (!dropResult.success) {
-            f4vr::showNotification("ROCK: The selected throwable could not be drawn.");
-            ROCK_LOG_WARN(Hand,
-                "Throwable quick-draw inventory drop failed: weapon={:08X} request={} stack={} reason={}",
-                equippedSelection.weapon ? equippedSelection.weapon->GetFormID() : 0,
-                equippedSelection.requestId,
-                equippedSelection.stackId,
-                dropResult.reason ? dropResult.reason : "unknown");
-            return;
-        }
-
-        commit = PendingForceGrabCommit{
-            .active = true,
-            .isLeft = isLeft,
-            .origin = PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw,
-            .phase = PendingForceGrabCommitPhase::WaitingForReference,
-            .targetHandle = dropResult.handle,
-            .targetIsLooseThrowable = true,
-            .preferredBodyId = INVALID_BODY_ID,
-            .maxDistanceGame = kLooseGrenadeQuickDrawMaxDistanceGame,
-            .grenadeRequestId = equippedSelection.requestId,
-        };
-        ROCK_LOG_INFO(Hand,
-            "Throwable quick draw created ref={:08X} weapon={:08X} stack={} request={} hand={}",
-            dropResult.droppedRef ? dropResult.droppedRef->GetFormID() : 0,
-            equippedSelection.weapon ? equippedSelection.weapon->GetFormID() : 0,
-            dropResult.stackId,
-            equippedSelection.requestId,
-            isLeft ? "left" : "right");
     }
 
     void PhysicsInteraction::servicePendingForceGrabCommits(const PhysicsFrameContext& frame)
@@ -267,35 +146,19 @@ namespace rock
 
             auto abandon = [&](const char* reason,
                                provider::RockProviderInteractionFailureV1 providerFailure,
-                               RE::TESObjectREFR* targetRef) {
-                if (commit.origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand) {
-                    commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
-                    commit.providerResultTemplate.failure = providerFailure;
-                    provider::completeInteractionCommandV1(commit.providerResultTemplate);
-                    rollbackInventoryTransfer(commit);
-                } else {
-                    const bool returnedToInventory = targetRef && loose_grenade_runtime::returnDroppedReferenceToInventory(targetRef);
-                    if (targetRef) {
-                        f4vr::showNotification(returnedToInventory ?
-                                "ROCK: Throwable attach failed; returned to inventory." :
-                                "ROCK: Throwable attach failed; it remains at your hand.");
-                    }
-                    ROCK_LOG_WARN(Hand,
-                        "Loose throwable force-grab cleanup: ref={:08X} request={} returnedToInventory={}",
-                        targetRef ? targetRef->GetFormID() : 0,
-                        commit.grenadeRequestId,
-                        returnedToInventory ? "yes" : "no");
-                }
+                               RE::TESObjectREFR*) {
+                commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
+                commit.providerResultTemplate.failure = providerFailure;
+                provider::completeInteractionCommandV1(commit.providerResultTemplate);
+                rollbackInventoryTransfer(commit);
                 ROCK_LOG_WARN(Hand,
-                    "Pending force-grab commit abandoned ({}): hand={} origin={}",
+                    "Pending force-grab commit abandoned ({}): hand={}",
                     reason,
-                    commit.isLeft ? "left" : "right",
-                    static_cast<int>(commit.origin));
+                    commit.isLeft ? "left" : "right");
                 commit = {};
             };
 
-            if (commit.origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand &&
-                !provider::isInteractionCommandActiveV1(
+            if (!provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
                 ROCK_LOG_INFO(Hand,
@@ -353,7 +216,7 @@ namespace rock
                     sourcePoint,
                     commit.preferredBodyId,
                     commit.maxDistanceGame,
-                    (commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw || commit.inventoryTransfer) &&
+                    commit.inventoryTransfer &&
                         commit.targetIsLooseThrowable &&
                         loose_grenade_runtime::isThrowableRef(targetRef))) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
@@ -374,9 +237,9 @@ namespace rock
             if (commit.preferredBodyId != INVALID_BODY_ID && hand.getSelection().bodyId.value != commit.preferredBodyId) {
                 const std::uint32_t resolvedBodyId = hand.getSelection().bodyId.value;
                 hand.clearSelectionState(false);
-                if (commit.origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand) {
-                    commit.providerResultTemplate.targetBodyId = resolvedBodyId;
-                }
+
+                commit.providerResultTemplate.targetBodyId = resolvedBodyId;
+
                 abandon("resolved body does not match requested body", provider::RockProviderInteractionFailureV1::TargetBodyMissing, targetRef);
                 continue;
             }
@@ -420,28 +283,27 @@ namespace rock
                 abandon("grab postcondition did not match exact target", provider::RockProviderInteractionFailureV1::TargetUnavailable, targetRef);
                 continue;
             }
-            if (commit.origin == PendingForceGrabCommitOrigin::ProviderForceGrabCommand) {
-                commit.providerResultTemplate.targetBodyId = primaryBodyId;
-                commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Succeeded;
-                commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::None;
-                if (!provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
-                    /*
-                     * Owner/provider loss can race the final main-thread
-                     * commit. Do not publish or retain a grab whose command
-                     * reservation was cancelled before the terminal result.
-                     */
-                    hand.releaseGrabbedObject(
-                        frame.hknpWorld,
-                        GrabReleaseCollisionRestoreMode::Immediate,
-                        makeGrabReleaseContext(hand, commit.isLeft));
-                    ROCK_LOG_INFO(Hand,
-                        "Provider force-grab rolled back because command ownership ended during commit: command={} hand={}",
-                        commit.providerResultTemplate.commandId,
-                        commit.isLeft ? "left" : "right");
-                    rollbackInventoryTransfer(commit);
-                    commit = {};
-                    continue;
-                }
+
+            commit.providerResultTemplate.targetBodyId = primaryBodyId;
+            commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Succeeded;
+            commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::None;
+            if (!provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
+                /*
+                 * Owner/provider loss can race the final main-thread
+                 * commit. Do not publish or retain a grab whose command
+                 * reservation was cancelled before the terminal result.
+                 */
+                hand.releaseGrabbedObject(
+                    frame.hknpWorld,
+                    GrabReleaseCollisionRestoreMode::Immediate,
+                    makeGrabReleaseContext(hand, commit.isLeft));
+                ROCK_LOG_INFO(Hand,
+                    "Provider force-grab rolled back because command ownership ended during commit: command={} hand={}",
+                    commit.providerResultTemplate.commandId,
+                    commit.isLeft ? "left" : "right");
+                rollbackInventoryTransfer(commit);
+                commit = {};
+                continue;
             }
 
             claimObject(heldRef, claimOwnerForHand(commit.isLeft));
@@ -449,13 +311,6 @@ namespace rock
             dispatchGrabCommittedEvent(commit.isLeft, heldRef, primaryBodyId, frame.hknpWorld);
             input_remap_runtime::setHandHeldWeapon(commit.isLeft, (commit.isLeft ? _leftHand : _rightHand).isHoldingLooseWeapon());
 
-            if (commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw) {
-                ROCK_LOG_INFO(Hand,
-                    "Throwable quick draw force-grabbed: ref={:08X} body={} request={}",
-                    heldRef ? heldRef->GetFormID() : 0,
-                    primaryBodyId,
-                    commit.grenadeRequestId);
-            }
             _forceGrab.committedThisFrame[commit.isLeft ? 1u : 0u] = true;
             commit = {};
         }

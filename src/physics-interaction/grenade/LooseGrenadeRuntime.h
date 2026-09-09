@@ -46,24 +46,6 @@ namespace rock::loose_grenade_runtime
         std::uint32_t actorHandlesScanned{ 0 };
     };
 
-    enum class EquippedGrenadeSelectionStatus : std::uint8_t
-    {
-        Selected,
-        PlayerUnavailable,
-        NoneEquipped,
-        AmbiguousEquipped,
-        InvalidRuntimeData
-    };
-
-    struct EquippedGrenadeSelection
-    {
-        std::uint64_t requestId{ 0 };
-        RE::TESObjectWEAP* weapon{ nullptr };
-        RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
-        std::uint32_t stackId{ 0xFFFF'FFFFu };
-        GrenadeRuntimeData runtime{};
-    };
-
     struct DropResult
     {
         bool success{ false };
@@ -82,13 +64,6 @@ namespace rock::loose_grenade_runtime
     [[nodiscard]] bool resolveGrenadeRuntimeDataForReference(
         RE::TESObjectREFR* ref,
         GrenadeRuntimeData& outRuntime) noexcept;
-
-    [[nodiscard]] EquippedGrenadeSelectionStatus resolveEquippedGrenadeSelection(
-        EquippedGrenadeSelection& outSelection) noexcept;
-    [[nodiscard]] const char* selectionStatusName(EquippedGrenadeSelectionStatus status) noexcept;
-    [[nodiscard]] DropResult dropEquippedGrenadeSelectionToWorld(
-        const EquippedGrenadeSelection& selection,
-        const RE::NiPoint3& dropLocation);
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
     // Main-thread inventory transfer; does not create a duplicate or dispatch EquipObject.

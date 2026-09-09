@@ -14,7 +14,6 @@
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
-#include <atomic>
 #include <cmath>
 
 namespace rock::loose_grenade_runtime
@@ -30,17 +29,6 @@ namespace rock::loose_grenade_runtime
             Generic,
             Molotov,
         };
-
-        struct InventoryStackMatch
-        {
-            bool found{ false };
-            bool exactInstanceData{ false };
-            bool equipped{ false };
-            std::uint32_t stackId{ kInvalidStackId };
-            std::uint32_t count{ 0 };
-        };
-
-        std::atomic<std::uint64_t> s_nextRequestId{ 1 };
 
         [[nodiscard]] RE::TESObjectWEAP::InstanceData* weaponInstanceData(
             RE::TESObjectWEAP* weapon,
@@ -295,46 +283,7 @@ namespace rock::loose_grenade_runtime
             return true;
         }
 
-        [[nodiscard]] InventoryStackMatch findExactInventoryStack(
-            RE::PlayerCharacter* player,
-            RE::TESObjectWEAP* weapon,
-            const RE::BSTSmartPointer<RE::TBO_InstanceData>& instanceData,
-            std::uint32_t requestedStackId) noexcept
-        {
-            if (!player || !weapon || requestedStackId == kInvalidStackId || !player->inventoryList) {
-                return {};
-            }
 
-            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
-            for (auto& inventoryItem : player->inventoryList->data) {
-                if (inventoryItem.object != weapon) {
-                    continue;
-                }
-
-                std::uint32_t stackId = 0;
-                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackId) {
-                    if (stackId != requestedStackId) {
-                        continue;
-                    }
-
-                    RE::BSTSmartPointer<RE::TBO_InstanceData> stackInstanceData{};
-                    if (stack->extra) {
-                        if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
-                            stackInstanceData = instanceExtra->data;
-                        }
-                    }
-
-                    return InventoryStackMatch{
-                        .found = true,
-                        .exactInstanceData = stackInstanceData.get() == instanceData.get(),
-                        .equipped = stack->IsEquipped(),
-                        .stackId = stackId,
-                        .count = stack->GetCount(),
-                    };
-                }
-            }
-            return {};
-        }
     }
 
     bool isThrowableWeapon(const RE::TESObjectWEAP* weapon) noexcept
@@ -369,173 +318,6 @@ namespace rock::loose_grenade_runtime
         const auto instanceData = resolveReferenceInstanceData(ref);
         const auto* objectInstanceExtra = resolveReferenceObjectInstanceExtra(ref);
         return resolveGrenadeRuntimeDataForSources(weapon, instanceData.get(), objectInstanceExtra, outRuntime);
-    }
-
-    EquippedGrenadeSelectionStatus resolveEquippedGrenadeSelection(
-        EquippedGrenadeSelection& outSelection) noexcept
-    {
-        outSelection = {};
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        if (!player || !player->inventoryList) {
-            return EquippedGrenadeSelectionStatus::PlayerUnavailable;
-        }
-
-        RE::TESObjectWEAP* selectedWeapon = nullptr;
-        RE::BSTSmartPointer<RE::TBO_InstanceData> selectedInstanceData{};
-        RE::BSTSmartPointer<RE::ExtraDataList> selectedExtraList{};
-        std::uint32_t selectedStackId = kInvalidStackId;
-        std::uint32_t equippedGrenadeStackCount = 0;
-
-        {
-            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
-            for (auto& inventoryItem : player->inventoryList->data) {
-                auto* weapon = inventoryItem.object ? inventoryItem.object->As<RE::TESObjectWEAP>() : nullptr;
-                if (!isThrowableWeapon(weapon)) {
-                    continue;
-                }
-
-                std::uint32_t stackId = 0;
-                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackId) {
-                    if (stack->GetCount() == 0 || !stack->IsEquipped()) {
-                        continue;
-                    }
-
-                    ++equippedGrenadeStackCount;
-                    if (equippedGrenadeStackCount > 1) {
-                        continue;
-                    }
-
-                    selectedWeapon = weapon;
-                    selectedExtraList = stack->extra;
-                    selectedStackId = stackId;
-                    if (selectedExtraList) {
-                        if (const auto* instanceExtra = selectedExtraList->GetByType<RE::ExtraInstanceData>()) {
-                            selectedInstanceData = instanceExtra->data;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (equippedGrenadeStackCount == 0) {
-            return EquippedGrenadeSelectionStatus::NoneEquipped;
-        }
-        if (equippedGrenadeStackCount != 1 || !selectedWeapon || selectedStackId == kInvalidStackId) {
-            return EquippedGrenadeSelectionStatus::AmbiguousEquipped;
-        }
-
-        const auto* objectInstanceExtra =
-            selectedExtraList ? selectedExtraList->GetByType<RE::BGSObjectInstanceExtra>() : nullptr;
-        GrenadeRuntimeData runtime{};
-        if (!resolveGrenadeRuntimeDataForSources(
-                selectedWeapon,
-                selectedInstanceData.get(),
-                objectInstanceExtra,
-                runtime)) {
-            return EquippedGrenadeSelectionStatus::InvalidRuntimeData;
-        }
-
-        /*
-         * FO4VR 1.2.72 raw disassembly establishes the native selection
-         * contract used here: BGSInventoryItem::Stack stores next/extra/count/
-         * flags at +0x10/+0x18/+0x20/+0x24 (constructor 0x1401AD6A0), and both
-         * Pip-Boy equip state (0x140C1E9A0) and native equipped-stack traversal
-         * (0x1401B1740) test flags & 7. Resolve that exact selected stack only
-         * on the B-button edge; no persistent cache can become stale.
-         */
-        outSelection = EquippedGrenadeSelection{
-            .requestId = s_nextRequestId.fetch_add(1, std::memory_order_relaxed),
-            .weapon = selectedWeapon,
-            .instanceData = selectedInstanceData,
-            .stackId = selectedStackId,
-            .runtime = runtime,
-        };
-        return EquippedGrenadeSelectionStatus::Selected;
-    }
-
-    const char* selectionStatusName(EquippedGrenadeSelectionStatus status) noexcept
-    {
-        switch (status) {
-        case EquippedGrenadeSelectionStatus::Selected:
-            return "selected";
-        case EquippedGrenadeSelectionStatus::PlayerUnavailable:
-            return "player-unavailable";
-        case EquippedGrenadeSelectionStatus::NoneEquipped:
-            return "none-equipped";
-        case EquippedGrenadeSelectionStatus::AmbiguousEquipped:
-            return "ambiguous-equipped";
-        case EquippedGrenadeSelectionStatus::InvalidRuntimeData:
-            return "invalid-runtime-data";
-        default:
-            return "unknown";
-        }
-    }
-
-    DropResult dropEquippedGrenadeSelectionToWorld(
-        const EquippedGrenadeSelection& selection,
-        const RE::NiPoint3& dropLocation)
-    {
-        DropResult result{};
-        result.stackId = selection.stackId;
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        if (!player) {
-            result.reason = "missing-player";
-            return result;
-        }
-        if (selection.requestId == 0 || !selection.weapon) {
-            result.reason = "missing-selection";
-            return result;
-        }
-        if (!player->inventoryList) {
-            result.reason = "missing-inventory-list";
-            return result;
-        }
-
-        const auto stack = findExactInventoryStack(
-            player,
-            selection.weapon,
-            selection.instanceData,
-            selection.stackId);
-        if (!stack.found || !stack.exactInstanceData || !stack.equipped ||
-            stack.count == 0 || stack.stackId == kInvalidStackId) {
-            result.reason = "selection-changed";
-            return result;
-        }
-
-        /*
-         * The native count modifier at 0x1401B01E0 changes only stack+0x20;
-         * it does not clear the equipped bits at +0x24 while the stack still
-         * has items. KDropping exactly one therefore preserves Bethesda's
-         * selected grenade until its final inventory count is consumed.
-         */
-        RE::TESObjectREFR::RemoveItemData removeData(selection.weapon, 1);
-        removeData.reason = RE::ITEM_REMOVE_REASON::KDropping;
-        removeData.dropLoc = &dropLocation;
-        removeData.stackData.push_back(stack.stackId);
-
-        result.stackId = stack.stackId;
-        result.handle = player->RemoveItem(removeData);
-        if (!result.handle) {
-            result.reason = "remove-item-failed";
-            return result;
-        }
-
-        const auto droppedRef = result.handle.get();
-        result.droppedRef = droppedRef.get();
-        if (!result.droppedRef) {
-            /*
-             * RemoveItem already committed the inventory-to-world transfer.
-             * The reference/3D can resolve asynchronously, so retain the
-             * handle and let the force-grab transaction wait for it.
-             */
-            result.success = true;
-            result.reason = "dropped-reference-pending";
-            return result;
-        }
-
-        result.success = true;
-        result.reason = "dropped";
-        return result;
     }
 
     DropResult dropInventoryItemToWorld(std::uint32_t baseFormId, const RE::NiPoint3& dropLocation)

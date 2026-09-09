@@ -152,12 +152,13 @@ namespace rock
             if (inventoryTransfer) {
                 const bool rightFree = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true) == 0;
                 const bool leftFree = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true) == 0;
+                const auto choice = force_grab_policy::selectGrenadeHand(false, rightFree, leftFree);
                 if (!rightFree && !leftFree) {
                     f4vr::showNotification("ROCK: Cannot take item - neither hand is free.");
                     complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
                     continue;
                 }
-                requestHand = rightFree ? RockProviderHand::Right : RockProviderHand::Left;
+                requestHand = choice.hand == force_grab_policy::HandChoice::Right ? RockProviderHand::Right : RockProviderHand::Left;
                 result.hand = requestHand;
             }
             const bool isLeft = requestHand == RockProviderHand::Left;
@@ -319,7 +320,6 @@ namespace rock
                 commit = PendingForceGrabCommit{
                     .active = true,
                     .isLeft = isLeft,
-                    .origin = PendingForceGrabCommitOrigin::ProviderForceGrabCommand,
                     .phase = PendingForceGrabCommitPhase::WaitingForReference,
                     .targetHandle = drop.handle,
                     .targetIsLooseThrowable = throwable,
@@ -374,7 +374,6 @@ namespace rock
             commit = PendingForceGrabCommit{
                 .active = true,
                 .isLeft = isLeft,
-                .origin = PendingForceGrabCommitOrigin::ProviderForceGrabCommand,
                 .phase = PendingForceGrabCommitPhase::WaitingForSettle,
                 .targetHandle = targetRef->GetHandle(),
                 .targetIsLooseThrowable = targetIsLooseThrowable,

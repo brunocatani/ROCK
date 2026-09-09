@@ -1,9 +1,19 @@
 #pragma once
 
-#include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
+#include <algorithm>
+#include <cmath>
 
 namespace rock::native_vats_input_suppression_policy
 {
+    inline constexpr float kDefaultHoldSeconds = 0.25f;
+    inline constexpr float kMinimumHoldSeconds = 0.05f;
+    inline constexpr float kMaximumHoldSeconds = 10.0f;
+    inline float sanitizedHoldSeconds(float value) {
+        return std::isfinite(value) ? std::clamp(value,kMinimumHoldSeconds,kMaximumHoldSeconds) : kDefaultHoldSeconds;
+    }
+    inline float sanitizedHeldSeconds(float value) {
+        return std::isfinite(value) && value >= 0.0f ? value : 0.0f;
+    }
     struct RuntimeState
     {
         bool suppressVatsOnRelease{ false };
@@ -19,7 +29,7 @@ namespace rock::native_vats_input_suppression_policy
         bool released{ false };
         float heldSeconds{ 0.0f };
         float holdSeconds{
-            vats_grenade_gesture_policy::kDefaultHoldSeconds
+            kDefaultHoldSeconds
         };
         bool suppressVats{ false };
         bool suppressVans{ false };
@@ -45,18 +55,18 @@ namespace rock::native_vats_input_suppression_policy
      * Bethesda's native helper has two phases: button-down samples can start
      * V.A.N.S. after its hold threshold, while every non-negative release
      * sample opens ordinary VATS regardless of how long the button was held.
-     * Provider phase suppression remains independent. ROCK's reserved grenade
+     * Provider phase suppression remains independent. ROCK's reserved B-button
      * hold additionally consumes release only after the same threshold, making
-     * tap-VATS and hold-grenade mutually exclusive.
+     * tap-VATS and the held UI gesture mutually exclusive.
      */
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
     {
         Decision decision{};
         const float heldSeconds =
-            vats_grenade_gesture_policy::sanitizedHeldSeconds(
+            sanitizedHeldSeconds(
                 input.heldSeconds);
         const float holdSeconds =
-            vats_grenade_gesture_policy::sanitizedHoldSeconds(
+            sanitizedHoldSeconds(
                 input.holdSeconds);
 
         if (input.buttonDown) {
@@ -111,7 +121,7 @@ namespace rock::native_vats_input_suppression_policy
                 decision.reason = input.suppressAll ?
                     "all-suppression-release" :
                     suppressHeldGestureRelease ?
-                        "grenade-hold-release" :
+                        "reserved-hold-release" :
                         "vats-suppression-release";
             } else {
                 decision.reason = "native-vats-release";

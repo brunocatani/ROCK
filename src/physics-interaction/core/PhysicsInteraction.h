@@ -345,9 +345,8 @@ namespace rock
         bool hasActiveLooseGrenadeCommit() const;
         bool isPendingForceGrabTarget(RE::TESObjectREFR* ref) const;
         void pruneInactiveProviderForceGrabCommits();
-        void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
-        void clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin origin);
+        void clearPendingForceGrabCommits();
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
         void saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
         void updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);

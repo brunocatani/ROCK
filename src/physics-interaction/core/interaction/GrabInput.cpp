@@ -2207,7 +2207,7 @@ namespace rock
             _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
             _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
             provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
-            clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
+            clearPendingForceGrabCommits();
             input_remap_runtime::setHandHeldWeapon(false, false);
             input_remap_runtime::setHandHeldWeapon(true, false);
             input_remap_runtime::setHandInteractionEngaged(false, false);
@@ -2286,7 +2286,6 @@ namespace rock
         publishHandInputOwnership(_rightHand, false);
         publishHandInputOwnership(_leftHand, true);
         processProviderInteractionCommands(frame);
-        serviceLooseGrenadeQuickDraw(frame);
         servicePendingForceGrabCommits(frame);
         updateSavedGrabOffsetGesture(frame);
         serviceEquippedWeaponDropMomentumHandoff(frame);

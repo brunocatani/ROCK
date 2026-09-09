@@ -142,14 +142,6 @@ namespace rock::input_remap_policy
      */
     inline constexpr int kOpenVrAcceptButtonId = 7;
 
-    /*
-     * OpenVR k_EButton_ApplicationMenu: physical right B on the supported
-     * controller layouts. A short release remains native VATS; crossing the
-     * verified V.A.N.S. hold threshold publishes ROCK grenade quick draw and
-     * consumes that gesture's eventual VATS release.
-     */
-    inline constexpr int kOpenVrGrenadeQuickDrawButtonId = 1;
-
     [[nodiscard]] constexpr bool isAllowedGrabButtonId(int buttonId)
     {
         return isValidButtonId(buttonId) && buttonId != kOpenVrSteamVrTriggerButtonId;

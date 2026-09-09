@@ -84,7 +84,6 @@ namespace rock::input_remap_runtime
 
     // Test-and-clear: true once after primary-wand B crosses Bethesda's
     // V.A.N.S. hold threshold during eligible gameplay. Frame thread only.
-    bool consumeGrenadeQuickDrawHoldRequest();
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId);

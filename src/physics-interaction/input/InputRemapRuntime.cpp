@@ -4,7 +4,6 @@
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
-#include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -225,11 +224,7 @@ namespace rock::input_remap_runtime
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
-        vats_grenade_gesture_policy::RuntimeState s_vatsGrenadeGestureState{};
         native_vats_input_suppression_policy::RuntimeState s_nativeVatsInputSuppressionState{};
-        // MenuControls publishes one hold edge; PhysicsInteraction consumes it
-        // on the frame thread before touching inventory or hand state.
-        std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
         std::atomic<bool> s_manualScopeActivationRequested{ false };
         std::atomic<bool> s_logicalJumpValid{ false };
         std::atomic<bool> s_logicalJumpHeld{ false };
@@ -289,13 +284,13 @@ namespace rock::input_remap_runtime
 
             const float rawThreshold = nativeThreshold.address() != 0 ?
                 *nativeThreshold :
-                vats_grenade_gesture_policy::kDefaultHoldSeconds;
+                native_vats_input_suppression_policy::kDefaultHoldSeconds;
             const float sanitizedThreshold =
-                vats_grenade_gesture_policy::sanitizedHoldSeconds(
+                native_vats_input_suppression_policy::sanitizedHoldSeconds(
                     rawThreshold);
             if ((!std::isfinite(rawThreshold) ||
-                    rawThreshold < vats_grenade_gesture_policy::kMinimumHoldSeconds ||
-                    rawThreshold > vats_grenade_gesture_policy::kMaximumHoldSeconds) &&
+                    rawThreshold < native_vats_input_suppression_policy::kMinimumHoldSeconds ||
+                    rawThreshold > native_vats_input_suppression_policy::kMaximumHoldSeconds) &&
                 !invalidThresholdLogged.exchange(true, std::memory_order_acq_rel)) {
                 ROCK_LOG_WARN(Input,
                     "Invalid native fVANSButtonHeldThreshold={}; using {:.3f} seconds",
@@ -1797,37 +1792,7 @@ namespace rock::input_remap_runtime
                 button->QHeldDownSecs());
         }
 
-        void observePrimaryVatsGrenadeGesture(RE::ButtonEvent& button)
-        {
-            const float holdSeconds =
-                readNativeVansHoldThresholdSeconds();
-            const auto decision = vats_grenade_gesture_policy::update(
-                s_vatsGrenadeGestureState,
-                vats_grenade_gesture_policy::Input{
-                    .eligible =
-                        s_gameplayInputAllowed.load(std::memory_order_acquire) &&
-                        !isInputBlockingMenuActive(),
-                    .pressed = button.QJustPressed(),
-                    .held = button.QPressed(),
-                    .released =
-                        !button.QPressed() &&
-                        button.QHeldDownSecs() >= 0.0f,
-                    .heldSeconds = button.QHeldDownSecs(),
-                    .holdSeconds = holdSeconds,
-                });
-            if (!decision.requestGrenade) {
-                return;
-            }
 
-            s_pendingGrenadeQuickDrawHoldRequest.store(
-                true,
-                std::memory_order_release);
-            ROCK_LOG_DEBUG(Input,
-                "VATS-button hold reserved for throwable quick draw: reason={} heldSeconds={:.3f} thresholdSeconds={:.3f}",
-                decision.reason,
-                button.QHeldDownSecs(),
-                holdSeconds);
-        }
 
         void hookedMenuOpenEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
@@ -1841,7 +1806,6 @@ namespace rock::input_remap_runtime
 
             const auto wandIdentity = resolveNativeWandIdentity(inputEvent);
             if (wandIdentity == NativeWandIdentity::Primary) {
-                observePrimaryVatsGrenadeGesture(*button);
                 if (s_originalMenuOpenEventHandler) {
                     s_originalMenuOpenEventHandler(handler, inputEvent);
                 }
@@ -2262,9 +2226,6 @@ namespace rock::input_remap_runtime
                     std::memory_order_release);
             }
             blockManualScopeInputUntilRelease();
-            s_pendingGrenadeQuickDrawHoldRequest.store(
-                false,
-                std::memory_order_release);
         }
     }
 
@@ -2500,16 +2461,7 @@ namespace rock::input_remap_runtime
         return s_pendingSavedGrabOffsetRequest[isLeft ? 0u : 1u].exchange(false, std::memory_order_acq_rel);
     }
 
-    bool consumeGrenadeQuickDrawHoldRequest()
-    {
-        const bool requested =
-            s_pendingGrenadeQuickDrawHoldRequest.exchange(
-                false,
-                std::memory_order_acq_rel);
-        return requested &&
-               s_gameplayInputAllowed.load(std::memory_order_acquire) &&
-               !isInputBlockingMenuActive();
-    }
+
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)
     {

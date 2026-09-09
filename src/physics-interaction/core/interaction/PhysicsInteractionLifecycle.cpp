@@ -665,7 +665,7 @@ namespace rock
         clearEquippedWeaponShoulderSheath("physics-shutdown");
         _twoHandedGrip.reset();
         _equipped.pendingPrimaryOnlyGripStart = {};
-        clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
+        clearPendingForceGrabCommits();
         clearLooseGrenadeRuntimeState();
         clearEquippedWeaponFiringGripInputState();
         _contacts.bodyRuntime.reset();

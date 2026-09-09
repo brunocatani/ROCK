@@ -10,12 +10,6 @@
 
 namespace rock
 {
-    enum class PendingForceGrabCommitOrigin : std::uint8_t
-    {
-        LooseGrenadeQuickDraw = 0,
-        ProviderForceGrabCommand = 1,
-    };
-
     enum class PendingForceGrabCommitPhase : std::uint8_t
     {
         WaitingForReference = 0,
@@ -24,8 +18,7 @@ namespace rock
     };
 
     /*
-     * Shared deferred state for the force-grab API (loose-grenade quick draw
-     * and the Provider SDK's force-grab command): both spawn or
+     * Deferred state for provider world grabs and inventory transfers: both
      * target an object and must attach it to the hand, but freezing the
      * grab-authority relation on the same tick reads whatever hand transform
      * happens to exist that instant. This carries the request across the
@@ -39,7 +32,6 @@ namespace rock
     {
         bool active{ false };
         bool isLeft{ false };
-        PendingForceGrabCommitOrigin origin{ PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw };
         PendingForceGrabCommitPhase phase{ PendingForceGrabCommitPhase::WaitingForSettle };
 
         RE::ObjectRefHandle targetHandle{};
@@ -52,9 +44,6 @@ namespace rock
         float elapsedSettleSeconds{ 0.0f };
         float elapsedTotalSeconds{ 0.0f };
         float maxTotalSeconds{ 1.5f };
-
-        // LooseGrenadeQuickDraw bookkeeping.
-        std::uint64_t grenadeRequestId{ 0 };
 
         // ProviderForceGrabCommand bookkeeping: pre-filled with request identity;
         // only .state/.failure/.targetBodyId are mutated when the commit resolves.
