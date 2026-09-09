@@ -512,6 +512,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKSkinnedBodyResolverPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKSkinnedBodyResolverPolicyTests)
 
+  add_executable(ROCKRagdollInteractionTests
+    "${ROOT_DIR}/tests/RagdollInteractionTests.cpp"
+  )
+  target_compile_features(ROCKRagdollInteractionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKRagdollInteractionTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKRagdollInteractionTests)
+
   add_executable(ROCKMechanicalConnectedBodySetPolicyTests
     "${ROOT_DIR}/tests/MechanicalConnectedBodySetPolicyTests.cpp"
   )

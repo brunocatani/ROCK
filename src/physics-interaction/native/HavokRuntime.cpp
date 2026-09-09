@@ -51,6 +51,7 @@ namespace rock::havok_runtime
         struct BodyFlagLeaseEntry
         {
             RE::hknpWorld* world = nullptr;
+            RE::NiPointer<RE::NiCollisionObject> collisionObject;
             std::uint32_t bodyId = body_frame::kInvalidBodyId;
             std::uint32_t flags = 0;
             std::uint32_t originalEnabledFlags = 0;
@@ -878,6 +879,15 @@ namespace rock::havok_runtime
             return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode);
         });
         if (leaseIt != g_bodyFlagLeases.end()) {
+            auto* live = getReadableBodySlot(world, RE::hknpBodyId{bodyId});
+            if (!live || getCollisionObjectFromBody(live) != leaseIt->collisionObject.get()) {
+                // A removed ragdoll body ID may be reused before the old hand
+                // releases. Its old lease must not transfer to the new body.
+                g_bodyFlagLeases.erase(leaseIt);
+                leaseIt = g_bodyFlagLeases.end();
+            }
+        }
+        if (leaseIt != g_bodyFlagLeases.end()) {
             if (!bodyFlagLeaseContainsOwner(*leaseIt, ownerToken)) {
                 leaseIt->ownerTokens.push_back(ownerToken);
             }
@@ -896,6 +906,7 @@ namespace rock::havok_runtime
 
         BodyFlagLeaseEntry lease{};
         lease.world = world;
+        lease.collisionObject.reset(getCollisionObjectFromBody(body));
         lease.bodyId = bodyId;
         lease.flags = flags;
         lease.originalEnabledFlags = originalEnabledFlags;
@@ -939,7 +950,9 @@ namespace rock::havok_runtime
         }
 
         const std::uint32_t flagsIntroducedByLease = leaseIt->flags & ~leaseIt->originalEnabledFlags;
-        const bool shouldRestore = restoreOnFinalLease && world && flagsIntroducedByLease != 0;
+        auto* live = world ? getReadableBodySlot(world, RE::hknpBodyId{bodyId}) : nullptr;
+        const bool sameIdentity = live && getCollisionObjectFromBody(live) == leaseIt->collisionObject.get();
+        const bool shouldRestore = restoreOnFinalLease && sameIdentity && flagsIntroducedByLease != 0;
         g_bodyFlagLeases.erase(leaseIt);
         return shouldRestore ? disableBodyFlags(world, bodyId, flagsIntroducedByLease, mode) : true;
     }

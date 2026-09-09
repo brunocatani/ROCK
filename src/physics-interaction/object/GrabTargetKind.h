@@ -120,6 +120,11 @@ namespace rock::grab_target
         return isPhysicalRockObject(kind);
     }
 
+    [[nodiscard]] inline constexpr bool isRagdoll(Kind kind) noexcept
+    {
+        return kind == Kind::DeadActorBody || kind == Kind::DetachedGore;
+    }
+
     [[nodiscard]] inline constexpr bool prefersMechanicalScope(Kind kind) noexcept
     {
         return kind == Kind::DeadActorBody || kind == Kind::DynamicMovableStatic;

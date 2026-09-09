@@ -61,6 +61,10 @@ namespace rock::skinned_body_resolver
 
     [[nodiscard]] inline Resolution resolvePrimaryBody(const ResolutionInput& input) noexcept
     {
+        if (grab_target::isRagdoll(input.targetKind) &&
+            (!input.surfaceOwnerUsable || !validBody(input.surfaceOwnerBodyId))) {
+            return Resolution{ .reason = "ragdoll-surface-owner-unresolved" };
+        }
         if (input.surfaceIsSkinned && input.hasSkinInfluences && input.surfaceOwnerUsable && validBody(input.surfaceOwnerBodyId)) {
             return Resolution{
                 .bodyId = input.surfaceOwnerBodyId,

@@ -7,31 +7,15 @@
 
         auto* bhk = frame.bhkWorld;
         auto* hknp = frame.hknpWorld;
-        auto rightContactBody = _contacts.lastBodyRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto rightSourceBody = _contacts.lastSourceRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        if (rightContactBody != 0xFFFFFFFF) {
-            resolveAndLogContact("Right", bhk, hknp, RE::hknpBodyId{ rightContactBody });
-            if (rightSourceBody == 0xFFFFFFFF) {
-                rightSourceBody = _rightHand.getCollisionBodyId().value;
-            }
-            applyDynamicPushAssist("Right", bhk, hknp, rightSourceBody, rightContactBody, false, &_rightHand);
-        }
-
-        auto leftContactBody = _contacts.lastBodyLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto leftSourceBody = _contacts.lastSourceLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        if (leftContactBody != 0xFFFFFFFF) {
-            resolveAndLogContact("Left", bhk, hknp, RE::hknpBodyId{ leftContactBody });
-            if (leftSourceBody == 0xFFFFFFFF) {
-                leftSourceBody = _leftHand.getCollisionBodyId().value;
-            }
-            applyDynamicPushAssist("Left", bhk, hknp, leftSourceBody, leftContactBody, false, &_leftHand);
-        }
-
-        auto weaponContactBody = _contacts.lastBodyWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto weaponSourceBody = _contacts.lastSourceWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        if (weaponContactBody != 0xFFFFFFFF && weaponSourceBody != 0xFFFFFFFF) {
-            applyDynamicPushAssist("Weapon", bhk, hknp, weaponSourceBody, weaponContactBody, true);
-        }
+        auto consumePush = [&](push_assist::ContactChannel& channel, const char* name, Hand* hand, bool weapon) {
+            push_assist::Contact contact{};
+            if (!channel.consume(contact) || contact.world != reinterpret_cast<std::uintptr_t>(hknp)) return;
+            if (hand) resolveAndLogContact(name, bhk, hknp, RE::hknpBodyId{contact.target});
+            applyDynamicPushAssist(name, bhk, hknp, contact.source, contact.target, weapon, hand, contact);
+        };
+        consumePush(_contacts.rightPush, "Right", &_rightHand, false);
+        consumePush(_contacts.leftPush, "Left", &_leftHand, false);
+        consumePush(_contacts.weaponPush, "Weapon", nullptr, true);
 
         auto readBodyMass = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
@@ -95,7 +79,8 @@
         std::uint32_t sourceBodyId,
             std::uint32_t targetBodyId,
         bool sourceIsWeapon,
-        const Hand* sourceHand)
+        const Hand* sourceHand,
+        const push_assist::Contact& contact)
     {
         if (!bhk || !hknp || sourceBodyId == 0xFFFFFFFF || targetBodyId == 0xFFFFFFFF ||
             sourceBodyId == object_physics_body_set::INVALID_BODY_ID || targetBodyId == object_physics_body_set::INVALID_BODY_ID || sourceBodyId == targetBodyId) {
@@ -129,6 +114,35 @@
                 "{} dynamic push skipped: target body {} belongs to an in-flight force-grab transaction",
                 sourceName,
                 targetBodyId);
+            return;
+        }
+
+        const auto target = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{targetBodyId});
+        const auto* base = targetRef->GetObjectReference();
+        const bool bodyContact = target.valid && ((base && base->Is(RE::ENUM_FORM_ID::kNPC_)) ||
+            grab_target::isDetachedGoreLayer(target.collisionFilterInfo & 0x7F));
+        if (bodyContact) {
+            if (!contact.hasPoint || !target.body ||
+                physics_body_classifier::motionTypeFromBodyFlags(target.body->flags) != physics_body_classifier::BodyMotionType::Dynamic) return;
+            const auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{sourceBodyId});
+            if (!sourceMotion) return;
+            const std::uint64_t key = (std::uint64_t(sourceBodyId) << 32) | targetBodyId;
+            const auto cooldown = _contacts.dynamicPushCooldownUntil.find(key);
+            const float remaining = cooldown == _contacts.dynamicPushCooldownUntil.end() ? 0.0f :
+                (std::max)(0.0f, cooldown->second - _contacts.dynamicPushElapsedSeconds);
+            const auto push = push_assist::computePushImpulse(push_assist::PushAssistInput<RE::NiPoint3>{
+                .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
+                .sourceVelocity = {sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z},
+                .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
+                .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
+                .layerMultiplier = 1.0f, .cooldownRemainingSeconds = remaining});
+            if (!push.apply) return;
+            const bool applied = push_assist::applyPointImpulse(hknp, targetBodyId, contact.owner, push.impulse,
+                RE::NiPoint3{contact.point[0], contact.point[1], contact.point[2]});
+            if (applied) _contacts.dynamicPushCooldownUntil[key] = _contacts.dynamicPushElapsedSeconds +
+                (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
+            ROCK_LOG_SAMPLE_INFO(Hand, 2000, "{} body point push: source={} target={} owner=0x{:X} applied={} pointHk=({:.3f},{:.3f},{:.3f})",
+                sourceName, sourceBodyId, targetBodyId, contact.owner, applied, contact.point[0], contact.point[1], contact.point[2]);
             return;
         }
 
@@ -1356,9 +1370,18 @@
             publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, contactRoute.providerSourceKind, contactRoute.providerSourceHand, routeHandMetadata);
         }
 
+        auto publishPushContact = [&](push_assist::ContactChannel& channel, std::uint32_t source) {
+            push_assist::Contact contact{};
+            contact.source = source;
+            contact.target = contactRoute.targetBodyId;
+            contact.world = reinterpret_cast<std::uintptr_t>(world);
+            contact.owner = reinterpret_cast<std::uintptr_t>(havok_runtime::getCollisionObjectFromBody(world, RE::hknpBodyId{contact.target}));
+            contact.hasPoint = ensureRawContactPoint();
+            if (contact.hasPoint) std::copy_n(rawContactPoint.contactPointHavok, 3, contact.point.begin());
+            channel.publish(contact);
+        };
         if (contactRoute.driveWeaponDynamicPush) {
-            _contacts.lastSourceWeapon.store(contactRoute.sourceBodyId, std::memory_order_release);
-            _contacts.lastBodyWeapon.store(contactRoute.targetBodyId, std::memory_order_release);
+            publishPushContact(_contacts.weaponPush, contactRoute.sourceBodyId);
         }
 
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
@@ -1448,14 +1471,12 @@
         if (handSource->isLeft) {
             _leftHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
-                _contacts.lastSourceLeft.store(handSource->metadata.bodyId, std::memory_order_release);
-                _contacts.lastBodyLeft.store(contactRoute.targetBodyId, std::memory_order_release);
+                publishPushContact(_contacts.leftPush, handSource->metadata.bodyId);
             }
         } else {
             _rightHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
-                _contacts.lastSourceRight.store(handSource->metadata.bodyId, std::memory_order_release);
-                _contacts.lastBodyRight.store(contactRoute.targetBodyId, std::memory_order_release);
+                publishPushContact(_contacts.rightPush, handSource->metadata.bodyId);
             }
         }
 

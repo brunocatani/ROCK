@@ -331,6 +331,7 @@ namespace rock::object_physics_body_set
         bool containsAcceptedBody(std::uint32_t bodyId) const;
         const ObjectPhysicsBodyRecord* findRecord(std::uint32_t bodyId) const;
         const ObjectPhysicsBodyRecord* findAcceptedRecordByOwnerNode(RE::NiAVObject* ownerNode) const;
+        const ObjectPhysicsBodyRecord* findAcceptedRagdollOwner(RE::NiAVObject* bone) const;
         PrimaryBodyChoice choosePrimaryBody(std::uint32_t preferredBodyId, PurePoint3 targetPointGame) const;
         PrimaryBodyChoice choosePrimaryBodyWithSurfaceOwner(std::uint32_t preferredBodyId, RE::NiAVObject* ownerNode, PurePoint3 targetPointGame) const;
     };

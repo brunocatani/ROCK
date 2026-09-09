@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "physics-interaction/collision/PushContact.h"
 
 #include <array>
 #include <atomic>
@@ -384,7 +385,8 @@ namespace rock
             std::uint32_t sourceBodyId,
             std::uint32_t targetBodyId,
             bool sourceIsWeapon,
-            const Hand* sourceHand = nullptr);
+            const Hand* sourceHand,
+            const push_assist::Contact& contact);
 
         void updateAuthoredSupportGripIndicator();
         void updateFiringGripReattachIndicator();
@@ -780,12 +782,7 @@ namespace rock
             contact_activity_tracker::ContactActivityTracker handActivity;
             body_contact_runtime::BodyContactRuntime bodyRuntime;
             generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> generatedBodyRegistry;
-            std::atomic<std::uint32_t> lastSourceRight{ 0xFFFFFFFF };
-            std::atomic<std::uint32_t> lastSourceLeft{ 0xFFFFFFFF };
-            std::atomic<std::uint32_t> lastBodyRight{ 0xFFFFFFFF };
-            std::atomic<std::uint32_t> lastBodyLeft{ 0xFFFFFFFF };
-            std::atomic<std::uint32_t> lastBodyWeapon{ 0xFFFFFFFF };
-            std::atomic<std::uint32_t> lastSourceWeapon{ 0xFFFFFFFF };
+            push_assist::ContactChannel rightPush, leftPush, weaponPush;
             std::atomic<std::uint64_t> lastHeldImpactPairRight{ INVALID_HELD_IMPACT_PAIR };
             std::atomic<std::uint64_t> lastHeldImpactPairLeft{ INVALID_HELD_IMPACT_PAIR };
             float dynamicPushElapsedSeconds = 0.0f;

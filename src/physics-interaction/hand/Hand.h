@@ -21,6 +21,7 @@
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/object/RagdollBodyScope.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "RockConfig.h"
@@ -391,12 +392,12 @@ namespace rock
 
         bool isHeldBodyId(std::uint32_t bodyId) const
         {
-            int count = _heldBodyIdsCount.load(std::memory_order_acquire);
-            for (int i = 0; i < count; i++) {
-                if (_heldBodyIdsSnapshot[i] == bodyId)
-                    return true;
-            }
-            return false;
+            const auto before = _heldBodyIdsSequence.load(std::memory_order_acquire);
+            if (before & 1u) return false;
+            const int count = _heldBodyIdsCount.load(std::memory_order_acquire);
+            bool found = false;
+            for (int i = 0; i < count; ++i) found = found || _heldBodyIdsSnapshot[i].load(std::memory_order_acquire) == bodyId;
+            return found && before == _heldBodyIdsSequence.load(std::memory_order_acquire);
         }
 
         bool isHoldingAtomic() const { return _isHoldingFlag.load(std::memory_order_acquire); }
@@ -539,6 +540,8 @@ namespace rock
             float tauMin,
             const BodyBoneColliderSet* bodyBoneColliders,
             const GrabReleaseContext& releaseContext = {});
+        void publishHeldBodyScope(RE::hknpWorld* world);
+        bool refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const;
@@ -1344,6 +1347,9 @@ namespace rock
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         grab_three_phase::ObjectGripArea _grabObjectGripAtGrab{};
         held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};
+        RE::NiPointer<RE::NiCollisionObject> _ragdollGrabOwner;
+        RE::NiPointer<RE::BSTriShape> _ragdollGrabSurface;
+        std::uint32_t _ragdollGrabTriangle = 0;
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         bool _heldObjectIsLooseWeapon = false;
         bool _grabFingerPosePublished = false;
@@ -1441,7 +1447,8 @@ namespace rock
         ActorEquipmentDropHandoff _actorEquipmentDropHandoff{};
 
         static constexpr int MAX_HELD_BODIES = 64;
-        std::uint32_t _heldBodyIdsSnapshot[MAX_HELD_BODIES] = {};
+        std::atomic<std::uint32_t> _heldBodyIdsSnapshot[MAX_HELD_BODIES]{};
+        std::atomic<std::uint32_t> _heldBodyIdsSequence{0};
         std::atomic<int> _heldBodyIdsCount{ 0 };
 
         std::atomic<bool> _isHoldingFlag{ false };
