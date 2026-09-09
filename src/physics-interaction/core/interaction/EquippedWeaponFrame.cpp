@@ -139,6 +139,7 @@ namespace rock
         RE::bhkWorld* bhk,
         RE::hknpWorld* hknp)
     {
+        performance_profiler::ScopedTimer equippedFrameTimer(performance_profiler::Scope::EquippedWeaponInteraction);
         const auto& runtime = runtime_state::currentFrame();
         weapon_recoil_policy::WeaponEvidence recoilWeapon{};
 

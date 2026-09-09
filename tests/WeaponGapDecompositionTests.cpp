@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <chrono>
+#include <stdexcept>
 
 using namespace rock::weapon_gap_decomposition;
 
@@ -94,6 +95,46 @@ namespace
         const double x = p.x * 0.6 - p.y * 0.8, y = p.x * 0.8 + p.y * 0.6;
         return { x * 1.7 + 100, y * 1.7 - 37, p.z * 1.7 + 42 };
     }
+
+    bool samePieces(const Result& a, const Result& b)
+    {
+        if (a.pieces.size() != b.pieces.size() || a.cuts != b.cuts || a.queryWork != b.queryWork || a.budgetLimited != b.budgetLimited) { return false; }
+        for (std::size_t i = 0; i < a.pieces.size(); ++i) {
+            if (a.pieces[i].size() != b.pieces[i].size()) { return false; }
+            for (std::size_t j = 0; j < a.pieces[i].size(); ++j) {
+                const auto x = a.pieces[i][j], y = b.pieces[i][j];
+                if (x.x != y.x || x.y != y.y || x.z != y.z) { return false; }
+            }
+        }
+        return true;
+    }
+
+    struct LiveLease
+    {
+        int& live;
+        explicit LiveLease(int& count) : live(count) { ++live; }
+        ~LiveLease() { --live; }
+    };
+
+    rock::weapon_geometry_work::Task cancellableChild(int& live)
+    {
+        LiveLease lease(live);
+        co_yield 0;
+        co_yield 0;
+    }
+
+    rock::weapon_geometry_work::Task cancellableParent(int& live)
+    {
+        LiveLease lease(live);
+        auto child = cancellableChild(live);
+        while (child.step()) { co_yield 0; }
+    }
+
+    rock::weapon_geometry_work::Task failedWork()
+    {
+        co_yield 0;
+        throw std::runtime_error("geometry failure");
+    }
 }
 
 int main()
@@ -114,6 +155,51 @@ int main()
     ok &= check(bipod.islands == 1 && bipod.cuts > 0, "reversed winding splayed connected bipod partitions");
     ok &= check(!inside(bipod, transform({ 0, -8, 0 })), "rotated scaled bipod opening is empty");
     ok &= check(covered(mesh, bipod), "bipod preserves surfaces across cuts");
+
+    Result deferredU, deferredBipod;
+    const auto plainU = fixture(false);
+    auto firstJob = decomposeDeferred(plainU, 1.0, 0.01, deferredU);
+    auto secondJob = decomposeDeferred(mesh, 1.0, 0.01, deferredBipod);
+    bool firstPending = true, secondPending = true;
+    std::size_t slices = 0;
+    while (firstPending || secondPending) {
+        if (firstPending) { firstPending = firstJob.step(); }
+        if (secondPending) { secondPending = secondJob.step(); }
+        ++slices;
+    }
+    ok &= check(slices > 10, "connected geometry yields within a single source");
+    ok &= check(samePieces(u, deferredU) && samePieces(bipod, deferredBipod), "interleaved jobs preserve exact decomposition output");
+    int live = 0;
+    auto cancelled = cancellableParent(live);
+    ok &= check(cancelled.step() && live == 2, "nested suspended work owns both leases");
+    auto moved = std::move(cancelled);
+    ok &= check(!cancelled.step() && live == 2, "moving suspended work retains ownership");
+    moved = {};
+    ok &= check(live == 0, "cancellation unwinds parent and child resources");
+    auto failure = failedWork();
+    ok &= check(failure.step(), "failure task initially suspends");
+    bool caught = false;
+    try { (void)failure.step(); } catch (const std::runtime_error&) { caught = true; }
+    ok &= check(caught, "failure is delivered to the preparation catch boundary");
+
+    Mesh dense;
+    for (int repeat = 0; repeat < 1000; ++repeat) { dense.insert(dense.end(), plainU.begin(), plainU.end()); }
+    Result denseResult;
+    auto denseTask = decomposeDeferred(dense, 1.0, 0.01, denseResult);
+    double longestStepMs = 0.0, totalStepMs = 0.0;
+    std::size_t denseSteps = 0;
+    bool densePending;
+    do {
+        const auto before = std::chrono::steady_clock::now();
+        densePending = denseTask.step();
+        const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - before).count();
+        longestStepMs = (std::max)(longestStepMs, elapsed);
+        totalStepMs += elapsed;
+        ++denseSteps;
+    } while (densePending);
+    ok &= check(denseSteps > 100 && !denseResult.pieces.empty(), "dense source preparation is resumable");
+    ok &= check(!inside(denseResult, {0, -8, 0}), "dense repeated geometry preserves its opening");
+    std::printf("Deferred dense mesh: triangles=%zu steps=%zu activeMs=%.3f longestStepMs=%.3f\n", dense.size(), denseSteps, totalStepMs, longestStepMs);
 
     Mesh islands = convex;
     for (auto t : convex) { for (auto& p : t) { p.x += 30; } islands.push_back(t); }
@@ -167,6 +253,13 @@ int main()
         const auto a = original.points[i], b = optimized.points[i];
         ok &= check(a.x == b.x && a.y == b.y && a.z == b.z, "support selection/order unchanged");
     }
+    rock::weapon_collision_geometry_math::ConvexSupportFitResult<FloatPoint> deferredFit;
+    auto fitting = rock::weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(points, 96, 252, 0.01f, true, deferredFit);
+    std::size_t fittingSteps = 0;
+    while (fitting.step()) { ++fittingSteps; }
+    ok &= check(fittingSteps > 100 && deferredFit.selectedPointCount == optimized.selectedPointCount &&
+        deferredFit.maxSupportError == optimized.maxSupportError && deferredFit.repairPointCount == optimized.repairPointCount,
+        "deferred point fitting preserves acceptance and repair counts");
     std::printf("U children=%zu cuts=%zu; bipod children=%zu cuts=%zu; synthetic support repair old=%.3fms new=%.3fms repairs=%zu\n",
         u.pieces.size(), u.cuts, bipod.pieces.size(), bipod.cuts,
         std::chrono::duration<double, std::milli>(middle - start).count(),

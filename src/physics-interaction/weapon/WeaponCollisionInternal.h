@@ -2099,15 +2099,17 @@ namespace rock
             return identity;
         }
 
-        inline GeneratedPointCloudClusterSet splitGeneratedWeaponPointCloudForCollision(const std::vector<RE::NiPoint3>& localPoints)
+        inline weapon_geometry_work::Task splitGeneratedWeaponPointCloudForCollisionDeferred(const std::vector<RE::NiPoint3>& localPoints, GeneratedPointCloudClusterSet& result)
         {
-            GeneratedPointCloudClusterSet result{};
+            result = {};
             constexpr auto targetPoints = WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS;
-            const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
+            weapon_collision_geometry_math::ConvexSupportFitResult<RE::NiPoint3> fit;
+            auto fitting = weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(
                 localPoints,
                 targetPoints,
                 MAX_CONVEX_HULL_POINTS,
-                WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS);
+                WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, false, fit);
+            while (fitting.step()) { co_yield 0; }
             result.supportFitAttempted = fit.attempted;
             result.supportFitAccepted = fit.accepted;
             result.supportFitMaxError = fit.maxSupportError;
@@ -2118,25 +2120,36 @@ namespace rock
 
             if (fit.accepted && !fit.points.empty()) {
                 result.clusters.push_back(fit.points);
-                return result;
+                co_return;
             }
 
             result.supportFitFallbackSplit = true;
             std::vector<std::vector<RE::NiPoint3>> splitClusters;
-            weapon_collision_geometry_math::splitOversizedCluster(localPoints, MAX_CONVEX_HULL_POINTS, splitClusters);
+            auto splitting = weapon_collision_geometry_math::splitOversizedClusterDeferred(localPoints, MAX_CONVEX_HULL_POINTS, splitClusters);
+            while (splitting.step()) { co_yield 0; }
             result.clusters.reserve(splitClusters.size());
             for (const auto& splitCluster : splitClusters) {
-                const auto childFit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
+                weapon_collision_geometry_math::ConvexSupportFitResult<RE::NiPoint3> childFit;
+                auto childFitting = weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(
                     splitCluster,
                     targetPoints,
                     MAX_CONVEX_HULL_POINTS,
-                    WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS);
+                    WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, false, childFit);
+                while (childFitting.step()) { co_yield 0; }
                 if (childFit.accepted && !childFit.points.empty()) {
                     result.clusters.push_back(childFit.points);
                 } else {
                     result.clusters.push_back(splitCluster);
                 }
             }
+            co_return;
+        }
+
+        inline GeneratedPointCloudClusterSet splitGeneratedWeaponPointCloudForCollision(const std::vector<RE::NiPoint3>& localPoints)
+        {
+            GeneratedPointCloudClusterSet result;
+            auto task = splitGeneratedWeaponPointCloudForCollisionDeferred(localPoints, result);
+            while (task.step()) {}
             return result;
         }
 

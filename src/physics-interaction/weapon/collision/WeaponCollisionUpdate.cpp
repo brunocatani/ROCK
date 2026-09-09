@@ -138,6 +138,7 @@ namespace rock
         };
 
         if (!world) {
+            _sources.preparation.reset();
             return;
         }
 
@@ -256,6 +257,27 @@ namespace rock
                 "Workbench exit requested generated weapon collision rebuild cachedKey={:016X} observedKey={:016X}",
                 _identity.cachedWeaponKey,
                 observedKey);
+        }
+
+        if (_sources.preparation) {
+            WeaponVisualKeyStats currentStats{};
+            const auto currentVisual = weaponNode ? getWeaponVisualCompositionKey(weaponNode, currentStats) : 0;
+            const auto& preparation = *_sources.preparation;
+            const bool invalidated = driveRequestedRebuild || workbenchExitRequested || geometryModeChanged ||
+                preparation.equippedKey != observedKey || preparation.ownershipKey != observedOwnershipKey ||
+                preparation.root.get() != weaponNode || preparation.visualKey != currentVisual;
+            if (invalidated) {
+                ROCK_LOG_INFO(Weapon, "Weapon geometry preparation cancelled: key={:016X} current={:016X} visual={:016X}->{:016X}",
+                    preparation.equippedKey, observedKey, preparation.visualKey, currentVisual);
+                _sources.preparation.reset();
+                clearPendingWeaponVisualRebuild();
+                rebuildRequired = true;
+            } else if (!preparation.ready) {
+                (void)advanceSourcePreparation();
+                return;
+            } else {
+                rebuildRequired = true;
+            }
         }
 
         if (_sources.pendingBuild.active) {
@@ -417,9 +439,30 @@ namespace rock
                         observedVisualKey,
                         generatedCount);
                 } else {
-                    performance_profiler::ScopedTimer profilerTimer(_sources.preserveGaps ?
-                        performance_profiler::Scope::WeaponGapColliderBuild : performance_profiler::Scope::WeaponColliderBuild);
-                    generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources);
+                    if (_sources.preserveGaps) {
+                        if (!_sources.preparation) {
+                            try {
+                                auto preparation = std::make_unique<PendingSourcePreparation>();
+                                preparation->root.reset(weaponNode);
+                                preparation->equippedKey = observedKey;
+                                preparation->ownershipKey = observedOwnershipKey;
+                                preparation->visualKey = observedVisualKey;
+                                preparation->task = prepareGeneratedWeaponShapeSources(preparation->root,
+                                    observedKey, preparation->sources, true);
+                                _sources.preparation = std::move(preparation);
+                                ROCK_LOG_INFO(Weapon, "Weapon geometry preparation queued: key={:016X} visual={:016X}", observedKey, observedVisualKey);
+                            } catch (...) {
+                                ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon geometry preparation allocation failed: key={:016X}", observedKey);
+                            }
+                            return;
+                        }
+                        generatedSources = std::move(_sources.preparation->sources);
+                        _sources.preparation.reset();
+                        generatedCount = generatedSources.size();
+                    } else {
+                        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
+                        generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources);
+                    }
                     recordGeneratedRecaptureDiagnostic(
                         observedKey,
                         observedIdentityKey,

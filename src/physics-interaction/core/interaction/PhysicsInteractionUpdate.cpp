@@ -72,6 +72,7 @@ namespace rock
 
     void PhysicsInteraction::presentClaimedHands()
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandPresentation);
         if (!_handBoneCache.isReady()) {
             return;
         }
@@ -228,6 +229,7 @@ namespace rock
         RE::hknpWorld* hknp,
         const EquippedWeaponFrameResult& equippedWeaponFrame)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::InteractionFinalize);
         const bool rightHandWeaponAuthorityActive = equippedWeaponFrame.rightHandWeaponAuthorityActive;
         const bool leftSupportGripActive = equippedWeaponFrame.leftSupportGripActive;
         const bool rightPartGripActive = equippedWeaponFrame.rightPartGripActive;

@@ -17,6 +17,14 @@ namespace rock::performance_profiler
     enum class Scope : std::uint8_t
     {
         FrameUpdate = 0,
+        RuntimePreparation,
+        WeaponEquipTransition,
+        AuthoredPrimaryGrip,
+        InteractionUpdate,
+        EquippedWeaponInteraction,
+        InteractionFinalize,
+        HandPresentation,
+        ProviderPublication,
         HandColliderUpdate,
         BodyColliderUpdate,
         GeneratedColliderPhysicsFlush,
@@ -26,6 +34,8 @@ namespace rock::performance_profiler
         WeaponColliderBuild,
         WeaponColliderCreate,
         WeaponGapDecomposition,
+        WeaponMeshExtraction,
+        WeaponPointFitting,
         WeaponGapColliderBuild,
         WeaponGapColliderCreate,
         TwoHandedGripStart,

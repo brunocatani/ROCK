@@ -1,10 +1,33 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 #include "physics-interaction/weapon/WeaponGapDecomposition.h"
 
+#include <chrono>
+
 // Generated weapon collision sources: visual-source discovery, completeness tracking, source cache, incremental pending builds, and body creation.
 
 namespace rock
 {
+    namespace
+    {
+        weapon_geometry_work::Task dedupeWeaponPointsDeferred(const std::vector<RE::NiPoint3>& points,
+            float grid, std::vector<RE::NiPoint3>& unique)
+        {
+            weapon_geometry_work::Quantum quantum;
+            std::unordered_set<QuantizedPointKey, QuantizedPointKeyHash> seen;
+            seen.reserve(points.size());
+            unique.reserve(points.size());
+            for (const auto& point : points) {
+                if (quantum.tick()) { co_yield 0; }
+                if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z) &&
+                    seen.insert(quantizePoint(point, grid)).second) { unique.push_back(point); }
+            }
+            while (!seen.empty()) {
+                if (quantum.tick()) { co_yield 0; }
+                seen.erase(seen.begin());
+            }
+        }
+    }
+
     weapon_generated_source_completeness_policy::GeneratedSourceCompleteness WeaponCollision::summarizeGeneratedSources(const std::vector<GeneratedHullSource>& sources)
     {
         using namespace weapon_generated_source_completeness_policy;
@@ -157,7 +180,50 @@ namespace rock
 
     void WeaponCollision::clearGeneratedSourceCache()
     {
+        _sources.preparation.reset();
         _sources.cache = {};
+    }
+
+    bool WeaponCollision::advanceSourcePreparation()
+    {
+        auto& work = *_sources.preparation;
+        const auto start = std::chrono::steady_clock::now();
+        constexpr double kPreparationSliceMilliseconds = 2.0;
+        constexpr std::size_t kMaxResumesPerFrame = 1024;
+        try {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponGapColliderBuild);
+            for (std::size_t resumed = 0; resumed < kMaxResumesPerFrame; ++resumed) {
+                if (!work.task.step()) {
+                    work.ready = true;
+                    work.task = {};
+                    break;
+                }
+                if (std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() >= kPreparationSliceMilliseconds) {
+                    break;
+                }
+            }
+        } catch (const std::exception& error) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon geometry preparation failed: key={:016X} reason={}", work.equippedKey, error.what());
+            _sources.preparation.reset();
+            return false;
+        } catch (...) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon geometry preparation failed: key={:016X} unknown exception", work.equippedKey);
+            _sources.preparation.reset();
+            return false;
+        }
+        const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        ++work.frames;
+        work.activeMilliseconds += elapsed;
+        work.maxSliceMilliseconds = (std::max)(work.maxSliceMilliseconds, elapsed);
+        if (elapsed > kPreparationSliceMilliseconds * 2.0) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon geometry preparation long slice: key={:016X} elapsedMs={:.3f} targetMs={:.1f}",
+                work.equippedKey, elapsed, kPreparationSliceMilliseconds);
+        }
+        if (work.ready) {
+            ROCK_LOG_INFO(Weapon, "Weapon geometry preparation completed: key={:016X} sources={} frames={} activeMs={:.3f} maxSliceMs={:.3f}",
+                work.equippedKey, work.sources.size(), work.frames, work.activeMilliseconds, work.maxSliceMilliseconds);
+        }
+        return work.ready;
     }
 
     void WeaponCollision::resetVisualSourceUnavailableRetention()
@@ -237,6 +303,7 @@ namespace rock
 
     void WeaponCollision::clearPendingGeneratedWeaponBuild(RE::hknpWorld* world, bool destroyTargetBank)
     {
+        _sources.preparation.reset();
         auto structuralMutation = destroyTargetBank && _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
@@ -499,21 +566,41 @@ namespace rock
         return visualKey;
     }
 
-    std::size_t WeaponCollision::findGeneratedWeaponShapeSources(
-        RE::NiAVObject* weaponNode,
-        std::uint64_t equippedWeaponKey,
-        std::vector<GeneratedHullSource>& outSources)
+    std::size_t WeaponCollision::findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode,
+        std::uint64_t equippedWeaponKey, std::vector<GeneratedHullSource>& outSources)
     {
+        try {
+            auto task = prepareGeneratedWeaponShapeSources(RE::NiPointer<RE::NiAVObject>{weaponNode}, equippedWeaponKey, outSources, false);
+            while (task.step()) {}
+        } catch (const std::exception& error) {
+            outSources.clear();
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon geometry preparation failed: key={:016X} reason={}", equippedWeaponKey, error.what());
+        } catch (...) {
+            outSources.clear();
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Weapon geometry preparation failed: key={:016X} unknown exception", equippedWeaponKey);
+        }
+        return outSources.size();
+    }
+
+    weapon_geometry_work::Task WeaponCollision::prepareGeneratedWeaponShapeSources(
+        RE::NiPointer<RE::NiAVObject> root,
+        std::uint64_t equippedWeaponKey,
+        std::vector<GeneratedHullSource>& outSources, bool preserveGaps)
+    {
+        auto* weaponNode = root.get();
         outSources.clear();
         if (!weaponNode) {
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon drive root");
-            return 0;
+            co_return;
         }
 
         const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
+        std::vector<RE::NiPointer<RE::NiAVObject>> candidateOwners;
+        candidateOwners.reserve(candidates.size());
+        for (const auto& candidate : candidates) { candidateOwners.emplace_back(candidate.root); }
         if (candidates.empty()) {
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon root candidates");
-            return 0;
+            co_return;
         }
 
         /*
@@ -543,9 +630,9 @@ namespace rock
             std::uint32_t visitedShapes = 0;
             std::uint32_t extractedTriangles = 0;
             std::uint32_t culledForEffectGeometry = 0;
-            findGeneratedWeaponShapeSourcesRecursive(
-                candidate.root,
-                packageDriveRoot,
+            auto candidateTask = findGeneratedWeaponShapeSourcesRecursive(
+                RE::NiPointer<RE::NiAVObject>{candidate.root},
+                root,
                 packageDriveRootTransform,
                 0,
                 candidateSources,
@@ -553,7 +640,8 @@ namespace rock
                 extractedTriangles,
                 claimedSourceGroups,
                 candidateExtractedSourceGroups,
-                culledForEffectGeometry);
+                culledForEffectGeometry, preserveGaps);
+            while (candidateTask.step()) { co_yield 0; }
             totalCulledForEffectGeometry += culledForEffectGeometry;
 
             ROCK_LOG_DEBUG(Weapon,
@@ -593,7 +681,7 @@ namespace rock
 
         if (outSources.empty()) {
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: all {} candidates produced zero hulls", candidates.size());
-            return 0;
+            co_return;
         }
 
         /*
@@ -765,7 +853,7 @@ namespace rock
                 g_rockConfig.rockLogSampleMilliseconds,
                 "Generated weapon mesh source scan: no collider sources remain after detached-component exclusions equippedKey={:016X}",
                 equippedWeaponKey);
-            return 0;
+            co_return;
         }
 
         auto generatedSourceConvexCount = [](const GeneratedHullSource& source) {
@@ -926,40 +1014,43 @@ namespace rock
                 safeNodeName(packageDriveRoot));
         }
 
-        return outSources.size();
+        co_return;
     }
 
-    void WeaponCollision::findGeneratedWeaponShapeSourcesRecursive(RE::NiAVObject* node,
-        RE::NiAVObject* sourceRoot,
-        const RE::NiTransform& weaponRootTransform,
+    weapon_geometry_work::Task WeaponCollision::findGeneratedWeaponShapeSourcesRecursive(RE::NiPointer<RE::NiAVObject> nodeOwner,
+        RE::NiPointer<RE::NiAVObject> sourceOwner,
+        RE::NiTransform weaponRootTransform,
         int depth,
         std::vector<GeneratedHullSource>& outSources,
         std::uint32_t& visitedShapes,
         std::uint32_t& extractedTriangles,
         const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
         std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
-        std::uint32_t& culledForEffectGeometry)
+        std::uint32_t& culledForEffectGeometry, bool preserveGaps)
     {
+        auto* node = nodeOwner.get();
+        auto* sourceRoot = sourceOwner.get();
+        weapon_geometry_work::Quantum quantum;
         if (!node || depth > 15) {
-            return;
+            co_return;
         }
         if (node->GetAppCulled()) {
             ROCK_LOG_TRACE(Weapon,
                 "{}generated mesh source branch skipped '{}': ancestor branch is app-culled",
                 std::string(depth * 2, ' '),
                 safeNodeName(node));
-            return;
+            co_return;
         }
         auto* triShape = node->IsTriShape();
         if (triShape) {
             const auto sourceGroupId = reinterpret_cast<std::uintptr_t>(triShape);
             if (claimedSourceGroups.find(sourceGroupId) != claimedSourceGroups.end()) {
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': duplicate TriShape already claimed by earlier candidate", std::string(depth * 2, ' '), safeNodeName(node));
-                return;
+                co_return;
             }
             if (!weaponVisualNodeVisible(node)) {
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': TriShape is hidden or locally zero-scale", std::string(depth * 2, ' '), safeNodeName(node));
-                return;
+                co_return;
             }
 
             const auto effectExclusionReason = classifyGeneratedWeaponEffectGeometry(triShape);
@@ -970,41 +1061,50 @@ namespace rock
                     std::string(depth * 2, ' '),
                     safeNodeName(node),
                     weapon_effect_geometry_policy::exclusionReasonName(effectExclusionReason));
-                return;
+                co_return;
             }
             ++visitedShapes;
 
             std::vector<TriangleData> triangles;
             std::vector<TriangleData> directSourceLocalTriangles;
+            co_yield 0;
+            // Snapshot every transform with the extraction. A later frame may
+            // move this source or the player while its value-only work resumes.
             const bool skinned = isSkinned(triShape);
-            const int added = skinned ?
-                                  extractTrianglesFromSkinnedTriShape(
-                                      triShape,
-                                      triangles,
-                                      nullptr,
-                                      false,
-                                      &directSourceLocalTriangles) :
-                                  extractTrianglesFromTriShape(
-                                      triShape,
-                                      triangles,
-                                      nullptr,
-                                      &directSourceLocalTriangles);
-            if (added <= 0) {
-                ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), safeNodeName(node));
-                return;
-            }
-            extractedTriangles += static_cast<std::uint32_t>(added);
-            candidateExtractedSourceGroups.insert(sourceGroupId);
-
+            weaponRootTransform = sourceRoot->world;
+            const RE::NiTransform capturedSourceWorld = node->world;
             RE::NiTransform sourceInWeapon{};
             const bool sourceInWeaponAvailable =
                 tryResolveDescendantLocalTransform(sourceRoot, node, sourceInWeapon);
-            RE::NiTransform sourceWorldForDrive = node->world;
+            RE::NiTransform sourceWorldForDrive = capturedSourceWorld;
             if (sourceInWeaponAvailable) {
                 sourceWorldForDrive = transform_math::composeTransforms(
                     weaponRootTransform,
                     sourceInWeapon);
             }
+            int added = 0;
+            {
+                performance_profiler::ScopedTimer extractionTimer(performance_profiler::Scope::WeaponMeshExtraction);
+                added = skinned ?
+                                      extractTrianglesFromSkinnedTriShape(
+                                          triShape,
+                                          triangles,
+                                          nullptr,
+                                          false,
+                                          &directSourceLocalTriangles) :
+                                      extractTrianglesFromTriShape(
+                                          triShape,
+                                          triangles,
+                                          nullptr,
+                                          &directSourceLocalTriangles);
+            }
+            co_yield 0;
+            if (added <= 0) {
+                ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), safeNodeName(node));
+                co_return;
+            }
+            extractedTriangles += static_cast<std::uint32_t>(added);
+            candidateExtractedSourceGroups.insert(sourceGroupId);
 
             std::vector<RE::NiPoint3> localPoints;
             localPoints.reserve(triangles.size() * 3);
@@ -1015,6 +1115,7 @@ namespace rock
             const bool hasDirectSourceLocalTriangles =
                 directSourceLocalTriangles.size() == triangles.size();
             for (std::size_t triangleIndex = 0; triangleIndex < triangles.size(); ++triangleIndex) {
+                if (quantum.tick()) { co_yield 0; }
                 const auto& triangle = triangles[triangleIndex];
                 TriangleData sourceLocalTriangle{};
                 if (hasDirectSourceLocalTriangles) {
@@ -1026,9 +1127,9 @@ namespace rock
                      */
                     sourceLocalTriangle = directSourceLocalTriangles[triangleIndex];
                 } else {
-                    sourceLocalTriangle.v0 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v0);
-                    sourceLocalTriangle.v1 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v1);
-                    sourceLocalTriangle.v2 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v2);
+                    sourceLocalTriangle.v0 = weapon_collision_geometry_math::worldPointToLocal(capturedSourceWorld.rotate, capturedSourceWorld.translate, capturedSourceWorld.scale, triangle.v0);
+                    sourceLocalTriangle.v1 = weapon_collision_geometry_math::worldPointToLocal(capturedSourceWorld.rotate, capturedSourceWorld.translate, capturedSourceWorld.scale, triangle.v1);
+                    sourceLocalTriangle.v2 = weapon_collision_geometry_math::worldPointToLocal(capturedSourceWorld.rotate, capturedSourceWorld.translate, capturedSourceWorld.scale, triangle.v2);
                 }
                 TriangleData localTriangle{};
                 if (sourceInWeaponAvailable) {
@@ -1048,11 +1149,14 @@ namespace rock
             }
 
             const float dedupGridGame = (std::max)(WEAPON_COLLISION_POINT_DEDUP_GRID_HAVOK * havokToGameScale(), 0.01f);
-            localPoints = dedupePointCloud(localPoints, dedupGridGame);
+            std::vector<RE::NiPoint3> uniquePoints;
+            auto dedup = dedupeWeaponPointsDeferred(localPoints, dedupGridGame, uniquePoints);
+            while (dedup.step()) { co_yield 0; }
+            localPoints = std::move(uniquePoints);
             if (!pointCloudCanBuildHull(localPoints)) {
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
                     localPoints.size());
-                return;
+                co_return;
             }
 
             /*
@@ -1096,15 +1200,23 @@ namespace rock
             }
             GeneratedPointCloudClusterSet clusterSet;
             std::vector<std::vector<RE::NiPoint3>> compoundChildren;
-            if (_sources.preserveGaps) {
-                performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponGapDecomposition);
+            if (preserveGaps) {
                 weapon_gap_decomposition::Result partition;
                 if (localTriangles.size() <= weapon_gap_decomposition::kMaxInputTriangles) {
                     std::vector<weapon_gap_decomposition::Triangle> mesh;
                     mesh.reserve(localTriangles.size());
                     const auto toPoint = [](const RE::NiPoint3& p) { return weapon_gap_decomposition::Point{ p.x, p.y, p.z }; };
-                    for (const auto& t : localTriangles) { mesh.push_back({ toPoint(t.v0), toPoint(t.v1), toPoint(t.v2) }); }
-                    partition = weapon_gap_decomposition::decompose(mesh, 1.0, 0.01);
+                    for (const auto& t : localTriangles) { if (quantum.tick()) { co_yield 0; } mesh.push_back({ toPoint(t.v0), toPoint(t.v1), toPoint(t.v2) }); }
+                    auto decomposition = weapon_gap_decomposition::decomposeDeferred(mesh, 1.0, 0.01, partition);
+                    for (;;) {
+                        bool pending;
+                        {
+                            performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponGapDecomposition);
+                            pending = decomposition.step();
+                        }
+                        if (!pending) { break; }
+                        co_yield 0;
+                    }
                 } else {
                     partition.budgetLimited = true;
                 }
@@ -1113,11 +1225,24 @@ namespace rock
                 for (const auto& piece : partition.pieces) {
                     std::vector<RE::NiPoint3> points;
                     points.reserve(piece.size());
-                    for (const auto& p : piece) { points.push_back({ static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z) }); }
-                    points = dedupePointCloud(points, dedupGridGame);
-                    const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
+                    for (const auto& p : piece) { if (quantum.tick()) { co_yield 0; } points.push_back({ static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z) }); }
+                    std::vector<RE::NiPoint3> uniquePiece;
+                    auto childDedup = dedupeWeaponPointsDeferred(points, dedupGridGame, uniquePiece);
+                    while (childDedup.step()) { co_yield 0; }
+                    points = std::move(uniquePiece);
+                    weapon_collision_geometry_math::ConvexSupportFitResult<RE::NiPoint3> fit;
+                    auto fitting = weapon_collision_geometry_math::fitConvexSupportPointCloudDeferred(
                         points, WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS, MAX_CONVEX_HULL_POINTS,
-                        WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, true);
+                        WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, true, fit);
+                    for (;;) {
+                        bool pending;
+                        {
+                            performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponPointFitting);
+                            pending = fitting.step();
+                        }
+                        if (!pending) { break; }
+                        co_yield 0;
+                    }
                     if (!fit.accepted || !pointCloudCanBuildHull(fit.points)) { accepted = false; break; }
                     combinedPoints.insert(combinedPoints.end(), fit.points.begin(), fit.points.end());
                     compoundChildren.push_back(fit.points);
@@ -1130,7 +1255,8 @@ namespace rock
                     // child cannot be represented, retain the original source
                     // policy as a whole, never a partial set of children.
                     compoundChildren.clear();
-                    clusterSet = splitGeneratedWeaponPointCloudForCollision(localPoints);
+                    auto fallback = splitGeneratedWeaponPointCloudForCollisionDeferred(localPoints, clusterSet);
+                    while (fallback.step()) { co_yield 0; }
                 }
                 ROCK_LOG_DEBUG(Weapon,
                     "Generated weapon gap fit: source='{}' accepted={} islands={} cuts={} children={} queryWork={} budgetLimited={}",
@@ -1142,7 +1268,8 @@ namespace rock
                         safeNodeName(node), !accepted, partition.budgetLimited, partition.cuts);
                 }
             } else {
-                clusterSet = splitGeneratedWeaponPointCloudForCollision(localPoints);
+                auto fallback = splitGeneratedWeaponPointCloudForCollisionDeferred(localPoints, clusterSet);
+                while (fallback.step()) { co_yield 0; }
             }
             auto& clusters = clusterSet.clusters;
             if (clusterSet.supportFitAttempted) {
@@ -1172,6 +1299,7 @@ namespace rock
                 source.localCenterGame = weapon_collision_geometry_math::pointCenter(cluster);
                 source.sourceLocalPointsGame.reserve(cluster.size());
                 for (const auto& point : cluster) {
+                    if (quantum.tick()) { co_yield 0; }
                     if (sourceInWeaponAvailable) {
                         source.sourceLocalPointsGame.push_back(
                             transform_math::worldPointToLocal(sourceInWeapon, point));
@@ -1182,9 +1310,9 @@ namespace rock
                             weaponRootTransform.scale,
                             point);
                         source.sourceLocalPointsGame.push_back(weapon_collision_geometry_math::worldPointToLocal(
-                            node->world.rotate,
-                            node->world.translate,
-                            node->world.scale,
+                            capturedSourceWorld.rotate,
+                            capturedSourceWorld.translate,
+                            capturedSourceWorld.scale,
                             pointWorld));
                     }
                 }
@@ -1225,31 +1353,28 @@ namespace rock
                     source.localPointsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
                 outSources.push_back(std::move(source));
             }
-            return;
+            co_return;
         }
 
         auto* niNode = node->IsNode();
         if (niNode) {
             auto& kids = niNode->GetRuntimeData().children;
+            std::vector<RE::NiPointer<RE::NiAVObject>> children;
             visitWeaponChildSlots(kids, [&](auto* kid, auto slot) {
                 if (slot >= kids.size()) {
-                    ROCK_LOG_DEBUG(Weapon,
-                        "Generated weapon sparse child: parent='{}' child='{}' slot={} populated={} slots={}",
+                    ROCK_LOG_DEBUG(Weapon, "Generated weapon sparse child: parent='{}' child='{}' slot={} populated={} slots={}",
                         safeNodeName(node), safeNodeName(kid), slot, kids.size(), kids.capacity());
                 }
-                findGeneratedWeaponShapeSourcesRecursive(
-                    kid,
-                    sourceRoot,
-                    weaponRootTransform,
-                    depth + 1,
-                    outSources,
-                    visitedShapes,
-                    extractedTriangles,
-                    claimedSourceGroups,
-                    candidateExtractedSourceGroups,
-                    culledForEffectGeometry);
+                children.emplace_back(kid);
                 return true;
             });
+            for (const auto& child : children) {
+                auto childTask = findGeneratedWeaponShapeSourcesRecursive(child, sourceOwner, weaponRootTransform,
+                    depth + 1, outSources, visitedShapes, extractedTriangles, claimedSourceGroups,
+                    candidateExtractedSourceGroups, culledForEffectGeometry, preserveGaps);
+                while (childTask.step()) { co_yield 0; }
+                co_yield 0;
+            }
         }
     }
 

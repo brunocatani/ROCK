@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <memory>
 #include <span>
 #include <string>
 #include <unordered_set>
@@ -28,6 +29,7 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
 
 namespace RE
 {
@@ -493,6 +495,18 @@ namespace rock
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
+        struct PendingSourcePreparation
+        {
+            RE::NiPointer<RE::NiAVObject> root;
+            std::uint64_t equippedKey{}, ownershipKey{}, visualKey{};
+            bool ready{ false };
+            std::size_t frames{};
+            double activeMilliseconds{}, maxSliceMilliseconds{};
+            std::vector<GeneratedHullSource> sources;
+            // Last member: destroy suspended work before its referenced outputs.
+            weapon_geometry_work::Task task;
+        };
+
         WeaponBodyBank& activeWeaponBodies();
         const WeaponBodyBank& activeWeaponBodies() const;
         WeaponBodyBank& inactiveWeaponBodies();
@@ -552,14 +566,18 @@ namespace rock
             std::uint64_t equippedWeaponKey,
             std::vector<GeneratedHullSource>& outSources);
 
-        void findGeneratedWeaponShapeSourcesRecursive(RE::NiAVObject* node, RE::NiAVObject* sourceRoot, const RE::NiTransform& weaponRootTransform,
+        weapon_geometry_work::Task prepareGeneratedWeaponShapeSources(RE::NiPointer<RE::NiAVObject> root,
+            std::uint64_t equippedWeaponKey, std::vector<GeneratedHullSource>& outSources, bool preserveGaps);
+        weapon_geometry_work::Task findGeneratedWeaponShapeSourcesRecursive(RE::NiPointer<RE::NiAVObject> nodeOwner,
+            RE::NiPointer<RE::NiAVObject> sourceOwner, RE::NiTransform weaponRootTransform,
             int depth,
             std::vector<GeneratedHullSource>& outSources,
             std::uint32_t& visitedShapes,
             std::uint32_t& extractedTriangles,
             const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
             std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
-            std::uint32_t& culledForEffectGeometry);
+            std::uint32_t& culledForEffectGeometry, bool preserveGaps);
+        bool advanceSourcePreparation();
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();
@@ -718,6 +736,7 @@ namespace rock
             // Committed mode remains distinct while a reload/hidden visual
             // defers replacement, so the requested rebuild cannot be lost.
             bool activePreserveGaps{ false };
+            std::unique_ptr<PendingSourcePreparation> preparation;
             GeneratedSourceCache cache{};
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness cachedCompleteness{};
             PendingGeneratedWeaponBuild pendingBuild{};

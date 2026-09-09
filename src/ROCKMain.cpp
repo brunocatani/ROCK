@@ -282,6 +282,7 @@ namespace
             g_rockConfig.rockPerformanceProfilerWarmupFrames,
             g_rockConfig.rockPerformanceProfilerOverlayText);
         performance_profiler::FrameScope profilerFrame;
+        performance_profiler::ScopedTimer runtimeTimer(performance_profiler::Scope::RuntimePreparation);
 
         if (!s_pluginLoaded) {
             clearUnavailableRuntimeInputState();
@@ -324,6 +325,7 @@ namespace
         debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         ensurePhysicsInteractionForReadySkeleton(runtime);
+        runtimeTimer.stop();
 
         if (s_physicsInteraction) {
             /*
@@ -331,16 +333,28 @@ namespace
              * frame. Reconcile the exact equipped instance first so authored
              * grip and collision never consume a stale hidden Weapon graph.
              */
-            s_physicsInteraction->updateEquippedWeaponTransition();
+            {
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponEquipTransition);
+                s_physicsInteraction->updateEquippedWeaponTransition();
+            }
             /*
              * hFRIK has already restored its generic one-gun Weapon local.
              * Reconstruct the Bethesda-authored primary grip before ROCK's
              * collision/probe/grip pass so every weapon-relative subsystem
              * sees the same corrected frame that will be rendered.
              */
-            s_physicsInteraction->updateAuthoredPrimaryFiringGrip();
-            s_physicsInteraction->update();
-            publishPhysicsInteractionIfReady();
+            {
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::AuthoredPrimaryGrip);
+                s_physicsInteraction->updateAuthoredPrimaryFiringGrip();
+            }
+            {
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::InteractionUpdate);
+                s_physicsInteraction->update();
+            }
+            {
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::ProviderPublication);
+                publishPhysicsInteractionIfReady();
+            }
         }
     }
 
