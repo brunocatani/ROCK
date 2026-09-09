@@ -59,12 +59,24 @@ namespace rock::provider::interaction_command_policy
     public:
         [[nodiscard]] bool isReserved(RockProviderHand hand) const noexcept
         {
+            if (hand == RockProviderHand::None) {
+                return _slots[0].commandId != 0 || _slots[1].commandId != 0;
+            }
             const auto index = handIndex(hand);
             return index < _slots.size() && _slots[index].commandId != 0;
         }
 
         [[nodiscard]] bool reserve(RockProviderHand hand, std::uint64_t ownerToken, std::uint64_t commandId) noexcept
         {
+            // Auto-hand inventory draws reserve both queue slots until ROCK
+            // chooses a physically free hand. No other request can overtake it.
+            if (hand == RockProviderHand::None) {
+                if (ownerToken == 0 || commandId == 0 || isReserved(hand)) {
+                    return false;
+                }
+                _slots.fill(ForceGrabReservation{ .ownerToken = ownerToken, .commandId = commandId });
+                return true;
+            }
             const auto index = handIndex(hand);
             if (index >= _slots.size() || ownerToken == 0 || commandId == 0 || _slots[index].commandId != 0) {
                 return false;
@@ -88,7 +100,6 @@ namespace rock::provider::interaction_command_policy
             for (auto& slot : _slots) {
                 if (slot.ownerToken == ownerToken && slot.commandId == commandId) {
                     slot = {};
-                    return;
                 }
             }
         }

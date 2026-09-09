@@ -222,6 +222,7 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::InteractionCommandQueue) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceGrabCommand) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::InventoryForceGrab) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceReleaseCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ThrownDropCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandInputSuppression) |
@@ -280,7 +281,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::NativeVatsVansInputSuppression) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WorldRaycasts);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
+        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame) |
+        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::ImmediateCollisionRestore) |
         static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::RequireMatchingTarget) |
@@ -2899,8 +2901,14 @@ namespace
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
             return RockProviderResultV1::UnsupportedVersion;
         }
-        if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
+        const bool fromInventory = (request->flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
+        if (fromInventory ? request->hand != RockProviderHand::None :
+            (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left)) {
             return RockProviderResultV1::HandUnavailable;
+        }
+        if (fromInventory && (request->flags != static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory) ||
+            request->targetBodyId != 0x7FFF'FFFF || request->maxDistanceGame != 0.0f)) {
+            return RockProviderResultV1::InvalidArgument;
         }
         if (request->targetFormId == 0 || (request->flags & ~kImplementedForceGrabFlagsV1) != 0) {
             return RockProviderResultV1::InvalidArgument;

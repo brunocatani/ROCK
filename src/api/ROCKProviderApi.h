@@ -382,6 +382,7 @@ namespace rock::provider
         WeaponEvidence = 1u << 3,
         BodyContacts = 1u << 4,
         ExternalContacts = 1u << 5,
+        InventoryForceGrab = 1u << 6,
         ConsumerRegistrationV1 = 1u << 8,
         OwnerFilteredExternalContactsV1 = 1u << 9,
         InteractionCommandQueue = 1u << 10,
@@ -634,6 +635,12 @@ namespace rock::provider
     {
         None = 0,
         UsePreferredGrabPointGame = 1u << 0,
+        // targetFormId is an owned ALCH/throwable base form, not a world REFR.
+        // Requires hand=None and no other flags. Transfers exactly one item to
+        // the first free hand (right preferred), without using or equipping it.
+        // Query InventoryForceGrab support first. Failure before the drop leaves
+        // inventory unchanged; failed attachment attempts return the exact drop.
+        FromPlayerInventory = 1u << 1,
     };
 
     enum class RockProviderForceReleaseFlagV1 : std::uint32_t

@@ -4,6 +4,23 @@
 
 namespace rock
 {
+    namespace
+    {
+        void rollbackInventoryTransfer(const PendingForceGrabCommit& commit)
+        {
+            if (!commit.inventoryTransfer) {
+                return;
+            }
+            const auto ref = commit.targetHandle.get();
+            const bool returned = ref && loose_grenade_runtime::returnDroppedReferenceToInventory(ref.get());
+            f4vr::showNotification(returned ?
+                "ROCK: Item handoff failed; returned to inventory." :
+                "ROCK: Item handoff failed; check the dropped item near your hand.");
+            ROCK_LOG_WARN(Hand, "Inventory handoff rollback: command={} ref={:08X} returned={}",
+                commit.providerResultTemplate.commandId, ref ? ref->GetFormID() : 0, returned);
+        }
+    }
+
     void PhysicsInteraction::clearLooseGrenadeImpactWatches()
     {
         for (auto& bodyId : _forceGrab.grenadeImpactBodyIds) {
@@ -33,6 +50,7 @@ namespace rock
                             commit.grenadeRequestId);
                     }
                 }
+                rollbackInventoryTransfer(commit);
                 commit = {};
             }
         }
@@ -121,6 +139,7 @@ namespace rock
                 !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
+                rollbackInventoryTransfer(commit);
                 commit = {};
             }
         }
@@ -253,6 +272,7 @@ namespace rock
                     commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
                     commit.providerResultTemplate.failure = providerFailure;
                     provider::completeInteractionCommandV1(commit.providerResultTemplate);
+                    rollbackInventoryTransfer(commit);
                 } else {
                     const bool returnedToInventory = targetRef && loose_grenade_runtime::returnDroppedReferenceToInventory(targetRef);
                     if (targetRef) {
@@ -282,6 +302,7 @@ namespace rock
                     "Pending provider force-grab commit cancelled because its command is no longer active: command={} hand={}",
                     commit.providerResultTemplate.commandId,
                     commit.isLeft ? "left" : "right");
+                rollbackInventoryTransfer(commit);
                 commit = {};
                 continue;
             }
@@ -303,6 +324,9 @@ namespace rock
             }
 
             if (commit.phase == PendingForceGrabCommitPhase::WaitingForReference) {
+                if (commit.inventoryTransfer) {
+                    commit.providerResultTemplate.targetFormId = targetRef->GetFormID();
+                }
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
             }
             if (!canHandAcceptForceGrab(hand, commit.isLeft, handInput.disabled)) {
@@ -329,7 +353,7 @@ namespace rock
                     sourcePoint,
                     commit.preferredBodyId,
                     commit.maxDistanceGame,
-                    commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw &&
+                    (commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw || commit.inventoryTransfer) &&
                         commit.targetIsLooseThrowable &&
                         loose_grenade_runtime::isThrowableRef(targetRef))) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
@@ -414,6 +438,7 @@ namespace rock
                         "Provider force-grab rolled back because command ownership ended during commit: command={} hand={}",
                         commit.providerResultTemplate.commandId,
                         commit.isLeft ? "left" : "right");
+                    rollbackInventoryTransfer(commit);
                     commit = {};
                     continue;
                 }

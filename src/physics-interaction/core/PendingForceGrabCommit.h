@@ -44,6 +44,7 @@ namespace rock
 
         RE::ObjectRefHandle targetHandle{};
         bool targetIsLooseThrowable{ false };
+        bool inventoryTransfer{ false };
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
         bool hasSourcePointOverride{ false };

@@ -23,7 +23,7 @@ namespace rock
                 !provider::isInteractionCommandActiveV1(command.ownerToken, command.commandId)) {
                 continue;
             }
-            const auto requestHand = [&]() {
+            auto requestHand = [&]() {
                 switch (command.kind) {
                 case RockProviderInteractionCommandKindV1::ForceGrab:
                     return command.forceGrab.hand;
@@ -147,6 +147,19 @@ namespace rock
                 continue;
             }
 
+            const bool inventoryTransfer = isForceGrabCommand &&
+                (command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
+            if (inventoryTransfer) {
+                const bool rightFree = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true) == 0;
+                const bool leftFree = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true) == 0;
+                if (!rightFree && !leftFree) {
+                    f4vr::showNotification("ROCK: Cannot take item - neither hand is free.");
+                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                    continue;
+                }
+                requestHand = rightFree ? RockProviderHand::Right : RockProviderHand::Left;
+                result.hand = requestHand;
+            }
             const bool isLeft = requestHand == RockProviderHand::Left;
             if (requestHand != RockProviderHand::Left && requestHand != RockProviderHand::Right) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandInvalid);
@@ -281,6 +294,43 @@ namespace rock
 
             if (command.forceGrab.targetFormId == 0) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                continue;
+            }
+
+            if (inventoryTransfer) {
+                auto* weapon = RE::TESForm::GetFormByID<RE::TESObjectWEAP>(command.forceGrab.targetFormId);
+                const bool throwable = weapon && loose_grenade_runtime::isThrowableWeapon(weapon);
+                if (throwable && (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) || hasActiveLooseGrenadeCommit())) {
+                    f4vr::showNotification("ROCK: A throwable is already held or attaching.");
+                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetAlreadyOwned);
+                    continue;
+                }
+                RE::NiPoint3 dropLocation = handInput.grabAnchorWorld;
+                dropLocation.z -= 3.0f;
+                const auto drop = loose_grenade_runtime::dropInventoryItemToWorld(command.forceGrab.targetFormId, dropLocation);
+                if (!drop.success) {
+                    ROCK_LOG_WARN(Hand, "Inventory handoff rejected: item={:08X} reason={}", command.forceGrab.targetFormId, drop.reason);
+                    f4vr::showNotification("ROCK: This inventory item could not be taken.");
+                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                    continue;
+                }
+                result.targetFormId = drop.droppedRef ? drop.droppedRef->GetFormID() : 0;
+                auto& commit = _forceGrab.pendingCommits[isLeft ? 1u : 0u];
+                commit = PendingForceGrabCommit{
+                    .active = true,
+                    .isLeft = isLeft,
+                    .origin = PendingForceGrabCommitOrigin::ProviderForceGrabCommand,
+                    .phase = PendingForceGrabCommitPhase::WaitingForReference,
+                    .targetHandle = drop.handle,
+                    .targetIsLooseThrowable = throwable,
+                    .inventoryTransfer = true,
+                    .maxDistanceGame = 96.0f,
+                    .providerResultTemplate = result,
+                };
+                // Keep the pending transfer even if cancellation won the race:
+                // the normal prune path owns rollback of this exact handle.
+                complete(RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None);
+                ROCK_LOG_INFO(Hand, "Inventory handoff queued: item={:08X} command={} hand={}", command.forceGrab.targetFormId, command.commandId, isLeft ? "left" : "right");
                 continue;
             }
 

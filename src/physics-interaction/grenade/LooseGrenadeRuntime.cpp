@@ -538,6 +538,59 @@ namespace rock::loose_grenade_runtime
         return result;
     }
 
+    DropResult dropInventoryItemToWorld(std::uint32_t baseFormId, const RE::NiPoint3& dropLocation)
+    {
+        DropResult result{};
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* form = RE::TESForm::GetFormByID(baseFormId);
+        auto* object = form ? form->As<RE::TESBoundObject>() : nullptr;
+        if (!player || !player->inventoryList || !object ||
+            !object->GetPlayable(object->GetBaseInstanceData()) ||
+            (!object->Is(RE::ENUM_FORM_ID::kALCH) &&
+                !(object->Is(RE::ENUM_FORM_ID::kWEAP) && isThrowableWeapon(static_cast<RE::TESObjectWEAP*>(object))))) {
+            result.reason = "unsupported-inventory-item";
+            return result;
+        }
+        std::uint32_t chosenStack = kInvalidStackId;
+        {
+            const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
+            std::uint32_t scanned = 0;
+            for (const auto& entry : player->inventoryList->data) {
+                if (++scanned > 16384) {
+                    break;
+                }
+                if (entry.object != object) {
+                    continue;
+                }
+                std::uint32_t stackId = 0;
+                for (auto* stack = entry.stackData.get(); stack && stackId < 4096; stack = stack->nextStack.get(), ++stackId) {
+                    if (stack->GetCount() > 0) {
+                        chosenStack = stackId;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        if (chosenStack == kInvalidStackId) {
+            result.reason = "item-no-longer-owned";
+            return result;
+        }
+        // Same native, instance-preserving transfer as grenade quick draw.
+        // Release the inventory read lock before the engine mutates its stacks.
+        RE::TESObjectREFR::RemoveItemData removeData(object, 1);
+        removeData.reason = RE::ITEM_REMOVE_REASON::KDropping;
+        removeData.dropLoc = &dropLocation;
+        removeData.stackData.push_back(chosenStack);
+        result.stackId = chosenStack;
+        result.handle = player->RemoveItem(removeData);
+        result.success = static_cast<bool>(result.handle);
+        const auto dropped = result.handle.get();
+        result.droppedRef = dropped.get();
+        result.reason = result.success ? "dropped" : "remove-item-failed";
+        return result;
+    }
+
     bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion)
     {
         if (!ref || !explosion) {

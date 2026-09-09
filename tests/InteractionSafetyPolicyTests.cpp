@@ -203,8 +203,18 @@ int main()
     ok &= expectFalse("state outside the FO4VR weapon enum is invalid", isValidNativeWeaponState(6));
 
     ForceGrabReservations reservations;
-    ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(RockProviderHand::None, 11, 100));
+    ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(static_cast<RockProviderHand>(99), 11, 100));
+    ok &= expectFalse("auto hand rejects missing owner", reservations.reserve(RockProviderHand::None, 0, 100));
+    ok &= expectTrue("auto hand reserves both hands", reservations.reserve(RockProviderHand::None, 11, 100));
+    ok &= expectTrue("auto hand reserves right", reservations.isReserved(RockProviderHand::Right));
+    ok &= expectTrue("auto hand reserves left", reservations.isReserved(RockProviderHand::Left));
+    ok &= expectFalse("auto hand blocks overtaking request", reservations.reserve(RockProviderHand::Left, 22, 201));
+    reservations.release(22, 100);
+    ok &= expectTrue("different owner cannot release auto hand", reservations.matches(11, 100));
+    reservations.release(11, 100);
+    ok &= expectFalse("auto hand completion releases both", reservations.isReserved(RockProviderHand::None));
     ok &= expectTrue("first right API force grab reserves", reservations.reserve(RockProviderHand::Right, 11, 101));
+    ok &= expectFalse("auto hand cannot overtake reserved right", reservations.reserve(RockProviderHand::None, 22, 200));
     ok &= expectFalse("duplicate right API force grab is rejected", reservations.reserve(RockProviderHand::Right, 11, 102));
     ok &= expectTrue("independent left API force grab is allowed", reservations.reserve(RockProviderHand::Left, 22, 201));
     ok &= expectTrue("dequeue does not implicitly release right", reservations.isReserved(RockProviderHand::Right));
