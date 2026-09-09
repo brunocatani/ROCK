@@ -135,5 +135,10 @@ int main()
     // A scheduler restart drops old budgets; cold idle does not log startup.
     signal = {};
     if (window.observe(1, 0, signal) || window.active || window.observe(2, 3, signal)) return 24;
+    // Recovery completion may occur after the button/menu trace tail ends.
+    signal.inputRecoveryMask = 2;
+    if (!window.observe(3, 0, signal) || window.observe(15, 0, signal)) return 25;
+    signal.inputRecoveryMask = 0;
+    if (!window.observe(30, 1, signal) || !window.observe(30, 2, signal)) return 26;
     return 0;
 }

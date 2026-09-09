@@ -1194,7 +1194,6 @@ namespace rock
         constexpr float kMaxBoneToDriverDistance = 30.0f;
         const auto refreshHand = [&](const bool isLeft,
                                      RE::NiNode* wandNode,
-                                     RE::NiNode* dampedDriverNode,
                                      RE::NiTransform& outBoneInWand,
                                      bool& outWandValid,
                                      RE::NiTransform& outBoneInDampedDriver,
@@ -1208,15 +1207,15 @@ namespace rock
                 return;
             }
 
-            const auto captureRelation = [&](RE::NiNode* sourceNode,
+            const auto captureRelation = [&](const RE::NiTransform* sourceWorld,
                                              RE::NiTransform& outRelation,
                                              bool& outValid) {
-                if (!sourceNode || !isFiniteTransform(sourceNode->world)) {
+                if (!sourceWorld || !isFiniteTransform(*sourceWorld)) {
                     return;
                 }
                 const RE::NiTransform relation =
                     transform_math::composeTransforms(
-                        transform_math::invertTransform(sourceNode->world),
+                        transform_math::invertTransform(*sourceWorld),
                         handWorld);
                 if (!isFiniteTransform(relation) ||
                     std::sqrt(dot(
@@ -1229,17 +1228,16 @@ namespace rock
                 outValid = true;
             };
 
-            captureRelation(wandNode, outBoneInWand, outWandValid);
-            captureRelation(
-                dampedDriverNode,
-                outBoneInDampedDriver,
-                outDampedDriverValid);
+            captureRelation(wandNode ? &wandNode->world : nullptr, outBoneInWand, outWandValid);
+            RE::NiTransform inputDriver{};
+            if (frik_hand_world_authority::tryGetInputDriverWorld(isLeft, inputDriver)) {
+                captureRelation(&inputDriver, outBoneInDampedDriver, outDampedDriverValid);
+            }
         };
 
         refreshHand(
             false,
             playerNodes->primaryWandNode,
-            playerNodes->primaryWeaponOffsetNOde,
             _firing.rightNaturalBoneInWand,
             _firing.hasRightNaturalBoneInWand,
             _firing.rightNaturalBoneInDampedDriver,
@@ -1247,7 +1245,6 @@ namespace rock
         refreshHand(
             true,
             playerNodes->SecondaryWandNode,
-            playerNodes->SecondaryMeleeWeaponOffsetNode2,
             _firing.leftNaturalBoneInWand,
             _firing.hasLeftNaturalBoneInWand,
             _firing.leftNaturalBoneInDampedDriver,

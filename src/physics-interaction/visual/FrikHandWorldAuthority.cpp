@@ -66,13 +66,18 @@ namespace rock::frik_hand_world_authority
          * with FRIK's own filter instead (factors through its config API,
          * camera step compensated) from the node ROCK read last frame, so
          * the claim FRIK consumes equals the seat up to prediction error.
-         * After FRIK's frame the actual node replaces the prediction in the
-         * driver frame and every claim is re-anchored to it.
+         * After FRIK's frame accepted native output replaces the prediction.
+         * During a scope-history discontinuity the controller-derived input
+         * remains authoritative; native output cannot re-anchor the claims.
          */
         struct DampenState
         {
             prediction_policy::FrikDampenConfig config{};
             std::array<prediction_policy::ObservedDriver, 2> history{};
+            std::array<prediction_policy::ScopeInputContinuity, 2> scopeInput{};
+            std::array<bool, 2> inputIsolatedThisPass{};
+            std::array<prediction_policy::DriverHandRelation, 2> firstPersonInDriver{};
+            std::array<DriverSample, 2> firstPersonInput{};
             std::uint64_t runtimeFrameObserved = 0;
             bool runtimeMenuSnapshot = false;
             bool menuUsed = false;
@@ -136,6 +141,8 @@ namespace rock::frik_hand_world_authority
         {
             registry_policy::Registry registry{};
             DriverFrame driverFrame{};
+            // Native presentation is an observation, not necessarily controller input.
+            DriverFrame nativeDriverFrame{};
             // The pass before: the driver's motion over the frame, for the trace.
             DriverFrame previousDriverFrame{};
             // The winner per hand at the end of the previous ROCK frame, for the trace.
@@ -349,6 +356,10 @@ namespace rock::frik_hand_world_authority
             dampen.runtimeFrameObserved = runtime_state::currentFrame().frameIndex;
             dampen.runtimeMenuSnapshot = runtime_state::currentFrame().localScopeMenuOpen;
             dampen.predictionMode = {};
+            dampen.inputIsolatedThisPass = {};
+            for (auto& state : dampen.scopeInput) {
+                state.beginPass(dampen.menuUsed, dampen.config.normal.enabled, dampen.config.vanillaScope.enabled);
+            }
             g_service.predictionErrors = {};
 
             DriverFrame frame = rawFrame;
@@ -372,23 +383,34 @@ namespace rock::frik_hand_world_authority
         }
 
         /*
-         * Post-FRIK: the dampened node FRIK actually wrote replaces the
-         * prediction in the driver frame, becomes the next prediction's
-         * previous value in every mode, and scores the prediction. Pose and
-         * camera history always describe the same scheduler pass.
+         * Post-FRIK: score native presentation against the predicted input.
+         * Accept normal output, but keep scope recovery on the current input
+         * until the two agree. Pose and camera history share one pass.
          */
         void observeActualDrivers()
         {
             auto& dampen = g_service.dampen;
             auto& probes = g_service.probes;
+            // Menu events can arrive after the outer sample. A late close
+            // must arm protection before any native result is accepted.
+            const bool observedScope = runtime_state::isScopeMenuOpenNow();
+            const auto observedFactors = prediction_policy::selectFactors(dampen.config, observedScope);
+            for (auto& state : dampen.scopeInput) {
+                state.beginPass(observedScope, dampen.config.normal.enabled, dampen.config.vanillaScope.enabled);
+            }
+            g_service.nativeDriverFrame = {};
+            g_service.nativeDriverFrame.sequence = g_service.rockFrameSequence;
             for (std::size_t hand = 0; hand < 2; ++hand) {
                 const bool isLeft = hand == handIndex(true);
                 g_service.predictionErrors[hand] = {};
                 RE::NiTransform actual{};
                 if (!readOffsetNodeWorld(isLeft, actual)) {
                     dampen.history[hand] = {};
+                    g_service.driverFrame.hands[hand] = {};
+                    dampen.inputIsolatedThisPass[hand] = dampen.scopeInput[hand].recovering;
                     continue;
                 }
+                g_service.nativeDriverFrame.hands[hand] = { actual, true };
                 DriverSample& sample = g_service.driverFrame.hands[hand];
                 if (sample.valid) {
                     PredictionError& error = g_service.predictionErrors[hand];
@@ -419,15 +441,46 @@ namespace rock::frik_hand_world_authority
                         }
                     }
                 }
-                sample.world = actual;
-                sample.valid = true;
+                auto& continuity = dampen.scopeInput[hand];
+                if (continuity.recovering && (!sample.valid || !dampen.cameraNowValid)) {
+                    sample = {};
+                    dampen.inputIsolatedThisPass[hand] = true;
+                } else if (continuity.acceptNative(sample.world, actual)) {
+                    sample = { actual, true };
+                } else {
+                    // Keep the input computed from current controller motion.
+                    // Feeding native scope history back here would move the
+                    // existing hand claims before the weapon solver even runs.
+                    dampen.inputIsolatedThisPass[hand] = true;
+                }
                 dampen.history[hand] = prediction_policy::ObservedDriver{
-                    .world = actual,
+                    .world = sample.world,
                     .camera = dampen.cameraNow,
                     .sequence = g_service.driverFrame.sequence,
-                    .dampeningEnabled = dampen.factorsThisPass.enabled,
-                    .valid = dampen.cameraNowValid && g_service.driverFrame.sequence == g_service.rockFrameSequence,
+                    .dampeningEnabled = observedFactors.enabled,
+                    .valid = sample.valid && dampen.cameraNowValid && g_service.driverFrame.sequence == g_service.rockFrameSequence,
                 };
+            }
+
+            // Either native arm pass can move the first-person tree. Protect
+            // both hand inputs while either driver is recovering, using the
+            // last sound local relation, without editing any native node.
+            const bool isolateHands = dampen.inputIsolatedThisPass[0] || dampen.inputIsolatedThisPass[1];
+            for (std::size_t hand = 0; hand < 2; ++hand) {
+                const bool isLeft = hand == handIndex(true);
+                auto& firstPerson = dampen.firstPersonInput[hand];
+                firstPerson = {};
+                const auto& driver = g_service.driverFrame.hands[hand];
+                auto& relation = dampen.firstPersonInDriver[hand];
+                if (isolateHands) {
+                    if (driver.valid && relation.valid) {
+                        firstPerson.world = transform_math::composeTransforms(driver.world, relation.handInDriver);
+                        firstPerson.valid = registry_policy::isFiniteTransform(firstPerson.world);
+                    }
+                } else {
+                    firstPerson.valid = frik_visual_authority::tryGetHandWorldTransform(
+                        frik_visual_authority::handFromBool(isLeft), firstPerson.world);
+                }
             }
         }
 
@@ -616,9 +669,26 @@ namespace rock::frik_hand_world_authority
             g_service.isolation[hand].presentRotationDegrees = 0.0f;
         }
         // The consumed targets above are what FRIK solved to (the predicted
-        // rebase); the registry now follows the node FRIK actually wrote.
+        // rebase); the registry now follows accepted controller input. Native
+        // presentation remains separate when scope history is recovering.
         registry_policy::reanchorClaims(g_service.registry, g_service.driverFrame);
         g_service.presentationAllowed = false;
+    }
+
+    bool tryGetInputDriverWorld(const bool isLeft, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        const auto& frame = g_service.driverFrame;
+        const auto& sample = frame.hands[handIndex(isLeft)];
+        if (frame.sequence == 0 || frame.sequence != g_service.rockFrameSequence || !sample.valid) return false;
+        outWorld = sample.world;
+        return true;
+    }
+
+    std::uint8_t scopeInputRecoveryMask() noexcept
+    {
+        return static_cast<std::uint8_t>((g_service.dampen.scopeInput[0].recovering ? 1 : 0) |
+            (g_service.dampen.scopeInput[1].recovering ? 2 : 0));
     }
 
     bool publish(const char* tag, const bool isLeft, const RE::NiTransform& requestedTarget, const int priority, const RebaseDriver driver)
@@ -776,15 +846,23 @@ namespace rock::frik_hand_world_authority
             }
 
             isolation_policy::FrameInput input{};
-            input.firstPersonHandValid = frik_visual_authority::tryGetHandWorldTransform(
-                frik_visual_authority::handFromBool(isLeft),
-                input.firstPersonHandWorld);
+            const auto& dampen = g_service.dampen;
+            input.firstPersonHandValid = dampen.firstPersonInput[hand].valid;
+            input.firstPersonHandWorld = dampen.firstPersonInput[hand].world;
+            input.firstPersonInputCorrected = dampen.inputIsolatedThisPass[0] || dampen.inputIsolatedThisPass[1];
             input.bodyHandNodeWorld = sample.bodyHandNodeWorld;
             input.bodyHandNodeValid = sample.bodyHandNodeValid;
             input.flattenedHandWorld = sample.flattenedHandWorld;
             input.flattenedHandValid = sample.flattenedHandValid;
             input.claimConsumed = g_service.claimConsumedThisFrame[hand];
-            input.calibrationAllowed = !recoilKickThisFrame;
+            input.calibrationAllowed = !recoilKickThisFrame && !input.firstPersonInputCorrected;
+            if (firstResolveThisFrame && input.calibrationAllowed && input.firstPersonHandValid) {
+                const auto& driver = g_service.driverFrame.hands[hand];
+                if (driver.valid) {
+                    const auto captured = prediction_policy::captureDriverHandRelation(driver.world, input.firstPersonHandWorld);
+                    if (captured.valid) g_service.dampen.firstPersonInDriver[hand] = captured;
+                }
+            }
             state.result = isolation_policy::resolveFrame(state.relation, input);
             state.chainTransport = transport_policy::makeHandTransport(
                 state.result.rawHandWorld,
@@ -1047,6 +1125,10 @@ namespace rock::frik_hand_world_authority
         result.cameraPreviousValid = d.cameraPrevValid;
         result.raw = g_service.rawFrame.hands;
         result.driver = g_service.driverFrame.hands;
+        result.nativeDriver = g_service.nativeDriverFrame.hands;
+        result.firstPersonInput = d.firstPersonInput;
+        result.inputIsolated = d.inputIsolatedThisPass;
+        result.recoveryMask = scopeInputRecoveryMask();
         result.consumed = g_service.consumedTargets;
         for (std::size_t i = 0; i < 2; ++i) {
             result.history[i] = { d.history[i].world, d.history[i].valid };
@@ -1082,6 +1164,7 @@ namespace rock::frik_hand_world_authority
         g_service.dampen = {};
         g_service.predictionErrors = {};
         g_service.rawFrame = {};
+        g_service.nativeDriverFrame = {};
         registry_policy::clearAll(g_service.registry);
         g_service.claimConsumedThisFrame = {};
         g_service.consumedTargets = {};

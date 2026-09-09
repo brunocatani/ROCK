@@ -108,12 +108,16 @@ namespace rock::scope_transition_telemetry
                 write("SCT prediction frame={} phase={} hand={} mode={} errorValid={} errorGameUnits={:.4f} errorDegrees={:.4f}",
                     sequence(), phase, left ? "left" : "right", dampened_driver_prediction_policy::predictionModeName(d.predictionMode[i]),
                     d.predictionErrorValid[i], d.predictionTranslationError[i], d.predictionRotationError[i]);
+                write("SCT input frame={} phase={} hand={} isolated={} recoveryMask={} relationInputValid={}",
+                    sequence(), phase, left ? "left" : "right", d.inputIsolated[i], d.recoveryMask, d.firstPersonInput[i].valid);
                 write("SCT history frame={} phase={} hand={} historySequence={} ageKnown={} ageFrames={} cameraValid={} origin=({:.4f},{:.4f},{:.4f}) accumulatedCamera=({:.4f},{:.4f},{:.4f})",
                     sequence(), phase, left ? "left" : "right", d.historySequence[i], historyKnown,
                     historyKnown ? sequence() - d.historySequence[i] : 0, d.historyCameraValid[i] && d.cameraNowValid,
                     camera.x, camera.y, camera.z, movement.x, movement.y, movement.z);
                 pose(phase, left ? "raw-left" : "raw-right", d.raw[i].world, d.raw[i].valid);
                 pose(phase, left ? "effective-driver-left" : "effective-driver-right", d.driver[i].world, d.driver[i].valid);
+                pose(phase, left ? "native-driver-left" : "native-driver-right", d.nativeDriver[i].world, d.nativeDriver[i].valid);
+                pose(phase, left ? "input-fp-left" : "input-fp-right", d.firstPersonInput[i].world, d.firstPersonInput[i].valid);
                 pose(phase, left ? "history-left" : "history-right", d.history[i].world, d.history[i].valid);
                 pose(phase, left ? "cached-presented-left" : "cached-presented-right", d.presented[i].world, d.presented[i].valid);
                 pose(phase, left ? "consumed-left" : "consumed-right", d.consumed[i].target, d.consumed[i].valid);
@@ -141,7 +145,7 @@ namespace rock::scope_transition_telemetry
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
             next->log->set_error_handler([](const std::string&) { writerFailed.store(true, std::memory_order_relaxed); });
             writerFailed.store(false, std::memory_order_relaxed);
-            next->log->info("SCT start version=2 pid={} build={} {} tailFrames={} maximumBurstFrames={} matrices=Ni-stored-rows scopeTraceObservational=true",
+            next->log->info("SCT start version=3 pid={} build={} {} tailFrames={} maximumBurstFrames={} matrices=Ni-stored-rows scopeTraceObservational=true",
                 GetCurrentProcessId(), __DATE__, __TIME__, policy::kTailFrames, policy::kMaximumBurstFrames);
             next->log->flush();
             session = std::move(next);
@@ -187,7 +191,8 @@ namespace rock::scope_transition_telemetry
             const bool rendererValid = native_memory::tryReadField(
                 reinterpret_cast<const void*>(REL::Offset(offsets::kData_NativeScopeRendererState).address()), 3, renderer);
             const policy::Signals signals{ menuEvent.load(std::memory_order_acquire),
-                input_remap_runtime::isManualScopeActivationRequested(), rendererValid, renderer != 0 };
+                input_remap_runtime::isManualScopeActivationRequested(), rendererValid, renderer != 0,
+                frik_hand_world_authority::scopeInputRecoveryMask() };
             const bool wasCapped = session->window.capped;
             if (!session->window.observe(schedulerSequence, static_cast<unsigned>(phase), signals)) {
                 if (!wasCapped && session->window.capped) session->log->warn("SCT burst capped frame={} edge={}; waiting for quiet gap", schedulerSequence, session->window.edge);

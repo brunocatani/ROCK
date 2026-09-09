@@ -90,6 +90,11 @@ namespace rock::frik_hand_world_authority
      */
     void beginRockFrame(std::uint64_t sequence);
 
+    // Current accepted controller driver. Never read rendered offset nodes as
+    // a second physical-input source after the provider pass.
+    [[nodiscard]] bool tryGetInputDriverWorld(bool isLeft, RE::NiTransform& outWorld);
+    [[nodiscard]] std::uint8_t scopeInputRecoveryMask() noexcept;
+
     struct ScopeDampenTrace
     {
         std::uint64_t driverSequence = 0;
@@ -103,6 +108,9 @@ namespace rock::frik_hand_world_authority
         RE::NiPoint3 cameraNow{}, cameraPrevious{};
         bool cameraNowValid = false, cameraPreviousValid = false;
         std::array<hand_world_claim_registry_policy::DriverSample, 2> raw{}, driver{}, history{}, presented{};
+        std::array<hand_world_claim_registry_policy::DriverSample, 2> nativeDriver{}, firstPersonInput{};
+        std::array<bool, 2> inputIsolated{};
+        std::uint8_t recoveryMask = 0;
         std::array<hand_world_claim_registry_policy::ConsumedTarget, 2> consumed{}, claimed{};
         std::array<std::uint64_t, 2> historySequence{};
         std::array<RE::NiPoint3, 2> historyCamera{};

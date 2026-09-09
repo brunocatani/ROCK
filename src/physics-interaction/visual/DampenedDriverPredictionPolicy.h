@@ -42,7 +42,7 @@ namespace rock::dampened_driver_prediction_policy
         bool valid = false;
     };
 
-    // One post-FRIK observation and the camera sample from that same pass.
+    // One accepted input and the camera sample from that same pass.
     // Keep observing while dampening is off: a pre-scope world is not a
     // previous-frame pose after walking in the scope.
     struct ObservedDriver
@@ -79,6 +79,56 @@ namespace rock::dampened_driver_prediction_policy
         RE::NiTransform world{};
         PredictionMode mode = PredictionMode::RawUnavailable;
     };
+
+    // Only the scope-disabled -> enabled boundary can separate ROCK input
+    // from native presentation. Ordinary frames still accept native output.
+    struct ScopeInputContinuity
+    {
+        bool suspendedByScope = false;
+        bool recovering = false;
+
+        void beginPass(const bool inScope, const bool normalEnabled, const bool scopeEnabled) noexcept
+        {
+            const bool suspended = inScope && normalEnabled && !scopeEnabled;
+            recovering = !inScope && normalEnabled && (recovering || suspendedByScope);
+            suspendedByScope = suspended;
+        }
+
+        // A measured handoff, not a timeout: retained native history may take
+        // any number of frames to converge. Tolerances cover scene float noise.
+        [[nodiscard]] bool acceptNative(const RE::NiTransform& input, const RE::NiTransform& native) noexcept
+        {
+            if (!recovering) return true;
+            const auto delta = input.translate - native.translate;
+            if (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z <= 0.05f * 0.05f &&
+                hand_visual_lerp_math::rotationDistanceDegrees(input, native) <= 0.05f &&
+                std::fabs(input.scale - native.scale) <= 0.0001f) {
+                recovering = false;
+                return true;
+            }
+            return false;
+        }
+    };
+
+    struct DriverHandRelation
+    {
+        RE::NiTransform handInDriver{};
+        bool valid = false;
+    };
+
+    // The first-person tree can be rebuilt by either arm's native update.
+    // Never learn its local hand relation from a recovering driver pass.
+    [[nodiscard]] inline DriverHandRelation captureDriverHandRelation(
+        const RE::NiTransform& driver, const RE::NiTransform& hand)
+    {
+        const auto relation = transform_math::orthonormalizedTransform(transform_math::composeTransforms(
+            transform_math::invertTransform(driver), hand));
+        const auto& p = relation.translate;
+        const bool valid = std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
+            p.x * p.x + p.y * p.y + p.z * p.z <= 30.0f * 30.0f &&
+            std::isfinite(relation.scale) && relation.scale >= 0.25f && relation.scale <= 4.0f;
+        return { relation, valid };
+    }
 
     [[nodiscard]] inline bool isUsableFactor(const float factor) noexcept
     {

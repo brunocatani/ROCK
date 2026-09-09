@@ -271,6 +271,38 @@ int main()
         }
     }
 
+    // Scope recovery must use the corrected controller input even for an
+    // unclaimed hand. A displayed native hand is not a fallback input here.
+    for (const bool claimed : { false, true }) {
+        RelationState relation{};
+        relation.firstPersonToBodyHand = identity();
+        relation.valid = true;
+        const auto controller = yawed(15.0f, 10.0f, 20.0f, 30.0f);
+        const auto displaced = yawed(15.0f, 242.0f, 20.0f, 30.0f);
+        const auto blend = yawed(6.0f, 0.0f, 0.0f, 0.0f);
+        FrameInput corrected{
+            .firstPersonHandWorld = controller,
+            .firstPersonHandValid = true,
+            .firstPersonInputCorrected = true,
+            .bodyHandNodeWorld = displaced,
+            .bodyHandNodeValid = true,
+            .flattenedHandWorld = compose(displaced, blend),
+            .flattenedHandValid = true,
+            .claimConsumed = claimed,
+            .calibrationAllowed = false,
+        };
+        const auto result = resolveFrame(relation, corrected);
+        ok &= expectEnum("scope controller input reconstructed", result.source, RawHandSource::Reconstructed);
+        ok &= expectNear("scope input rejects displayed displacement", result.rawHandWorld.translate.x, 10.0f, 0.001f);
+        ok &= expectNear("current palm blend retained", rotationDegrees(result.rawHandWorld, compose(controller, blend)), 0.0f, 0.01f);
+        ok &= expectTrue("scope output cannot recalibrate relation", relation.acceptedSamples == 0);
+        corrected.firstPersonHandValid = false;
+        ok &= expectFalse("missing corrected input fails closed", resolveFrame(relation, corrected).valid);
+        corrected.firstPersonHandValid = true;
+        relation.valid = false;
+        ok &= expectFalse("missing relation fails closed", resolveFrame(relation, corrected).valid);
+    }
+
     if (!ok) {
         std::printf("TrackedHandIsolationPolicyTests FAILED\n");
         return 1;

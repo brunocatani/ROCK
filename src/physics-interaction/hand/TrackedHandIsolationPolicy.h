@@ -50,6 +50,10 @@ namespace rock::tracked_hand_isolation_policy
     {
         RE::NiTransform firstPersonHandWorld{};
         bool firstPersonHandValid = false;
+        // A scope transition supplied a controller-derived hand input instead
+        // of the displaced native first-person output. Reconstruct even when
+        // no claim is active; the rendered body may carry that same reset.
+        bool firstPersonInputCorrected = false;
         // The flattened hand bone's refNode: the body hand FRIK's solver wrote.
         RE::NiTransform bodyHandNodeWorld{};
         bool bodyHandNodeValid = false;
@@ -223,6 +227,13 @@ namespace rock::tracked_hand_isolation_policy
         input.bodyHandNodeWorld = transform_math::orthonormalizedTransform(rawInput.bodyHandNodeWorld);
         input.flattenedHandWorld = transform_math::orthonormalizedTransform(rawInput.flattenedHandWorld);
         FrameResult result{};
+        if (input.firstPersonInputCorrected) {
+            if (reconstruct(state, input, result.rawHandWorld)) {
+                result.valid = true;
+                result.source = RawHandSource::Reconstructed;
+            }
+            return result;
+        }
         if (!input.claimConsumed) {
             if (input.flattenedHandValid && isFiniteTransform(input.flattenedHandWorld)) {
                 result.rawHandWorld = input.flattenedHandWorld;

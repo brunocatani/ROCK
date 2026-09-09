@@ -922,27 +922,15 @@ namespace rock
                     toggleGrabDecision.rightReleasePressConsumed;
             }
 
-            const auto captureScopeHandDriverFrame = [](RE::NiNode* driverNode) {
+            const auto captureScopeHandDriverFrame = [](const bool isLeft) {
                 EquippedWeaponScopeHandDriverFrame result{};
-                result.nodeAvailable = driverNode != nullptr;
-                if (driverNode) {
-                    result.world = driverNode->world;
-                    result.worldFinite = finiteNiTransform(driverNode->world);
-                    result.valid = result.worldFinite;
-                }
+                result.nodeAvailable = frik_hand_world_authority::tryGetInputDriverWorld(isLeft, result.world);
+                result.worldFinite = result.nodeAvailable && finiteNiTransform(result.world);
+                result.valid = result.worldFinite;
                 return result;
             };
-            auto* playerNodes = f4vr::getPlayerNodes();
-            const auto scopeHandDriverNode = [playerNodes](bool isLeft) -> RE::NiNode* {
-                if (!playerNodes) {
-                    return nullptr;
-                }
-                return isLeft ?
-                    playerNodes->SecondaryMeleeWeaponOffsetNode2 :
-                    playerNodes->primaryWeaponOffsetNOde;
-            };
-            const EquippedWeaponScopeHandDriverFrame leftHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(true));
-            const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(false));
+            const EquippedWeaponScopeHandDriverFrame leftHandDriverFrame = captureScopeHandDriverFrame(true);
+            const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame = captureScopeHandDriverFrame(false);
             bool nativeScopeRequestActive = false;
             const bool nativeScopeRequestStateValid =
                 tryReadNativeScopeRequestState(nativeScopeRequestActive);

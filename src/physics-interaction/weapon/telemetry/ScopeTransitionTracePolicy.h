@@ -13,6 +13,7 @@ namespace rock::scope_transition_trace_policy
         bool button = false;
         bool rendererValid = false;
         bool renderer = false;
+        std::uint8_t inputRecoveryMask = 0;
         bool operator==(const Signals&) const = default;
     };
 
@@ -40,7 +41,7 @@ namespace rock::scope_transition_trace_policy
                 phaseMask = 0;
             }
             const bool changed = observed ? signals != previous :
-                signals.button || (signals.rendererValid && signals.renderer) || (signals.menuEvent & 1) != 0;
+                signals.button || (signals.rendererValid && signals.renderer) || (signals.menuEvent & 1) != 0 || signals.inputRecoveryMask != 0;
             previous = signals;
             observed = true;
             if (changed) {

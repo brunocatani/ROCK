@@ -2692,26 +2692,18 @@ namespace rock
     {
         outHandWorld = {};
         outDriverWorld = {};
-        auto* playerNodes = f4vr::getPlayerNodes();
-        RE::NiNode* dampedDriver = playerNodes ?
-            (isLeft ?
-                    playerNodes->SecondaryMeleeWeaponOffsetNode2 :
-                    playerNodes->primaryWeaponOffsetNOde) :
-            nullptr;
         const RE::NiTransform& boneInDriver = isLeft ?
             _firing.leftNaturalBoneInDampedDriver :
             _firing.rightNaturalBoneInDampedDriver;
         const bool relationValid = isLeft ?
             _firing.hasLeftNaturalBoneInDampedDriver :
             _firing.hasRightNaturalBoneInDampedDriver;
-        if (!dampedDriver ||
-            !relationValid ||
-            !isFiniteTransform(dampedDriver->world) ||
+        if (!relationValid ||
+            !frik_hand_world_authority::tryGetInputDriverWorld(isLeft, outDriverWorld) ||
             !isFiniteTransform(boneInDriver)) {
             return false;
         }
 
-        outDriverWorld = dampedDriver->world;
         outHandWorld = transform_math::composeTransforms(
             outDriverWorld,
             boneInDriver);
