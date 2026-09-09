@@ -770,6 +770,7 @@ namespace rock
             const RE::NiTransform& heldVisualNodeWorld,
             bool heldVisualNodeFromPresentedPose,
             float deltaTime);
+        void logGrabMeshContactProbe(const RE::NiTransform& rawHandWorld, const HeldDriveUpdate& driveUpdate);
         void updateHeldAcquisition(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
@@ -1370,6 +1371,7 @@ namespace rock
         RE::NiTransform _heldRenderClockProbePresentedNode{};
         RE::NiTransform _heldRenderClockProbeResidual{};
         bool _hasHeldRenderClockProbeSample = false;
+        std::uint64_t _grabMeshContactProbeTraceId = 0;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;

@@ -12395,6 +12395,7 @@ namespace rock
         const GrabReleaseContext& releaseContext,
         bool& outConvergingAcquisitionPhase)
     {
+        logGrabMeshContactProbe(handWorldTransform, driveUpdate);
         const float pivotTrackingErrorGameUnits = driveUpdate.pivotTrackingErrorGameUnits;
         const bool hasPivotTrackingError = driveUpdate.hasPivotTrackingError;
         const bool heldMotorContactSoftening = driveUpdate.heldMotorContactSoftening;
@@ -13254,6 +13255,137 @@ namespace rock
         }
 
 
+    }
+
+    void Hand::logGrabMeshContactProbe(const RE::NiTransform& rawHandWorld, const HeldDriveUpdate& driveUpdate)
+    {
+        // One measurement per settled grab, behind the existing diagnostic gate.
+        // Read the scene hand and scene mesh together: the queued presentation
+        // belongs to the next scene write and cannot witness a rendered gap.
+        if (!g_rockConfig.rockDebugGrabFrameLogging || !_grabFrame.hasTelemetryCapture ||
+            _grabMeshContactProbeTraceId == _grabFrame.traceId || _grabStartTime < 1.0f ||
+            _grabAcquisitionPhase != grab_three_phase::AcquisitionPhase::TouchHeld ||
+            _grabFingerLocalTransformFinalizePending) {
+            return;
+        }
+        _grabMeshContactProbeTraceId = _grabFrame.traceId;
+        const auto started = std::chrono::steady_clock::now();
+        const auto& triangles = _grabFrame.localMeshTriangles;
+        constexpr std::size_t kMaxProbeTriangles = 4096;
+        const char* unavailable = nullptr;
+        if (triangles.empty()) {
+            unavailable = "noCachedMesh";
+        } else if (triangles.size() > kMaxProbeTriangles) {
+            unavailable = "triangleBudgetExceeded";
+        } else if (!_grabFrame.heldNode || !isUsableGrabVisualTransform(_grabFrame.heldNode->world) ||
+                   !isUsableGrabVisualTransform(rawHandWorld) ||
+                   !isUsableGrabVisualTransform(driveUpdate.desiredObjectWorld)) {
+            unavailable = "invalidMeshOrHandFrame";
+        }
+        DirectSkeletonBoneReader reader;
+        DirectSkeletonBoneSnapshot bones{};
+        root_flattened_finger_skeleton_runtime::Snapshot fingers{};
+        const DirectSkeletonBoneEntry* sceneHand = nullptr;
+        if (!unavailable) {
+            if (!reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    SkeletonBoneCaptureSpace::Rendered, bones) ||
+                !root_flattened_finger_skeleton_runtime::buildFingerSkeletonSnapshot(bones, _isLeft, fingers)) {
+                unavailable = "renderedSkeletonUnavailable";
+            } else {
+                const std::string_view handBone = _isLeft ? "LArm_Hand" : "RArm_Hand";
+                for (const auto& bone : bones.bones) {
+                    if (bone.name == handBone && isUsableGrabVisualTransform(bone.world)) {
+                        sceneHand = &bone;
+                        break;
+                    }
+                }
+                if (!sceneHand) {
+                    unavailable = "renderedHandUnavailable";
+                }
+            }
+        }
+        if (unavailable) {
+            ROCK_LOG_DEBUG(Hand, "{} GRAB MESH CONTACT: trace={} unavailable={} triangles={}",
+                handName(), _grabFrame.traceId, unavailable, triangles.size());
+            return;
+        }
+
+        const auto sceneObjectWorld = _grabFrame.heldNode->world;
+        auto meshDistance = [&](const RE::NiPoint3& pointWorld, const RE::NiTransform& objectWorld) {
+            const auto pointLocal = transform_math::worldPointToLocal(objectWorld, pointWorld);
+            if (!grab_three_phase::isFinite(pointLocal)) {
+                return -1.0f;
+            }
+            float bestSquared = std::numeric_limits<float>::max();
+            for (const auto& triangle : triangles) {
+                float distanceSquared = 0.0f;
+                (void)closestPointOnTriangleToPoint(pointLocal,
+                    TriangleData{ triangle.v0, triangle.v1, triangle.v2 }, distanceSquared);
+                if (std::isfinite(distanceSquared) && distanceSquared >= 0.0f) {
+                    bestSquared = (std::min)(bestSquared, distanceSquared);
+                }
+            }
+            return bestSquared < std::numeric_limits<float>::max() ?
+                std::sqrt(bestSquared) * std::abs(objectWorld.scale) : -1.0f;
+        };
+        float targetPalmGap = -1.0f;
+        float scenePalmGap = -1.0f;
+        bool palmAvailable = false;
+        for (const auto& segment : _boneColliders.segmentColliderFrames()) {
+            if (segment.role != hand_collider_semantics::HandColliderRole::PalmFace ||
+                !segment.valid || !isUsableGrabVisualTransform(segment.target) ||
+                !std::isfinite(segment.radius) || segment.radius <= 0.0f) {
+                continue;
+            }
+            const auto scenePalm = transform_math::localPointToWorld(sceneHand->world,
+                transform_math::worldPointToLocal(rawHandWorld, segment.target.translate));
+            const float targetDistance = meshDistance(segment.target.translate, driveUpdate.desiredObjectWorld);
+            const float sceneDistance = meshDistance(scenePalm, sceneObjectWorld);
+            palmAvailable = targetDistance >= 0.0f && sceneDistance >= 0.0f;
+            if (palmAvailable) {
+                // Sphere clearance at the palm-face centre, not a signed
+                // penetration test of the entire palm capsule.
+                targetPalmGap = targetDistance - segment.radius;
+                scenePalmGap = sceneDistance - segment.radius * std::abs(sceneHand->world.scale / rawHandWorld.scale);
+            }
+            break;
+        }
+        std::array<float, 5> targetDistalDistances{};
+        std::array<float, 5> sceneDistalDistances{};
+        for (std::size_t finger = 0; finger < fingers.fingers.size(); ++finger) {
+            const auto sceneDistal = fingers.fingers[finger].points[2];
+            const auto targetDistal = transform_math::localPointToWorld(rawHandWorld,
+                transform_math::worldPointToLocal(sceneHand->world, sceneDistal));
+            targetDistalDistances[finger] = meshDistance(targetDistal, driveUpdate.desiredObjectWorld);
+            sceneDistalDistances[finger] = meshDistance(sceneDistal, sceneObjectWorld);
+        }
+        const auto targetGrip = transform_math::localPointToWorld(driveUpdate.desiredObjectWorld,
+            _grabFrame.gripEvidence.gripPointLocal);
+        const float pivotMeshDistance = meshDistance(targetGrip, driveUpdate.desiredObjectWorld);
+        const bool hasPriorPresented = _hasHeldRenderClockProbeSample && _heldRenderClockProbeTraceId == _grabFrame.traceId;
+        const auto& seat = _grabFrame.seat.diagnostics;
+        ROCK_LOG_DEBUG(Hand,
+            "{} GRAB MESH CONTACT: trace={} frame={} acquisition={} source={} synthetic={} triangles={} "
+            "pivotMesh={:.3f}gu palmAvailable={} palmSphereGap(target/scene)={:.3f}/{:.3f}gu "
+            "distalMeshTarget(T/I/M/R/P)=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f})gu "
+            "distalMeshScene(T/I/M/R/P)=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f})gu "
+            "fingerHits={} fingerPublished={} depthOffset={:.3f}gu backstop={:.3f}gu supportShift={:.3f}gu "
+            "published={} sceneHandToPublished={:.3f}gu/{:.3f}deg priorPresented={} sceneNodeToPriorPresented={:.3f}gu/{:.3f}deg us={}",
+            handName(), _grabFrame.traceId, runtime_state::currentFrame().frameIndex,
+            seat.acquisitionMode, _grabFrame.support.reason, _grabFrame.syntheticLooseWeaponPrimaryAttach,
+            triangles.size(), pivotMeshDistance, palmAvailable,
+            targetPalmGap, scenePalmGap,
+            targetDistalDistances[0], targetDistalDistances[1], targetDistalDistances[2], targetDistalDistances[3], targetDistalDistances[4],
+            sceneDistalDistances[0], sceneDistalDistances[1], sceneDistalDistances[2], sceneDistalDistances[3], sceneDistalDistances[4],
+            _grabFingerPose.hitCount, _grabFingerPosePublished, seat.depthOffsetGameUnits, seat.penetrationBackstopGameUnits,
+            _grabFrame.support.pivotShiftGameUnits, _hasLastPublishedGrabVisualHandTransform,
+            _hasLastPublishedGrabVisualHandTransform ? translationDeltaGameUnits(sceneHand->world, _lastPublishedGrabVisualHandTransform) : -1.0f,
+            _hasLastPublishedGrabVisualHandTransform ? rotationDeltaDegrees(sceneHand->world.rotate, _lastPublishedGrabVisualHandTransform.rotate) : -1.0f,
+            hasPriorPresented,
+            hasPriorPresented ? translationDeltaGameUnits(sceneObjectWorld, _heldRenderClockProbePresentedNode) : -1.0f,
+            hasPriorPresented ? rotationDeltaDegrees(sceneObjectWorld.rotate, _heldRenderClockProbePresentedNode.rotate) : -1.0f,
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count());
     }
 
     void Hand::finalizeHeldObjectUpdate(RE::hknpWorld* world,
