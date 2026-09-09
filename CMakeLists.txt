@@ -322,6 +322,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponInteractionPolicyTests)
 
+  add_executable(ROCKWeaponGapDecompositionTests "${ROOT_DIR}/tests/WeaponGapDecompositionTests.cpp")
+  target_compile_features(ROCKWeaponGapDecompositionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponGapDecompositionTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponGapDecompositionTests)
+
   add_executable(ROCKEquippedWeaponShoulderCoordinatorPolicyTests
     "${ROOT_DIR}/tests/EquippedWeaponShoulderCoordinatorPolicyTests.cpp"
   )

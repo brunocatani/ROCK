@@ -117,6 +117,8 @@ namespace rock
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
+        // A/B comparison: original support hulls or bounded gap-preserving compounds.
+        bool rockWeaponCollisionPreserveGaps = false;
         // Elapsed stable-witness window before a generation-driven weapon
         // visual rebuild commits (historical 8-frame tuning at 90 Hz).
         float rockWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;

@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/WeaponGapDecomposition.h"
 
 // Generated weapon collision sources: visual-source discovery, completeness tracking, source cache, incremental pending builds, and body creation.
 
@@ -306,7 +307,8 @@ namespace rock
         auto& pending = _sources.pendingBuild;
         auto& targetBank = pending.replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies();
         {
-            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderCreate);
+            performance_profiler::ScopedTimer profilerTimer(_sources.preserveGaps ?
+                performance_profiler::Scope::WeaponGapColliderCreate : performance_profiler::Scope::WeaponColliderCreate);
             pending.createdCount += createGeneratedWeaponBodiesInBankSlice(
                 world,
                 pending.sources,
@@ -393,6 +395,7 @@ namespace rock
         _identity.cachedOwnershipKey = ownershipKey;
         _identity.cachedFormID = weaponFormID;
         _sources.cachedCompleteness = summary;
+        _sources.activePreserveGaps = _sources.preserveGaps;
         clearPendingWeaponVisualRebuild();
         publishWeaponBodySetGeneration(summary);
         publishAtomicBodyIds(activeWeaponBodies());
@@ -405,6 +408,16 @@ namespace rock
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildBodiesCreated, createdCount);
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildTransientReloadSources, summary.transientReloadSourceCount);
         performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildBodyCount, finalBodyCount);
+        std::size_t convexCount = 0, pointCount = 0;
+        for (const auto& source : pending.sources) {
+            convexCount += source.childLocalPointCloudsGame.empty() ? 1 : source.childLocalPointCloudsGame.size();
+            pointCount += source.localPointsGame.size();
+        }
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildGapMode, _sources.preserveGaps ? 1 : 0);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildConvexes, convexCount);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::WeaponBuildPoints, pointCount);
+        ROCK_LOG_INFO(Weapon, "Weapon collider generation completed: preserveGaps={} bodies={} requestedConvexes={} points={}",
+            _sources.preserveGaps, finalBodyCount, convexCount, pointCount);
         _sources.pendingBuild = {};
         return true;
     }
@@ -1081,7 +1094,56 @@ namespace rock
                         sourceSemantic.attachPointFormId);
                 }
             }
-            auto clusterSet = splitGeneratedWeaponPointCloudForCollision(localPoints);
+            GeneratedPointCloudClusterSet clusterSet;
+            std::vector<std::vector<RE::NiPoint3>> compoundChildren;
+            if (_sources.preserveGaps) {
+                performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponGapDecomposition);
+                weapon_gap_decomposition::Result partition;
+                if (localTriangles.size() <= weapon_gap_decomposition::kMaxInputTriangles) {
+                    std::vector<weapon_gap_decomposition::Triangle> mesh;
+                    mesh.reserve(localTriangles.size());
+                    const auto toPoint = [](const RE::NiPoint3& p) { return weapon_gap_decomposition::Point{ p.x, p.y, p.z }; };
+                    for (const auto& t : localTriangles) { mesh.push_back({ toPoint(t.v0), toPoint(t.v1), toPoint(t.v2) }); }
+                    partition = weapon_gap_decomposition::decompose(mesh, 1.0, 0.01);
+                } else {
+                    partition.budgetLimited = true;
+                }
+                std::vector<RE::NiPoint3> combinedPoints;
+                bool accepted = !partition.pieces.empty();
+                for (const auto& piece : partition.pieces) {
+                    std::vector<RE::NiPoint3> points;
+                    points.reserve(piece.size());
+                    for (const auto& p : piece) { points.push_back({ static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z) }); }
+                    points = dedupePointCloud(points, dedupGridGame);
+                    const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
+                        points, WEAPON_COLLISION_SUPPORT_FIT_TARGET_POINTS, MAX_CONVEX_HULL_POINTS,
+                        WEAPON_COLLISION_SUPPORT_FIT_MAX_ERROR_GAME_UNITS, true);
+                    if (!fit.accepted || !pointCloudCanBuildHull(fit.points)) { accepted = false; break; }
+                    combinedPoints.insert(combinedPoints.end(), fit.points.begin(), fit.points.end());
+                    compoundChildren.push_back(fit.points);
+                }
+                if (accepted) {
+                    clusterSet.clusters.push_back(std::move(combinedPoints));
+                    if (compoundChildren.size() == 1) { compoundChildren.clear(); }
+                } else {
+                    // Bounded decomposition must keep source coverage. If any
+                    // child cannot be represented, retain the original source
+                    // policy as a whole, never a partial set of children.
+                    compoundChildren.clear();
+                    clusterSet = splitGeneratedWeaponPointCloudForCollision(localPoints);
+                }
+                ROCK_LOG_DEBUG(Weapon,
+                    "Generated weapon gap fit: source='{}' accepted={} islands={} cuts={} children={} queryWork={} budgetLimited={}",
+                    safeNodeName(node), accepted, partition.islands, partition.cuts,
+                    compoundChildren.empty() ? clusterSet.clusters.size() : compoundChildren.size(), partition.queryWork, partition.budgetLimited);
+                if (!accepted || partition.budgetLimited) {
+                    ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds,
+                        "Generated weapon gap fit limited: source='{}' originalPolicy={} budgetLimited={} cuts={} unresolved gaps may remain",
+                        safeNodeName(node), !accepted, partition.budgetLimited, partition.cuts);
+                }
+            } else {
+                clusterSet = splitGeneratedWeaponPointCloudForCollision(localPoints);
+            }
             auto& clusters = clusterSet.clusters;
             if (clusterSet.supportFitAttempted) {
                 ROCK_LOG_DEBUG(Weapon,
@@ -1099,7 +1161,9 @@ namespace rock
                     clusterSet.supportFitValidationDirections);
             }
             for (std::size_t clusterIndex = 0; clusterIndex < clusters.size(); ++clusterIndex) {
-                auto cluster = weapon_collision_geometry_math::limitPointCloud(std::move(clusters[clusterIndex]), MAX_CONVEX_HULL_POINTS);
+                auto cluster = compoundChildren.empty() ?
+                    weapon_collision_geometry_math::limitPointCloud(std::move(clusters[clusterIndex]), MAX_CONVEX_HULL_POINTS) :
+                    std::move(clusters[clusterIndex]);
                 if (!pointCloudCanBuildHull(cluster)) {
                     continue;
                 }
@@ -1125,6 +1189,17 @@ namespace rock
                     }
                 }
                 source.sourceLocalCenterGame = weapon_collision_geometry_math::pointCenter(source.sourceLocalPointsGame);
+                // All children move rigidly with this TriShape. Bake them in
+                // exactly the same source-local frame/scale as the simple hull.
+                if (!compoundChildren.empty()) {
+                    std::size_t offset = 0;
+                    for (const auto& child : compoundChildren) {
+                        source.childLocalPointCloudsGame.emplace_back(
+                            source.sourceLocalPointsGame.begin() + offset,
+                            source.sourceLocalPointsGame.begin() + offset + child.size());
+                        offset += child.size();
+                    }
+                }
                 const auto bounds = pointCloudBounds(cluster);
                 const auto sourceBounds = pointCloudBounds(source.sourceLocalPointsGame);
                 source.localMinGame = bounds.min;
@@ -1228,6 +1303,7 @@ namespace rock
         std::size_t createdCount = bankWeaponBodyCount(bank);
         std::size_t createdThisFrame = 0;
         std::size_t attemptedThisFrame = 0;
+        static_assert(weapon_gap_decomposition::kMaxChildren <= GENERATED_WEAPON_BODY_CREATION_BATCH);
         const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(options.collisionEnabledOnCreate);
         auto buildSourceShape = [&](const GeneratedHullSource& source) -> RE::hknpShape* {
             const auto tagCollisionSoundMaterial = [&](RE::hknpShape* shape) {
@@ -1253,56 +1329,50 @@ namespace rock
                         WEAPON_COLLISION_CONVEX_RADIUS_HAVOK));
             }
 
-            std::vector<RE::hknpShape*> childShapes;
+            std::vector<std::unique_ptr<RE::hknpShape, havok_compound_shape_builder::HavokShapeRelease>> childShapes;
             std::vector<havok_compound_shape_builder::CompoundChild> children;
             childShapes.reserve(source.childLocalPointCloudsGame.size());
             children.reserve(source.childLocalPointCloudsGame.size());
 
             for (const auto& childLocalPointsGame : source.childLocalPointCloudsGame) {
-                if (!pointCloudCanBuildHull(childLocalPointsGame)) {
-                    continue;
+                if (!pointCloudCanBuildHull(childLocalPointsGame, source.sourceNodeScale)) {
+                    return nullptr;
                 }
 
                 const auto childCenterGame = weapon_collision_geometry_math::pointCenter(childLocalPointsGame);
-                auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame);
+                auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame, source.sourceNodeScale);
                 auto* childShape =
                     havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, WEAPON_COLLISION_CONVEX_RADIUS_HAVOK);
                 if (!childShape) {
                     ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
-                    continue;
+                    return nullptr;
                 }
 
                 tagCollisionSoundMaterial(childShape);
 
-                childShapes.push_back(childShape);
+                childShapes.emplace_back(childShape);
 
                 havok_compound_shape_builder::CompoundChild child{};
                 child.shape = childShape;
-                child.transform.translation.x = (childCenterGame.x - source.localCenterGame.x) * gameToHavokScale();
-                child.transform.translation.y = (childCenterGame.y - source.localCenterGame.y) * gameToHavokScale();
-                child.transform.translation.z = (childCenterGame.z - source.localCenterGame.z) * gameToHavokScale();
+                child.transform.translation.x = (childCenterGame.x - source.sourceLocalCenterGame.x) * source.sourceNodeScale * gameToHavokScale();
+                child.transform.translation.y = (childCenterGame.y - source.sourceLocalCenterGame.y) * source.sourceNodeScale * gameToHavokScale();
+                child.transform.translation.z = (childCenterGame.z - source.sourceLocalCenterGame.z) * source.sourceNodeScale * gameToHavokScale();
                 child.transform.translation.w = 1.0f;
                 children.push_back(child);
             }
 
-            RE::hknpShape* compoundShape = nullptr;
-            if (children.size() > 1) {
-                compoundShape = havok_compound_shape_builder::buildStaticCompoundShape(children);
-            } else if (children.size() == 1) {
-                compoundShape = const_cast<RE::hknpShape*>(children.front().shape);
-                childShapes.clear();
-            }
-
-            for (auto* childShape : childShapes) {
-                shapeRemoveRef(childShape);
-            }
-
-            return tagCollisionSoundMaterial(compoundShape);
+            // Native compound construction retains each child. Local ownership
+            // releases every temporary reference on success and on any failure.
+            return tagCollisionSoundMaterial(havok_compound_shape_builder::buildStaticCompoundShape(children));
         };
 
         while (nextSourceIndex < sources.size() && createdCount < MAX_WEAPON_BODIES && attemptedThisFrame < maxSourceAttemptsThisFrame) {
+            // Count native convex builds, not compound bodies: an eight-child
+            // source consumes the complete eight-hull slice, never eight times it.
+            const auto cost = (std::max)(std::size_t{ 1 }, sources[nextSourceIndex].childLocalPointCloudsGame.size());
+            if (cost > maxSourceAttemptsThisFrame - attemptedThisFrame) { break; }
             const std::size_t sourceIndex = nextSourceIndex++;
-            ++attemptedThisFrame;
+            attemptedThisFrame += cost;
             const auto& source = sources[sourceIndex];
             const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
             const auto& shapePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;

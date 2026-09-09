@@ -352,6 +352,7 @@ namespace rock
             std::vector<TriangleData> localTrianglesGame;
             std::vector<RE::NiPoint3> sourceLocalPointsGame;
             std::vector<TriangleData> sourceLocalTrianglesGame;
+            // Children use the source node's local frame, like sourceLocalPointsGame.
             std::vector<std::vector<RE::NiPoint3>> childLocalPointCloudsGame;
             RE::NiPoint3 localCenterGame{};
             RE::NiPoint3 sourceLocalCenterGame{};
@@ -713,6 +714,10 @@ namespace rock
         // exclusion.
         struct GeneratedSourceState
         {
+            bool preserveGaps{ false };
+            // Committed mode remains distinct while a reload/hidden visual
+            // defers replacement, so the requested rebuild cannot be lost.
+            bool activePreserveGaps{ false };
             GeneratedSourceCache cache{};
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness cachedCompleteness{};
             PendingGeneratedWeaponBuild pendingBuild{};

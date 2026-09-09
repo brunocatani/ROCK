@@ -607,7 +607,8 @@ namespace rock::weapon_collision_geometry_math
     inline void selectSlicedSupportPoints(const std::vector<Vector>& points,
         std::vector<std::uint8_t>& selected,
         std::size_t& selectedCount,
-        std::size_t maxPoints)
+        std::size_t maxPoints,
+        bool singlePass = false)
     {
         const auto bounds = pointBounds(points);
         if (!bounds.valid || selectedCount >= maxPoints) {
@@ -642,6 +643,37 @@ namespace rock::weapon_collision_geometry_math
         appendSignedSupportDirection(crossDirections, SupportDirection{ axisB[0], axisB[1], axisB[2] });
 
         constexpr std::size_t kSliceCount = 7;
+        if (singlePass) {
+            // Accumulate the same eight extrema per slice without rescanning
+            // the cloud for each direction. Inclusive boundaries intentionally
+            // put an exact boundary vertex into both adjacent slices, as before.
+            std::array<std::array<std::size_t, 8>, kSliceCount> winners{};
+            std::array<std::array<float, 8>, kSliceCount> scores{};
+            std::array<float, kSliceCount> starts{}, ends{};
+            for (std::size_t slice = 0; slice < kSliceCount; ++slice) {
+                winners[slice].fill(points.size());
+                scores[slice].fill(-std::numeric_limits<float>::infinity());
+                starts[slice] = minAxis + span * (static_cast<float>(slice) / static_cast<float>(kSliceCount));
+                ends[slice] = slice + 1 == kSliceCount ? maxAxis : minAxis + span * (static_cast<float>(slice + 1) / static_cast<float>(kSliceCount));
+            }
+            for (std::size_t i = 0; i < points.size(); ++i) {
+                const float value = pointAxisValue(points[i], longAxis);
+                for (std::size_t slice = 0; slice < kSliceCount; ++slice) {
+                    if (value < starts[slice] || value > ends[slice]) { continue; }
+                    for (std::size_t d = 0; d < crossDirections.size(); ++d) {
+                        const float support = pointSupportDot(points[i], crossDirections[d]);
+                        if (support > scores[slice][d]) { scores[slice][d] = support; winners[slice][d] = i; }
+                    }
+                }
+            }
+            for (const auto& slice : winners) {
+                for (auto index : slice) {
+                    if (selectedCount >= maxPoints) { return; }
+                    if (index < selected.size() && !selected[index]) { selected[index] = 1; ++selectedCount; }
+                }
+            }
+            return;
+        }
         for (std::size_t slice = 0; slice < kSliceCount && selectedCount < maxPoints; ++slice) {
             const float start = minAxis + span * (static_cast<float>(slice) / static_cast<float>(kSliceCount));
             const float end = slice + 1 == kSliceCount ? maxAxis : minAxis + span * (static_cast<float>(slice + 1) / static_cast<float>(kSliceCount));
@@ -721,7 +753,8 @@ namespace rock::weapon_collision_geometry_math
     inline ConvexSupportFitResult<Vector> fitConvexSupportPointCloud(const std::vector<Vector>& points,
         std::size_t targetPoints,
         std::size_t maxPoints,
-        float maxSupportError)
+        float maxSupportError,
+        bool incrementalValidation = false)
     {
         /*
          * Weapon visual meshes often contain dense bevels, triangle duplicates,
@@ -764,7 +797,7 @@ namespace rock::weapon_collision_geometry_math
         for (const auto& direction : selectionDirections) {
             selectSupportPointIndex(points, direction, selected, selectedCount, safeMaxPoints);
         }
-        selectSlicedSupportPoints(points, selected, selectedCount, safeMaxPoints);
+        selectSlicedSupportPoints(points, selected, selectedCount, safeMaxPoints, incrementalValidation);
 
         for (std::size_t i = 0; selectedCount < 4 && i < points.size(); ++i) {
             if (!selected[i]) {
@@ -776,15 +809,48 @@ namespace rock::weapon_collision_geometry_math
         const auto validationDirections = makeValidationSupportDirections(basis);
         result.validationDirectionCount = validationDirections.size();
         SupportDirection worstDirection{};
-        result.maxSupportError = supportErrorForSelectedPoints(points, selected, validationDirections, &worstDirection);
-
-        while (result.maxSupportError > safeMaxSupportError && selectedCount < safeMaxPoints) {
-            const bool added = selectSupportPointIndex(points, worstDirection, selected, selectedCount, safeMaxPoints);
-            if (!added) {
-                break;
+        if (incrementalValidation) {
+            // Original directional maxima never change during repair. Cache
+            // their winning indices once, then update only the selected maxima.
+            // This retains the same directions, tie order and acceptance test.
+            std::vector<std::size_t> originalIndices(validationDirections.size());
+            std::vector<float> originalSupports(validationDirections.size());
+            std::vector<float> selectedSupports(validationDirections.size(), -std::numeric_limits<float>::infinity());
+            for (std::size_t d = 0; d < validationDirections.size(); ++d) {
+                const auto& direction = validationDirections[d];
+                originalIndices[d] = supportPointIndexForDirection(points, direction);
+                originalSupports[d] = pointSupportDot(points[originalIndices[d]], direction);
+                for (std::size_t i = 0; i < points.size(); ++i) {
+                    if (selected[i]) { selectedSupports[d] = (std::max)(selectedSupports[d], pointSupportDot(points[i], direction)); }
+                }
             }
-            ++result.repairPointCount;
+            for (;;) {
+                result.maxSupportError = 0.0f;
+                std::size_t worst = 0;
+                for (std::size_t d = 0; d < validationDirections.size(); ++d) {
+                    const float error = (std::max)(0.0f, originalSupports[d] - selectedSupports[d]);
+                    if (error > result.maxSupportError) { result.maxSupportError = error; worst = d; }
+                }
+                if (result.maxSupportError <= safeMaxSupportError || selectedCount >= safeMaxPoints) { break; }
+                const auto index = originalIndices[worst];
+                if (selected[index]) { break; }
+                selected[index] = 1;
+                ++selectedCount;
+                ++result.repairPointCount;
+                for (std::size_t d = 0; d < validationDirections.size(); ++d) {
+                    selectedSupports[d] = (std::max)(selectedSupports[d], pointSupportDot(points[index], validationDirections[d]));
+                }
+            }
+        } else {
             result.maxSupportError = supportErrorForSelectedPoints(points, selected, validationDirections, &worstDirection);
+            while (result.maxSupportError > safeMaxSupportError && selectedCount < safeMaxPoints) {
+                const bool added = selectSupportPointIndex(points, worstDirection, selected, selectedCount, safeMaxPoints);
+                if (!added) {
+                    break;
+                }
+                ++result.repairPointCount;
+                result.maxSupportError = supportErrorForSelectedPoints(points, selected, validationDirections, &worstDirection);
+            }
         }
 
         result.points = collectSelectedSupportPoints(points, selected);

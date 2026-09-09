@@ -186,6 +186,14 @@ namespace rock
         _identity.observedFormID = observedFormID;
         _identity.observedInstanceContentKey = observedInstanceContentKey;
 
+        const bool geometryModeChanged = _sources.preserveGaps != g_rockConfig.rockWeaponCollisionPreserveGaps;
+        if (geometryModeChanged) {
+            _sources.preserveGaps = g_rockConfig.rockWeaponCollisionPreserveGaps;
+            clearGeneratedSourceCache();
+            clearPendingWeaponVisualRebuild();
+            ROCK_LOG_INFO(Weapon, "Weapon collider generation mode changed: preserveGaps={} rebuilding geometry", _sources.preserveGaps);
+        }
+        const bool geometryModeRebuildRequired = hasWeaponBody() && _sources.activePreserveGaps != _sources.preserveGaps;
         const bool driveRequestedRebuild = _drive.rebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool workbenchExitRequested =
             weaponNode != nullptr && _drive.workbenchExitRebuildRequested.exchange(false, std::memory_order_acq_rel);
@@ -212,7 +220,7 @@ namespace rock
 
         const bool missingBodies = observedKey != 0 && !hasWeaponBody();
         bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || keyChanged ||
-            ownershipKeyChanged || activeRootChanged || missingBodies;
+            ownershipKeyChanged || activeRootChanged || missingBodies || geometryModeChanged || geometryModeRebuildRequired;
         bool rebuildDiagnosticsRecorded = false;
 
         const auto recordRebuildDiagnostics = [&]() {
@@ -251,7 +259,7 @@ namespace rock
         }
 
         if (_sources.pendingBuild.active) {
-            const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested || activeRootChanged ||
+            const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested || activeRootChanged || geometryModeChanged ||
                 !pendingGeneratedWeaponBuildMatches(
                     observedKey,
                     observedOwnershipKey,
@@ -310,7 +318,7 @@ namespace rock
             WeaponVisualKeyStats visualKeyStats{};
             const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, visualKeyStats);
             const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _identity.cachedVisualKey;
-            const bool generationDrivenRebuild = keyChanged || missingBodies;
+            const bool generationDrivenRebuild = keyChanged || missingBodies || geometryModeRebuildRequired;
             const float requiredStableSeconds = (std::max)(0.0f, g_rockConfig.rockWeaponCollisionVisualStabilizationSeconds);
             const float measuredStabilizationDelta =
                 std::isfinite(dt) && dt > 0.0f ? dt : 0.0f;
@@ -409,7 +417,8 @@ namespace rock
                         observedVisualKey,
                         generatedCount);
                 } else {
-                    performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
+                    performance_profiler::ScopedTimer profilerTimer(_sources.preserveGaps ?
+                        performance_profiler::Scope::WeaponGapColliderBuild : performance_profiler::Scope::WeaponColliderBuild);
                     generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources);
                     recordGeneratedRecaptureDiagnostic(
                         observedKey,

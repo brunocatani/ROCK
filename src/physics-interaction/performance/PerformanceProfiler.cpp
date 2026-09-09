@@ -95,6 +95,12 @@ namespace rock::performance_profiler
                 return "weaponColliderBuild";
             case Scope::WeaponColliderCreate:
                 return "weaponColliderCreate";
+            case Scope::WeaponGapDecomposition:
+                return "weaponGapDecomposition";
+            case Scope::WeaponGapColliderBuild:
+                return "weaponGapColliderBuild";
+            case Scope::WeaponGapColliderCreate:
+                return "weaponGapColliderCreate";
             case Scope::TwoHandedGripStart:
                 return "twoHandedGripStart";
             case Scope::EquippedWeaponFingerPoseCapture:
@@ -193,6 +199,12 @@ namespace rock::performance_profiler
                 return "weaponBuildTransientReloadSources";
             case ValueMetric::WeaponBuildBodyCount:
                 return "weaponBuildBodyCount";
+            case ValueMetric::WeaponBuildGapMode:
+                return "weaponBuildGapMode";
+            case ValueMetric::WeaponBuildConvexes:
+                return "weaponBuildConvexes";
+            case ValueMetric::WeaponBuildPoints:
+                return "weaponBuildPoints";
             case ValueMetric::GrabAcquisitionVisitedNodes:
                 return "grabAcquisitionVisitedNodes";
             case ValueMetric::GrabAcquisitionCollisionObjects:

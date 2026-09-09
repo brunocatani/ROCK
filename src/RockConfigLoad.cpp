@@ -479,6 +479,7 @@ namespace rock
             15.0f);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
+        rockWeaponCollisionPreserveGaps = ini.GetBoolValue(SECTION, "bWeaponCollisionPreserveGaps", false);
         rockWeaponCollisionVisualStabilizationSeconds =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionVisualStabilizationSeconds", rockWeaponCollisionVisualStabilizationSeconds));
         if (!std::isfinite(rockWeaponCollisionVisualStabilizationSeconds) ||
