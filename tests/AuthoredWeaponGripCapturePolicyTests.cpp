@@ -503,5 +503,36 @@ int main()
     marker = receiver;
     marker.translate.y = std::numeric_limits<float>::quiet_NaN();
     if (frame::registrationAgrees(receiver, marker)) return 76;
+
+    for (const auto& signature : frame::kVanillaPipePoses) {
+        Grip pipe{identity, {signature.translate[0], signature.translate[1], signature.translate[2]}, 1};
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) pipe.rotate.entry[row][col] = signature.rotate[row * 3 + col];
+        }
+        if (!frame::matchesVanillaPipePose(0x00024F55, pipe) ||
+            !frame::matchesVanillaPipePose(0x0014831A, pipe) ||
+            !frame::matchesVanillaPipePose(0x0014831B, pipe)) return 77;
+        if (frame::matchesVanillaPipePose(0x01024F55, pipe) || frame::matchesVanillaPipePose(0x0015B043, pipe)) return 78;
+        auto replacementPipe = pipe;
+        replacementPipe.translate.y += 0.1f;
+        if (frame::matchesVanillaPipePose(0x00024F55, replacementPipe)) return 79;
+        replacementPipe = pipe;
+        replacementPipe.rotate.entry[0][0] += 0.01f;
+        if (frame::matchesVanillaPipePose(0x00024F55, replacementPipe)) return 80;
+        const auto mapPoint = [](const Grip& grip, const Point3& p) {
+            const auto& r = grip.rotate.entry;
+            return Point3{
+                grip.translate.x + grip.scale * (r[0][0]*p.x + r[1][0]*p.y + r[2][0]*p.z),
+                grip.translate.y + grip.scale * (r[0][1]*p.x + r[1][1]*p.y + r[2][1]*p.z),
+                grip.translate.z + grip.scale * (r[0][2]*p.x + r[1][2]*p.y + r[2][2]*p.z)};
+        };
+        const Point3 palm{6, -2, 1};
+        const auto anchor = mapPoint(pipe, palm);
+        const auto corrected = frame::withWristRotationAtPalm(pipe, identity, palm, mapPoint);
+        const auto seated = mapPoint(corrected, palm);
+        if (std::abs(anchor.x - seated.x) > 0.00001f || std::abs(anchor.y - seated.y) > 0.00001f ||
+            std::abs(anchor.z - seated.z) > 0.00001f || corrected.scale != pipe.scale) return 81;
+        if (corrected.rotate.entry[0][0] != 1 || corrected.rotate.entry[1][1] != 1) return 82;
+    }
     return 0;
 }

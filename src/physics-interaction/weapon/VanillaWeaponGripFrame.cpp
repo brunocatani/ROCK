@@ -2,7 +2,10 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
+#include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/NetImmerse/NiNode.h"
 
 #include <array>
@@ -11,6 +14,22 @@
 
 namespace rock::vanilla_weapon_grip_frame
 {
+    void correctPipeWrist(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* model, RE::NiTransform& hand)
+    {
+        if (!weapon || !matchesVanillaPipePose(weapon->formID, hand)) return;
+        if (frik_weapon_offset_cache::findCustomGripOverride(weapon, model).found) return;
+        const auto native = frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, model);
+        if (!native.found || native.source != frik_weapon_offset_cache::OffsetSource::EmbeddedResource) return;
+        // Approved vanilla-only wrist posture. The baseline weapon carrier
+        // already uses this placement; no Weapon rotation or translation is
+        // taken from the preset here. Explicit files keep their precedence.
+        const auto nativeHand = transform_math::invertTransform(native.offset);
+        hand = withWristRotationAtPalm(hand, nativeHand.rotate,
+            authoredHandspaceToRawHandspace(computeGrabLegacyPalmPivotAHandspacePosition(false)),
+            [](const auto& frame, const auto& point) { return transform_math::localPointToWorld(frame, point); });
+        ROCK_LOG_SAMPLE_DEBUG(Animation, 2000, "Vanilla pipe wrist corrected at authored palm formID={:08X}", weapon->formID);
+    }
+
     bool resolveModelTranslation(const std::uint32_t formId,
         const RE::NiAVObject* model, RE::NiPoint3& outTranslation)
     {

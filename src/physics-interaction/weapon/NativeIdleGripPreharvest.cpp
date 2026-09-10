@@ -9,6 +9,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -889,6 +890,11 @@ namespace rock::native_idle_grip_preharvest
         [[nodiscard]] bool makeJobCacheKey(const Job& job, authored_weapon_grip_cache::CacheKey& out) noexcept
         {
             out = {};
+            // Pipe correction depends on the active pose, not a filename.
+            // The disk key does not fingerprint replacement HKX contents;
+            // sample these three forms each process instead of accepting a
+            // previous animation's pose. The process-local library still caches it.
+            if (vanilla_weapon_grip_frame::isPipeWeapon(job.weaponFormId)) return false;
             return job.origin == CandidateOrigin::EquippedWeapon &&
                    job.variant.instanceContentKnown &&
                    job.graphProfileKey != 0 &&
