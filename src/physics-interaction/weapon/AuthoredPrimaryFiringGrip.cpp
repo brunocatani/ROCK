@@ -1031,11 +1031,6 @@ namespace rock
             return;
         }
 
-        vanilla_weapon_alignment_telemetry::recordSolve(
-            input.weapon ? input.weapon->formID : 0, resolvedCaptureSequence,
-            harvestedRelationAvailable ? "native-idle" : "live-equipped",
-            authoredPrimaryHandInWeapon, trackedHandWorld, solvedWeaponWorld);
-
         // The authored wrist correction belongs to the presented hand: the
         // weapon keeps its native rotation while the right hand seats at the
         // authored grip on that weapon frame.
@@ -1048,6 +1043,12 @@ namespace rock
             endSession("position-only-hand-target-invalid");
             return;
         }
+
+        vanilla_weapon_alignment_telemetry::recordSolve(
+            input.weapon ? input.weapon->formID : 0, resolvedCaptureSequence,
+            harvestedRelationAvailable ? "native-idle" : "live-equipped",
+            authoredPrimaryHandInWeapon, trackedHandWorld, solvedWeaponWorld,
+            solvedFiringHandWorld);
 
         if (!weaponAuthority.applyAuthoredPrimaryGripWeaponAlignment(
                 input.weaponNode,
