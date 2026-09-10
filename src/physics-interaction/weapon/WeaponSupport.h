@@ -281,14 +281,20 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool dropRequested{ false };
     };
 
+    enum class PrimaryOnlyStartSource : std::uint8_t
+    {
+        GripInput,
+        HeldWeaponEquip,
+        ShoulderRetrieval,
+    };
+
     struct PendingPrimaryOnlyStartInput
     {
         bool pending{ false };
         bool gripHeld{ false };
-        // A native draw accepted from a physical shoulder retrieval is an
-        // already-committed transfer. It must survive the user releasing the
-        // initiating squeeze while the equipped node becomes observable.
-        bool committedTransfer{ false };
+        // Accepted equip/draw transfers keep their physical hand while the
+        // equipped node resolves, even if the initiating squeeze has opened.
+        PrimaryOnlyStartSource source{ PrimaryOnlyStartSource::GripInput };
         bool ownershipModeEnabled{ true };
         bool primaryPoseBlockerAvailable{ true };
     };
@@ -306,7 +312,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         FiringGripModeAvailability modes{};
         bool handIsLeft{ false };
-        bool gripHeld{ false };
+        bool holdingLooseWeapon{ false };
     };
 
     [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(
@@ -319,7 +325,9 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(const HeldWeaponEquipOwnershipInput& input) noexcept
     {
-        return input.gripHeld &&
+        // Trigger equip runs before loose-grab release. The retained weapon
+        // owns the hand choice even on a simultaneous trigger/release frame.
+        return input.holdingLooseWeapon &&
                (input.modes.primaryDetachEnabled ||
                    input.modes.integratedDetachEnabled ||
                    (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
@@ -374,11 +382,10 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(const PendingPrimaryOnlyStartInput& input) noexcept
     {
-        // Trigger-equip remains coupled to its held grip. A committed native
-        // draw instead owns a durable hand-transfer intent until it starts or
-        // its exact equipped identity/timeout invalidates it.
+        // Physical release is processed by the equipped grip once the chosen
+        // hand takes ownership; it must not silently select native right.
         return input.pending &&
-               (input.gripHeld || input.committedTransfer) &&
+               (input.gripHeld || input.source != PrimaryOnlyStartSource::GripInput) &&
                input.ownershipModeEnabled &&
                input.primaryPoseBlockerAvailable;
     }
@@ -386,10 +393,10 @@ namespace rock::equipped_weapon_manual_ownership_policy
     [[nodiscard]] inline constexpr bool shouldStartPendingPrimaryOnlyGrip(
         bool pendingMatchesCurrentWeapon,
         bool gripHeld,
-        bool committedTransfer) noexcept
+        PrimaryOnlyStartSource source) noexcept
     {
         return pendingMatchesCurrentWeapon &&
-               (gripHeld || committedTransfer);
+               (gripHeld || source != PrimaryOnlyStartSource::GripInput);
     }
 
     [[nodiscard]] inline constexpr bool canPreserveManualOwnership(

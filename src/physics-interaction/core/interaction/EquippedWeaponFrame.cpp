@@ -404,9 +404,14 @@ namespace rock
                     (std::max)(0.0f, frame.deltaSeconds);
                 if (_equipped.pendingPrimaryOnlyGripStart.remainingSeconds <= 0.0f) {
                     ROCK_LOG_WARN(Weapon,
-                        "Held weapon manual ownership handoff expired targetForm={:08X} targetInstance={:#x}",
+                        "Held weapon manual ownership handoff expired targetForm={:08X} targetInstance={:#x} hand={} lastStartFailure={} supportReadiness={}",
                         _equipped.pendingPrimaryOnlyGripStart.targetWeaponFormID,
-                        _equipped.pendingPrimaryOnlyGripStart.targetWeaponInstanceData);
+                        _equipped.pendingPrimaryOnlyGripStart.targetWeaponInstanceData,
+                        _equipped.pendingPrimaryOnlyGripStart.isLeft ? "left" : "right",
+                        _equipped.pendingPrimaryOnlyGripStart.lastStartFailureReason ?
+                            _equipped.pendingPrimaryOnlyGripStart.lastStartFailureReason : "none",
+                        authored_support_grab_policy::leftFiringTakeoverReadinessName(
+                            _equipped.pendingPrimaryOnlyGripStart.takeoverWitness.last));
                     _equipped.pendingPrimaryOnlyGripStart = {};
                 }
             }
@@ -673,9 +678,9 @@ namespace rock
                                 firingHandIsLeft,
                                 input_remap_policy::kGrabButtonId) ||
                             pendingToggleGripRetained,
-                        .committedTransfer =
+                        .source =
                             _equipped.pendingPrimaryOnlyGripStart.
-                                committedTransfer,
+                                source,
                         .ownershipModeEnabled =
                             firingGripDecision.firingGripOwnershipEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
@@ -719,8 +724,8 @@ namespace rock
                 const auto& primaryState = readPrimaryGrabState();
                 if (_equipped.pendingPrimaryOnlyGripStart.pending &&
                     !primaryState.held &&
-                    !_equipped.pendingPrimaryOnlyGripStart.
-                        committedTransfer &&
+                    _equipped.pendingPrimaryOnlyGripStart.source ==
+                        equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::GripInput &&
                     !pendingToggleGripRetained) {
                     _equipped.pendingPrimaryOnlyGripStart = {};
                 }
@@ -732,7 +737,7 @@ namespace rock
                             pendingPrimaryStartMatchesCurrentWeapon,
                             primaryState.held || pendingToggleGripRetained,
                             _equipped.pendingPrimaryOnlyGripStart.
-                                committedTransfer);
+                                source);
                 const bool primaryOnlyStartRequested =
                     !pendingToggleCancelRequested &&
                     weaponNode != nullptr &&
@@ -775,8 +780,8 @@ namespace rock
                     nullptr;
                 const bool retainUntilPhysicalGrip =
                     pendingPrimaryStartMatchesCurrentWeapon &&
-                    (_equipped.pendingPrimaryOnlyGripStart.
-                            committedTransfer ||
+                    (_equipped.pendingPrimaryOnlyGripStart.source ==
+                            equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::ShoulderRetrieval ||
                         pendingToggleGripRetained);
                 const auto leftTakeoverReadiness =
                     _twoHandedGrip.getLeftFiringTakeoverReadiness(
@@ -799,7 +804,9 @@ namespace rock
                             leftTakeoverReadiness)) {
                         ROCK_LOG_DEBUG(
                             Weapon,
-                            "Left firing-grip start waiting for authored support readiness={} collisionGeneration={:016X} authoredGeneration={:016X} ownership={:016X}",
+                            "Left firing-grip start waiting weapon='{}' formID={:08X} authored support readiness={} collisionGeneration={:016X} authoredGeneration={:016X} ownership={:016X}",
+                            observedEquippedWeapon ? RE::TESFullName::GetFullName(*observedEquippedWeapon, false) : "unknown",
+                            pendingStart.targetWeaponFormID,
                             authored_support_grab_policy::
                                 leftFiringTakeoverReadinessName(
                                     leftTakeoverReadiness),
@@ -807,22 +814,46 @@ namespace rock
                             currentAuthoredGripGenerationKey,
                             currentEquippedWeaponOwnershipKey);
                     }
-                } else if (primaryOnlyStartRequested &&
-                    _twoHandedGrip.beginPrimaryOnlyGrip(
+                } else if (primaryOnlyStartRequested) {
+                    const char* startFailureReason = nullptr;
+                    if (_twoHandedGrip.beginPrimaryOnlyGrip(
                         weaponNode,
                         currentAuthoredGripGenerationKey,
                         currentEquippedWeaponOwnershipKey,
                         firingHandIsLeft,
                         capturedFiringHandWeaponLocal,
                         capturedFiringGripWeaponLocal,
-                        retainUntilPhysicalGrip)) {
-                    primaryOnlyGripStartedThisFrame = true;
-                    _equipped.pendingPrimaryOnlyGripStart = {};
-                    primaryGripInput = EquippedWeaponPrimaryGripInput{
-                        .held = primaryState.held,
-                        .pressed = primaryState.pressed,
-                        .released = primaryState.released,
-                    };
+                        retainUntilPhysicalGrip,
+                        true,
+                        &startFailureReason)) {
+                        if (_equipped.pendingPrimaryOnlyGripStart.pending) {
+                            ROCK_LOG_INFO(Weapon,
+                                "Equipped hand transfer completed weapon='{}' formID={:08X} hand={} source={}",
+                                observedEquippedWeapon ? RE::TESFullName::GetFullName(*observedEquippedWeapon, false) : "unknown",
+                                observedEquippedWeaponFormID,
+                                firingHandIsLeft ? "left" : "right",
+                                static_cast<unsigned>(_equipped.pendingPrimaryOnlyGripStart.source));
+                        }
+                        primaryOnlyGripStartedThisFrame = true;
+                        _equipped.pendingPrimaryOnlyGripStart = {};
+                        primaryGripInput = EquippedWeaponPrimaryGripInput{
+                            .held = primaryState.held,
+                            .pressed = primaryState.pressed,
+                            .released = primaryState.released,
+                        };
+                    } else {
+                        _equipped.pendingPrimaryOnlyGripStart.lastStartFailureReason = startFailureReason;
+                        ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                            "Equipped hand transfer blocked weapon='{}' formID={:08X} hand={} reason={} generation={:016X} ownership={:016X} physicalHeld={} toggleRetained={}",
+                            observedEquippedWeapon ? RE::TESFullName::GetFullName(*observedEquippedWeapon, false) : "unknown",
+                            observedEquippedWeaponFormID,
+                            firingHandIsLeft ? "left" : "right",
+                            startFailureReason ? startFailureReason : "unknown",
+                            currentAuthoredGripGenerationKey,
+                            currentEquippedWeaponOwnershipKey,
+                            primaryState.held,
+                            pendingToggleGripRetained);
+                    }
                 }
             } else if (inputBlockingMenuActive) {
                 _equipped.pendingPrimaryOnlyGripStart = {};
@@ -2425,7 +2456,7 @@ namespace rock
                 .targetWeaponFormID = currentIdentity.formID,
                 .targetWeaponInstanceData = currentIdentity.instanceData,
                 .remainingSeconds = 10.0f,
-                .committedTransfer = true,
+                .source = equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::ShoulderRetrieval,
                 .hasFiringHandWeaponLocal = retrieveWithLeftHand &&
                     _equipped.shoulderSheath.
                         hasLeftFiringGripTransfer,

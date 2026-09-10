@@ -1318,7 +1318,7 @@ namespace rock
                 equipped_weapon_manual_ownership_policy::HeldWeaponEquipOwnershipInput{
                     .modes = firingGripModes,
                     .handIsLeft = isLeft,
-                    .gripHeld = rawGrabInput.held,
+                    .holdingLooseWeapon = hand.isHoldingLooseWeapon(),
                 });
         /*
          * The canonical firing-grip frame serves two independent consumers:
@@ -1468,19 +1468,26 @@ namespace rock
                         pendingGripStart.firingGripWeaponLocal);
                 pendingGripStart.hasFiringHandWeaponLocal = capturedLooseHold;
                 pendingGripStart.hasFiringGripWeaponLocal = capturedLooseHold;
-                if (pendingGripStart.pending && isLeft && !capturedLooseHold) {
+                if (isLeft && !capturedLooseHold) {
                     ROCK_LOG_SAMPLE_WARN(
                         Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "left hand {} held weapon equip blocked: canonical weapon-relative left carry unavailable addonAuthority={} integratedDetach={} ambidextrousFiring={} grabHeld={} hFRIKBlockers={} gripFrame={}",
+                        "left hand {} held weapon equip blocked: weapon='{}' formID={:08X} ownershipEligible={} canonical weapon-relative left carry unavailable addonAuthority={} integratedDetach={} ambidextrousFiring={} grabHeld={} hFRIKBlockers={} gripFrame={}",
                         logAction ? logAction : "requested",
+                        heldRefForGameplay && heldRefForGameplay->GetObjectReference() ?
+                            RE::TESFullName::GetFullName(*heldRefForGameplay->GetObjectReference(), false) : "unknown",
+                        heldRefForGameplay && heldRefForGameplay->GetObjectReference() ?
+                            heldRefForGameplay->GetObjectReference()->GetFormID() : 0u,
+                        pendingGripStart.pending,
                         _equipped.handlingSettings.externalAuthorityActive ? "yes" : "no",
                         firingGripModes.integratedDetachEnabled ? "yes" : "no",
                         ambidextrousHandoffAvailable ? "yes" : "no",
                         rawGrabInput.held ? "yes" : "no",
                         handCarryAvailable ? "yes" : "no",
                         pendingGripStart.hasFiringHandWeaponLocal ? "yes" : "no");
-                    return true;
+                    // A rejected equip still owes the loose hand its release
+                    // when trigger and grip-release arrived together.
+                    return !grabInput.released;
                 }
 
                 hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
@@ -1568,14 +1575,24 @@ namespace rock
                     pendingGripStart.previousWeaponInstanceData =
                         equipResult.previousEquippedInstanceData;
                     pendingGripStart.remainingSeconds = 10.0f;
+                    pendingGripStart.source =
+                        equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::HeldWeaponEquip;
+                    // The bridge above consumes the loose-model grip. Equipped
+                    // left carry must acquire its own canonical frame: the loose
+                    // relation already includes aim trim and cannot be reused.
+                    if (isLeft) {
+                        pendingGripStart.hasFiringHandWeaponLocal = false;
+                        pendingGripStart.hasFiringGripWeaponLocal = false;
+                    }
                     _equipped.pendingPrimaryOnlyGripStart = pendingGripStart;
                 }
                 const auto& actionTrace = equipResult.instantTransition.actionTrace;
                 ROCK_LOG_INFO(Hand,
-                    "{} hand {} held weapon equip formID={:08X} success={} managerAccepted={} committed={} equippedStackMatch={} equipReason={} requestReason={} transition={} readiness={} count={} stack={} stackEvidence={} stacks={}->{} mutations={} instanceMatch={} requestedInstance={:#x} observedInstance={:#x} transferred={} observedEquipped={:08X} equipIndex={} weaponState={}({})->{}({}) traceCount={} traceSheathe={} traceDraw={} traceFaults=0x{:02X} nativeInstance={} nativeAncestorsVisible={} nativeLocalVisible={} immediateEquip={} visualBridge={} physicalCarryPending={} physicalCarryHand={}",
+                    "{} hand {} held weapon equip formID={:08X} weapon='{}' success={} managerAccepted={} committed={} equippedStackMatch={} equipReason={} requestReason={} transition={} readiness={} count={} stack={} stackEvidence={} stacks={}->{} mutations={} instanceMatch={} requestedInstance={:#x} observedInstance={:#x} transferred={} observedEquipped={:08X} equipIndex={} weaponState={}({})->{}({}) traceCount={} traceSheathe={} traceDraw={} traceFaults=0x{:02X} nativeInstance={} nativeAncestorsVisible={} nativeLocalVisible={} immediateEquip={} visualBridge={} physicalCarryPending={} physicalCarryHand={}",
                     hand.handName(),
                     logAction ? logAction : "requested",
                     heldFormID,
+                    equipResult.weapon ? RE::TESFullName::GetFullName(*equipResult.weapon, false) : "unknown",
                     equipResult.success ? "yes" : "no",
                     equipResult.instantTransition.managerAccepted ? "yes" : "no",
                     equipResult.committed ? "yes" : "no",

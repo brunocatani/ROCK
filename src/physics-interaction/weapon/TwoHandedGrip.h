@@ -851,7 +851,8 @@ namespace rock
             const RE::NiTransform* capturedFiringHandWeaponLocal,
             const RE::NiPoint3* capturedFiringGripWeaponLocal,
             bool retainUntilPhysicalGrip = false,
-            bool emitAttachHaptic = true);
+            bool emitAttachHaptic = true,
+            const char** outFailureReason = nullptr);
 
         /*
          * A persistent carry is a PrimaryOnly session that survives without
@@ -880,7 +881,8 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             RE::NiTransform& outFiringHandWeaponLocal,
-            RE::NiPoint3& outFiringGripWeaponLocal);
+            RE::NiPoint3& outFiringGripWeaponLocal,
+            const char** outFailureReason = nullptr);
 
         /*
          * Captures a left-hand transfer frame before a native transition can

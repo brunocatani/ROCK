@@ -547,13 +547,16 @@ namespace rock
             std::uint32_t previousWeaponFormID{ 0 };
             std::uintptr_t previousWeaponInstanceData{ 0 };
             float remainingSeconds{ 0.0f };
-            bool committedTransfer{ false };
+            equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource source{
+                equipped_weapon_manual_ownership_policy::PrimaryOnlyStartSource::GripInput
+            };
             // A toggle acquisition is a committed logical grab even after the
             // physical button opens while left takeover waits for the final
             // generation-bound authored-support verdict.
             bool toggleAcquisitionCommitted{ false };
             bool toggleAcquisitionReleased{ false };
             left_carry_readiness::TakeoverWitness takeoverWitness{};
+            const char* lastStartFailureReason{ nullptr }; // Static diagnostic reason; never an engine pointer.
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};
             bool hasFiringGripWeaponLocal{ false };

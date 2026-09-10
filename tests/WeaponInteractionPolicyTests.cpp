@@ -3338,28 +3338,28 @@ int main()
                 .ambidextrousHandoffAvailable = true,
             },
             .handIsLeft = true,
-            .gripHeld = true,
+            .holdingLooseWeapon = true,
         }));
     ok &= expectFalse("right-hand trigger equip cannot start handoff-only ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
                 .ambidextrousHandoffAvailable = true,
             },
-            .gripHeld = true,
+            .holdingLooseWeapon = true,
         }));
     ok &= expectTrue("provider detach mode can start right-hand ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
                 .primaryDetachEnabled = true,
             },
-            .gripHeld = true,
+            .holdingLooseWeapon = true,
         }));
     ok &= expectTrue("integrated detach can start physical-right ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
                 .integratedDetachEnabled = true,
             },
-            .gripHeld = true,
+            .holdingLooseWeapon = true,
         }));
     ok &= expectTrue("integrated detach can start physical-left ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
@@ -3367,9 +3367,9 @@ int main()
                 .integratedDetachEnabled = true,
             },
             .handIsLeft = true,
-            .gripHeld = true,
+            .holdingLooseWeapon = true,
         }));
-    ok &= expectFalse("trigger equip ownership requires the same hand grip",
+    ok &= expectFalse("trigger equip ownership requires a retained loose weapon",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
                 .primaryDetachEnabled = true,
@@ -3456,13 +3456,15 @@ int main()
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = true,
+            .source = PrimaryOnlyStartSource::HeldWeaponEquip,
             .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = true,
         }));
-    ok &= expectFalse("pending trigger-equip grip clears on release",
+    ok &= expectTrue("accepted trigger equip keeps its chosen hand after physical release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = false,
+            .source = PrimaryOnlyStartSource::HeldWeaponEquip,
             .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = true,
         }));
@@ -3470,7 +3472,7 @@ int main()
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = false,
-            .committedTransfer = true,
+            .source = PrimaryOnlyStartSource::ShoulderRetrieval,
             .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = true,
         }));
@@ -3478,16 +3480,28 @@ int main()
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = false,
-            .committedTransfer = true,
+            .source = PrimaryOnlyStartSource::ShoulderRetrieval,
             .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = false,
         }));
     ok &= expectTrue("committed shoulder retrieval starts after squeeze release",
-        shouldStartPendingPrimaryOnlyGrip(true, false, true));
-    ok &= expectFalse("ordinary held-weapon transfer does not start after squeeze release",
-        shouldStartPendingPrimaryOnlyGrip(true, false, false));
+        shouldStartPendingPrimaryOnlyGrip(true, false, PrimaryOnlyStartSource::ShoulderRetrieval));
+    ok &= expectTrue("accepted held-weapon equip starts after squeeze release",
+        shouldStartPendingPrimaryOnlyGrip(true, false, PrimaryOnlyStartSource::HeldWeaponEquip));
+    ok &= expectFalse("uncommitted grip input does not start after squeeze release",
+        shouldStartPendingPrimaryOnlyGrip(true, false, PrimaryOnlyStartSource::GripInput));
     ok &= expectFalse("committed transfer cannot start on a different equipped identity",
-        shouldStartPendingPrimaryOnlyGrip(false, true, true));
+        shouldStartPendingPrimaryOnlyGrip(false, true, PrimaryOnlyStartSource::HeldWeaponEquip));
+    ok &= expectFalse("held-weapon equip still requires pose authority after release",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .source = PrimaryOnlyStartSource::HeldWeaponEquip,
+            .primaryPoseBlockerAvailable = false,
+        }));
+    ok &= expectFalse("released grip input cannot persist without an accepted equip",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+        }));
     ok &= expectTrue("pending trigger-equip grip is retained for visual-only sidearm release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,

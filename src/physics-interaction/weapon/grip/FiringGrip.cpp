@@ -14,16 +14,28 @@ namespace rock
         const std::uint64_t currentWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey,
         RE::NiTransform& outFiringHandWeaponLocal,
-        RE::NiPoint3& outFiringGripWeaponLocal)
+        RE::NiPoint3& outFiringGripWeaponLocal,
+        const char** outFailureReason)
     {
+        if (outFailureReason) {
+            *outFailureReason = nullptr;
+        }
+        const auto reject = [&](const char* reason) {
+            if (outFailureReason) {
+                *outFailureReason = reason;
+            }
+            return false;
+        };
         outFiringHandWeaponLocal = {};
         outFiringGripWeaponLocal = {};
-        if (!canBeginPrimaryOnlyGripForHand(true) ||
-            !hasRightFiringHandCanonicalFrame(
+        if (!canBeginPrimaryOnlyGripForHand(true)) {
+            return reject("left-infrastructure-unavailable");
+        }
+        if (!hasRightFiringHandCanonicalFrame(
                 weaponNode,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey)) {
-            return false;
+            return reject("right-firing-canonical-unavailable");
         }
 
         if (!hasRightNativeWeaponAimFrame(
@@ -34,7 +46,7 @@ namespace rock
                 weaponNode,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey)) {
-            return false;
+            return reject("native-right-aim-unavailable");
         }
 
         /*
@@ -49,11 +61,15 @@ namespace rock
         RE::NiTransform leftHandWorld{};
         if (!tryResolveNaturalWandHandOrientationFrame(
                 false,
-                rightHandWorld) ||
-            !tryResolveNaturalWandHandOrientationFrame(
+                rightHandWorld)) {
+            return reject("right-natural-wand-frame-unavailable");
+        }
+        if (!tryResolveNaturalWandHandOrientationFrame(
                 true,
-                leftHandWorld) ||
-            !tryBuildMirroredLeftFiringHandWeaponLocalImpl(
+                leftHandWorld)) {
+            return reject("left-natural-wand-frame-unavailable");
+        }
+        if (!tryBuildMirroredLeftFiringHandWeaponLocalImpl(
                 _firing.rightCanonicalHandWeaponLocal,
                 _firing.rightCanonicalGripWeaponLocal,
                 rightHandWorld,
@@ -61,7 +77,7 @@ namespace rock
                 outFiringHandWeaponLocal,
                 false,
                 true)) {
-            return false;
+            return reject("mirrored-firing-frame-unavailable");
         }
 
         outFiringGripWeaponLocal = _firing.rightCanonicalGripWeaponLocal;
@@ -148,23 +164,43 @@ namespace rock
         const RE::NiTransform* capturedFiringHandWeaponLocal,
         const RE::NiPoint3* capturedFiringGripWeaponLocal,
         const bool retainUntilPhysicalGrip,
-        const bool emitAttachHaptic)
+        const bool emitAttachHaptic,
+        const char** outFailureReason)
     {
-        if (!weaponNode || currentEquippedWeaponOwnershipKey == 0 || _session.state != TwoHandedState::Inactive ||
-            !canBeginPrimaryOnlyGripForHand(firingHandIsLeft)) {
+        if (outFailureReason) {
+            *outFailureReason = nullptr;
+        }
+        const auto reject = [&](const char* reason) {
+            if (outFailureReason) {
+                *outFailureReason = reason;
+            }
             return false;
+        };
+        if (!weaponNode) {
+            return reject("weapon-node-unavailable");
+        }
+        if (currentEquippedWeaponOwnershipKey == 0) {
+            return reject("weapon-ownership-unavailable");
+        }
+        if (_session.state != TwoHandedState::Inactive) {
+            return reject("grip-session-already-active");
+        }
+        if (!canBeginPrimaryOnlyGripForHand(firingHandIsLeft)) {
+            return reject("left-infrastructure-unavailable");
         }
 
         RE::NiTransform resolvedLeftHandWeaponLocal{};
         RE::NiPoint3 resolvedLeftFiringGripWeaponLocal{};
         if (firingHandIsLeft) {
+            const char* canonicalFailureReason = nullptr;
             const bool currentCanonicalResolved =
                 tryBuildCurrentLeftFiringGripCapture(
                     weaponNode,
                     currentWeaponGenerationKey,
                     currentEquippedWeaponOwnershipKey,
                     resolvedLeftHandWeaponLocal,
-                    resolvedLeftFiringGripWeaponLocal);
+                    resolvedLeftFiringGripWeaponLocal,
+                    &canonicalFailureReason);
             if (!currentCanonicalResolved) {
                 // Only a committed equipped-weapon transfer may reuse a
                 // captured left seat. Loose-model holds include their legacy
@@ -180,16 +216,18 @@ namespace rock
                     !std::isfinite(
                         capturedFiringGripWeaponLocal->y) ||
                     !std::isfinite(
-                        capturedFiringGripWeaponLocal->z) ||
-                    (!hasRightNativeWeaponAimFrame(
-                         weaponNode,
-                         currentWeaponGenerationKey,
-                         currentEquippedWeaponOwnershipKey) &&
-                        !captureRightNativeWeaponAimFrame(
-                            weaponNode,
-                            currentWeaponGenerationKey,
-                            currentEquippedWeaponOwnershipKey))) {
-                    return false;
+                        capturedFiringGripWeaponLocal->z)) {
+                    return reject(canonicalFailureReason);
+                }
+                if (!hasRightNativeWeaponAimFrame(
+                        weaponNode,
+                        currentWeaponGenerationKey,
+                        currentEquippedWeaponOwnershipKey) &&
+                    !captureRightNativeWeaponAimFrame(
+                        weaponNode,
+                        currentWeaponGenerationKey,
+                        currentEquippedWeaponOwnershipKey)) {
+                    return reject("native-right-aim-unavailable");
                 }
                 resolvedLeftHandWeaponLocal =
                     *capturedFiringHandWeaponLocal;
@@ -198,11 +236,7 @@ namespace rock
             }
         }
         if (firingHandIsLeft && !blockFrikPrimaryWeaponPose()) {
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "TwoHandedGrip: left primary-grip start skipped because the hFRIK primary weapon-pose blocker is unavailable");
-            return false;
+            return reject("primary-weapon-pose-blocker-unavailable");
         }
 
         setFiringHand(firingHandIsLeft, "primary-grip-start-hand");
@@ -220,7 +254,7 @@ namespace rock
             _firing.hasPrimaryHandWeaponLocal = false;
             setFiringHand(false, "primary-grip-start-failed");
             restoreFrikPrimaryWeaponPose();
-            return false;
+            return reject("primary-only-transition-rejected");
         }
         if (firingHandIsLeft) {
             // Install the normalized authored/transfer grip after the state
