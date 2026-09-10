@@ -7,7 +7,6 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -674,16 +673,9 @@ namespace rock::authored_weapon_grip_capture
                 invalidateAuthoredSupportGripCapture();
             }
 
-            const auto diagnosticCaller = primaryPass ? vanilla_weapon_alignment_telemetry::ArmCaller::NativePrimary :
-                supportPass ? vanilla_weapon_alignment_telemetry::ArmCaller::NativeSupport :
-                              vanilla_weapon_alignment_telemetry::ArmCaller::Other;
-            const auto diagnosticEvent = vanilla_weapon_alignment_telemetry::beginNativeArm(
-                diagnosticCaller, returnAddress, weapon, offsetNode);
             void* result = s_originalUpdateFirstPersonArm ?
                 s_originalUpdateFirstPersonArm(player, weapon, offsetNode) :
                 nullptr;
-            vanilla_weapon_alignment_telemetry::endNativeArm(
-                diagnosticEvent, diagnosticCaller, weapon, offsetNode);
             if (!captureEnabled || authorityActive) {
                 return result;
             }

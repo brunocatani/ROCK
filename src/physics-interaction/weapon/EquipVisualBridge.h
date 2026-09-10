@@ -174,7 +174,6 @@ namespace rock
         // bridge obeys the same priority as pull seating and grip-zone equip.
         RE::NiTransform _firingHandWeaponLocal{};
         bool _hasFiringHandWeaponLocal = false;
-        bool _usesAuthoredControllerAim = false;
         bool _hasPhysicalHandInWandLocal = false;
         std::array<RE::NiTransform, 15> _handoffFingerLocalTransforms{};
         std::uint16_t _handoffFingerLocalTransformMask = 0;

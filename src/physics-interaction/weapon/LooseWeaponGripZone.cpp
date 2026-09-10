@@ -12,7 +12,6 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
-#include "physics-interaction/weapon/ControllerWeaponAim.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
@@ -194,14 +193,6 @@ namespace rock::loose_weapon_grip_zone
                 [&](RE::NiTransform& outAttachedRootWorld,
                     const char*& outFailureReason) {
                     outAttachedRootWorld = {};
-                    if (g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets &&
-                        selectedSource == weapon_grip_authority_policy::Source::AuthoredAnimation) {
-                        if (!controller_weapon_aim::tryResolveCarrier(looseRoot->world, outAttachedRootWorld)) {
-                            outFailureReason = "controllerAimUnavailable";
-                            return false;
-                        }
-                        return isUsableWorldTransform(outAttachedRootWorld);
-                    }
                     if (!frikLookup.found) {
                         outFailureReason = frikLookup.reason;
                         return false;
@@ -279,12 +270,6 @@ namespace rock::loose_weapon_grip_zone
                 }
 
                 if (!canonicalPlacementResolved) {
-                    if (g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets) {
-                        // Missing aim input must not switch to authored weapon
-                        // rotation or back to an embedded preset.
-                        state.reason = carrierFailureReason;
-                        return false;
-                    }
                     canonicalPlacementHandWeaponLocal =
                         canonicalHandWeaponLocal;
                     canonicalPlacementResolved = true;

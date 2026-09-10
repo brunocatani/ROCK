@@ -9,7 +9,6 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h"
-#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -1426,7 +1425,7 @@ namespace rock::native_idle_grip_preharvest
             return SupportExtractionFailure::None;
         }
 
-        [[nodiscard]] bool trySampleAnimationBinding(Runtime& state, RE::BShkbAnimationGraph* graph, void* binding, std::string_view clipPath, RE::NiTransform& outHandInWeapon,
+        [[nodiscard]] bool trySampleAnimationBinding(Runtime& state, RE::BShkbAnimationGraph* graph, void* binding, RE::NiTransform& outHandInWeapon,
             authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, SupportGripSample& outSupport, IdleGripExtractionDiagnostics& diagnostics)
         {
             outRightFiringFingerPose = {};
@@ -1635,30 +1634,6 @@ namespace rock::native_idle_grip_preharvest
                     diagnostics.maxSupportFingerTranslationDelta,
                     diagnostics.maxSupportFingerRotationDeltaDegrees,
                     diagnostics.maxSupportScaleDelta);
-            if (vanilla_weapon_alignment_telemetry::wantsAnimationSample(state.job.weaponFormId)) {
-                constexpr std::array names{ "Weapon", "WeaponOffset", "WeaponMagazineTrans", "WeaponTriggerTrans",
-                    "RArm_Hand", "RArm_Finger11", "RArm_Finger21", "LArm_Hand" };
-                std::array<vanilla_weapon_alignment_telemetry::AnimationBone, names.size()> observations{};
-                for (std::size_t i = 0; i < names.size(); ++i) {
-                    auto& observed = observations[i];
-                    observed.name = names[i];
-                    const auto index = state.native.findBoneWithName(skeleton, names[i], nullptr);
-                    if (index >= static_cast<std::uint64_t>(boneCount)) continue;
-                    observed.bone = static_cast<int>(index);
-                    observed.parent = parents[index];
-                    observed.track = native_idle_grip_preharvest_policy::findTransformTrackForBone(observed.bone, transformTrackCount, mapping);
-                    HkQsTransform local{};
-                    observed.sampledValid = readSampledBoneLocal(observed.bone, transformTrackCount, mapping,
-                        sampledTracks, referencePose, local, observed.fromReference) && convertHavokLocalTransform(local, observed.sampled);
-                    HkQsTransform reference{};
-                    observed.referenceValid = referencePose.pose && observed.bone < referencePose.count &&
-                        native_memory::guardedCopyFromMemory(referencePose.pose + observed.bone, &reference, sizeof(reference)) &&
-                        convertHavokLocalTransform(reference, observed.reference);
-                }
-                vanilla_weapon_alignment_telemetry::recordAnimationSample(state.job.weaponFormId,
-                    state.job.variant.key, state.job.variant.instanceContentKey, state.job.graphProfileKey,
-                    clipPath, diagnostics.animationType, diagnostics.bindingBlendHint, observations);
-            }
             diagnostics.failure = IdleGripExtractionFailure::None;
             return true;
         }
@@ -1710,7 +1685,7 @@ namespace rock::native_idle_grip_preharvest
                 if (!native_memory::tryReadField(bindingWithTriggers, kBindingFromBindingWithTriggersOffset, binding) || !binding) {
                     return failExtractionResult(diagnostics, IdleGripExtractionFailure::AnimationBindingUnavailable);
                 }
-                return trySampleAnimationBinding(state, graph, binding, clipName ? clipName : "", outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
+                return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
             }
 
             auto& job = state.job;
@@ -1770,7 +1745,7 @@ namespace rock::native_idle_grip_preharvest
                 return failExtractionResult(diagnostics, IdleGripExtractionFailure::DirectClipBindingUnavailable);
             }
 
-            return trySampleAnimationBinding(state, graph, binding, clipName ? clipName : "", outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
+            return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
         }
 
         [[nodiscard]] ExtractionResult tryExtractIdleGrip(Runtime& state, RE::BSAnimationGraphManager& manager, RE::NiTransform& outHandInWeapon,

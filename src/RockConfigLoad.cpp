@@ -508,8 +508,6 @@ namespace rock
             6.0f,
             0.25f,
             30.0f);
-        rockSuppressFrikEmbeddedWeaponOffsets = ini.GetBoolValue(
-            REALISTIC_WEAPONS_SECTION, "bSuppressFrikEmbeddedWeaponOffsets", rockSuppressFrikEmbeddedWeaponOffsets);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",

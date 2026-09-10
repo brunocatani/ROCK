@@ -1,5 +1,4 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
-#include "physics-interaction/weapon/ControllerWeaponAim.h"
 
 // Hand and weapon visual transitions: visual returns, locked-hand visuals, grip hand pose publication, weapon visual/collision-resolved authority application, and FRIK primary pose blocking.
 
@@ -631,15 +630,10 @@ namespace rock
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
                 trackedRightHandWorld,
                 false);
-        RE::NiTransform aimCarrier = nativeWeaponWorld;
-        if (g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets &&
-            !controller_weapon_aim::tryResolveCarrier(nativeWeaponWorld, aimCarrier)) {
-            return false;
-        }
         const RE::NiTransform authoredWeaponWorld =
             authored_weapon_grip_capture_policy::
                 resolveAuthoredPrimaryWeaponWorldPositionOnly(
-                    aimCarrier,
+                    nativeWeaponWorld,
                     _firing.rightCanonicalGripWeaponLocal,
                     trackedPalmWorld,
                     [](const RE::NiTransform& transform,
