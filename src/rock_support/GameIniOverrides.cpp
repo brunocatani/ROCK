@@ -24,12 +24,11 @@ namespace rock::game_ini_overrides
             bool rejectionLogged = false;  // Main thread only.
         };
 
-        // Mandatory native behavior. Rotation remains owned by the game.
-        constinit std::array<Override, 4> s_overrides{{
+        // Mandatory native behavior. Rotation and handedness remain owned by the game.
+        constinit std::array<Override, 3> s_overrides{{
             { "bUseKickback:VR", true },
             { "bUseRecoil:VR", true },
             { "bIgnoreConeOfFireCalculationsForPlayer:VR", true },
-            { "bLeftHandedMode:VR", false },
         }};
         static_assert(std::atomic<bool>::is_always_lock_free);
 
@@ -59,8 +58,8 @@ namespace rock::game_ini_overrides
             // FO4VR 1.2.72: native INI reader 0x1D13230 (+0x3A6), settings
             // menu 0xBD9880 (handedness tail at +0xD6), and Papyrus SetINIBool
             // 0x14D70B0 (+0x99) / SetINIInt 0x14D7330 (+0x99) all notify here
-            // after writing Setting+8. Enforce before the observer dispatch so
-            // handedness aliases, wands, and UI never rebuild for a rejected value.
+            // after writing Setting+8. Enforce the three required values before
+            // observer dispatch; other settings retain their native behavior.
             constexpr std::uintptr_t kNotifyRva = 0x1D11C30;
             constexpr std::array<std::uint8_t, 10> kPrefix{
                 0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20
@@ -141,7 +140,7 @@ namespace rock::game_ini_overrides
                 s_originalNotify(entry.setting);
             }
         }
-        ROCK_LOG_INFO(Init, "ROCK enforces four required VR settings; rotation remains controlled by the game");
+        ROCK_LOG_INFO(Init, "ROCK enforces three required VR settings; rotation and handedness remain controlled by the game");
         return true;
     }
 
