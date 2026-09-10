@@ -222,9 +222,35 @@ int main()
             ok &= expectTrue("armor umbrella ignores weapon percentages",
                 armorGains.translation == kPowerArmor.translation && armorGains.rotation == kPowerArmor.rotation);
         }
+        ok &= expectTrue("one-hand percentage is a direct override, not stacked on family tuning",
+            selectHoldPercent(true, 300.0f, 200.0f) == 300.0f);
+        ok &= expectTrue("two-hand retains custom low tuning", selectHoldPercent(false, 300.0f, 50.0f) == 50.0f);
+        ok &= expectTrue("two-hand retains custom high tuning", selectHoldPercent(false, 300.0f, 200.0f) == 200.0f);
+        for (const auto profile : { Profile::FullTwoHand, Profile::CloseSupport }) {
+            for (const float currentPercent : { 50.0f, 100.0f, 200.0f }) {
+                const auto before = effectiveGains(profile, currentPercent);
+                const auto after = effectiveGains(profile, selectHoldPercent(false, 300.0f, currentPercent));
+                ok &= expectTrue("two-hand full and close profiles preserve today's response",
+                    before.translation == after.translation && before.rotation == after.rotation);
+            }
+        }
+        for (const bool oneHanded : { false, true }) {
+            const auto unchangedArmor = effectiveGains(Profile::PowerArmor, selectHoldPercent(oneHanded, 300.0f, 200.0f));
+            ok &= expectTrue("power armor ignores either hold's percentage",
+                unchangedArmor.translation == kPowerArmor.translation && unchangedArmor.rotation == kPowerArmor.rotation);
+        }
         TestTransform shot = rock::transform_math::makeIdentityTransform<TestTransform>();
         shot.translate = { 10.0f, -4.0f, 2.0f };
         shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
+        auto modestShot = shot;
+        modestShot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 20.0f);
+        TestTransform tripleKick{};
+        ok &= expectTrue("300 percent builds a valid three-times impulse",
+            tryBuildControlledKick(modestShot, effectiveGains(Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));
+        auto tripleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
+        tripleExpected.translate = { 30.0f, -12.0f, 6.0f };
+        tripleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
+        ok &= expectTransformNear("one hand gets 300 percent rather than 600 percent", tripleKick, tripleExpected);
         TestTransform amplified{};
         ok &= expectTrue("200 percent produces a rigid amplified transform",
             tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 200.0f), amplified));

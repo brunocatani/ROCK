@@ -42,11 +42,16 @@ namespace rock
         identity.oneHanded = _session.state != TwoHandedState::Gripping &&
             _session.state != TwoHandedState::PartCarry;
         switch (identity.family) {
-        case weapon_recoil_policy::Family::Pistol: identity.familyPercent = g_rockConfig.rockPistolRecoilPercent; break;
-        case weapon_recoil_policy::Family::Rifle: identity.familyPercent = g_rockConfig.rockRifleRecoilPercent; break;
-        case weapon_recoil_policy::Family::Shotgun: identity.familyPercent = g_rockConfig.rockShotgunRecoilPercent; break;
-        case weapon_recoil_policy::Family::Heavy: identity.familyPercent = g_rockConfig.rockHeavyRecoilPercent; break;
-        default: identity.familyPercent = g_rockConfig.rockDefaultRecoilPercent; break;
+        case weapon_recoil_policy::Family::Pistol: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+            g_rockConfig.rockPistolOneHandRecoilPercent, g_rockConfig.rockPistolTwoHandRecoilPercent); break;
+        case weapon_recoil_policy::Family::Rifle: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+            g_rockConfig.rockRifleOneHandRecoilPercent, g_rockConfig.rockRifleTwoHandRecoilPercent); break;
+        case weapon_recoil_policy::Family::Shotgun: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+            g_rockConfig.rockShotgunOneHandRecoilPercent, g_rockConfig.rockShotgunTwoHandRecoilPercent); break;
+        case weapon_recoil_policy::Family::Heavy: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+            g_rockConfig.rockHeavyOneHandRecoilPercent, g_rockConfig.rockHeavyTwoHandRecoilPercent); break;
+        default: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
+            g_rockConfig.rockDefaultOneHandRecoilPercent, g_rockConfig.rockDefaultTwoHandRecoilPercent); break;
         }
         if (identity.profile == weapon_recoil_policy::Profile::PowerArmor) {
             identity.familyPercent = 100.0f;

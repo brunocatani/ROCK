@@ -88,6 +88,15 @@ namespace rock::weapon_recoil_policy
         }
     }
 
+    // The physical support state selects the percentage independently of the
+    // recoil delivery/profile (provider visual support can retain OneHand's
+    // geometric profile while still being a supported hold).
+    [[nodiscard]] inline constexpr float selectHoldPercent(const bool oneHanded,
+        const float oneHandPercent, const float twoHandPercent) noexcept
+    {
+        return oneHanded ? oneHandPercent : twoHandPercent;
+    }
+
     // Percent has already been validated by ROCK's central INI loader.
     // Armor is an umbrella override and never inherits a family multiplier.
     [[nodiscard]] inline constexpr ProfileGains effectiveGains(const Profile profile, const float percent) noexcept

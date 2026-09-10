@@ -323,16 +323,26 @@ namespace rock
 
         rockImmersiveRecoil = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
-        rockPistolRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolRecoilPercent",
-            rockPistolRecoilPercent, 100.0f, 0.0f, 200.0f);
-        rockRifleRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fRifleRecoilPercent",
-            rockRifleRecoilPercent, 100.0f, 0.0f, 200.0f);
-        rockShotgunRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fShotgunRecoilPercent",
-            rockShotgunRecoilPercent, 100.0f, 0.0f, 200.0f);
-        rockHeavyRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fHeavyRecoilPercent",
-            rockHeavyRecoilPercent, 100.0f, 0.0f, 200.0f);
-        rockDefaultRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fDefaultRecoilPercent",
-            rockDefaultRecoilPercent, 100.0f, 0.0f, 200.0f);
+        rockPistolOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolOneHandRecoilPercent",
+            rockPistolOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockPistolTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolTwoHandRecoilPercent",
+            rockPistolTwoHandRecoilPercent, 100.0f, 0.0f, 300.0f);
+        rockRifleOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fRifleOneHandRecoilPercent",
+            rockRifleOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockRifleTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fRifleTwoHandRecoilPercent",
+            rockRifleTwoHandRecoilPercent, 100.0f, 0.0f, 300.0f);
+        rockShotgunOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fShotgunOneHandRecoilPercent",
+            rockShotgunOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockShotgunTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fShotgunTwoHandRecoilPercent",
+            rockShotgunTwoHandRecoilPercent, 100.0f, 0.0f, 300.0f);
+        rockHeavyOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fHeavyOneHandRecoilPercent",
+            rockHeavyOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockHeavyTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fHeavyTwoHandRecoilPercent",
+            rockHeavyTwoHandRecoilPercent, 100.0f, 0.0f, 300.0f);
+        rockDefaultOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fDefaultOneHandRecoilPercent",
+            rockDefaultOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
+        rockDefaultTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fDefaultTwoHandRecoilPercent",
+            rockDefaultTwoHandRecoilPercent, 100.0f, 0.0f, 300.0f);
 
         rockDetachEitherHand = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,

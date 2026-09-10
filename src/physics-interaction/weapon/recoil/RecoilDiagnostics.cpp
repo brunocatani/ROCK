@@ -12,10 +12,10 @@ namespace rock
         const auto identity = transform_math::makeIdentityTransform<RE::NiTransform>();
         const auto gains = weapon_recoil_policy::effectiveGains(context.profile, context.familyPercent);
         ROCK_LOG_SAMPLE_INFO(Weapon, 250,
-            "Weapon recoil: form={:08X} family={} resolved={} classSource={} keywords={:016X} profile={} percent={:.1f} gains=({:.3f},{:.3f}) firingHand={} nativePrimary={} delivery={} handMask={} sample={} generation={:016X} nativeT={:.4f} controlledT={:.4f} nativeR={:.4f} controlledR={:.4f}",
+            "Weapon recoil: form={:08X} family={} resolved={} classSource={} keywords={:016X} profile={} hold={} percent={:.1f} gains=({:.3f},{:.3f}) firingHand={} nativePrimary={} delivery={} handMask={} sample={} generation={:016X} nativeT={:.4f} controlledT={:.4f} nativeR={:.4f} controlledR={:.4f}",
             context.formID, weapon_recoil_policy::name(context.family), _recoil.weaponEvidence.resolved,
             static_cast<int>(_recoil.weaponEvidence.source), _recoil.weaponEvidence.keywordFlags,
-            weapon_recoil_policy::name(context.profile), context.familyPercent, gains.translation, gains.rotation,
+            weapon_recoil_policy::name(context.profile), context.oneHanded ? "one-hand" : "two-hand", context.familyPercent, gains.translation, gains.rotation,
             context.firingHandIsLeft ? "left" : "right", context.nativePrimaryIsLeft ? "left" : "right",
             ownedCarry ? "owned-weapon" : "native-hand", handMask, _recoil.ticket.sequence, context.weaponGeneration,
             hand_world_claim_registry_policy::translationDeltaGameUnits(nativeKick, identity),
@@ -42,9 +42,9 @@ namespace rock
         }
         const auto& sample = _recoil.ticket.identity;
         ROCK_LOG_SAMPLE_INFO(Weapon, 250,
-            "Weapon recoil published: route={} sample={} form={:08X} family={} profile={} percent={:.1f} rawSource={} generation={:016X}",
+            "Weapon recoil published: route={} sample={} form={:08X} family={} profile={} hold={} percent={:.1f} rawSource={} generation={:016X}",
             route, _recoil.ticket.sequence, sample.formID, weapon_recoil_policy::name(sample.family),
-            weapon_recoil_policy::name(sample.profile), sample.familyPercent,
+            weapon_recoil_policy::name(sample.profile), sample.oneHanded ? "one-hand" : "two-hand", sample.familyPercent,
             frik_hand_world_authority::rawHandSourceName(sample.firingHandIsLeft), sample.weaponGeneration);
     }
 }
