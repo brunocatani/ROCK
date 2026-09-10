@@ -221,13 +221,6 @@ namespace
 
 namespace rock
 {
-    void RockConfig::compiledDefaults(CSimpleIniA& storage)
-    {
-        RockConfig defaults;
-        defaults.readValuesFromIni(storage, true);
-    }
-
-
     void RockConfig::readValuesFromIni(
         CSimpleIniA& storage,
         const bool materializeMissingDefaults)
