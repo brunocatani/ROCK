@@ -1,6 +1,7 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
+#include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 
 #include <cstdio>
@@ -63,6 +64,44 @@ int main()
     ok &= expectFalse("native menu bypasses stale consumer lease", providerSuppressionApplies(true, true));
     ok &= expectFalse("no lease cannot suppress gameplay", providerSuppressionApplies(false, false));
     ok &= expectFalse("native menu without lease remains native", providerSuppressionApplies(true, false));
+
+    namespace grenade = rock::vats_grenade_gesture_policy;
+    grenade::RuntimeState grenadeState{};
+    grenade::Input grenadeInput{ .pressed = true, .held = true };
+    ok &= expectFalse("grenade mode leaves B press pending", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 0.1f };
+    ok &= expectFalse("grenade mode leaves short B tap native", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.25f };
+    ok &= expectTrue("grenade mode draws at hold threshold", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput.heldSeconds = 2.0f;
+    ok &= expectFalse("continued B hold cannot draw a second grenade", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 2.0f };
+    ok &= expectFalse("release after draw cannot repeat it", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .released = true, .heldSeconds = 0.3f };
+    ok &= expectTrue("late release observes a missed threshold exactly once", grenade::update(grenadeState, grenadeInput).requestGrenade);
+
+    // A wheel claim, native menu or provider loss cancels a pending gesture.
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .eligible = false, .held = true, .heldSeconds = 0.1f };
+    ok &= expectFalse("wheel readiness cancels pending grenade mode", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .held = true, .heldSeconds = 0.5f };
+    ok &= expectFalse("claim expiry cannot reuse held B", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 0.6f };
+    ok &= expectFalse("claim expiry cannot draw on old release", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.25f };
+    ok &= expectTrue("fresh B hold draws after claim release", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenade::reset(grenadeState);
+    grenadeInput = { .held = true, .heldSeconds = 1.0f };
+    ok &= expectFalse("B already held on load cannot draw", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .eligible = false, .pressed = true, .held = true, .heldSeconds = 0.4f };
+    ok &= expectFalse("disabled grenade mode cannot draw even on a late press", grenade::update(grenadeState, grenadeInput).requestGrenade);
 
     Settings settings{};
 

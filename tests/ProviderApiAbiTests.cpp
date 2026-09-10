@@ -225,5 +225,10 @@ int main()
         static_cast<std::uint32_t>(
             RockProviderEquippedWeaponGripStateFlagV1::MuzzleWorldValid) ==
             (1u << 7);
+    const auto grenadeOnly = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw);
+    ok = ok && grenadeOnly == (1u << 7);
+    ok = ok && !hasHandInputSuppressionFlagV1(grenadeOnly, RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+    ok = ok && !hasHandInputSuppressionFlagV1(grenadeOnly, RockProviderHandInputSuppressionFlagV1::SuppressNativeVats);
+    ok = ok && !hasHandInputSuppressionFlagV1(grenadeOnly, RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
     return ok ? 0 : 1;
 }

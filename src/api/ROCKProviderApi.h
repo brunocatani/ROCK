@@ -677,6 +677,13 @@ namespace rock::provider
          */
         SuppressNativeVats = 1u << 5,
         SuppressNativeVans = 1u << 6,
+        // Grenade mode is enabled without a claim. A ready UI consumer renews
+        // this flag (on either hand) to disable Pip-Boy-equipped B-hold draw.
+        // Remove the flag or clear the lease to enable it again; expiry,
+        // unregister and lifecycle loss also restore it. Other owners retain
+        // their claims. Never renew merely because the consumer DLL loaded.
+        // This flag alone leaves native taps, OpenVR input and grabs unchanged.
+        SuppressGrenadeQuickDraw = 1u << 7,
         SuppressConfigModeChord =
             static_cast<std::uint32_t>(SuppressNormalGrabPress) |
             static_cast<std::uint32_t>(SuppressGrabRelease) |

@@ -295,7 +295,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans);
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw);
     constexpr std::uint32_t kWeaponPartTargetMatcherFlagsV1 =
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |

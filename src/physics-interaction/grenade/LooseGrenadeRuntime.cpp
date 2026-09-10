@@ -283,7 +283,23 @@ namespace rock::loose_grenade_runtime
             return true;
         }
 
-
+        DropResult dropInventoryStackToWorld(RE::PlayerCharacter& player, RE::TESBoundObject* object,
+            std::uint32_t stackId, const RE::NiPoint3& dropLocation)
+        {
+            DropResult result{};
+            // Release the inventory read lock before the engine mutates its stacks.
+            RE::TESObjectREFR::RemoveItemData removeData(object, 1);
+            removeData.reason = RE::ITEM_REMOVE_REASON::KDropping;
+            removeData.dropLoc = &dropLocation;
+            removeData.stackData.push_back(stackId);
+            result.stackId = stackId;
+            result.handle = player.RemoveItem(removeData);
+            result.success = static_cast<bool>(result.handle);
+            const auto dropped = result.handle.get();
+            result.droppedRef = dropped.get();
+            result.reason = result.success ? "dropped" : "remove-item-failed";
+            return result;
+        }
     }
 
     bool isThrowableWeapon(const RE::TESObjectWEAP* weapon) noexcept
@@ -358,19 +374,59 @@ namespace rock::loose_grenade_runtime
             result.reason = "item-no-longer-owned";
             return result;
         }
-        // Same native, instance-preserving transfer as grenade quick draw.
-        // Release the inventory read lock before the engine mutates its stacks.
-        RE::TESObjectREFR::RemoveItemData removeData(object, 1);
-        removeData.reason = RE::ITEM_REMOVE_REASON::KDropping;
-        removeData.dropLoc = &dropLocation;
-        removeData.stackData.push_back(chosenStack);
-        result.stackId = chosenStack;
-        result.handle = player->RemoveItem(removeData);
-        result.success = static_cast<bool>(result.handle);
-        const auto dropped = result.handle.get();
-        result.droppedRef = dropped.get();
-        result.reason = result.success ? "dropped" : "remove-item-failed";
-        return result;
+        return dropInventoryStackToWorld(*player, object, chosenStack, dropLocation);
+    }
+
+    DropResult dropEquippedThrowableToWorld(const RE::NiPoint3& dropLocation)
+    {
+        DropResult result{};
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player || !player->inventoryList) {
+            result.reason = "missing-player-inventory";
+            return result;
+        }
+        RE::TESObjectWEAP* selected{};
+        std::uint32_t selectedStack = kInvalidStackId;
+        {
+            const RE::BSAutoReadLock lock{ player->inventoryList->rwLock };
+            std::uint32_t scanned = 0;
+            for (const auto& entry : player->inventoryList->data) {
+                if (++scanned > 16384) {
+                    result.reason = "inventory-scan-limit";
+                    return result;
+                }
+                auto* weapon = entry.object ? entry.object->As<RE::TESObjectWEAP>() : nullptr;
+                if (!isThrowableWeapon(weapon)) continue;
+                std::uint32_t stackId = 0;
+                for (auto* stack = entry.stackData.get(); stack; stack = stack->nextStack.get(), ++stackId) {
+                    if (stackId >= 4096) {
+                        result.reason = "stack-scan-limit";
+                        return result;
+                    }
+                    if (stack->GetCount() == 0 || !stack->IsEquipped()) continue;
+                    if (selected) {
+                        result.reason = "ambiguous-equipped-throwable";
+                        return result;
+                    }
+                    const auto* instance = stack->extra ? stack->extra->GetByType<RE::ExtraInstanceData>() : nullptr;
+                    const auto* extra = stack->extra ? stack->extra->GetByType<RE::BGSObjectInstanceExtra>() : nullptr;
+                    GrenadeRuntimeData runtime{};
+                    if (!resolveGrenadeRuntimeDataForSources(weapon, instance ? instance->data.get() : nullptr, extra, runtime)) {
+                        result.reason = "unsupported-equipped-throwable";
+                        return result;
+                    }
+                    selected = weapon;
+                    selectedStack = stackId;
+                }
+            }
+        }
+        if (!selected) {
+            result.reason = "no-equipped-throwable";
+            return result;
+        }
+        // Resolve and remove the exact equipped stack in this frame-thread call.
+        // No cached form choice, first-owned-stack substitution or equip mutation.
+        return dropInventoryStackToWorld(*player, selected, selectedStack, dropLocation);
     }
 
     bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion)

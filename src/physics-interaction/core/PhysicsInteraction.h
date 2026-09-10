@@ -346,6 +346,7 @@ namespace rock
         bool hasActiveLooseGrenadeCommit() const;
         bool isPendingForceGrabTarget(RE::TESObjectREFR* ref) const;
         void pruneInactiveProviderForceGrabCommits();
+        void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommits();
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);

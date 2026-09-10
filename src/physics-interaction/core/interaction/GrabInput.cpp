@@ -2315,6 +2315,7 @@ namespace rock
         publishHandInputOwnership(_rightHand, false);
         publishHandInputOwnership(_leftHand, true);
         processProviderInteractionCommands(frame);
+        serviceLooseGrenadeQuickDraw(frame);
         servicePendingForceGrabCommits(frame);
         updateSavedGrabOffsetGesture(frame);
         serviceEquippedWeaponDropMomentumHandoff(frame);

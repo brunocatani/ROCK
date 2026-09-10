@@ -120,7 +120,7 @@ namespace rock
     void PhysicsInteraction::pruneInactiveProviderForceGrabCommits()
     {
         for (auto& commit : _forceGrab.pendingCommits) {
-            if (commit.active &&
+            if (commit.active && !commit.grenadeQuickDraw &&
                 !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
@@ -128,6 +128,44 @@ namespace rock
                 commit = {};
             }
         }
+    }
+
+    void PhysicsInteraction::serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame)
+    {
+        if (!input_remap_runtime::consumeGrenadeQuickDrawHoldRequest()) return;
+        if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld ||
+            !physicsWritesAllowedForWorld(frame.hknpWorld)) return;
+        if (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) || hasActiveLooseGrenadeCommit()) {
+            f4vr::showNotification("ROCK: A throwable is already held or attaching.");
+            return;
+        }
+        const bool rightFree = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true) == 0;
+        const bool leftFree = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true) == 0;
+        if (!rightFree && !leftFree) {
+            f4vr::showNotification("ROCK: Cannot draw throwable - both hands are occupied.");
+            return;
+        }
+        const bool isLeft = force_grab_policy::selectGrenadeHand(false, rightFree, leftFree).hand == force_grab_policy::HandChoice::Left;
+        auto location = (isLeft ? frame.left : frame.right).grabAnchorWorld;
+        location.z -= 3.0f;
+        const auto drop = loose_grenade_runtime::dropEquippedThrowableToWorld(location);
+        if (!drop.success) {
+            f4vr::showNotification("ROCK: Equip a supported grenade or throwable in the Pip-Boy first.");
+            ROCK_LOG_WARN(Hand, "Grenade mode draw rejected: {}", drop.reason);
+            return;
+        }
+        _forceGrab.pendingCommits[isLeft ? 1u : 0u] = PendingForceGrabCommit{
+            .active = true,
+            .isLeft = isLeft,
+            .phase = PendingForceGrabCommitPhase::WaitingForReference,
+            .targetHandle = drop.handle,
+            .targetIsLooseThrowable = true,
+            .inventoryTransfer = true,
+            .grenadeQuickDraw = true,
+            .maxDistanceGame = 96.0f,
+        };
+        ROCK_LOG_INFO(Hand, "Grenade mode draw: ref={:08X} stack={} hand={}",
+            drop.droppedRef ? drop.droppedRef->GetFormID() : 0, drop.stackId, isLeft ? "left" : "right");
     }
 
     void PhysicsInteraction::servicePendingForceGrabCommits(const PhysicsFrameContext& frame)
@@ -149,7 +187,9 @@ namespace rock
                                RE::TESObjectREFR*) {
                 commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Rejected;
                 commit.providerResultTemplate.failure = providerFailure;
-                provider::completeInteractionCommandV1(commit.providerResultTemplate);
+                if (!commit.grenadeQuickDraw) {
+                    provider::completeInteractionCommandV1(commit.providerResultTemplate);
+                }
                 rollbackInventoryTransfer(commit);
                 ROCK_LOG_WARN(Hand,
                     "Pending force-grab commit abandoned ({}): hand={}",
@@ -158,7 +198,7 @@ namespace rock
                 commit = {};
             };
 
-            if (!provider::isInteractionCommandActiveV1(
+            if (!commit.grenadeQuickDraw && !provider::isInteractionCommandActiveV1(
                     commit.providerResultTemplate.ownerToken,
                     commit.providerResultTemplate.commandId)) {
                 ROCK_LOG_INFO(Hand,
@@ -287,7 +327,7 @@ namespace rock
             commit.providerResultTemplate.targetBodyId = primaryBodyId;
             commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Succeeded;
             commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::None;
-            if (!provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
+            if (!commit.grenadeQuickDraw && !provider::completeInteractionCommandV1(commit.providerResultTemplate)) {
                 /*
                  * Owner/provider loss can race the final main-thread
                  * commit. Do not publish or retain a grab whose command

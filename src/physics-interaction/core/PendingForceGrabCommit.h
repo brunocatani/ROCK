@@ -37,6 +37,8 @@ namespace rock
         RE::ObjectRefHandle targetHandle{};
         bool targetIsLooseThrowable{ false };
         bool inventoryTransfer{ false };
+        // Internal B-hold draws share transfer/rollback, without an API owner.
+        bool grenadeQuickDraw{ false };
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
         bool hasSourcePointOverride{ false };

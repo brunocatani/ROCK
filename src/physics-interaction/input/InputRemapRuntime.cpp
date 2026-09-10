@@ -3,6 +3,7 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
+#include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
@@ -227,6 +228,10 @@ namespace rock::input_remap_runtime
         // thread; these gesture states are never read from worker callbacks.
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
+        vats_grenade_gesture_policy::RuntimeState s_vatsGrenadeGestureState{};
+        // Native input publishes one edge; the interaction frame owns inventory.
+        std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
+        std::atomic<bool> s_grenadeQuickDrawReleaseToRearm{ true };
         using PipboyRoute = pipboy_pause_gesture_policy::PipboyRoute;
         PipboyRoute s_pipboyGestureRoute{ PipboyRoute::Unavailable };
         // Frame/config thread only. Engine settings are registered for the
@@ -1882,7 +1887,33 @@ namespace rock::input_remap_runtime
                 button->QHeldDownSecs());
         }
 
+        [[nodiscard]] bool grenadeQuickDrawAllowed()
+        {
+            const auto flags = currentProviderHandInputSuppressionFlagsAtDispatch();
+            return s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+                !isInputBlockingMenuActive() &&
+                !provider::hasHandInputSuppressionFlagV1(flags,
+                    provider::RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw) &&
+                !isAnyProviderOpenVrGameInputSuppressedAtDispatch();
+        }
 
+        void observePrimaryVatsGrenadeGesture(RE::ButtonEvent& button)
+        {
+            const auto decision = vats_grenade_gesture_policy::update(
+                s_vatsGrenadeGestureState,
+                vats_grenade_gesture_policy::Input{
+                    .eligible = grenadeQuickDrawAllowed() &&
+                        !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire),
+                    .pressed = button.QJustPressed(),
+                    .held = button.QPressed(),
+                    .released = !button.QPressed() && button.QHeldDownSecs() >= 0.0f,
+                    .heldSeconds = button.QHeldDownSecs(),
+                    .holdSeconds = readNativeVansHoldThresholdSeconds(),
+                });
+            if (decision.requestGrenade) {
+                s_pendingGrenadeQuickDrawHoldRequest.store(true, std::memory_order_release);
+            }
+        }
 
         void hookedMenuOpenEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
@@ -1896,6 +1927,7 @@ namespace rock::input_remap_runtime
 
             const auto wandIdentity = resolveNativeWandIdentity(inputEvent);
             if (wandIdentity == NativeWandIdentity::Primary) {
+                observePrimaryVatsGrenadeGesture(*button);
                 if (s_originalMenuOpenEventHandler) {
                     s_originalMenuOpenEventHandler(handler, inputEvent);
                 }
@@ -2389,6 +2421,8 @@ namespace rock::input_remap_runtime
                     std::memory_order_release);
             }
             blockManualScopeInputUntilRelease();
+            s_pendingGrenadeQuickDrawHoldRequest.store(false, std::memory_order_release);
+            s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
         }
     }
 
@@ -2643,7 +2677,20 @@ namespace rock::input_remap_runtime
         return s_pendingSavedGrabOffsetRequest[isLeft ? 0u : 1u].exchange(false, std::memory_order_acq_rel);
     }
 
-
+    bool consumeGrenadeQuickDrawHoldRequest()
+    {
+        const bool requested = s_pendingGrenadeQuickDrawHoldRequest.exchange(false, std::memory_order_acq_rel);
+        // Sample pre-remap physical input even while the wheel blanks native B.
+        // Losing its claim during a held gesture must never synthesize a draw.
+        const auto button = consumeRawButtonState(false, 1);
+        const bool allowed = grenadeQuickDrawAllowed();
+        if (!allowed || !button.available) {
+            s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
+        } else if (!button.held) {
+            s_grenadeQuickDrawReleaseToRearm.store(false, std::memory_order_release);
+        }
+        return requested && allowed && !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire);
+    }
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)
     {

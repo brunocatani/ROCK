@@ -68,6 +68,7 @@ namespace rock::loose_grenade_runtime
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
     // Main-thread inventory transfer; does not create a duplicate or dispatch EquipObject.
     [[nodiscard]] DropResult dropInventoryItemToWorld(std::uint32_t baseFormId, const RE::NiPoint3& dropLocation);
+    [[nodiscard]] DropResult dropEquippedThrowableToWorld(const RE::NiPoint3& dropLocation);
     [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
     [[nodiscard]] ProximityScanResult scanHostileActorsWithinProximity(
         RE::TESObjectREFR* ref,
