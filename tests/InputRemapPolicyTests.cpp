@@ -59,6 +59,10 @@ int main()
     using namespace rock::input_remap_policy;
 
     bool ok = true;
+    ok &= expectTrue("consumer owns gameplay input", providerSuppressionApplies(false, true));
+    ok &= expectFalse("native menu bypasses stale consumer lease", providerSuppressionApplies(true, true));
+    ok &= expectFalse("no lease cannot suppress gameplay", providerSuppressionApplies(false, false));
+    ok &= expectFalse("native menu without lease remains native", providerSuppressionApplies(true, false));
 
     Settings settings{};
 

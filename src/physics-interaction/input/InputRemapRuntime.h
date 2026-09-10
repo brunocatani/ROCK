@@ -76,6 +76,8 @@ namespace rock::input_remap_runtime
     // the engine transition; input runtime owns only the physical hold gesture.
     bool isManualScopeActivationRequested();
     bool isMenuInputActive();
+    // Frame-thread query using the same ViewCaster classification as Activate.
+    bool hasNativeActivationTarget(bool primaryHand);
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();
     bool isPipboyMenuOpen();

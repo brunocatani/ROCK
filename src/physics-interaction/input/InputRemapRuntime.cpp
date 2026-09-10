@@ -521,15 +521,19 @@ namespace rock::input_remap_runtime
             return hand == input_remap_policy::Hand::Left ? 0u : 1u;
         }
 
+        [[nodiscard]] bool isInputBlockingMenuActive();
+
         [[nodiscard]] bool isProviderOpenVrGameInputSuppressed(input_remap_policy::Hand hand)
         {
-            return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire);
+            return input_remap_policy::providerSuppressionApplies(isInputBlockingMenuActive(),
+                s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire));
         }
 
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressed()
         {
-            return s_providerOpenVrGameInputSuppressed[0].load(std::memory_order_acquire) ||
-                   s_providerOpenVrGameInputSuppressed[1].load(std::memory_order_acquire);
+            return input_remap_policy::providerSuppressionApplies(isInputBlockingMenuActive(),
+                s_providerOpenVrGameInputSuppressed[0].load(std::memory_order_acquire) ||
+                s_providerOpenVrGameInputSuppressed[1].load(std::memory_order_acquire));
         }
 
         [[nodiscard]] std::uint32_t currentProviderHandInputSuppressionFlagsAtDispatch()
@@ -542,6 +546,9 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressedAtDispatch()
         {
+            // Native menus own input immediately, including before the next
+            // provider frame has revoked UI consumers' outstanding leases.
+            if (isInputBlockingMenuActive()) return false;
             if (isAnyProviderOpenVrGameInputSuppressed()) {
                 return true;
             }
@@ -623,8 +630,6 @@ namespace rock::input_remap_runtime
                 axis.y = 0.0f;
             }
         }
-
-        [[nodiscard]] bool isInputBlockingMenuActive();
 
         /*
          * Left-hand fire: while the LEFT hand occupies the equipped weapon's
@@ -2545,6 +2550,11 @@ namespace rock::input_remap_runtime
     bool isMenuInputActive()
     {
         return isInputBlockingMenuActive();
+    }
+
+    bool hasNativeActivationTarget(bool primaryHand)
+    {
+        return classifyActivateTarget(primaryHand) == ActivateTarget::NativeActivation;
     }
 
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)

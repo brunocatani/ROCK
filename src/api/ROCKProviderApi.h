@@ -1532,6 +1532,13 @@ namespace rock::provider
      * matching native game action (e.g. the pipboy trigger) - that is the
      * point: the game action is silenced, the physical button is not.
      */
+    enum class RockProviderNativeInputContextFlagV1 : std::uint32_t
+    {
+        Available = 1u << 0,
+        MenuActive = 1u << 1,
+        PrimaryActivationTarget = 1u << 2,
+    };
+
     struct RockProviderRawWandButtonStateV1
     {
         std::uint32_t size{ sizeof(RockProviderRawWandButtonStateV1) };
@@ -3181,6 +3188,12 @@ namespace rock::provider
         // Query table size before using this appended V1 entry; no prefix ABI changes.
         bool(ROCK_PROVIDER_CALL* getRawWandThumbstickV1)(RockProviderHand hand, float* outX, float* outY);
 
+        // Frame callback only. Returns NativeInputContextFlagV1 bits; zero is
+        // unavailable. Uses native menu tracking and the primary ViewCaster's
+        // Activate classification (furniture, terminals, containers, actors, etc.).
+        // Does not claim input or expose engine pointers. Check table size first.
+        std::uint32_t(ROCK_PROVIDER_CALL* getNativeInputContextV1)();
+
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
             const std::uint32_t minProviderApiByteSize = 0)
@@ -3990,7 +4003,8 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 752);
+    static_assert(sizeof(RockProviderApi) == 760);
+    static_assert(offsetof(RockProviderApi, getNativeInputContextV1) == 752);
     static_assert(offsetof(RockProviderApi, getRawWandThumbstickV1) == 744);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(

@@ -5148,6 +5148,24 @@ namespace
         return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
     }
 
+    std::uint32_t ROCK_PROVIDER_CALL apiGetNativeInputContextV1()
+    {
+        try {
+            using Flag = RockProviderNativeInputContextFlagV1;
+            if (!rock::input_remap_runtime::isInputRemapHookInstalled()) return 0;
+            auto flags = static_cast<std::uint32_t>(Flag::Available);
+            if (rock::input_remap_runtime::isMenuInputActive())
+                return flags | static_cast<std::uint32_t>(Flag::MenuActive);
+            if (rock::input_remap_runtime::hasNativeActivationTarget(true))
+                flags |= static_cast<std::uint32_t>(Flag::PrimaryActivationTarget);
+            return flags;
+        } catch (...) {
+            static std::atomic_bool logged{ false };
+            if (!logged.exchange(true)) logger::error("Native input context query failed; consumer input denied");
+            return 0; // Unavailable: consumers must not claim input on a failed query.
+        }
+    }
+
     bool ROCK_PROVIDER_CALL apiGetRawWandThumbstickV1(RockProviderHand hand, float* outX, float* outY)
     {
         if (outX) *outX = 0.0f;
@@ -5467,6 +5485,7 @@ namespace
         .requestPlayerControllerJumpV1 =
             &apiRequestPlayerControllerJumpV1,
         .getRawWandThumbstickV1 = &apiGetRawWandThumbstickV1,
+        .getNativeInputContextV1 = &apiGetNativeInputContextV1,
     };
 
     constexpr RockProviderApiDescriptorV1 ROCK_PROVIDER_API_DESCRIPTOR{
