@@ -1,6 +1,5 @@
 #include "rock_support/GameIniOverrides.h"
 
-#include "RockConfig.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
 
@@ -17,50 +16,26 @@ namespace rock::game_ini_overrides
         struct Override
         {
             const char* name;
-            RE::Setting::SETTING_TYPE type;
+            const bool desired;
             // Non-owning, statically registered engine SettingT objects. Published
             // once before installing the hook; never retain a collection iterator.
             RE::Setting* setting = nullptr;
-            std::atomic<int> desired{ 0 };
             std::atomic<bool> rejected{ false };
             bool rejectionLogged = false;  // Main thread only.
         };
 
-        using Type = RE::Setting::SETTING_TYPE;
-        constinit std::array<Override, 5> s_overrides{{
-            { "bUseKickback:VR", Type::kBinary },
-            { "bUseRecoil:VR", Type::kBinary },
-            { "bIgnoreConeOfFireCalculationsForPlayer:VR", Type::kBinary },
-            { "bLeftHandedMode:VR", Type::kBinary },
-            { "iRotationType:VR", Type::kInt },
+        // Mandatory native behavior. Rotation remains owned by the game.
+        constinit std::array<Override, 4> s_overrides{{
+            { "bUseKickback:VR", true },
+            { "bUseRecoil:VR", true },
+            { "bIgnoreConeOfFireCalculationsForPlayer:VR", true },
+            { "bLeftHandedMode:VR", false },
         }};
-        static_assert(std::atomic<int>::is_always_lock_free);
         static_assert(std::atomic<bool>::is_always_lock_free);
 
         using Notify = void (*)(RE::Setting*);
         Notify s_originalNotify = nullptr;
         bool s_installed = false;
-
-        std::array<int, 5> values(const RockConfigValues& config)
-        {
-            return { config.rockVrUseKickback, config.rockVrUseRecoil,
-                config.rockVrIgnoreConeOfFireCalculationsForPlayer,
-                config.rockVrLeftHandedMode, config.rockVrRotationType };
-        }
-
-        int read(const Override& entry)
-        {
-            return entry.type == Type::kBinary ? entry.setting->GetBinary() : entry.setting->GetInt();
-        }
-
-        void write(const Override& entry, int value)
-        {
-            if (entry.type == Type::kBinary) {
-                entry.setting->SetBinary(value != 0);
-            } else {
-                entry.setting->SetInt(value);
-            }
-        }
 
         void onSettingChanged(RE::Setting* setting)
         {
@@ -70,9 +45,8 @@ namespace rock::game_ini_overrides
                 if (entry.setting != setting) {
                     continue;
                 }
-                const int desired = entry.desired.load(std::memory_order_relaxed);
-                if (read(entry) != desired) {
-                    write(entry, desired);
+                if (entry.setting->GetBinary() != entry.desired) {
+                    entry.setting->SetBinary(entry.desired);
                     entry.rejected.store(true, std::memory_order_relaxed);
                 }
                 break;
@@ -144,60 +118,47 @@ namespace rock::game_ini_overrides
         }
     }
 
-    bool install(const RockConfigValues& config)
+    bool install()
     {
         if (s_installed) {
             return true;
         }
-        const auto desired = values(config);
-        for (std::size_t i = 0; i < s_overrides.size(); ++i) {
-            auto& entry = s_overrides[i];
+        for (auto& entry : s_overrides) {
             entry.setting = f4vr::getIniSetting(entry.name);
-            if (!entry.setting || entry.setting->GetType() != entry.type) {
+            if (!entry.setting || entry.setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
                 ROCK_LOG_ERROR(Init, "VR INI override '{}' is missing or has the wrong type; enforcement not installed", entry.name);
                 return false;
             }
-            entry.desired.store(desired[i], std::memory_order_relaxed);
         }
         if (!installNotifier()) {
             return false;
         }
         s_installed = true;
         for (auto& entry : s_overrides) {
-            const int desiredValue = entry.desired.load(std::memory_order_relaxed);
-            ROCK_LOG_INFO(Config, "VR INI override '{}': native={} ROCK={}", entry.name, read(entry), desiredValue);
-            if (read(entry) != desiredValue) {
-                write(entry, desiredValue);
+            ROCK_LOG_INFO(Config, "VR INI override '{}': native={} required={}", entry.name, entry.setting->GetBinary(), entry.desired);
+            if (entry.setting->GetBinary() != entry.desired) {
+                entry.setting->SetBinary(entry.desired);
                 s_originalNotify(entry.setting);
             }
         }
-        ROCK_LOG_INFO(Init, "ROCK owns all five VR INI overrides; native setting notifications are guarded");
+        ROCK_LOG_INFO(Init, "ROCK enforces four required VR settings; rotation remains controlled by the game");
         return true;
     }
 
-    void update(const RockConfigValues& config)
+    void update()
     {
         if (!s_installed) {
             return;
         }
-        const auto desired = values(config);
-        for (std::size_t i = 0; i < s_overrides.size(); ++i) {
-            auto& entry = s_overrides[i];
-            const int previous = entry.desired.load(std::memory_order_relaxed);
-            if (previous != desired[i]) {
-                entry.desired.store(desired[i], std::memory_order_relaxed);
-                ROCK_LOG_INFO(Config, "VR INI override '{}' changed in ROCK.ini: {} -> {}", entry.name, previous, desired[i]);
-            }
-            if (read(entry) != desired[i]) {
-                if (previous == desired[i]) {
-                    entry.rejected.store(true, std::memory_order_relaxed);
-                }
-                write(entry, desired[i]);
+        for (auto& entry : s_overrides) {
+            if (entry.setting->GetBinary() != entry.desired) {
+                entry.rejected.store(true, std::memory_order_relaxed);
+                entry.setting->SetBinary(entry.desired);
                 s_originalNotify(entry.setting);
             }
             if (!entry.rejectionLogged && entry.rejected.load(std::memory_order_relaxed)) {
                 entry.rejectionLogged = true;
-                ROCK_LOG_INFO(Config, "VR INI override '{}' rejected an external change; ROCK.ini remains authoritative (reported once)", entry.name);
+                ROCK_LOG_INFO(Config, "VR INI override '{}' rejected an external change; required behavior remains enforced (reported once)", entry.name);
             }
         }
     }

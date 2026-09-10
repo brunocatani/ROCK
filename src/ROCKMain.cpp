@@ -285,7 +285,7 @@ namespace
         }
 
         g_rockConfig.processPendingConfigReload();
-        game_ini_overrides::update(g_rockConfig);
+        game_ini_overrides::update();
         advanceNativeRuntimeSettingFrameClock();
         enforceNativeMeleeRuntimeSuppression();
 
@@ -1028,7 +1028,7 @@ namespace
             g_rockConfig.subscribeForConfigChanged("ROCKPipboyInput", [](const std::string&) {
                 input_remap_runtime::configurePipboyInput();
             });
-            if (!game_ini_overrides::install(g_rockConfig)) {
+            if (!game_ini_overrides::install()) {
                 logger::critical("ROCK: Required VR INI enforcement is unavailable; initialization stopped.");
                 return;
             }
@@ -1076,7 +1076,7 @@ namespace
             if (s_frikAvailable) {
                 g_rockConfig.reload();
                 input_remap_runtime::configurePipboyInput();
-                game_ini_overrides::update(g_rockConfig);
+                game_ini_overrides::update();
                 logger::info("ROCK: Config reloaded for new session.");
             }
         }
