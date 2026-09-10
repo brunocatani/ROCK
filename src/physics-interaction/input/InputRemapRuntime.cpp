@@ -223,9 +223,9 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<bool> s_equippedWeaponShoulderSheathActive{ false };
         std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
-        manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         // MenuControls dispatches ButtonEvents serially on the frame/input
         // thread; these gesture states are never read from worker callbacks.
+        manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
         using PipboyRoute = pipboy_pause_gesture_policy::PipboyRoute;
         PipboyRoute s_pipboyGestureRoute{ PipboyRoute::Unavailable };
@@ -1356,10 +1356,18 @@ namespace rock::input_remap_runtime
             return handleValue;
         }
 
-        [[nodiscard]] bool isTakeEquipTargetEligible(bool primaryHandEvent)
+        enum class ActivateTarget : std::uint8_t
+        {
+            Unavailable,
+            TakeEquip,
+            NativeActivation,
+        };
+
+        [[nodiscard]] ActivateTarget classifyActivateTarget(bool primaryHandEvent)
         {
             const auto globalOffset = primaryHandEvent ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset;
             std::uint32_t handleValue = readWandPickRefHandle(globalOffset);
+            const bool usedOtherWand = handleValue == 0;
             if (handleValue == 0) {
                 /*
                  * The native dispatcher at 0xFC07E0 falls back to the other wand's caster when
@@ -1376,7 +1384,7 @@ namespace rock::input_remap_runtime
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Take/Equip classification stopped at stage=no-handle (offset=0x{:X} value=0)",
                     globalOffset);
-                return false;
+                return ActivateTarget::Unavailable;
             }
 
             RE::ObjectRefHandle handle{};
@@ -1390,7 +1398,7 @@ namespace rock::input_remap_runtime
                     "Take/Equip classification stopped at stage=handle-resolve (offset=0x{:X} handleValue=0x{:X})",
                     globalOffset,
                     handleValue);
-                return false;
+                return ActivateTarget::Unavailable;
             }
 
             /*
@@ -1409,7 +1417,7 @@ namespace rock::input_remap_runtime
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Take/Equip suppression classification: pick-ref formID=0x{:X} matches ROCK's own held object in this hand",
                     refFormId);
-                return true;
+                return ActivateTarget::TakeEquip;
             }
 
             const auto* baseForm = ref->GetObjectReference();
@@ -1421,7 +1429,7 @@ namespace rock::input_remap_runtime
                     handleValue,
                     refFormId,
                     heldFormId);
-                return false;
+                return ActivateTarget::Unavailable;
             }
 
             const bool eligible = far_selection_blacklist_policy::listContainsText(g_rockConfig.rockSuppressTakeEquipFormTypes, formTypeChars);
@@ -1433,10 +1441,13 @@ namespace rock::input_remap_runtime
                 heldFormId,
                 formTypeChars,
                 eligible ? "yes" : "no");
-            return eligible;
+            // The existing opposite-wand fallback protects against taking an
+            // owned object. It cannot grant use priority for this wand.
+            return eligible ? ActivateTarget::TakeEquip :
+                (usedOtherWand ? ActivateTarget::Unavailable : ActivateTarget::NativeActivation);
         }
 
-        [[nodiscard]] bool shouldSuppressNativeTakeEquipActionEvent(const RE::InputEvent* event)
+        [[nodiscard]] bool shouldSuppressNativeTakeEquipActionEvent(const RE::InputEvent* event, ActivateTarget target)
         {
             const bool eventMatched = isActivateReloadEvent(event);
             if (!eventMatched) {
@@ -1445,7 +1456,7 @@ namespace rock::input_remap_runtime
 
             const bool primaryHandEvent = isPrimaryWandInputEvent(event);
             const bool handEngaged = isTakeEquipHandEngaged(primaryHandEvent);
-            const bool targetEligible = handEngaged && isTakeEquipTargetEligible(primaryHandEvent);
+            const bool targetEligible = target == ActivateTarget::TakeEquip;
 
             auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding, event, eventMatched);
             input.takeEquipHandEngaged = handEngaged;
@@ -1557,7 +1568,27 @@ namespace rock::input_remap_runtime
                 return;
             }
 
-            if (shouldDeferFiringHandActivateForManualScope(inputEvent)) {
+            const bool gameplayActivation = isActivateReloadEvent(inputEvent) &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
+            const bool primaryHandEvent = isPrimaryWandInputEvent(inputEvent);
+            const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
+            const auto target = gameplayActivation && (weaponDrawn || isTakeEquipHandEngaged(primaryHandEvent)) ?
+                classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
+            bool nativeActivation = target == ActivateTarget::NativeActivation;
+            if (gameplayActivation && primaryHandEvent && weaponDrawn &&
+                !s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
+                s_hooksInstalled.load(std::memory_order_acquire)) {
+                const auto* button = inputEvent->As<RE::ButtonEvent>();
+                if (button && button->QJustPressed()) {
+                    manual_scope_input_policy::beginPrimaryActivateGesture(s_manualScopeInputState, nativeActivation);
+                }
+                // Keep the first consumer's decision even if the wand target
+                // changes between native dispatch and the raw frame update.
+                nativeActivation = s_manualScopeInputState.primaryPressUsesNative &&
+                    s_manualScopeInputState.state != manual_scope_input_policy::State::BlockedUntilRelease;
+            }
+
+            if (!nativeActivation && shouldDeferFiringHandActivateForManualScope(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -1572,7 +1603,7 @@ namespace rock::input_remap_runtime
                     "Recorded a pending saved-grab-offset request from an Activate/WandAccept press");
             }
 
-            if (shouldRouteFiringHandActivateReload(inputEvent)) {
+            if (!nativeActivation && shouldRouteFiringHandActivateReload(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 if (dispatchNativeReloadAction()) {
                     ROCK_LOG_SAMPLE_DEBUG(Input,
@@ -1583,7 +1614,7 @@ namespace rock::input_remap_runtime
                 return;
             }
 
-            if (shouldSuppressNativeTakeEquipActionEvent(inputEvent)) {
+            if (shouldSuppressNativeTakeEquipActionEvent(inputEvent, target)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -2433,9 +2464,9 @@ namespace rock::input_remap_runtime
     void updateFiringHandReloadInput(const float deltaSeconds)
     {
         /*
-         * Consume both physical accept buttons every frame. Automatic mode
-         * preserves the existing primary-event/secondary-raw reload split.
-         * Manual mode owns either physical firing-hand gesture end to end:
+         * Consume both physical accept buttons every frame. Native use owns
+         * a primary-wand press that starts on a non-pickup target. Otherwise
+         * manual scope owns either physical firing-hand gesture end to end:
          * release before the threshold dispatches reload, while crossing it
          * holds native scope activation until release. Draining both edges in
          * every mode prevents a config or firing-hand change from replaying a
@@ -2456,6 +2487,13 @@ namespace rock::input_remap_runtime
             return;
         }
         const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
+        const bool gameplayAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
+        const bool menuActive = isInputBlockingMenuActive();
+        const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
+        const bool nativeActivationTarget = gameplayAllowed && !menuActive && weaponDrawn &&
+            !firingHandIsLeft && rightAcceptState.pressed &&
+            s_manualScopeInputState.state == manual_scope_input_policy::State::Idle &&
+            classifyActivateTarget(true) == ActivateTarget::NativeActivation;
 
         const auto toManualButtonState = [](const RawButtonState& state) {
             return manual_scope_input_policy::ButtonState{
@@ -2468,10 +2506,11 @@ namespace rock::input_remap_runtime
         const auto previousState = s_manualScopeInputState.state;
         const auto decision = manual_scope_input_policy::update(s_manualScopeInputState,
             manual_scope_input_policy::Input{
-                .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                .menuInputActive = isInputBlockingMenuActive(),
-                .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
+                .gameplayInputAllowed = gameplayAllowed,
+                .menuInputActive = menuActive,
+                .weaponDrawn = weaponDrawn,
                 .firingHandIsLeft = firingHandIsLeft,
+                .nativeActivationTarget = nativeActivationTarget,
                 .leftButton = toManualButtonState(leftAcceptState),
                 .rightButton = toManualButtonState(rightAcceptState),
                 .deltaSeconds = deltaSeconds,

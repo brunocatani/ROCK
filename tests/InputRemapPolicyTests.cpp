@@ -795,5 +795,83 @@ int main()
     manualDecision = manual::update(manualState, manualInput);
     ok &= expectFalse("menu-cancelled gesture cannot replay as reload", manualDecision.dispatchReload);
 
+    manual::reset(manualState);
+    manualInput.nativeActivationTarget = true;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("raw press on a use target belongs to native activation", manualDecision.state, manual::State::NativeActivation);
+    ok &= expectFalse("use target press cannot reload or scope", manualDecision.dispatchReload || manualDecision.scopeRequested);
+    manualInput.nativeActivationTarget = false;
+    manualInput.rightButton.pressed = false;
+    manualInput.deltaSeconds = 1.0f;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("looking away retains native activation ownership through a long hold", manualDecision.state, manual::State::NativeActivation);
+    ok &= expectFalse("native activation hold cannot become scope", manualDecision.scopeRequested);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("native activation release rearms the gesture", manualDecision.state, manual::State::Idle);
+    ok &= expectFalse("native activation release cannot reload", manualDecision.dispatchReload);
+
+    manual::reset(manualState);
+    manual::beginPrimaryActivateGesture(manualState, true);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("native event before raw polling retains its use decision", manualDecision.state, manual::State::NativeActivation);
+    ok &= expectFalse("native event followed by raw press cannot reload or scope", manualDecision.dispatchReload || manualDecision.scopeRequested);
+    manualInput.menuInputActive = true;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("a menu opened by native activation cancels the held gesture", manualDecision.state, manual::State::BlockedUntilRelease);
+    manualInput.menuInputActive = false;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("closing a use menu cannot reload on release", manualDecision.dispatchReload);
+
+    manualInput.nativeActivationTarget = true;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .pressed = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("a complete native use tap between polls cannot reload or scope", manualDecision.dispatchReload || manualDecision.scopeRequested);
+    manualInput.nativeActivationTarget = false;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("the next press without a use target starts weapon input", manualDecision.state, manual::State::Pending);
+    manual::beginPrimaryActivateGesture(manualState, true);
+    manualInput.nativeActivationTarget = true;
+    manualInput.rightButton.pressed = false;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("aiming at a use target cannot steal an existing scope gesture", manualDecision.scopeRequested);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .released = true };
+    (void)manual::update(manualState, manualInput);
+
+    manual::beginPrimaryActivateGesture(manualState, false);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .pressed = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("native event weapon decision survives a use target appearing before raw polling", manualDecision.dispatchReload);
+
+    manual::reset(manualState);
+    manualInput.nativeActivationTarget = true;
+    manualDecision = manual::update(manualState, manualInput);
+    manual::beginPrimaryActivateGesture(manualState, false);
+    ok &= expectTrue("raw use tap retains native routing when the native press arrives after release", manualState.primaryPressUsesNative);
+    ok &= expectManualScopeState("late native press cannot restart the completed use tap", manualState.state, manual::State::Idle);
+    ok &= expectFalse("raw use tap dispatches no weapon action", manualDecision.dispatchReload || manualDecision.scopeRequested);
+
+    manual::reset(manualState);
+    manualInput.nativeActivationTarget = false;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("raw weapon tap reloads when no use target is present", manualDecision.dispatchReload);
+    manual::beginPrimaryActivateGesture(manualState, true);
+    ok &= expectFalse("a late native press cannot also activate a newly acquired use target", manualState.primaryPressUsesNative);
+    ok &= expectManualScopeState("late native press cannot restart a completed reload tap", manualState.state, manual::State::Idle);
+    manualInput.rightButton = manual::ButtonState{ .available = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("the frame after a late native press cannot repeat reload", manualDecision.dispatchReload);
+
+    manualInput.nativeActivationTarget = true;
+    manualInput.firingHandIsLeft = true;
+    manualInput.leftButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualInput.rightButton = manual::ButtonState{ .available = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("right-wand use target leaves left firing-hand input available", manualDecision.state, manual::State::Pending);
+
     return ok ? 0 : 1;
 }
