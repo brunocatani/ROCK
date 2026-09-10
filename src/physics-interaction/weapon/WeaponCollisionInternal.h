@@ -11,6 +11,7 @@
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
+#include "physics-interaction/native/NativeCollisionShape.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "RockConfig.h"
@@ -1101,6 +1102,8 @@ namespace rock
 
         struct CollisionSoundMaterialDiagnostics
         {
+            std::array<std::size_t, static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Count)> shapeQueryStages{};
+            bool worldModelLoaded{ false };
             std::size_t inspectedShapes{ 0 };
             std::size_t simpleShapes{ 0 };
             std::size_t compositeShapes{ 0 };
@@ -1324,15 +1327,9 @@ namespace rock
                 return evidence;
             }
 
-            auto* collisionObject = node->collisionObject.get();
-            auto* nativeCollision = collisionObject ?
-                collisionObject->IsbhkNPCollisionObject() :
-                nullptr;
-            if (!nativeCollision || !nativeCollision->spSystem) {
-                return evidence;
-            }
-
-            auto* shape = nativeCollision->GetShape();
+            const auto query = native_scene::queryCollisionShape(node);
+            ++diagnostics.shapeQueryStages[static_cast<std::size_t>(query.stage)];
+            auto* shape = query.shape;
             if (!shape) {
                 return evidence;
             }
@@ -1465,6 +1462,7 @@ namespace rock
             outModelPath = modelPath;
             auto modelRoot =
                 loadGeometryInspectionOmodModelTemplate(outModelPath);
+            diagnostics.worldModelLoaded = modelRoot != nullptr;
             CollisionSoundMaterialCache modelMaterialCache;
             modelMaterialCache.reserve(16);
             return firstCollisionSoundMaterial(
@@ -1614,7 +1612,7 @@ namespace rock
             ROCK_LOG_SAMPLE_INFO(
                 Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Equipped weapon collision audio native scan: shapes={} simple={} composite={} keys={} queries={} zeroKeys={} unregisteredKeys={} ambiguousShapes={} incompleteShapes={} truncatedShapes={} stalledShapes={} invalidEnumerations={} blockedFallbackSources={} candidates='{}' model='{}'",
+                "Equipped weapon collision audio native scan: shapes={} simple={} composite={} keys={} queries={} zeroKeys={} unregisteredKeys={} ambiguousShapes={} incompleteShapes={} truncatedShapes={} stalledShapes={} invalidEnumerations={} blockedFallbackSources={} candidates='{}' model='{}' modelLoaded={} shapeStages(node/object/dispatch/system/shape/ok)={}/{}/{}/{}/{}/{}",
                 diagnostics.inspectedShapes,
                 diagnostics.simpleShapes,
                 diagnostics.compositeShapes,
@@ -1629,7 +1627,14 @@ namespace rock
                 diagnostics.invalidEnumerationShapes,
                 blockedFallbackSources.size(),
                 nativeMaterialHistogram,
-                worldModelPath);
+                worldModelPath,
+                diagnostics.worldModelLoaded,
+                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Node)],
+                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::CollisionObject)],
+                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::NativeDispatch)],
+                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::PhysicsSystem)],
+                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Shape)],
+                diagnostics.shapeQueryStages[static_cast<std::size_t>(native_scene::CollisionShapeQueryStage::Complete)]);
 
             if (unresolvedSourceCount != 0) {
                 ROCK_LOG_SAMPLE_WARN(
