@@ -14,6 +14,18 @@
     "controls": [
       {
         "section": "ImmersiveWeapons",
+        "key": "bFiringGripDetachEnabled",
+        "label": "Detach Either Hand",
+        "help": "Allows either hand to detach from the weapon, including the hand on the firing grip. With Toggle Grab on, tap that hand's grab button to detach it. With Toggle Grab off, let go of the grab button."
+      },
+      {
+        "section": "ImmersiveWeapons",
+        "key": "bLastGripReleaseDropEnabled",
+        "label": "Auto Drop",
+        "help": "Auto drops the weapon if not being held. With Toggle Grab on, tap the grab button on the last hand holding it to drop it. With Toggle Grab off, let go of that hand's grab button."
+      },
+      {
+        "section": "ImmersiveWeapons",
         "key": "fFiringGripReattachRadiusGameUnits",
         "min": 0.25,
         "max": 30,
