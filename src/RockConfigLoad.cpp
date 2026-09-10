@@ -341,19 +341,27 @@ namespace rock
         rockDefaultRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fDefaultRecoilPercent",
             rockDefaultRecoilPercent, 100.0f, 0.0f, 200.0f);
 
-        rockFiringGripDetachEnabled = ini.GetBoolValue(
+        rockDetachEitherHand = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
-            "bFiringGripDetachEnabled",
-            rockFiringGripDetachEnabled);
+            "bDetachEitherHand",
+            rockDetachEitherHand);
         rockFiringGripDetachPosePreservationEnabled =
             ini.GetBoolValue(
                 IMMERSIVE_WEAPONS_SECTION,
                 "bFiringGripDetachPosePreservationEnabled",
                 rockFiringGripDetachPosePreservationEnabled);
-        rockLastGripReleaseDropEnabled = ini.GetBoolValue(
+        rockAutoDrop = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION,
-            "bLastGripReleaseDropEnabled",
-            rockLastGripReleaseDropEnabled);
+            "bAutoDrop",
+            rockAutoDrop);
+        rockToggleGrab = ini.GetBoolValue(
+            IMMERSIVE_WEAPONS_SECTION,
+            "bToggleGrab",
+            rockToggleGrab);
+        rockGrabAnywhereOnWeapon = ini.GetBoolValue(
+            IMMERSIVE_WEAPONS_SECTION,
+            "bGrabAnywhereOnWeapon",
+            rockGrabAnywhereOnWeapon);
         rockFiringGripReattachRadiusGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
@@ -421,14 +429,6 @@ namespace rock
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",
             rockAmbidextrousFiringGripEnabled);
-        rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled = ini.GetBoolValue(
-            AMBIDEXTROUS_FIRING_SECTION,
-            "bAuthoredOnlyEquippedWeaponSupportGrabsEnabled",
-            rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled);
-        rockEquippedWeaponToggleGrabEnabled = ini.GetBoolValue(
-            AMBIDEXTROUS_FIRING_SECTION,
-            "bEquippedWeaponToggleGrabEnabled",
-            rockEquippedWeaponToggleGrabEnabled);
         rockFiringGripPromotionRadius = readClampedFloat(
             ini,
             AMBIDEXTROUS_FIRING_SECTION,

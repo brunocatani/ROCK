@@ -84,11 +84,16 @@ namespace rock
         // ROCK-native Immersive Weapons firing-role boundary. The same
         // release, part-carry, reattach and haptic contract follows whichever
         // physical hand currently occupies the firing grip.
-        bool rockFiringGripDetachEnabled = true;
+        bool rockDetachEitherHand = true;
         bool rockFiringGripDetachPosePreservationEnabled = true;
         // Whether the last carrying hand may drop the weapon by letting go.
         // With false that grip is retained under either input mode.
-        bool rockLastGripReleaseDropEnabled = true;
+        bool rockAutoDrop = true;
+        // Tap to grab and tap again to release equipped-weapon grips.
+        bool rockToggleGrab = false;
+        // Allow dynamic support grabs beyond authored grips. False preserves
+        // authored-grip preference and the existing missing-pose fallback.
+        bool rockGrabAnywhereOnWeapon = false;
         float rockFiringGripReattachRadiusGameUnits = 12.0f;
         float rockFiringGripReattachCylinderRadiusGameUnits = 2.0f;
         grip_zone_indicator_policy::Mode rockGripZoneIndicatorMode{
@@ -103,12 +108,6 @@ namespace rock
         // ROCK-native firing-grip handoff. This remains independent from the
         // role-neutral Immersive Weapons detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;
-        // ROCK-local support acquisition policy. Matched provider part
-        // targets retain their declared authority; current weapons without a
-        // usable authored support pose may use the qualified dynamic fallback.
-        bool rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled = true;
-        // Optional ROCK-owned input mode for equipped-weapon grips only.
-        bool rockEquippedWeaponToggleGrabEnabled = false;
         float rockFiringGripPromotionRadius = 5.0f;
         float rockLeftFiringAimYawDegrees = 0.0f;
         float rockLeftFiringAimPitchDegrees = 0.0f;

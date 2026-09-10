@@ -14,15 +14,27 @@
     "controls": [
       {
         "section": "ImmersiveWeapons",
-        "key": "bFiringGripDetachEnabled",
+        "key": "bDetachEitherHand",
         "label": "Detach Either Hand",
         "help": "Allows either hand to detach from the weapon, including the hand on the firing grip. With Toggle Grab on, tap that hand's grab button to detach it. With Toggle Grab off, let go of the grab button."
       },
       {
         "section": "ImmersiveWeapons",
-        "key": "bLastGripReleaseDropEnabled",
+        "key": "bAutoDrop",
         "label": "Auto Drop",
         "help": "Auto drops the weapon if not being held. With Toggle Grab on, tap the grab button on the last hand holding it to drop it. With Toggle Grab off, let go of that hand's grab button."
+      },
+      {
+        "section": "ImmersiveWeapons",
+        "key": "bToggleGrab",
+        "label": "Toggle Grab",
+        "help": "Tap the grab button to hold a weapon grip; tap it again to let go. When off, hold the grab button to keep your grip and release it to let go. Applies to either hand. Auto Drop controls whether releasing the last grip drops the weapon. Loose objects, surfaces, and provider touch grabs always use hold-to-grab."
+      },
+      {
+        "section": "ImmersiveWeapons",
+        "key": "bGrabAnywhereOnWeapon",
+        "label": "Grab Anywhere on Weapon",
+        "help": "Allows dynamic support grabs anywhere on the weapon. When off, uses authored support grips where available. Weapons without an authored support pose keep their dynamic-grab fallback. Applies to either support hand and is independent of Ambidextrous Firing."
       },
       {
         "section": "ImmersiveWeapons",

@@ -1781,18 +1781,17 @@ namespace rock
             .ambidextrousHandoffEnabled =
                 g_rockConfig.rockAmbidextrousFiringGripEnabled,
             .authoredOnlySupportGrabsEnabled =
-                g_rockConfig.
-                    rockAuthoredOnlyEquippedWeaponSupportGrabsEnabled,
+                !g_rockConfig.rockGrabAnywhereOnWeapon,
             .toggleGrabEnabled =
-                g_rockConfig.rockEquippedWeaponToggleGrabEnabled,
+                g_rockConfig.rockToggleGrab,
             .equippedWeaponShoulderStashEnabled =
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
             .lastGripReleaseDropEnabled =
-                g_rockConfig.rockLastGripReleaseDropEnabled,
+                g_rockConfig.rockAutoDrop,
             .immersiveWeapon = {
                 .firingGripDetachEnabled =
                     g_rockConfig.
-                        rockFiringGripDetachEnabled,
+                        rockDetachEitherHand,
                 .firingGripDetachPosePreservationEnabled =
                     g_rockConfig.
                         rockFiringGripDetachPosePreservationEnabled,

@@ -35,7 +35,7 @@ int main(int argc, char** argv)
                 else if (key.find("Pull") != std::string::npos || key.find("ForceGrab") != std::string::npos) group = "Pull and force grab";
                 else if (key.find("Selection") != std::string::npos || key.find("Highlight") != std::string::npos) group = "Selection and highlighting";
                 else if (key.find("Collision") != std::string::npos || key.find("Collider") != std::string::npos) group = "Collision";
-                else if (key.find("Grab") != std::string::npos || key.find("Grip") != std::string::npos) group = "Grabbing and grips";
+                else if (key == "bAutoDrop" || key == "bDetachEitherHand" || key.find("Grab") != std::string::npos || key.find("Grip") != std::string::npos) group = "Grabbing and grips";
                 const std::string page = std::string(section.pItem) == "PhysicsInteraction" ||
                     group.starts_with("Debug") || group.starts_with("Developer") ? group : section.pItem;
                 entries.push_back({{"section", section.pItem}, {"key", key}, {"default", value}, {"group", group}, {"page", page}});
