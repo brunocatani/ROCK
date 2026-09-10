@@ -107,6 +107,15 @@ namespace rock
         // Game frame only, before early returns, so clicks cannot replay later.
         void updateSurfaceSupportInput();
 
+        // Same game-thread owner as the recoil callback; no cached hand-mode
+        // flag can keep the reduced profile alive after this latch releases.
+        [[nodiscard]] bool hasLatchedSurfaceSupport(std::uintptr_t weaponNode, std::uint64_t generation) const noexcept
+        {
+            return _surfaceSupport.latched() && generation != 0 &&
+                generation == _surfaceSupport.contact.generation &&
+                weaponNode != 0 && weaponNode == reinterpret_cast<std::uintptr_t>(_frameWeaponNode);
+        }
+
         void beginFrame(
             std::uint64_t frameIndex,
             RE::hknpWorld* world,

@@ -155,6 +155,21 @@ int main()
         using rock::weapon_recoil_authority_math::tryBuildControlledKick;
         ok &= expectTrue("ordinary one hand selects independent profile",
             selectProfile(false, false, false) == Profile::OneHand);
+        for (const bool armor : { false, true }) {
+            for (const bool twoHands : { false, true }) {
+                for (const bool close : { false, true }) {
+                    ok &= expectTrue("latched bipod overrides all hand and armor profiles",
+                        selectProfile(armor, close, twoHands, true) == Profile::Bipod);
+                    ok &= expectTrue("unlatched bipod restores ordinary profile selection",
+                        selectProfile(armor, close, twoHands, false) == selectProfile(armor, close, twoHands));
+                }
+            }
+        }
+        for (const float percent : { 0.0f, 80.0f, 100.0f, 292.1f, 300.0f }) {
+            const auto bipodGains = effectiveGains(Profile::Bipod, percent);
+            ok &= expectTrue("bipod gains are ten percent regardless of weapon tuning",
+                bipodGains.translation == 0.10f && bipodGains.rotation == 0.10f);
+        }
         ok &= expectTrue("close support chooses its own profile",
             selectProfile(false, true, false) == Profile::CloseSupport);
         for (const bool supported : { false, true }) {
@@ -269,6 +284,13 @@ int main()
         expected.translate = { 4.5f, -1.8f, 0.9f };
         expected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 18.0f);
         ok &= expectTransformNear("armor starts with the requested attenuation", armor, expected);
+        TestTransform bipod{};
+        ok &= expectTrue("bipod builds a rigid reduced kick",
+            tryBuildControlledKick(shot, effectiveGains(Profile::Bipod, 300.0f), bipod));
+        auto bipodExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
+        bipodExpected.translate = { 1.0f, -0.4f, 0.2f };
+        bipodExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 6.0f);
+        ok &= expectTransformNear("bipod applies ten percent of native translation and angle", bipod, bipodExpected);
         auto independentlyTunedSupport = kCloseSupport;
         independentlyTunedSupport.translation = 0.2f;
         independentlyTunedSupport.rotation = 0.1f;

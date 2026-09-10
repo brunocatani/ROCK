@@ -33,6 +33,7 @@
 
 namespace rock
 {
+    class DynamicWeaponCollisionRuntime;
     namespace authored_weapon_grip_library
     {
         struct FiringFingerPose;
@@ -644,6 +645,11 @@ namespace rock
         {
             _visuals.weaponIntentObserverContext = context;
             _visuals.weaponIntentObserver = observer;
+        }
+
+        void setSurfaceSupportRuntime(const DynamicWeaponCollisionRuntime* runtime) noexcept
+        {
+            _surfaceSupportRuntime = runtime;
         }
 
         // Releases last frame's collision hand tags before new claims arrive.
@@ -2226,6 +2232,9 @@ namespace rock
         PartCarryState _partCarry{};
         LeftFiringCarryState _leftCarry{};
         WeaponRecoilState _recoil{};
+        // Non-owning sibling service. PhysicsInteraction declares the surface
+        // runtime first, so our recoil registration ends before it is destroyed.
+        const DynamicWeaponCollisionRuntime* _surfaceSupportRuntime{ nullptr };
         HandVisualTransitionState _visuals{};
         ScopePresentationState _scope{};
         GripFailureTelemetryState _telemetry{};

@@ -10,6 +10,7 @@ namespace rock::weapon_recoil_policy
         FullTwoHand,
         CloseSupport,
         PowerArmor,
+        Bipod,
     };
 
     struct ProfileGains
@@ -23,11 +24,14 @@ namespace rock::weapon_recoil_policy
     inline constexpr ProfileGains kFullTwoHand{ 1.0f, 1.0f };
     inline constexpr ProfileGains kCloseSupport{ 0.45f, 0.30f };
     inline constexpr ProfileGains kPowerArmor{ 0.45f, 0.30f };
+    inline constexpr ProfileGains kBipod{ 0.10f, 0.10f };
 
     [[nodiscard]] inline constexpr Profile selectProfile(
-        const bool inPowerArmor, const bool closeSupport, const bool fullTwoHanded) noexcept
+        const bool inPowerArmor, const bool closeSupport, const bool fullTwoHanded,
+        const bool surfaceLatched = false) noexcept
     {
-        return inPowerArmor ? Profile::PowerArmor :
+        return surfaceLatched ? Profile::Bipod :
+               inPowerArmor ? Profile::PowerArmor :
                closeSupport ? Profile::CloseSupport :
                fullTwoHanded ? Profile::FullTwoHand : Profile::OneHand;
     }
@@ -35,6 +39,7 @@ namespace rock::weapon_recoil_policy
     [[nodiscard]] inline constexpr ProfileGains gainsFor(const Profile profile) noexcept
     {
         switch (profile) {
+        case Profile::Bipod: return kBipod;
         case Profile::PowerArmor: return kPowerArmor;
         case Profile::CloseSupport: return kCloseSupport;
         case Profile::FullTwoHand: return kFullTwoHand;
@@ -45,6 +50,7 @@ namespace rock::weapon_recoil_policy
     [[nodiscard]] inline constexpr const char* name(const Profile profile) noexcept
     {
         switch (profile) {
+        case Profile::Bipod: return "bipod";
         case Profile::PowerArmor: return "power-armor";
         case Profile::CloseSupport: return "close-support";
         case Profile::FullTwoHand: return "full-two-hand";
@@ -98,11 +104,12 @@ namespace rock::weapon_recoil_policy
     }
 
     // Percent has already been validated by ROCK's central INI loader.
-    // Armor is an umbrella override and never inherits a family multiplier.
+    // Armor and a latched bipod are umbrella overrides. Neither inherits a
+    // family/hand multiplier; bipod is always 10% of the native kick.
     [[nodiscard]] inline constexpr ProfileGains effectiveGains(const Profile profile, const float percent) noexcept
     {
         const auto base = gainsFor(profile);
-        if (profile == Profile::PowerArmor) {
+        if (profile == Profile::PowerArmor || profile == Profile::Bipod) {
             return base;
         }
         const float multiplier = percent * 0.01f;

@@ -324,6 +324,8 @@ namespace rock
         rockImmersiveAidEnabled = ini.GetBoolValue("ImmersiveAid", "bEnabled", rockImmersiveAidEnabled);
         rockImmersiveRecoil = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
+        rockBipodMode = ini.GetBoolValue(
+            IMMERSIVE_WEAPONS_SECTION, "bBipodMode", rockBipodMode);
         rockPistolOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolOneHandRecoilPercent",
             rockPistolOneHandRecoilPercent, 300.0f, 0.0f, 300.0f);
         rockPistolTwoHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolTwoHandRecoilPercent",

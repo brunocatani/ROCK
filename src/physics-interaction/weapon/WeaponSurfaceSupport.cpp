@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
+#include "RockConfig.h"
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
@@ -21,6 +22,15 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::updateSurfaceSupportInput()
     {
+        if (!g_rockConfig.rockBipodMode) {
+            _surfaceClickRequested = false;
+            _surfaceToggle = {};
+            if (_surfaceSupport.latched()) {
+                weapon_surface_support::release(_surfaceSupport);
+                ROCK_LOG_INFO(Weapon, "Weapon surface support released: reason=bipod-mode-disabled");
+            }
+            return; // Do not read or consume the button while this mode is off.
+        }
         if (input_remap_runtime::isProviderOpenVrGameInputSuppressedForHand(false)) {
             _surfaceClickRequested = false;
             _surfaceToggle = {};

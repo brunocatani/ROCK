@@ -689,7 +689,7 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::Settings{
                 .grabButtonId = input_remap_policy::kGrabButtonId,
-                .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
+                .suppressRightFavoritesGameInput = g_rockConfig.rockBipodMode || g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressPipboyGameInputWhileHolding = g_rockConfig.rockSuppressPipboyGameInputWhileHolding,
             };
         }
@@ -1151,7 +1151,8 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeFavoritesAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightFavoritesGameInput, eventNameMatches(event, kNativeEventWandThumbClick)));
+                makeNativeActionSuppressionInput(g_rockConfig.rockBipodMode || g_rockConfig.rockSuppressRightFavoritesGameInput,
+                    eventNameMatches(event, kNativeEventWandThumbClick)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event)

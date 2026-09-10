@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/DynamicWeaponCollision.h"
 
 namespace rock
 {
@@ -34,8 +35,10 @@ namespace rock
             _session.authorityMode == weapon_support_authority_policy::
                 WeaponSupportAuthorityMode::FullTwoHandedSolver;
         auto identity = _recoil.equippedIdentity;
+        const bool surfaceLatched = g_rockConfig.rockBipodMode && _surfaceSupportRuntime &&
+            _surfaceSupportRuntime->hasLatchedSurfaceSupport(identity.weaponNode, identity.weaponGeneration);
         identity.profile = weapon_recoil_policy::selectProfile(
-            f4vr::isInPowerArmor(), hasVisualOnlySupportRecoilAssist(), fullTwoHanded);
+            f4vr::isInPowerArmor(), hasVisualOnlySupportRecoilAssist(), fullTwoHanded, surfaceLatched);
         identity.firingHandIsLeft = isFiringHandLeft();
         identity.nativePrimaryIsLeft = nativePrimaryIsLeft;
         identity.fullTwoHanded = fullTwoHanded;
@@ -53,7 +56,8 @@ namespace rock
         default: identity.familyPercent = weapon_recoil_policy::selectHoldPercent(identity.oneHanded,
             g_rockConfig.rockDefaultOneHandRecoilPercent, g_rockConfig.rockDefaultTwoHandRecoilPercent); break;
         }
-        if (identity.profile == weapon_recoil_policy::Profile::PowerArmor) {
+        if (identity.profile == weapon_recoil_policy::Profile::PowerArmor ||
+            identity.profile == weapon_recoil_policy::Profile::Bipod) {
             identity.familyPercent = 100.0f;
         }
         return identity;

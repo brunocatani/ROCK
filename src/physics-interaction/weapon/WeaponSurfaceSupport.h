@@ -73,7 +73,8 @@ namespace rock::weapon_surface_support
     [[nodiscard]] inline bool contactStillTouches(const Contact& contact,
         const RE::NiTransform& weaponWorld, const RE::NiTransform& surfaceWorld)
     {
-        using namespace dynamic_weapon_collision_policy;
+        using dynamic_weapon_collision_policy::isFinitePoint;
+        using dynamic_weapon_collision_policy::isFiniteTransform;
         if (!isFiniteTransform(weaponWorld) || !isFiniteTransform(surfaceWorld) ||
             std::abs(weaponWorld.scale) < 0.0001f || std::abs(surfaceWorld.scale) < 0.0001f) return false;
         const auto weaponPoint = transform_math::localPointToWorld(weaponWorld, contact.weaponPointLocal);
@@ -133,7 +134,8 @@ namespace rock::weapon_surface_support
     [[nodiscard]] inline bool capture(State& state, const Contact& contact,
         const RE::NiTransform& requestedWeaponWorld, const RE::NiPoint3& primaryGripLocal)
     {
-        using namespace dynamic_weapon_collision_policy;
+        using dynamic_weapon_collision_policy::isFinitePoint;
+        using dynamic_weapon_collision_policy::isFiniteTransform;
         if (!contact.valid || !isFiniteTransform(contact.weaponWorld) ||
             !isFiniteTransform(contact.surfaceWorld) || !isFinitePoint(contact.weaponPointLocal) ||
             !isFinitePoint(contact.surfacePointLocal) || std::abs(contact.weaponWorld.scale) < 0.0001f ||
@@ -160,7 +162,8 @@ namespace rock::weapon_surface_support
     [[nodiscard]] inline bool solve(State& state, const RE::NiTransform& requestedWeaponWorld,
         const RE::NiTransform& surfaceWorld, RE::NiTransform& result)
     {
-        using namespace dynamic_weapon_collision_policy;
+        using dynamic_weapon_collision_policy::isFinitePoint;
+        using dynamic_weapon_collision_policy::isFiniteTransform;
         if (!state.latched() || !isFiniteTransform(requestedWeaponWorld) || !isFiniteTransform(surfaceWorld)) return false;
         const auto anchor = transform_math::localPointToWorld(surfaceWorld, state.contact.surfacePointLocal);
         const auto captureAnchor = transform_math::localPointToWorld(state.contact.surfaceWorld, state.contact.surfacePointLocal);

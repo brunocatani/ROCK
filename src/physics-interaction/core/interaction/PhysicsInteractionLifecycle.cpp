@@ -29,6 +29,7 @@ namespace rock
         _twoHandedGrip.setWeaponVisualIntentObserver(
             &_dynamicWeaponCollision,
             &DynamicWeaponCollisionRuntime::observeWeaponVisualIntent);
+        _twoHandedGrip.setSurfaceSupportRuntime(&_dynamicWeaponCollision);
         clearLooseGrenadeImpactWatches();
 
         installBumpHook();
