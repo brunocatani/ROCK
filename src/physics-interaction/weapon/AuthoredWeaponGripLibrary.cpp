@@ -393,7 +393,6 @@ namespace rock::authored_weapon_grip_library
             return LookupResult{ .reason = "invalidVanillaModelFrame" };
         }
         result.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(result.rightHandWeaponLocal, displacement);
-        vanilla_weapon_grip_frame::correctPipeWrist(weapon, weaponRoot, result.rightHandWeaponLocal);
         if (result.hasSupportRelation) {
             result.supportHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(result.supportHandWeaponLocal, displacement);
         }

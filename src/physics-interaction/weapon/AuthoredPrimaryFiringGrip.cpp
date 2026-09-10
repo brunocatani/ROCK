@@ -356,7 +356,6 @@ namespace rock
         auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
         if (authoredLookup.found) {
             authoredLookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.rightHandWeaponLocal, modelDisplacement);
-            vanilla_weapon_grip_frame::correctPipeWrist(input.weapon, input.weaponNode, authoredLookup.rightHandWeaponLocal);
             if (authoredLookup.hasSupportRelation) {
                 authoredLookup.supportHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.supportHandWeaponLocal, modelDisplacement);
             }
@@ -993,7 +992,6 @@ namespace rock
         if (alignmentResolved && !harvestedRelationAvailable && !compiledMinigunFiringSeat) {
             rawPrimaryHandInWeapon = authoredPrimaryHandInWeapon;
             authoredPrimaryHandInWeapon = vanilla_weapon_grip_frame::translateGrip(authoredPrimaryHandInWeapon, modelDisplacement);
-            vanilla_weapon_grip_frame::correctPipeWrist(input.weapon, input.weaponNode, authoredPrimaryHandInWeapon);
             currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
             alignmentResolved = finiteTransform(currentAuthoredHandWorld);
         }
