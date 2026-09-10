@@ -34,7 +34,6 @@
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
-#include "physics-interaction/weapon/AuthoredSupportGripIndicatorEffect.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponShoulderCoordinator.h"
@@ -114,7 +113,7 @@ namespace rock
 
         void update();
 
-        // Publishes mode-2 grip indicators after every animation phase has
+        // Publishes grip indicators after every animation phase has
         // committed, immediately before the frame's later VR render submit.
         void publishGripZoneIndicatorRenderFrame(
             std::uint64_t gameFrameIndex);
@@ -392,8 +391,6 @@ namespace rock
             const Hand* sourceHand,
             const push_assist::Contact& contact);
 
-        void updateAuthoredSupportGripIndicator();
-        void updateFiringGripReattachIndicator();
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
         void logGrabOverlayPointProbe(const PhysicsFrameContext& frame);
 
@@ -990,10 +987,6 @@ namespace rock
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         TwoHandedGrip _twoHandedGrip;
-        AuthoredSupportGripIndicatorEffect
-            _authoredSupportGripIndicator{ "ROCK_AuthoredSupportGripIndicator" };
-        AuthoredSupportGripIndicatorEffect
-            _firingGripReattachIndicator{ "ROCK_FiringGripReattachIndicator" };
         DynamicHandCollisionRuntime _dynamicHandCollision;
         DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;
         feedback_haptics::FeedbackHaptics _feedbackHaptics;

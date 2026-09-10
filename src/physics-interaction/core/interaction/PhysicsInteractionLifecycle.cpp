@@ -496,14 +496,6 @@ namespace rock
             ROCK_LOG_INFO(Init, "Initial bone-derived hand collider transforms updated");
         }
 
-        _rightHand.preloadSelectionBeam();
-        _leftHand.preloadSelectionBeam();
-        if (grip_zone_indicator_policy::usesNif(
-                g_rockConfig.rockGripZoneIndicatorMode)) {
-            (void)_authoredSupportGripIndicator.preload();
-            (void)_firingGripReattachIndicator.preload();
-        }
-
         _frame.hasPrevPositions = false;
         _diagnostics.deltaLogCounter = 0;
         _diagnostics.contactLogCounter = 0;
@@ -599,8 +591,6 @@ namespace rock
             currentHknp == _lifecycle.cachedHknpWorld;
 
         if (worldValid) {
-            _authoredSupportGripIndicator.shutdown();
-            _firingGripReattachIndicator.shutdown();
             auto* hknp = getHknpWorld(_lifecycle.cachedBhkWorld);
             _dynamicWorldCarCollision.restoreAll(_lifecycle.cachedBhkWorld, hknp, "shutdown");
             _touchGrabRuntime.releaseAll(
@@ -634,8 +624,6 @@ namespace rock
             destroyBodyBoneCollisions(_lifecycle.cachedBhkWorld);
             destroyHandCollisions(_lifecycle.cachedBhkWorld);
         } else {
-            _authoredSupportGripIndicator.abandonSceneGraph();
-            _firingGripReattachIndicator.abandonSceneGraph();
             _dynamicWorldCarCollision.abandon();
             _touchGrabRuntime.abandonAll(
                 provider::RockProviderTouchGrabReleaseReasonV1::

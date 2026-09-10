@@ -371,20 +371,6 @@ namespace rock
             2.0f,
             0.1f,
             30.0f);
-        const long configuredGripZoneIndicatorMode = ini.GetLongValue(
-            IMMERSIVE_WEAPONS_SECTION,
-            "iGripZoneIndicatorMode",
-            static_cast<long>(rockGripZoneIndicatorMode));
-        if (!grip_zone_indicator_policy::isSupportedMode(
-                configuredGripZoneIndicatorMode)) {
-            ROCK_LOG_WARN(
-                Config,
-                "Invalid iGripZoneIndicatorMode={} -- using 1 (NIF)",
-                configuredGripZoneIndicatorMode);
-        }
-        rockGripZoneIndicatorMode =
-            grip_zone_indicator_policy::modeFromIni(
-                configuredGripZoneIndicatorMode);
         rockGripZoneIndicatorDiameterGameUnits = readClampedFloat(
             ini,
             IMMERSIVE_WEAPONS_SECTION,
@@ -663,29 +649,6 @@ namespace rock
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
         rockHighlightIntensityMode = readHighlightIntensityMode(ini, SECTION, "iHighlightIntensityMode", rockHighlightIntensityMode);
         rockHighlightColor = readHighlightColor(ini, SECTION, "sHighlightColor", rockHighlightColor);
-        rockSelectionBeamEnabled = ini.GetBoolValue(SECTION, "bSelectionBeamEnabled", rockSelectionBeamEnabled);
-        rockSelectionBeamSegmentSizeGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fSelectionBeamSegmentSizeGameUnits",
-            rockSelectionBeamSegmentSizeGameUnits,
-            selection_beam_policy::kDefaultSegmentSizeGameUnits,
-            0.2f,
-            6.0f);
-        rockSelectionBeamCurveLiftGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fSelectionBeamCurveLiftGameUnits",
-            rockSelectionBeamCurveLiftGameUnits,
-            selection_beam_policy::kDefaultCurveLiftGameUnits,
-            0.0f,
-            80.0f);
-        rockSelectionBeamAlpha = readClampedFloat(ini,
-            SECTION,
-            "fSelectionBeamAlpha",
-            rockSelectionBeamAlpha,
-            selection_beam_policy::kDefaultAlpha,
-            0.05f,
-            1.0f);
-
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
         rockDebugDrawColliderPhaseDiagnostics = ini.GetBoolValue(

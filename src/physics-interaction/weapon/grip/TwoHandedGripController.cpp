@@ -155,7 +155,6 @@ namespace rock
             }
             _support.authoredIndicatorFrame =
                 AuthoredSupportGripIndicatorFrame{
-                    .positionWorld = indicatorWorld,
                     .positionWeaponLocal = indicatorWeaponLocal,
                     .weaponGenerationKey =
                         authoredIndicatorWeaponGenerationKey,

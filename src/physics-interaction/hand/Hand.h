@@ -17,7 +17,6 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/hand/SelectionBeamEffect.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
@@ -608,9 +607,6 @@ namespace rock
         void updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,
             const RE::NiPoint3& farSelectionDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
             const FarSelectionHmdConeGate& farHmdConeGate, float deltaTime, const OtherHandSelectionContext& otherHandContext);
-        void preloadSelectionBeam();
-        void updateSelectionBeam(RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin);
-        void stopSelectionBeam();
 
         struct LivePalmAnchorReference
         {
@@ -1456,7 +1452,6 @@ namespace rock
         std::atomic<bool> _isHoldingFlag{ false };
 
         VatsSelectionHighlight _selectionHighlight;
-        SelectionBeamEffect _selectionBeam;
 
     public:
         selection_highlight_policy::VatsHighlightTargetChoice chooseSelectionHighlightTarget(const SelectedObject& selection) const
@@ -1537,7 +1532,6 @@ namespace rock
         void stopSelectionHighlight()
         {
             _selectionHighlightRefreshFrames = 0;
-            stopSelectionBeam();
             _selectionHighlight.stop();
         }
 

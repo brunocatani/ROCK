@@ -24,7 +24,6 @@
 #undef ROCK_DEFINED_MAX_PATH_FOR_FILEWATCH
 #endif
 
-#include "physics-interaction/hand/SelectionBeamPolicy.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
@@ -96,9 +95,6 @@ namespace rock
         bool rockGrabAnywhereOnWeapon = false;
         float rockFiringGripReattachRadiusGameUnits = 12.0f;
         float rockFiringGripReattachCylinderRadiusGameUnits = 2.0f;
-        grip_zone_indicator_policy::Mode rockGripZoneIndicatorMode{
-            grip_zone_indicator_policy::Mode::Nif
-        };
         float rockGripZoneIndicatorDiameterGameUnits =
             grip_zone_indicator_policy::kDefaultDiameterGameUnits;
         float rockFiringGripHapticDurationSeconds = 0.10f;
@@ -174,10 +170,6 @@ namespace rock
         bool rockHighlightEnabled = true;
         int rockHighlightIntensityMode = 3;
         std::string rockHighlightColor = "orange";
-        bool rockSelectionBeamEnabled = true;
-        float rockSelectionBeamSegmentSizeGameUnits = selection_beam_policy::kDefaultSegmentSizeGameUnits;
-        float rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
-        float rockSelectionBeamAlpha = selection_beam_policy::kDefaultAlpha;
 
         bool rockDebugShowColliders = false;
         bool rockDebugShowTargetColliders = false;

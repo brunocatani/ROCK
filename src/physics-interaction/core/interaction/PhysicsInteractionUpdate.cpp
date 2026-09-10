@@ -336,8 +336,6 @@ namespace rock
         }
         updateFeedbackHaptics(frame.deltaSeconds);
 
-        updateAuthoredSupportGripIndicator();
-        updateFiringGripReattachIndicator();
         _frame.debugOverlayFrameIndex = runtime_state::currentFrame().frameIndex;
 
         resolveContacts(frame);
@@ -450,8 +448,6 @@ namespace rock
         refreshEquippedWeaponHandlingSettings();
         if (!runtime.visualAuthorityAvailable) {
             retireDynamicWeaponForInterruptedFrame();
-            _authoredSupportGripIndicator.hide();
-            _firingGripReattachIndicator.hide();
             restoreHeldMassMovementSlowdown("frik-unavailable");
             _grabInput.shoulderStashStates = {};
             _grabInput.mouthConsumeStates = {};
@@ -540,8 +536,6 @@ namespace rock
                 }
             }
             debug::ClearFrame();
-            _authoredSupportGripIndicator.hide();
-            _firingGripReattachIndicator.hide();
             clearEquippedWeaponFiringGripInputState();
             _equipped.pendingPrimaryOnlyGripStart = {};
             auto* snapshotBhk = getPlayerBhkWorld();
@@ -594,8 +588,6 @@ namespace rock
             _equipped.pendingPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
             debug::ClearFrame();
-            _authoredSupportGripIndicator.hide();
-            _firingGripReattachIndicator.hide();
             restoreHeldMassMovementSlowdown("world-unavailable");
             _grabInput.shoulderStashStates = {};
             _grabInput.mouthConsumeStates = {};
@@ -681,8 +673,6 @@ namespace rock
                     _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
                 debug::ClearFrame();
                 _twoHandedGrip.reset();
-                _authoredSupportGripIndicator.hide();
-                _firingGripReattachIndicator.hide();
                 _equipped.pendingPrimaryOnlyGripStart = {};
                 clearEquippedWeaponFiringGripInputState();
                 _grabInput.shoulderStashStates = {};
@@ -705,8 +695,6 @@ namespace rock
                 _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire));
             debug::ClearFrame();
             _twoHandedGrip.reset();
-            _authoredSupportGripIndicator.hide();
-            _firingGripReattachIndicator.hide();
             _equipped.pendingPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
             _grabInput.shoulderStashStates = {};
@@ -984,8 +972,6 @@ namespace rock
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)
     {
         if (!runtime_state::isLocalSkeletonReady()) {
-            _rightHand.stopSelectionBeam();
-            _leftHand.stopSelectionBeam();
             return;
         }
 
@@ -1024,7 +1010,6 @@ namespace rock
             if (_rightHand.hasSelection()) {
                 _rightHand.clearSelectionState(false);
             }
-            _rightHand.stopSelectionBeam();
         } else if (!frame.right.disabled) {
             _rightHand.updateSelection(frame.bhkWorld,
                 frame.hknpWorld,
@@ -1037,16 +1022,12 @@ namespace rock
                 farHmdConeGate,
                 frame.deltaSeconds,
                 leftHandContext);
-            _rightHand.updateSelectionBeam(frame.hknpWorld, frame.right.grabAnchorWorld);
-        } else {
-            _rightHand.stopSelectionBeam();
         }
 
         if (_forceGrab.pendingCommits[1].active) {
             if (_leftHand.hasSelection()) {
                 _leftHand.clearSelectionState(false);
             }
-            _leftHand.stopSelectionBeam();
         } else if (!frame.left.disabled) {
             _leftHand.updateSelection(frame.bhkWorld,
                 frame.hknpWorld,
@@ -1059,9 +1040,6 @@ namespace rock
                 farHmdConeGate,
                 frame.deltaSeconds,
                 rightHandContext);
-            _leftHand.updateSelectionBeam(frame.hknpWorld, frame.left.grabAnchorWorld);
-        } else {
-            _leftHand.stopSelectionBeam();
         }
     }
 

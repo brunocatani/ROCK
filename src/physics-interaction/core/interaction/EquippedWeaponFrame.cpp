@@ -1562,50 +1562,11 @@ namespace rock
         };
     }
 
-    void PhysicsInteraction::updateAuthoredSupportGripIndicator()
-    {
-        if (!grip_zone_indicator_policy::usesNif(
-                g_rockConfig.rockGripZoneIndicatorMode)) {
-            _authoredSupportGripIndicator.hide();
-            return;
-        }
-
-        const auto frame =
-            _twoHandedGrip.getAuthoredSupportGripIndicatorFrame();
-        const Hand& supportHand =
-            frame.supportHandIsLeft ? _leftHand : _rightHand;
-        if (!frame.visible || supportHand.isHolding()) {
-            _authoredSupportGripIndicator.hide();
-            return;
-        }
-        (void)_authoredSupportGripIndicator.update(frame.positionWorld);
-    }
-
-    void PhysicsInteraction::updateFiringGripReattachIndicator()
-    {
-        if (!grip_zone_indicator_policy::usesNif(
-                g_rockConfig.rockGripZoneIndicatorMode)) {
-            _firingGripReattachIndicator.hide();
-            return;
-        }
-
-        const auto frame =
-            _twoHandedGrip.getFiringGripReattachIndicatorFrame();
-        const Hand& hoverHand = frame.handIsLeft ? _leftHand : _rightHand;
-        if (!frame.visible || hoverHand.isHolding()) {
-            _firingGripReattachIndicator.hide();
-            return;
-        }
-        (void)_firingGripReattachIndicator.update(frame.positionWorld);
-    }
-
     void PhysicsInteraction::publishGripZoneIndicatorRenderFrame(
         const std::uint64_t gameFrameIndex)
     {
         const auto& runtime = runtime_state::currentFrame();
-        if (!grip_zone_indicator_policy::usesDebugOverlay(
-                g_rockConfig.rockGripZoneIndicatorMode) ||
-            !_lifecycle.initialized.load(std::memory_order_acquire) ||
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) ||
             !runtime.visualAuthorityAvailable ||
             !runtime.localSkeletonReady || runtime.localMenuBlocking ||
             runtime.compatibilityConfigBlocking || gameFrameIndex == 0 ||

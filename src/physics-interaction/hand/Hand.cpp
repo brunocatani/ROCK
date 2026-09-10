@@ -216,7 +216,6 @@ namespace rock
         }
 
         stopSelectionHighlight();
-        _selectionBeam.shutdown();
         held_scene_presentation::clearHeldBodies(_isLeft);
         _isHoldingFlag.store(false, std::memory_order_release);
         _heldBodyIdsCount.store(0, std::memory_order_release);
@@ -345,7 +344,6 @@ namespace rock
     void Hand::abandonHavokStateAfterWorldLoss()
     {
         held_scene_presentation::clearHeldBodies(_isLeft);
-        _selectionBeam.abandonSceneGraph();
 
         /*
          * World-loss teardown cannot safely restore old body flags, filters, or
@@ -2206,45 +2204,6 @@ namespace rock
                                           HandInteractionEvent::ObjectInvalidated;
         applyTransition(HandTransitionRequest{ .event = event });
         _selectionHoldSeconds = 0.0f;
-    }
-
-    void Hand::preloadSelectionBeam()
-    {
-        (void)_selectionBeam.preload(handName());
-    }
-
-    void Hand::updateSelectionBeam(RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin)
-    {
-        const bool stateCanShowBeam = _state == HandState::SelectedFar || _state == HandState::SelectionLocked;
-        if (!g_rockConfig.rockSelectionBeamEnabled || !stateCanShowBeam || !_currentSelection.isValid() || !_currentSelection.isFarSelection) {
-            _selectionBeam.hide();
-            return;
-        }
-
-        RE::NiPoint3 targetWorld{};
-        if (!resolveFarSelectionHmdConeAnchor(hknpWorld, _currentSelection, targetWorld)) {
-            _selectionBeam.hide();
-            return;
-        }
-
-        (void)_selectionBeam.update(selection_beam_policy::Frame{
-                                       .active = true,
-                                       .startWorld = selectionOrigin,
-                                       .endWorld = targetWorld,
-                                       .config =
-                                           selection_beam_policy::Config{
-                                               .enabled = g_rockConfig.rockSelectionBeamEnabled,
-                                               .segmentSizeGameUnits = g_rockConfig.rockSelectionBeamSegmentSizeGameUnits,
-                                               .curveLiftGameUnits = g_rockConfig.rockSelectionBeamCurveLiftGameUnits,
-                                               .alpha = g_rockConfig.rockSelectionBeamAlpha,
-                                           },
-                                   },
-            handName());
-    }
-
-    void Hand::stopSelectionBeam()
-    {
-        _selectionBeam.hide();
     }
 
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,

@@ -109,10 +109,6 @@ namespace rock::fo4vr
     using LoadNif = int (*)(std::uint64_t path, std::uint64_t output, std::uint64_t flags);
     inline REL::Relocation<LoadNif> loadNif{ REL::Offset(0x1D0DEE0) };
 
-    // The engine owns initialization and destruction of its clone process,
-    // including both transient maps. Callers own the returned node reference.
-    [[nodiscard]] RE::NiNode* cloneNode(const RE::NiNode* node) noexcept;
-
     using IsActorUsingMelee = bool (*)(RE::Actor* actor);
     inline REL::Relocation<IsActorUsingMelee> CombatUtilities_IsActorUsingMelee{ REL::Offset(0x1133BB0) };
 
@@ -153,9 +149,6 @@ namespace rock::fo4vr
     void updateTransforms(RE::NiAVObject* node) noexcept;
     void updateTransformsDown(RE::NiAVObject* node, bool updateSelf, const char* ignoredNode = nullptr) noexcept;
 
-    [[nodiscard]] RE::NiNode* loadNifFromFile(const std::string& path);
-    [[nodiscard]] RE::NiAVObject* loadNifObjectFromFile(
-        const std::string& path);
 }
 
 namespace f4vr = rock::fo4vr;

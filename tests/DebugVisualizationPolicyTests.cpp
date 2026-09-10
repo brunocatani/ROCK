@@ -105,25 +105,6 @@ namespace
     static_assert(!unrelatedGenericVisuals.authoredGripActivationZones);
     static_assert(!unrelatedGenericVisuals.grabPocketNormal);
 
-    using rock::grip_zone_indicator_policy::Mode;
-    static_assert(
-        rock::grip_zone_indicator_policy::modeFromIni(0) == Mode::Off);
-    static_assert(
-        rock::grip_zone_indicator_policy::modeFromIni(1) == Mode::Nif);
-    static_assert(
-        rock::grip_zone_indicator_policy::modeFromIni(2) ==
-        Mode::DebugOverlay);
-    static_assert(
-        rock::grip_zone_indicator_policy::modeFromIni(-1) == Mode::Nif);
-    static_assert(
-        rock::grip_zone_indicator_policy::modeFromIni(3) == Mode::Nif);
-    static_assert(rock::grip_zone_indicator_policy::usesNif(Mode::Nif));
-    static_assert(!rock::grip_zone_indicator_policy::usesNif(Mode::Off));
-    static_assert(
-        !rock::grip_zone_indicator_policy::usesDebugOverlay(Mode::Off));
-    static_assert(
-        rock::grip_zone_indicator_policy::usesDebugOverlay(
-            Mode::DebugOverlay));
     static_assert(
         rock::grip_zone_indicator_policy::isCurrentRenderFrame(42, 42));
     static_assert(

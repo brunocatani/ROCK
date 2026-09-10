@@ -310,7 +310,6 @@ namespace rock
                 }
                 _firing.reattachIndicatorFrame =
                     FiringGripReattachIndicatorFrame{
-                        .positionWorld = indicatorWorld,
                         .positionWeaponLocal = indicatorWeaponLocal,
                         .weaponGenerationKey = currentWeaponGenerationKey,
                         .handIsLeft = candidate.isLeft,
