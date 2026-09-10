@@ -14,7 +14,7 @@ namespace
     {
         try {
             return rock::resources::getPathInDocuments(
-                R"(\My Games\Fallout4VR\ROCK_Config\ROCK.ini)");
+                R"(\My Games\Fallout4VR\Mods\_Config\ROCK\ROCK.ini)");
         } catch (const std::exception& error) {
             ROCK_LOG_ERROR(Config,
                 "Failed to resolve the only supported ROCK.ini path: {}",

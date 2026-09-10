@@ -18,7 +18,7 @@ Data\F4SE\Plugins
 
 ROCK does not ship a configuration file. It loads its only active ROCK.ini at:
 
-%USERPROFILE%\Documents\My Games\Fallout4VR\ROCK_Config\ROCK.ini
+%USERPROFILE%\Documents\My Games\Fallout4VR\Mods\_Config\ROCK\ROCK.ini
 
 If that file is absent, ROCK creates the directory and writes a complete
 ROCK.ini from its compiled C++ defaults. Existing files are loaded unchanged.
