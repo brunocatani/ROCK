@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/ControllerWeaponAim.h"
 
 // Firing-hand grip: canonical right frame, native aim-frame capture, left/right mirroring, authored primary firing grip canonical and finger pose, reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped carry) sessions.
 
@@ -825,6 +826,12 @@ namespace rock
         _firing.leftFingerLocalTransforms = leftFingerPose ? leftFingerPose->localTransforms : std::array<RE::NiTransform, 15>{};
         _firing.leftFingerLocalTransformMask = leftFingerPose ? leftFingerPose->enabledMask : 0;
 
+        // Refresh after publishing the canonical so first-time left takeover
+        // cannot retain a cold embedded aim captured before the grip existed.
+        if (g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets) {
+            (void)captureRightNativeWeaponAimFrame(weaponNode, weaponGenerationKey, weaponOwnershipKey);
+        }
+
         if (sourceBoundary) {
             ROCK_LOG_INFO(Animation,
                 "TwoHandedGrip: authored firing canonical active generation={:016X} ownership={:016X} capture={} handWeaponT=({:.3f},{:.3f},{:.3f}) "
@@ -1157,17 +1164,27 @@ namespace rock
         auto* playerNodes = f4vr::getPlayerNodes();
         RE::NiNode* rightWand =
             playerNodes ? playerNodes->primaryWandNode : nullptr;
-        if (!canCaptureRightNativeWeaponAimFrame() || !weaponNode ||
+        const bool useControllerAim = g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets &&
+            _firing.rightCanonicalSource == RightFiringCanonicalSource::AuthoredAnimation &&
+            hasRightFiringHandCanonicalFrame(weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey);
+        // The independent driver remains usable while another ROCK grip
+        // owns Weapon; only sampling the live Weapon carrier needs the gate.
+        if ((!useControllerAim && !canCaptureRightNativeWeaponAimFrame()) || !weaponNode ||
             currentEquippedWeaponOwnershipKey == 0 ||
             !rightWand || !isFiniteTransform(weaponNode->world) ||
             !isFiniteTransform(rightWand->world)) {
             return false;
         }
 
+        RE::NiTransform aimWorld = weaponNode->world;
+        if (useControllerAim && !controller_weapon_aim::tryResolveCarrier(weaponNode->world, aimWorld)) {
+            _firing.rightNativeWeaponAimFrame = {};
+            return false;
+        }
         RE::NiTransform weaponInRightWand =
             transform_math::composeTransforms(
                 transform_math::invertTransform(rightWand->world),
-                weaponNode->world);
+                aimWorld);
         weaponInRightWand =
             left_firing_position_only_math::orientationOnly(
                 weaponInRightWand);

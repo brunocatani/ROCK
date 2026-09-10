@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/ControllerWeaponAim.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -236,6 +237,8 @@ namespace rock
             !customFrikOffsetPresent && input.weapon ?
                 authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :
                 authored_weapon_grip_library::LookupResult{};
+        _usesAuthoredControllerAim = !customFrikOffsetPresent && authoredLookup.found &&
+            g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets;
 
         RE::NiTransform resolvedHandWorld{};
         RE::NiTransform resolvedHandWeaponLocal{};
@@ -503,6 +506,15 @@ namespace rock
                         input.nativeVisual->weaponRoot->world;
                 }
             }
+            if (_usesAuthoredControllerAim && !_isLeftHand) {
+                // An equipped visual may still contain FRIK's preset. Use the
+                // same independent aim input as the authored equipped solve.
+                if (!controller_weapon_aim::tryResolveCarrier(model->world, nativeCarrierWorld)) {
+                    clear("controller-aim-unavailable", true);
+                    return;
+                }
+                nativePositionOnlyCarrierAvailable = true;
+            }
             if (_isLeftHand &&
                 nativePositionOnlyCarrierAvailable &&
                 !_nativeCarrierWasUsable) {
@@ -732,6 +744,7 @@ namespace rock
 
         _firingHandWeaponLocal = {};
         _hasFiringHandWeaponLocal = false;
+        _usesAuthoredControllerAim = false;
         _hasPhysicalHandInWandLocal = false;
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;

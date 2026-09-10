@@ -1,4 +1,8 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
+
+#include <cmath>
 
 int main()
 {
@@ -62,6 +66,36 @@ int main()
     static_assert(positionOnlyWeaponWorld.translate.x == 120.0f);
     static_assert(positionOnlyWeaponWorld.translate.y == 230.0f);
     static_assert(positionOnlyWeaponWorld.translate.z == 340.0f);
+
+    struct Rotation { float entry[3][3]; };
+    struct WeaponFrame { Rotation rotate; Point3 translate; float scale; };
+    const WeaponFrame embeddedCarrier{ {{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}}, {100, 200, 300}, 2 };
+    // Native aim rotates +90 degrees around Z (Ni stored rows). The driver's
+    // location and scale must not become the weapon's placement or sizing.
+    const WeaponFrame controller{ {{{0, 1, 0}, {-1, 0, 0}, {0, 0, 1}}}, {-500, 900, -100}, 0.25f };
+    const auto controllerCarrier = withControllerWeaponAim(embeddedCarrier, controller);
+    if (controllerCarrier.scale != 2 || controllerCarrier.translate.x != 100 ||
+        controllerCarrier.rotate.entry[0][1] != 1 || controllerCarrier.rotate.entry[1][0] != -1) return 1;
+    const Point3 palm{10, 20, 30};
+    // Two different animation grips must both seat at the palm without
+    // changing controller aim. No fixed vanilla correction can satisfy both.
+    for (const Point3 grip : {Point3{2, 3, 4}, Point3{-6, 8, -2}}) {
+        const auto placed = resolveAuthoredPrimaryWeaponWorldPositionOnly(
+            controllerCarrier, grip, palm,
+            [](const WeaponFrame& frame, const Point3& point) {
+                return rock::transform_math::localPointToWorld(frame, point);
+            });
+        const auto readback = rock::transform_math::localPointToWorld(placed, grip);
+        if (std::abs(readback.x - palm.x) > 0.0001f || std::abs(readback.y - palm.y) > 0.0001f ||
+            std::abs(readback.z - palm.z) > 0.0001f || placed.scale != embeddedCarrier.scale ||
+            placed.rotate.entry[0][1] != controller.rotate.entry[0][1]) return 2;
+    }
+    using rock::weapon_grip_authority_policy::select;
+    using Source = rock::weapon_grip_authority_policy::Source;
+    static_assert(select({.frikCustomFile=true, .authoredAnimation=true, .frikEmbeddedResource=true}) == Source::FrikCustomFile);
+    static_assert(select({.authoredAnimation=true, .frikEmbeddedResource=true}) == Source::AuthoredAnimation);
+    static_assert(select({.frikEmbeddedResource=true}) == Source::FrikEmbeddedResource);
+    static_assert(select({}) == Source::None);
 
     constexpr AffineTransform primaryHandModel{ 2.0f, 20.0f };
     constexpr AffineTransform supportHandModel{ 6.0f, 80.0f };

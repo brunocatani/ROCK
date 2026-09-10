@@ -11,6 +11,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/ControllerWeaponAim.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 
 #include "RE/NetImmerse/NiNode.h"
@@ -277,9 +278,9 @@ namespace rock
                     frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
                 _customFrikOffsetOverrideActive =
                     customFrikOffset.found &&
-                    !compiledMinigunFiringSeat;
+                    (!compiledMinigunFiringSeat || g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets);
                 if (customFrikOffset.found) {
-                    if (compiledMinigunFiringSeat) {
+                    if (compiledMinigunFiringSeat && !g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets) {
                         ROCK_LOG_INFO(Animation,
                             "Minigun custom hFRIK weapon offset promoted to compiled authored firing seat weaponKey=0x{:X} source={}",
                             currentWeaponKey,
@@ -311,7 +312,7 @@ namespace rock
                 frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
             _customFrikOffsetOverrideActive =
                 customFrikOffset.found &&
-                !compiledMinigunFiringSeat;
+                (!compiledMinigunFiringSeat || g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets);
             if (_customFrikOffsetOverrideActive != previousCustomOverride) {
                 ROCK_LOG_INFO(Animation,
                     "Authored primary firing grip custom hFRIK override {} weaponKey=0x{:X} cacheRevision={} source={}",
@@ -1005,10 +1006,17 @@ namespace rock
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
                 trackedHandWorld,
                 false);
+        RE::NiTransform aimCarrier = liveWeaponWorld;
+        if (g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets &&
+            !controller_weapon_aim::tryResolveCarrier(liveWeaponWorld, aimCarrier)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            endSession("controller-aim-unavailable");
+            return;
+        }
         solvedWeaponWorld =
             authored_weapon_grip_capture_policy::
                 resolveAuthoredPrimaryWeaponWorldPositionOnly(
-                    liveWeaponWorld,
+                    aimCarrier,
                     authoredGripWeaponLocal,
                     trackedPalmWorld,
                     [](const RE::NiTransform& transform,
@@ -1224,7 +1232,7 @@ namespace rock
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
                 "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) "
-                "mode=position-only primaryHand=weapon-relative-authored physicalLeftSource=authored-seat-plus-native-weapon-aim",
+                "mode=position-only primaryHand=weapon-relative-authored aimAuthority={}",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence,
@@ -1244,7 +1252,8 @@ namespace rock
                 input.weaponNode->world.translate.z,
                 input.weaponNode->local.translate.x,
                 input.weaponNode->local.translate.y,
-                input.weaponNode->local.translate.z);
+                input.weaponNode->local.translate.z,
+                g_rockConfig.rockSuppressFrikEmbeddedWeaponOffsets ? "controller" : "frik-carrier");
             _sessionLogged = true;
         }
     }

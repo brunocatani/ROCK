@@ -450,6 +450,18 @@ namespace rock::authored_weapon_grip_capture_policy
         return solvedWeaponWorld;
     }
 
+    // The native controller aim is independent of the authored wrist and of
+    // FRIK's downstream Weapon-node presets. Position is still solved by the
+    // existing palm pin; copying rotation must not copy driver scale/position.
+    template <class Transform>
+    [[nodiscard]] constexpr Transform withControllerWeaponAim(
+        const Transform& weaponWorld, const Transform& controllerWorld)
+    {
+        Transform result = weaponWorld;
+        result.rotate = controllerWorld.rotate;
+        return result;
+    }
+
     template <class Transform, class Compose, class Invert>
     [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInPrimaryHand(
         const Transform& authoredPrimaryHandModel,
