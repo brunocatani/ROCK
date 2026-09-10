@@ -1735,6 +1735,18 @@ namespace rock
 
     void PhysicsInteraction::refreshEquippedWeaponHandlingSettings()
     {
+        // Frame updates begin after GameLoaded, when F4SE has loaded every
+        // plugin. Cache module presence for this process without polling or
+        // changing the user's configuration on reloads or new game sessions.
+        static const bool virtualHolstersLoaded = [] {
+            const bool loaded = GetModuleHandleA("VirtualHolsters.dll") != nullptr;
+            logger::info(
+                "ROCK: VirtualHolsters.dll {} -- equipped-weapon shoulder sheath/retrieval {}; loose-object shoulder stash keeps its configuration.",
+                loaded ? "detected" : "not detected",
+                loaded ? "disabled for compatibility" : "uses ROCK configuration");
+            return loaded;
+        }();
+
         ::rock::provider::RockProviderEquippedWeaponHandlingRequestV1 request{};
         const bool externalAuthorityActive =
             ::rock::provider::getEquippedWeaponHandlingAuthorityV1(request);
@@ -1746,7 +1758,8 @@ namespace rock
             .toggleGrabEnabled =
                 g_rockConfig.rockToggleGrab,
             .equippedWeaponShoulderStashEnabled =
-                g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
+                g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
+                !virtualHolstersLoaded,
             .lastGripReleaseDropEnabled =
                 g_rockConfig.rockAutoDrop,
             .immersiveWeapon = {
