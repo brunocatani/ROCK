@@ -238,6 +238,7 @@ namespace rock
          * behind it, so the hand draws on the seat ROCK computed this frame.
          */
         void presentClaimedHands();
+        void publishDebugRenderFrame();
 
     private:
         struct EquippedWeaponDropMomentumHandoff;
@@ -915,6 +916,8 @@ namespace rock
         // Frame clock and per-frame products owned by the update module.
         struct FrameClockState
         {
+            // Main-thread eligibility only; never retain frame-local engine pointers.
+            std::uint64_t debugOverlayFrameIndex = 0;
             // Central sanitized game delta captured each update; zero until
             // the first frame is measured.
             float deltaTime = 0.0f;

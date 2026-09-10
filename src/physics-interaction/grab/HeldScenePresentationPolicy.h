@@ -237,6 +237,36 @@ namespace rock::held_scene_presentation_policy
         bool duplicate = false;
     };
 
+    // Loose weapons have mesh-only branches beside their collision owners.
+    // Present the reference root first, then retain each body's independent
+    // solved pose. The captured root/body relation never uses last frame's
+    // presented node as a new physics input.
+    template <class Node, class Transform>
+    inline bool appendAssemblyRootPose(
+        ScenePose<Node, Transform>* poses, std::size_t& count, std::size_t capacity,
+        Node* root, const Transform& presentedBody, const Transform& bodyInRoot) noexcept
+    {
+        if (!root || count == 0 || count >= capacity || !finiteTransform(root->world) ||
+            !finiteTransform(presentedBody) || !finiteTransform(bodyInRoot)) {
+            return false;
+        }
+        bool rootIsBodyOwner = false;
+        for (std::size_t index = 0; index < count; ++index) {
+            auto* node = poses[index].node;
+            std::size_t depth = 0;
+            while (node && node != root && depth++ < 128) node = node->parent;
+            if (node != root) return false;
+            rootIsBodyOwner |= poses[index].node == root;
+        }
+        if (rootIsBodyOwner) return true;
+        auto rootWorld = transform_math::composeTransforms(
+            presentedBody, transform_math::invertTransform(bodyInRoot));
+        rootWorld.scale = root->world.scale;
+        if (!finiteTransform(rootWorld)) return false;
+        poses[count++] = {root, rootWorld};
+        return true;
+    }
+
     template <class Node, class Transform>
     inline bool prepareScenePoses(ScenePose<Node, Transform>* poses, std::size_t count) noexcept
     {

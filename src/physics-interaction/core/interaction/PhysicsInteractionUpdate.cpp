@@ -223,6 +223,28 @@ namespace rock
         _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
+    void PhysicsInteraction::publishDebugRenderFrame()
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        const auto sourceFrameIndex = std::exchange(_frame.debugOverlayFrameIndex, 0);
+        if (sourceFrameIndex == 0 || sourceFrameIndex != runtime.frameIndex ||
+            !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.visualAuthorityAvailable ||
+            !runtime.localSkeletonReady || runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
+            debug::ClearFrame();
+            return;
+        }
+        auto* bhk = getPlayerBhkWorld();
+        auto* hknp = bhk ? getHknpWorld(bhk) : nullptr;
+        if (!bhk || bhk != _lifecycle.cachedBhkWorld || !hknp || hknp != _lifecycle.cachedHknpWorld) {
+            debug::ClearFrame();
+            return;
+        }
+        // All provider animation callbacks and claimed-hand presentation have
+        // completed. Re-sample the live skeleton here on the main thread;
+        // PublishFrame copies values before the render thread consumes them.
+        publishDebugBodyOverlay(buildFrameContext(bhk, hknp));
+    }
+
     void PhysicsInteraction::finalizeInteractionFrame(
         const PhysicsFrameContext& frame,
         RE::bhkWorld* bhk,
@@ -316,7 +338,7 @@ namespace rock
 
         updateAuthoredSupportGripIndicator();
         updateFiringGripReattachIndicator();
-        publishDebugBodyOverlay(frame);
+        _frame.debugOverlayFrameIndex = runtime_state::currentFrame().frameIndex;
 
         resolveContacts(frame);
 
@@ -406,6 +428,7 @@ namespace rock
 
     void PhysicsInteraction::update()
     {
+        _frame.debugOverlayFrameIndex = 0;
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
         _equipped.shoulderGestureConsumedThisFrame = {};

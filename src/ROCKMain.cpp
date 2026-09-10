@@ -277,12 +277,6 @@ namespace
 
     void onFrameUpdate()
     {
-        performance_profiler::refreshSettings(
-            g_rockConfig.rockPerformanceProfilerEnabled,
-            g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
-            g_rockConfig.rockPerformanceProfilerWarmupFrames,
-            g_rockConfig.rockPerformanceProfilerOverlayText);
-        performance_profiler::FrameScope profilerFrame;
         performance_profiler::ScopedTimer runtimeTimer(performance_profiler::Scope::RuntimePreparation);
 
         if (!s_pluginLoaded) {
@@ -855,6 +849,13 @@ namespace
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
 
+        performance_profiler::refreshSettings(
+            g_rockConfig.rockPerformanceProfilerEnabled,
+            g_rockConfig.rockPerformanceProfilerLogIntervalFrames,
+            g_rockConfig.rockPerformanceProfilerWarmupFrames,
+            g_rockConfig.rockPerformanceProfilerOverlayText);
+        // Keep final presentation and overlay capture in this measured frame.
+        performance_profiler::FrameScope profilerFrame;
         onFrameUpdate();
         // Input classification runs inside onFrameUpdate. Apply the button
         // scope level after it so an unflagged scope does not wait for a native
@@ -868,15 +869,16 @@ namespace
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::Complete,
             frameTiming);
-        if (s_physicsInteraction) {
-            s_physicsInteraction->publishGripZoneIndicatorRenderFrame(
-                runtime_state::currentFrame().frameIndex);
-        }
-        // Last in the frame: every claim of this frame is published, and the
-        // rendered chain is not read again before FRIK's next solve.
+        // Last scene writes: every claim of this frame is published before
+        // the read-only render snapshot samples the completed chain.
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->presentClaimedHands();
             s_physicsInteraction->traceScopeColliderState();
+        }
+        if (s_physicsInteraction) {
+            s_physicsInteraction->publishDebugRenderFrame();
+            s_physicsInteraction->publishGripZoneIndicatorRenderFrame(
+                runtime_state::currentFrame().frameIndex);
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
         frik_hand_world_authority::endRockFrame();

@@ -23,6 +23,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/debug/DebugOverlayGpuTimer.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
@@ -199,6 +200,7 @@ namespace rock::debug
         {
             ShapeKey shapeKey{};
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
+            DirectX::XMMATRIX physicsWorldMatrix = DirectX::XMMatrixIdentity();
             DirectX::XMMATRIX currentTargetWorldMatrix = DirectX::XMMatrixIdentity();
             DirectX::XMMATRIX childLocalMatrix =
                 DirectX::XMMatrixIdentity();
@@ -210,6 +212,7 @@ namespace rock::debug
             bool hasValidWorldAabb{ false };
             bool hasChildLocalMatrix{ false };
             bool hasCurrentTarget{ false };
+            bool hasHeldPresentation{ false };
         };
 
         struct PhysicsPhaseCaptureRequestEntry
@@ -287,6 +290,7 @@ namespace rock::debug
         {
             AxisOverlayEntry entry{};
             DirectX::XMMATRIX bodyWorldMatrix = DirectX::XMMatrixIdentity();
+            bool hasHeldPresentation{ false };
         };
 
         struct PublishedOverlayFrame
@@ -938,9 +942,8 @@ namespace rock::debug
             }
 
             s_physicsPhaseCaptureRequest = {};
-            if (!frame.phaseDiagnosticsEnabled ||
-                !frame.worldIdentity || frame.gameFrameIndex == 0 ||
-                (!frame.drawRockBodies && !frame.drawTargetBodies)) {
+            if (!frame.worldIdentity || frame.gameFrameIndex == 0 ||
+                (!frame.drawRockBodies && !frame.drawTargetBodies && !frame.drawAxes)) {
                 s_physicsPhaseCaptureEnabled.store(
                     false,
                     std::memory_order_release);
@@ -988,7 +991,7 @@ namespace rock::debug
                     source.role == BodyOverlayRole::Target;
                 DirectX::XMStoreFloat4x4(
                     &destination.preStepWorldMatrix,
-                    source.worldMatrix);
+                    source.physicsWorldMatrix);
                 destination.preStepValid = true;
                 if (source.hasCurrentTarget) {
                     DirectX::XMStoreFloat4x4(
@@ -996,6 +999,24 @@ namespace rock::debug
                         source.currentTargetWorldMatrix);
                     destination.hasCurrentTarget = true;
                 }
+            }
+            // Body axes can be enabled without collider shells. Capture their
+            // physical frame too, sharing a request when the shell is present.
+            for (const auto& axis : frame.axes) {
+                if (axis.entry.source != AxisOverlaySource::Body || axis.entry.bodyId.value == kInvalidBodyId) continue;
+                const auto role = axis.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target :
+                    axis.entry.role == AxisOverlayRole::LeftHandBody ? BodyOverlayRole::LeftHand : BodyOverlayRole::RightHand;
+                bool alreadyStaged = false;
+                for (std::uint32_t index = 0; index < s_physicsPhaseCaptureRequest.count; ++index) {
+                    const auto& entry = s_physicsPhaseCaptureRequest.entries[index];
+                    alreadyStaged |= entry.bodyId.value == axis.entry.bodyId.value && entry.role == role;
+                }
+                if (alreadyStaged) continue;
+                if (s_physicsPhaseCaptureRequest.count >= s_physicsPhaseCaptureRequest.entries.size()) break;
+                auto& request = s_physicsPhaseCaptureRequest.entries[s_physicsPhaseCaptureRequest.count++];
+                request.bodyId = axis.entry.bodyId;
+                request.role = role;
+                request.useBodyArrayTransform = role == BodyOverlayRole::Target;
             }
             s_physicsPhaseCaptureEnabled.store(
                 s_physicsPhaseCaptureRequest.count != 0,
@@ -1040,15 +1061,15 @@ namespace rock::debug
 
         const CompletedBodyPhaseEntry* findCompletedBodyPhaseEntry(
             const CompletedBodyPhaseFrame& frame,
-            const PublishedBodyEntry& published)
+            std::uint32_t bodyId, BodyOverlayRole role)
         {
             for (std::uint32_t index = 0;
                  index < frame.count && index < frame.entries.size();
                  ++index) {
                 const auto& candidate = frame.entries[index];
                 if (candidate.postSolveValid &&
-                    candidate.bodyId.value == published.bodyId &&
-                    candidate.role == published.role) {
+                    candidate.bodyId.value == bodyId &&
+                    candidate.role == role) {
                     return &candidate;
                 }
             }
@@ -1618,6 +1639,15 @@ namespace rock::debug
                     continue;
                 }
 
+                // Held-object presentation advances the complete solved pose.
+                // Use that same immutable frame for the ordinary collider shell,
+                // while phase diagnostics retain the unmodified physics sample.
+                RE::NiTransform presentedBody{};
+                const bool hasPresentation = held_scene_presentation::tryGetPresentedBodyWorld(
+                    source.world, entry.bodyId.value, source.gameFrameIndex, presentedBody);
+                const auto displayedWorldMatrix = hasPresentation ?
+                    niStoredBodyAxesToWorldMatrix(presentedBody) : body.worldMatrix;
+
                 const auto shapeIdentity = captureShapeIdentityForFrame(destination, body.shapeAddress);
                 if (rockRole &&
                     (shapeIdentity.shapeType == 7 ||
@@ -1647,7 +1677,9 @@ namespace rock::debug
                                     child.shapeAddress);
                             PublishedBodyEntry published{};
                             published.shapeKey = childIdentity.key;
-                            published.worldMatrix = body.worldMatrix;
+                            published.worldMatrix = displayedWorldMatrix;
+                            published.physicsWorldMatrix = body.worldMatrix;
+                            published.hasHeldPresentation = hasPresentation;
                             if (entry.hasCurrentTarget && isFiniteTransform(entry.currentTarget)) {
                                 published.currentTargetWorldMatrix =
                                     currentTargetToWorldMatrix(
@@ -1682,7 +1714,9 @@ namespace rock::debug
 
                 PublishedBodyEntry published{};
                 published.shapeKey = shapeIdentity.key;
-                published.worldMatrix = body.worldMatrix;
+                published.worldMatrix = displayedWorldMatrix;
+                published.physicsWorldMatrix = body.worldMatrix;
+                published.hasHeldPresentation = hasPresentation;
                 if (entry.hasCurrentTarget && isFiniteTransform(entry.currentTarget)) {
                     published.currentTargetWorldMatrix =
                         currentTargetToWorldMatrix(
@@ -1715,6 +1749,12 @@ namespace rock::debug
                             continue;
                         }
                         published.bodyWorldMatrix = body.worldMatrix;
+                        RE::NiTransform presentedBody{};
+                        if (held_scene_presentation::tryGetPresentedBodyWorld(source.world,
+                                published.entry.bodyId.value, source.gameFrameIndex, presentedBody)) {
+                            published.bodyWorldMatrix = niStoredBodyAxesToWorldMatrix(presentedBody);
+                            published.hasHeldPresentation = true;
+                        }
                     }
                     destination.axes.push_back(std::move(published));
                 }
@@ -3552,7 +3592,8 @@ namespace rock::debug
             }
         }
 
-        void collectAxisOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
+        void collectAxisOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame,
+            const CompletedBodyPhaseFrame* completedFrame)
         {
             if (!frame.drawAxes || frame.axes.empty()) {
                 return;
@@ -3560,7 +3601,15 @@ namespace rock::debug
 
             for (const auto& published : frame.axes) {
                 if (published.entry.source == AxisOverlaySource::Body) {
-                    collectBodyAxisEntry(batch, published);
+                    auto displayed = published;
+                    if (!published.hasHeldPresentation && completedFrame && completedFrame->gameFrameIndex == frame.gameFrameIndex) {
+                        const auto role = published.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target :
+                            published.entry.role == AxisOverlayRole::LeftHandBody ? BodyOverlayRole::LeftHand : BodyOverlayRole::RightHand;
+                        if (const auto* completed = findCompletedBodyPhaseEntry(*completedFrame, published.entry.bodyId.value, role)) {
+                            displayed.bodyWorldMatrix = DirectX::XMLoadFloat4x4(&completed->postSolveWorldMatrix);
+                        }
+                    }
+                    collectBodyAxisEntry(batch, displayed);
                 } else {
                     collectTransformAxisEntry(batch, published.entry);
                 }
@@ -4344,7 +4393,14 @@ namespace rock::debug
                                 model;
                         }
                     } else {
-                        model = worldAabbMatrix(entry);
+                        // The cached world AABB belongs to the physics sample.
+                        // Carry its proxy by the same pose delta as the detailed
+                        // shape, including while that shape is still building.
+                        DirectX::XMVECTOR determinant{};
+                        const auto inversePhysics = DirectX::XMMatrixInverse(&determinant, entry.physicsWorldMatrix);
+                        const float determinantValue = DirectX::XMVectorGetX(determinant);
+                        if (!std::isfinite(determinantValue) || std::abs(determinantValue) < 0.000001f) return;
+                        model = worldAabbMatrix(entry) * inversePhysics * model;
                     }
 
                     const float phaseScale =
@@ -4372,8 +4428,14 @@ namespace rock::debug
                 };
 
                 if (!frame.phaseDiagnosticsEnabled) {
+                    auto displayedWorld = entry.worldMatrix;
+                    if (!entry.hasHeldPresentation && completedPhaseFrame && completedPhaseFrame->gameFrameIndex == frame.gameFrameIndex) {
+                        if (const auto* completed = findCompletedBodyPhaseEntry(*completedPhaseFrame, entry.bodyId, entry.role)) {
+                            displayedWorld = DirectX::XMLoadFloat4x4(&completed->postSolveWorldMatrix);
+                        }
+                    }
                     appendPhase(
-                        entry.worldMatrix,
+                        displayedWorld,
                         BodyRenderPhase::RoleColor,
                         true);
                     continue;
@@ -4383,7 +4445,7 @@ namespace rock::debug
                     if (const auto* completed =
                             findCompletedBodyPhaseEntry(
                                 *completedPhaseFrame,
-                                entry)) {
+                                entry.bodyId, entry.role)) {
                         if (completed->hasCurrentTarget) {
                             appendPhase(
                                 DirectX::XMLoadFloat4x4(
@@ -4421,7 +4483,7 @@ namespace rock::debug
                         false);
                 }
                 appendPhase(
-                    entry.worldMatrix,
+                    entry.physicsWorldMatrix,
                     BodyRenderPhase::PreStep,
                     true);
             }
@@ -4495,7 +4557,7 @@ namespace rock::debug
 
             CompletedBodyPhaseFrame completedPhaseFrame{};
             const bool hasCompletedPhaseFrame =
-                frame && frame->phaseDiagnosticsEnabled &&
+                frame &&
                 tryCopyCompletedBodyPhaseFrame(
                     *frame,
                     completedPhaseFrame);
@@ -4592,7 +4654,7 @@ namespace rock::debug
                     // view is not silently starved by unrelated
                     // high-cardinality probes.
                     collectColoredLineOverlays(lineBatch, *frame);
-                    collectAxisOverlays(lineBatch, *frame);
+                    collectAxisOverlays(lineBatch, *frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr);
                     collectMarkerOverlays(lineBatch, *frame);
                     collectSkeletonOverlays(lineBatch, *frame);
                     drawLineBatch(context, lineBatch, stats);
@@ -4878,7 +4940,7 @@ namespace rock::debug
         }
 
         const bool enabled = buildPublishedFrame(frame, *next);
-        if (enabled && next->phaseDiagnosticsEnabled) {
+        if (enabled && (!next->bodies.empty() || !next->axes.empty())) {
             stagePhysicsPhaseCapture(*next);
 
             // Publish-thread-only counter; ~7 s cadence at 90 Hz. Leaves
@@ -4886,8 +4948,7 @@ namespace rock::debug
             // missing cyan/orange shell is attributable from the session
             // log without HUD relay.
             static std::uint32_t s_phaseDiagPublishCounter = 0;
-            if (next->phaseDiagnosticsEnabled &&
-                ++s_phaseDiagPublishCounter >= 600) {
+            if (++s_phaseDiagPublishCounter >= 600) {
                 s_phaseDiagPublishCounter = 0;
                 const auto& diag = s_phaseCaptureDiagnostics;
                 ROCK_LOG_INFO(

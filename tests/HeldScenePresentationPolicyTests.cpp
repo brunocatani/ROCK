@@ -144,6 +144,46 @@ int main()
     Pose cyclic[]{ {&child, currentTarget} };
     ok &= expect("cyclic ancestry must fail within the bounded traversal", !prepareScenePoses(cyclic, 1));
     root.parent = nullptr;
+
+    Node weaponRoot{}, receiver{&weaponRoot}, slide{&weaponRoot}, magazine{&weaponRoot};
+    receiver.local.translate.x = 10.0f;
+    slide.local.translate.x = 20.0f;
+    slide.local.translate.y = 2.0f;  // A live animated slide offset must survive.
+    magazine.local.translate.z = -5.0f;
+    RE::NiTransform presentedReceiver = previousTarget;
+    presentedReceiver.translate.x = 13.0f;
+    RE::NiTransform presentedMagazine = previousTarget;
+    presentedMagazine.translate = RE::NiPoint3(3.0f, 1.0f, -5.5f);
+    Pose weaponPoses[3]{{&receiver, presentedReceiver}, {&magazine, presentedMagazine}};
+    std::size_t weaponPoseCount = 2;
+    ok &= expect("loose weapon root must join the body-owner batch",
+        appendAssemblyRootPose(weaponPoses, weaponPoseCount, 3, &weaponRoot, presentedReceiver, receiver.local) &&
+        weaponPoseCount == 3 && prepareScenePoses(weaponPoses, weaponPoseCount));
+    applyScenePoses(weaponPoses, weaponPoseCount, [&](Node* node) {
+        if (node == &weaponRoot) {
+            for (auto* part : {&receiver, &slide, &magazine}) {
+                part->world = rock::transform_math::composeTransforms(weaponRoot.world, part->local);
+            }
+        }
+    });
+    ok &= expect("mesh-only sibling slide must advance with the receiver and retain its animation",
+        near(weaponRoot.world.translate.x, 3.0f) && near(slide.world.translate.x, 23.0f) &&
+        near(slide.world.translate.y, 2.0f) && near(slide.local.translate.x, 20.0f));
+    ok &= expect("independent magazine physics must survive the whole-root refresh",
+        near(magazine.world.translate.x, 3.0f) && near(magazine.world.translate.y, 1.0f) &&
+        near(magazine.world.translate.z, -5.5f));
+    const auto repeatedMagazine = rock::transform_math::composeTransforms(weaponRoot.world, magazine.local);
+    ok &= expect("a later parent update must retain the magazine pose without double transport",
+        near(repeatedMagazine.translate.y, 1.0f) && near(repeatedMagazine.translate.z, -5.5f));
+    Pose unrelated[2]{{&sibling, presentedReceiver}};
+    std::size_t unrelatedCount = 1;
+    ok &= expect("a replaced or unrelated reference root must fail before scene writes",
+        !appendAssemblyRootPose(unrelated, unrelatedCount, 2, &weaponRoot, presentedReceiver, receiver.local) && unrelatedCount == 1);
+    Pose rootOwned[2]{{&weaponRoot, presentedReceiver}};
+    std::size_t rootOwnedCount = 1;
+    ok &= expect("a physics-owned reference root must retain its independent body pose",
+        appendAssemblyRootPose(rootOwned, rootOwnedCount, 2, &weaponRoot, presentedReceiver, receiver.local) && rootOwnedCount == 1);
+
     ok &= expect("earlier grab must own all shared parts, including when left updates second",
         preferEarlierTrace(4, 8) && !preferEarlierTrace(8, 4));
     ok &= expect("release must transfer ownership to the remaining registration",

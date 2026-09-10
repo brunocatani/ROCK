@@ -827,7 +827,9 @@ namespace rock::held_scene_presentation
         std::uint32_t bodyId,
         std::uint64_t traceId,
         const RE::NiTransform& targetBodyWorld,
-        const RE::NiTransform& solvedBodyWorld) noexcept
+        const RE::NiTransform& solvedBodyWorld,
+        RE::NiAVObject* looseWeaponRoot,
+        const RE::NiTransform& bodyInRoot) noexcept
     {
         const std::size_t handIndex = isLeft ? 1u : 0u;
         if (!world || bodyId == 0x7FFF'FFFFu || traceId == 0) {
@@ -898,7 +900,7 @@ namespace rock::held_scene_presentation
         Registration registration{};
         using ScenePose = held_scene_presentation_policy::ScenePose<RE::NiAVObject, RE::NiTransform>;
         std::array<BodyPose, kMaxRegisteredBodies> poses{};
-        std::array<ScenePose, kMaxRegisteredBodies> scenePoses{};
+        std::array<ScenePose, kMaxRegisteredBodies + 1> scenePoses{};
         const char* failure = nullptr;
         std::uint32_t failedBody = bodyId;
         if (!copyRegistration(isLeft, registration) || registration.traceId != traceId ||
@@ -942,7 +944,13 @@ namespace rock::held_scene_presentation
                     body.bodyId == bodyId, pose.world.translate.x, pose.world.translate.y, pose.world.translate.z);
             }
         }
-        if (!failure && !held_scene_presentation_policy::prepareScenePoses(scenePoses.data(), registration.count)) {
+        std::size_t scenePoseCount = registration.count;
+        if (!failure && looseWeaponRoot && !held_scene_presentation_policy::appendAssemblyRootPose(
+                scenePoses.data(), scenePoseCount, scenePoses.size(), looseWeaponRoot,
+                decision.presentedWorld, bodyInRoot)) {
+            failure = "loose-root-or-body-ancestry-invalid";
+        }
+        if (!failure && !held_scene_presentation_policy::prepareScenePoses(scenePoses.data(), scenePoseCount)) {
             failure = "scene-hierarchy-or-alias-conflict";
         }
         if (failure) {
@@ -962,8 +970,26 @@ namespace rock::held_scene_presentation
             // Absolute writes in ancestor order: refreshing a parent cannot
             // overwrite a child's final pose. Mesh-only descendants follow their
             // owner, and aliases are written once. No Havok state is changed.
-            held_scene_presentation_policy::applyScenePoses(scenePoses.data(), registration.count,
-                [](RE::NiAVObject* node) noexcept { f4vr::updateTransformsDown(node, false); });
+            const auto rootBefore = looseWeaponRoot ? looseWeaponRoot->world : RE::NiTransform{};
+            held_scene_presentation_policy::applyScenePoses(scenePoses.data(), scenePoseCount,
+                [looseWeaponRoot](RE::NiAVObject* node) noexcept {
+                    if (looseWeaponRoot) {
+                        // Include native geometry/skin world-data refresh for
+                        // weapon branches beyond the collision owner's subtree.
+                        f4vr::updateDown(node, true);
+                    } else {
+                        f4vr::updateTransformsDown(node, false);
+                    }
+                });
+            if (logBodies && looseWeaponRoot) {
+                ROCK_LOG_INFO(HeldScenePresentation,
+                    "HELD_SCENE_ROOT trace={} frame={} hand={} root='{}' bodyOwners={} scenePoses={} advance={:.3f}gu/{:.3f}deg output=({:.3f},{:.3f},{:.3f})",
+                    traceId, frameIndex, isLeft ? "left" : "right", looseWeaponRoot->name.c_str(),
+                    registration.count, scenePoseCount,
+                    held_scene_presentation_policy::pointDistance(rootBefore.translate, looseWeaponRoot->world.translate),
+                    held_scene_presentation_policy::matrixRotationDeltaDegrees(rootBefore.rotate, looseWeaponRoot->world.rotate),
+                    looseWeaponRoot->world.translate.x, looseWeaponRoot->world.translate.y, looseWeaponRoot->world.translate.z);
+            }
         }
         if (logBodies) {
             ROCK_LOG_INFO(HeldScenePresentation,
@@ -990,5 +1016,16 @@ namespace rock::held_scene_presentation
             }
         }
         return false;
+    }
+
+    bool tryGetPresentedBodyWorld(
+        RE::hknpWorld* world, std::uint32_t bodyId, std::uint64_t frameIndex,
+        RE::NiTransform& outWorld) noexcept
+    {
+        TargetTransportMatch match{};
+        if (!world || frameIndex == 0 || !findTargetTransport(world, bodyId, match) ||
+            match.frameIndex != frameIndex) return false;
+        outWorld = match.presentedWorld;
+        return true;
     }
 }

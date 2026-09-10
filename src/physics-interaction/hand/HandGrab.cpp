@@ -12249,7 +12249,9 @@ namespace rock
             _savedObjectState.bodyId.value,
             _grabFrame.traceId,
             update.desiredBodyWorld,
-            update.solvedBodyWorld);
+            update.solvedBodyWorld,
+            _heldObjectIsLooseWeapon && _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr,
+            _grabFrame.rootBodyLocal);
         update.hasPresentedBodyWorld = presentation.applied;
         update.presentedBodyWorld = presentation.presentedBodyWorld;
 
