@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 
 // Grab input pipeline: hand preludes, touch grab, grab intent and commit, and per-frame grab input update.
@@ -1641,8 +1642,10 @@ namespace rock
                 }
             }
 
+            const bool injectionMode = g_rockConfig.rockImmersiveAidEnabled &&
+                immersive_aid::classify(heldRefForGameplay ? heldRefForGameplay->GetObjectReference() : nullptr) != immersive_aid::Injector::None;
             const auto consumeEligibility = mouth_consume::evaluateEligibility(mouth_consume::EligibilityInput{
-                .enabled = g_rockConfig.rockMouthConsumeEnabled,
+                .enabled = injectionMode || g_rockConfig.rockMouthConsumeEnabled,
                 .allowPoison = g_rockConfig.rockMouthConsumeAllowPoison,
                 .peerHoldingSameObject = peerHoldingSameObject,
                 .heldRef = heldRefForGameplay,
@@ -1650,7 +1653,13 @@ namespace rock
             });
 
             mouth_consume::Decision consumeDecision{};
-            if (consumeEligibility.eligible) {
+            if (consumeEligibility.eligible && injectionMode) {
+                consumeDecision = immersive_aid::evaluate(hknp, _bodyBoneColliders, hand, isLeft,
+                    _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire), frame.timing, mouthConsumeState);
+            } else if (consumeEligibility.eligible) {
+                if (mouthConsumeState.injection.grabIdentity != 0) {
+                    clearMouthConsumeForHand(hand, isLeft);
+                }
                 consumeDecision = mouth_consume::evaluate(mouth_consume::DetectorInput{
                         .hasHmdFrame = frame.hasHmdFrame,
                         .hmdPositionWorld = frame.hmdPositionWorld,
@@ -1746,20 +1755,22 @@ namespace rock
                 hand.cancelStashCandidate();
             }
 
-            if (grabInput.released) {
+            const bool injectionCommit = injectionMode && consumeEligibility.eligible &&
+                consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate;
+            if (grabInput.released || injectionCommit) {
                 hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
                 auto* heldRef = hand.getHeldRef();
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                 if (consumeEligibility.eligible && consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate) {
                     /*
-                     * Mouth consume mirrors shoulder stash's two-phase release:
+                     * Mouth release and automatic injection share the two-phase transfer:
                      * detach the grab without throw velocity first, then let the
                      * native consume/activation path take ownership. Only failures
                      * that leave a world ref behind get the captured throw velocity.
                      */
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);
                     releaseContext.disposition = GrabReleaseDisposition::PendingConsumeTransfer;
-                    releaseContext.reason = "mouth-consume-pending-transfer";
+                    releaseContext.reason = injectionMode ? "aid-injection-pending-transfer" : "mouth-consume-pending-transfer";
                     const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
                     auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                     if (heldRef) {
@@ -1786,8 +1797,9 @@ namespace rock
                         dispatchHeldObjectEventByFormID(GrabEventType::Released, postConsumeRef, heldFormID, primaryBodyId);
                     }
                     ROCK_LOG_INFO(Hand,
-                        "{} hand mouth consume release formID={:08X} success={} consumeReason={} count={} confidence={:.2f} distance={:.1f} speed={:.1f}",
+                        "{} hand {} formID={:08X} success={} consumeReason={} count={} confidence={:.2f} distance={:.1f} speed={:.1f}",
                         hand.handName(),
+                        injectionMode ? "aid injection" : "mouth consume release",
                         heldFormID,
                         consumeResult.success ? "yes" : "no",
                         mouth_consume::consumeReasonName(consumeResult.reason),

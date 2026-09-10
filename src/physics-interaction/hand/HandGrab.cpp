@@ -17,6 +17,8 @@
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/consume/ImmersiveAid.h"
+#include "physics-interaction/consume/ImmersiveAidPose.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -1011,12 +1013,11 @@ namespace rock
         {
             LooseWeaponPrimaryAttachFrame frame{};
             /*
-             * A close grab is a free mesh hold on either hand regardless of
-             * source; the firing-grip transition happens later through the
-             * grip-zone equip path (loose_weapon_grip_zone), not by forcing
-             * the attach at grab.
+             * Ordinary close grabs keep their mesh hold. Immersive aid may
+             * supply a mandatory authored pose on any acquisition path.
+             * Weapon firing-grip transitions still use the grip-zone path.
              */
-            if (!grabbedFromPullCatch && !selection.forcedArrival) {
+            if (!grabbedFromPullCatch && !selection.forcedArrival && !savedGrabOffsetAttachValid) {
                 frame.reason = "closeGrabFreeHold";
                 return frame;
             }
@@ -5324,6 +5325,23 @@ namespace rock
         abandonGrabAuthorityProxyLocked();
     }
 
+    bool Hand::getHeldBodyContactMesh(RE::hknpWorld* world,
+        std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld) const
+    {
+        triangles = {};
+        RE::NiTransform bodyWorld{};
+        if (!world || !isHolding() || !_savedObjectState.isValid() || _grabFrame.localMeshTriangles.empty() ||
+            !tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, bodyWorld)) {
+            return false;
+        }
+        meshWorld = deriveNodeWorldFromBodyWorld(bodyWorld, _grabFrame.authority.bodyLocal);
+        if (!isUsableGrabVisualTransform(meshWorld)) {
+            return false;
+        }
+        triangles = _grabFrame.localMeshTriangles;
+        return true;
+    }
+
     bool Hand::tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const
     {
         outPivotWorld = {};
@@ -9048,7 +9066,12 @@ namespace rock
                          * Leaving the source empty here also keeps a saved finger
                          * pose from overriding the FRIK weapon hand pose.
                          */
-                        if (programmaticArrival &&
+                        const bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
+                            immersive_aid::usesStimpakPose(immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
+                        if (fixedAidPose) {
+                            savedGrabOffset = immersive_aid::stimpakPose(_isLeft);
+                            hasSavedGrabOffset = true;
+                        } else if (programmaticArrival &&
                             saved_grab_offset::participatesInSavedGrabOffsets(
                                 looseWeaponGrab,
                                 isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
@@ -9056,7 +9079,7 @@ namespace rock
                         }
                         RE::NiTransform grabProxyWorldForOffset{};
                         const bool grabProxyWorldValidForOffset =
-                            programmaticArrival && tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
+                            (programmaticArrival || fixedAidPose) && tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
                         RE::NiTransform savedGrabOffsetRootWorld{};
                         const bool savedGrabOffsetAttachValid = hasSavedGrabOffset &&
                             tryResolveSavedGrabOffsetAttach(
@@ -9064,6 +9087,10 @@ namespace rock
                                 grabProxyWorldValidForOffset,
                                 savedGrabOffset,
                                 savedGrabOffsetRootWorld);
+                        if (fixedAidPose && !savedGrabOffsetAttachValid) {
+                            ROCK_LOG_WARN(Hand, "{} hand immersive aid grab rejected: authored proxy frame unavailable", handName());
+                            return abortCapture();
+                        }
                         const auto looseWeaponPrimaryAttachFrame = resolveLooseWeaponPrimaryAttachFrame(
                             looseWeaponGrab,
                             grabbedFromPullCatch,
@@ -10854,7 +10881,9 @@ namespace rock
             _grabFingerLocalTransformFinalizePending = false;
             if (useLooseWeaponPrimaryAttachHandPose) {
                 grab_finger_pose_runtime::SolvedGrabFingerPose savedGrabFingerPose{};
-                const bool hasSavedGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled &&
+                const bool fixedAidPose = g_rockConfig.rockImmersiveAidEnabled &&
+                    immersive_aid::usesStimpakPose(immersive_aid::classify(sel.refr ? sel.refr->GetObjectReference() : nullptr));
+                const bool hasSavedGrabFingerPose = (fixedAidPose || g_rockConfig.rockGrabMeshFingerPoseEnabled) &&
                     hasSavedGrabOffset &&
                     tryBuildSavedGrabOffsetFingerPose(savedGrabOffset, savedGrabFingerPose);
                 if (hasSavedGrabFingerPose) {

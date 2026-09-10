@@ -1,4 +1,5 @@
 #pragma once
+#include <span>
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -444,6 +445,9 @@ namespace rock
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }
         const active_grab_body_lifecycle::BodyLifecycleSnapshot& getActiveGrabLifecycle() const { return _activeGrabLifecycle; }
         bool tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
+        // Frame-local view of the cached mesh, paired with its live physics transform.
+        bool getHeldBodyContactMesh(RE::hknpWorld* world, std::span<const GrabLocalTriangle>& triangles, RE::NiTransform& meshWorld) const;
+        std::uint64_t heldGrabIdentity() const { return isHolding() ? _grabFrame.traceId : 0; }
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
         bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;

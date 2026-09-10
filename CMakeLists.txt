@@ -561,6 +561,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKMouthConsumePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKMouthConsumePolicyTests)
 
+  add_executable(ROCKImmersiveAidPolicyTests
+    "${ROOT_DIR}/tests/ImmersiveAidPolicyTests.cpp"
+  )
+  target_compile_features(ROCKImmersiveAidPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKImmersiveAidPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKImmersiveAidPolicyTests)
+
   add_executable(ROCKFeedbackHapticsPolicyTests
     "${ROOT_DIR}/tests/FeedbackHapticsPolicyTests.cpp"
     "${SOURCE_DIR}/physics-interaction/feedback/FeedbackHaptics.cpp"
@@ -829,6 +836,7 @@ if(BUILD_ROCK_TESTS)
     ROCKHknpBodyFramePolicyTests
     ROCKShoulderStashPolicyTests
     ROCKMouthConsumePolicyTests
+    ROCKImmersiveAidPolicyTests
     ROCKFeedbackHapticsPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests
     ROCKActiveGrabBodyLifecyclePolicyTests

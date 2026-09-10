@@ -71,6 +71,9 @@ namespace rock
         int rockPerformanceProfilerWarmupFrames = 120;
         bool rockPerformanceProfilerOverlayText = false;
 
+        // Optional fixed injector grips and body-contact consumption.
+        bool rockImmersiveAidEnabled = false;
+
         // Master switch for every ROCK-owned visual recoil profile and delivery.
         bool rockImmersiveRecoil = true;
         float rockPistolOneHandRecoilPercent = 300.0f;

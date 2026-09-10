@@ -321,6 +321,7 @@ namespace rock
         }
         rockGrabInputForceSeconds = std::clamp(rockGrabInputForceSeconds, 0.0f, 0.3f);
 
+        rockImmersiveAidEnabled = ini.GetBoolValue("ImmersiveAid", "bEnabled", rockImmersiveAidEnabled);
         rockImmersiveRecoil = ini.GetBoolValue(
             IMMERSIVE_WEAPONS_SECTION, "bImmersiveRecoil", rockImmersiveRecoil);
         rockPistolOneHandRecoilPercent = readClampedFloat(ini, IMMERSIVE_WEAPONS_SECTION, "fPistolOneHandRecoilPercent",
