@@ -314,6 +314,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKInteractionSafetyPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKInteractionSafetyPolicyTests)
 
+  add_executable(ROCKCharacterProxyFaultPolicyTests
+    "${ROOT_DIR}/tests/CharacterProxyFaultPolicyTests.cpp"
+  )
+  target_compile_features(ROCKCharacterProxyFaultPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKCharacterProxyFaultPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKCharacterProxyFaultPolicyTests)
+
   add_executable(ROCKFo4VrActorStatePolicyTests
     "${ROOT_DIR}/tests/Fo4VrActorStatePolicyTests.cpp"
   )
