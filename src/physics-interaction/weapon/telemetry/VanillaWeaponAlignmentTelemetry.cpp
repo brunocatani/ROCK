@@ -1,5 +1,5 @@
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
-#include "physics-interaction/weapon/telemetry/WeaponTelemetryTraversal.h"
+#include "physics-interaction/weapon/WeaponSceneTraversal.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
@@ -196,7 +196,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
         std::size_t emitted = 0;
         unsigned int sceneMask = 0;
         auto* root = f4vr::getFirstPersonSkeleton();
-        const auto traversal = visitScene(static_cast<RE::NiAVObject*>(root), [&](RE::NiAVObject* current) {
+        const auto traversal = weapon_scene::visitScene(static_cast<RE::NiAVObject*>(root), [&](RE::NiAVObject* current) {
             if (selected(current)) {
                 if (emitted == 40) {
                     return false;

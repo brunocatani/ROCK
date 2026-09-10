@@ -134,6 +134,8 @@ namespace rock::authored_weapon_grip_library
         std::uint64_t supportCaptureSequence,
         CaptureSource source);
 
+    // Resolve the raw animation relation into this model's registration frame.
+    // findResolvedVariant and all publication calls retain raw animation space.
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
     [[nodiscard]] LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor);
 }

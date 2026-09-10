@@ -4,7 +4,7 @@
 #include <array>
 #include <cstddef>
 
-namespace rock::vanilla_weapon_alignment_telemetry
+namespace rock::weapon_scene
 {
     struct TraversalResult
     {

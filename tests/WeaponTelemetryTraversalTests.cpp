@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/telemetry/WeaponTelemetryTraversal.h"
+#include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/weapon/WeaponSceneChildren.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTracePolicy.h"
 
@@ -35,7 +35,7 @@ namespace
 
 int main()
 {
-    using rock::vanilla_weapon_alignment_telemetry::visitScene;
+    using rock::weapon_scene::visitScene;
     Node skeleton, hand, weapon, muzzle;
     // Reproduce a weapon branch after holes in the skeleton's child slots.
     skeleton.children.slots[6].value = &hand;

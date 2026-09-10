@@ -1,6 +1,6 @@
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTracePolicy.h"
-#include "physics-interaction/weapon/telemetry/WeaponTelemetryTraversal.h"
+#include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
@@ -73,7 +73,7 @@ namespace rock::scope_transition_telemetry
             // No cross-frame node cache. Limit both sparse child traversal
             // and matching-node output, including duplicate bone names.
             unsigned mask = 0, emitted = 0;
-            const auto traversal = vanilla_weapon_alignment_telemetry::visitScene(
+            const auto traversal = weapon_scene::visitScene(
                 static_cast<RE::NiAVObject*>(root), [&](RE::NiAVObject* current) {
                     const char* rawName = current->name.c_str();
                     const std::string_view name = rawName ? std::string_view(rawName) : std::string_view{};

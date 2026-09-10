@@ -7,6 +7,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/MinigunFiringGripPolicy.h"
@@ -343,7 +344,22 @@ namespace rock
             input.weaponNode,
             input.weaponInstanceContentKey,
             input.weaponInstanceContentKnown);
-        const auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
+        RE::NiPoint3 modelDisplacement{};
+        if (!vanilla_weapon_grip_frame::resolveModelTranslation(
+                input.weapon ? input.weapon->formID : 0, input.weaponNode, modelDisplacement)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripCanonical("invalid-model-registration");
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            clearStableAuthoredSupportGripSnapshot();
+            endSession("invalid-model-registration");
+            return;
+        }
+        auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
+        if (authoredLookup.found) {
+            authoredLookup.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.rightHandWeaponLocal, modelDisplacement);
+            if (authoredLookup.hasSupportRelation) {
+                authoredLookup.supportHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(authoredLookup.supportHandWeaponLocal, modelDisplacement);
+            }
+        }
         const bool harvestedRelationAvailable = authoredLookup.found && authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source);
         const RE::NiTransform& selectedRightHandInWeapon =
             compiledMinigunFiringSeat ?
@@ -408,6 +424,7 @@ namespace rock
                     liveCaptureSequence)) {
                 return;
             }
+            liveSupportHandInWeapon = vanilla_weapon_grip_frame::translateGrip(liveSupportHandInWeapon, modelDisplacement);
             ROCK_LOG_SAMPLE_DEBUG(Animation, 2000,
                 "Authored support library-vs-live trace weaponKey=0x{:X} libraryT=({:.3f},{:.3f},{:.3f}) liveT=({:.3f},{:.3f},{:.3f}) deltaT={:.3f}gu valueMatch={}",
                 currentWeaponKey,
@@ -468,6 +485,8 @@ namespace rock
                 return false;
             }
 
+            const auto rawSupportHandInWeapon = authoredSupportHandInWeapon;
+            authoredSupportHandInWeapon = vanilla_weapon_grip_frame::translateGrip(authoredSupportHandInWeapon, modelDisplacement);
             if (!weaponAuthority.setAuthoredSupportGripCandidate(
                     input.weaponNode,
                     authoredSupportHandInWeapon,
@@ -534,7 +553,7 @@ namespace rock
                     input.weapon,
                     variant,
                     input.inPowerArmor,
-                    authoredSupportHandInWeapon,
+                    rawSupportHandInWeapon,
                     supportPose,
                     authoredSupportCaptureSequence,
                     authored_weapon_grip_library::CaptureSource::LiveEquippedGraph);
@@ -933,6 +952,7 @@ namespace rock
         RE::NiTransform solvedWeaponWorld{};
         RE::NiTransform currentAuthoredHandWorld{};
         RE::NiTransform authoredPrimaryHandInWeapon{};
+        RE::NiTransform rawPrimaryHandInWeapon{};
         std::uint64_t resolvedCaptureSequence = 0;
         bool alignmentResolved = false;
         if (harvestedRelationAvailable) {
@@ -968,6 +988,12 @@ namespace rock
                     authoredPrimaryHandInWeapon);
             alignmentResolved =
                 finiteTransform(currentAuthoredHandWorld);
+        }
+        if (alignmentResolved && !harvestedRelationAvailable && !compiledMinigunFiringSeat) {
+            rawPrimaryHandInWeapon = authoredPrimaryHandInWeapon;
+            authoredPrimaryHandInWeapon = vanilla_weapon_grip_frame::translateGrip(authoredPrimaryHandInWeapon, modelDisplacement);
+            currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
+            alignmentResolved = finiteTransform(currentAuthoredHandWorld);
         }
         if (!alignmentResolved) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
@@ -1093,7 +1119,7 @@ namespace rock
                     input.weapon,
                     variant,
                     input.inPowerArmor,
-                    authoredPrimaryHandInWeapon,
+                    rawPrimaryHandInWeapon,
                     resolvedCaptureSequence,
                     authored_weapon_grip_library::CaptureSource::LiveEquippedGraph);
         }

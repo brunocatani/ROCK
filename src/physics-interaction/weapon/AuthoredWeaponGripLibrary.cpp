@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -385,7 +386,17 @@ namespace rock::authored_weapon_grip_library
 
     LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, const bool inPowerArmor)
     {
-        return findResolvedVariant(weapon, identifyWeaponVariant(weaponRoot), inPowerArmor);
+        auto result = findResolvedVariant(weapon, identifyWeaponVariant(weaponRoot), inPowerArmor);
+        if (!result.found) return result;
+        RE::NiPoint3 displacement{};
+        if (!vanilla_weapon_grip_frame::resolveModelTranslation(weapon->formID, weaponRoot, displacement)) {
+            return LookupResult{ .reason = "invalidVanillaModelFrame" };
+        }
+        result.rightHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(result.rightHandWeaponLocal, displacement);
+        if (result.hasSupportRelation) {
+            result.supportHandWeaponLocal = vanilla_weapon_grip_frame::translateGrip(result.supportHandWeaponLocal, displacement);
+        }
+        return result;
     }
 
     LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, const WeaponVariantIdentity variant, const bool inPowerArmor)

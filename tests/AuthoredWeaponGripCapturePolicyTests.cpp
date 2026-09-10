@@ -1,4 +1,6 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
+#include <limits>
 
 int main()
 {
@@ -459,5 +461,47 @@ int main()
     static_assert(kWeapon == (1u << 2));
     static_assert(equalsIgnoreCase("RArm_Hand", "rarm_hand"));
     static_assert(!equalsIgnoreCase("Weapon", "WeaponLeft"));
+
+    // SMG animation anchors are expressed before its model registration.
+    // Carry the whole authored hand pair through that translation, including
+    // replacement animation offsets, without changing either orientation.
+    namespace frame = rock::vanilla_weapon_grip_frame;
+    static_assert(frame::hasVanillaModelRegistration(0x0015B043));
+    static_assert(!frame::hasVanillaModelRegistration(0x0115B043));
+    static_assert(!frame::hasVanillaModelRegistration(0x00024F55));
+    struct Matrix { float entry[3][3]; };
+    struct Grip { Matrix rotate; Point3 translate; float scale; };
+    constexpr Matrix identity{{ {1,0,0}, {0,1,0}, {0,0,1} }};
+    constexpr Matrix turned{{ {0,1,0}, {-1,0,0}, {0,0,1} }};
+    constexpr Point3 registration{0, -14.02198f, 0};
+    constexpr Grip vanilla{identity, {3.12409f, 7.72383f, -3.22147f}, 1};
+    constexpr Grip replacement{turned, {1.90928f, 6.18517f, -3.67387f}, 0.9f};
+    constexpr Grip support{turned, {-4.089f, 30.645f, -1.756f}, 1};
+    constexpr auto seatedVanilla = frame::translateGrip(vanilla, registration);
+    constexpr auto seatedReplacement = frame::translateGrip(replacement, registration);
+    constexpr auto seatedSupport = frame::translateGrip(support, registration);
+    static_assert(seatedVanilla.rotate.entry[0][0] == 1);
+    static_assert(seatedReplacement.rotate.entry[0][1] == 1 && seatedReplacement.scale == 0.9f);
+    static_assert(seatedReplacement.translate.x == replacement.translate.x);
+    static_assert(seatedReplacement.translate.z == replacement.translate.z);
+    if (std::abs((seatedReplacement.translate.y - seatedVanilla.translate.y) -
+                 (replacement.translate.y - vanilla.translate.y)) > 0.00001f) return 70;
+    if (std::abs((seatedSupport.translate.y - seatedVanilla.translate.y) -
+                 (support.translate.y - vanilla.translate.y)) > 0.00001f) return 71;
+    constexpr auto loose = frame::translateGrip(vanilla, Point3{});
+    static_assert(loose.translate.y == vanilla.translate.y);
+    Grip receiver{identity, registration, 1}, marker = receiver;
+    if (!frame::registrationAgrees(receiver, marker)) return 72;
+    marker.translate.y += 1;
+    if (frame::registrationAgrees(receiver, marker)) return 73;
+    marker = receiver;
+    marker.rotate = turned;
+    if (frame::registrationAgrees(receiver, marker)) return 74;
+    marker = receiver;
+    marker.scale = 2;
+    if (frame::registrationAgrees(receiver, marker)) return 75;
+    marker = receiver;
+    marker.translate.y = std::numeric_limits<float>::quiet_NaN();
+    if (frame::registrationAgrees(receiver, marker)) return 76;
     return 0;
 }
