@@ -697,12 +697,25 @@
                 otherFilterInfo);
             const auto otherLayer =
                 otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            RE::NiPoint3 supportPointGame{};
+            if (solvedChildContact) {
+                // The same recurring manifold positions used by surface hands
+                // above qualify weapon support while a contact is at rest.
+                const float pointScale = havokToGameScale() / static_cast<float>(manifoldPointCount);
+                for (std::int32_t index = 0; index < manifoldPointCount; ++index) {
+                    const auto* point = reinterpret_cast<const float*>(data + 0x70 + index * 0x10);
+                    supportPointGame.x += point[0] * pointScale;
+                    supportPointGame.y += point[1] * pointScale;
+                    supportPointGame.z += point[2] * pointScale;
+                }
+            }
             _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
                 world,
                 proxyBodyId,
                 otherBodyId,
                 otherLayerRead,
-                otherLayer);
+                otherLayer,
+                solvedChildContact ? &supportPointGame : nullptr);
         }
     }
 

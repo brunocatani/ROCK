@@ -1450,13 +1450,18 @@ namespace rock
                 restoreHandCollisionAfterWeaponSupport(hknp, true);
             }
 
+            RE::NiPoint3 surfaceSupportPrimaryGripLocal{};
+            const bool surfaceSupportPrimaryValid =
+                _twoHandedGrip.tryGetSurfaceSupportPrimaryGripLocal(
+                    weaponNode, currentWeaponGenerationKey, surfaceSupportPrimaryGripLocal);
             const auto dynamicWeaponFrame =
                 _dynamicWeaponCollision.finishFrame(
                     frame,
                     physicsWritesAllowedForWorld(frame.hknpWorld),
                     weaponNode,
                     currentWeaponGenerationKey,
-                    _weaponCollision);
+                    _weaponCollision,
+                    surfaceSupportPrimaryValid ? &surfaceSupportPrimaryGripLocal : nullptr);
             const bool dynamicWeaponDebugEnabled =
                 g_rockConfig.rockDebugShowColliders &&
                 g_rockConfig.rockDebugDrawDynamicWeaponColliders;
@@ -1546,7 +1551,8 @@ namespace rock
                 const bool visualPublishSucceeded = _twoHandedGrip.applyWeaponCollisionResolvedAuthority(
                     weaponNode,
                     dynamicWeaponFrame.resolvedWeaponWorld,
-                    currentWeaponGenerationKey);
+                    currentWeaponGenerationKey,
+                    dynamicWeaponFrame.surfaceSupportOwnsPose);
                 const float immediateTranslationError =
                     visualPublishSucceeded && weaponNode ?
                         dynamic_weapon_collision_policy::translationDeltaGameUnits(

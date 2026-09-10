@@ -64,6 +64,7 @@ namespace rock::input_remap_runtime
     // primary wand's trigger and blank both physical trigger identities.
     void setEquippedWeaponLeftHandFiringActive(bool active);
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
+    bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft);
     /*
      * Once-per-frame physical firing-hand A/X arbitration. Automatic scope
      * mode preserves press-time reload and only dispatches the secondary-wand

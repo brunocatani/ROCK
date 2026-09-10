@@ -768,6 +768,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicWeaponCollisionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicWeaponCollisionPolicyTests)
 
+  add_executable(ROCKWeaponSurfaceSupportTests "${ROOT_DIR}/tests/WeaponSurfaceSupportTests.cpp")
+  target_compile_features(ROCKWeaponSurfaceSupportTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponSurfaceSupportTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponSurfaceSupportTests)
+
   add_executable(ROCKHandWorldClaimRegistryPolicyTests
     "${ROOT_DIR}/tests/HandWorldClaimRegistryPolicyTests.cpp"
   )
@@ -867,6 +872,7 @@ if(BUILD_ROCK_TESTS)
     ROCKDynamicHandCollisionTransitionPolicyTests
     ROCKHavokCompoundShapeKeyPolicyTests
     ROCKDynamicWeaponCollisionPolicyTests
+    ROCKWeaponSurfaceSupportTests
     ROCKHandWorldClaimRegistryPolicyTests
     ROCKDampenedDriverPredictionPolicyTests
     ROCKTrackedHandIsolationPolicyTests

@@ -6,6 +6,7 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/WeaponSurfaceSupport.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -41,6 +42,7 @@ namespace rock
         {
             bool proxyActive{ false };
             bool applyVisualCorrection{ false };
+            bool surfaceSupportOwnsPose{ false };
             bool contactEpisodeStarted{ false };
             bool rawContactPointValid{ false };
             bool rawContactProxyWasBodyA{ false };
@@ -102,6 +104,9 @@ namespace rock
 
         void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
+        // Game frame only, before early returns, so clicks cannot replay later.
+        void updateSurfaceSupportInput();
+
         void beginFrame(
             std::uint64_t frameIndex,
             RE::hknpWorld* world,
@@ -123,7 +128,8 @@ namespace rock
             bool physicsWritesAllowed,
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
-            const WeaponCollision& weaponCollision);
+            const WeaponCollision& weaponCollision,
+            const RE::NiPoint3* primaryGripWeaponLocal);
 
         void flushPendingPhysicsDrive(
             RE::hknpWorld* world,
@@ -146,9 +152,10 @@ namespace rock
             std::uint32_t proxyBodyId,
             std::uint32_t otherBodyId,
             bool otherLayerRead,
-            std::uint32_t otherLayer);
+            std::uint32_t otherLayer,
+            const RE::NiPoint3* contactPointGame);
 
-        void retireAll(void* bhkWorld);
+        void retireAll(void* bhkWorld, bool preserveSurfaceSupport = false);
         void abandonHavokStateAfterWorldLoss();
 
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug() const;
@@ -215,6 +222,14 @@ namespace rock
             std::uint64_t weaponGenerationKey,
             dynamic_weapon_collision_policy::VisualIntentSource source,
             const RE::NiTransform* physicalDriverWorld);
+        void recordSurfaceSupportContact(RE::hknpWorld* world,
+            std::uint32_t otherBodyId, const RE::NiPoint3& contactPointGame);
+        bool resolveSurfaceSupportBody(const weapon_surface_support::Contact& contact,
+            RE::NiTransform& surfaceWorld) const;
+        bool setAuthorityPivot(const PhysicsFrameContext& frame,
+            const RE::NiPoint3& pivotWeaponLocal, const RE::NiTransform& weaponWorld);
+        void updateSurfaceSupport(const PhysicsFrameContext& frame,
+            const RE::NiPoint3* primaryGripWeaponLocal);
         bool ensureProxyBody(
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,
@@ -251,7 +266,11 @@ namespace rock
         RE::NiPoint3 _createdCenterWeaponLocal{};
         RE::NiPoint3 _createdHalfExtentsWeaponLocal{};
         float _createdWeaponScale{ 1.0f };
+        float _createdMass{ 0.0f };
         std::uint32_t _createdCompoundChildCount{ 0 };
+        // Structural mutations own this pivot; callbacks read it under their
+        // quiescence lease. Free carry uses the existing weapon-root pivot.
+        RE::NiPoint3 _authorityPivotWeaponLocal{};
         std::size_t _createdCompoundPointCount{ 0 };
         bool _created{ false };
         bool _droveThisSubstep{ false };
@@ -289,6 +308,12 @@ namespace rock
         dynamic_weapon_collision_policy::VisualIntentSource _frameIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};
         RE::NiTransform _frameIntentDriverWorld{};
         bool _frameIntentDriverValid{false};
+        // Toggle, latch, and return are owned by the game frame. The contact
+        // channel is the only callback-to-frame transfer for surface support.
+        weapon_surface_support::ContactChannel _surfaceContacts;
+        weapon_surface_support::Toggle _surfaceToggle{};
+        weapon_surface_support::State _surfaceSupport{};
+        bool _surfaceClickRequested{ false };
         // Game-thread diagnostic baseline; source/generation changes rebase it.
         RE::NiTransform _previousIntentDriverLocal{};
         dynamic_weapon_collision_policy::VisualIntentSource _previousIntentSource{dynamic_weapon_collision_policy::VisualIntentSource::None};

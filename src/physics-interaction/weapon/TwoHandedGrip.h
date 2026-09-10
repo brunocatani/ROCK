@@ -655,7 +655,11 @@ namespace rock
         bool applyWeaponCollisionResolvedAuthority(
             RE::NiNode* weaponNode,
             const RE::NiTransform& resolvedWeaponWorld,
-            std::uint64_t authorityGenerationKey);
+            std::uint64_t authorityGenerationKey,
+            bool worldAnchored = false);
+
+        bool tryGetSurfaceSupportPrimaryGripLocal(RE::NiNode* weaponNode,
+            std::uint64_t generation, RE::NiPoint3& outLocal) const;
 
         bool isGripping() const { return _session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PartCarry; }
 

@@ -2452,6 +2452,12 @@ namespace rock::input_remap_runtime
         }
     }
 
+    bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft)
+    {
+        return isProviderOpenVrGameInputSuppressed(
+            isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
+    }
+
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed)
     {
         const bool wasSuppressed =

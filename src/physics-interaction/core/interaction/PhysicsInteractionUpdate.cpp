@@ -432,7 +432,8 @@ namespace rock
         _equipped.shoulderGestureConsumedThisFrame = {};
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
-        const auto retireDynamicWeaponForInterruptedFrame = [this]() {
+        _dynamicWeaponCollision.updateSurfaceSupportInput();
+        const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {
                 return;
             }
@@ -440,7 +441,7 @@ namespace rock
             auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
             if (currentBhk && currentBhk == _lifecycle.cachedBhkWorld &&
                 currentHknp && currentHknp == _lifecycle.cachedHknpWorld) {
-                _dynamicWeaponCollision.retireAll(currentBhk);
+                _dynamicWeaponCollision.retireAll(currentBhk, preserveSurfaceSupport);
             } else {
                 _dynamicWeaponCollision.abandonHavokStateAfterWorldLoss();
             }
@@ -497,7 +498,7 @@ namespace rock
                 menuBlocking,
                 false,
                 false)) {
-            retireDynamicWeaponForInterruptedFrame();
+            retireDynamicWeaponForInterruptedFrame(true);
             _equipped.menuReconcilePending = true;
             if (_lifecycle.initialized) {
                 _twoHandedGrip.reset();

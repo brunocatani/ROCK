@@ -394,6 +394,12 @@ namespace rock
         _frameBhkWorld = bhkWorld;
         _frameWeaponNode = weaponNode;
         _frameGenerationKey = weaponGenerationKey;
+        if (_surfaceSupport.ownsPose() &&
+            (_surfaceSupport.contact.world != reinterpret_cast<std::uintptr_t>(world) ||
+                _surfaceSupport.contact.generation != weaponGenerationKey || !weaponNode)) {
+            ROCK_LOG_INFO(Weapon, "Weapon surface support cleared: reason=weapon-or-world-changed");
+            _surfaceSupport = {};
+        }
         _frameRequestedWeaponWorld = {};
         _frameAcceptingIntent = enabled && world && bhkWorld && weaponNode && weaponGenerationKey != 0;
         // Only explicit collision-free intent publications can drive the body.
@@ -442,12 +448,43 @@ namespace rock
         }
     }
 
+    bool DynamicWeaponCollisionRuntime::setAuthorityPivot(
+        const PhysicsFrameContext& frame, const RE::NiPoint3& pivotWeaponLocal,
+        const RE::NiTransform& weaponWorld)
+    {
+        if (weaponSolverLength(weaponSolverSub(pivotWeaponLocal, _authorityPivotWeaponLocal)) < 0.0001f) {
+            return _authorityConstraint.isValid();
+        }
+        auto mutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        if (!_created || _createdWorld != frame.hknpWorld || !_body.isValid() || !_authorityProxy.isValid()) return false;
+
+        const auto target = dynamic_weapon_collision_policy::makeGripAuthorityTarget(weaponWorld, pivotWeaponLocal);
+        destroyGrabConstraint(frame.hknpWorld, _authorityConstraint);
+        if (!placeGeneratedKeyframedBodyImmediately(_authorityProxy, target)) return false;
+        const auto relation = dynamic_weapon_collision_policy::makeContactBodyInGripAuthoritySpace(
+            _createdCenterWeaponLocal, _createdWeaponScale, pivotWeaponLocal);
+        _authorityConstraint = createGrabConstraint(frame.hknpWorld,
+            _authorityProxy.getBodyId(), _body.getBodyId(), target, target.translate,
+            relation, buildWeaponGripConstraintTuning(_createdMass));
+        if (!_authorityConstraint.isValid()) return false;
+        _authorityPivotWeaponLocal = pivotWeaponLocal;
+        initializeGeneratedKeyframedBodyDriveState(_authorityDriveState, target);
+        _physicsRequestedTargetValid = false;
+        _physicsPreviousRequestedTargetValid = false;
+        _droveThisSubstep = false;
+        _divergenceDwellSeconds = 0.0f;
+        clearPublishedPhysicsSnapshot();
+        return true;
+    }
+
     DynamicWeaponCollisionRuntime::FrameResult DynamicWeaponCollisionRuntime::finishFrame(
         const PhysicsFrameContext& frame,
         const bool physicsWritesAllowed,
         RE::NiNode* weaponNode,
         const std::uint64_t weaponGenerationKey,
-        const WeaponCollision& weaponCollision)
+        const WeaponCollision& weaponCollision,
+        const RE::NiPoint3* primaryGripWeaponLocal)
     {
         FrameResult result{};
         result.requestedWeaponWorld = _frameRequestedWeaponWorld;
@@ -465,7 +502,7 @@ namespace rock
             !frame.menuBlocked;
         if (!frameMatches || !ensureProxyBody(frame, weaponCollision, _frameRequestedWeaponWorld)) {
             if (_created) {
-                retireAll(frame.bhkWorld);
+                retireAll(frame.bhkWorld, frame.menuBlocked);
             }
             _debugSnapshot = {};
             return result;
@@ -486,8 +523,16 @@ namespace rock
         }
 
         result.proxyActive = true;
+        updateSurfaceSupport(frame, primaryGripWeaponLocal);
+        if (!_authorityConstraint.isValid() || _rebuildRequestedAtomic.load(std::memory_order_acquire)) return result;
+        result.surfaceSupportOwnsPose = _surfaceSupport.ownsPose();
+        result.requestedWeaponWorld = _frameRequestedWeaponWorld;
+        result.resolvedWeaponWorld = _frameRequestedWeaponWorld;
+        // Support still publishes when resting contact has no fresh residual,
+        // or while the rebound pivot awaits its first post-solve sample.
+        result.applyVisualCorrection = result.surfaceSupportOwnsPose;
         const RE::NiTransform requestedAuthorityTarget =
-            dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld);
+            dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld, _authorityPivotWeaponLocal);
         const auto queueResult = queueGeneratedKeyframedBodyTarget(
             _authorityDriveState,
             requestedAuthorityTarget,
@@ -666,6 +711,7 @@ namespace rock
         // A perceptual cutoff must not switch the next frame's input ownership.
         result.applyVisualCorrection = correction.apply;
         result.resolvedWeaponWorld = resolvedWeaponWorld;
+        if (_surfaceSupport.ownsPose()) _surfaceSupport.lastWorld = resolvedWeaponWorld;
         if (debugEnabled) {
             _debugSnapshot.visualCorrectionActive = true;
         }
@@ -990,6 +1036,7 @@ namespace rock
         _createdHalfExtentsWeaponLocal = geometry.halfExtentsWeaponLocal;
         _createdWeaponScale = scale;
         _createdCompoundChildCount = static_cast<std::uint32_t>(compoundGeometry.children.size());
+        _authorityPivotWeaponLocal = {};
         _createdCompoundPointCount = compoundGeometry.sourcePointCount;
         _created = true;
         {
@@ -1005,6 +1052,7 @@ namespace rock
         }
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
+        _createdMass = bodyMass;
         _body.setMass(bodyMass);
         if (!applyWeaponEnvelopeMassProperties(
                 frame.hknpWorld,
@@ -1203,7 +1251,7 @@ namespace rock
             _physicsRequestedTarget = dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(
                 driveResult.requestedTargetGameTransform,
                 _createdCenterWeaponLocal,
-                _createdWeaponScale);
+                _createdWeaponScale, _authorityPivotWeaponLocal);
 
             RE::NiTransform liveContactBodyWorld{};
             const bool hasLiveContactBody =
@@ -1224,7 +1272,7 @@ namespace rock
                     _createdCenterWeaponLocal,
                     _createdWeaponScale,
                     _gripRecoveryDistanceGameUnitsAtomic.load(
-                        std::memory_order_acquire)) :
+                        std::memory_order_acquire), _authorityPivotWeaponLocal) :
                 dynamic_weapon_collision_policy::GripRecoveryDecision{};
             if (gripRecovery.resetNow) {
                 // This is an independent catastrophic-failure boundary. It
@@ -1363,7 +1411,7 @@ namespace rock
             const auto requested = drive.requestedTargetGameTransform;
             const auto commanded = drive.commandedTargetGameTransform;
             const auto contactAtAuthority = authorityReadable ?
-                dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(authority, _createdCenterWeaponLocal, _createdWeaponScale) :
+                dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(authority, _createdCenterWeaponLocal, _createdWeaponScale, _authorityPivotWeaponLocal) :
                 RE::NiTransform{};
             ROCK_LOG_INFO(Weapon,
                 "DWC_CLOCK solve: source={} solve={} step={} substep={}/{} generation={:016X} body={} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} rawDt={:.6f} remainder={:.6f} contact={} teleport={} commandValid={} authorityRead={} limit=({},{},{:.4f}) requested=({:.3f},{:.3f},{:.3f}) commanded=({:.3f},{:.3f},{:.3f}) authority=({:.3f},{:.3f},{:.3f}) contactBody=({:.3f},{:.3f},{:.3f}) limitError=({:.4f}gu,{:.4f}deg) driveError=({:.4f}gu,{:.4f}deg) constraintError=({:.4f}gu,{:.4f}deg)",
@@ -1568,7 +1616,8 @@ namespace rock
         const std::uint32_t proxyBodyId,
         const std::uint32_t otherBodyId,
         const bool otherLayerRead,
-        const std::uint32_t otherLayer)
+        const std::uint32_t otherLayer,
+        const RE::NiPoint3* contactPointGame)
     {
         if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
@@ -1579,6 +1628,9 @@ namespace rock
         }
         _obstacleCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         _processedManifoldCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (contactPointGame && collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
+            recordSurfaceSupportContact(world, otherBodyId, *contactPointGame);
+        }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
         _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
@@ -1629,6 +1681,8 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::clearLocalProxyStateLocked()
     {
+        _surfaceContacts.clear();
+        _authorityPivotWeaponLocal = {};
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
             _compoundPoseScratch.clear();
@@ -1643,6 +1697,7 @@ namespace rock
         _createdCenterWeaponLocal = {};
         _createdHalfExtentsWeaponLocal = {};
         _createdWeaponScale = 1.0f;
+        _createdMass = 0.0f;
         _createdCompoundChildCount = 0;
         _createdCompoundPointCount = 0;
         _created = false;
@@ -1694,12 +1749,13 @@ namespace rock
         clearContactDiagnosticSnapshot();
     }
 
-    void DynamicWeaponCollisionRuntime::retireAll(void* bhkWorld)
+    void DynamicWeaponCollisionRuntime::retireAll(void* bhkWorld, const bool preserveSurfaceSupport)
     {
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
         retireProxyLocked(bhkWorld);
+        if (!preserveSurfaceSupport) _surfaceSupport = {};
         _enabledAtomic.store(false, std::memory_order_release);
         _frameAcceptingIntent = false;
         _frameHasIntent = false;
@@ -1718,6 +1774,7 @@ namespace rock
         _body.reset();
         _authorityProxy.reset();
         clearLocalProxyStateLocked();
+        _surfaceSupport = {};
         _enabledAtomic.store(false, std::memory_order_release);
         _frameAcceptingIntent = false;
         _frameHasIntent = false;
@@ -1768,7 +1825,7 @@ namespace rock
         outTarget = dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(
             authorityTarget,
             _createdCenterWeaponLocal,
-            _createdWeaponScale);
+            _createdWeaponScale, _authorityPivotWeaponLocal);
         return dynamic_weapon_collision_policy::isFiniteTransform(outTarget);
     }
 

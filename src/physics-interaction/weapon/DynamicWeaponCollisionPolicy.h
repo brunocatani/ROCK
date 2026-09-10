@@ -296,10 +296,12 @@ namespace rock::dynamic_weapon_collision_policy
         return result;
     }
 
-    inline RE::NiTransform makeGripAuthorityTarget(const RE::NiTransform& weaponRootWorld)
+    inline RE::NiTransform makeGripAuthorityTarget(const RE::NiTransform& weaponRootWorld,
+        const RE::NiPoint3& pivotWeaponLocal = {})
     {
         RE::NiTransform result = weaponRootWorld;
         result.rotate = transform_math::transposeRotation(weaponRootWorld.rotate);
+        result.translate = transform_math::localPointToWorld(weaponRootWorld, pivotWeaponLocal);
         result.scale = 1.0f;
         return result;
     }
@@ -307,11 +309,16 @@ namespace rock::dynamic_weapon_collision_policy
     inline RE::NiTransform makeContactBodyTargetFromGripAuthority(
         const RE::NiTransform& gripAuthorityWorld,
         const RE::NiPoint3& centerWeaponLocal,
-        float weaponScale)
+        float weaponScale,
+        const RE::NiPoint3& pivotWeaponLocal = {})
     {
         RE::NiTransform weaponRootWorld = gripAuthorityWorld;
         weaponRootWorld.rotate = transform_math::transposeRotation(gripAuthorityWorld.rotate);
         weaponRootWorld.scale = weaponScale;
+        const auto pivotOffset = transform_math::localVectorToWorld(weaponRootWorld, pivotWeaponLocal);
+        weaponRootWorld.translate.x -= pivotOffset.x;
+        weaponRootWorld.translate.y -= pivotOffset.y;
+        weaponRootWorld.translate.z -= pivotOffset.z;
         RE::NiTransform result = makeProxyBodyTarget(weaponRootWorld, centerWeaponLocal);
         result.scale = 1.0f;
         return result;
@@ -319,14 +326,15 @@ namespace rock::dynamic_weapon_collision_policy
 
     inline RE::NiTransform makeContactBodyInGripAuthoritySpace(
         const RE::NiPoint3& centerWeaponLocal,
-        float weaponScale)
+        float weaponScale,
+        const RE::NiPoint3& pivotWeaponLocal = {})
     {
         RE::NiTransform result = transform_math::makeIdentityTransform<RE::NiTransform>();
         const float scale = std::abs(weaponScale);
         result.translate = RE::NiPoint3{
-            centerWeaponLocal.x * scale,
-            centerWeaponLocal.y * scale,
-            centerWeaponLocal.z * scale,
+            (centerWeaponLocal.x - pivotWeaponLocal.x) * scale,
+            (centerWeaponLocal.y - pivotWeaponLocal.y) * scale,
+            (centerWeaponLocal.z - pivotWeaponLocal.z) * scale,
         };
         return result;
     }
@@ -436,7 +444,8 @@ namespace rock::dynamic_weapon_collision_policy
         const RE::NiTransform& requestedGripAuthorityWorld,
         const RE::NiPoint3& centerWeaponLocal,
         float weaponScale,
-        float recoveryDistanceGameUnits)
+        float recoveryDistanceGameUnits,
+        const RE::NiPoint3& pivotWeaponLocal = {})
     {
         if (!isFiniteTransform(liveContactBodyWorld) ||
             !isFiniteTransform(requestedGripAuthorityWorld) ||
@@ -448,15 +457,17 @@ namespace rock::dynamic_weapon_collision_policy
             return {};
         }
 
-        // The constraint anchors the firing-grip authority at the weapon-root
-        // origin. Reconstruct that point from the live contact body so a large
-        // rotational failure around the body center cannot hide the separation.
+        // Reconstruct the current constraint pivot (weapon root for free carry,
+        // captured contact for surface support), so rotation around the body
+        // center cannot hide a large separation at that pivot.
         const RE::NiTransform liveWeaponRootWorld = reconstructWeaponRoot(
             liveContactBodyWorld,
             centerWeaponLocal,
             weaponScale);
+        auto livePivotWorld = liveWeaponRootWorld;
+        livePivotWorld.translate = transform_math::localPointToWorld(liveWeaponRootWorld, pivotWeaponLocal);
         const float distanceGameUnits = translationDeltaGameUnits(
-            liveWeaponRootWorld,
+            livePivotWorld,
             requestedGripAuthorityWorld);
         if (!std::isfinite(distanceGameUnits)) {
             return {};

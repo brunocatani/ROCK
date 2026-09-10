@@ -846,10 +846,28 @@ namespace rock
         }
     }
 
+    bool TwoHandedGrip::tryGetSurfaceSupportPrimaryGripLocal(
+        RE::NiNode* weaponNode, const std::uint64_t generation, RE::NiPoint3& outLocal) const
+    {
+        if (isManualOwnershipActive() && _session.state != TwoHandedState::PartCarry &&
+            _session.weaponNode == weaponNode && _session.weaponGenerationKey == generation &&
+            _firing.hasPrimaryHandWeaponLocal) {
+            outLocal = _firing.primaryGripLocal;
+        } else if (_firing.hasRightCanonicalHandWeaponLocal &&
+            _firing.rightCanonicalWeaponNode == weaponNode &&
+            _firing.rightCanonicalGenerationKey == generation) {
+            outLocal = _firing.rightCanonicalGripWeaponLocal;
+        } else {
+            return false;
+        }
+        return dynamic_weapon_collision_policy::isFinitePoint(outLocal);
+    }
+
     bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
         RE::NiNode* weaponNode,
         const RE::NiTransform& resolvedWeaponWorld,
-        const std::uint64_t authorityGenerationKey)
+        const std::uint64_t authorityGenerationKey,
+        const bool worldAnchored)
     {
         if (!weaponNode ||
             !isFiniteTransform(weaponNode->world) ||
@@ -935,7 +953,7 @@ namespace rock
                         hand,
                         pulse.targetWorld,
                         WEAPON_COLLISION_HAND_PRIORITY,
-                        weaponSeatDriver(pulse.isLeft));
+                        worldAnchored ? frik_visual_authority::RebaseDriver::Static : weaponSeatDriver(pulse.isLeft));
                 /*
                  * Retain the high-priority result through rendering. Clearing
                  * it here synchronously reselects the live priority-100 firing
