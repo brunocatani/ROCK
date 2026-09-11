@@ -500,6 +500,7 @@
             drawAuthoredGripActivationZones;
         const bool drawNativeScopeActivation =
             visualization.nativeScopeActivation;
+        const bool drawNativeScopeShots = g_rockConfig.rockDebugNativeScopeShotAlignment;
         const bool drawWorldOriginDiagnostics =
             visualization.worldOriginDiagnostics;
 
@@ -558,7 +559,7 @@
         if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
-            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics &&
+            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawNativeScopeShots && !drawGrabSupportFrame && !drawWorldOriginDiagnostics &&
             !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
@@ -607,6 +608,7 @@
                 (source.flags & static_cast<std::uint32_t>(
                     provider::RockProviderDebugOverlayTextFlagV1::WorldAnchored)) != 0;
         }
+        if (drawNativeScopeShots) native_scope_shot_diagnostics::appendOverlay(frame);
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;

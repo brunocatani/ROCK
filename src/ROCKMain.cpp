@@ -37,6 +37,7 @@
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
+#include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -859,6 +860,8 @@ namespace
         performance_profiler::FrameScope profilerFrame;
         dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
         onFrameUpdate();
+        native_scope_shot_diagnostics::beginFrame();
+        if (!s_physicsInteraction) native_scope_shot_diagnostics::clearPresentation();
         // Input classification runs inside onFrameUpdate. Apply the button
         // scope level after it so an unflagged scope does not wait for a native
         // cone callback that Bethesda will never issue.
@@ -939,6 +942,7 @@ namespace
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
             vanilla_weapon_alignment_telemetry::shutdown();
             scope_transition_telemetry::shutdown();
+            native_scope_shot_diagnostics::shutdown();
             frik_visual_authority::resetPresentedHandNodeCache();
             frik_hand_world_authority::resetForSkeletonRelease();
             bumpGeneration(s_skeletonGeneration);
@@ -1046,6 +1050,7 @@ namespace
                     "ROCK: Held-body scene presentation hook is unavailable; native presentation remains unchanged.");
             }
             runtime_state::initialize();
+            (void)native_scope_shot_diagnostics::install();
             logger::info("ROCK: Config loaded.");
             rock::input_remap_runtime::installInputRemapHooks();
             rock::debug::Install();

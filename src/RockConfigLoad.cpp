@@ -712,6 +712,8 @@ namespace rock
             rockDebugDrawGrabbedWeaponPartCollider);
         rockDebugDrawNativeScopeActivation =
             ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
+        rockDebugNativeScopeShotAlignment =
+            ini.GetBoolValue(SECTION, "bDebugNativeScopeShotAlignment", rockDebugNativeScopeShotAlignment);
         rockDebugDrawAuthoredGripActivationZones =
             ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
         rockDebugDrawWeaponAuthority =

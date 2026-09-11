@@ -612,6 +612,11 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKNativeScopeAdmissionTests PRIVATE CommonLibF4::CommonLibF4)
   add_rock_test(ROCKNativeScopeAdmissionTests)
 
+  add_executable(ROCKNativeScopeShotPolicyTests "${ROOT_DIR}/tests/NativeScopeShotPolicyTests.cpp")
+  target_compile_features(ROCKNativeScopeShotPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeScopeShotPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeScopeShotPolicyTests)
+
   add_executable(ROCKActiveGrabBodyLifecyclePolicyTests
     "${ROOT_DIR}/tests/ActiveGrabBodyLifecyclePolicyTests.cpp"
   )

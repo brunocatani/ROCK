@@ -232,6 +232,10 @@ namespace rock::debug
         NativeScopeCameraParent,
         NativeScopeSightBounds,
         NativeScopeMismatch,
+        NativeScopeShotSight,
+        NativeScopeShotMuzzle,
+        NativeScopeShotAim,
+        NativeScopeShotLaunch,
         RightWeaponPrimaryGrip,
         LeftWeaponSupportGrip,
         RightWeaponAuthorityMismatch,
@@ -330,6 +334,8 @@ namespace rock::debug
         float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
         RE::NiPoint3 worldAnchor{};
         bool worldAnchored{ false };
+        // Pixel offsets from each eye's center, independent of grab-text mode.
+        bool centeredInEye{ false };
     };
 
     struct ColoredLineOverlayEntry

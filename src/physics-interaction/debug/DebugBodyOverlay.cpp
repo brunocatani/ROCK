@@ -3203,6 +3203,18 @@ namespace rock::debug
                 color[2] = 0.04f;
                 color[3] = 1.0f;
                 break;
+            case MarkerOverlayRole::NativeScopeShotSight:
+                color[0] = 0.1f; color[1] = 1.0f; color[2] = 0.2f; color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeShotMuzzle:
+                color[0] = 0.05f; color[1] = 0.9f; color[2] = 1.0f; color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeShotAim:
+                color[0] = 1.0f; color[1] = 0.9f; color[2] = 0.05f; color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeShotLaunch:
+                color[0] = 1.0f; color[1] = 0.1f; color[2] = 0.9f; color[3] = 1.0f;
+                break;
             case MarkerOverlayRole::NativeScopeRockTarget:
                 color[0] = 0.05f;
                 color[1] = 1.0f;
@@ -3992,10 +4004,14 @@ namespace rock::debug
                         appendWorldAnchoredTextGlyphs(
                             vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
                     } else {
-                        appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
-                        if (duplicatePerEye) {
+                        const bool entryPerEye = duplicatePerEye || entry.centeredInEye;
+                        const float entryEyeWidth = entryPerEye ? textureWidth * 0.5f : textureWidth;
+                        const float x = entry.x + (entry.centeredInEye ? entryEyeWidth * 0.5f : 0.0f);
+                        const float y = entry.y + (entry.centeredInEye ? textureHeight * 0.5f : 0.0f);
+                        appendTextGlyphs(vertices, entry, x, y, entryEyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                        if (entryPerEye) {
                             appendTextGlyphs(
-                                vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                                vertices, entry, x + entryEyeWidth, y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
                         }
                     }
                     if (rejectedVertices != rejectedBefore) {

@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/weapon/telemetry/NativeScopeShotDiagnostics.h"
 
 // Per-frame orchestration: update(), interaction frame finalization, hand transform sampling, physics substep callbacks, held-mass slowdown, and the frame/debug-overlay implementation includes.
 
@@ -231,17 +232,29 @@ namespace rock
             !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime.visualAuthorityAvailable ||
             !runtime.localSkeletonReady || runtime.localMenuBlocking || runtime.compatibilityConfigBlocking) {
             debug::ClearFrame();
+            native_scope_shot_diagnostics::clearPresentation();
             return;
         }
         auto* bhk = getPlayerBhkWorld();
         auto* hknp = bhk ? getHknpWorld(bhk) : nullptr;
         if (!bhk || bhk != _lifecycle.cachedBhkWorld || !hknp || hknp != _lifecycle.cachedHknpWorld) {
             debug::ClearFrame();
+            native_scope_shot_diagnostics::clearPresentation();
             return;
         }
         // All provider animation callbacks and claimed-hand presentation have
         // completed. Re-sample the live skeleton here on the main thread;
         // PublishFrame copies values before the render thread consumes them.
+        if (g_rockConfig.rockDebugNativeScopeShotAlignment) {
+            auto* weapon = resolveEquippedWeaponInteractionNode();
+            const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
+            DynamicWeaponCollisionRuntime::DebugSnapshot collision{};
+            const bool contactKnown = _dynamicWeaponCollision.getDebugSnapshot(collision) &&
+                collision.valid && collision.generationKey == generation;
+            native_scope_shot_diagnostics::publishPresentation(weapon, generation,
+                _weaponCollision.getCurrentObservedEquippedWeaponFormID(), contactKnown, contactKnown && collision.contactActive,
+                _dynamicWeaponCollision.hasLatchedSurfaceSupport(reinterpret_cast<std::uintptr_t>(weapon), generation));
+        }
         publishDebugBodyOverlay(buildFrameContext(bhk, hknp));
     }
 
