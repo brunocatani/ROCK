@@ -1459,8 +1459,7 @@ namespace rock
                 pendingGripStart.pending = heldWeaponEquipOwnershipEligible;
                 pendingGripStart.isLeft = isLeft;
                 pendingGripStart.toggleAcquisitionCommitted =
-                    pendingGripStart.pending &&
-                    _equipped.handlingSettings.toggleGrabEnabled;
+                    pendingGripStart.pending;
                 const bool handCarryAvailable =
                     TwoHandedGrip::canBeginPrimaryOnlyGripForHand(isLeft);
                 const bool capturedLooseHold = pendingGripStart.pending &&

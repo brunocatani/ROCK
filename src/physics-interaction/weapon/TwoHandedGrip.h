@@ -15,6 +15,7 @@
 #include "physics-interaction/weapon/AuthoredSupportGrabPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/EquippedWeaponToggleGrabPolicy.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 #include "physics-interaction/weapon/FiringGripReattachZonePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
@@ -111,22 +112,8 @@ namespace rock
         weapon_recoil_policy::WeaponEvidence recoilWeapon{};
     };
 
-    struct EquippedWeaponHandGripOccupancy
-    {
-        bool firingGripActive{ false };
-        bool partGripActive{ false };
-
-        [[nodiscard]] bool weaponEngaged() const noexcept
-        {
-            return firingGripActive || partGripActive;
-        }
-    };
-
-    struct EquippedWeaponGripOccupancy
-    {
-        EquippedWeaponHandGripOccupancy left{};
-        EquippedWeaponHandGripOccupancy right{};
-    };
+    using EquippedWeaponHandGripOccupancy = equipped_weapon_toggle_grab_policy::HandGripOccupancy;
+    using EquippedWeaponGripOccupancy = equipped_weapon_toggle_grab_policy::GripOccupancy;
 
     // Hands whose open-hand release was refused during this update because
     // they are the weapon's last carrier and the last-grip drop is disabled.

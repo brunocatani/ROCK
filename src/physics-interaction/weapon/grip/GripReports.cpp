@@ -13,11 +13,13 @@ namespace rock
                 .firingGripActive =
                     firingGripActive && isFiringHandLeft(),
                 .partGripActive = partGrip(true).active,
+                .partGripAttachOnly = partGrip(true).attachOnly,
             },
             .right = {
                 .firingGripActive =
                     firingGripActive && !isFiringHandLeft(),
                 .partGripActive = partGrip(false).active,
+                .partGripAttachOnly = partGrip(false).attachOnly,
             },
         };
     }

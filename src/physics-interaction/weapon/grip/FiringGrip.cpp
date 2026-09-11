@@ -432,7 +432,6 @@ namespace rock
                 .startRequested = false,
                 .primaryGripRetained = equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership(
                     primaryDetachEnabled,
-                    _handlingSettings.toggleGrabEnabled,
                     primaryGripInput.held,
                     _handlingSettings.lastGripReleaseDropEnabled),
                 .supportGripRetained = false,

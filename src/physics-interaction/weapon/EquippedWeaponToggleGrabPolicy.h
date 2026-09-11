@@ -21,10 +21,28 @@ namespace rock::equipped_weapon_toggle_grab_policy
         bool released{ false };
     };
 
+    struct HandGripOccupancy
+    {
+        bool firingGripActive{ false };
+        bool partGripActive{ false };
+        bool partGripAttachOnly{ false };
+
+        [[nodiscard]] constexpr bool weaponEngaged() const noexcept
+        {
+            return firingGripActive || partGripActive;
+        }
+
+        [[nodiscard]] constexpr bool usesToggleGrab(const bool toggleGrabEnabled) const noexcept
+        {
+            return firingGripActive ||
+                   (toggleGrabEnabled && !(partGripActive && partGripAttachOnly));
+        }
+    };
+
     struct GripOccupancy
     {
-        bool left{ false };
-        bool right{ false };
+        HandGripOccupancy left{};
+        HandGripOccupancy right{};
     };
 
     struct RuntimeState
@@ -39,7 +57,7 @@ namespace rock::equipped_weapon_toggle_grab_policy
 
     struct Input
     {
-        bool enabled{ false };
+        bool toggleGrabEnabled{ false };
         bool inputAllowed{ false };
         std::uint64_t weaponOwnershipKey{ 0 };
         GripOccupancy occupancy{};
@@ -94,9 +112,20 @@ namespace rock::equipped_weapon_toggle_grab_policy
             HandState& state,
             const ButtonState& physical,
             const bool occupied,
+            const bool toggleGrab,
             const bool inputAllowed,
             const bool synchronizeOccupancy) noexcept
         {
+            // Attach-only parts and hold-mode support grips follow the physical
+            // button. An empty hand must still drain an earlier toggle-release
+            // press before that same squeeze can acquire another grip.
+            if (!toggleGrab && (occupied ||
+                    (state != HandState::ReleasePending &&
+                        state != HandState::BlockedUntilRelease))) {
+                state = HandState::Open;
+                return { .button = physical };
+            }
+
             if (synchronizeOccupancy) {
                 if (occupied && state == HandState::Open) {
                     // A programmatic or held-button acquisition becomes a
@@ -160,8 +189,14 @@ namespace rock::equipped_weapon_toggle_grab_policy
         [[nodiscard]] inline constexpr bool reconcileHand(
             HandState& state,
             const bool occupied,
+            const bool toggleGrab,
             const bool releaseRetained) noexcept
         {
+            if (occupied && !toggleGrab) {
+                state = HandState::Open;
+                return false;
+            }
+
             if (occupied) {
                 if (state == HandState::Open) {
                     state = HandState::Latched;
@@ -192,7 +227,7 @@ namespace rock::equipped_weapon_toggle_grab_policy
         RuntimeState& state,
         const Input& input) noexcept
     {
-        if (!input.enabled || input.weaponOwnershipKey == 0) {
+        if (input.weaponOwnershipKey == 0) {
             reset(state);
             return Decision{
                 .left = input.left,
@@ -210,13 +245,15 @@ namespace rock::equipped_weapon_toggle_grab_policy
         auto left = detail::prepareHand(
             state.hands[handIndex(true)],
             input.left,
-            input.occupancy.left,
+            input.occupancy.left.weaponEngaged(),
+            input.occupancy.left.usesToggleGrab(input.toggleGrabEnabled),
             input.inputAllowed,
             !identityChanged);
         auto right = detail::prepareHand(
             state.hands[handIndex(false)],
             input.right,
-            input.occupancy.right,
+            input.occupancy.right.weaponEngaged(),
+            input.occupancy.right.usesToggleGrab(input.toggleGrabEnabled),
             input.inputAllowed,
             !identityChanged);
         return Decision{
@@ -229,12 +266,12 @@ namespace rock::equipped_weapon_toggle_grab_policy
 
     [[nodiscard]] inline constexpr ReconcileDecision reconcile(
         RuntimeState& state,
-        const bool enabled,
+        const bool toggleGrabEnabled,
         const std::uint64_t weaponOwnershipKey,
         const GripOccupancy& occupancy,
         const GripReleaseRetention& releaseRetained) noexcept
     {
-        if (!enabled || weaponOwnershipKey == 0 ||
+        if (weaponOwnershipKey == 0 ||
             state.weaponOwnershipKey != weaponOwnershipKey) {
             reset(state);
             return {};
@@ -243,11 +280,13 @@ namespace rock::equipped_weapon_toggle_grab_policy
         return ReconcileDecision{
             .leftGripAcquired = detail::reconcileHand(
                 state.hands[handIndex(true)],
-                occupancy.left,
+                occupancy.left.weaponEngaged(),
+                occupancy.left.usesToggleGrab(toggleGrabEnabled),
                 releaseRetained.left),
             .rightGripAcquired = detail::reconcileHand(
                 state.hands[handIndex(false)],
-                occupancy.right,
+                occupancy.right.weaponEngaged(),
+                occupancy.right.usesToggleGrab(toggleGrabEnabled),
                 releaseRetained.right),
         };
     }

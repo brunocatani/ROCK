@@ -722,7 +722,6 @@ namespace rock
                     primaryGrabHeld,
                 .isLeft = firingHandIsLeft,
                 .toggleAcquisitionCommitted =
-                    _equipped.handlingSettings.toggleGrabEnabled &&
                     primaryGrabHeld,
             };
             _equipped.menuReconcilePending = false;

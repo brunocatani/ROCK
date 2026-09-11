@@ -502,6 +502,8 @@ namespace rock
             const auto holsterOccupancy = _twoHandedGrip.getGripOccupancy();
             const auto advanceHolsterInput = [&](const bool isLeft, const GrabButtonState& button) {
                 const auto handIndex = equipped_weapon_toggle_grab_policy::handIndex(isLeft);
+                const auto& occupancy = isLeft ? holsterOccupancy.left : holsterOccupancy.right;
+                const bool toggleGrab = occupancy.usesToggleGrab(_equipped.handlingSettings.toggleGrabEnabled);
                 const auto decision = virtual_holsters::advance(
                     _equipped.holsterInputStates[handIndex],
                     virtual_holsters::Input{
@@ -510,8 +512,8 @@ namespace rock
                         .grabButtonId = input_remap_policy::kGrabButtonId,
                         .isLeft = isLeft,
                         .weaponEngaged = weaponNode &&
-                            (isLeft ? holsterOccupancy.left : holsterOccupancy.right).weaponEngaged(),
-                        .toggleGrab = _equipped.handlingSettings.toggleGrabEnabled,
+                            (occupancy.firingGripActive || _twoHandedGrip.isHandPartCarryGripping(isLeft)),
+                        .toggleGrab = toggleGrab,
                         .held = button.held,
                         .pressed = button.pressed,
                         .released = button.released,
@@ -521,7 +523,7 @@ namespace rock
                     ROCK_LOG_INFO(Weapon,
                         "VirtualHolsters weapon release deferred: hand={} slot={} mode={} held={} pressed={} released={} ownership={:016X}",
                         isLeft ? "left" : "right", holsterSnapshot.slot,
-                        _equipped.handlingSettings.toggleGrabEnabled ? "toggle" : "hold",
+                        toggleGrab ? "toggle" : "hold",
                         button.held, button.pressed, button.released, currentEquippedWeaponOwnershipKey);
                 }
                 return decision;
@@ -679,8 +681,7 @@ namespace rock
             bool pendingToggleCancelRequested = false;
             auto& pendingPrimaryStart =
                 _equipped.pendingPrimaryOnlyGripStart;
-            if (_equipped.handlingSettings.toggleGrabEnabled &&
-                pendingPrimaryStart.toggleAcquisitionCommitted) {
+            if (pendingPrimaryStart.toggleAcquisitionCommitted) {
                 const auto& pendingHandPhysicalGrip =
                     firingHandIsLeft ?
                     leftPhysicalGripState :
@@ -706,7 +707,6 @@ namespace rock
             }
             const bool pendingToggleGripRetained =
                 !pendingToggleCancelRequested &&
-                _equipped.handlingSettings.toggleGrabEnabled &&
                 _equipped.pendingPrimaryOnlyGripStart.
                     toggleAcquisitionCommitted;
             if (inputBlockingMenuActive) {
@@ -745,8 +745,7 @@ namespace rock
                 }
             }
 
-            if (_equipped.handlingSettings.toggleGrabEnabled &&
-                !primaryGrabStateRead) {
+            if (!primaryGrabStateRead) {
                 static_cast<void>(readPrimaryGrabState());
             }
 
@@ -957,17 +956,12 @@ namespace rock
                 equipped_weapon_toggle_grab_policy::prepare(
                     _equipped.toggleGrabState,
                     equipped_weapon_toggle_grab_policy::Input{
-                        .enabled = _equipped.handlingSettings.
+                        .toggleGrabEnabled = _equipped.handlingSettings.
                             toggleGrabEnabled,
                         .inputAllowed = !inputBlockingMenuActive,
                         .weaponOwnershipKey =
                             currentEquippedWeaponOwnershipKey,
-                        .occupancy = {
-                            .left = toggleOccupancyBefore.left.
-                                weaponEngaged(),
-                            .right = toggleOccupancyBefore.right.
-                                weaponEngaged(),
-                        },
+                        .occupancy = toggleOccupancyBefore,
                         .left = toToggleButtonState(
                             leftPhysicalGripState),
                         .right = toToggleButtonState(
@@ -982,27 +976,25 @@ namespace rock
             if (rightHolsterInput.consumeInput) {
                 toggleGrabDecision.right = { .held = rightHolsterInput.retainGrip };
             }
-            if (_equipped.handlingSettings.toggleGrabEnabled) {
-                leftGripHeld = toggleGrabDecision.left.held;
-                rightGripHeld = toggleGrabDecision.right.held;
-                const auto& logicalPrimaryGrip = firingHandIsLeft ?
-                    toggleGrabDecision.left : toggleGrabDecision.right;
-                primaryGripInput = EquippedWeaponPrimaryGripInput{
-                    .held = logicalPrimaryGrip.held,
-                    .pressed = logicalPrimaryGrip.pressed,
-                    .released = logicalPrimaryGrip.released,
-                };
+            leftGripHeld = toggleGrabDecision.left.held;
+            rightGripHeld = toggleGrabDecision.right.held;
+            const auto& logicalPrimaryGrip = firingHandIsLeft ?
+                toggleGrabDecision.left : toggleGrabDecision.right;
+            primaryGripInput = EquippedWeaponPrimaryGripInput{
+                .held = logicalPrimaryGrip.held,
+                .pressed = logicalPrimaryGrip.pressed,
+                .released = logicalPrimaryGrip.released,
+            };
+            _equipped.toggleGrabReleasePressConsumedThisFrame[
+                equipped_weapon_toggle_grab_policy::handIndex(true)] =
                 _equipped.toggleGrabReleasePressConsumedThisFrame[
-                    equipped_weapon_toggle_grab_policy::handIndex(true)] =
-                    _equipped.toggleGrabReleasePressConsumedThisFrame[
-                        equipped_weapon_toggle_grab_policy::handIndex(true)] ||
-                    toggleGrabDecision.leftReleasePressConsumed;
+                    equipped_weapon_toggle_grab_policy::handIndex(true)] ||
+                toggleGrabDecision.leftReleasePressConsumed;
+            _equipped.toggleGrabReleasePressConsumedThisFrame[
+                equipped_weapon_toggle_grab_policy::handIndex(false)] =
                 _equipped.toggleGrabReleasePressConsumedThisFrame[
-                    equipped_weapon_toggle_grab_policy::handIndex(false)] =
-                    _equipped.toggleGrabReleasePressConsumedThisFrame[
-                        equipped_weapon_toggle_grab_policy::handIndex(false)] ||
-                    toggleGrabDecision.rightReleasePressConsumed;
-            }
+                    equipped_weapon_toggle_grab_policy::handIndex(false)] ||
+                toggleGrabDecision.rightReleasePressConsumed;
 
             const auto captureScopeHandDriverFrame = [](const bool isLeft) {
                 EquippedWeaponScopeHandDriverFrame result{};
@@ -1100,10 +1092,7 @@ namespace rock
                     _equipped.toggleGrabState,
                     _equipped.handlingSettings.toggleGrabEnabled,
                     currentEquippedWeaponOwnershipKey,
-                    equipped_weapon_toggle_grab_policy::GripOccupancy{
-                        .left = toggleOccupancyAfter.left.weaponEngaged(),
-                        .right = toggleOccupancyAfter.right.weaponEngaged(),
-                    },
+                    toggleOccupancyAfter,
                     equipped_weapon_toggle_grab_policy::GripReleaseRetention{
                         .left = gripUpdateResult.releaseRetained.left || leftHolsterInput.retainGrip,
                         .right = gripUpdateResult.releaseRetained.right || rightHolsterInput.retainGrip,

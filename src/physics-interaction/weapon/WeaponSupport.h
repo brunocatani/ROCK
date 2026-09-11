@@ -349,7 +349,6 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(
         bool primaryDetachEnabled,
-        bool toggleGrabEnabled,
         bool primaryGripHeld,
         bool lastGripReleaseDropEnabled) noexcept
     {
@@ -360,12 +359,9 @@ namespace rock::equipped_weapon_manual_ownership_policy
             return true;
         }
 
-        // Physical hold-to-release remains governed by detach authority. A
-        // toggle latch is different: its second press is an explicit logical
-        // release and must never strand manual PrimaryOnly ownership when a
-        // non-detach ownership source created the carry.
-        return (!primaryDetachEnabled && !toggleGrabEnabled) ||
-               primaryGripHeld;
+        // Firing grips always latch. The next press is an explicit logical
+        // release, including carries created by a non-detach ownership source.
+        return primaryGripHeld;
     }
 
     [[nodiscard]] inline constexpr bool featureAvailable(
