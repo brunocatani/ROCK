@@ -43,7 +43,6 @@ namespace rock::character_controller_runtime
             Controller,
             Dispatch,
             CharacterImplementation,
-            Penetration,
             Complete,
         };
 
@@ -93,8 +92,6 @@ namespace rock::character_controller_runtime
                 return "controllerDispatch";
             case ControllerResolveStage::CharacterImplementation:
                 return "characterImplementation";
-            case ControllerResolveStage::Penetration:
-                return "penetrationQuery";
             case ControllerResolveStage::Complete:
                 return "complete";
             }
@@ -395,9 +392,7 @@ namespace rock::character_controller_runtime
         return tryResolvePlayerControllerRaw();
     }
 
-    bool tryGetPlayerControllerState(
-        PlayerControllerState& outState,
-        const bool checkPenetration) noexcept
+    bool tryGetPlayerControllerState(PlayerControllerState& outState) noexcept
     {
         outState = {};
         const float havokToGame = physics_scale::havokToGame();
@@ -494,29 +489,6 @@ namespace rock::character_controller_runtime
         if (!read) {
             outState = {};
             return false;
-        }
-
-        if (checkPenetration) {
-            bool penetrating = false;
-            bool checked = false;
-            __try {
-                using CheckPenetrationFunction = bool (*)(
-                    RE::bhkCharacterController*);
-                const auto function =
-                    reinterpret_cast<CheckPenetrationFunction>(
-                        penetrationFunction);
-                penetrating = function(controller);
-                checked = true;
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                checked = false;
-            }
-            if (!checked) {
-                outState = {};
-                observeResolveStage(ControllerResolveStage::Penetration);
-                return false;
-            }
-            outState.penetrationChecked = true;
-            outState.penetrating = penetrating;
         }
 
         outState.valid = true;

@@ -5111,13 +5111,12 @@ namespace
         }
 
         rock::character_controller_runtime::PlayerControllerState state{};
-        const bool checkPenetration =
-            (queryFlags & static_cast<std::uint32_t>(
-                RockProviderPlayerControllerQueryFlagV1::CheckPenetration)) !=
-            0;
+        // The legacy CheckPenetration bit is accepted for ABI compatibility
+        // but intentionally produces no flags. FO4VR's controller virtual at
+        // +0x1E8 reports blocking-layer contact, not penetration depth.
+        static_cast<void>(queryFlags);
         if (!rock::character_controller_runtime::tryGetPlayerControllerState(
-                state,
-                checkPenetration)) {
+                state)) {
             return RockProviderResultV1::NotReady;
         }
 
@@ -5146,10 +5145,6 @@ namespace
             state.supportState ==
                 rock::character_controller_runtime::PlayerSupportState::Sliding,
             RockProviderPlayerControllerStateFlagV1::Sliding);
-        addFlag(state.penetrationChecked,
-            RockProviderPlayerControllerStateFlagV1::PenetrationChecked);
-        addFlag(state.penetrating,
-            RockProviderPlayerControllerStateFlagV1::Penetrating);
         addFlag(
             state.implementation == rock::character_controller_runtime::
                 PlayerControllerImplementation::Proxy,
@@ -5235,13 +5230,8 @@ namespace
 
         rock::character_controller_runtime::PlayerControllerState state{};
         if (!rock::character_controller_runtime::tryGetPlayerControllerState(
-                state,
-                true) ||
-            !state.penetrationChecked) {
+                state)) {
             return RockProviderResultV1::NotReady;
-        }
-        if (state.penetrating) {
-            return RockProviderResultV1::TargetInvalid;
         }
         return rock::character_controller_runtime::requestPlayerJump(
                    request->heightGameUnits) ?

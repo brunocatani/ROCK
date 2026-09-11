@@ -33,8 +33,6 @@ namespace rock::character_controller_runtime
         bool velocityValid{ false };
         bool shapeValid{ false };
         bool supportNormalValid{ false };
-        bool penetrationChecked{ false };
-        bool penetrating{ false };
         PlayerControllerImplementation implementation{
             PlayerControllerImplementation::Unknown
         };
@@ -50,9 +48,7 @@ namespace rock::character_controller_runtime
     RE::bhkCharacterController* tryGetActorCharacterController(RE::Actor* actor) noexcept;
     RE::bhkCharacterController* tryGetPlayerCharacterController() noexcept;
 
-    bool tryGetPlayerControllerState(
-        PlayerControllerState& outState,
-        bool checkPenetration) noexcept;
+    bool tryGetPlayerControllerState(PlayerControllerState& outState) noexcept;
     bool requestPlayerJump(float heightGameUnits) noexcept;
 
     // Player locomotion velocity (character-controller cachedLinearVelocity), GAME UNITS.
