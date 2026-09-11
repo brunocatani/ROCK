@@ -431,6 +431,7 @@ namespace rock
             }
         }
 
+        updateNativeGrenadeCollisionSuppression(hknp, 0.0f);
         ::rock::provider::dispatchFrameCallbacks(*this);
         // Publish callback ownership only after every main-thread collider
         // mutation and target update for this frame has committed.
@@ -446,6 +447,12 @@ namespace rock
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
         _equipped.holsterInputConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
+        if (!_suppression.nativeGrenadeLeases.empty()) {
+            auto* bhk = getPlayerBhkWorld();
+            auto* world = bhk ? getHknpWorld(bhk) : nullptr;
+            if (bhk == _lifecycle.cachedBhkWorld && world == _lifecycle.cachedHknpWorld)
+                updateNativeGrenadeCollisionSuppression(world, runtime.deltaSeconds);
+        }
         _dynamicWeaponCollision.updateSurfaceSupportInput();
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
             if (!_lifecycle.initialized.load(std::memory_order_acquire)) {

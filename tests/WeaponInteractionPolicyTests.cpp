@@ -1697,6 +1697,34 @@ int main()
     ok &= expectTrue("two-hand axe is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kTwoHandAxe));
     ok &= expectFalse("gun does not bit-alias melee", rock::weapon_type_policy::isMelee(TestWeaponType::kGun));
     ok &= expectFalse("grenade is not melee", rock::weapon_type_policy::isMelee(TestWeaponType::kGrenade));
+    ok &= expectTrue("equipped hand-to-hand weapon retains its combat pose", rock::weapon_type_policy::isEquippedMelee(TestWeaponType::kHandToHand));
+    ok &= expectTrue("equipped sword retains its combat pose", rock::weapon_type_policy::isEquippedMelee(TestWeaponType::kOneHandSword));
+    ok &= expectFalse("equipped grenade cannot preserve the bare-fist pose", rock::weapon_type_policy::isEquippedMelee(TestWeaponType::kGrenade));
+    ok &= expectFalse("equipped mine cannot preserve the bare-fist pose", rock::weapon_type_policy::isEquippedMelee(TestWeaponType::kMine));
+    ok &= expectFalse("equipped gun is not an inventory melee witness", rock::weapon_type_policy::isEquippedMelee(TestWeaponType::kGun));
+
+    {
+        using namespace rock::collision_suppression_registry;
+        PureCollisionSuppressionRegistry registry;
+        constexpr auto body = 71u;
+        auto grab = registry.acquire(body, CollisionSuppressionOwner::Grab, 0x35);
+        auto grenade = registry.acquire(body, CollisionSuppressionOwner::NativeGrenadeThrow, grab.filterAfter);
+        ok &= expectTrue("grenade protection joins existing collision ownership", grenade.valid && grenade.activeLeaseCount == 2);
+        auto restored = registry.release(body, CollisionSuppressionOwner::NativeGrenadeThrow, grenade.filterAfter);
+        ok &= expectTrue("grenade expiry preserves an active grab's suppression", restored.valid && !restored.bodyFullyReleased &&
+            (restored.filterAfter & kSuppressionNoCollideBit));
+        restored = registry.release(body, CollisionSuppressionOwner::Grab, restored.filterAfter);
+        ok &= expectTrue("last collision owner restores the original filter", restored.bodyFullyReleased && restored.filterAfter == 0x35);
+        grenade = registry.acquire(body, CollisionSuppressionOwner::NativeGrenadeThrow, 0x35);
+        restored = registry.release(body, CollisionSuppressionOwner::NativeGrenadeThrow, grenade.filterAfter);
+        ok &= expectTrue("standalone grenade protection restores collision", restored.bodyFullyReleased && restored.filterAfter == 0x35);
+        DelayedRestoreTimer grace;
+        ok &= expectTrue("grenade release starts the collision grace period", grace.begin(body, 1, 0.5f));
+        ok &= expectFalse("grenade collision stays off inside the grace period", grace.advance(true, 0.4f));
+        ok &= expectTrue("another grenade renews the full grace period", grace.begin(body, 1, 0.5f));
+        ok &= expectFalse("the earlier throw cannot restore collisions during the next throw", grace.advance(true, 0.4f));
+        ok &= expectTrue("grenade collision grace expires after the final throw", grace.advance(true, 0.1f));
+    }
 
     ok &= testLiveHandDriver();
 

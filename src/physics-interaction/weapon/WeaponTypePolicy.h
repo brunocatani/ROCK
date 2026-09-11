@@ -14,4 +14,12 @@ namespace rock::weapon_type_policy
                type == WeaponType::kTwoHandSword ||
                type == WeaponType::kTwoHandAxe;
     }
+
+    template <class WeaponType>
+    [[nodiscard]] constexpr bool isEquippedMelee(const WeaponType type) noexcept
+    {
+        // Knuckles/power fists own an actual hand-to-hand inventory weapon.
+        // An equipped grenade or mine does not own the drawn bare-fist pose.
+        return type == WeaponType::kHandToHand || isMelee(type);
+    }
 }

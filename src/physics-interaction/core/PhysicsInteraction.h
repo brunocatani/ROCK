@@ -143,6 +143,10 @@ namespace rock
 
         void forceDropHeldObject(bool isLeft);
 
+        // Native input dispatch runs on the game thread. Complete collision
+        // protection before the native handler can create its grenade/preview.
+        bool protectNativeGrenadeThrow();
+
         Hand& getRightHand() { return _rightHand; }
         Hand& getLeftHand() { return _leftHand; }
         const Hand& getRightHand() const { return _rightHand; }
@@ -460,6 +464,9 @@ namespace rock
         void updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world, float deltaSeconds);
 
         void clearEquippedWeaponPostDropCollisionSuppressionState();
+        bool refreshNativeGrenadeCollisionSuppression(RE::hknpWorld* world);
+        void updateNativeGrenadeCollisionSuppression(RE::hknpWorld* world, float deltaSeconds);
+        void restoreNativeGrenadeCollisionSuppression(RE::hknpWorld* world);
 
         void subscribeContactEvents(RE::hknpWorld* world);
         void unsubscribeContactEvents(RE::hknpWorld* liveWorld);
@@ -899,6 +906,8 @@ namespace rock
         // suppression.
         struct HandSuppressionState
         {
+            collision_suppression_registry::SuppressionLeaseSet<kGeneratedBodyContactRegistryCapacity + 3>
+                nativeGrenadeLeases{ collision_suppression_registry::CollisionSuppressionOwner::NativeGrenadeThrow };
             std::atomic<bool> rightDominantSuppressed{ false };
             std::atomic<bool> leftWeaponSupportSuppressed{ false };
             std::atomic<bool> rightWeaponSupportSuppressed{ false };

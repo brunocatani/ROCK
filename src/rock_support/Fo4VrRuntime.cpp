@@ -3,6 +3,7 @@
 #include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
 #include "physics-interaction/object/CarInteractionPolicy.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
@@ -193,8 +194,8 @@ namespace rock::fo4vr
         }
 
         return std::ranges::any_of(player->inventoryList->data, [](const RE::BGSInventoryItem& item) {
-            return item.object &&
-                item.object->formType == RE::ENUM_FORM_ID::kWEAP &&
+            const auto* weapon = item.object ? item.object->As<RE::TESObjectWEAP>() : nullptr;
+            return weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()) &&
                 item.stackData &&
                 item.stackData->IsEquipped();
         });

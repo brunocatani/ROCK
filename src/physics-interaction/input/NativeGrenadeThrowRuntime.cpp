@@ -1,6 +1,7 @@
 #include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
@@ -151,6 +152,11 @@ namespace rock::native_grenade_throw_runtime
             return false;
         }
         const auto process = reinterpret_cast<Process>(REL::Offset(kProcess).address());
+        auto* physics = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
+        if (!physics || !physics->protectNativeGrenadeThrow()) {
+            ROCK_LOG_WARN(Input, "Vanilla grenade hold rejected: collision protection unavailable");
+            return false;
+        }
         process(handler, &source, nullptr, nullptr);
         source.heldDownSecs = holdSeconds();
         source.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
@@ -194,8 +200,13 @@ namespace rock::native_grenade_throw_runtime
             source.heldDownSecs = (std::max)(source.heldDownSecs, holdSeconds());
             source.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             if (reinterpret_cast<ShouldHandle>(REL::Offset(kShouldHandle).address())(handler, &source)) {
-                reinterpret_cast<Process>(REL::Offset(kProcess).address())(handler, &source, nullptr, nullptr);
-                ROCK_LOG_DEBUG(Input, "Vanilla grenade release submitted to native handler");
+                auto* physics = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
+                if (physics && physics->protectNativeGrenadeThrow()) {
+                    reinterpret_cast<Process>(REL::Offset(kProcess).address())(handler, &source, nullptr, nullptr);
+                    ROCK_LOG_DEBUG(Input, "Vanilla grenade release submitted to native handler");
+                } else {
+                    ROCK_LOG_WARN(Input, "Vanilla grenade release cancelled: collision protection unavailable");
+                }
             } else {
                 ROCK_LOG_DEBUG(Input, "Vanilla grenade release rejected by native gameplay gates; cancelling");
             }

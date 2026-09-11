@@ -607,6 +607,7 @@ namespace rock
                     std::memory_order_acquire));
             unsubscribeContactEvents(hknp);
             restoreNativePlayerCollisionSuppression(hknp, "shutdown");
+            restoreNativeGrenadeCollisionSuppression(hknp);
             restoreRightHandCollisionAfterDominantWeapon(hknp);
             restoreHandCollisionAfterWeaponSupport(hknp, true, true);
             restoreHandCollisionAfterWeaponSupport(hknp, false, true);
@@ -656,6 +657,7 @@ namespace rock
         }
 
         clearEquippedWeaponShoulderSheath("physics-shutdown");
+        _suppression.nativeGrenadeLeases.clearTracking();
         _twoHandedGrip.reset();
         _equipped.pendingPrimaryOnlyGripStart = {};
         clearPendingForceGrabCommits();
