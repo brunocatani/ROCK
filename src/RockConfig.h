@@ -49,7 +49,7 @@ namespace rock
 
         bool rockDeveloperModeEnabled = false;
 
-        int rockLogLevel = 6;
+        int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
         int rockLogSampleMilliseconds = 2000;
         /*
