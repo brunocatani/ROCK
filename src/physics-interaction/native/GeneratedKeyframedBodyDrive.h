@@ -439,6 +439,13 @@ namespace rock
         bool hasRequestedTargetGameTransform = false;
         bool hasCommandedTargetGameTransform = false;
         bool hasSampledTargetLinearVelocityHavok = false;
+        // Observed native velocity before/after the existing contact limiter.
+        bool dynamicVelocityValid = false;
+        bool contactPressClamped = false;
+        bool sourceJumpPlacement = false;
+        bool divergencePlacement = false;
+        RE::NiPoint3 dynamicLinearBeforePressHavok{};
+        RE::NiPoint3 dynamicLinearAfterPressHavok{};
         /*
          * targetGamePosition is the COMMANDED target: velocity-limited toward
          * the live body when the raw gap exceeds maxLinearVelocity * driveDt.

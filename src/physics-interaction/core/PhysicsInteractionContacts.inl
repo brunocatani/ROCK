@@ -603,6 +603,7 @@
         if (solvedChildContact && bodyAIsDynamicHand) {
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceA,
+                bodyIdB,
                 bodyBIsDynamicHand &&
                     dynamicBodySourceA.isLeft !=
                         dynamicBodySourceB.isLeft,
@@ -611,6 +612,7 @@
         if (solvedChildContact && bodyBIsDynamicHand) {
             _dynamicHandCollision.recordDynamicBodyContactCallback(
                 dynamicBodySourceB,
+                bodyIdA,
                 bodyAIsDynamicHand &&
                     dynamicBodySourceA.isLeft !=
                         dynamicBodySourceB.isLeft,

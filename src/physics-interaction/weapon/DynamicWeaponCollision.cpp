@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/DynamicWeaponCollision.h"
+#include "physics-interaction/telemetry/DynamicColliderTrace.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -41,8 +42,7 @@ namespace rock
         // consumed source so the solve and game-frame rows can be joined.
         bool weaponClockTraceEnabled(std::uint64_t sourceSequence)
         {
-            return g_rockConfig.rockDebugGrabFrameLogging &&
-                   sourceSequence != 0 && sourceSequence % 4 == 0;
+            return dynamic_collider_trace::sample(sourceSequence);
         }
 
         const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
@@ -501,6 +501,12 @@ namespace rock
             weaponGenerationKey == _frameGenerationKey &&
             !frame.menuBlocked;
         if (!frameMatches || !ensureProxyBody(frame, weaponCollision, _frameRequestedWeaponWorld)) {
+            if (dynamic_collider_trace::sample(_frameIndex)) {
+                dynamic_collider_trace::write(
+                    "DWC_CLOCK unavailable: frame={} generation={:016X} acceptsIntent={} hasIntent={} frameMatches={} writesAllowed={} worldReady={} menuBlocked={} created={}",
+                    _frameIndex, _frameGenerationKey, _frameAcceptingIntent, _frameHasIntent,
+                    frameMatches, physicsWritesAllowed, frame.worldReady, frame.menuBlocked, _created);
+            }
             if (_created) {
                 retireAll(frame.bhkWorld, frame.menuBlocked);
             }
@@ -653,6 +659,12 @@ namespace rock
         };
 
         if (!snapshotCurrent) {
+            if (dynamic_collider_trace::sample(queueResult.queuedSequence)) {
+                dynamic_collider_trace::write(
+                    "DWC_CLOCK gate: frame={} queued={} source={} generation={:016X} body={} readable={} valid={} identity={} teleported={}",
+                    _frameIndex, queueResult.queuedSequence, snapshot.sourceSequence, _frameGenerationKey,
+                    _body.getBodyId().value, snapshotReadable, snapshot.valid, snapshotIdentityCurrent, snapshot.teleported);
+            }
             logPipelineStage("snapshot-gate");
             return result;
         }
@@ -723,7 +735,7 @@ namespace rock
         float driverLocalRotationStep = -1.0f;
         const bool sameIntentSource = _previousIntentSource == _frameIntentSource &&
             _previousIntentGeneration == _frameGenerationKey;
-        if (g_rockConfig.rockDebugGrabFrameLogging && _frameIntentDriverValid) {
+        if (dynamic_collider_trace::enabled() && _frameIntentDriverValid) {
             intentDriverLocal = transform_math::composeTransforms(
                 transform_math::invertTransform(_frameIntentDriverWorld), _frameRequestedWeaponWorld);
             driverLocalValid = dynamic_weapon_collision_policy::isFiniteTransform(intentDriverLocal);
@@ -739,7 +751,7 @@ namespace rock
         if (weaponClockTraceEnabled(snapshot.sourceSequence)) {
             _clockPresentationFrame = _frameIndex;
             _clockExpectedWeaponWorld = result.resolvedWeaponWorld;
-            ROCK_LOG_INFO(Weapon,
+            dynamic_collider_trace::write(
                 "DWC_INTENT frame={} generation={:016X} source={} sameSource={} driverValid={} driver=({:.3f},{:.3f},{:.3f}) weaponInDriver=({:.3f},{:.3f},{:.3f}) localStep=({:.4f}gu,{:.4f}deg)",
                 _frameIndex, _frameGenerationKey, dynamic_weapon_collision_policy::visualIntentSourceName(_frameIntentSource),
                 sameIntentSource, driverLocalValid,
@@ -748,7 +760,7 @@ namespace rock
                 _frameIntentDriverValid ? _frameIntentDriverWorld.translate.z : 0.0f,
                 intentDriverLocal.translate.x, intentDriverLocal.translate.y, intentDriverLocal.translate.z,
                 driverLocalStep, driverLocalRotationStep);
-            ROCK_LOG_INFO(Weapon,
+            dynamic_collider_trace::write(
                 "DWC_CLOCK game: frame={} queued={} source={} solve={} generation={:016X} body={} dt={:.6f} contact={} apply={} intent=({:.3f},{:.3f},{:.3f}) sampledIntent=({:.3f},{:.3f},{:.3f}) sampledLive=({:.3f},{:.3f},{:.3f}) resolved=({:.3f},{:.3f},{:.3f}) correction=({:.4f}gu,{:.4f}deg)",
                 _frameIndex, queueResult.queuedSequence, snapshot.sourceSequence, snapshot.solveSequence,
                 snapshot.generationKey, snapshot.bodyId, frame.deltaSeconds, snapshot.contactActive, result.applyVisualCorrection,
@@ -763,19 +775,19 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::tracePresentedWeapon(RE::NiNode* weaponNode, std::uint64_t frameIndex)
     {
-        if (!g_rockConfig.rockDebugGrabFrameLogging || _clockPresentationFrame == 0 ||
+        if (!dynamic_collider_trace::enabled() || _clockPresentationFrame == 0 ||
             _clockPresentationFrame != frameIndex || !_frameAcceptingIntent) {
             return;
         }
         _clockPresentationFrame = 0;
         if (!weaponNode || weaponNode != _frameWeaponNode ||
             !dynamic_weapon_collision_policy::isFiniteTransform(weaponNode->world)) {
-            ROCK_LOG_INFO(Weapon, "DWC_CLOCK frame-end: frame={} generation={:016X} readable=false", frameIndex, _frameGenerationKey);
+            dynamic_collider_trace::write("DWC_CLOCK frame-end: frame={} generation={:016X} readable=false", frameIndex, _frameGenerationKey);
             return;
         }
         const auto& actual = weaponNode->world;
         const auto& room = runtime_state::currentFrame().playerSpace.world.translate;
-        ROCK_LOG_INFO(Weapon,
+        dynamic_collider_trace::write(
             "DWC_CLOCK frame-end: frame={} generation={:016X} readable=true weapon=({:.3f},{:.3f},{:.3f}) room=({:.3f},{:.3f},{:.3f}) presentationError=({:.4f}gu,{:.4f}deg)",
             frameIndex, _frameGenerationKey, actual.translate.x, actual.translate.y, actual.translate.z,
             room.x, room.y, room.z,
@@ -1220,6 +1232,14 @@ namespace rock
             0,
             dynamic_weapon_collision_policy::kMaximumLinearVelocityHavok,
             dynamic_weapon_collision_policy::kMaximumAngularVelocityRadiansPerSecond);
+        if (!driveResult.driven && dynamic_collider_trace::sample(
+                driveResult.sourceSequence != 0 ? driveResult.sourceSequence : timing.stepSequence)) {
+            dynamic_collider_trace::write(
+                "DWC_CLOCK drive-skipped: source={} step={} body={} invalidTiming={} stale={} missingBody={} identityMismatch={} placementFailed={} nativeFailed={}",
+                driveResult.sourceSequence, timing.stepSequence, _body.getBodyId().value,
+                driveResult.skippedInvalidTiming, driveResult.skippedStale, driveResult.missingBody,
+                driveResult.bodyCollisionObjectMismatch, driveResult.placementFailed, driveResult.nativeDriveFailed);
+        }
         if (driveResult.shouldRequestRebuild()) {
             _rebuildRequestedAtomic.store(true, std::memory_order_release);
             _droveThisSubstep = false;
@@ -1282,6 +1302,7 @@ namespace rock
                     _body,
                     _physicsRequestedTarget);
                 if (contactBodyRecovered) {
+                    ++_clockGripResetCount;
                     ROCK_LOG_SAMPLE_WARN(
                         Weapon,
                         1000,
@@ -1319,6 +1340,7 @@ namespace rock
                         _body,
                         _physicsRequestedTarget);
                     if (contactBodyRecovered) {
+                        ++_clockDivergenceResetCount;
                         ROCK_LOG_SAMPLE_WARN(
                             Weapon,
                             1000,
@@ -1334,6 +1356,7 @@ namespace rock
             _divergenceDwellSeconds = 0.0f;
         }
         _physicsDriveTeleported = driveResult.teleported || contactBodyRecovered;
+        _clockSourceJumpCount += driveResult.teleported && driveResult.sourceJumpPlacement ? 1u : 0u;
         if (_physicsDriveTeleported) {
             _contactGraceSolves = 0;
         }
@@ -1371,6 +1394,15 @@ namespace rock
                 collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer);
         }
         const bool contactWasActive = _contactGraceSolves > 0;
+        if (weaponClockTraceEnabled(_physicsSourceSequence)) {
+            dynamic_collider_trace::write(
+                "DWC_CONTACT source={} solve={} body={} callbacks={} lastPeer={} layer={} freshWorldContact={} graceBefore={} sourceJumps={} gripResets={} divergenceResets={} dwell={:.4f} tau=({:.5f},{:.5f})",
+                _physicsSourceSequence, solveSequence, _body.getBodyId().value, contactSequence,
+                otherBodyId, otherLayer, newMatchingContact, _contactGraceSolves,
+                _clockSourceJumpCount, _clockGripResetCount, _clockDivergenceResetCount, _divergenceDwellSeconds,
+                _authorityConstraint.linearMotor ? _authorityConstraint.linearMotor->tau : -1.0f,
+                _authorityConstraint.angularMotor ? _authorityConstraint.angularMotor->tau : -1.0f);
+        }
         const bool contactEpisodeStarted =
             newMatchingContact &&
             (!contactWasActive || _activeContactOtherBodyId != otherBodyId);
@@ -1413,7 +1445,7 @@ namespace rock
             const auto contactAtAuthority = authorityReadable ?
                 dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(authority, _createdCenterWeaponLocal, _createdWeaponScale, _authorityPivotWeaponLocal) :
                 RE::NiTransform{};
-            ROCK_LOG_INFO(Weapon,
+            dynamic_collider_trace::write(
                 "DWC_CLOCK solve: source={} solve={} step={} substep={}/{} generation={:016X} body={} sourceDt={:.6f} sourceAge={:.6f} physicsDt={:.6f} rawDt={:.6f} remainder={:.6f} contact={} teleport={} commandValid={} authorityRead={} limit=({},{},{:.4f}) requested=({:.3f},{:.3f},{:.3f}) commanded=({:.3f},{:.3f},{:.3f}) authority=({:.3f},{:.3f},{:.3f}) contactBody=({:.3f},{:.3f},{:.3f}) limitError=({:.4f}gu,{:.4f}deg) driveError=({:.4f}gu,{:.4f}deg) constraintError=({:.4f}gu,{:.4f}deg)",
                 snapshot.sourceSequence, solveSequence, _clockDriveTiming.stepSequence,
                 _clockDriveTiming.substepIndex, _clockDriveTiming.substepCount, snapshot.generationKey, snapshot.bodyId,
@@ -1711,6 +1743,9 @@ namespace rock
         _physicsSourceSequence = 0;
         _clockDriveResult = {};
         _clockDriveTiming = {};
+        _clockSourceJumpCount = 0;
+        _clockGripResetCount = 0;
+        _clockDivergenceResetCount = 0;
         _clockPresentationFrame = 0;
         _clockExpectedWeaponWorld = {};
         _previousIntentDriverValid = false;

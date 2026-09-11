@@ -418,7 +418,8 @@ namespace rock
             BethesdaPhysicsBody& body,
             const RE::NiTransform& target,
             float driveDeltaSeconds,
-            const GeneratedBodyDriveMode& mode)
+            const GeneratedBodyDriveMode& mode,
+            GeneratedKeyframedBodyDriveResult& result)
         {
             if (!world || !body.isValid() || !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
                 return false;
@@ -443,6 +444,8 @@ namespace rock
                 return false;
             }
 
+            result.dynamicVelocityValid = true;
+            result.dynamicLinearBeforePressHavok = { linearVelocityHavok[0], linearVelocityHavok[1], linearVelocityHavok[2] };
             if (mode.hasContactPressDirection && mode.contactPressMaxVelocityHavok > 0.0f) {
                 const float dirLengthSq =
                     mode.contactPressDirection[0] * mode.contactPressDirection[0] +
@@ -455,6 +458,7 @@ namespace rock
                         linearVelocityHavok[2] * mode.contactPressDirection[2];
                     const float excess = along - mode.contactPressMaxVelocityHavok;
                     if (std::isfinite(excess) && excess > 0.0f) {
+                        result.contactPressClamped = true;
                         linearVelocityHavok[0] -= mode.contactPressDirection[0] * excess;
                         linearVelocityHavok[1] -= mode.contactPressDirection[1] * excess;
                         linearVelocityHavok[2] -= mode.contactPressDirection[2] * excess;
@@ -464,6 +468,7 @@ namespace rock
 
             linearVelocityHavok[3] = 0.0f;
             angularVelocityRadians[3] = 0.0f;
+            result.dynamicLinearAfterPressHavok = { linearVelocityHavok[0], linearVelocityHavok[1], linearVelocityHavok[2] };
             return body.setVelocity(linearVelocityHavok, angularVelocityRadians);
         }
     }
@@ -603,6 +608,7 @@ namespace rock
         }
 
         if (immediatePlacement) {
+            result.sourceJumpPlacement = state.pendingTeleport;
             result.hardSynced = hardSyncForVelocity;
             result.teleported = placeGeneratedKeyframedBodyImmediately(body, target);
             result.driven = result.teleported;
@@ -643,6 +649,7 @@ namespace rock
                 std::isfinite(requestedGapGameUnits) &&
                 requestedGapGameUnits > mode.divergenceTeleportGameUnits;
             if (divergenceTeleport) {
+                result.divergencePlacement = true;
                 // The requested target becomes the commanded one: post-solve
                 // consumers measure the solver's ejection against what was
                 // actually placed.
@@ -653,7 +660,7 @@ namespace rock
                 result.driven = result.teleported;
                 result.placementFailed = !result.teleported;
             } else {
-                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, mode);
+                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, mode, result);
                 result.nativeDriveFailed = !result.driven;
             }
             if (!result.driven) {

@@ -293,6 +293,9 @@ namespace rock
         std::uint64_t _physicsSourceSequence{ 0 };
         GeneratedKeyframedBodyDriveResult _clockDriveResult{};
         havok_physics_timing::PhysicsTimingSample _clockDriveTiming{};
+        std::uint64_t _clockSourceJumpCount{ 0 };
+        std::uint64_t _clockGripResetCount{ 0 };
+        std::uint64_t _clockDivergenceResetCount{ 0 };
         // Physics-thread-only persistence timer for the real colliding body.
         // The hidden authority target may jump immediately after a tracking
         // discontinuity, but blocked physical divergence must persist before

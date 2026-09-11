@@ -30,6 +30,7 @@
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/telemetry/DynamicColliderTrace.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
@@ -856,6 +857,7 @@ namespace
             g_rockConfig.rockPerformanceProfilerOverlayText);
         // Keep final presentation and overlay capture in this measured frame.
         performance_profiler::FrameScope profilerFrame;
+        dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
         onFrameUpdate();
         // Input classification runs inside onFrameUpdate. Apply the button
         // scope level after it so an unflagged scope does not wait for a native
@@ -881,6 +883,7 @@ namespace
                 runtime_state::currentFrame().frameIndex);
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
+        dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
         frik_hand_world_authority::endRockFrame();
         vanilla_weapon_alignment_telemetry::capture(
             vanilla_weapon_alignment_telemetry::Phase::AfterRock, s_schedulerSequence);
@@ -918,6 +921,7 @@ namespace
             logger::info("ROCK: Received kSkeletonReady from FRIK.");
             vanilla_weapon_alignment_telemetry::initialize();
             scope_transition_telemetry::initialize();
+            dynamic_collider_trace::initialize();
             frik_visual_authority::resetPresentedHandNodeCache();
             bumpGeneration(s_skeletonGeneration);
             if (!authored_weapon_grip_capture::installHook()) {
@@ -948,6 +952,7 @@ namespace
                     rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
             }
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
+            dynamic_collider_trace::shutdown();
             break;
 
         default:

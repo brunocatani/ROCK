@@ -125,6 +125,7 @@ namespace rock
             DynamicBodyContactSource& outSource) const noexcept;
         void recordDynamicBodyContactCallback(
             const DynamicBodyContactSource& source,
+            std::uint32_t otherBodyId,
             bool otherIsHand,
             bool otherIsWeapon) noexcept;
 
@@ -220,6 +221,8 @@ namespace rock
             bool contactActive = false;
             bool worldContactActive = false;
             bool recoveryTeleport = false;
+            std::uint64_t sourceSequence = 0;
+            std::uint64_t solveSequence = 0;
         };
 
         /*
@@ -249,6 +252,8 @@ namespace rock
             std::atomic<bool> contactActive{ false };
             std::atomic<bool> worldContactActive{ false };
             std::atomic<bool> recoveryTeleport{ false };
+            std::atomic<std::uint64_t> sourceSequence{ 0 };
+            std::atomic<std::uint64_t> solveSequence{ 0 };
         };
 
         struct ProxySlot
@@ -367,6 +372,13 @@ namespace rock
             bool visualActive = false;
             // Lines emitted for the current contact episode (debug trace).
             std::uint32_t debugTraceLines = 0;
+            // Diagnostics only. Peer ID/kind is one atomic witness, not ownership.
+            std::atomic<std::uint64_t> tracePeer{ 0x7FFF'FFFFu };
+            std::uint64_t traceQueuedSequence = 0; // game thread
+            std::uint64_t traceSourceSequence = 0; // physics thread
+            std::uint64_t traceSourceJumpCount = 0;
+            std::uint64_t traceDivergenceCount = 0;
+            std::uint64_t traceCapCount = 0;
             RE::NiTransform lastPresentedHandWorld{};
             bool lastPresentedHandWorldValid = false;
             SurfaceLatch surfaceLatch{};

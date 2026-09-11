@@ -1,0 +1,101 @@
+#include "physics-interaction/telemetry/DynamicColliderTrace.h"
+
+#include "RockConfig.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
+#include "rock_support/Logger.h"
+#include "rock_support/ResourceUtils.h"
+
+#include <atomic>
+#include <memory>
+#include <spdlog/async_logger.h>
+#include <spdlog/details/thread_pool.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <Windows.h>
+
+namespace rock::dynamic_collider_trace
+{
+    namespace
+    {
+        struct Session
+        {
+            // The logger dies before the pool drains and joins its sole worker.
+            // The worker receives formatted messages, never engine pointers.
+            std::shared_ptr<spdlog::details::thread_pool> pool;
+            std::shared_ptr<spdlog::async_logger> log;
+        };
+        // Lifecycle changes are game-thread-only, outside active physics callbacks.
+        std::unique_ptr<Session> session;
+        std::atomic<bool> recording{ false };
+        std::atomic<bool> writerFailed{ false };
+    }
+
+    void initialize() noexcept
+    {
+        if (session || !g_rockConfig.rockDebugGrabFrameLogging) return;
+        try {
+            auto next = std::make_unique<Session>();
+            const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_ColliderTrace.log");
+            auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, 10 * 1024 * 1024, 5, true);
+            next->pool = std::make_shared<spdlog::details::thread_pool>(2048, 1);
+            next->log = std::make_shared<spdlog::async_logger>("ROCK_ColliderTrace", sink, next->pool,
+                spdlog::async_overflow_policy::overrun_oldest);
+            next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
+            next->log->set_error_handler([](const std::string&) { suppressAfterError(); });
+            writerFailed.store(false, std::memory_order_relaxed);
+            next->log->info("COLLIDER_TRACE start version=1 pid={} build={} {} sourceStride=4 observational=true positions=game-units velocities=havok-units-per-second peerKind=1:hand,2:weapon,3:world",
+                GetCurrentProcessId(), __DATE__, __TIME__);
+            next->log->flush();
+            session = std::move(next);
+            recording.store(true, std::memory_order_release);
+        } catch (...) {
+            suppressAfterError();
+            try { logger::error("ROCK: Collider trace initialization failed."); } catch (...) {}
+        }
+    }
+
+    void shutdown() noexcept
+    {
+        recording.store(false, std::memory_order_release);
+        if (!session) return;
+        try {
+            session->log->info("COLLIDER_TRACE end overruns={} writerFailed={}",
+                session->pool->overrun_counter(), writerFailed.load(std::memory_order_relaxed));
+            session->log->flush();
+        } catch (...) {
+            try { logger::error("ROCK: Collider trace final status failed."); } catch (...) {}
+        }
+        session.reset();
+    }
+
+    void beginFrame(bool requested, std::uint64_t frame) noexcept
+    {
+        recording.store(requested && session && !writerFailed.load(std::memory_order_relaxed), std::memory_order_release);
+        if (!enabled() || frame % 300 != 0) return;
+        write("COLLIDER_TRACE heartbeat frame={} overruns={}", frame, session->pool->overrun_counter());
+        try { session->log->flush(); } catch (...) { suppressAfterError(); }
+    }
+
+    bool enabled() noexcept { return recording.load(std::memory_order_acquire); }
+    bool sample(std::uint64_t sequence) noexcept { return enabled() && sequence != 0 && sequence % 4 == 0; }
+    spdlog::logger* activeLogger() noexcept { return enabled() ? session->log.get() : nullptr; }
+    void capturePresentedHands(std::uint64_t frame) noexcept
+    {
+        if (!sample(frame)) return;
+        for (const bool left : { false, true }) {
+            RE::NiTransform driver{}, raw{}, presented{};
+            const bool driverValid = frik_hand_world_authority::tryGetInputDriverWorld(left, driver);
+            const bool rawValid = frik_hand_world_authority::tryGetRawHandWorld(left, raw);
+            const bool presentedValid = frik_hand_world_authority::tryGetPresentedHandWorld(left, presented);
+            write("DHC_CLOCK frame-end: frame={} hand={} driverValid={} rawValid={} presentedValid={} driver=({:.4f},{:.4f},{:.4f}) raw=({:.4f},{:.4f},{:.4f}) presented=({:.4f},{:.4f},{:.4f})",
+                frame, left ? "L" : "R", driverValid, rawValid, presentedValid,
+                driver.translate.x, driver.translate.y, driver.translate.z,
+                raw.translate.x, raw.translate.y, raw.translate.z,
+                presented.translate.x, presented.translate.y, presented.translate.z);
+        }
+    }
+    void suppressAfterError() noexcept
+    {
+        writerFailed.store(true, std::memory_order_relaxed);
+        recording.store(false, std::memory_order_release);
+    }
+}
