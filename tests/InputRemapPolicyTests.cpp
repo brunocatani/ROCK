@@ -103,6 +103,46 @@ static bool testInputRouting()
     grenadeInput = { .eligible = false, .pressed = true, .held = true, .heldSeconds = 0.4f };
     ok &= expectFalse("disabled grenade mode cannot draw even on a late press", grenade::update(grenadeState, grenadeInput).requestGrenade);
 
+    grenade::reset(grenadeState);
+    grenadeInput = { .pressed = true, .held = true, .immersiveGrenades = false };
+    ok &= expectFalse("vanilla fallback waits for the hold", grenade::update(grenadeState, grenadeInput).requestNativeThrow);
+    grenadeInput = { .released = true, .heldSeconds = 0.1f, .immersiveGrenades = false };
+    auto nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectFalse("vanilla short tap cannot prime", nativeThrow.requestNativeThrow);
+    ok &= expectFalse("vanilla short tap cannot throw", nativeThrow.releaseNativeThrow);
+    grenadeInput = { .pressed = true, .held = true, .immersiveGrenades = false };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.3f, .holdSeconds = 0.3f, .immersiveGrenades = false };
+    nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectTrue("vanilla hold primes the native throw", nativeThrow.requestNativeThrow);
+    ok &= expectFalse("vanilla hold does not also draw a loose grenade", nativeThrow.requestGrenade);
+    ok &= expectFalse("continued vanilla hold cannot reprime", grenade::update(grenadeState, grenadeInput).requestNativeThrow);
+    grenadeInput = { .released = true, .heldSeconds = 0.5f, .immersiveGrenades = false };
+    ok &= expectTrue("vanilla physical release launches once", grenade::update(grenadeState, grenadeInput).releaseNativeThrow);
+    ok &= expectFalse("repeated vanilla release cannot launch", grenade::update(grenadeState, grenadeInput).releaseNativeThrow);
+
+    grenadeInput = { .pressed = true, .held = true, .heldSeconds = 0.4f, .immersiveGrenades = false };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .eligible = false, .held = true, .immersiveGrenades = false };
+    nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectTrue("PALM takeover cancels a primed native throw", nativeThrow.cancelNativeThrow);
+    ok &= expectFalse("PALM takeover cannot launch", nativeThrow.releaseNativeThrow);
+    grenadeInput = { .held = true, .heldSeconds = 0.8f, .immersiveGrenades = false };
+    ok &= expectFalse("PALM loss during a hold cannot prime fallback", grenade::update(grenadeState, grenadeInput).requestNativeThrow);
+    grenadeInput = { .released = true, .heldSeconds = 0.9f, .immersiveGrenades = false };
+    ok &= expectFalse("cancelled native gesture cannot throw on release", grenade::update(grenadeState, grenadeInput).releaseNativeThrow);
+
+    grenadeInput = { .pressed = true, .held = true, .heldSeconds = 0.4f, .immersiveGrenades = false };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.5f };
+    nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectTrue("hot reload cancels a primed native throw", nativeThrow.cancelNativeThrow);
+    ok &= expectFalse("hot reload cannot draw during an old native hold", nativeThrow.requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 0.6f };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .pressed = true, .held = true, .heldSeconds = 0.4f };
+    ok &= expectTrue("fresh hold uses immersive mode after reload", grenade::update(grenadeState, grenadeInput).requestGrenade);
+
     Settings settings{};
 
     ok &= expectTrue("fixed grab button is OpenVR grip", kGrabButtonId == 2);

@@ -85,6 +85,12 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "bImmersiveGrenades").value == "true", "immersive grenades must remain the default");
+        require(store.setValue(Group::Consumer, "RealisticWeapons", "bImmersiveGrenades", "false"), "vanilla fallback selection failed");
+        require(store.load(false), "vanilla fallback reload failed");
+        require(find(store, "bImmersiveGrenades").value == "false", "vanilla fallback selection was lost on reload");
+        require(store.setValue(Group::Consumer, "RealisticWeapons", "bImmersiveGrenades", "true"), "immersive mode restore failed");
+        require(store.load(false), "immersive restore reload failed");
         require(fs::exists(store.path(Group::Consumer)), "consumer defaults were not created");
         require(!fs::exists(store.path(Group::Developer)), "developer INI must not be created on load");
         CSimpleIniA consumer;

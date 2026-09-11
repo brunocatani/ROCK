@@ -21,6 +21,7 @@ namespace rock::vats_grenade_gesture_policy
     struct RuntimeState
     {
         State state{ State::Idle };
+        bool immersiveGrenades{ true };
     };
 
     struct Input
@@ -31,12 +32,16 @@ namespace rock::vats_grenade_gesture_policy
         bool released{ false };
         float heldSeconds{ 0.0f };
         float holdSeconds{ kDefaultHoldSeconds };
+        bool immersiveGrenades{ true };
     };
 
     struct Decision
     {
         State state{ State::Idle };
         bool requestGrenade{ false };
+        bool requestNativeThrow{ false };
+        bool releaseNativeThrow{ false };
+        bool cancelNativeThrow{ false };
         const char* reason{ "idle" };
     };
 
@@ -58,9 +63,9 @@ namespace rock::vats_grenade_gesture_policy
     }
 
     /*
-     * Primary-wand B is one exclusive gesture: a release before Bethesda's
-     * V.A.N.S. threshold remains a native VATS tap, while crossing the
-     * threshold publishes grenade quick draw exactly once. A gesture first
+     * Primary-wand B is one exclusive gesture. A qualified hold draws an
+     * immersive grenade or primes the native throw for physical release.
+     * PALM/menu ownership and a mode change cancel the gesture; a button first
      * observed while ineligible or already held must release before rearming.
      */
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
@@ -73,10 +78,14 @@ namespace rock::vats_grenade_gesture_policy
         // always starts a new physical gesture instead of inheriting stale
         // committed or blocked state.
         if (input.pressed && state.state != State::Idle) {
+            decision.cancelNativeThrow = state.state == State::HoldCommitted && !state.immersiveGrenades;
             reset(state);
         }
 
-        if (!input.eligible) {
+        const bool modeChanged = state.state != State::Idle && state.immersiveGrenades != input.immersiveGrenades;
+        if (!input.eligible || modeChanged) {
+            decision.cancelNativeThrow = decision.cancelNativeThrow ||
+                (state.state == State::HoldCommitted && !state.immersiveGrenades);
             if (input.held) {
                 state.state = State::BlockedUntilRelease;
                 decision.reason = "ineligible-held";
@@ -91,9 +100,11 @@ namespace rock::vats_grenade_gesture_policy
         switch (state.state) {
         case State::Idle:
             if (input.pressed && input.held) {
+                state.immersiveGrenades = input.immersiveGrenades;
                 if (heldSeconds >= holdSeconds) {
                     state.state = State::HoldCommitted;
-                    decision.requestGrenade = true;
+                    decision.requestGrenade = state.immersiveGrenades;
+                    decision.requestNativeThrow = !state.immersiveGrenades;
                     decision.reason = "press-at-threshold";
                 } else {
                     state.state = State::Pending;
@@ -109,8 +120,10 @@ namespace rock::vats_grenade_gesture_policy
 
         case State::Pending:
             if (input.released) {
-                decision.requestGrenade = heldSeconds >= holdSeconds;
-                decision.reason = decision.requestGrenade ?
+                decision.requestGrenade = heldSeconds >= holdSeconds && state.immersiveGrenades;
+                decision.requestNativeThrow = heldSeconds >= holdSeconds && !state.immersiveGrenades;
+                decision.releaseNativeThrow = decision.requestNativeThrow;
+                decision.reason = heldSeconds >= holdSeconds ?
                     "release-after-threshold" :
                     "short-release";
                 reset(state);
@@ -119,7 +132,8 @@ namespace rock::vats_grenade_gesture_policy
                 decision.reason = "lost-level";
             } else if (heldSeconds >= holdSeconds) {
                 state.state = State::HoldCommitted;
-                decision.requestGrenade = true;
+                decision.requestGrenade = state.immersiveGrenades;
+                decision.requestNativeThrow = !state.immersiveGrenades;
                 decision.reason = "hold-threshold";
             } else {
                 decision.reason = "pending";
@@ -128,6 +142,8 @@ namespace rock::vats_grenade_gesture_policy
 
         case State::HoldCommitted:
             if (input.released || !input.held) {
+                decision.releaseNativeThrow = input.released && !state.immersiveGrenades;
+                decision.cancelNativeThrow = !input.released && !state.immersiveGrenades;
                 reset(state);
                 decision.reason = "hold-release";
             } else {

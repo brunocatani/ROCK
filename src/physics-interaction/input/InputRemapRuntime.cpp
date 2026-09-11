@@ -3,6 +3,7 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
+#include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
@@ -1816,6 +1817,15 @@ namespace rock::input_remap_runtime
                         .suppressAll = suppressAll,
                     });
 
+            if (!button->QPressed()) {
+                const auto raw = peekRawButtonState(false, 1);
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "B/VATS release: nativeSeconds={:.3f} threshold={:.3f} rawAvailable={} rawHeld={} flags={:#x} immersive={} nativeThrow={} forward={} reason={}",
+                    button->QHeldDownSecs(), holdSeconds, raw.available, raw.held, flags,
+                    g_rockConfig.rockImmersiveGrenades, native_grenade_throw_runtime::active(),
+                    decision.forwardNative, decision.reason);
+            }
+
             if (decision.forwardNative) {
                 if (s_originalNativeVatsVansDecision) {
                     s_originalNativeVatsVansDecision(button);
@@ -1842,19 +1852,35 @@ namespace rock::input_remap_runtime
 
         void observePrimaryVatsGrenadeGesture(RE::ButtonEvent& button)
         {
+            const auto raw = peekRawButtonState(false, 1);
+            const auto previous = s_vatsGrenadeGestureState.state;
             const auto decision = vats_grenade_gesture_policy::update(
                 s_vatsGrenadeGestureState,
                 vats_grenade_gesture_policy::Input{
                     .eligible = grenadeQuickDrawAllowed() &&
-                        !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire),
+                        raw.available &&
+                        !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire) &&
+                        (button.QPressed() || !raw.held),
                     .pressed = button.QJustPressed(),
                     .held = button.QPressed(),
                     .released = !button.QPressed() && button.QHeldDownSecs() >= 0.0f,
                     .heldSeconds = button.QHeldDownSecs(),
-                    .holdSeconds = readNativeVansHoldThresholdSeconds(),
+                    .holdSeconds = g_rockConfig.rockImmersiveGrenades ? readNativeVansHoldThresholdSeconds() :
+                        (std::max)(readNativeVansHoldThresholdSeconds(), native_grenade_throw_runtime::holdSeconds()),
+                    .immersiveGrenades = g_rockConfig.rockImmersiveGrenades,
                 });
+            if (decision.cancelNativeThrow) native_grenade_throw_runtime::cancel();
+            if (decision.requestNativeThrow) static_cast<void>(native_grenade_throw_runtime::begin(button));
+            if (decision.releaseNativeThrow) native_grenade_throw_runtime::release(button);
             if (decision.requestGrenade) {
                 s_pendingGrenadeQuickDrawHoldRequest.store(true, std::memory_order_release);
+            }
+            if (previous != decision.state || decision.requestGrenade || decision.requestNativeThrow) {
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "B grenade gesture: reason={} seconds={:.3f} immersive={} draw={} nativeBegin={} nativeRelease={} rawAvailable={} rawHeld={} rearm={}",
+                    decision.reason, button.QHeldDownSecs(), g_rockConfig.rockImmersiveGrenades,
+                    decision.requestGrenade, decision.requestNativeThrow, decision.releaseNativeThrow,
+                    raw.available, raw.held, s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire));
             }
         }
 
@@ -2355,6 +2381,7 @@ namespace rock::input_remap_runtime
                 wristOpen ? "opened" : "closed", pipboyRouteName(currentPipboyRoute()));
         }
         if (!allowed) {
+            native_grenade_throw_runtime::cancel();
             if (s_logicalJumpHeld.load(std::memory_order_acquire)) {
                 s_logicalJumpReleaseToRearm.store(
                     true,
@@ -2618,12 +2645,17 @@ namespace rock::input_remap_runtime
         // Losing its claim during a held gesture must never synthesize a draw.
         const auto button = consumeRawButtonState(false, 1);
         const bool allowed = grenadeQuickDrawAllowed();
+        if (native_grenade_throw_runtime::active() &&
+            (!allowed || !button.available || !button.held || g_rockConfig.rockImmersiveGrenades)) {
+            native_grenade_throw_runtime::cancel();
+        }
         if (!allowed || !button.available) {
             s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
         } else if (!button.held) {
             s_grenadeQuickDrawReleaseToRearm.store(false, std::memory_order_release);
         }
-        return requested && allowed && !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire);
+        return requested && allowed && g_rockConfig.rockImmersiveGrenades &&
+            !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire);
     }
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)

@@ -509,6 +509,7 @@ namespace rock
             8.0f,
             0.25f,
             30.0f);
+        rockImmersiveGrenades = ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bImmersiveGrenades", rockImmersiveGrenades);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",
