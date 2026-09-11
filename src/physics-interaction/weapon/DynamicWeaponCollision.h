@@ -172,6 +172,9 @@ namespace rock
         // body's target reconstructed from the pending grip-authority target.
         [[nodiscard]] bool tryGetContactBodyTargetForDebug(RE::NiTransform& outTarget) const;
         bool getDebugSnapshot(DebugSnapshot& outSnapshot) const;
+        // Main-thread observation of the authoritative physics sample. This
+        // does not depend on collider visualization or its debug snapshot.
+        bool tryGetContactState(RE::NiNode* weapon, std::uint64_t generation, bool& contact) const;
 
     private:
         struct AtomicTransform

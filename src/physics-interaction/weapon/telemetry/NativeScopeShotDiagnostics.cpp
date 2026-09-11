@@ -2,6 +2,8 @@
 #include "physics-interaction/weapon/telemetry/NativeScopeShotPolicy.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
+#include "physics-interaction/debug/DebugWorldTextGeometry.h"
+#include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/ResourceUtils.h"
@@ -54,7 +56,9 @@ namespace rock::native_scope_shot_diagnostics
             ReadStage scopeReadStage{}, muzzleReadStage{};
             Ray scope{}, muzzle{};
             Point right{}, up{}, aimPoint{};
+            Point panelAnchor{}, panelRight{}, panelDown{};
             bool valid{}, aimValid{}, scoped{}, contactKnown{}, contact{}, bipodMode{}, bipodLatched{};
+            bool scopeViewKnown{}, scopeMenu{}, panelValid{};
         };
 
         // Raw launch prefix, not the propagated CommonLib class layout.
@@ -78,12 +82,14 @@ namespace rock::native_scope_shot_diagnostics
         {
             Frame presented{}, following{};
             Ray scopeAtSetup{}, muzzleAtSetup{}, nativeAim{}, initial{}, launch{};
+            Point setupRight{}, setupUp{};
             Point aimPoint{};
             std::uint64_t sequence{}, milliseconds{}, epoch{};
             std::uint32_t thread{}, form{}, equip{}, handle{}, stage{};
             ReadStage scopeReadStage{}, muzzleReadStage{};
             float yaw{}, pitch{};
             bool setupMatched{}, onGameThread{}, aimValid{}, launchReturned{};
+            bool displayAccepted{};
         };
         struct Pending
         {
@@ -133,6 +139,11 @@ namespace rock::native_scope_shot_diagnostics
         }
         void readSight(Frame& frame) noexcept
         {
+            std::uint8_t request = 0;
+            frame.scopeViewKnown = native_memory::tryReadField(
+                reinterpret_cast<const void*>(REL::Offset(offsets::kData_NativeScopeRendererState).address()), 3, request);
+            frame.scoped = frame.scopeViewKnown && request != 0;
+            frame.scopeMenu = runtime_state::currentFrame().localScopeMenuOpen;
             auto* nodes = fo4vr::getPlayerNodes();
             RE::NiNode* camera{};
             RE::NiTransform world{};
@@ -148,6 +159,25 @@ namespace rock::native_scope_shot_diagnostics
             // Raw writer 0x140F7B6AA/B2/BA and reader 0x14104F7A6..D8
             // agree on this cached world-space native aiming point.
             frame.aimValid = native_memory::tryReadField(fo4vr::getPlayer(), 0xB90, frame.aimPoint) && policy::finite(frame.aimPoint);
+        }
+
+        void readPanel(Frame& frame) noexcept
+        {
+            const auto* nodes = fo4vr::getPlayerNodes();
+            RE::NiNode* hmd{};
+            RE::NiTransform world{};
+            ReadStage stage{};
+            if (!nodes || !native_memory::tryReadValue(&nodes->HmdNode, hmd) || !readWorld(hmd, world, stage)) return;
+            const auto right = axisRay(world, 0);
+            const auto forward = axisRay(world, 1);
+            const auto up = axisRay(world, 2);
+            if (!right.valid || !forward.valid || !up.valid) return;
+            frame.panelRight = right.direction;
+            frame.panelDown = { -up.direction.x, -up.direction.y, -up.direction.z };
+            const auto center = policy::end(forward, 75.0f);
+            frame.panelAnchor = { center.x - right.direction.x * 24 - up.direction.x * 6,
+                center.y - right.direction.y * 24 - up.direction.y * 6, center.z - right.direction.z * 24 - up.direction.z * 6 };
+            frame.panelValid = debug_world_text_geometry::validBasis(frame.panelAnchor, frame.panelRight, frame.panelDown, 0.12f);
         }
 
         std::uint64_t onSetOrigin(void* data)
@@ -180,6 +210,8 @@ namespace rock::native_scope_shot_diagnostics
                 Frame current{};
                 readSight(current);
                 pending.shot.scopeAtSetup = current.scope;
+                pending.shot.setupRight = current.right;
+                pending.shot.setupUp = current.up;
                 pending.shot.scopeReadStage = current.scopeReadStage;
                 pending.shot.aimPoint = current.aimPoint;
                 pending.shot.aimValid = current.aimValid;
@@ -259,6 +291,16 @@ namespace rock::native_scope_shot_diagnostics
             logRay(log, sequence, phase, "muzzle", frame.muzzle);
             log.info("SSA read shot={} phase={} scopeStage={} muzzleStage={}", sequence, phase,
                 static_cast<unsigned>(frame.scopeReadStage), static_cast<unsigned>(frame.muzzleReadStage));
+            log.info("SSA view shot={} phase={} rendererKnown={} rendererActive={} scopeMenu={} panelValid={}",
+                sequence, phase, frame.scopeViewKnown, frame.scoped, frame.scopeMenu, frame.panelValid);
+        }
+
+        void logPlane(spdlog::logger& log, std::uint64_t sequence, const char* phase,
+            const Ray& scope, Point right, Point up, const Ray& launch)
+        {
+            const auto offset = policy::planeOffset(scope, right, up, launch);
+            log.info("SSA plane shot={} phase={} depthGu={} valid={} rightGu={:.6f} upGu={:.6f}", sequence,
+                phase, policy::kGuideLengthGameUnits, offset.valid, offset.rightGameUnits, offset.upGameUnits);
         }
 
         // Main thread owns start/stop. The worker only copies immutable value
@@ -278,7 +320,7 @@ namespace rock::native_scope_shot_diagnostics
                         spdlog::logger log("ROCK_ScopeShots", sink);
                         log.set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
                         log.set_error_handler([](const std::string&) { writerFailed.store(true, std::memory_order_release); });
-                        log.info("SSA start version=1 pid={} build={} {} sampleMs=250 holdMs=8000 observational=true units=game direction=unit-vector angles=degrees guide=straight-launch-not-impact",
+                        log.info("SSA start version=2 pid={} build={} {} sampleMs=250 holdMs=8000 observational=true units=game direction=unit-vector angles=degrees guide=straight-launch-not-impact panel=world-glyphs-stereo planeDepthGu=1500",
                             GetCurrentProcessId(), __DATE__, __TIME__);
                         log.flush();
                         std::uint64_t last{};
@@ -317,6 +359,12 @@ namespace rock::native_scope_shot_diagnostics
                                 logRay(log, shot.sequence, "origin-setup", "initial-launch", shot.initial);
                                 logRay(log, shot.sequence, "launch", "launch", shot.launch);
                                 logFrame(log, shot.sequence, "following-presentation", shot.following);
+                                logPlane(log, shot.sequence, "pre-fire-view", shot.presented.scope, shot.presented.right, shot.presented.up, shot.launch);
+                                logPlane(log, shot.sequence, "at-fire", shot.scopeAtSetup, shot.setupRight, shot.setupUp, shot.launch);
+                                logPlane(log, shot.sequence, "next-view-includes-recoil", shot.following.scope, shot.following.right, shot.following.up, shot.launch);
+                                log.info("SSA display shot={} accepted={} scoped={} generationMatch={} formMatch={} epochMatch={}", shot.sequence,
+                                    shot.displayAccepted, shot.following.scoped, shot.presented.generation == shot.following.generation,
+                                    shot.form == shot.following.form, shot.epoch == shot.following.epoch);
                                 log.flush();
                                 last = shot.sequence;
                             }
@@ -428,12 +476,12 @@ namespace rock::native_scope_shot_diagnostics
         frame.generation = generation;
         frame.form = form;
         frame.epoch = epoch.load(std::memory_order_acquire);
-        frame.scoped = runtime.localScopeMenuOpen;
         frame.contactKnown = contactKnown;
         frame.contact = contact;
         frame.bipodMode = g_rockConfig.rockBipodMode;
         frame.bipodLatched = bipodLatched;
         frame.valid = weapon && generation && form && runtime.weaponDrawn;
+        readPanel(frame);
         if (frame.valid) {
             readSight(frame);
             auto* data = fo4vr::getEquippedWeaponData();
@@ -456,88 +504,106 @@ namespace rock::native_scope_shot_diagnostics
             if (shot.epoch != frame.epoch) return;
             displayedShot = {};
             shot.following = frame;
-            if (!completedChannel.store(shot)) dropped.fetch_add(1, std::memory_order_relaxed);
-            if (frame.valid && shot.epoch == frame.epoch && shot.form == form &&
+            shot.displayAccepted = frame.valid && shot.epoch == frame.epoch && shot.form == form &&
                 shot.presented.valid && shot.presented.generation == generation && shot.presented.form == form && shot.presented.epoch == frame.epoch &&
                 policy::fresh(shot.milliseconds, shot.presented.milliseconds, 100) &&
-                policy::fresh(frame.milliseconds, shot.milliseconds, policy::kDisplayMilliseconds)) displayedShot = shot;
+                policy::fresh(frame.milliseconds, shot.milliseconds, policy::kDisplayMilliseconds);
+            if (shot.displayAccepted) displayedShot = shot;
+            if (!completedChannel.store(shot)) dropped.fetch_add(1, std::memory_order_relaxed);
         }
     }
 
     void appendOverlay(debug::BodyOverlayFrame& frame) noexcept
     {
-        if (!g_rockConfig.rockDebugNativeScopeShotAlignment) return;
+        if (!g_rockConfig.rockDebugNativeScopeShotAlignment || !liveFrame.panelValid) return;
         frame.drawText = true;
         const auto text = [&](float x, float y, const char* label, const float* color) {
             if (frame.textCount == frame.textEntries.size()) return;
             auto& entry = frame.textEntries[frame.textCount++];
-            entry.x = x - 310; entry.y = y - 480; entry.size = 2.0f;
-            entry.centeredInEye = true;
+            entry.x = x; entry.y = y; entry.size = 0.12f;
+            entry.worldSpaceGlyphs = true;
+            entry.worldAnchor = ni(liveFrame.panelAnchor);
+            entry.worldRight = ni(liveFrame.panelRight);
+            entry.worldDown = ni(liveFrame.panelDown);
             std::snprintf(entry.text, sizeof(entry.text), "%s", label);
             std::copy_n(color, 4, entry.color);
         };
         constexpr float green[]{ 0.1f, 1.0f, 0.2f, 1.0f }, cyan[]{ 0.05f, 0.9f, 1.0f, 1.0f };
         constexpr float yellow[]{ 1.0f, 0.9f, 0.05f, 1.0f }, magenta[]{ 1.0f, 0.1f, 0.9f, 1.0f };
         constexpr float white[]{ 1.0f, 1.0f, 1.0f, 1.0f };
-        if (!installed) {
-            text(24, 256, "SCOPE SHOT HOOKS UNAVAILABLE; SEE ROCK.LOG", magenta);
-            return;
-        }
-        const bool shotValid = displayedShot.sequence && policy::fresh(GetTickCount64(), displayedShot.milliseconds, policy::kDisplayMilliseconds);
-        const auto& state = shotValid ? displayedShot.presented : liveFrame;
-        const Ray scope = shotValid ? state.scope : liveFrame.scope;
-        const Ray muzzle = shotValid ? displayedShot.muzzleAtSetup : liveFrame.muzzle;
-        const Ray aim = shotValid ? displayedShot.nativeAim :
+        if (!installed) { text(0, 0, "SCOPE SHOT HOOKS UNAVAILABLE; SEE ROCK.LOG", magenta); return; }
+
+        const bool hasShot = displayedShot.sequence && policy::fresh(GetTickCount64(), displayedShot.milliseconds, policy::kDisplayMilliseconds);
+        const auto& state = hasShot ? displayedShot.presented : liveFrame;
+        const Ray scope = state.scope;
+        const Ray muzzle = hasShot ? displayedShot.muzzleAtSetup : liveFrame.muzzle;
+        const Ray aim = hasShot ? displayedShot.nativeAim :
             (liveFrame.aimValid && liveFrame.muzzle.valid ? policy::ray(liveFrame.muzzle.origin, policy::subtract(liveFrame.aimPoint, liveFrame.muzzle.origin)) : Ray{});
-        const Ray launch = shotValid ? displayedShot.launch : Ray{};
+        const Ray launch = hasShot ? displayedShot.launch : Ray{};
         const std::array offsets{
-            policy::angularOffset(scope, state.right, state.up, muzzle),
-            policy::angularOffset(scope, state.right, state.up, aim),
-            policy::angularOffset(scope, state.right, state.up, launch),
+            policy::planeOffset(scope, state.right, state.up, muzzle),
+            policy::planeOffset(scope, state.right, state.up, aim),
+            policy::planeOffset(scope, state.right, state.up, launch),
         };
-        float plotRange = 0.25f;
-        for (const auto& offset : offsets) {
-            if (offset.valid) plotRange = std::max({ plotRange, std::abs(offset.rightDegrees), std::abs(offset.upDegrees) });
-        }
-        plotRange = std::ceil(plotRange * 4.0f) * 0.25f;
         char line[128]{};
-        std::snprintf(line, sizeof(line), "SCOPE SHOTS %s  CONTACT %s  BIPOD %s", shotValid ? "LAST SAMPLE" : "LIVE",
-            !state.contactKnown ? "?" : state.contact ? "YES" : "NO", state.bipodLatched ? "LATCHED" : state.bipodMode ? "ON" : "OFF");
-        text(24, 190, line, white);
-        text(24, 212, "S GREEN=SCOPE  M CYAN=MUZZLE", green);
-        text(24, 234, "A YELLOW=NATIVE AIM  L MAGENTA=LAUNCH", magenta);
-        std::snprintf(line, sizeof(line), "DEG S-L %.3f  M-L %.3f  A-L %.3f (-1=UNKNOWN)",
-            policy::angleDegrees(scope, launch), policy::angleDegrees(muzzle, launch), policy::angleDegrees(aim, launch));
-        text(24, 256, line, white);
-        std::snprintf(line, sizeof(line), "ANGULAR PLOT +/-%.2f DEG (AUTO SCALE)", plotRange);
-        text(24, 278, line, white);
-        text(24, 300, "STRAIGHT RAYS; NO IMPACT PREDICTION", white);
-        text(24, 322, writerFailed.load() ? "LOG FAILED: SEE ROCK.LOG" : "LOWER SCOPE TO INSPECT RAYS (8 SEC)", white);
-        if (scope.valid) text(210, 505, "S", green);
-        const auto plot = [&](const policy::AngularOffset& offset, const char* label, const float* color) {
-            if (offset.valid) text(210 + offset.rightDegrees * 150 / plotRange,
-                505 - offset.upDegrees * 150 / plotRange, label, color);
-        };
-        plot(offsets[0], "M", cyan); plot(offsets[1], "A", yellow); plot(offsets[2], "L", magenta);
-        if (shotValid) {
-            std::snprintf(line, sizeof(line), "SHOT %llu AGE %.1fS FRAME %llu -> %llu",
+        std::snprintf(line, sizeof(line), "SCOPE %s | CONTACT %s | BIPOD %s",
+            !liveFrame.scopeViewKnown ? "?" : liveFrame.scoped ? "ON" : "OFF",
+            !liveFrame.contactKnown ? "?" : liveFrame.contact ? "YES" : "NO",
+            liveFrame.bipodLatched ? "LATCHED" : liveFrame.bipodMode ? "ON" : "OFF");
+        text(0, 0, line, white);
+        if (hasShot) {
+            std::snprintf(line, sizeof(line), "SHOT %llu | AGE %.1fS | CONTACT %s | LATCH %s",
                 static_cast<unsigned long long>(displayedShot.sequence), (GetTickCount64() - displayedShot.milliseconds) * 0.001,
-                static_cast<unsigned long long>(state.index), static_cast<unsigned long long>(displayedShot.following.index));
-            text(24, 680, line, white);
+                !state.contactKnown ? "?" : state.contact ? "YES" : "NO", state.bipodLatched ? "YES" : "NO");
+        } else {
+            std::snprintf(line, sizeof(line), "LIVE AIM | FIRE TO CAPTURE | SAMPLES %llu", static_cast<unsigned long long>(shotSequence.load()));
         }
-        // The submitted stereo matrices are not the magnified mono camera.
-        // Only the labeled screen-space comparison is drawn while scoped.
-        if (liveFrame.scoped) return;
-        const auto guide = [&](const Ray& r, debug::MarkerOverlayRole role) {
-            if (!r.valid || frame.markerCount + 2 > frame.markerEntries.size()) return;
+        text(0, 1.6f, line, white);
+        text(0, 3.2f, "SEPARATION AT 1500 WORLD UNITS; +RIGHT / +UP", white);
+        const auto separation = [&](float y, const char* label, const policy::PlaneOffset& offset, const float* color) {
+            if (offset.valid) std::snprintf(line, sizeof(line), "%s: H %+.2f  V %+.2f GU", label, offset.rightGameUnits, offset.upGameUnits);
+            else std::snprintf(line, sizeof(line), "%s: UNAVAILABLE", label);
+            text(0, y, line, color);
+        };
+        separation(4.8f, "MUZZLE", offsets[0], cyan);
+        separation(6.4f, hasShot ? "SHOT / PRE-FIRE VIEW" : "NATIVE AIM", hasShot ? offsets[2] : offsets[1], hasShot ? magenta : yellow);
+        if (hasShot) {
+            separation(8.0f, "SHOT / AT-FIRE CAMERA", policy::planeOffset(displayedShot.scopeAtSetup,
+                displayedShot.setupRight, displayedShot.setupUp, launch), magenta);
+            separation(9.6f, "SHOT / NEXT VIEW", policy::planeOffset(displayedShot.following.scope,
+                displayedShot.following.right, displayedShot.following.up, launch), white);
+        }
+        text(0, 11.2f, "NEXT VIEW INCLUDES RECOIL AND MOVEMENT", white);
+        text(0, 12.8f, "STRAIGHT AIM COMPARISON; NOT BULLET IMPACT", white);
+
+        float range = 1.0f;
+        for (const auto& offset : offsets) if (offset.valid) range = std::max({ range, std::abs(offset.rightGameUnits), std::abs(offset.upGameUnits) });
+        range = std::ceil(range);
+        std::snprintf(line, sizeof(line), "PLOT +/-%.0f GU | + SCOPE M MUZZLE A AIM L SHOT", range);
+        text(0, 14.4f, line, white);
+        constexpr float centerX = 22, centerY = 21, halfSize = 4.8f;
+        if (scope.valid) text(centerX, centerY, "+", green);
+        const auto plot = [&](std::size_t i, const char* label, const float* color) {
+            if (offsets[i].valid) text(centerX + offsets[i].rightGameUnits * halfSize / range,
+                centerY - offsets[i].upGameUnits * halfSize / range, label, color);
+        };
+        plot(0, "M", cyan); plot(1, "A", yellow); plot(2, "L", magenta);
+        if (writerFailed.load()) text(0, 27, "LOG FAILED; SEE ROCK.LOG", magenta);
+
+        // The panel remains fully visible in native scope mode. World rays
+        // remain available in the unmagnified view where stereo world
+        // projection describes the scene beneath them.
+        if (!liveFrame.scopeViewKnown || liveFrame.scoped) return;
+        const auto guide = [&](const Ray& r, const policy::PlaneOffset& intersection, debug::MarkerOverlayRole role) {
+            if (!r.valid || !intersection.valid || frame.markerCount + 2 > frame.markerEntries.size()) return;
+            const auto endpoint = ni(intersection.intersection);
             frame.drawMarkers = true;
-            frame.markerEntries[frame.markerCount++] = { role, ni(r.origin), ni(policy::end(r)), 1.0f, true, true };
-            const auto endpoint = ni(policy::end(r));
+            frame.markerEntries[frame.markerCount++] = { role, ni(r.origin), endpoint, 1.0f, true, true };
             frame.markerEntries[frame.markerCount++] = { role, endpoint, endpoint, 3.0f, true, false };
         };
-        guide(scope, debug::MarkerOverlayRole::NativeScopeShotSight);
-        guide(muzzle, debug::MarkerOverlayRole::NativeScopeShotMuzzle);
-        guide(aim, debug::MarkerOverlayRole::NativeScopeShotAim);
-        guide(launch, debug::MarkerOverlayRole::NativeScopeShotLaunch);
+        guide(scope, policy::planeOffset(scope, state.right, state.up, scope), debug::MarkerOverlayRole::NativeScopeShotSight);
+        guide(muzzle, offsets[0], debug::MarkerOverlayRole::NativeScopeShotMuzzle);
+        guide(aim, offsets[1], debug::MarkerOverlayRole::NativeScopeShotAim);
+        guide(launch, offsets[2], debug::MarkerOverlayRole::NativeScopeShotLaunch);
     }
 }

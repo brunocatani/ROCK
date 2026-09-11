@@ -31,6 +31,7 @@
 #include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
 #include "physics-interaction/debug/DebugOverlayShapePipeline.h"
 #include "physics-interaction/debug/DebugOverlayShaders.h"
+#include "physics-interaction/debug/DebugWorldTextGeometry.h"
 #include "physics-interaction/debug/DebugOverlaySnapshotPool.h"
 #include "physics-interaction/debug/DebugOverlayStats.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -3837,6 +3838,31 @@ namespace rock::debug
             return true;
         }
 
+        void appendWorldTextGlyphs(std::vector<ColoredVertex>& vertices, const TextOverlayEntry& entry,
+            std::uint32_t maxVertices, std::uint32_t& rejectedVertices)
+        {
+            if (!debug_world_text_geometry::validBasis(entry.worldAnchor, entry.worldRight, entry.worldDown, entry.size)) {
+                rejectedVertices += 6;
+                return;
+            }
+            for (std::size_t i = 0; i < sizeof(entry.text) && entry.text[i] != '\0'; ++i) {
+                const auto rows = glyphRows(entry.text[i]);
+                for (std::size_t row = 0; row < rows.size(); ++row) {
+                    for (unsigned column = 0; column < 5; ++column) {
+                        if ((rows[row] & (1u << (4u - column))) == 0) continue;
+                        if (vertices.size() + 6 > maxVertices) { rejectedVertices += 6; return; }
+                        const auto quad = debug_world_text_geometry::pixelCorners(entry.worldAnchor, entry.worldRight, entry.worldDown,
+                            entry.x + (static_cast<float>(i) * 6 + column) * entry.size,
+                            entry.y + static_cast<float>(row) * entry.size, entry.size);
+                        for (const unsigned corner : { 0u, 1u, 2u, 0u, 2u, 3u }) {
+                            const auto& p = quad[corner];
+                            vertices.push_back({ p.x, p.y, p.z, { entry.color[0], entry.color[1], entry.color[2], entry.color[3] } });
+                        }
+                    }
+                }
+            }
+        }
+
         float textPixelWidth(const TextOverlayEntry& entry)
         {
             std::size_t length = 0;
@@ -3997,21 +4023,26 @@ namespace rock::debug
             vertices.clear();
             std::uint32_t rejectedVertices = 0;
             const auto maxVertices = frame.settings.limits.maxTextVertices;
+            // World glyphs occupy one prefix of the existing bounded buffer.
+            // The stereo shader projects the same vertices once for each eye.
+            if (drawPublishedText && s_d3d.stereoColorVertexShader) {
+                for (const auto& entry : frame.text) {
+                    if (entry.worldSpaceGlyphs) appendWorldTextGlyphs(vertices, entry, maxVertices, rejectedVertices);
+                }
+            }
+            const auto worldVertexCount = static_cast<UINT>(vertices.size());
             if (drawPublishedText) {
                 for (const auto& entry : frame.text) {
+                    if (entry.worldSpaceGlyphs) continue;
                     const std::uint32_t rejectedBefore = rejectedVertices;
                     if (entry.worldAnchored) {
                         appendWorldAnchoredTextGlyphs(
                             vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
                     } else {
-                        const bool entryPerEye = duplicatePerEye || entry.centeredInEye;
-                        const float entryEyeWidth = entryPerEye ? textureWidth * 0.5f : textureWidth;
-                        const float x = entry.x + (entry.centeredInEye ? entryEyeWidth * 0.5f : 0.0f);
-                        const float y = entry.y + (entry.centeredInEye ? textureHeight * 0.5f : 0.0f);
-                        appendTextGlyphs(vertices, entry, x, y, entryEyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
-                        if (entryPerEye) {
+                        appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                        if (duplicatePerEye) {
                             appendTextGlyphs(
-                                vertices, entry, x + entryEyeWidth, y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                                vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
                         }
                     }
                     if (rejectedVertices != rejectedBefore) {
@@ -4232,9 +4263,18 @@ namespace rock::debug
             ID3D11Buffer* vertexBuffer = s_d3d.textVB.Get();
             context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
             context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-            context->Draw(static_cast<UINT>(vertices.size()), 0);
+            if (worldVertexCount > 0) {
+                context->VSSetShader(s_d3d.stereoColorVertexShader.Get(), nullptr, 0);
+                context->DrawInstanced(worldVertexCount, 2, 0, 0);
+                ++stats.textDrawCalls;
+            }
+            const auto screenVertexCount = static_cast<UINT>(vertices.size()) - worldVertexCount;
+            if (screenVertexCount > 0) {
+                context->VSSetShader(s_d3d.screenTextVertexShader.Get(), nullptr, 0);
+                context->Draw(screenVertexCount, worldVertexCount);
+                ++stats.textDrawCalls;
+            }
             stats.textVertices += static_cast<std::uint32_t>(vertices.size());
-            ++stats.textDrawCalls;
         }
 
         void drawGripZoneIndicatorBatch(

@@ -27,9 +27,26 @@ int main()
     const float nan = std::numeric_limits<float>::quiet_NaN();
     check(!p::launchRay(origin, nan, 0).valid && !p::ray({nan, 0, 0}, {0, 1, 0}).valid, "nonfinite data fails closed");
     check(p::angleDegrees(forward, {}) == -1, "missing capture is unknown rather than aligned");
-    const auto offset = p::angularOffset(forward, {1, 0, 0}, {0, 0, 1}, p::launchRay(origin, 1 / p::kRadiansToDegrees, -2 / p::kRadiansToDegrees));
-    check(offset.valid && near(offset.rightDegrees, 1) && std::abs(offset.upDegrees - 2) < 0.001f, "HUD keeps right/up signs");
-    check(!p::angularOffset(forward, {1, 0, 0}, {0, 0, 1}, p::launchRay(origin, 2 * halfPi, 0)).valid, "behind-camera ray is not plotted at the center");
+    const auto offset = p::planeOffset(forward, {1, 0, 0}, {0, 0, 1}, p::ray({13, -20, 24}, {0, 1, 0}));
+    check(offset.valid && near(offset.rightGameUnits, 3) && near(offset.upGameUnits, -6), "parallel rays retain horizontal and bore-height separation");
+    const auto crossing = p::planeOffset(p::ray({}, {0, 1, 0}), {1, 0, 0}, {0, 0, 1}, p::ray({-10, 0, 0}, {10, 100, 0}), 100);
+    check(crossing.valid && near(crossing.rightGameUnits, 0), "converging ray reaches common sight plane");
+    check(!p::planeOffset(forward, {1, 0, 0}, {0, 0, 1}, p::launchRay(origin, 2 * halfPi, 0)).valid, "behind-camera ray is unavailable");
+    check(!p::planeOffset(forward, {}, {}, forward).valid, "missing sight basis is not reported as zero error");
+    check(!p::planeOffset(forward, {1, 0, 0}, {0, 0, 1}, forward, nan).valid, "invalid reference plane rejected");
+    check(std::abs(p::angleDegrees(forward, p::launchRay(origin, 0.001f / p::kRadiansToDegrees, 0)) - 0.001f) < 0.00001f,
+        "small angular differences survive floating-point dot rounding");
+    // Recorded scoped shot 55, PID 28668, 2026-09-11 13:57:38.253.
+    // Its former angle-only display said zero although the launch line was
+    // almost six game units below the sight line.
+    const auto recordedScope = p::ray({-79223.617188f,90278.031250f,7950.995605f}, {0.702898145f,-0.710876703f,-0.024262231f});
+    const auto recordedShot = p::ray({-79236.968750f,90291.851562f,7945.590332f}, {0.702897072f,-0.710877657f,-0.024263371f});
+    const auto basisRight = p::ray({}, {recordedScope.direction.y, -recordedScope.direction.x, 0}).direction;
+    const auto f = recordedScope.direction;
+    const p::Point basisUp{basisRight.y*f.z-basisRight.z*f.y, basisRight.z*f.x-basisRight.x*f.z, basisRight.x*f.y-basisRight.y*f.x};
+    const auto replay = p::planeOffset(recordedScope, basisRight, basisUp, recordedShot);
+    check(replay.valid && std::abs(std::hypot(replay.rightGameUnits, replay.upGameUnits) - 5.874f) < 0.01f,
+        "scoped runtime regression exposes positional mismatch hidden by zero degrees");
     check(p::fresh(9000, 1000, 8000) && !p::fresh(9001, 1000, 8000), "frozen shot expires at bounded age");
     check(!p::fresh(999, 1000, 8000) && !p::fresh(1000, 0, 8000), "future and absent timestamps rejected");
     // Round trip native angles across quadrants and elevation. Recovering

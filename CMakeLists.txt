@@ -617,6 +617,12 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativeScopeShotPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeScopeShotPolicyTests)
 
+  add_executable(ROCKWorldTextStereoTests "${ROOT_DIR}/tests/WorldTextStereoTests.cpp")
+  target_compile_features(ROCKWorldTextStereoTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWorldTextStereoTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKWorldTextStereoTests PRIVATE d3d11 d3dcompiler)
+  add_rock_test(ROCKWorldTextStereoTests)
+
   add_executable(ROCKActiveGrabBodyLifecyclePolicyTests
     "${ROOT_DIR}/tests/ActiveGrabBodyLifecyclePolicyTests.cpp"
   )

@@ -334,8 +334,10 @@ namespace rock::debug
         float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
         RE::NiPoint3 worldAnchor{};
         bool worldAnchored{ false };
-        // Pixel offsets from each eye's center, independent of grab-text mode.
-        bool centeredInEye{ false };
+        // World-space bitmap glyphs use size/x/y in game units. Both eyes
+        // project the same quad vertices through the stereo geometry shader.
+        RE::NiPoint3 worldRight{}, worldDown{};
+        bool worldSpaceGlyphs{ false };
     };
 
     struct ColoredLineOverlayEntry

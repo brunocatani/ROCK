@@ -40,19 +40,38 @@ namespace rock::native_scope_shot_policy
     inline float angleDegrees(const Ray& a, const Ray& b) noexcept
     {
         if (!a.valid || !b.valid) return -1.0f;
-        return std::acos(std::clamp(dot(a.direction, b.direction), -1.0f, 1.0f)) * kRadiansToDegrees;
+        const double x = static_cast<double>(a.direction.y) * b.direction.z - static_cast<double>(a.direction.z) * b.direction.y;
+        const double y = static_cast<double>(a.direction.z) * b.direction.x - static_cast<double>(a.direction.x) * b.direction.z;
+        const double z = static_cast<double>(a.direction.x) * b.direction.y - static_cast<double>(a.direction.y) * b.direction.x;
+        const double cosine = static_cast<double>(a.direction.x) * b.direction.x + static_cast<double>(a.direction.y) * b.direction.y + static_cast<double>(a.direction.z) * b.direction.z;
+        return static_cast<float>(std::atan2(std::sqrt(x * x + y * y + z * z), cosine) * kRadiansToDegrees);
     }
     inline bool fresh(std::uint64_t now, std::uint64_t then, std::uint64_t limit) noexcept
     {
         return then != 0 && now >= then && now - then <= limit;
     }
-    struct AngularOffset { float rightDegrees{}, upDegrees{}; bool valid{}; };
-    inline AngularOffset angularOffset(const Ray& sight, Point right, Point up, const Ray& other) noexcept
+    struct PlaneOffset { float rightGameUnits{}, upGameUnits{}; Point intersection{}; bool valid{}; };
+    // Intersect the forward ray with the plane normal to the sight at one
+    // stated depth. Parallel sight/bullet directions retain their bore offset.
+    inline PlaneOffset planeOffset(const Ray& sight, Point right, Point up, const Ray& other,
+        float depth = kGuideLengthGameUnits) noexcept
     {
-        if (!sight.valid || !other.valid || !finite(right) || !finite(up)) return {};
-        const float forward = dot(sight.direction, other.direction);
-        if (forward <= 0.0001f) return {};
-        return { std::atan2(dot(right, other.direction), forward) * kRadiansToDegrees,
-            std::atan2(dot(up, other.direction), forward) * kRadiansToDegrees, true };
+        if (!sight.valid || !other.valid || !finite(right) || !finite(up) || !std::isfinite(depth) || depth <= 0) return {};
+        const Point cross{ right.y * up.z - right.z * up.y, right.z * up.x - right.x * up.z, right.x * up.y - right.y * up.x };
+        if (dot(cross, cross) < 0.000001f) return {};
+        const double forward = dot(sight.direction, other.direction);
+        if (forward <= 0.0001) return {};
+        const auto delta = subtract(other.origin, sight.origin);
+        const double t = (depth - static_cast<double>(dot(delta, sight.direction))) / forward;
+        if (!std::isfinite(t) || t < 0) return {};
+        const double x = delta.x + t * other.direction.x - static_cast<double>(depth) * sight.direction.x;
+        const double y = delta.y + t * other.direction.y - static_cast<double>(depth) * sight.direction.y;
+        const double z = delta.z + t * other.direction.z - static_cast<double>(depth) * sight.direction.z;
+        PlaneOffset result{
+            static_cast<float>(x * right.x + y * right.y + z * right.z),
+            static_cast<float>(x * up.x + y * up.y + z * up.z),
+            { static_cast<float>(other.origin.x + t * other.direction.x), static_cast<float>(other.origin.y + t * other.direction.y), static_cast<float>(other.origin.z + t * other.direction.z) }, true };
+        if (!std::isfinite(result.rightGameUnits) || !std::isfinite(result.upGameUnits) || !finite(result.intersection)) return {};
+        return result;
     }
 }

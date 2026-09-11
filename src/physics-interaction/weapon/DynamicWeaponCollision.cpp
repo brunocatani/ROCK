@@ -1870,6 +1870,19 @@ namespace rock
         return outSnapshot.valid;
     }
 
+    bool DynamicWeaponCollisionRuntime::tryGetContactState(RE::NiNode* weapon, std::uint64_t generation, bool& contact) const
+    {
+        contact = false;
+        if (!_created || !weapon || weapon != _frameWeaponNode || generation == 0 ||
+            generation != _frameGenerationKey || generation != _createdGenerationKey) return false;
+        PhysicsSnapshot snapshot{};
+        if (!readPhysicsSnapshot(snapshot) || !snapshot.valid || snapshot.teleported ||
+            snapshot.world != reinterpret_cast<std::uintptr_t>(_frameWorld) ||
+            snapshot.bodyId != _body.getBodyId().value || snapshot.generationKey != generation) return false;
+        contact = snapshot.contactActive;
+        return true;
+    }
+
     void DynamicWeaponCollisionRuntime::storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value)
     {
         std::size_t index = 0;

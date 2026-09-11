@@ -248,11 +248,10 @@ namespace rock
         if (g_rockConfig.rockDebugNativeScopeShotAlignment) {
             auto* weapon = resolveEquippedWeaponInteractionNode();
             const auto generation = _weaponCollision.getCurrentWeaponGenerationKey();
-            DynamicWeaponCollisionRuntime::DebugSnapshot collision{};
-            const bool contactKnown = _dynamicWeaponCollision.getDebugSnapshot(collision) &&
-                collision.valid && collision.generationKey == generation;
+            bool contact = false;
+            const bool contactKnown = _dynamicWeaponCollision.tryGetContactState(weapon, generation, contact);
             native_scope_shot_diagnostics::publishPresentation(weapon, generation,
-                _weaponCollision.getCurrentObservedEquippedWeaponFormID(), contactKnown, contactKnown && collision.contactActive,
+                _weaponCollision.getCurrentObservedEquippedWeaponFormID(), contactKnown, contact,
                 _dynamicWeaponCollision.hasLatchedSurfaceSupport(reinterpret_cast<std::uintptr_t>(weapon), generation));
         }
         publishDebugBodyOverlay(buildFrameContext(bhk, hknp));
