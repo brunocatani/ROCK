@@ -702,6 +702,14 @@ namespace rock
         auto& peerHeldJoinRetryState = _grabInput.peerHeldJoinRetryStates[handIndex];
 
         const auto handState = hand.getState();
+        if (rawGrabInput.pressed) {
+            const auto& probe = _powerArmorProbeDiagnostics[handIndex];
+            const auto& candidate = _powerArmorCandidates[handIndex];
+            ROCK_LOG_INFO(Hand, "PA proximity probe: hand={} frame={} stage={} hits={} refs={} paRefs={} bones={} nearest={:.2f}gu candidate={} form={:08X} point={} heldInput={} visualAuthority={}",
+                isLeft ? "left" : "right", _powerArmorCandidateFrame, probe.stage, probe.hits, probe.references,
+                probe.armorReferences, probe.bones, probe.nearestDistanceGame, candidate.valid, candidate.referenceFormId,
+                static_cast<std::uint32_t>(candidate.point), rawGrabInput.held, runtime_state::currentFrame().visualAuthorityAvailable);
+        }
         const bool touchGrabStateAvailable =
             handState == HandState::Idle ||
             handState == HandState::SelectedClose ||
@@ -812,7 +820,8 @@ namespace rock
                     providerGeneration, collisionGeneration) ||
                 tryTargetClass(
                     TouchGrabRuntime::TargetClass::
-                        Wildcard);
+                        Wildcard) ||
+                tryTargetClass(TouchGrabRuntime::TargetClass::Fallback);
             if (touchGrabAcquired) {
                 TouchGrabRuntime::HandReport touchGrabReport{};
                 if (g_rockConfig.rockSurfaceGrabHapticsEnabled &&
@@ -2323,6 +2332,7 @@ namespace rock
         publishHandInputOwnership(_rightHand, false);
         publishHandInputOwnership(_leftHand, true);
         _powerArmorCandidates = {};
+        _powerArmorProbeDiagnostics = {};
         _powerArmorCandidateFrame = runtime_state::currentFrame().frameIndex;
         for (const bool isLeft : {false, true}) {
             const auto& input = isLeft ? frame.left : frame.right;
@@ -2332,7 +2342,8 @@ namespace rock
                 forceGrabHandBlockerMask(hand, isLeft, false, true) == 0 &&
                 _dynamicHandCollision.getLastPresentedHandWorld(isLeft, presented)) {
                 _powerArmorCandidates[isLeft ? 1u : 0u] =
-                    _touchGrabRuntime.findPowerArmorCandidate(frame.hknpWorld, presented.translate);
+                    _touchGrabRuntime.findPowerArmorCandidate(frame.hknpWorld, presented.translate, 0, {},
+                        TouchGrabRuntime::kPowerArmorProximityRadiusGame, &_powerArmorProbeDiagnostics[isLeft ? 1u : 0u]);
             }
         }
         processProviderInteractionCommands(frame);

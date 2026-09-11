@@ -40,6 +40,7 @@ namespace rock
         {
             Explicit,
             Wildcard,
+            Fallback,
         };
 
         enum class ContactSource : std::uint8_t
@@ -80,10 +81,22 @@ namespace rock
             RE::NiPoint3 positionGame{};
         };
         static constexpr float kPowerArmorProximityRadiusGame = 8.0f;
+        struct PowerArmorProbeDiagnostics
+        {
+            // 0 not attempted, 1 query failed, 2 no PA, 3 no bone,
+            // 4 outside radius, 5 eligible point.
+            std::uint32_t stage = 0;
+            std::uint32_t hits = 0;
+            std::uint32_t references = 0;
+            std::uint32_t armorReferences = 0;
+            std::uint32_t bones = 0;
+            float nearestDistanceGame = -1.0f;
+        };
         PowerArmorCandidate findPowerArmorCandidate(RE::hknpWorld* world,
             const RE::NiPoint3& handPosition, std::uint32_t frameFormId = 0,
             provider::RockProviderPowerArmorPointV1 point = {},
-            float radius = kPowerArmorProximityRadiusGame) const;
+            float radius = kPowerArmorProximityRadiusGame,
+            PowerArmorProbeDiagnostics* diagnostics = nullptr) const;
         bool tryAcquirePowerArmor(bool isLeft, const PowerArmorCandidate& candidate,
             RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
             std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,

@@ -174,6 +174,11 @@ namespace rock::provider
         MatchStaticMotion = 1u << 5,
         MatchKeyframedMotion = 1u << 6,
         MatchDynamicMotion = 1u << 7,
+        // Wildcard FixedAnchor only. Considered after explicit bodies, native
+        // authored points, close objects and ordinary wildcard registrations.
+        FallbackOnly = 1u << 8,
+        // Exclude native PA furniture and PA actors from this target's surface.
+        ExcludePowerArmor = 1u << 9,
     };
 
     enum class RockProviderTouchGrabPhaseV1 : std::uint32_t

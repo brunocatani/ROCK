@@ -388,11 +388,38 @@ namespace
     }
 }
 
+void testFallbackPriority()
+{
+    using namespace rock::provider;
+    auto registry = std::make_unique<TouchGrabRegistry>();
+    auto climbing = wildcardAnchor(50, 1ull << 2);
+    climbing.flags |= flag(RockProviderTouchGrabTargetFlagV1::FallbackOnly) |
+        flag(RockProviderTouchGrabTargetFlagV1::ExcludePowerArmor);
+    auto ordinary = wildcardAnchor(51, 1ull << 2);
+    auto exact = hinge(52, 100);
+    const auto resolve = [&]() { return registry->resolve(100, 2, TouchGrabMotionClassV1::Keyframed,
+        RockProviderHand::Right, 11, 12, 13, 40); };
+    assert(registry->setScope(1, 1, &climbing, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 50);
+    // A late higher-priority wildcard is admitted even when climbing registered first.
+    assert(registry->setScope(2, 2, &ordinary, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 51);
+    assert(registry->setScope(3, 3, &exact, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 52);
+    registry->clearAll();
+    assert(registry->setScope(2, 2, &ordinary, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(registry->setScope(1, 1, &climbing, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 51);
+    exact.flags |= flag(RockProviderTouchGrabTargetFlagV1::FallbackOnly);
+    assert(registry->setScope(3, 3, &exact, 1, 40) != TouchGrabRegistry::RegistrationResult::Ok);
+}
+
 int main()
 {
     testValidationAndExplicitPriority();
     testLeaseRefreshStateAndYield();
     testScopeReplacementIsTransactional();
     testDisjointTwoHandWildcardsCoexist();
+    testFallbackPriority();
     return 0;
 }

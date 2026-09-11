@@ -998,6 +998,7 @@ namespace rock
         Hand _leftHand{ true };
         TouchGrabRuntime _touchGrabRuntime;
         std::array<TouchGrabRuntime::PowerArmorCandidate, 2> _powerArmorCandidates{};
+        std::array<TouchGrabRuntime::PowerArmorProbeDiagnostics, 2> _powerArmorProbeDiagnostics{};
         std::uint64_t _powerArmorCandidateFrame = 0;
         BodyBoneColliderSet _bodyBoneColliders;
         WeaponCollision _weaponCollision;
