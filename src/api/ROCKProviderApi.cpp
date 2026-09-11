@@ -6557,7 +6557,7 @@ namespace rock::provider
         }
 
         const auto frameIndex = currentProviderFrameIndex();
-        std::uint32_t flags = 0;
+        std::uint32_t flags = input_remap_runtime::uiInputSuppressionFlags(hand == RockProviderHand::Left);
         std::scoped_lock lock(s_handInputSuppressionMutex);
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
         for (const auto& slot : s_handInputSuppressions) {

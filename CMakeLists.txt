@@ -190,6 +190,7 @@ if(RPS_SDK_ROOT STREQUAL "")
   set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)
 endif()
 set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
+target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_SDK_ROOT}/SDK/UI/include")
 
 if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
   foreach(ROCK_REQUIRED_SDK_PATH IN ITEMS

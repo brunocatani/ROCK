@@ -45,6 +45,8 @@ namespace rock::input_remap_runtime
 
     bool installInputRemapHooks();
     bool isInputRemapHookInstalled();
+    // Optional independent UI capture; ROCK owns the response of its features.
+    std::uint32_t uiInputSuppressionFlags(bool isLeft) noexcept;
 
     // GameLoaded/config-change boundary only: the FRIK session override
     // reloads its configuration. Never call from a controller/input hook.

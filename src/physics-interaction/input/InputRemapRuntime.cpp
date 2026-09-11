@@ -1,4 +1,5 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "RPSUIInputApi.h"
 
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
@@ -267,6 +268,10 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_missingUILogged{ false };
         std::array<std::atomic<bool>, 2> s_providerOpenVrGameInputSuppressed{};
         void** s_vrSystemVTable = nullptr;
+        // Published once at game-loaded hook installation; the DLL/API table
+        // lives for the process. Polling threads read only this atomic pointer.
+        std::atomic<const rpsui::sdk::InputApiV1*> s_uiInputApi{ nullptr };
+
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
         TriggerHapticPulse_t s_originalTriggerHapticPulse = nullptr;
@@ -528,6 +533,15 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool isInputBlockingMenuActive();
 
+        [[nodiscard]] std::uint64_t uiCapturedButtons(bool isLeft) noexcept
+        {
+            const auto* api = s_uiInputApi.load(std::memory_order_acquire);
+            if (!api || isInputBlockingMenuActive()) return 0;
+            return api->capturedButtons(isLeft ? 0u : 1u,
+                s_controllers[0].rawPressed.load(std::memory_order_acquire),
+                s_controllers[1].rawPressed.load(std::memory_order_acquire));
+        }
+
         [[nodiscard]] bool isProviderOpenVrGameInputSuppressed(input_remap_policy::Hand hand)
         {
             if (isInputBlockingMenuActive()) return false;
@@ -611,6 +625,11 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldBypassProviderOpenVrGameInputSuppression(const void* callerAddress)
         {
+            // Only the UI's explicit physical sample bypasses remapping. A
+            // game poll chained through the same DLL still receives ROCK input.
+            const auto* ui = s_uiInputApi.load(std::memory_order_acquire);
+            if (ui && ui->rawInputReadActive()) return true;
+
             /*
              * The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
              * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
@@ -679,7 +698,10 @@ namespace rock::input_remap_runtime
 
             if (hand == input_remap_policy::Hand::Right) {
                 const auto& leftTracker = s_controllers[controllerIndex(input_remap_policy::Hand::Left)];
-                const bool leftValid = leftTracker.valid.load(std::memory_order_acquire);
+                // A UI-owned physical trigger must not reappear on the other
+                // wand through ROCK's left-hand firing remap.
+                const bool leftValid = leftTracker.valid.load(std::memory_order_acquire) &&
+                    (uiCapturedButtons(true) & triggerButtonMask) == 0;
                 const std::uint64_t leftPressed = leftValid ? leftTracker.rawPressed.load(std::memory_order_acquire) : 0;
                 const std::uint64_t leftTouched = leftValid ? leftTracker.rawTouched.load(std::memory_order_acquire) : 0;
                 state->ulButtonPressed = (state->ulButtonPressed & ~triggerButtonMask) | (leftPressed & triggerButtonMask);
@@ -2248,6 +2270,14 @@ namespace rock::input_remap_runtime
             const auto rawPressed = tracker.rawPressed.load(std::memory_order_acquire);
             const bool rawHeld = (rawPressed & mask) != 0;
 
+            if ((uiCapturedButtons(isLeft) & mask) != 0) {
+                if (rawHeld) tracker.rearmPressedMask.fetch_or(mask, std::memory_order_acq_rel);
+                clearButtonEdges(tracker, mask);
+                result.available = false;
+                result.availabilityReason = RawButtonAvailabilityReason::ReleaseToRearm;
+                return result;
+            }
+
             if (isInputBlockingMenuActive()) {
                 if (rawHeld) {
                     tracker.rearmPressedMask.fetch_or(mask, std::memory_order_acq_rel);
@@ -2285,8 +2315,23 @@ namespace rock::input_remap_runtime
 
     }
 
+    std::uint32_t uiInputSuppressionFlags(bool isLeft) noexcept
+    {
+        if (uiCapturedButtons(isLeft) == 0) return 0;
+        using Flag = provider::RockProviderHandInputSuppressionFlagV1;
+        return static_cast<std::uint32_t>(Flag::SuppressConfigModeChord) |
+            static_cast<std::uint32_t>(Flag::SuppressOpenVrGameInput) |
+            static_cast<std::uint32_t>(Flag::SuppressNativeVats) |
+            static_cast<std::uint32_t>(Flag::SuppressNativeVans);
+    }
+
     bool installInputRemapHooks()
     {
+        const auto* ui = rpsui::sdk::RequestInputApiV1();
+        if (ui && ui->rawInputReadActive && ui->capturedButtons &&
+            s_uiInputApi.exchange(ui, std::memory_order_acq_rel) != ui) {
+            ROCK_LOG_INFO(Input, "Independent UI input cooperation connected; UI owns tracking and capture");
+        }
         ensureMenuInputGateRegistered();
 
         const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks();
