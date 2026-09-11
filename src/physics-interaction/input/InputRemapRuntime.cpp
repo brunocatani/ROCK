@@ -530,8 +530,12 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool isProviderOpenVrGameInputSuppressed(input_remap_policy::Hand hand)
         {
-            return input_remap_policy::providerSuppressionApplies(isInputBlockingMenuActive(),
-                s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire));
+            if (isInputBlockingMenuActive()) return false;
+            const auto physicalHand = hand == input_remap_policy::Hand::Left ?
+                provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+            return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire) ||
+                provider::hasHandInputSuppressionFlagV1(provider::currentHandInputSuppressionFlagsV1(physicalHand),
+                    provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
         }
 
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressed()
@@ -1160,6 +1164,11 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event)
         {
+            // Conditional chord leases are evaluated against the raw sample
+            // before the consumer's next frame callback can publish ownership.
+            if (eventNameMatches(event, kNativeEventWandTrigger) &&
+                isProviderOpenVrGameInputSuppressed(isSecondaryWandInputEvent(event) ?
+                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right)) return true;
             return input_remap_policy::shouldSuppressNativeTriggerAction(
                 makeNativeActionSuppressionInput(
                     true,
@@ -2695,6 +2704,16 @@ namespace rock::input_remap_runtime
         const auto& tracker = s_controllers[isLeft ? 0u : 1u];
         return tracker.valid.load(std::memory_order_acquire) &&
                (tracker.rawPressed.load(std::memory_order_acquire) & mask) != 0;
+    }
+
+    bool isTriggerGripChordHeld(bool isLeft)
+    {
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        return input_remap_policy::triggerGripChordHeld(
+            tracker.valid.load(std::memory_order_acquire) &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive(),
+            tracker.rawPressed.load(std::memory_order_acquire),
+            tracker.rearmPressedMask.load(std::memory_order_acquire));
     }
 
 }

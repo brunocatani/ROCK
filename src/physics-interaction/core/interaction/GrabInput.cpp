@@ -558,6 +558,10 @@ namespace rock
             hand.getState() != HandState::SelectionLocked &&
             hand.getState() != HandState::Pulled;
         if (providerHoldsCurrentGrabState || providerBlocksNewGrabPress) {
+            static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, grabButton));
+            if (providerSuppressesHeldWeaponTriggerEquip) {
+                static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, 33));
+            }
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("provider-hand-input-suppressed", true);
             if (providerHoldsCurrentGrabState &&

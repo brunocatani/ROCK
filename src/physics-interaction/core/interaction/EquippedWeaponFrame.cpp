@@ -6,6 +6,26 @@
 
 namespace rock
 {
+    namespace
+    {
+        void maskProviderWeaponGrabInput(bool isLeft, bool holding, GrabButtonState& button)
+        {
+            using Flag = provider::RockProviderHandInputSuppressionFlagV1;
+            const auto flags = provider::currentHandInputSuppressionFlagsV1(
+                isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right);
+            const bool press = provider::hasHandInputSuppressionFlagV1(flags, Flag::SuppressNormalGrabPress);
+            const bool release = provider::hasHandInputSuppressionFlagV1(flags, Flag::SuppressGrabRelease);
+            if (!press && !release) return;
+            const auto filtered = input_remap_policy::suppressGrabInput(
+                {.grabHeld = button.held, .grabPressed = button.pressed, .grabReleased = button.released},
+                press, release, holding);
+            button = {.held = filtered.grabHeld, .pressed = filtered.grabPressed, .released = filtered.grabReleased};
+            // The UI reads raw levels. Drain gameplay edges so opening the
+            // wheel cannot become a delayed detach after its lease is cleared.
+            static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, input_remap_policy::kGrabButtonId));
+        }
+    }
+
     void PhysicsInteraction::traceScopeColliderState() const
     {
         if (!scope_transition_telemetry::activeLogger()) return;
@@ -497,6 +517,9 @@ namespace rock
                 peekGrabButtonState(true, input_remap_policy::kGrabButtonId);
             auto rightPhysicalGripState =
                 peekGrabButtonState(false, input_remap_policy::kGrabButtonId);
+            const auto providerGripOccupancy = _twoHandedGrip.getGripOccupancy();
+            maskProviderWeaponGrabInput(true, providerGripOccupancy.left.weaponEngaged(), leftPhysicalGripState);
+            maskProviderWeaponGrabInput(false, providerGripOccupancy.right.weaponEngaged(), rightPhysicalGripState);
             const auto holsterSnapshot = inputBlockingMenuActive || frame.menuBlocked ?
                 virtual_holsters::Snapshot{} : virtual_holsters::readSnapshot();
             const auto holsterOccupancy = _twoHandedGrip.getGripOccupancy();
@@ -657,6 +680,8 @@ namespace rock
                     // firing-grip ownership still follows the physical hand
                     // state after the menu closes.
                     primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, input_remap_policy::kGrabButtonId);
+                    maskProviderWeaponGrabInput(firingHandIsLeft,
+                        (firingHandIsLeft ? providerGripOccupancy.left : providerGripOccupancy.right).weaponEngaged(), primaryGrabState);
                     maskHolsterInput(firingHandIsLeft, primaryGrabState);
                     maskShoulderGestureInput(
                         firingHandIsLeft,
@@ -2167,6 +2192,9 @@ namespace rock
             input_remap_runtime::isRawButtonPhysicallyHeld(
                 false,
                 input_remap_policy::kGrabButtonId);
+        const auto providerGripOccupancy = _twoHandedGrip.getGripOccupancy();
+        maskProviderWeaponGrabInput(true, providerGripOccupancy.left.weaponEngaged(), leftPhysicalGrip);
+        maskProviderWeaponGrabInput(false, providerGripOccupancy.right.weaponEngaged(), rightPhysicalGrip);
         const std::uint64_t shoulderOwnershipKey =
             _equipped.shoulderSheath.active ?
             _equipped.shoulderSheath.weaponOwnershipKey :

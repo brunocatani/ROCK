@@ -65,6 +65,8 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponLeftHandFiringActive(bool active);
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
     bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft);
+    // Reads captured physical input only; never queries provider leases.
+    bool isTriggerGripChordHeld(bool isLeft);
     /*
      * Once-per-frame physical firing-hand A/X arbitration. Automatic scope
      * mode preserves press-time reload and only dispatches the secondary-wand

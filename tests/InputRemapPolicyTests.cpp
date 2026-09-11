@@ -65,6 +65,23 @@ static bool testInputRouting()
     ok &= expectFalse("no lease cannot suppress gameplay", providerSuppressionApplies(false, false));
     ok &= expectFalse("native menu without lease remains native", providerSuppressionApplies(true, false));
 
+    const auto gripMask = buttonMask(kGrabButtonId), triggerMask = buttonMask(33);
+    ok &= expectFalse("trigger alone remains native with a chord reservation", triggerGripChordHeld(true, triggerMask, 0));
+    ok &= expectFalse("grab alone remains native with a chord reservation", triggerGripChordHeld(true, gripMask, 0));
+    ok &= expectFalse("B cannot activate the trigger/grab reservation", triggerGripChordHeld(true, buttonMask(1), 0));
+    ok &= expectTrue("complete chord is recognized on its first raw sample", triggerGripChordHeld(true, triggerMask | gripMask, 0));
+    ok &= expectFalse("unavailable input cannot capture a chord", triggerGripChordHeld(false, triggerMask | gripMask, 0));
+    ok &= expectFalse("a grab held through a menu cannot capture a chord", triggerGripChordHeld(true, triggerMask | gripMask, gripMask));
+    ok &= expectFalse("a trigger held through a menu cannot capture a chord", triggerGripChordHeld(true, triggerMask | gripMask, triggerMask));
+    auto blockedGrab = suppressGrabInput({.grabHeld=true,.grabPressed=true}, true, true, false);
+    ok &= expectFalse("wheel chord cannot acquire with an empty hand", blockedGrab.grabHeld || blockedGrab.grabPressed);
+    blockedGrab = suppressGrabInput({.grabHeld=true,.grabPressed=true}, true, true, true);
+    ok &= expectTrue("wheel chord retains the existing weapon grip", blockedGrab.grabHeld);
+    ok &= expectFalse("wheel chord cannot toggle-detach the weapon", blockedGrab.grabPressed);
+    blockedGrab = suppressGrabInput({.grabReleased=true}, true, true, true);
+    ok &= expectTrue("wheel release retains existing grip during input drain", blockedGrab.grabHeld);
+    ok &= expectFalse("wheel release cannot release the weapon", blockedGrab.grabReleased);
+
     namespace grenade = rock::vats_grenade_gesture_policy;
     grenade::RuntimeState grenadeState{};
     grenade::Input grenadeInput{ .pressed = true, .held = true };

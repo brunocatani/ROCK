@@ -299,7 +299,19 @@ namespace
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw);
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord);
+    std::uint32_t effectiveHandInputSuppressionFlags(RockProviderHand hand, std::uint32_t flags)
+    {
+        const auto reservation = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord);
+        const bool reserved = (flags & reservation) != 0;
+        flags &= ~reservation;
+        if (reserved && rock::input_remap_runtime::isTriggerGripChordHeld(hand == RockProviderHand::Left)) {
+            flags |= static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+        }
+        return flags;
+    }
     constexpr std::uint32_t kWeaponPartTargetMatcherFlagsV1 =
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
@@ -3257,6 +3269,7 @@ namespace
                 outState->providerGeneration = s_lastSnapshot.providerGeneration;
             }
         }
+        outState->effectiveFlags = effectiveHandInputSuppressionFlags(hand, outState->effectiveFlags);
         return RockProviderResultV1::Ok;
     }
 
@@ -6529,7 +6542,7 @@ namespace rock::provider
                 flags |= slot.flags;
             }
         }
-        return flags;
+        return effectiveHandInputSuppressionFlags(hand, flags);
     }
 
     std::uint32_t currentNativeAnimationAuthorityFlagsV1()

@@ -8,6 +8,12 @@ namespace rock::input_remap_policy
     // ROCK uses the OpenVR grip button as its fixed grab input.
     inline constexpr int kGrabButtonId = 2;
 
+    [[nodiscard]] constexpr bool triggerGripChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm) noexcept
+    {
+        constexpr auto chord = (std::uint64_t{1} << kGrabButtonId) | (std::uint64_t{1} << 33);
+        return available && (rearm & chord) == 0 && (pressed & chord) == chord;
+    }
+
     // These native take/equip targets are always protected while the activating hand holds a ROCK object.
     inline constexpr std::string_view kNativeTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
 
@@ -44,6 +50,19 @@ namespace rock::input_remap_policy
         bool grabPressed{ false };
         bool grabReleased{ false };
     };
+
+    [[nodiscard]] constexpr Decision suppressGrabInput(Decision input, bool suppressPress, bool suppressRelease, bool holding) noexcept
+    {
+        if (suppressPress) {
+            input.grabPressed = false;
+            if (!holding) input.grabHeld = false;
+        }
+        if (suppressRelease) {
+            input.grabReleased = false;
+            if (holding) input.grabHeld = true;
+        }
+        return input;
+    }
 
     struct NativeActionSuppressionInput
     {

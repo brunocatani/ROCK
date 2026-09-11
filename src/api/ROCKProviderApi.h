@@ -692,6 +692,12 @@ namespace rock::provider
         // their claims. Never renew merely because the consumer DLL loaded.
         // This flag alone leaves native taps, OpenVR input and grabs unchanged.
         SuppressGrenadeQuickDraw = 1u << 7,
+        // Reserve this hand's trigger+grip chord. Alone, either button remains
+        // native. When both raw buttons are held, ROCK applies ConfigModeChord
+        // and OpenVrGameInput suppression before returning input to the game.
+        // Renew only while the consumer can accept a new chord. After capture,
+        // also request unconditional suppression through both physical releases.
+        ReserveTriggerGripChord = 1u << 8,
         SuppressConfigModeChord =
             static_cast<std::uint32_t>(SuppressNormalGrabPress) |
             static_cast<std::uint32_t>(SuppressGrabRelease) |
