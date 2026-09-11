@@ -1,11 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace rock::input_remap_policy
 {
     // ROCK uses the OpenVR grip button as its fixed grab input.
     inline constexpr int kGrabButtonId = 2;
+
+    // These native take/equip targets are always protected while the activating hand holds a ROCK object.
+    inline constexpr std::string_view kNativeTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
 
     [[nodiscard]] constexpr bool providerSuppressionApplies(bool menuActive, bool requested) noexcept
     {
@@ -21,7 +25,6 @@ namespace rock::input_remap_policy
     struct Settings
     {
         int grabButtonId{ kGrabButtonId };
-        bool suppressPipboyGameInputWhileHolding{ true };
     };
 
     struct Input
@@ -56,7 +59,6 @@ namespace rock::input_remap_policy
         bool equippedWeaponShoulderSheathActive{ false };
         bool realMeleeWeaponEquipped{ false };
         bool nativeMeleeSuppressionActive{ false };
-        bool pipboyHandEngaged{ false };
         bool takeEquipHandEngaged{ false };
         bool takeEquipTargetEligible{ false };
         bool eventMatched{ false };
@@ -281,26 +283,12 @@ namespace rock::input_remap_policy
      * keyboard/gamepad Pipboy bindings and primary-wand attack events remain
      * native. Only an already-open Pip-Boy retains native trigger handling;
      * another menu or a gameplay gate must not restore trigger opening.
-     * Flashlight suppression remains separately governed
-     * by shouldSuppressNativePipboyAction below.
+     * Holding a ROCK object does not change native flashlight handling.
      */
     [[nodiscard]] constexpr bool shouldSuppressLegacyPipboyTriggerOpen(const LegacyPipboyTriggerOpenInput& input)
     {
         return input.remapEnabled && !input.pipboyMenuOpen &&
                input.eventMatched && input.secondaryWandEvent;
-    }
-
-    /*
-     * FO4VR's separate PipboyLightHandler still owns the secondary trigger's
-     * flashlight hold. While the pipboy hand is engaged in a ROCK interaction
-     * that remaining native action is suppressed, while the raw OpenVR button
-     * stays readable. The same policy continues to protect direct Pipboy input
-     * bindings during an engaged interaction. Menu input stays native.
-     */
-    [[nodiscard]] constexpr bool shouldSuppressNativePipboyAction(const NativeActionSuppressionInput& input)
-    {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               !input.primaryHandEvent && input.pipboyHandEngaged;
     }
 
     /*
@@ -310,14 +298,14 @@ namespace rock::input_remap_policy
      * input action, the Take-vs-other outcome is decided deep inside the target ref's own
      * per-FormType virtual Activate dispatch, not reachable as a flat branch from the input
      * handler. ROCK does not chase that internal dispatch; it instead classifies the same wand
-     * pick-ref target the handler is about to act on by FormType (ini-configurable allowlist)
+     * pick-ref target the handler is about to act on by FormType (fixed allowlist)
      * and only suppresses when the SAME hand whose wand fired the press is currently holding a
      * ROCK object, so Talk/Open/Search/Read and the opposite hand's Activate keep working on
      * the same button.
      */
     [[nodiscard]] constexpr bool shouldSuppressNativeTakeEquipAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
                input.eventMatched && input.takeEquipHandEngaged && input.takeEquipTargetEligible;
     }
 

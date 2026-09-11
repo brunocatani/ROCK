@@ -120,9 +120,8 @@ namespace rock::input_remap_runtime
          * 2026-07-04 from raw disassembly after live traces showed the
          * PipboyHandler hook suppressing opens while the light still fired -
          * the light-on-hold path inside PipboyHandler is flat-game only.
-         * The function checks neither event name nor device, so the hook
-         * applies the shared pipboy suppression policy (secondary-wand
-         * trigger + engaged hand) before chaining.
+         * The hook now only enforces provider input leases. Holding an
+         * object or supporting a weapon leaves the native flashlight alone.
          */
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventFunctionOffset = 0x0FC9170;
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventVTableSlotOffset = 0x2D8A2A0;
@@ -694,7 +693,6 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::Settings{
                 .grabButtonId = input_remap_policy::kGrabButtonId,
-                .suppressPipboyGameInputWhileHolding = g_rockConfig.rockSuppressPipboyGameInputWhileHolding,
             };
         }
 
@@ -1168,35 +1166,6 @@ namespace rock::input_remap_runtime
                     eventNameMatches(event, kNativeEventWandTrigger)));
         }
 
-        /*
-         * The Pip-Boy trigger rides ROCK's physical-left secondary wand, so
-         * the suppression gate is the left hand's engagement state. Verified
-         * in the slot-11 processor: its open path only
-         * accepts events whose controller id matches the secondary wand slot
-         * at player+0x8D0 (primary sits at the already-verified +0x8CC).
-         */
-        [[nodiscard]] bool isPipboyHandEngaged()
-        {
-            constexpr auto index = 0u;
-            // All three publications describe the same ownership boundary but
-            // are refreshed by different transition paths. Treat any durable
-            // witness as engaged so a just-committed left grab cannot expose a
-            // one-frame Pip-Boy-open window before the aggregate flag catches
-            // up.
-            return s_handInteractionEngaged[index].load(std::memory_order_acquire) ||
-                   s_handHeldWeapon[index].load(std::memory_order_acquire) ||
-                   s_heldObjectFormId[index].load(std::memory_order_acquire) != 0u;
-        }
-
-        [[nodiscard]] bool shouldSuppressNativePipboyActionEvent(const RE::InputEvent* event)
-        {
-            // VR wand triggers arrive as "WandTrigger"; "Pipboy" covers flat/gamepad direct bindings.
-            const bool eventMatched = eventNameMatches(event, kNativeEventWandTrigger) || eventNameMatches(event, kNativeEventPipboy);
-            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, event, eventMatched);
-            input.pipboyHandEngaged = isPipboyHandEngaged();
-            return input_remap_policy::shouldSuppressNativePipboyAction(input);
-        }
-
         [[nodiscard]] bool shouldSuppressLegacyPipboyTriggerOpenEvent(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressLegacyPipboyTriggerOpen(input_remap_policy::LegacyPipboyTriggerOpenInput{
@@ -1442,7 +1411,7 @@ namespace rock::input_remap_runtime
                 return ActivateTarget::Unavailable;
             }
 
-            const bool eligible = far_selection_blacklist_policy::listContainsText(g_rockConfig.rockSuppressTakeEquipFormTypes, formTypeChars);
+            const bool eligible = far_selection_blacklist_policy::listContainsText(input_remap_policy::kNativeTakeEquipFormTypes, formTypeChars);
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "Take/Equip suppression classification: handleValue=0x{:X} refFormID=0x{:X} heldFormID=0x{:X} formType='{}' eligible={}",
@@ -1468,7 +1437,7 @@ namespace rock::input_remap_runtime
             const bool handEngaged = isTakeEquipHandEngaged(primaryHandEvent);
             const bool targetEligible = target == ActivateTarget::TakeEquip;
 
-            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding, event, eventMatched);
+            auto input = makeNativeActionSuppressionInput(true, event, eventMatched);
             input.takeEquipHandEngaged = handEngaged;
             input.takeEquipTargetEligible = targetEligible;
             const bool suppress = input_remap_policy::shouldSuppressNativeTakeEquipAction(input);
@@ -1478,12 +1447,11 @@ namespace rock::input_remap_runtime
             // suppression. Rate-limited like every other native-action trace in this file.
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Take/Equip gate: primaryHandEvent={} physicalHand={} handEngaged={} targetEligible={} suppressionEnabled={} gameplay={} menuInput={} -> {}",
+                "Take/Equip gate: primaryHandEvent={} physicalHand={} handEngaged={} targetEligible={} gameplay={} menuInput={} -> {}",
                 primaryHandEvent ? "yes" : "no",
                 primaryHandEvent ? "right" : "left",
                 handEngaged ? "yes" : "no",
                 targetEligible ? "yes" : "no",
-                g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding ? "yes" : "no",
                 input.gameplayInputAllowed ? "yes" : "no",
                 input.menuInputActive ? "yes" : "no",
                 suppress ? "suppress" : "native");
@@ -1687,39 +1655,15 @@ namespace rock::input_remap_runtime
         {
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
             const bool legacyTriggerSuppressed = shouldSuppressLegacyPipboyTriggerOpenEvent(inputEvent);
-            const bool interactionSuppressed = shouldSuppressNativePipboyActionEvent(inputEvent);
-            const bool suppressed = providerSuppressed || legacyTriggerSuppressed || interactionSuppressed;
+            const bool suppressed = providerSuppressed || legacyTriggerSuppressed;
 
             if (inputEvent) {
                 const auto& userEvent = inputEvent->QUserEvent();
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Pipboy handler event '{}': movedTrigger={} engaged={} gameplay={} menuInput={} providerLease={} -> {}",
+                    "Pipboy handler event '{}': movedTrigger={} gameplay={} menuInput={} providerLease={} -> {}",
                     userEvent.c_str() ? userEvent.c_str() : "",
                     legacyTriggerSuppressed ? "yes" : "no",
-                    isPipboyHandEngaged() ? "yes" : "no",
-                    s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
-                    isInputBlockingMenuActive() ? "yes" : "no",
-                    providerSuppressed ? "yes" : "no",
-                    suppressed ? "suppressed" : "native");
-            }
-
-            return suppressed;
-        }
-
-        [[nodiscard]] bool decideAndTracePipboyLightSuppression(const RE::InputEvent* inputEvent)
-        {
-            const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
-            const bool interactionSuppressed = shouldSuppressNativePipboyActionEvent(inputEvent);
-            const bool suppressed = providerSuppressed || interactionSuppressed;
-
-            if (inputEvent) {
-                const auto& userEvent = inputEvent->QUserEvent();
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "PipboyLight handler event '{}': engaged={} gameplay={} menuInput={} providerLease={} -> {}",
-                    userEvent.c_str() ? userEvent.c_str() : "",
-                    isPipboyHandEngaged() ? "yes" : "no",
                     s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
                     isInputBlockingMenuActive() ? "yes" : "no",
                     providerSuppressed ? "yes" : "no",
@@ -2024,7 +1968,7 @@ namespace rock::input_remap_runtime
 
         void hookedPipboyLightEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
-            if (decideAndTracePipboyLightSuppression(inputEvent)) {
+            if (isAnyProviderOpenVrGameInputSuppressed()) {
                 markInputEventStopped(inputEvent);
                 return;
             }
@@ -2146,7 +2090,7 @@ namespace rock::input_remap_runtime
                 &hookedPipboyLightEventHandler,
                 s_originalPipboyLightEventHandler,
                 s_pipboyLightEventHookInstalled,
-                "PipboyLightHandler::HandleEvent suppression");
+                "PipboyLightHandler::HandleEvent provider input lease");
             const bool menuOpenHookReady = installNativeActionVTableHook(kMenuOpenHandlerHandleEventVTableSlotOffset,
                 kMenuOpenHandlerHandleEventFunctionOffset,
                 &hookedMenuOpenEventHandler,
@@ -2601,14 +2545,8 @@ namespace rock::input_remap_runtime
 
     bool isNativePipboyInputSuppressionActive()
     {
-        // Mirrors hookedPipboyEventHandler for a matched "Pipboy" event so API consumers see the live hook decision.
-        if (isAnyProviderOpenVrGameInputSuppressed()) {
-            return true;
-        }
-
-        auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, true);
-        input.pipboyHandEngaged = isPipboyHandEngaged();
-        return input_remap_policy::shouldSuppressNativePipboyAction(input);
+        // Only a provider lease claims native flashlight input; hand engagement does not.
+        return isAnyProviderOpenVrGameInputSuppressed();
     }
 
     bool isPipboyMenuOpen()

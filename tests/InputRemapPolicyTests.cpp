@@ -3,6 +3,7 @@
 #include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
 #include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
+#include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 
 #include <cstdio>
 
@@ -210,30 +211,6 @@ int main()
     unmatched.eventMatched = false;
     ok &= expectFalse("unmatched native event is not suppressed", shouldSuppressNativeTriggerAction(unmatched));
 
-    auto pipboyIdleHand = base;
-    ok &= expectFalse("matched Pipboy event with a free pipboy hand keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyIdleHand));
-    auto pipboyHolding = base;
-    pipboyHolding.pipboyHandEngaged = true;
-    ok &= expectTrue("engaged pipboy hand (hold or weapon grip) suppresses native pipboy open/light", shouldSuppressNativePipboyAction(pipboyHolding));
-    auto pipboyHoldingDrawn = pipboyHolding;
-    pipboyHoldingDrawn.weaponDrawn = true;
-    ok &= expectTrue("weapon drawn does not gate pipboy suppression while holding", shouldSuppressNativePipboyAction(pipboyHoldingDrawn));
-    auto pipboyMenu = pipboyHolding;
-    pipboyMenu.menuInputActive = true;
-    ok &= expectFalse("menu input keeps native pipboy handling so the trigger can close an open Pip-Boy", shouldSuppressNativePipboyAction(pipboyMenu));
-    auto pipboyDisabled = pipboyHolding;
-    pipboyDisabled.suppressionEnabled = false;
-    ok &= expectFalse("disabled pipboy suppression setting keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyDisabled));
-    auto pipboyNoGameplay = pipboyHolding;
-    pipboyNoGameplay.gameplayInputAllowed = false;
-    ok &= expectFalse("blocked gameplay input keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyNoGameplay));
-    auto pipboyUnmatched = pipboyHolding;
-    pipboyUnmatched.eventMatched = false;
-    ok &= expectFalse("non-Pipboy event is never suppressed by the pipboy gate", shouldSuppressNativePipboyAction(pipboyUnmatched));
-    auto pipboyPrimaryHand = pipboyHolding;
-    pipboyPrimaryHand.primaryHandEvent = true;
-    ok &= expectFalse("primary-wand trigger event bypasses the pipboy gate so attack handling survives", shouldSuppressNativePipboyAction(pipboyPrimaryHand));
-
     LegacyPipboyTriggerOpenInput legacyPipboyTrigger{
         .remapEnabled = true,
         .pipboyMenuOpen = false,
@@ -253,6 +230,13 @@ int main()
     legacyDirectPipboy.eventMatched = false;
     ok &= expectFalse("direct keyboard or gamepad Pipboy binding is not the moved VR trigger", shouldSuppressLegacyPipboyTriggerOpen(legacyDirectPipboy));
 
+    for (const char* formType : { "WEAP", "ARMO", "AMMO", "MISC", "INGR", "ALCH", "BOOK", "KEYM", "SLGM" }) {
+        ok &= expectTrue(formType, rock::far_selection_blacklist_policy::listContainsText(kNativeTakeEquipFormTypes, formType));
+    }
+    for (const char* formType : { "DOOR", "NPC_", "CONT", "TERM", "", "WEA" }) {
+        ok &= expectFalse(formType, rock::far_selection_blacklist_policy::listContainsText(kNativeTakeEquipFormTypes, formType));
+    }
+
     auto takeEquipIdleHand = base;
     takeEquipIdleHand.takeEquipTargetEligible = true;
     ok &= expectFalse("free hand keeps native take/equip on an eligible target", shouldSuppressNativeTakeEquipAction(takeEquipIdleHand));
@@ -269,9 +253,9 @@ int main()
     auto takeEquipMenu = takeEquipHoldingEligible;
     takeEquipMenu.menuInputActive = true;
     ok &= expectFalse("menu input keeps native activate handling for take/equip", shouldSuppressNativeTakeEquipAction(takeEquipMenu));
-    auto takeEquipDisabled = takeEquipHoldingEligible;
-    takeEquipDisabled.suppressionEnabled = false;
-    ok &= expectFalse("disabled take/equip suppression setting keeps native activate handling", shouldSuppressNativeTakeEquipAction(takeEquipDisabled));
+    auto takeEquipMandatory = takeEquipHoldingEligible;
+    takeEquipMandatory.suppressionEnabled = false;
+    ok &= expectTrue("take/equip protection cannot be disabled", shouldSuppressNativeTakeEquipAction(takeEquipMandatory));
     auto takeEquipNoGameplay = takeEquipHoldingEligible;
     takeEquipNoGameplay.gameplayInputAllowed = false;
     ok &= expectFalse("blocked gameplay input keeps native activate handling for take/equip", shouldSuppressNativeTakeEquipAction(takeEquipNoGameplay));

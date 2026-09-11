@@ -42,10 +42,7 @@ namespace rock
 
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
-        bool rockSuppressPipboyGameInputWhileHolding = false;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
-        bool rockSuppressTakeEquipGameInputWhileHolding = true;
-        std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
         bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
