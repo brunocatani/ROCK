@@ -66,8 +66,11 @@ namespace rock::config
 
     Group settingGroup(std::string_view section, std::string_view key) noexcept
     {
-        return section == "Debug" || (key.size() > 1 && key.substr(1).starts_with("Debug")) ?
-            Group::Developer : Group::Consumer;
+        if (section == "Debug" || (key.size() > 1 && key.substr(1).starts_with("Debug"))) return Group::Developer;
+        for (const auto& setting : kDeveloperSettingMetadata) {
+            if (setting.section == section && setting.key == key) return Group::Developer;
+        }
+        return Group::Consumer;
     }
 
     ConfigurationStore::ConfigurationStore(std::filesystem::path directory, const CSimpleIniA& defaults) :

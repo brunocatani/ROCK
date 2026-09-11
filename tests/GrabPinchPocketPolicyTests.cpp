@@ -80,11 +80,11 @@ int main()
     ok &= expectTrue("compact object flag", compact.compactObject);
     ok &= expectReason("compact object reason", compact.reason, "pinchCompact");
 
-    auto compactLimit = evaluateObject(validInput(bounds(8.0f, 5.0f, 2.0f)));
-    ok &= expectTrue("compact object accepts the configured 8gu limit", compactLimit.accept);
+    auto compactLimit = evaluateObject(validInput(bounds(10.0f, 5.0f, 2.0f)));
+    ok &= expectTrue("compact object accepts the configured 10gu limit", compactLimit.accept);
     ok &= expectReason("compact object limit reason", compactLimit.reason, "pinchCompact");
 
-    auto canSizedObject = evaluateObject(validInput(bounds(9.0f, 5.0f, 2.0f)));
+    auto canSizedObject = evaluateObject(validInput(bounds(11.0f, 5.0f, 2.0f)));
     ok &= expectFalse("can-sized object above compact limit rejected", canSizedObject.accept);
     ok &= expectReason("can-sized object reason", canSizedObject.reason, "objectTooLarge");
 

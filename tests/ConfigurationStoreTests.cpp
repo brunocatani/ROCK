@@ -39,6 +39,18 @@ int main(int argc, char** argv)
         CSimpleIniA developerExample;
         require(consumerExample.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_example.ini").c_str()) >= 0, "consumer reference unavailable");
         require(developerExample.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_Developer_example.ini").c_str()) >= 0, "developer reference unavailable");
+        CSimpleIniA allReferences;
+        require(allReferences.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_example.ini").c_str()) >= 0, "consumer reference merge failed");
+        require(allReferences.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_Developer_example.ini").c_str()) >= 0, "developer reference merge failed");
+        CSimpleIniA missingOptions;
+        require(rock::RockConfig::parseValues(missingOptions) == rock::RockConfig::parseValues(allReferences),
+            "omitting options does not produce the same runtime values as all documented defaults");
+        require(settingGroup("PhysicsInteraction", "fRightGrabLegacyPalmPivotAHandspaceX") == Group::Developer,
+            "the first option below the authored boundary is not developer-owned");
+        require(settingGroup("PhysicsInteraction", "fMouthConsumeCommitHapticIntensity") == Group::Developer,
+            "the final option below the authored boundary is not developer-owned");
+        require(settingGroup("PhysicsInteraction", "sHighlightColor") == Group::Consumer,
+            "the final option above the authored boundary is not consumer-owned");
         for (const auto& setting : store.settings()) {
             const auto& example = setting.group == Group::Consumer ? consumerExample : developerExample;
             const auto& other = setting.group == Group::Consumer ? developerExample : consumerExample;

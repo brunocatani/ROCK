@@ -61,9 +61,7 @@ namespace rock
 
         CSimpleIniA combined;
         _store->appendLoadedValues(combined);
-        RockConfig parsed;
-        parsed.readValuesFromIni(combined);
-        static_cast<RockConfigValues&>(*this) = std::move(static_cast<RockConfigValues&>(parsed));
+        static_cast<RockConfigValues&>(*this) = parseValues(combined);
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
         _configRevision.store(_store->revision(), std::memory_order_release);
         ROCK_LOG_INFO(Config, "ROCK configuration applied (revision={}, logLevel={} {})",
@@ -142,7 +140,7 @@ namespace rock
             config::Change{ SECTION, keys[1], values[1] },
             config::Change{ SECTION, keys[2], values[2] },
         };
-        if (!_store->setValues(Group::Consumer, changes)) {
+        if (!_store->setValues(config::settingGroup(SECTION, keys[0]), changes)) {
             ROCK_LOG_WARN(Config, "Cannot persist {} palm pivot: {}", isLeft ? "left" : "right", _store->error());
             return false;
         }

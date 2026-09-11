@@ -34,13 +34,15 @@ namespace rock
 {
     struct RockConfigValues
     {
+        bool operator==(const RockConfigValues&) const = default;
+
         bool rockHavokTimingFixEnabled = true;
         float rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
         int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
-        bool rockSuppressPipboyGameInputWhileHolding = true;
+        bool rockSuppressPipboyGameInputWhileHolding = false;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
         std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
@@ -50,7 +52,7 @@ namespace rock
 
         bool rockDeveloperModeEnabled = false;
 
-        int rockLogLevel = 2;
+        int rockLogLevel = 6;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
         int rockLogSampleMilliseconds = 2000;
         /*
@@ -66,21 +68,21 @@ namespace rock
         bool rockPerformanceProfilerOverlayText = false;
 
         // Optional fixed injector grips and body-contact consumption.
-        bool rockImmersiveAidEnabled = false;
+        bool rockImmersiveAidEnabled = true;
 
         // Master switch for every ROCK-owned visual recoil profile and delivery.
         bool rockImmersiveRecoil = true;
         bool rockBipodMode = true;
         float rockPistolOneHandRecoilPercent = 300.0f;
-        float rockPistolTwoHandRecoilPercent = 100.0f;
+        float rockPistolTwoHandRecoilPercent = 80.0f;
         float rockRifleOneHandRecoilPercent = 300.0f;
-        float rockRifleTwoHandRecoilPercent = 100.0f;
+        float rockRifleTwoHandRecoilPercent = 80.0f;
         float rockShotgunOneHandRecoilPercent = 300.0f;
-        float rockShotgunTwoHandRecoilPercent = 100.0f;
+        float rockShotgunTwoHandRecoilPercent = 80.0f;
         float rockHeavyOneHandRecoilPercent = 300.0f;
-        float rockHeavyTwoHandRecoilPercent = 100.0f;
+        float rockHeavyTwoHandRecoilPercent = 292.1f;
         float rockDefaultOneHandRecoilPercent = 300.0f;
-        float rockDefaultTwoHandRecoilPercent = 100.0f;
+        float rockDefaultTwoHandRecoilPercent = 80.0f;
 
 
         // ROCK-native Immersive Weapons firing-role boundary. The same
@@ -90,14 +92,14 @@ namespace rock
         bool rockFiringGripDetachPosePreservationEnabled = true;
         // Whether the last carrying hand may drop the weapon by letting go.
         // With false that grip is retained under either input mode.
-        bool rockAutoDrop = true;
+        bool rockAutoDrop = false;
         // Tap to grab and tap again to release equipped-weapon grips.
-        bool rockToggleGrab = false;
+        bool rockToggleGrab = true;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
-        float rockFiringGripReattachRadiusGameUnits = 12.0f;
-        float rockFiringGripReattachCylinderRadiusGameUnits = 2.0f;
+        float rockFiringGripReattachRadiusGameUnits = 10.0f;
+        float rockFiringGripReattachCylinderRadiusGameUnits = 3.0f;
         float rockGripZoneIndicatorDiameterGameUnits =
             grip_zone_indicator_policy::kDefaultDiameterGameUnits;
         float rockFiringGripHapticDurationSeconds = 0.10f;
@@ -116,17 +118,17 @@ namespace rock
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         // A/B comparison: original support hulls or bounded gap-preserving compounds.
-        bool rockWeaponCollisionPreserveGaps = false;
+        bool rockWeaponCollisionPreserveGaps = true;
         // Elapsed stable-witness window before a generation-driven weapon
         // visual rebuild commits (historical 8-frame tuning at 90 Hz).
-        float rockWeaponCollisionVisualStabilizationSeconds = 8.0f / 90.0f;
-        float rockWeaponCollisionMaxLinearVelocity = 50.0f;
-        float rockWeaponCollisionMaxAngularVelocity = 100.0f;
+        float rockWeaponCollisionVisualStabilizationSeconds = 0.0889f;
+        float rockWeaponCollisionMaxLinearVelocity = 800.0f;
+        float rockWeaponCollisionMaxAngularVelocity = 800.0f;
         float rockWeaponCollisionGripRecoveryDistanceGameUnits = 210.0f;
         float rockWeaponInteractionTouchRadius = 2.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
-        float rockFiringGripProximitySupportRadius = 6.0f;
-        float rockRealisticGrenadeFuseSeconds = 5.0f;
+        float rockFiringGripProximitySupportRadius = 8.0f;
+        float rockRealisticGrenadeFuseSeconds = 3.0f;
         bool rockWeaponSupportGripHandLerpEnabled = true;
         float rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
@@ -146,7 +148,7 @@ namespace rock
         bool rockNativeScopeForceFiringGripFallback = false;
         float rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
         float rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
-        float rockNativeScopeFiringGripFallbackOffsetZGameUnits = 0.0f;
+        float rockNativeScopeFiringGripFallbackOffsetZGameUnits = 10.0f;
         float rockNativeScopeFiringGripFallbackPitchDegrees = 0.0f;
         float rockNativeScopeFiringGripFallbackYawDegrees = 0.0f;
         float rockNativeScopeFiringGripFallbackRollDegrees = 0.0f;
@@ -156,7 +158,7 @@ namespace rock
         // anchors it to the resolved scope point; they do not move the native
         // activation camera or alter its entry detection.
         float rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
-        float rockNativeScopeOverlayOffsetYGameUnits = 0.0f;
+        float rockNativeScopeOverlayOffsetYGameUnits = 10.0f;
         float rockNativeScopeOverlayOffsetZGameUnits = 0.0f;
         float rockNativeScopeOverlayPitchDegrees = 0.0f;
         float rockNativeScopeOverlayYawDegrees = 0.0f;
@@ -171,8 +173,8 @@ namespace rock
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;
-        int rockHighlightIntensityMode = 3;
-        std::string rockHighlightColor = "orange";
+        int rockHighlightIntensityMode = 2;
+        std::string rockHighlightColor = "blue";
 
         bool rockDebugShowColliders = false;
         bool rockDebugShowTargetColliders = false;
@@ -284,10 +286,10 @@ namespace rock
         float rockSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
         int rockSurfaceMeshGrabMaxTriangles = 20000;
         std::string rockHandBoneColliderRadiusScaleOverrides = "";
-        std::string rockHandPalmColliderDimensionScaleOverrides = "";
+        std::string rockHandPalmColliderDimensionScaleOverrides = "PalmAnchor=0.8,1.0,2.0";
         bool rockHandBoneCollidersRequirePalmAnchor = true;
-        float rockHandBoneColliderMaxLinearVelocity = 200.0f;
-        float rockHandBoneColliderMaxAngularVelocity = 500.0f;
+        float rockHandBoneColliderMaxLinearVelocity = 800.0f;
+        float rockHandBoneColliderMaxAngularVelocity = 800.0f;
 
         int rockObjectPhysicsTreeMaxDepth = 12;
         bool rockDynamicPushAssistEnabled = true;
@@ -310,14 +312,14 @@ namespace rock
         float rockForceGrabAttachSettleSeconds = 0.10f;
         bool rockGrabEffectiveMotorMassFloorEnabled = true;
         float rockGrabEffectiveMotorMassFloor = 2.0f;
-        bool rockGrabPhysicsRateForceScalingEnabled = true;
+        bool rockGrabPhysicsRateForceScalingEnabled = false;
         float rockGrabPhysicsRateReferenceHz = 90.0f;
         float rockGrabPhysicsRateForceScaleExponent = 0.5f;
         float rockGrabPhysicsRateMinForceScale = 0.75f;
         float rockGrabPhysicsRateMaxForceScale = 1.35f;
         float rockGrabForceFadeInTime = 0.1f;
-        RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
-        RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
+        RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
+        RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
         float rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
@@ -352,7 +354,7 @@ namespace rock
         float rockGrabThrowMaxVelocityHavok = 12.0f;
         float rockGrabThrowAngularVelocityScale = 1.0f;
         float rockGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;
-        float rockGrabReleaseHandCollisionDelaySeconds = 0.10f;
+        float rockGrabReleaseHandCollisionDelaySeconds = 0.8f;
         bool rockShoulderStashEnabled = true;
         // Equipped weapons remain equipped and use the native sheath/draw
         // transition. This ROCK-owned shoulder gesture is independent of an
@@ -366,7 +368,7 @@ namespace rock
         float rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
         // Elapsed shoulder-stash contact freshness and miss tolerance
         // (historical 4- and 18-frame tunings at 90 Hz).
-        float rockShoulderStashRecentContactSeconds = 4.0f / 90.0f;
+        float rockShoulderStashRecentContactSeconds = 0.0444f;
         float rockShoulderStashSustainedContactMissSeconds = 18.0f / 90.0f;
         RE::NiPoint3 rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(14.0f, -18.0f, -6.85f);
         RE::NiPoint3 rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-14.0f, -18.0f, -6.85f);
@@ -409,7 +411,7 @@ namespace rock
         float rockGrabConvergeMaxTimeSeconds = 0.35f;
         // Elapsed stable dwell inside the grab pocket before convergence
         // promotes (historical 3-frame tuning at 90 Hz).
-        float rockGrabConvergeStableSeconds = 3.0f / 90.0f;
+        float rockGrabConvergeStableSeconds = 0.0333f;
         float rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
         float rockGrabAcquisitionVisualStartDistanceGameUnits = 28.0f;
         bool rockGrabMultiFingerContactValidationEnabled = true;
@@ -420,10 +422,10 @@ namespace rock
         float rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         // Elapsed opposition/patch contact freshness (historical 5-frame
         // tuning at 90 Hz).
-        float rockGrabOppositionContactMaxAgeSeconds = 5.0f / 90.0f;
+        float rockGrabOppositionContactMaxAgeSeconds = 0.0556f;
         bool rockGrabPinchPocketEnabled = true;
         bool rockGrabPinchCloseSelectionEnabled = true;
-        float rockGrabPinchCompactMaxExtentGameUnits = 8.0f;
+        float rockGrabPinchCompactMaxExtentGameUnits = 10.0f;
         float rockGrabPinchThinRodMaxLengthGameUnits = 18.0f;
         float rockGrabPinchThinRodMaxCrossSectionGameUnits = 4.0f;
         float rockGrabPinchMaxPocketDistanceGameUnits = 8.0f;
@@ -456,9 +458,9 @@ namespace rock
         float rockGrabFingerSurfaceAimStrength = 0.75f;
         bool rockGrabFingerRejectBacksideHits = true;
         float rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
-        float rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
+        float rockGrabFingerSweepContactRadiusGameUnits = 0.6f;
         float rockGrabFingerSweepMaxOpenValue = 2.0f;
-        float rockGrabThumbSweepMaxOpenValue = 2.0f;
+        float rockGrabThumbSweepMaxOpenValue = 1.5f;
         float rockGrabThumbOppositionStrength = 1.0f;
         float rockGrabThumbAlternateCurveStrength = 0.65f;
         bool rockGrabThumbSurfaceSafetyEnabled = true;
@@ -486,7 +488,7 @@ namespace rock
         float rockGrabSeatRollMinSecondElongationRatio = 1.25f;
         float rockPullPresentationAngularGainPerSecond = 6.0f;
         float rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
-        float rockPullPresentationGripAxisTiltDegrees = 10.0f;
+        float rockPullPresentationGripAxisTiltDegrees = 15.0f;
 
         RE::NiPoint3 rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         RE::NiPoint3 rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
@@ -541,6 +543,7 @@ namespace rock
         void reload();
 
         static void buildCompiledDefaults(CSimpleIniA& target);
+        [[nodiscard]] static RockConfigValues parseValues(CSimpleIniA& source);
         [[nodiscard]] std::uint64_t configRevision() const noexcept { return _configRevision.load(std::memory_order_acquire); }
         [[nodiscard]] bool visitSettings(configuration_api::Group group, configuration_api::VisitorV1 visitor, void* context) const;
         [[nodiscard]] bool persistSetting(configuration_api::Group group, const char* section, const char* key, const char* value, std::string& error);
