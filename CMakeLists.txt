@@ -26,6 +26,8 @@ endmacro()
 message(">>> Setup vcpkg")
 set_from_environment(VCPKG_ROOT)
 if(DEFINED VCPKG_ROOT)
+  # Build-triggered regeneration does not inherit configure-preset environment.
+  set(VCPKG_ROOT "${VCPKG_ROOT}" CACHE PATH "Selected vcpkg installation")
   set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
   set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "")
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "")
@@ -204,6 +206,12 @@ if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
   message(">>> Using independent ROCK SDK from: '${ROCK_PUBLIC_SDK_DIR}'")
 endif()
 
+include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
+get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)
+rock_verify_distribution_inputs(
+  TREES "${ROOT_DIR}/data/mod" "${ROCK_PUBLIC_SDK_DIR}"
+  FILES ${ROCK_BUILD_INPUTS})
+
 if(POST_BUILD_COPY_PLUGIN)
   if(DEFINED COPY_PLUGIN_BASE_PATH AND NOT COPY_PLUGIN_BASE_PATH STREQUAL "")
     set(COPY_PLUGIN_PATH_LIST ${COPY_PLUGIN_BASE_PATH})
@@ -215,6 +223,9 @@ if(POST_BUILD_COPY_PLUGIN)
         TARGET ${PROJECT_NAME}
         POST_BUILD
         COMMENT "Copying ${PROJECT_NAME}.dll and .pdb to plugins folder: '${copy_path}/F4SE/Plugins/'"
+        COMMAND ${CMAKE_COMMAND}
+          "-DINPUT_TREES=${ROOT_DIR}/data/mod"
+          -P "${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake"
         COMMAND ${CMAKE_COMMAND} -E make_directory ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E rm -f "${copy_path}/ROCK.esp"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Scripts/ROCK"
@@ -266,11 +277,7 @@ if(BUILD_ROCK_TESTS)
   # built. Do not list test targets here manually.
   add_custom_target(ROCKPolicyTestBinaries)
 
-  function(add_rock_test TARGET_NAME)
-    add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
-    set_tests_properties(${TARGET_NAME} PROPERTIES LABELS "policy")
-    add_dependencies(ROCKPolicyTestBinaries ${TARGET_NAME})
-  endfunction()
+  include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
   add_executable(ROCKGrabInputIntentPolicyTests
     "${ROOT_DIR}/tests/GrabInputIntentPolicyTests.cpp"
@@ -729,6 +736,8 @@ if(BUILD_ROCK_TESTS)
     "${SOURCE_DIR}/physics-interaction/weapon/AuthoredWeaponGripCacheFormat.cpp"
   )
   target_compile_features(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ROCK_TEST_FIXTURE_DIR="${ROOT_DIR}/tests/fixtures")
+  target_sources(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE "${ROOT_DIR}/tests/fixtures/AuthoredGripCache.json")
   target_include_directories(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE nlohmann_json::nlohmann_json)
   add_rock_test(ROCKAuthoredWeaponGripCacheFormatTests)
@@ -908,6 +917,8 @@ if(BUILD_ROCK_TESTS)
       ENABLE_FALLOUT_VR=1
       ROCK_POLICY_TEST_NO_RUNTIME_LOGGER=1
   )
+  # Match the assertion policy of every consumer reusing this PCH.
+  target_compile_options(ROCKPolicyTestSupport PRIVATE /UNDEBUG)
   target_precompile_headers(ROCKPolicyTestSupport PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h")
   target_link_libraries(ROCKPolicyTestSupport PUBLIC spdlog::spdlog mmio::mmio)
   if(TARGET xbyak::xbyak)
@@ -1095,37 +1106,8 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponTelemetryTraversalTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponTelemetryTraversalTests)
 
-  add_dependencies(
-    ROCKPolicyTestBinaries
-    ROCKSDKExamplePlugins
-    ROCKDebugOverlayFrameAdmissionTests
-    ROCKDebugVisualizationPolicyTests
-    ROCKDebugOverlayLineBatchTests
-    ROCKProviderDebugOverlayRuntimeTests
-    ROCKProviderColliderVisualizationRuntimeTests
-    ROCKProviderApiAbiTests
-    ROCKProviderApiNegotiationTests
-    ROCKProviderExternalBodyRegistryTests
-    ROCKProviderTouchGrabRegistryTests
-    ROCKTouchGrabMathTests
-    ROCKGameFrameTimingPolicyTests
-    ROCKPhysicsTimingSamplePolicyTests
-    ROCKContactActivityTrackerPolicyTests
-    ROCKDynamicHandSurfaceContactStateTests
-    ROCKProviderLeasePolicyTests
-    ROCKDebugOverlayShapeGeometryTests
-    ROCKDebugOverlayShapePipelineTests
-    ROCKDebugOverlayRuntimeSettingsTests
-    ROCKDebugOverlaySnapshotPoolTests
-    ROCKDebugOverlayShaderCompileTests
-    ROCKMainLoopHookPolicyTests
-    ROCKWeaponTelemetryTraversalTests
-    ROCKHandWorldClaimRegistryPolicyTests
-    ROCKDampenedDriverPredictionPolicyTests
-    ROCKTrackedHandIsolationPolicyTests
-    ROCKRenderedBoneTransportPolicyTests
-    ROCKArmPresentationPolicyTests
-  )
+  rock_write_test_catalog()
+
 
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
   if(ROCK_POWERSHELL_EXECUTABLE)
@@ -1139,7 +1121,7 @@ if(BUILD_ROCK_TESTS)
     )
     set_tests_properties(
       RpsSdkRockContractTests
-      PROPERTIES LABELS "source-boundary"
+      PROPERTIES LABELS "sdk" TIMEOUT 60
     )
 
     file(GLOB ROCK_SOURCE_BOUNDARY_TESTS CONFIGURE_DEPENDS "${ROOT_DIR}/tests/*SourceTests.ps1")
@@ -1157,6 +1139,7 @@ if(BUILD_ROCK_TESTS)
         ${ROCK_SOURCE_BOUNDARY_TEST_NAME}
         PROPERTIES
           LABELS "source-boundary"
+          TIMEOUT 60
           ENVIRONMENT "RPS_SDK_ROOT=${RPS_SDK_ROOT}"
       )
     endforeach()

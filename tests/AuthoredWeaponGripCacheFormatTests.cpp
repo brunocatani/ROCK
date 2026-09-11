@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheFormat.h"
 
 #include <iostream>
+#include <fstream>
 #include <string>
 
 namespace
@@ -56,6 +57,17 @@ int main()
     const std::string text = serialize(source);
     CacheRecord parsed{};
     std::string error;
+    // Fixed format-v3 bytes protect reader compatibility independently of the
+    // current writer. Updating the fixture requires a deliberate format change.
+    std::ifstream fixture(std::string(ROCK_TEST_FIXTURE_DIR) + "/AuthoredGripCache.json");
+    const std::string golden{ std::istreambuf_iterator<char>(fixture), {} };
+    CacheRecord historical{};
+    ok &= expect(!golden.empty() && parse(golden, historical, &error), "format-v3 fixture no longer parses");
+    ok &= expect(historical.key == source.key && historical.checksum == 0x51687B0DFAABA5AFull,
+        "format-v3 identity/checksum changed");
+    ok &= expect(historical.rightHandWeaponLocal.translate == source.rightHandWeaponLocal.translate &&
+        historical.rightFiringFingerMask == kCompleteFiringFingerMask,
+        "format-v3 pose changed");
     ok &= expect(parse(text, parsed, &error), "serialized cache record did not parse");
     ok &= expect(parsed.key == source.key, "cache key changed during round trip");
     ok &= expect(parsed.idleClipPath == source.idleClipPath, "clip path changed during round trip");

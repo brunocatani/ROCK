@@ -18,6 +18,25 @@ namespace
         for (const auto& setting : store.settings()) if (setting.key == key) return setting;
         throw std::runtime_error("Missing compiled setting");
     }
+
+    void verifyReference(const CSimpleIniA& reference,
+        const rock::config::ConfigurationStore& store, rock::config::Group owner)
+    {
+        CSimpleIniA::TNamesDepend sections;
+        reference.GetAllSections(sections);
+        for (const auto& section : sections) {
+            CSimpleIniA::TNamesDepend keys;
+            reference.GetAllKeys(section.pItem, keys);
+            for (const auto& key : keys) {
+                const auto& setting = find(store, key.pItem);
+                require(setting.section == section.pItem && setting.group == owner,
+                    "reference key has an unsupported section or owner");
+                CSimpleIniA::TNamesDepend values;
+                reference.GetAllValues(section.pItem, key.pItem, values);
+                require(values.size() == 1, "reference contains a duplicate key");
+            }
+        }
+    }
 }
 
 int main(int argc, char** argv)
@@ -37,8 +56,12 @@ int main(int argc, char** argv)
         ConfigurationStore store(directory, compiled);
         CSimpleIniA consumerExample;
         CSimpleIniA developerExample;
+        consumerExample.SetMultiKey(true);
+        developerExample.SetMultiKey(true);
         require(consumerExample.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_example.ini").c_str()) >= 0, "consumer reference unavailable");
         require(developerExample.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_Developer_example.ini").c_str()) >= 0, "developer reference unavailable");
+        verifyReference(consumerExample, store, Group::Consumer);
+        verifyReference(developerExample, store, Group::Developer);
         CSimpleIniA allReferences;
         require(allReferences.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_example.ini").c_str()) >= 0, "consumer reference merge failed");
         require(allReferences.LoadFile((fs::path(ROCK_CONFIG_REFERENCE_DIR) / "ROCK_Developer_example.ini").c_str()) >= 0, "developer reference merge failed");

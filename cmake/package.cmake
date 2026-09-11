@@ -30,6 +30,9 @@ foreach(API_HEADER IN ITEMS ROCKProviderApi.h ROCKApi.h)
   endif()
 endforeach()
 
+include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
+rock_verify_distribution_inputs(TREES "${ROOT_DIR}/data/mod" "${ROCK_PUBLIC_SDK_DIR}")
+
 set(PACKAGE_DIR "${BUILD_DIR}/package")
 set(PACKAGE_STAGE_DIR "${PACKAGE_DIR}/stageing")
 set(PACKAGE_STAGE_PLUGINS_DIR "${PACKAGE_STAGE_DIR}/F4SE/Plugins")

@@ -35,6 +35,7 @@ pwsh -NoProfile -File tools/Invoke-RockTests.ps1 -All
 #>
 [CmdletBinding()]
 param(
+    [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
     [string]$BaseRef,
     [string[]]$ChangedFile,
     [switch]$All,
@@ -45,7 +46,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$script:RepoRoot = (Resolve-Path -LiteralPath $Root).Path
 $script:BuildDirectory = Join-Path $script:RepoRoot 'build-tests'
 $script:IncludeCache = [System.Collections.Generic.Dictionary[string, object]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
@@ -153,44 +154,29 @@ function Get-ChangedFiles {
     return @($paths | Sort-Object)
 }
 
+function Test-CatalogCurrent {
+    $catalogPath = Join-Path $script:BuildDirectory 'RockTestCatalog.json'
+    if (-not (Test-Path -LiteralPath $catalogPath)) { return $false }
+    try {
+        $catalog = Get-Content -Raw -LiteralPath $catalogPath | ConvertFrom-Json
+        return $catalog.CMakeHash -eq (Get-FileHash (Join-Path $script:RepoRoot 'CMakeLists.txt')).Hash -and
+            $catalog.RegistrationHash -eq (Get-FileHash (Join-Path $script:RepoRoot 'cmake/RockTestRegistration.cmake')).Hash
+    } catch {
+        return $false
+    }
+}
+
 function Get-PolicyTargetDefinitions {
-    $cmakePath = Join-Path $script:RepoRoot 'CMakeLists.txt'
-    $cmakeContent = Get-Content -Raw -LiteralPath $cmakePath
-    $targetMatches = [regex]::Matches(
-        $cmakeContent,
-        '(?ms)add_executable\s*\(\s*(ROCK[A-Za-z0-9_]*Tests)\s+(.*?)^\s*\)')
-
+    $catalog = Get-Content -Raw -LiteralPath (Join-Path $script:BuildDirectory 'RockTestCatalog.json') | ConvertFrom-Json
     $definitions = [ordered]@{}
-    foreach ($targetMatch in $targetMatches) {
-        $targetName = $targetMatch.Groups[1].Value
-        $sources = [System.Collections.Generic.HashSet[string]]::new(
-            [System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($sourceMatch in [regex]::Matches($targetMatch.Groups[2].Value, '"([^"]+)"')) {
-            $sourceText = $sourceMatch.Groups[1].Value
-            $expanded = $sourceText.Replace('$' + '{ROOT_DIR}', $script:RepoRoot)
-            $expanded = $expanded.Replace(
-                '$' + '{SOURCE_DIR}',
-                (Join-Path $script:RepoRoot 'src'))
-            if ($expanded.Contains('$')) {
-                continue
-            }
-            $normalized = Normalize-RelativePath $expanded
-            if ($normalized) {
-                $null = $sources.Add($normalized)
-            }
-        }
-
+    foreach ($target in $catalog.Targets.PSObject.Properties) {
+        $sources = @($target.Value | ForEach-Object { Normalize-RelativePath $_ })
         if ($sources.Count -eq 0) {
-            throw "No source files could be resolved for policy target $targetName."
+            throw "No source files registered for policy target $($target.Name)."
         }
-        $definitions[$targetName] = @($sources | Sort-Object)
+        $definitions[$target.Name] = $sources
     }
-
-    $testSources = @(Get-ChildItem (Join-Path $script:RepoRoot 'tests') -Filter '*Tests.cpp')
-    if ($definitions.Count -ne $testSources.Count) {
-        throw "CMake registers $($definitions.Count) policy targets, but tests contains $($testSources.Count) C++ test sources."
-    }
-
+    if ($definitions.Count -eq 0) { throw 'CMake registered no policy tests.' }
     return $definitions
 }
 
@@ -218,50 +204,32 @@ function Resolve-LocalInclude {
 }
 
 function Get-LocalIncludeClosure {
-    param(
-        [Parameter(Mandatory)][string]$RelativePath,
-        [System.Collections.Generic.HashSet[string]]$Visiting
-    )
+    param([Parameter(Mandatory)][string]$RelativePath)
 
-    $normalized = Normalize-RelativePath $RelativePath
-    if ($script:IncludeCache.ContainsKey($normalized)) {
-        return @($script:IncludeCache[$normalized])
-    }
-
-    if ($null -eq $Visiting) {
-        $Visiting = [System.Collections.Generic.HashSet[string]]::new(
-            [System.StringComparer]::OrdinalIgnoreCase)
-    }
-    if ($Visiting.Contains($normalized)) {
-        return @($normalized)
-    }
-
-    $null = $Visiting.Add($normalized)
+    # Cache direct edges only. A recursive closure cached while an include cycle
+    # is still being visited can silently omit dependencies for later targets.
     $dependencies = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::OrdinalIgnoreCase)
-    $null = $dependencies.Add($normalized)
-
-    $fullPath = Join-Path $script:RepoRoot $normalized
-    if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
-        $content = Get-Content -Raw -LiteralPath $fullPath
-        $includeMatches = [regex]::Matches(
-            $content,
-            '(?m)^\s*#\s*include\s*[<"]([^>"]+)[>"]')
-        foreach ($includeMatch in $includeMatches) {
-            $resolved = Resolve-LocalInclude $normalized $includeMatch.Groups[1].Value
-            if (-not $resolved) {
-                continue
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push((Normalize-RelativePath $RelativePath))
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        if (-not $dependencies.Add($current)) { continue }
+        if (-not $script:IncludeCache.ContainsKey($current)) {
+            $includes = [System.Collections.Generic.List[string]]::new()
+            $fullPath = Join-Path $script:RepoRoot $current
+            if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+                $content = Get-Content -Raw -LiteralPath $fullPath
+                foreach ($match in [regex]::Matches($content, '(?m)^\s*#\s*include\s*[<"]([^>"]+)[>"]')) {
+                    $resolved = Resolve-LocalInclude $current $match.Groups[1].Value
+                    if ($resolved) { $includes.Add($resolved) }
+                }
             }
-            foreach ($dependency in Get-LocalIncludeClosure $resolved $Visiting) {
-                $null = $dependencies.Add($dependency)
-            }
+            $script:IncludeCache[$current] = @($includes)
         }
+        foreach ($included in $script:IncludeCache[$current]) { $pending.Push($included) }
     }
-
-    $null = $Visiting.Remove($normalized)
-    $result = @($dependencies | Sort-Object)
-    $script:IncludeCache[$normalized] = $result
-    return $result
+    return @($dependencies | Sort-Object)
 }
 
 function Get-SourceTestDependencies {
@@ -341,9 +309,14 @@ function Invoke-CheckedCommand {
         [Parameter(Mandatory)][string[]]$Arguments
     )
 
-    & $FilePath @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$FilePath failed with exit code $LASTEXITCODE."
+    Push-Location -LiteralPath $script:RepoRoot
+    try {
+        & $FilePath @Arguments | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "$FilePath failed with exit code $LASTEXITCODE."
+        }
+    } finally {
+        Pop-Location
     }
 }
 
@@ -357,6 +330,16 @@ if ($Json -and -not $PlanOnly) {
     throw '-Json is available only with -PlanOnly.'
 }
 
+# PlanOnly remains read-only. Refuse a stale catalog rather than presenting
+# an incomplete target list; an executing run refreshes it before selection.
+$catalogConfigured = $false
+if (-not (Test-CatalogCurrent)) {
+    if ($PlanOnly) {
+        throw 'The CMake test catalog is missing or stale. Run cmake --preset custom-tests before requesting a plan.'
+    }
+    Invoke-CheckedCommand 'cmake' @('--preset', 'custom-tests')
+    $catalogConfigured = $true
+}
 $policyDefinitions = Get-PolicyTargetDefinitions
 $allPolicyTargets = @($policyDefinitions.Keys | Sort-Object)
 $sourceTestPaths = @(
@@ -378,6 +361,8 @@ if ($All) {
 $selectedPolicy = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 $selectedSource = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+$behaviorMappedChanges = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 $mappedChanges = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
@@ -420,6 +405,7 @@ if (-not $fullSuiteReason) {
         $allPolicyReason = 'Shared policy-test support changed: ' + ($commonChanges -join ', ')
         foreach ($changed in $commonChanges) {
             $null = $mappedChanges.Add($changed)
+            $null = $behaviorMappedChanges.Add($changed)
         }
         foreach ($target in $allPolicyTargets) {
             $null = $selectedPolicy.Add($target)
@@ -437,6 +423,7 @@ if (-not $fullSuiteReason) {
                 if ($targetDependencies.Contains($changed)) {
                     $null = $selectedPolicy.Add($target)
                     $null = $mappedChanges.Add($changed)
+                    $null = $behaviorMappedChanges.Add($changed)
                 }
             }
         }
@@ -494,7 +481,20 @@ if ($fullSuiteReason) {
 
 $policyTargets = @($selectedPolicy | Sort-Object)
 $sourceTests = @($selectedSource | Sort-Object)
-$testNames = @($policyTargets + $sourceTests | Sort-Object -Unique)
+$sdkSelected = [bool]($fullSuiteReason -or @($changedFiles | Where-Object {
+    $_ -match '(?i)^(src/api|public|sdk)/'
+}).Count -gt 0)
+$sdkBuildTargets = if ($sdkSelected) { @('ROCKSDKExamplePlugins') } else { @() }
+$sdkTests = if ($sdkSelected) { @('RpsSdkRockContractTests', 'ROCKSDKExampleBehaviorTests') } else { @() }
+$testNames = @($policyTargets + $sourceTests + $sdkTests | Sort-Object -Unique)
+$uncoveredBehavior = if ($fullSuiteReason) {
+    # Full selection is conservative; it cannot establish integration coverage.
+    @($changedFiles | Where-Object { $_ -match '(?i)^src/.*\.(cpp|h|inl)$' })
+} else {
+    @($changedFiles | Where-Object {
+        $_ -match '(?i)^src/.*\.(cpp|h|inl)$' -and -not $behaviorMappedChanges.Contains($_)
+    })
+}
 if ($policyTargets.Count -eq $allPolicyTargets.Count) {
     $policyBuildTargets = @('ROCKPolicyTestBinaries')
 } else {
@@ -518,6 +518,9 @@ $plan = [pscustomobject]@{
     AllPolicyReason = $allPolicyReason
     PolicyTargets = @($policyTargets)
     PolicyBuildTargets = @($policyBuildTargets)
+    SdkBuildTargets = @($sdkBuildTargets)
+    SdkTests = @($sdkTests)
+    BehavioralCoverageUnverified = @($uncoveredBehavior)
     SourceTests = @($sourceTests)
     TestNames = @($testNames)
     ConfigureRequired = [bool]$configureRequired
@@ -536,6 +539,10 @@ if ($Json) {
         Write-Host $allPolicyReason
     }
     Write-Host "Policy binaries selected: $($policyTargets.Count)/$($allPolicyTargets.Count)"
+    Write-Host "SDK example builds selected: $sdkSelected"
+    if ($uncoveredBehavior.Count -gt 0) {
+        Write-Host "Behavioral coverage unverified: $($uncoveredBehavior -join ', '). Source checks and broad selection do not establish runtime coverage."
+    }
     Write-Host "Source-boundary tests selected: $($sourceTests.Count)/$($allSourceTests.Count)"
 }
 
@@ -543,11 +550,12 @@ if ($PlanOnly) {
     return
 }
 
-if ($configureRequired) {
+if ($configureRequired -and -not $catalogConfigured) {
     Invoke-CheckedCommand 'cmake' @('--preset', 'custom-tests')
 }
 
-if ($policyBuildTargets.Count -gt 0) {
+$buildTargets = @($policyBuildTargets + $sdkBuildTargets)
+if ($buildTargets.Count -gt 0) {
     $buildArguments = @(
         '--build',
         $script:BuildDirectory,
@@ -555,7 +563,7 @@ if ($policyBuildTargets.Count -gt 0) {
         'Release',
         '--target'
     )
-    $buildArguments += $policyBuildTargets
+    $buildArguments += $buildTargets
     $buildArguments += @('--', '/m:1', '/p:CL_MPCount=2')
     Invoke-CheckedCommand 'cmake' $buildArguments
 }

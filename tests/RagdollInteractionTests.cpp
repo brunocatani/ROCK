@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <limits>
 #include <thread>
+#include <barrier>
 
 namespace
 {
@@ -107,17 +108,30 @@ int main()
     ok &= check(!channel.consume(sample), "contact consumed only once");
     channel.publish(contact); channel.clear();
     ok &= check(!channel.consume(sample), "world reset discards queued contact");
+    std::barrier start{2};
     std::atomic<bool> finished{false};
+    std::atomic<bool> observed{false};
     std::thread writer([&] {
-        for (std::uint32_t n=1;n<10000;++n) channel.publish({n,n+1,n+2,n+3,{float(n),float(n+1),float(n+2)},true});
+        start.arrive_and_wait();
+        // Keep publishing until the consumer participates; do not let a fast
+        // producer turn this into a passing test with no reads.
+        for (std::uint32_t n=1; n<10000 || !observed.load(); ++n) {
+            channel.publish({n,n+1,n+2,n+3,{float(n),float(n+1),float(n+2)},true});
+        }
         finished.store(true);
     });
+    start.arrive_and_wait();
+    std::size_t reads = 0;
     bool coherent = true;
     while (!finished.load()) {
-        if (channel.consume(sample)) coherent = coherent && sample.target==sample.source+1 && sample.owner==sample.source+3 &&
-            sample.point[0]==float(sample.source) && sample.point[2]==float(sample.source+2);
+        if (channel.consume(sample)) {
+            ++reads;
+            coherent = coherent && sample.target==sample.source+1 && sample.owner==sample.source+3 &&
+                sample.point[0]==float(sample.source) && sample.point[2]==float(sample.source+2);
+            observed.store(true);
+        }
     }
     writer.join();
-    ok &= check(coherent, "concurrent publication never mixes another limb with a contact point");
+    ok &= check(reads > 0 && coherent, "concurrent publication never mixes another limb with a contact point");
     return ok ? 0 : 1;
 }

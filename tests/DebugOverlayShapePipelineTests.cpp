@@ -34,7 +34,7 @@ namespace
             if (pipeline.stats().completedJobs >= count) {
                 return true;
             }
-            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         return false;
     }
@@ -47,7 +47,7 @@ namespace
             if (stats.completedQueueDrops > 0 && stats.activeJobs == 0 && stats.queuedJobs == 0) {
                 return true;
             }
-            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         return false;
     }

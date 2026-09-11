@@ -21,7 +21,8 @@ namespace
     {
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
-                if (std::abs(a.entry[row][column] - b.entry[row][column]) > 0.000001f) return false;
+                if (!std::isfinite(a.entry[row][column]) || !std::isfinite(b.entry[row][column]) ||
+                    std::abs(a.entry[row][column] - b.entry[row][column]) > 0.000001f) return false;
             }
         }
         return true;
@@ -53,6 +54,12 @@ int main()
     using namespace weapon_surface_support;
     using namespace dynamic_weapon_collision_policy;
     bool ok = true;
+    auto invalidRotation = rock::transform_math::makeIdentityTransform<RE::NiTransform>().rotate;
+    const auto validRotation = invalidRotation;
+    invalidRotation.entry[0][1] = std::numeric_limits<float>::quiet_NaN();
+    ok &= check(!sameRotation(invalidRotation, validRotation) && !sameRotation(validRotation, invalidRotation),
+        "rotation comparison rejects nonfinite components in either operand");
+
 
     Toggle toggle{};
     ok &= check(!toggle.consume({ true, true, true, 0 }), "held-on-entry requires release");

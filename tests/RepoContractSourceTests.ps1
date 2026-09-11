@@ -4,9 +4,8 @@ param(
 
 # Repository contract checks. These verify structural project contracts that
 # no C++ policy test can observe: the CommonLibF4VR-only dependency boundary,
-# the ROCK.ini configuration-authority packaging contract, and negative guards
-# for specific past bugs. They intentionally do not pin source wording, call
-# order, identifier names, or comment text.
+# the ROCK.ini configuration-authority distribution contract. Input ownership
+# and configuration values are covered by the C++ tests.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -49,68 +48,34 @@ foreach ($file in $productionFiles) {
     }
 }
 
-# --- ROCK.ini configuration-authority packaging contract ------------------
-# Runtime configuration is consumer ROCK.ini plus optional developer overrides.
-# Both examples are human references, never build inputs or runtime sources.
+# Distribution checks execute the production preflight. Compiled catalog/default
+# parity belongs to ConfigurationStoreTests; input ownership to adapter tests.
+$guard = Join-Path $Root 'cmake/VerifyDistributionInputs.cmake'
+& cmake "-DINPUT_TREES=$Root/data/mod" -P $guard
+if ($LASTEXITCODE -ne 0) { $failures.Add('The deployment input tree contains an INI.') }
 
-foreach ($removedPath in @(
-        'data/config/ROCK.ini',
-        'data/mod/ROCK_Config/ROCK.ini',
-        'cmake/resources.rc.in',
-        'src/resources.h')) {
-    if (Test-Path -LiteralPath (Join-Path $Root $removedPath)) {
-        $failures.Add("Shipped or embedded ROCK configuration artifact exists: $removedPath")
+$fixture = Join-Path ([System.IO.Path]::GetTempPath()) ('rock-distribution-' + [guid]::NewGuid())
+try {
+    $null = New-Item -ItemType Directory -Path (Join-Path $fixture 'nested') -Force
+    $resource = Join-Path $fixture 'version.rc'
+    Set-Content -LiteralPath $resource -Value '1 VERSIONINFO'
+    & cmake "-DINPUT_TREES=$fixture" -P $guard
+    if ($LASTEXITCODE -ne 0) { $failures.Add('Generic resources must be accepted.') }
+    $ini = Join-Path $fixture 'nested/ROCK_Developer.INI'
+    Set-Content -LiteralPath $ini -Value '[Developer]'
+    & cmake "-DINPUT_TREES=$fixture" -P $guard *> $null
+    if ($LASTEXITCODE -eq 0) { $failures.Add('Nested INIs must fail the distribution preflight.') }
+    Remove-Item -LiteralPath $ini
+    Set-Content -LiteralPath $resource -Value '101 RCDATA "outside/ROCK_example.ini"'
+    & cmake "-DINPUT_FILES=$resource" -P $guard *> $null
+    if ($LASTEXITCODE -eq 0) { $failures.Add('Embedded reference INIs must fail the resource preflight.') }
+} finally {
+    $resolvedFixture = [System.IO.Path]::GetFullPath($fixture)
+    $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $resolvedFixture.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Fixture escaped temporary root: $resolvedFixture"
     }
-}
-
-foreach ($example in @('ROCK_example.ini', 'ROCK_Developer_example.ini')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $Root ('data/config/' + $example)))) {
-        $failures.Add("Missing configuration reference: $example")
-    }
-}
-
-if ($cmakeText -match 'ROCK_(Developer_)?example\.ini|data/config/ROCK(_Developer)?\.ini|resources\.rc') {
-    $failures.Add('CMakeLists.txt: ROCK_example.ini must not be a build input, resource, or packaged file.')
-}
-
-$configSource = (Read-Source 'src/RockConfig.cpp') + (Read-Source 'src/config/ConfigurationStore.cpp')
-if ($configSource -match 'ROCK_(Developer_)?example\.ini|IDR_ROCK_INI|createFileFromResourceIfMissing|Data\\+F4SE\\+Plugins\\+ROCK\.ini') {
-    $failures.Add('src/RockConfig.cpp: runtime configuration must not read the example, use an embedded INI, or retain a Data-folder fallback.')
-}
-if ((Read-Source 'src/rock_support/ResourceUtils.cpp') -match 'FindResource|LoadResource|LockResource') {
-    $failures.Add('src/rock_support/ResourceUtils.cpp: resource helpers must not retain removed INI-resource creation code.')
-}
-
-# The two examples together must mirror the loadable key catalog exactly.
-$exampleText = (Read-Source 'data/config/ROCK_example.ini') + "`n" + (Read-Source 'data/config/ROCK_Developer_example.ini')
-$exampleKeyMatches = [regex]::Matches($exampleText, '(?m)^\s*([A-Za-z][A-Za-z0-9]*)\s*=')
-$exampleKeys = @($exampleKeyMatches | ForEach-Object { $_.Groups[1].Value })
-$duplicateExampleKeys = @($exampleKeys | Group-Object | Where-Object Count -gt 1)
-if ($duplicateExampleKeys.Count -ne 0) {
-    $failures.Add("The configuration examples contain duplicate keys: $($duplicateExampleKeys.Name -join ', ')")
-}
-$loaderSource = Read-Source 'src/RockConfigLoad.cpp'
-$loaderKeys = @(
-    [regex]::Matches($loaderSource, '"([bifs][A-Z][A-Za-z0-9]*)"') |
-        ForEach-Object { $_.Groups[1].Value } |
-        Sort-Object -Unique
-)
-$exampleUniqueKeys = @($exampleKeys | Sort-Object -Unique)
-$catalogDifference = @(Compare-Object $loaderKeys $exampleUniqueKeys)
-if ($catalogDifference.Count -ne 0) {
-    $failures.Add("The configuration examples and loadable code catalog differ: $($catalogDifference.InputObject -join ', ')")
-}
-
-# --- Negative guards for specific past bugs -------------------------------
-# ROCK controller identity must never be reinterpreted through the Fallout 4
-# VR native left-handed-mode setting.
-
-$interactionFiles = Get-ChildItem -LiteralPath (Join-Path $Root 'src/physics-interaction') -Recurse -File -Include *.h,*.cpp,*.inl
-foreach ($file in $interactionFiles) {
-    if ((Get-Content -Raw -LiteralPath $file.FullName) -match 'isLeftHandedMode') {
-        $relative = [System.IO.Path]::GetRelativePath($Root, $file.FullName)
-        $failures.Add("$relative`: ROCK must not reinterpret controller identity through native handedness.")
-    }
+    Remove-Item -LiteralPath $resolvedFixture -Recurse -Force
 }
 
 if ($failures.Count -gt 0) {

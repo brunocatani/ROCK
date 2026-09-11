@@ -56,10 +56,9 @@ namespace
 
 }
 
-int main()
+static bool testInputRouting()
 {
     using namespace rock::input_remap_policy;
-
     bool ok = true;
     ok &= expectTrue("consumer owns gameplay input", providerSuppressionApplies(false, true));
     ok &= expectFalse("native menu bypasses stale consumer lease", providerSuppressionApplies(true, true));
@@ -373,6 +372,13 @@ int main()
 
     ok &= expectTrue("enabled remap installs mandatory Pip-Boy/Pause arbitration hooks", shouldInstallPipboyPauseArbitrationHooks(true));
     ok &= expectFalse("disabled remap leaves native Pip-Boy and Pause handlers untouched", shouldInstallPipboyPauseArbitrationHooks(false));
+    return ok;
+}
+
+static bool testNativeVats()
+{
+    using namespace rock::input_remap_policy;
+    bool ok = true;
     nativeVats::RuntimeState nativeVatsState{};
     auto nativeVatsDecision = nativeVats::update(
         nativeVatsState,
@@ -587,6 +593,13 @@ int main()
         "broad OpenVR game-input suppression latches through VATS release",
         nativeVatsDecision.forwardNative);
 
+    return ok;
+}
+
+static bool testPipboyGestures()
+{
+    using namespace rock::input_remap_policy;
+    bool ok = true;
     pipboyGesture::RuntimeState pipboyGestureState{};
     ok &= expectTrue("Pip-Boy/Pause hold duration clamps low values",
         pipboyGesture::sanitizedHoldSeconds(0.01f) == pipboyGesture::kMinimumHoldSeconds);
@@ -739,6 +752,13 @@ int main()
         pipboyGesture::Input{ .eligible = false, .pressed = true, .held = true });
     ok &= expectPipboyGestureState("fresh press cannot bypass a currently blocking menu", stillBlocked.state, pipboyGesture::State::BlockedUntilRelease);
 
+    return ok;
+}
+
+static bool testManualScope()
+{
+    using namespace rock::input_remap_policy;
+    bool ok = true;
     manual::RuntimeState manualState{};
     manual::Input manualInput{
         .gameplayInputAllowed = true,
@@ -906,5 +926,15 @@ int main()
     manualDecision = manual::update(manualState, manualInput);
     ok &= expectManualScopeState("right-wand use target leaves left firing-hand input available", manualDecision.state, manual::State::Pending);
 
+    return ok;
+}
+
+int main()
+{
+    bool ok = true;
+    ok &= testInputRouting();
+    ok &= testNativeVats();
+    ok &= testPipboyGestures();
+    ok &= testManualScope();
     return ok ? 0 : 1;
 }

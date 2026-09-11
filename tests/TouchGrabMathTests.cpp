@@ -3,9 +3,6 @@
 
 #include <cmath>
 #include <cstdint>
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <cassert>
 
 namespace

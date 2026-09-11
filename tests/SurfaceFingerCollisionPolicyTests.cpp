@@ -1,9 +1,6 @@
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
 
-#ifdef NDEBUG
-#    undef NDEBUG
-#endif
 #include <cassert>
 #include <cmath>
 

@@ -1,8 +1,5 @@
 #include "api/ProviderColliderVisualizationRuntime.h"
 
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 
 #include <cassert>
 

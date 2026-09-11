@@ -2,9 +2,6 @@
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
 
 #include <limits>
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <cassert>
 
 int main()
