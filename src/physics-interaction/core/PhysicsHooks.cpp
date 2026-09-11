@@ -14,6 +14,7 @@
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RockConfig.h"
@@ -1708,6 +1709,7 @@ namespace rock
     {
         bool isMovableStatic = false;
         bool isCar = false;
+        bool isLooseWeapon = false;
     };
 
     PlayerContactTargetIdentity resolvePlayerContactTargetIdentity(
@@ -1716,6 +1718,12 @@ namespace rock
         RE::hknpBodyId bodyId,
         std::uint32_t layer)
     {
+        if (layer == collision_layer_policy::FO4_LAYER_WEAPON) {
+            return PlayerContactTargetIdentity{
+                .isLooseWeapon = native_player_collision::isLooseWeaponBody(
+                    havok_runtime::snapshotBody(world, bodyId)),
+            };
+        }
         const bool requiresFormIdentity =
             collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
             collision_layer_policy::isDynamicWorldCarLayer(layer);
@@ -1766,6 +1774,7 @@ namespace rock
                 .targetLayer = layer,
                 .targetIsMovableStatic = targetIdentity.isMovableStatic,
                 .targetIsCar = targetIdentity.isCar,
+                .targetIsLooseWeapon = targetIdentity.isLooseWeapon,
             });
     }
 

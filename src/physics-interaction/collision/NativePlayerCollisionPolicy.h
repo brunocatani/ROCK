@@ -39,11 +39,14 @@ namespace rock::native_player_collision
     }
 
     inline constexpr bool suppressPhysicalPair(bool playerA, bool playerB,
-        std::uint32_t layerA, std::uint32_t layerB)
+        std::uint32_t layerA, std::uint32_t layerB, bool looseWeaponContact = false)
     {
         return (playerA && playerB) ||
                (playerA && isDuplicatePhysicalContactLayer(layerB)) ||
-               (playerB && isDuplicatePhysicalContactLayer(layerA));
+               (playerB && isDuplicatePhysicalContactLayer(layerA)) ||
+               (looseWeaponContact &&
+                   ((playerA && layerB == collision_layer_policy::FO4_LAYER_WEAPON) ||
+                       (playerB && layerA == collision_layer_policy::FO4_LAYER_WEAPON)));
     }
 
     struct BodyPair

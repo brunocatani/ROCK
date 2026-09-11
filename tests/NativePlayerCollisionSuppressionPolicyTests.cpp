@@ -98,6 +98,32 @@ int main()
         ok &= expect("controller retains incoming attack contact",
             !evaluatePlayerCharacterControllerContact({ true, true, true, layer }).suppress);
     }
+    const PlayerCharacterControllerContactPolicyInput droppedWeapon{
+        .filterEnabled = true, .playerController = true, .targetLayerKnown = true,
+        .targetLayer = FO4_LAYER_WEAPON, .targetIsLooseWeapon = true,
+    };
+    ok &= expect("player controller does not bump a positively identified dropped gun",
+        evaluatePlayerCharacterControllerContact(droppedWeapon).suppress);
+    auto npcDroppedWeapon = droppedWeapon;
+    npcDroppedWeapon.playerController = false;
+    ok &= expect("NPC controller keeps its normal dropped-gun contact",
+        !evaluatePlayerCharacterControllerContact(npcDroppedWeapon).suppress);
+    auto unclassifiedWeapon = droppedWeapon;
+    unclassifiedWeapon.targetIsLooseWeapon = false;
+    ok &= expect("equipped or unidentified weapon contact remains native",
+        !evaluatePlayerCharacterControllerContact(unclassifiedWeapon).suppress);
+    ok &= expect("native player body does not bump a dropped gun",
+        suppressPhysicalPair(true, false, FO4_LAYER_BIPED, FO4_LAYER_WEAPON, true));
+    ok &= expect("dropped-gun suppression is symmetric",
+        suppressPhysicalPair(false, true, FO4_LAYER_WEAPON, FO4_LAYER_BIPED, true));
+    ok &= expect("ROCK hand still contacts dropped gun",
+        !suppressPhysicalPair(false, false, ROCK_LAYER_HAND, FO4_LAYER_WEAPON, true));
+    ok &= expect("ROCK weapon still contacts dropped gun",
+        !suppressPhysicalPair(false, false, ROCK_LAYER_WEAPON, FO4_LAYER_WEAPON, true));
+    ok &= expect("ROCK body still contacts dropped gun",
+        !suppressPhysicalPair(false, false, ROCK_LAYER_BODY, FO4_LAYER_WEAPON, true));
+    ok &= expect("loose-weapon identity cannot suppress projectile layer",
+        !suppressPhysicalPair(true, false, FO4_LAYER_BIPED, FO4_LAYER_PROJECTILE, true));
     for (auto layer : { FO4_LAYER_STATIC, FO4_LAYER_ANIMSTATIC, FO4_LAYER_CLUTTER,
             FO4_LAYER_CLUTTER_LARGE, FO4_LAYER_PROPS, ROCK_LAYER_HAND, ROCK_LAYER_WEAPON,
             ROCK_LAYER_BODY, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,

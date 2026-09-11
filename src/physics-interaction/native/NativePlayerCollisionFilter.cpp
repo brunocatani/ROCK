@@ -7,6 +7,7 @@
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include <REL/Relocation.h>
+#include <RE/Bethesda/TESObjectREFRs.h>
 #include <Windows.h>
 
 #include <algorithm>
@@ -37,6 +38,7 @@ namespace rock::native_player_collision
         std::atomic<std::uint64_t> s_removedPairs{ 0 };
         std::atomic<std::uint64_t> s_preservedPlayerPairs{ 0 };
         std::atomic<std::uint64_t> s_staleIdentities{ 0 };
+        std::atomic<std::uint64_t> s_unresolvedWeaponOwners{ 0 };
         std::uint64_t s_nextReportMs{ 0 };
 
         BodyIdentity identity(const havok_runtime::BodySnapshot& body)
@@ -82,9 +84,12 @@ namespace rock::native_player_collision
                 if ((expectedA && !playerA) || (expectedB && !playerB)) {
                     ++stale;
                 }
+                const bool looseWeaponContact = playerA ? isLooseWeaponBody(b) :
+                    playerB ? isLooseWeaponBody(a) : false;
                 const bool suppress = suppressPhysicalPair(playerA, playerB,
                     a.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
-                    b.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+                    b.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK,
+                    looseWeaponContact);
                 if (!suppress && (playerA || playerB)) {
                     ++preserved;
                 }
@@ -122,6 +127,30 @@ namespace rock::native_player_collision
                 }
             }
         }
+    }
+
+    bool isLooseWeaponBody(const havok_runtime::BodySnapshot& body) noexcept
+    {
+        if (!body.valid ||
+            (body.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK) != collision_layer_policy::FO4_LAYER_WEAPON) {
+            return false;
+        }
+        // The same read-only resolver is used by native contact handling.
+        // FO4VR 3F0890 climbs scene ownership; 3F0913..3F0931 replaces an
+        // attached WEAP reference with its parent actor when one exists.
+        // No reference or scene pointer survives this callback.
+        __try {
+            auto* ref = body.ownerNode ? RE::TESObjectREFR::FindReferenceFor3D(body.ownerNode) : nullptr;
+            auto* base = ref ? ref->GetObjectReference() : nullptr;
+            if (base) {
+                return base->Is(RE::ENUM_FORM_ID::kWEAP);
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Unknown ownership keeps melee contacts native. Report from the
+            // game-thread publication path, never format logs on a worker.
+        }
+        s_unresolvedWeaponOwners.fetch_add(1, std::memory_order_relaxed);
+        return false;
     }
 
     bool install() noexcept
@@ -207,9 +236,10 @@ namespace rock::native_player_collision
             const auto removed = s_removedPairs.exchange(0, std::memory_order_relaxed);
             const auto preserved = s_preservedPlayerPairs.exchange(0, std::memory_order_relaxed);
             const auto stale = s_staleIdentities.exchange(0, std::memory_order_relaxed);
-            if (removed || preserved || stale) {
-                ROCK_LOG_INFO(PhysicsSafety, "Native player contact filter: physicalPairsRemoved={} playerPairsPreserved={} staleIdentitiesPreserved={}",
-                    removed, preserved, stale);
+            const auto unresolvedWeapons = s_unresolvedWeaponOwners.exchange(0, std::memory_order_relaxed);
+            if (removed || preserved || stale || unresolvedWeapons) {
+                ROCK_LOG_INFO(PhysicsSafety, "Native player contact filter: physicalPairsRemoved={} playerPairsPreserved={} staleIdentitiesPreserved={} unresolvedWeaponOwnersPreserved={}",
+                    removed, preserved, stale, unresolvedWeapons);
             }
         }
     }

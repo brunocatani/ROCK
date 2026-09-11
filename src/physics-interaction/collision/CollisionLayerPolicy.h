@@ -248,6 +248,7 @@ namespace rock::collision_layer_policy
         std::uint32_t targetLayer = FO4_LAYER_UNIDENTIFIED;
         bool targetIsMovableStatic = false;
         bool targetIsCar = false;
+        bool targetIsLooseWeapon = false;
     };
 
     struct PlayerCharacterControllerContactPolicyDecision
@@ -279,6 +280,11 @@ namespace rock::collision_layer_policy
         }
         if (!input.targetLayerKnown) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
+        }
+        // Loose weapon references share layer 5 with equipped attack bodies.
+        // Only positive loose-object ownership permits push suppression here.
+        if (input.targetLayer == FO4_LAYER_WEAPON && input.targetIsLooseWeapon) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = true, .reason = "looseWeapon" };
         }
         // Locomotion push suppression must not consume incoming attack contacts.
         if (input.targetLayer == FO4_LAYER_WEAPON || input.targetLayer == FO4_LAYER_PROJECTILE ||
