@@ -48,9 +48,9 @@ jobs:
             fi
 
             git fetch origin "$base" --depth=1
-            bad_subjects="$(git log --format=%s "origin/$base..HEAD" | grep -Ev '^(feature|fix)/[^:]+: .+' || true)"
+            bad_subjects="$(git log --format=%s "origin/$base..HEAD" | grep -Ev '^(feature|fix|cleanup|docs|build|test)/[^:]+: .+' || true)"
             if [[ -n "$bad_subjects" ]]; then
-              echo "Commit subjects must use: feature/<scope>: <change> or fix/<scope>: <change>"
+              echo "Commit subjects must use feature, fix, cleanup, docs, build, or test followed by /<scope>: <change>"
               echo "$bad_subjects"
               exit 1
             fi
