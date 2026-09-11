@@ -779,7 +779,8 @@ namespace rock
         const float castDistance = selection_query_policy::kNearCastDistanceGameUnits;
         const float castRadius = selection_query_policy::kNearCastRadiusGameUnits;
 
-        RE::hknpAllHitsCollector collector;
+        physics_query_resources::AllHitsCollector ownedCollector;
+        auto& collector = ownedCollector.get();
         physics_shape_cast::SphereCastDiagnostics diagnostics;
         if (!physics_shape_cast::castSelectionSphere(
                 hknpWorld,
@@ -860,7 +861,8 @@ namespace rock
                 rayResult.hitFraction * farRange);
         }
 
-        RE::hknpAllHitsCollector collector;
+        physics_query_resources::AllHitsCollector ownedCollector;
+        auto& collector = ownedCollector.get();
         physics_shape_cast::SphereCastDiagnostics diagnostics;
         if (!physics_shape_cast::castSelectionSphere(
                 hknpWorld,

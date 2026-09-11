@@ -829,7 +829,8 @@ namespace rock::nearby_grab_damping
         state.angularDamping = safeAngularDamping;
         state.remainingSeconds = duration;
 
-        RE::hknpAllHitsCollector collector;
+        physics_query_resources::AllHitsCollector ownedCollector;
+        auto& collector = ownedCollector.get();
         physics_shape_cast::SphereCastDiagnostics diagnostics;
         if (!physics_shape_cast::castSelectionSphere(
                 hknpWorld,

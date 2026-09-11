@@ -2400,7 +2400,8 @@ namespace rock
                 const RE::NiPoint3 probeOrigin = grabPivotAWorld + offsets[probe];
                 const RE::NiPoint3 start = probeOrigin - palmNormal * radius;
 
-                RE::hknpAllHitsCollector collector;
+                physics_query_resources::AllHitsCollector ownedCollector;
+                auto& collector = ownedCollector.get();
                 physics_shape_cast::SphereCastDiagnostics diagnostics;
                 if (!physics_shape_cast::castSelectionSphere(
                         world,

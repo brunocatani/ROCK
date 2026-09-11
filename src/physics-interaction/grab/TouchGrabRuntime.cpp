@@ -596,7 +596,8 @@ namespace rock
         PowerArmorCandidate best{};
         if (!world || !finitePoint(handPosition) || !std::isfinite(radius) || radius <= 0 || radius > 32) return best;
         probe.stage = 1;
-        RE::hknpAllHitsCollector hits;
+        physics_query_resources::AllHitsCollector ownedHits;
+        auto& hits = ownedHits.get();
         // Selection caches native sphere shapes by exact radius. Quantize this
         // broadphase-only radius so arbitrary consumer distances cannot grow it.
         const float broadphaseRadius = std::ceil(radius) + 16.0f;

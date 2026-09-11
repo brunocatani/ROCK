@@ -1548,7 +1548,7 @@ namespace rock
 
             if (!ok) {
                 ROCK_LOG_ERROR(Weapon, "BethesdaPhysicsBody::create failed for generated weapon mesh hull '{}'", source.sourceName);
-                shapeRemoveRef(shape);
+                havok_ref_count::release(shape);
                 clearWeaponBodyInstance(instance, false);
                 continue;
             }
@@ -1579,7 +1579,7 @@ namespace rock
                     safeNodeName(source.driveRoot),
                     safeNodeName(source.sourceRoot));
                 retireWeaponBodyInstance(instance, false);
-                shapeRemoveRef(shape);
+                havok_ref_count::release(shape);
                 continue;
             }
             initializeGeneratedKeyframedBodyDriveState(instance.driveState, initialTransform);

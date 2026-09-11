@@ -336,7 +336,7 @@ namespace rock
     void WeaponCollision::clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef)
     {
         if (releaseShapeRef && instance.ownsShapeRef && instance.shape) {
-            shapeRemoveRef(instance.shape);
+            havok_ref_count::release(instance.shape);
         }
         instance.body.reset();
         instance.shape = nullptr;

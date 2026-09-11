@@ -2,6 +2,7 @@
 
 #include "physics-interaction/collision/PhysicsShapeCastMath.h"
 #include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/native/PhysicsQueryResources.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Havok/hknpAllHitsCollector.h"

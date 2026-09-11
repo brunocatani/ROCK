@@ -1,7 +1,7 @@
 #include "physics-interaction/native/PhysicsRayCast.h"
+#include "physics-interaction/native/PhysicsQueryResources.h"
 
 #include "RE/Bethesda/BSHavok.h"
-#include "RE/Bethesda/bhkPickData.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,11 +16,11 @@ namespace rock::physics_ray_cast
         ClosestSegmentResult& outResult)
     {
         outResult = {};
-        if (!world) {
+        if (!world || !physics_query_resources::nativeCleanupReady()) {
             return false;
         }
 
-        RE::bhkPickData pickData;
+        physics_query_resources::PickData pickData;
         pickData.SetStartEnd(startGame, endGame);
         pickData.collisionFilter.filter = collisionFilterInfo;
 

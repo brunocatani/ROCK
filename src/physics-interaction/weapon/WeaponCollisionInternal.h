@@ -5,6 +5,7 @@
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
@@ -2962,22 +2963,6 @@ namespace rock
             const auto& children = niNode->GetRuntimeData().children;
             for (std::uint16_t i = 0; i < children.capacity(); ++i) {
                 refreshWeaponEmittersRecursive(children[i].get(), weaponRoot, depth + 1, visitedNodes, snapshot);
-            }
-        }
-
-        inline void shapeRemoveRef(const RE::hknpShape* shape)
-        {
-            if (!shape)
-                return;
-            auto* refCountDword = reinterpret_cast<volatile long*>(const_cast<char*>(reinterpret_cast<const char*>(shape)) + 0x08);
-            for (;;) {
-                long oldVal = *refCountDword;
-                std::uint16_t rc = static_cast<std::uint16_t>(oldVal & 0xFFFF);
-                if (rc == 0xFFFF || rc == 0)
-                    return;
-                long newVal = (oldVal & static_cast<long>(0xFFFF0000u)) | static_cast<long>(static_cast<std::uint16_t>(rc - 1));
-                if (_InterlockedCompareExchange(refCountDword, newVal, oldVal) == oldVal)
-                    return;
             }
         }
 

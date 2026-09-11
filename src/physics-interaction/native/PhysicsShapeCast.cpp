@@ -66,9 +66,8 @@ namespace rock::physics_shape_cast
              */
             collector.hints = 0;
             collector.earlyOutThreshold.real = _mm_set1_ps((std::numeric_limits<float>::max)());
-            collector.hits._data = reinterpret_cast<RE::hknpCollisionResult*>(reinterpret_cast<std::uintptr_t>(&collector) + 0x30);
+            // Keep any owned overflow allocation when reusing this collector.
             collector.hits._size = 0;
-            collector.hits._capacityAndFlags = 0x8000000A;
         }
 
         bool normalize(RE::NiPoint3 value, RE::NiPoint3& out)
@@ -104,7 +103,8 @@ namespace rock::physics_shape_cast
             diagnostics->collisionFilterInfo = input.collisionFilterInfo;
         }
 
-        if (!world || input.distanceGame <= 0.001f || input.radiusGame <= 0.001f) {
+        if (!world || !physics_query_resources::nativeCleanupReady() ||
+            input.distanceGame <= 0.001f || input.radiusGame <= 0.001f) {
             return false;
         }
 
