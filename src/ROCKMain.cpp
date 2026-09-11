@@ -29,6 +29,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/NativeRagdollSafety.h"
 #include "physics-interaction/native/NativeShapeCastSafety.h"
+#include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
@@ -264,6 +265,7 @@ namespace
 
     void clearUnavailableRuntimeInputState()
     {
+        weapon_action_trace::invalidateContext();
         weapon_transition_animation_acceleration::cancel(
             "rock-runtime-unavailable");
         authored_weapon_grip_capture::setEnabled(false);
@@ -922,6 +924,7 @@ namespace
         switch (static_cast<LE>(msg->type)) {
         case LE::kSkeletonReady:
             logger::info("ROCK: Received kSkeletonReady from FRIK.");
+            weapon_action_trace::initialize();
             vanilla_weapon_alignment_telemetry::initialize();
             scope_transition_telemetry::initialize();
             dynamic_collider_trace::initialize();
@@ -940,6 +943,7 @@ namespace
 
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
+            weapon_action_trace::invalidateContext();
             vanilla_weapon_alignment_telemetry::shutdown();
             scope_transition_telemetry::shutdown();
             native_scope_shot_diagnostics::shutdown();

@@ -2712,6 +2712,23 @@ namespace rock::input_remap_runtime
             !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire);
     }
 
+    PhysicalTraceSnapshot readPhysicalTraceSnapshot(bool isLeft) noexcept
+    {
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        const auto sampleTick = tracker.sampleTickMilliseconds.load(std::memory_order_acquire);
+        const auto now = GetTickCount64();
+        return {
+            .valid = tracker.valid.load(std::memory_order_acquire),
+            .sequence = tracker.sampleSequence.load(std::memory_order_acquire),
+            .ageMilliseconds = now >= sampleTick ? now - sampleTick : 0,
+            .pressed = tracker.rawPressed.load(std::memory_order_acquire),
+            .pendingPressed = tracker.pressedEdges.load(std::memory_order_acquire),
+            .pendingReleased = tracker.releasedEdges.load(std::memory_order_acquire),
+            .rearm = tracker.rearmPressedMask.load(std::memory_order_acquire),
+            .trigger = tracker.triggerAxisX.load(std::memory_order_acquire),
+        };
+    }
+
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)
     {
         return readRawButtonState(isLeft, buttonId, false);

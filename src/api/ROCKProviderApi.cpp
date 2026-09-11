@@ -23,6 +23,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/ReferenceInteraction.h"
+#include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -5757,6 +5758,19 @@ namespace rock::provider
         for (auto& state : handInteractionStates) {
             state.frameIndex = snapshot.frameIndex;
         }
+
+        std::uint8_t traceHands = 0;
+        for (const auto& state : handInteractionStates) {
+            using Flag = RockProviderHandInteractionFlagV1;
+            const auto has = [&](Flag flag) { return (state.flags & static_cast<std::uint32_t>(flag)) != 0; };
+            const bool holding = state.phase == RockProviderHandInteractionPhaseV1::Holding;
+            const std::uint8_t bits = has(Flag::Valid) ? static_cast<std::uint8_t>(1 |
+                ((holding && has(Flag::TouchGrab) && has(Flag::FixedSurfaceLatch)) ? 2 : 0) |
+                ((holding && (has(Flag::LooseObject) || has(Flag::LooseWeapon))) ? 4 : 0) |
+                (has(Flag::FiringGrip) ? 8 : 0)) : 0;
+            traceHands |= static_cast<std::uint8_t>(bits << (state.hand == RockProviderHand::Left ? 4 : 0));
+        }
+        weapon_action_trace::publishHands(snapshot.frameIndex, traceHands);
 
         RockProviderEquippedWeaponStateV1 equippedWeaponState{};
         (void)pi.queryProviderEquippedWeaponStateV1(equippedWeaponState);

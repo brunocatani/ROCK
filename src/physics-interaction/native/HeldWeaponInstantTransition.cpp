@@ -3,6 +3,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/WeaponActionTrace.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 
@@ -115,6 +116,11 @@ namespace rock::held_weapon_instant_transition
                 returnAddress,
                 REL::Offset(kEquipManagerDrawReturn).address(),
                 REL::Offset(kEquipManagerSheatheReturn).address());
+
+            weapon_action_trace::recordDraw(player, draw,
+                decision == held_weapon_instant_transition_policy::HookDecision::SuppressDraw ||
+                    decision == held_weapon_instant_transition_policy::HookDecision::SuppressSheathe,
+                returnAddress);
 
             switch (decision) {
             case held_weapon_instant_transition_policy::HookDecision::SuppressDraw:
