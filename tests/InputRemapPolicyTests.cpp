@@ -66,6 +66,13 @@ static bool testInputRouting()
     ok &= expectFalse("native menu without lease remains native", providerSuppressionApplies(true, false));
 
     const auto gripMask = buttonMask(kGrabButtonId), triggerMask = buttonMask(33);
+    const auto customChord = buttonMask(7) | buttonMask(32);
+    ok &= expectTrue("custom chord qualifies", buttonChordHeld(true, customChord, 0, customChord));
+    ok &= expectTrue("single-button binding qualifies", buttonChordHeld(true, buttonMask(7), 0, buttonMask(7)));
+    ok &= expectFalse("partial custom chord remains native", buttonChordHeld(true, buttonMask(7), 0, customChord));
+    ok &= expectFalse("context-held member cannot qualify", buttonChordHeld(true, customChord, buttonMask(32), customChord));
+    ok &= expectFalse("unavailable custom chord remains native", buttonChordHeld(false, customChord, 0, customChord));
+    ok &= expectFalse("empty binding cannot reserve input", buttonChordHeld(true, customChord, 0, 0));
     ok &= expectFalse("trigger alone remains native with a chord reservation", triggerGripChordHeld(true, triggerMask, 0));
     ok &= expectFalse("grab alone remains native with a chord reservation", triggerGripChordHeld(true, gripMask, 0));
     ok &= expectFalse("B cannot activate the trigger/grab reservation", triggerGripChordHeld(true, buttonMask(1), 0));

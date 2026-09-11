@@ -300,8 +300,9 @@ namespace
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans) |
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord);
-    std::uint32_t effectiveHandInputSuppressionFlags(RockProviderHand hand, std::uint32_t flags)
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveButtonChord);
+    std::uint32_t effectiveHandInputSuppressionFlags(RockProviderHand hand, std::uint32_t flags, std::uint64_t leftChord, std::uint64_t rightChord)
     {
         const auto reservation = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord);
         const bool reserved = (flags & reservation) != 0;
@@ -309,6 +310,17 @@ namespace
         if (reserved && rock::input_remap_runtime::isTriggerGripChordHeld(hand == RockProviderHand::Left)) {
             flags |= static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
                 static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+        }
+        const auto generic = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveButtonChord);
+        const bool chordReserved = (flags & generic) != 0;
+        flags &= ~generic;
+        if (chordReserved && (leftChord || rightChord) &&
+            rock::input_remap_runtime::areRawButtonsHeld(true, leftChord) &&
+            rock::input_remap_runtime::areRawButtonsHeld(false, rightChord)) {
+            flags |= static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans);
         }
         return flags;
     }
@@ -380,6 +392,7 @@ namespace
         std::uint64_t ownerToken{ 0 };
         RockProviderHand hand{ RockProviderHand::None };
         std::uint32_t flags{ 0 };
+        std::uint64_t leftChord{ 0 }, rightChord{ 0 };
         std::uint64_t expiresAfterFrame{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
@@ -3133,6 +3146,15 @@ namespace
             return RockProviderResultV1::InvalidArgument;
         }
 
+        const auto leftChord = (static_cast<std::uint64_t>(request->chordButtonsHigh[0]) << 32) | request->chordButtonsLow[0];
+        const auto rightChord = (static_cast<std::uint64_t>(request->chordButtonsHigh[1]) << 32) | request->chordButtonsLow[1];
+        constexpr auto allowedButtons = (1ull << 1) | (1ull << 2) | (1ull << 7) | (1ull << 32) | (1ull << 33);
+        if (hasHandInputSuppressionFlagV1(request->flags, RockProviderHandInputSuppressionFlagV1::ReserveButtonChord) &&
+            (((leftChord | rightChord) & ~allowedButtons) != 0 ||
+             !(request->hand == RockProviderHand::Left ? leftChord : rightChord))) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
@@ -3158,6 +3180,7 @@ namespace
         for (auto& slot : s_handInputSuppressions) {
             if (slot.active && slot.ownerToken == ownerToken && slot.hand == request->hand) {
                 slot.flags = request->flags;
+                slot.leftChord = leftChord; slot.rightChord = rightChord;
                 slot.expiresAfterFrame = expiresAfterFrame;
                 slot.worldGeneration = request->worldGeneration;
                 slot.skeletonGeneration = request->skeletonGeneration;
@@ -3176,6 +3199,7 @@ namespace
                     .ownerToken = ownerToken,
                     .hand = request->hand,
                     .flags = request->flags,
+                    .leftChord = leftChord, .rightChord = rightChord,
                     .expiresAfterFrame = expiresAfterFrame,
                     .worldGeneration = request->worldGeneration,
                     .skeletonGeneration = request->skeletonGeneration,
@@ -3242,7 +3266,7 @@ namespace
                 continue;
             }
             if (slot.active) {
-                outState->effectiveFlags |= slot.flags;
+                outState->effectiveFlags |= effectiveHandInputSuppressionFlags(hand, slot.flags, slot.leftChord, slot.rightChord);
             }
             if (slot.ownerToken != ownerToken) {
                 continue;
@@ -3269,7 +3293,6 @@ namespace
                 outState->providerGeneration = s_lastSnapshot.providerGeneration;
             }
         }
-        outState->effectiveFlags = effectiveHandInputSuppressionFlags(hand, outState->effectiveFlags);
         return RockProviderResultV1::Ok;
     }
 
@@ -6539,10 +6562,10 @@ namespace rock::provider
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
         for (const auto& slot : s_handInputSuppressions) {
             if (slot.active && slot.hand == hand) {
-                flags |= slot.flags;
+                flags |= effectiveHandInputSuppressionFlags(hand, slot.flags, slot.leftChord, slot.rightChord);
             }
         }
-        return effectiveHandInputSuppressionFlags(hand, flags);
+        return flags;
     }
 
     std::uint32_t currentNativeAnimationAuthorityFlagsV1()

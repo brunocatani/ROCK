@@ -698,6 +698,9 @@ namespace rock::provider
         // Renew only while the consumer can accept a new chord. After capture,
         // also request unconditional suppression through both physical releases.
         ReserveTriggerGripChord = 1u << 8,
+        // General physical button/chord reservation. Uses the two masks in the
+        // request; suppression applies only while every specified button is down.
+        ReserveButtonChord = 1u << 9,
         SuppressConfigModeChord =
             static_cast<std::uint32_t>(SuppressNormalGrabPress) |
             static_cast<std::uint32_t>(SuppressGrabRelease) |
@@ -1544,7 +1547,12 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[8]{};
+        // Physical left/right OpenVR button masks, split to preserve V1 alignment.
+        // Used only with ReserveButtonChord. Renew unconditional flags after
+        // capture until every member is released; expiry/clear restores input.
+        std::uint32_t chordButtonsLow[2]{};
+        std::uint32_t chordButtonsHigh[2]{};
+        std::uint32_t reserved[4]{};
     };
 
     /*

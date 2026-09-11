@@ -67,6 +67,7 @@ namespace rock::input_remap_runtime
     bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft);
     // Reads captured physical input only; never queries provider leases.
     bool isTriggerGripChordHeld(bool isLeft);
+    bool areRawButtonsHeld(bool isLeft, std::uint64_t mask);
     /*
      * Once-per-frame physical firing-hand A/X arbitration. Automatic scope
      * mode preserves press-time reload and only dispatches the secondary-wand

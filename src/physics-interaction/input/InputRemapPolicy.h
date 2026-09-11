@@ -8,10 +8,15 @@ namespace rock::input_remap_policy
     // ROCK uses the OpenVR grip button as its fixed grab input.
     inline constexpr int kGrabButtonId = 2;
 
+    [[nodiscard]] constexpr bool buttonChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm, std::uint64_t chord) noexcept
+    {
+        return available && chord != 0 && (rearm & chord) == 0 && (pressed & chord) == chord;
+    }
+
     [[nodiscard]] constexpr bool triggerGripChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm) noexcept
     {
         constexpr auto chord = (std::uint64_t{1} << kGrabButtonId) | (std::uint64_t{1} << 33);
-        return available && (rearm & chord) == 0 && (pressed & chord) == chord;
+        return buttonChordHeld(available, pressed, rearm, chord);
     }
 
     // These native take/equip targets are always protected while the activating hand holds a ROCK object.

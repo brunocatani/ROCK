@@ -2716,4 +2716,15 @@ namespace rock::input_remap_runtime
             tracker.rearmPressedMask.load(std::memory_order_acquire));
     }
 
+    bool areRawButtonsHeld(bool isLeft, std::uint64_t mask)
+    {
+        if (!mask) return true;
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        return input_remap_policy::buttonChordHeld(
+            tracker.valid.load(std::memory_order_acquire) &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive(),
+            tracker.rawPressed.load(std::memory_order_acquire),
+            tracker.rearmPressedMask.load(std::memory_order_acquire), mask);
+    }
+
 }
