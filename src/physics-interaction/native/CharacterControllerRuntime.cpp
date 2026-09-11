@@ -183,21 +183,25 @@ namespace rock::character_controller_runtime
             PlayerControllerImplementation implementation{
                 PlayerControllerImplementation::Unknown
             };
-            std::array<std::uint8_t, 10> penetrationPrefix{};
+            std::array<std::uint8_t, 11> penetrationPrefix{};
         };
 
+        // Fallout4VR.exe.unpacked.exe
+        // SHA-256 95ABB321DD5F8E9536665D8EA0A8DC550B8A5C7878516F3A1727569844B0BBF6.
+        // The proxy entry starts with a redundant REX prefix (0x40) that is
+        // omitted by textual disassembly but is present in the live image.
         constexpr std::array<ControllerDispatchSpec, 2> kControllerDispatchSpecs{
             ControllerDispatchSpec{
                 kProxyControllerVtableRva,
                 kProxyPenetrationFunctionRva,
                 PlayerControllerImplementation::Proxy,
-                { 0x53, 0x41, 0x56, 0x48, 0x81, 0xEC, 0x68, 0x04, 0x00, 0x00 },
+                { 0x40, 0x53, 0x41, 0x56, 0x48, 0x81, 0xEC, 0x68, 0x04, 0x00, 0x00 },
             },
             ControllerDispatchSpec{
                 kRigidControllerVtableRva,
                 kRigidPenetrationFunctionRva,
                 PlayerControllerImplementation::RigidBody,
-                { 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10 },
+                { 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57 },
             },
         };
 
