@@ -293,6 +293,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponInteractionPolicyTests)
 
+  add_executable(ROCKVirtualHolstersCompatibilityTests
+    "${ROOT_DIR}/tests/VirtualHolstersCompatibilityTests.cpp"
+  )
+  target_compile_features(ROCKVirtualHolstersCompatibilityTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKVirtualHolstersCompatibilityTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKVirtualHolstersCompatibilityTests)
+
   add_executable(ROCKWeaponGapDecompositionTests
     "${ROOT_DIR}/tests/WeaponGapDecompositionTests.cpp"
   )

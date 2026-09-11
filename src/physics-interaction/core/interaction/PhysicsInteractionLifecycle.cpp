@@ -515,6 +515,8 @@ namespace rock
         equipped_weapon_toggle_grab_policy::reset(
             _equipped.toggleGrabState);
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
+        _equipped.holsterInputStates = {};
+        _equipped.holsterInputConsumedThisFrame = {};
         _equipped.shoulderSheath = {};
         input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
         _equipped.stashStates = {};
@@ -562,6 +564,8 @@ namespace rock
         equipped_weapon_toggle_grab_policy::reset(
             _equipped.toggleGrabState);
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
+        _equipped.holsterInputStates = {};
+        _equipped.holsterInputConsumedThisFrame = {};
         _equipped.authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
         if (!_lifecycle.initialized) {
             _equipped.shoulderSheath = {};

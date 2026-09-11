@@ -468,11 +468,12 @@ namespace rock
             }
             return false;
         }
-        if (_equipped.toggleGrabReleasePressConsumedThisFrame[
-                handIndex]) {
+        if (_equipped.toggleGrabReleasePressConsumedThisFrame[handIndex] ||
+            _equipped.holsterInputConsumedThisFrame[handIndex]) {
             // The second press belongs only to the equipped-weapon latch. Do
             // not let the same edge start a loose-object, surface, or touch
-            // grab after the weapon state releases this hand.
+            // grab after the weapon state releases this hand. Virtual Holsters
+            // likewise owns its claimed physical cycle through release.
             if (_grabInput.firingHandButtonFrame.valid &&
                 _grabInput.firingHandButtonFrame.isLeft == isLeft) {
                 _grabInput.firingHandButtonFrame.valid = false;
@@ -483,7 +484,9 @@ namespace rock
             inputSuppressionState.deferredGrabRelease = false;
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry(
-                "equipped-weapon-toggle-release-this-frame",
+                _equipped.holsterInputConsumedThisFrame[handIndex] ?
+                    "virtual-holsters-gesture-this-frame" :
+                    "equipped-weapon-toggle-release-this-frame",
                 true);
             clearGameplayCandidatesForHand(hand, isLeft);
             if (hand.hasSelection()) {

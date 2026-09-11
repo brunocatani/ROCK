@@ -431,6 +431,7 @@ namespace rock
 
         _equipped.shoulderGestureConsumedThisFrame = {};
         _equipped.toggleGrabReleasePressConsumedThisFrame = {};
+        _equipped.holsterInputConsumedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
         _dynamicWeaponCollision.updateSurfaceSupportInput();
         const auto retireDynamicWeaponForInterruptedFrame = [this](bool preserveSurfaceSupport = false) {
