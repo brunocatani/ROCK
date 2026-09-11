@@ -663,7 +663,7 @@ namespace rock
             _suppression.leftWeaponSupportSuppressed.store(false, std::memory_order_release);
             _suppression.rightWeaponSupportSuppressed.store(false, std::memory_order_release);
             clearEquippedWeaponPostDropCollisionSuppressionState();
-            restoreNativePlayerCollisionSuppression(hknp, "scale-change");
+            clearNativePlayerCollisionFilter(hknp);
             _suppression.nativePlayerRefreshFrames = 0;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
@@ -754,8 +754,7 @@ namespace rock
         if (_layers.registered &&
             (_layers.expectedHandMask != 0 || _layers.expectedWeaponMask != 0 || _layers.expectedReloadMask != 0 || _layers.expectedBodyMask != 0 ||
                 _layers.expectedDynamicHandProxyMask != 0 || _layers.expectedDynamicWeaponProxyMask != 0 ||
-                _layers.expectedDynamicWorldCarClutterMask != 0 || _layers.expectedDynamicWorldCarLargeClutterMask != 0 ||
-                _layers.nativeControllerPolicyCaptured)) {
+                _layers.expectedDynamicWorldCarClutterMask != 0 || _layers.expectedDynamicWorldCarLargeClutterMask != 0)) {
             const auto desiredHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
             const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
@@ -774,10 +773,6 @@ namespace rock
                     true);
             const auto desiredDynamicWeaponProxyMask =
                 collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
-            const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
-            const bool nativeControllerPolicyModeChanged =
-                _layers.nativeControllerPolicyCaptured &&
-                _layers.nativeControllerPolicyEnabled != desiredNativeControllerPolicyEnabled;
             if (!collision_layer_policy::matrixLayerMaskMatches(_layers.expectedHandMask, desiredHandMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedWeaponMask, desiredWeaponMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_layers.expectedReloadMask, desiredReloadMask) ||
@@ -790,8 +785,7 @@ namespace rock
                     desiredDynamicLeftHandProxyMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(
                     _layers.expectedDynamicWeaponProxyMask,
-                    desiredDynamicWeaponProxyMask) ||
-                nativeControllerPolicyModeChanged) {
+                    desiredDynamicWeaponProxyMask)) {
                 ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
                 _layers.registered = false;
                 registerCollisionLayer(hknp);
@@ -828,16 +822,10 @@ namespace rock
                     _layers.expectedHandMask != 0 && _layers.expectedWeaponMask != 0 &&
                     !collision_layer_policy::rockToolActorPairsMatch(matrix, _layers.expectedHandMask, _layers.expectedWeaponMask);
                 const bool bodyPairsDrifted = _layers.expectedBodyMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _layers.expectedBodyMask);
-                const bool nativeControllerObjectPairsDrifted =
-                    _layers.nativeControllerPolicyCaptured &&
-                    !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _layers.expectedNativeCharacterControllerMask);
                 if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted || dynamicLeftHandProxyMaskDrifted || dynamicWeaponProxyMaskDrifted ||
-                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
-                    nativeControllerObjectPairsDrifted) {
-                    const auto currentNativeCharacterControllerMask =
-                        _layers.nativeControllerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
+                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted) {
                     ROCK_LOG_WARN(Config,
-                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicRightHandProxy expected=0x{:016X} current=0x{:016X}, dynamicLeftHandProxy expected=0x{:016X} current=0x{:016X}, dynamicWeaponProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, nativeController expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}, nativeControllerObjects={}; re-registering",
+                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicRightHandProxy expected=0x{:016X} current=0x{:016X}, dynamicLeftHandProxy expected=0x{:016X} current=0x{:016X}, dynamicWeaponProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}; re-registering",
                         collision_layer_policy::matrixAddressableMask(_layers.expectedHandMask),
                         collision_layer_policy::matrixAddressableMask(currentHandMask),
                         collision_layer_policy::matrixAddressableMask(_layers.expectedWeaponMask),
@@ -856,11 +844,8 @@ namespace rock
                         collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarClutterMask),
                         collision_layer_policy::matrixAddressableMask(_layers.expectedDynamicWorldCarLargeClutterMask),
                         collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarLargeClutterMask),
-                        collision_layer_policy::matrixAddressableMask(_layers.expectedNativeCharacterControllerMask),
-                        collision_layer_policy::matrixAddressableMask(currentNativeCharacterControllerMask),
                         actorToolPairsDrifted ? "drifted" : "ok",
-                        bodyPairsDrifted ? "drifted" : "ok",
-                        nativeControllerObjectPairsDrifted ? "drifted" : "ok");
+                        bodyPairsDrifted ? "drifted" : "ok");
                     _layers.registered = false;
                     registerCollisionLayer(hknp);
                 }
@@ -886,15 +871,6 @@ namespace rock
         if (!self) {
             return;
         }
-
-        /*
-         * This pre-collide callback runs inside the same native Havok step path
-         * used for generated body writes. It reasserts bit 14 only while the
-         * cached native identity still owns the lease. This callback only reads
-         * the cache; game-frame refresh owns stale-lease eviction under the
-         * callback quiescence gate.
-         */
-        self->refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(world, "native-player-body-pre-collide");
 
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }

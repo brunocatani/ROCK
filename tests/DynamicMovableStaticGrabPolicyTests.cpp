@@ -407,31 +407,6 @@ int main()
         false,
         "nonPlayerController");
 
-    auto matrix = makeFullyEnabledMatrix();
-    const auto originalControllerMask = matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER];
-    collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(matrix.data(), true, originalControllerMask);
-    const auto expectedSuppressedControllerMask =
-        collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, true);
-
-    ok &= expectLayerPair("native controller excludes ordinary clutter at the matrix", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, false);
-    ok &= expectLayerPair("native controller keeps weapon objects for native melee", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, true);
-    ok &= expectLayerPair("native controller no longer hits small debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_SMALL, false);
-    ok &= expectLayerPair("native controller no longer hits large debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_LARGE, false);
-    ok &= expectLayerPair("native controller no longer hits shell casings", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_SHELLCASING, false);
-    ok &= expectLayerPair("native controller excludes ordinary large clutter at the matrix", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, false);
-    ok &= expectLayerPair("native controller preserves static support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_STATIC, true);
-    ok &= expectLayerPair("native controller preserves animstatic support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_ANIMSTATIC, true);
-    ok &= expectLayerPair("native controller preserves terrain support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_TERRAIN, true);
-    ok &= expectLayerPair("native controller preserves ground support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_GROUND, true);
-    ok &= expectTrue("native controller suppression matrix matches expected object pairs",
-        collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix.data(), expectedSuppressedControllerMask));
-    ok &= expectFalse("native controller object suppression does not manage ROCK hand layer",
-        collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_HAND));
-    ok &= expectFalse("native controller object suppression does not manage ROCK weapon layer",
-        collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_WEAPON));
-    ok &= expectFalse("native controller object suppression does not manage ROCK body layer",
-        collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_BODY));
-
     auto generatedWeaponMatrix = makeFullyEnabledMatrix();
     collision_layer_policy::applyRockGeneratedLayerPolicies(
         generatedWeaponMatrix.data(),
@@ -530,31 +505,24 @@ int main()
     ok &= expectLayerPair("tagged large car does not inherit generated body or leg collision", dynamicCarMatrix,
         collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, collision_layer_policy::ROCK_LAYER_BODY, false);
 
-    collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(matrix.data(), false, originalControllerMask);
-    ok &= expectLayerPair("disabled native controller policy restores clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, true);
-    ok &= expectLayerPair("disabled native controller policy restores weapon objects", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, true);
-    ok &= expectTrue("disabled native controller policy matches original object pairs",
-        collision_layer_policy::nativeCharacterControllerObjectPairsMatch(
-            matrix.data(),
-            collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, false)));
+
 
     {
         alignas(void*) char manifold[sizeof(char*) + sizeof(int)]{};
         alignas(void*) char simplex[held_grab_cc_policy::kGeneratedConstraintCountOffset + sizeof(int)]{};
         alignas(void*) char constraintRows[held_grab_cc_policy::kGeneratedContactStride * 2]{};
-
-        *reinterpret_cast<char**>(manifold) = nullptr;
-        *reinterpret_cast<int*>(manifold + sizeof(char*)) = 0;
         *reinterpret_cast<char**>(simplex + held_grab_cc_policy::kGeneratedConstraintRowsOffset) = constraintRows;
-        *reinterpret_cast<int*>(simplex + held_grab_cc_policy::kGeneratedConstraintCountOffset) = 2;
-
+        auto* count = reinterpret_cast<int*>(simplex + held_grab_cc_policy::kGeneratedConstraintCountOffset);
+        *count = 2;
         const auto view = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplex);
-        ok &= expectFalse("constraint-only player controller view is not body-identifiable", view.valid);
-        const auto cleared = held_grab_cc_policy::clearGeneratedConstraintOnlyContacts(view);
-        ok &= expectTrue("constraint-only player controller contacts can be cleared fail-closed", cleared.valid);
-        ok &= expectTrue("constraint-only player controller contacts remove every unidentified row", cleared.removedPairCount == 2);
-        ok &= expectTrue("constraint-only player controller clear zeros native constraint count",
-            *reinterpret_cast<int*>(simplex + held_grab_cc_policy::kGeneratedConstraintCountOffset) == 0);
+        bool predicateCalled = false;
+        const auto filtered = held_grab_cc_policy::filterGeneratedContactBuffers(view, [&](std::uint32_t) {
+            predicateCalled = true;
+            return true;
+        });
+        ok &= expectFalse("unidentified constraint-only contacts cannot be classified", filtered.valid);
+        ok &= expectFalse("missing body identities never reach the suppression predicate", predicateCalled);
+        ok &= expectTrue("native support and attack rows survive missing identities", *count == 2);
     }
 
     return ok ? 0 : 1;

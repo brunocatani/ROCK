@@ -261,7 +261,7 @@ namespace rock::collision_layer_policy
         return isWorldSurfaceLayer(layer);
     }
 
-    inline constexpr bool isNativePlayerCollisionSuppressionLayer(std::uint32_t layer)
+    inline constexpr bool isNativePlayerCollisionBodyLayer(std::uint32_t layer)
     {
         return !isRockOwnedReusableLayer(layer) &&
                layer != FO4_LAYER_CHARCONTROLLER &&
@@ -279,6 +279,12 @@ namespace rock::collision_layer_policy
         }
         if (!input.targetLayerKnown) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
+        }
+        // Locomotion push suppression must not consume incoming attack contacts.
+        if (input.targetLayer == FO4_LAYER_WEAPON || input.targetLayer == FO4_LAYER_PROJECTILE ||
+            input.targetLayer == FO4_LAYER_SPELL || input.targetLayer == FO4_LAYER_CONEPROJECTILE ||
+            input.targetLayer == FO4_LAYER_SPELLEXPLOSION) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "nativeAttack" };
         }
         if (input.targetIsCar) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "carCollision" };
@@ -405,34 +411,6 @@ namespace rock::collision_layer_policy
         return bit != 0 && (mask & bit) != 0;
     }
 
-    inline constexpr std::uint64_t nativeCharacterControllerObjectSuppressionLayerMask()
-    {
-        /*
-         * FO4_LAYER_WEAPON stays OUT of this suppression mask: native VR melee
-         * lands NPC hits through weapon(5) x charcontroller(30) contact, so
-         * severing that pair here disables melee damage entirely. The self-hit
-         * loop the severance once guarded against is handled by identity, not
-         * by layer: the VRMeleeImpact hook drops ROCK-owned partners, and the
-         * native callback rejects player-ref partners (verified in-game: L30
-         * events never armed the melee cooldown).
-         */
-        return layerBitOrZero(FO4_LAYER_CLUTTER) |
-               layerBitOrZero(FO4_LAYER_DEBRIS_SMALL) |
-               layerBitOrZero(FO4_LAYER_DEBRIS_LARGE) |
-               layerBitOrZero(FO4_LAYER_SHELLCASING) |
-               layerBitOrZero(FO4_LAYER_CLUTTER_LARGE);
-    }
-
-    inline constexpr bool isNativeCharacterControllerObjectSuppressionLayer(std::uint32_t layer)
-    {
-        return maskEnablesLayer(nativeCharacterControllerObjectSuppressionLayerMask(), layer);
-    }
-
-    inline constexpr std::uint64_t nativeCharacterControllerExpectedMask(std::uint64_t originalMask, bool suppressDynamicObjects)
-    {
-        return suppressDynamicObjects ? (originalMask & ~nativeCharacterControllerObjectSuppressionLayerMask()) : originalMask;
-    }
-
     inline constexpr std::uint64_t buildRockHandExpectedMask(bool includeWeaponLayer, bool includeStaticWorld = true)
     {
         /*
@@ -543,24 +521,6 @@ namespace rock::collision_layer_policy
     {
         return layerPairEnabledFromRow(matrix, layerA, layerB) == expectedEnabled &&
                layerPairEnabledFromRow(matrix, layerB, layerA) == expectedEnabled;
-    }
-
-    inline constexpr bool nativeCharacterControllerObjectPairsMatch(const std::uint64_t* matrix, std::uint64_t expectedCharacterControllerMask)
-    {
-        if (!matrix) {
-            return false;
-        }
-
-        const auto managedMask = nativeCharacterControllerObjectSuppressionLayerMask();
-        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
-            if (!maskEnablesLayer(managedMask, other)) {
-                continue;
-            }
-            if (!layerPairSymmetricMatches(matrix, FO4_LAYER_CHARCONTROLLER, other, maskEnablesLayer(expectedCharacterControllerMask, other))) {
-                return false;
-            }
-        }
-        return true;
     }
 
     inline constexpr bool rockToolActorPairsMatch(
@@ -756,21 +716,6 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER,
             buildRockDynamicWorldCarExpectedMask(nativeLargeClutterMask, FO4_LAYER_CLUTTER_LARGE));
-    }
-
-    inline void applyNativeCharacterControllerObjectSuppressionPolicy(std::uint64_t* matrix, bool suppressDynamicObjects, std::uint64_t originalCharacterControllerMask)
-    {
-        if (!matrix) {
-            return;
-        }
-
-        const auto managedMask = nativeCharacterControllerObjectSuppressionLayerMask();
-        const auto expectedMask = nativeCharacterControllerExpectedMask(originalCharacterControllerMask, suppressDynamicObjects);
-        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
-            if (maskEnablesLayer(managedMask, other)) {
-                setPair(matrix, FO4_LAYER_CHARCONTROLLER, other, maskEnablesLayer(expectedMask, other));
-            }
-        }
     }
 
     inline void applyRockGeneratedLayerPolicies(

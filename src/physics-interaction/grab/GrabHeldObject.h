@@ -971,31 +971,6 @@ namespace rock::held_grab_cc_policy
         };
     }
 
-    inline GeneratedContactFilterResult clearGeneratedConstraintOnlyContacts(const GeneratedContactBufferView& view)
-    {
-        if (view.manifoldEntries || !view.constraintEntries || !view.constraintCountPtr || view.constraintCount <= 0) {
-            return GeneratedContactFilterResult{
-                .valid = false,
-                .originalPairCount = view.constraintCount,
-                .reason = "notConstraintOnlyContacts",
-            };
-        }
-
-        const int originalCount = view.constraintCount;
-        if (view.manifoldCountPtr) {
-            *view.manifoldCountPtr = 0;
-        }
-        *view.constraintCountPtr = 0;
-
-        return GeneratedContactFilterResult{
-            .valid = true,
-            .originalPairCount = originalCount,
-            .keptPairCount = 0,
-            .removedPairCount = originalCount,
-            .reason = "clearedConstraintOnlyContacts",
-        };
-    }
-
     template <class IsHeldBody>
     inline GeneratedContactFilterResult filterGeneratedContactBuffers(const GeneratedContactBufferView& view, IsHeldBody&& isHeldBody)
     {

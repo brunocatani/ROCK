@@ -1,6 +1,7 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
 
-// Hand and native-player collision suppression: contact evidence ownership, dominant-weapon and weapon-support hand suppression, post-drop suppression, and native player body suppression.
+// Hand and native-player collision suppression: contact evidence ownership, dominant-weapon and weapon-support hand suppression, post-drop suppression, and native player physical-pair ownership.
 
 namespace rock
 {
@@ -613,7 +614,7 @@ namespace rock
         _bodyBoneColliders.update(frame.hknpWorld, frame.deltaSeconds);
     }
 
-    bool PhysicsInteraction::shouldSuppressNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const
+    bool PhysicsInteraction::isNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const
     {
         if (!bhk || !hknp || !contact_pipeline_policy::isValidBodyId(bodyId)) {
             return false;
@@ -637,151 +638,55 @@ namespace rock
         }
 
         const std::uint32_t layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-        if (!collision_layer_policy::isNativePlayerCollisionSuppressionLayer(layer)) {
+        if (!collision_layer_policy::isNativePlayerCollisionBodyLayer(layer)) {
             return false;
         }
 
         auto* resolvedRef = resolveBodyToRef(bhk, hknp, RE::hknpBodyId{ bodyId });
         auto* player = RE::PlayerCharacter::GetSingleton();
-        return !resolvedRef || resolvedRef == player;
+        if (resolvedRef) {
+            return resolvedRef == player;
+        }
+        // Unresolved ownership is accepted only with positive player-tree
+        // ancestry, never merely because reference resolution failed.
+        const auto snapshot = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{ bodyId });
+        auto* firstPerson = f4vr::getFirstPersonSkeleton();
+        auto* thirdPerson = f4vr::getWorldRootNode();
+        auto* node = snapshot.ownerNode;
+        for (unsigned depth = 0; node && depth < 64; ++depth) {
+            if (node == firstPerson || node == thirdPerson) {
+                return true;
+            }
+            RE::NiNode* parent = nullptr;
+            if (!native_memory::tryReadValue(&node->parent, parent) || parent == node) {
+                ROCK_LOG_SAMPLE_WARN(PhysicsSafety, 5000,
+                    "Native player body identity rejected: bodyId={} stage=owner-ancestry depth={}", bodyId, depth);
+                return false;
+            }
+            node = parent;
+        }
+        return false;
     }
 
-    void PhysicsInteraction::restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason)
+    void PhysicsInteraction::clearNativePlayerCollisionFilter(RE::hknpWorld* hknp)
     {
-        if (_suppression.nativePlayerBodyCount == 0) {
-            _suppression.nativePlayerRefreshFrames = 0;
-            return;
-        }
-
-        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
-        std::array<NativePlayerCollisionSuppressedBody, kNativePlayerCollisionSuppressionBodyCapacity> pending{};
-        std::uint32_t pendingCount = 0;
-
-        auto keepPending = [&](const NativePlayerCollisionSuppressedBody& body) {
-            if (pendingCount < pending.size()) {
-                pending[pendingCount++] = body;
-            }
-        };
-
-        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
-            const auto& body = _suppression.nativePlayerBodies[i];
-            if (!contact_pipeline_policy::isValidBodyId(body.bodyId)) {
-                continue;
-            }
-
-            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
-                hknp,
-                body.bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
-                reason ? reason : "native-player-body");
-            if (releaseResult.readFailed) {
-                keepPending(body);
-            }
-        }
-
-        _suppression.nativePlayerBodies = pending;
-        _suppression.nativePlayerBodyCount = pendingCount;
-        _suppression.nativePlayerRefreshFrames = pendingCount == 0 ? 0 : 30;
+        native_player_collision::publish(hknp, {});
+        _suppression.nativePlayerRefreshFrames = 0;
     }
 
-    void PhysicsInteraction::refreshNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* context)
-    {
-        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _suppression.nativePlayerBodyCount == 0) {
-            return;
-        }
-
-        std::uint32_t retainedCount = 0;
-        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
-            const auto body = _suppression.nativePlayerBodies[i];
-            if (!contact_pipeline_policy::isValidBodyId(body.bodyId)) {
-                continue;
-            }
-
-            const auto refreshResult = collision_suppression_registry::globalCollisionSuppressionRegistry().refresh(
-                hknp,
-                body.bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
-                context ? context : "native-player-body-refresh");
-            if (refreshResult.readFailed || (refreshResult.valid && !refreshResult.staleLeaseDiscarded)) {
-                _suppression.nativePlayerBodies[retainedCount++] = body;
-            }
-        }
-
-        for (std::uint32_t i = retainedCount; i < _suppression.nativePlayerBodies.size(); ++i) {
-            _suppression.nativePlayerBodies[i] = {};
-        }
-        _suppression.nativePlayerBodyCount = retainedCount;
-    }
-
-    void PhysicsInteraction::refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(RE::hknpWorld* hknp, const char* context)
-    {
-        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _suppression.nativePlayerBodyCount == 0) {
-            return;
-        }
-
-        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
-            const auto& leasedBody = _suppression.nativePlayerBodies[i];
-            if (!contact_pipeline_policy::isValidBodyId(leasedBody.bodyId)) {
-                continue;
-            }
-
-            const auto snapshot = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{ leasedBody.bodyId });
-            if (!snapshot.valid) {
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    1000,
-                    "Native player collision suppression physics refresh skipped: bodyId={} context={} cannot snapshot body",
-                    leasedBody.bodyId,
-                    context ? context : "");
-                continue;
-            }
-
-            if (snapshot.motionIndex != leasedBody.motionIndex ||
-                snapshot.collisionObject != leasedBody.collisionObject ||
-                snapshot.ownerNode != leasedBody.ownerNode) {
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    1000,
-                    "Native player collision suppression physics refresh rejected recycled body: bodyId={} context={} oldMotion={} newMotion={} oldOwner={} newOwner={} oldCollision={} newCollision={}",
-                    leasedBody.bodyId,
-                    context ? context : "",
-                    leasedBody.motionIndex,
-                    snapshot.motionIndex,
-                    static_cast<const void*>(leasedBody.ownerNode),
-                    static_cast<const void*>(snapshot.ownerNode),
-                    static_cast<const void*>(leasedBody.collisionObject),
-                    static_cast<const void*>(snapshot.collisionObject));
-                continue;
-            }
-
-            std::uint32_t currentFilter = 0;
-            if (!body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ leasedBody.bodyId }, currentFilter)) {
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    1000,
-                    "Native player collision suppression physics refresh skipped: bodyId={} context={} cannot read filter",
-                    leasedBody.bodyId,
-                    context ? context : "");
-                continue;
-            }
-
-            const std::uint32_t refreshedFilter = currentFilter | collision_suppression_registry::kSuppressionNoCollideBit;
-            if (refreshedFilter != currentFilter) {
-                body_collision::setFilterInfo(hknp, RE::hknpBodyId{ leasedBody.bodyId }, refreshedFilter);
-            }
-        }
-    }
-
-    void PhysicsInteraction::updateNativePlayerCollisionSuppression(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
+    void PhysicsInteraction::updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
     {
         if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled) {
-            restoreNativePlayerCollisionSuppression(hknp, "native-player-filter-disabled");
+            clearNativePlayerCollisionFilter(hknp);
             return;
         }
 
         if (!bhk || !hknp) {
+            native_player_collision::abandon();
             return;
         }
 
         auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
-        refreshNativePlayerCollisionSuppression(hknp, "native-player-body-frame-refresh");
 
         if (_suppression.nativePlayerRefreshFrames > 0) {
             --_suppression.nativePlayerRefreshFrames;
@@ -794,7 +699,7 @@ namespace rock
             PhysicsInteraction* self = nullptr;
             RE::bhkWorld* bhk = nullptr;
             RE::hknpWorld* hknp = nullptr;
-            std::array<std::uint32_t, PhysicsInteraction::kNativePlayerCollisionSuppressionBodyCapacity> bodyIds{};
+            std::array<std::uint32_t, native_player_collision::kMaximumPlayerBodies> bodyIds{};
             std::uint32_t bodyCount = 0;
             bool overflow = false;
             RE::NiPoint3 playerPositionGameUnits{};
@@ -818,7 +723,7 @@ namespace rock
             void append(std::uint32_t bodyId)
             {
                 appendNearbyCar(bodyId);
-                if (!self || !self->shouldSuppressNativePlayerCollisionBody(bhk, hknp, bodyId) || contains(bodyId)) {
+                if (!self || !self->isNativePlayerCollisionBody(bhk, hknp, bodyId) || contains(bodyId)) {
                     return;
                 }
                 if (bodyCount >= bodyIds.size()) {
@@ -941,72 +846,22 @@ namespace rock
         if (scanContext.overflow && !_suppression.nativePlayerOverflowLogged) {
             _suppression.nativePlayerOverflowLogged = true;
             ROCK_LOG_WARN(Hand,
-                "Native player collision suppression body capacity exceeded; keeping first {} bodies",
-                kNativePlayerCollisionSuppressionBodyCapacity);
+                "Native player contact filter capacity exceeded; additional bodies retain native collision (capacity={})",
+                native_player_collision::kMaximumPlayerBodies);
         } else if (!scanContext.overflow) {
             _suppression.nativePlayerOverflowLogged = false;
         }
 
-        std::array<NativePlayerCollisionSuppressedBody, kNativePlayerCollisionSuppressionBodyCapacity> next{};
-        std::uint32_t nextCount = 0;
-        auto nextContains = [&](std::uint32_t bodyId) {
-            for (std::uint32_t i = 0; i < nextCount && i < next.size(); ++i) {
-                if (next[i].bodyId == bodyId) {
-                    return true;
-                }
-            }
-            return false;
-        };
-        auto appendNext = [&](const NativePlayerCollisionSuppressedBody& body) {
-            if (!contact_pipeline_policy::isValidBodyId(body.bodyId) || nextContains(body.bodyId) || nextCount >= next.size()) {
-                return;
-            }
-            next[nextCount++] = body;
-        };
-
-        for (std::uint32_t i = 0; i < scanContext.bodyCount && i < scanContext.bodyIds.size(); ++i) {
-            const auto bodyId = scanContext.bodyIds[i];
-            const auto acquireResult = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
-                hknp,
-                bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
-                "native-player-body");
-            if (acquireResult.valid && acquireResult.leaseIdentityValid) {
-                appendNext({
-                    bodyId,
-                    acquireResult.leaseMotionIndex,
-                    acquireResult.leaseCollisionObject,
-                    acquireResult.leaseOwnerNode,
-                });
-            } else if (acquireResult.valid) {
-                collision_suppression_registry::globalCollisionSuppressionRegistry().release(
-                    hknp,
-                    bodyId,
-                    collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
-                    "native-player-body-missing-identity");
-                ROCK_LOG_WARN(Hand,
-                    "Native player collision suppression acquisition rejected: bodyId={} lease identity unavailable",
-                    bodyId);
+        std::array<native_player_collision::BodyIdentity, native_player_collision::kMaximumPlayerBodies> bodies{};
+        std::size_t count = 0;
+        for (std::uint32_t i = 0; i < scanContext.bodyCount; ++i) {
+            const auto body = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{ scanContext.bodyIds[i] });
+            if (body.valid && body.collisionObject && body.ownerNode) {
+                bodies[count++] = { body.bodyId.value, body.motionIndex,
+                    reinterpret_cast<std::uintptr_t>(body.collisionObject),
+                    reinterpret_cast<std::uintptr_t>(body.ownerNode) };
             }
         }
-
-        for (std::uint32_t i = 0; i < _suppression.nativePlayerBodyCount && i < _suppression.nativePlayerBodies.size(); ++i) {
-            const auto& body = _suppression.nativePlayerBodies[i];
-            if (nextContains(body.bodyId)) {
-                continue;
-            }
-
-            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
-                hknp,
-                body.bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
-                "native-player-body-stale");
-            if (releaseResult.readFailed) {
-                appendNext(body);
-            }
-        }
-
-        _suppression.nativePlayerBodies = next;
-        _suppression.nativePlayerBodyCount = nextCount;
+        native_player_collision::publish(hknp, { bodies.data(), count });
     }
 }

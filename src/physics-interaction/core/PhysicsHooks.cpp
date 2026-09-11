@@ -2050,10 +2050,10 @@ namespace rock
 
         __try {
             const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
-            const bool playerController = playerControllerFilterEnabled && isPlayerCharacterController(controller);
+            const bool playerController = isPlayerCharacterController(controller);
             RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
             RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
-            const bool playerControllerFilterActive = playerController && playerHknpWorld;
+            const bool playerControllerFilterActive = playerControllerFilterEnabled && playerController && playerHknpWorld;
 
             auto* pi = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
             const bool piReady = pi && pi->isInitialized();
@@ -2065,7 +2065,7 @@ namespace rock
                 .holdingHeldObject = rightHolding || leftHolding,
                 .diagnosticsEnabled = diagnosticsEnabled,
             });
-            const bool heldFilterActive = piReady && contactPolicy.mayFilterBeforeOriginal;
+            const bool heldFilterActive = playerController && piReady && contactPolicy.mayFilterBeforeOriginal;
 
             if (!heldFilterActive && !playerControllerFilterActive) {
                 if (g_originalProcessConstraints) {
@@ -2077,18 +2077,8 @@ namespace rock
 
             const auto contactBuffers = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
             if (!contactBuffers.valid) {
-                if (playerControllerFilterActive && std::string_view(contactBuffers.reason) == "missingManifoldEntries") {
-                    const auto clearResult = held_grab_cc_policy::clearGeneratedConstraintOnlyContacts(contactBuffers);
-                    if (clearResult.valid) {
-                        ROCK_LOG_SAMPLE_DEBUG(CC,
-                            g_rockConfig.rockLogSampleMilliseconds,
-                            "Cleared {} player character-controller constraint-only contacts before original listener reason={} heldFilter={} playerObjectFilter={}",
-                            clearResult.removedPairCount,
-                            clearResult.reason,
-                            heldFilterActive ? "on" : "off",
-                            playerControllerFilterActive ? "on" : "off");
-                    }
-                }
+                // Without body identities no targeted decision is possible.
+                // Keep native support and attack constraints intact.
                 if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,

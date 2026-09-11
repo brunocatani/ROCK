@@ -289,15 +289,11 @@ namespace rock
 
         void updateBodyBoneCollisions(const PhysicsFrameContext& frame);
 
-        void updateNativePlayerCollisionSuppression(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
+        void updateNativePlayerCollisionFilter(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
 
-        void restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason);
+        void clearNativePlayerCollisionFilter(RE::hknpWorld* hknp);
 
-        void refreshNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* context);
-
-        void refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(RE::hknpWorld* hknp, const char* context);
-
-        bool shouldSuppressNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const;
+        bool isNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const;
 
         void driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -517,7 +513,6 @@ namespace rock
         static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 8;
         static constexpr std::size_t kEquippedWeaponDropBodySnapshotCapacity = 32;
         static constexpr std::size_t kEquippedWeaponDropHandoffCapacity = 4;
-        static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
 
         struct EquippedWeaponShoulderSheathState
         {
@@ -672,14 +667,6 @@ namespace rock
             bool activeThisFrame{ false };
         };
 
-        struct NativePlayerCollisionSuppressedBody
-        {
-            std::uint32_t bodyId = 0x7FFF'FFFFu;
-            std::uint32_t motionIndex = 0;
-            RE::NiCollisionObject* collisionObject = nullptr;
-            RE::NiAVObject* ownerNode = nullptr;
-        };
-
         struct RawHandParityState
         {
             RE::NiTransform previousApiTransform{};
@@ -779,10 +766,6 @@ namespace rock
             std::uint64_t expectedDynamicWeaponProxyMask = 0;
             std::uint64_t expectedDynamicWorldCarClutterMask = 0;
             std::uint64_t expectedDynamicWorldCarLargeClutterMask = 0;
-            std::uint64_t expectedNativeCharacterControllerMask = 0;
-            std::uint64_t originalNativeCharacterControllerMask = 0;
-            bool nativeControllerPolicyCaptured = false;
-            bool nativeControllerPolicyEnabled = false;
         };
 
         // State owned by the contact callback (PhysicsInteractionContacts.inl):
@@ -928,8 +911,6 @@ namespace rock
             collision_suppression_registry::SuppressionLeaseSet<kGrabCollisionSuppressionBodyCountPerHand>
                 leftDropLeases{
                     collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand };
-            std::array<NativePlayerCollisionSuppressedBody, kNativePlayerCollisionSuppressionBodyCapacity> nativePlayerBodies{};
-            std::uint32_t nativePlayerBodyCount = 0;
             std::uint32_t nativePlayerRefreshFrames = 0;
             bool nativePlayerOverflowLogged = false;
         };

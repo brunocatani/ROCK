@@ -46,6 +46,16 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFilter_CollisionMatrix = 0x1A0;
 
+    // FO4VR raw disassembly: 1E11800 consumes 8-byte body-ID pairs and
+    // compacts the admitted prefix; bhkCollisionFilter ctor 1E11460 installs
+    // vtable 2E84308. Ray traversal 1816CB8 uses slot +38 (1E11910), while
+    // simulation uses +20. Never hook the shared 1E115B0 bit predicate.
+    constexpr std::uintptr_t kFunc_BhkCollisionFilter_FilterBodyPairs = 0x1E11800;
+    constexpr std::uintptr_t kVtableEntry_BhkCollisionFilter_FilterBodyPairs = 0x2E84328;
+    // Both native SetCollisionFilterInfo (153AF7A) and DisablePair
+    // (196DF62) call this world/body-ID cache invalidation routine.
+    constexpr std::uintptr_t kFunc_RebuildBodyCollisionCaches = 0x153C5A0;
+
     constexpr std::uintptr_t kHknpWorld_MotionArrayPtr = 0xE0;
 
     constexpr std::uintptr_t kHknpWorld_MotionPropertiesLibraryPtr = 0x5D0;
