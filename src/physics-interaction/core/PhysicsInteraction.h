@@ -833,6 +833,12 @@ namespace rock
             std::array<bool, 2> holsterInputConsumedThisFrame{};
             PendingEquippedWeaponPrimaryOnlyGripStart pendingPrimaryOnlyGripStart{};
             std::array<weapon_interaction_acquisition_policy::State, 2> weaponInteractionAcquisitionStates{};
+            // Left/right candidates from the actual grab probes, valid only for
+            // this frame and weapon generation. No scene pointers cross phases.
+            std::array<std::uint32_t, 2> partIndicatorBodyIds{
+                weapon_part_runtime::kInvalidBodyId, weapon_part_runtime::kInvalidBodyId };
+            std::uint64_t partIndicatorFrame{ 0 };
+            std::uint64_t partIndicatorGeneration{ 0 };
         };
 
         // State owned by the EquippedWeaponDrop module.

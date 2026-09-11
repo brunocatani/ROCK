@@ -264,6 +264,7 @@ namespace rock
         std::size_t collectAttachOnlyGripIndicators(
             const RE::NiAVObject* currentWeaponRoot,
             std::span<const weapon_part_runtime::Target> targets,
+            std::span<const std::uint32_t> candidateBodyIds,
             std::span<RE::NiPoint3> outPositions) const;
         // Main-thread debug publication only. Returns the exact pending target
         // for one generated weapon body in the active bank.

@@ -607,6 +607,21 @@ namespace rock
                 (supportHandIsLeft ? providerInteractionState : rightHandInteractionState).supportGripAllowed = false;
             }
 
+            const auto indicatorBodyId = [&](const WeaponInteractionContact& contact,
+                                             const WeaponInteractionRuntimeState& state) {
+                return contact.valid && state.supportGripAllowed &&
+                    contact.weaponGenerationKey == currentWeaponGenerationKey ?
+                    contact.bodyId : weapon_part_runtime::kInvalidBodyId;
+            };
+            _equipped.partIndicatorBodyIds = {
+                frame.left.disabled ? weapon_part_runtime::kInvalidBodyId :
+                    indicatorBodyId(leftWeaponContact, providerInteractionState),
+                frame.right.disabled ? weapon_part_runtime::kInvalidBodyId :
+                    indicatorBodyId(rightWeaponContact, rightHandInteractionState),
+            };
+            _equipped.partIndicatorFrame = runtime.frameIndex;
+            _equipped.partIndicatorGeneration = currentWeaponGenerationKey;
+
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
             const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
                 leftWeaponContact,
@@ -1716,13 +1731,31 @@ namespace rock
             firingReattachFrame,
             firingReattachFrame.handIsLeft ? _leftHand : _rightHand);
 
-        std::array<weapon_part_runtime::Target,
-            provider::ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> partTargets{};
-        const auto targetCount = provider::copyWeaponPartTargets(partTargets);
-        overlayFrame.count += static_cast<std::uint32_t>(
-            _weaponCollision.collectAttachOnlyGripIndicators(weaponNode,
-                std::span(partTargets).first(targetCount),
-                std::span(overlayFrame.positions).subspan(overlayFrame.count)));
+        if (_equipped.partIndicatorFrame == gameFrameIndex &&
+            _equipped.partIndicatorGeneration == currentWeaponGenerationKey) {
+            auto candidateBodyIds = _equipped.partIndicatorBodyIds;
+            const auto occupancy = _twoHandedGrip.getGripOccupancy();
+            for (const bool isLeft : { true, false }) {
+                const auto& hand = isLeft ? _leftHand : _rightHand;
+                const auto& grip = isLeft ? occupancy.left : occupancy.right;
+                if (hand.isHolding() || _touchGrabRuntime.isHandActive(isLeft) ||
+                    grip.weaponEngaged() ||
+                    (isLeft == _twoHandedGrip.isFiringHandLeft() &&
+                        !_twoHandedGrip.isPartCarryActive())) {
+                    candidateBodyIds[isLeft ? 0u : 1u] = weapon_part_runtime::kInvalidBodyId;
+                }
+            }
+            if (candidateBodyIds[0] != weapon_part_runtime::kInvalidBodyId ||
+                candidateBodyIds[1] != weapon_part_runtime::kInvalidBodyId) {
+                std::array<weapon_part_runtime::Target,
+                    provider::ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> partTargets{};
+                const auto targetCount = provider::copyWeaponPartTargets(partTargets);
+                overlayFrame.count += static_cast<std::uint32_t>(
+                    _weaponCollision.collectAttachOnlyGripIndicators(weaponNode,
+                        std::span(partTargets).first(targetCount), candidateBodyIds,
+                        std::span(overlayFrame.positions).subspan(overlayFrame.count)));
+            }
+        }
 
         if (overlayFrame.count > 0) {
             debug::Install();

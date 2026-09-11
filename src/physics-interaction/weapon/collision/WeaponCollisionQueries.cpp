@@ -7,10 +7,11 @@ namespace rock
     std::size_t WeaponCollision::collectAttachOnlyGripIndicators(
         const RE::NiAVObject* currentWeaponRoot,
         std::span<const weapon_part_runtime::Target> targets,
+        std::span<const std::uint32_t> candidateBodyIds,
         std::span<RE::NiPoint3> outPositions) const
     {
         const auto generation = getCurrentWeaponGenerationKey();
-        if (!currentWeaponRoot || generation == 0 || outPositions.empty() ||
+        if (!currentWeaponRoot || generation == 0 || outPositions.empty() || candidateBodyIds.empty() ||
             !activeWeaponBodyRootMatches(currentWeaponRoot) ||
             !std::any_of(targets.begin(), targets.end(), [generation](const auto& target) {
                 return weapon_part_runtime::targetAppliesToGeneration(target, generation) &&
@@ -26,6 +27,12 @@ namespace rock
                 break;
             }
             if (!instance.body.isValid() || !instance.sourceNode) {
+                continue;
+            }
+            // Registration alone is not a hover. Only the exact body selected
+            // by an available hand's current grab probe may show a marker.
+            if (std::find(candidateBodyIds.begin(), candidateBodyIds.end(),
+                    instance.body.getBodyId().value) == candidateBodyIds.end()) {
                 continue;
             }
             const auto source = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
