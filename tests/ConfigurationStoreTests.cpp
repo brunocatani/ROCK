@@ -1,5 +1,5 @@
 #include "RockConfig.h"
-#include "config/DeveloperSettingMetadata.h"
+#include "config/SettingMetadata.h"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -73,16 +73,29 @@ int main(int argc, char** argv)
                 ++developerCount;
                 require(consumer.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr) == nullptr,
                     "developer setting leaked into generated consumer INI");
-                const auto metadata = std::find_if(std::begin(kDeveloperSettingMetadata), std::end(kDeveloperSettingMetadata),
-                    [&](const auto& info) { return info.section == setting.section && info.key == setting.key; });
-                require(metadata != std::end(kDeveloperSettingMetadata), "developer UI metadata missing");
             } else {
                 require(consumer.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr) != nullptr,
                     "a supported consumer default is missing from first-run INI");
             }
         }
-        require(developerCount == std::size(kDeveloperSettingMetadata), "stale developer UI metadata");
+        require(store.settings().size() == std::size(kSettingMetadata), "presentation catalog differs from supported loader options");
+        for (std::size_t index = 0; index < store.settings().size(); ++index) {
+            const auto& setting = store.settings()[index];
+            const auto& metadata = kSettingMetadata[index];
+            require(setting.section == metadata.section && setting.key == metadata.key &&
+                setting.group == metadata.group && setting.category == metadata.category,
+                "configuration API lost authored section or option order");
+        }
         const auto originalConsumer = bytes(store.path(Group::Consumer));
+        std::string_view previousCategory;
+        std::size_t previousHeading = 0;
+        for (const auto& setting : store.settings()) {
+            if (setting.group != Group::Consumer || setting.category == previousCategory) continue;
+            const auto heading = originalConsumer.find("; === " + setting.category + " ===");
+            require(heading != std::string::npos && heading >= previousHeading, "generated consumer sections differ from menu order");
+            previousCategory = setting.category;
+            previousHeading = heading;
+        }
         const auto originalRevision = store.revision();
         require(store.load(true), "repeat load failed");
         require(store.revision() == originalRevision, "unchanged reload was republished");
@@ -110,6 +123,14 @@ int main(int argc, char** argv)
         require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowHandAxes", "true"), "second override failed");
         require(store.load(false), "external+menu reload failed");
         require(find(store, "bDeveloperModeEnabled").value == "true", "menu overwrote an external edit");
+        const auto organizedDeveloper = bytes(store.path(Group::Developer));
+        const auto controlsHeading = "; === " + find(store, "bDeveloperModeEnabled").category + " ===";
+        const auto overlayHeading = "; === " + find(store, "bDebugShowColliders").category + " ===";
+        require(organizedDeveloper.find(overlayHeading) != std::string::npos &&
+            organizedDeveloper.find(controlsHeading) < organizedDeveloper.find(overlayHeading),
+            "sparse developer sections follow edit order instead of menu order");
+        require(organizedDeveloper.find(overlayHeading) == organizedDeveloper.rfind(overlayHeading),
+            "editing multiple options duplicated a section heading");
         require(find(store, "bDebugShowHandAxes").value == "true", "menu override missing");
         require(bytes(store.path(Group::Consumer)) == originalConsumer, "developer edits rewrote consumer options");
         require(store.setValue(Group::Developer, "PhysicsInteraction", "bDebugShowColliders", "0"), "default restoration failed");
@@ -142,6 +163,8 @@ int main(int argc, char** argv)
         CSimpleIniA supplied;
         require(supplied.SetBoolValue("Debug", "bDeveloperModeEnabled", false) >= 0, "supplied developer setup failed");
         require(supplied.SetLongValue("Debug", "iLogSampleMilliseconds", 2000) >= 0, "supplied default setup failed");
+        require(supplied.SetValue("Debug", "sLogPattern", "%v", "; My log format") >= 0, "authored comment setup failed");
+        require(supplied.SetValue("Local", "sNote", "keep me", "; My local note") >= 0, "external entry setup failed");
         require(supplied.SaveFile(store.path(Group::Developer).c_str(), false) >= 0, "supplied developer save failed");
         const auto suppliedBytes = bytes(store.path(Group::Developer));
         require(store.load(false), "supplied developer file did not load");
@@ -152,6 +175,10 @@ int main(int argc, char** argv)
         require(retained.LoadFile(store.path(Group::Developer).c_str()) >= 0, "reset deleted the supplied developer file");
         require(retained.GetValue("Debug", "bDeveloperModeEnabled", nullptr), "reset removed an unrelated supplied default");
         require(retained.GetValue("Debug", "iLogSampleMilliseconds", nullptr), "edit pruned an unrelated supplied default");
+        require(std::string_view(retained.GetValue("Local", "sNote", "")) == "keep me", "organization discarded an external entry");
+        const auto retainedBytes = bytes(store.path(Group::Developer));
+        require(retainedBytes.find("; My log format") != std::string::npos && retainedBytes.find("; My local note") != std::string::npos,
+            "organization discarded authored option comments");
         fs::remove(store.path(Group::Developer));
         require(fs::create_directory(store.path(Group::Developer)), "failure directory setup failed");
         require(!store.load(false), "unreadable developer path was accepted");

@@ -26,6 +26,7 @@ namespace rock::config
         Group group;
         ValueType type;
         bool specified = false;
+        std::size_t displayOrder = 0;
     };
 
     struct Change { std::string_view section, key, value; };
@@ -51,6 +52,7 @@ namespace rock::config
     private:
         bool readFile(Group group, CSimpleIniA& ini);
         bool materializeConsumerDefaults(CSimpleIniA& ini);
+        bool organizeFile(Group group, const CSimpleIniA& source, CSimpleIniA& output);
         bool writeFile(Group group, CSimpleIniA& ini, bool replace);
         std::filesystem::path _directory;
         std::vector<Setting> _settings;

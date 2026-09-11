@@ -1,5 +1,5 @@
 #include "config/ConfigurationStore.h"
-#include "config/DeveloperSettingMetadata.h"
+#include "config/SettingMetadata.h"
 
 #include <Windows.h>
 #include <algorithm>
@@ -66,9 +66,8 @@ namespace rock::config
 
     Group settingGroup(std::string_view section, std::string_view key) noexcept
     {
-        if (section == "Debug" || (key.size() > 1 && key.substr(1).starts_with("Debug"))) return Group::Developer;
-        for (const auto& setting : kDeveloperSettingMetadata) {
-            if (setting.section == section && setting.key == key) return Group::Developer;
+        for (const auto& setting : kSettingMetadata) {
+            if (setting.section == section && setting.key == key) return setting.group;
         }
         return Group::Consumer;
     }
@@ -91,20 +90,20 @@ namespace rock::config
                     .type = typeOf(key.pItem),
                 };
                 setting.value = setting.defaultValue;
-                if (setting.group == Group::Developer) {
-                    for (const auto& metadata : kDeveloperSettingMetadata) {
-                        if (metadata.key == setting.key && metadata.section == setting.section) {
-                            setting.category = metadata.category;
-                            setting.description = metadata.description;
-                            break;
-                        }
+                for (std::size_t index = 0; index < std::size(kSettingMetadata); ++index) {
+                    const auto& metadata = kSettingMetadata[index];
+                    if (metadata.key == setting.key && metadata.section == setting.section) {
+                        setting.category = metadata.category;
+                        setting.description = metadata.description;
+                        setting.displayOrder = index;
+                        break;
                     }
                 }
                 _settings.push_back(std::move(setting));
             }
         }
         std::stable_sort(_settings.begin(), _settings.end(), [](const Setting& a, const Setting& b) {
-            return a.category < b.category;
+            return a.displayOrder < b.displayOrder;
         });
     }
 
@@ -140,6 +139,8 @@ namespace rock::config
             if (ec) _error = std::format("Cannot remove empty {}: {}", destination.string(), ec.message());
             return !ec;
         }
+        CSimpleIniA organized;
+        if (!organizeFile(group, ini, organized)) return false;
         std::filesystem::create_directories(_directory, ec);
         if (ec) {
             _error = std::format("Cannot create {}: {}", _directory.string(), ec.message());
@@ -147,7 +148,7 @@ namespace rock::config
         }
         auto temporary = destination;
         temporary += L".creating";
-        if (ini.SaveFile(temporary.c_str(), false) < 0) {
+        if (organized.SaveFile(temporary.c_str(), false) < 0) {
             _error = std::format("Cannot write {}", temporary.string());
             std::filesystem::remove(temporary, ec);
             return false;
@@ -192,12 +193,6 @@ namespace rock::config
             changed |= setting.value != next || setting.specified != specified;
             setting.value = next;
             setting.specified = specified;
-            if (setting.group == Group::Consumer) {
-                if (const auto* section = source.GetSection(setting.section.c_str())) {
-                    const auto key = section->find(CSimpleIniA::Entry(setting.key.c_str()));
-                    if (key != section->end() && key->first.pComment) setting.description = key->first.pComment;
-                }
-            }
         }
         _settings = std::move(updated);
         if (changed) ++_revision;
@@ -270,6 +265,79 @@ namespace rock::config
                     setting.key.c_str(), setting.defaultValue.c_str()) < 0) {
                 _error = "Cannot materialize compiled consumer defaults";
                 return false;
+            }
+        }
+        return true;
+    }
+
+    bool ConfigurationStore::organizeFile(Group group, const CSimpleIniA& source, CSimpleIniA& output)
+    {
+        const auto header = group == Group::Consumer ?
+            "; ROCK.ini - regular options\n; Created with all regular defaults when missing.\n" :
+            "; ROCK_Developer.ini - developer options\n; Created only after a non-default developer change.\n"
+            "; New files contain only changed options. Existing entries are preserved.\n"
+            "; Resetting an option removes its entry; an empty developer file is removed.\n";
+        if (output.LoadData(std::string(header) +
+                "; Missing options use compiled defaults. Section numbers match the wheel menu.\n\n") < 0) {
+            _error = "Cannot prepare configuration header";
+            return false;
+        }
+        std::string_view previousCategory;
+        for (const auto& setting : _settings) {
+            if (setting.group != group) continue;
+            const auto* value = source.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr);
+            if (!value) continue;
+
+            std::string comment;
+            if (setting.category != previousCategory) {
+                comment = std::format("; === {} ===\n", setting.category);
+                previousCategory = setting.category;
+            }
+            const auto* section = source.GetSection(setting.section.c_str());
+            const auto entry = section->find(CSimpleIniA::Entry(setting.key.c_str()));
+            const char* existing = entry != section->end() ? entry->first.pComment : nullptr;
+            if (existing) {
+                // Rebuild only our category banner. Keep authored per-option help.
+                std::string_view remaining(existing);
+                while (!remaining.empty()) {
+                    const auto end = remaining.find('\n');
+                    auto line = remaining.substr(0, end);
+                    if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+                    if (!line.empty() && !(line.starts_with("; === ") && line.ends_with(" ==="))) {
+                        comment.append(line);
+                        comment += '\n';
+                    }
+                    if (end == std::string_view::npos) break;
+                    remaining.remove_prefix(end + 1);
+                }
+            } else if (!setting.description.empty()) {
+                comment += "; ";
+                for (const char c : setting.description) {
+                    comment += c;
+                    if (c == '\n') comment += "; ";
+                }
+                comment += '\n';
+            }
+            if (output.SetValue(setting.section.c_str(), setting.key.c_str(), value,
+                    comment.empty() ? nullptr : comment.c_str()) < 0) {
+                _error = "Cannot organize configuration option";
+                return false;
+            }
+        }
+
+        // Preserve externally added entries; organization must not discard values.
+        CSimpleIniA::TNamesDepend sections;
+        source.GetAllSections(sections);
+        for (const auto& section : sections) {
+            CSimpleIniA::TNamesDepend keys;
+            source.GetAllKeys(section.pItem, keys);
+            for (const auto& key : keys) {
+                if (!output.GetValue(section.pItem, key.pItem, nullptr) &&
+                    output.SetValue(section.pItem, key.pItem,
+                        source.GetValue(section.pItem, key.pItem), key.pComment) < 0) {
+                    _error = "Cannot preserve external configuration option";
+                    return false;
+                }
             }
         }
         return true;
