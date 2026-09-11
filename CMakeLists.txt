@@ -994,6 +994,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderApiNegotiationTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderApiNegotiationTests)
 
+  add_executable(ROCKProviderHandItemClientTests
+    "${ROOT_DIR}/tests/ProviderHandItemClientTests.cpp"
+  )
+  target_compile_features(ROCKProviderHandItemClientTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderHandItemClientTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderHandItemClientTests)
+
   add_executable(ROCKProviderExternalBodyRegistryTests
     "${ROOT_DIR}/tests/ProviderExternalBodyRegistryTests.cpp"
   )

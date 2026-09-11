@@ -3852,6 +3852,145 @@ namespace rock::provider
             ROCK_PROVIDER_API_V1_PLAYER_CONTROLLER_JUMP_TABLE_BYTES);
     }
 
+    // Consumer-side result, not a function-table payload. RequestQueued means
+    // admission only; poll getInteractionCommandResultV1(ownerToken, commandId)
+    // for Succeeded/Rejected/Cancelled, or cancelInteractionCommandV1 to cancel.
+    struct RockGrabItemRequestResult
+    {
+        RockProviderResultV1 result{ RockProviderResultV1::NotReady };
+        std::uint64_t commandId{ 0 };
+    };
+
+    /*
+     * Small, non-owning client for world-reference hand items. Register once
+     * with RequiredCapabilities (check the granted mask), then construct with
+     * that owner token and your SDK's typed FormID lookup:
+     *
+     *   using HandItems = RockHandItems<RE::TESObjectREFR>;
+     *   registration.requestedCapabilities |= HandItems::RequiredCapabilities;
+     *   // registerConsumerV1(&registration, &handle), then check result/mask.
+     *   HandItems hands{handle.ownerToken,
+     *       &RE::TESForm::GetFormByID<RE::TESObjectREFR>};
+     *   auto* held = hands.GetHeldItem(true);
+     *   auto grab = hands.RequestGrabItem(false, target, 100.0f);
+     *
+     * Classic F4SE consumers supply a TESObjectREFR*(uint32_t) resolver using
+     * their SDK's LookupFormByID and checked reference cast. Reference must
+     * expose formID. The resolver must return nullptr for non-references and
+     * must not throw. No engine pointer crosses the ROCK function table.
+     *
+     * Call on the game thread, normally in a ROCK frame callback. Resolved
+     * pointers are borrowed for immediate use; use the consumer SDK's native
+     * reference handles for longer lifetimes. This client does not register,
+     * unregister, or retain references. Recreate it after consumer registration
+     * changes. The owner token authorizes queries of either hand's full state,
+     * including manual pickups and grabs initiated by other consumers.
+     */
+    template <class Reference>
+    class RockHandItems
+    {
+    public:
+        using ResolveReference = Reference* (*)(std::uint32_t);
+        static constexpr std::uint32_t RequiredCapabilities =
+            static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::FrameSnapshots) |
+            static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInteractionState) |
+            static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands);
+
+        RockHandItems(std::uint64_t ownerToken, ResolveReference resolveReference) noexcept :
+            _ownerToken(ownerToken), _resolveReference(resolveReference)
+        {}
+
+        // nullptr + Ok means no held world reference (including a surface with
+        // no REFR). Supply outResult to distinguish permission/readiness errors
+        // or a reference that could no longer be resolved (TargetUnavailable).
+        [[nodiscard]] Reference* GetHeldItem(
+            bool isLeft, RockProviderResultV1* outResult = nullptr) const
+        {
+            Reference* reference = nullptr;
+            const auto result = queryHeldItem(isLeft, reference);
+            if (outResult) {
+                *outResult = result;
+            }
+            return reference;
+        }
+
+        // Only existing world REFRs. Zero distance uses ROCK's normal near-grab
+        // range. A fresh snapshot supplies all generation guards; ROCK selects
+        // the physics body and executes the request asynchronously.
+        [[nodiscard]] RockGrabItemRequestResult RequestGrabItem(
+            bool isLeft, const Reference* reference, float maxDistanceGame = 0.0f) const
+        {
+            if (!reference || reference->formID == 0) {
+                return { RockProviderResultV1::InvalidArgument, 0 };
+            }
+            if (!RockProviderApi::inst) {
+                return {};
+            }
+            if (!providerApiTableSupportsV1(ROCK_PROVIDER_API_V1_FORCE_GRAB_TABLE_BYTES) ||
+                !supportsForceGrabCommandV1() ||
+                !RockProviderApi::inst->requestForceGrabV1 ||
+                !RockProviderApi::inst->getInteractionCommandResultV1) {
+                return { RockProviderResultV1::UnsupportedVersion, 0 };
+            }
+            RockProviderFrameSnapshot snapshot{};
+            if (!RockProviderApi::inst->getFrameSnapshot ||
+                !RockProviderApi::inst->getFrameSnapshot(&snapshot) ||
+                snapshot.worldGeneration == 0 || snapshot.skeletonGeneration == 0 ||
+                snapshot.providerGeneration == 0) {
+                return {};
+            }
+            RockProviderForceGrabRequestV1 request{};
+            request.hand = isLeft ? RockProviderHand::Left : RockProviderHand::Right;
+            request.targetFormId = reference->formID;
+            request.worldGeneration = snapshot.worldGeneration;
+            request.skeletonGeneration = snapshot.skeletonGeneration;
+            request.providerGeneration = snapshot.providerGeneration;
+            request.maxDistanceGame = maxDistanceGame;
+            RockGrabItemRequestResult admission{};
+            admission.result = RockProviderApi::inst->requestForceGrabV1(
+                _ownerToken, &request, &admission.commandId);
+            return admission;
+        }
+
+    private:
+        [[nodiscard]] RockProviderResultV1 queryHeldItem(
+            bool isLeft, Reference*& reference) const
+        {
+            if (!_resolveReference) {
+                return RockProviderResultV1::InvalidArgument;
+            }
+            if (!RockProviderApi::inst) {
+                return RockProviderResultV1::NotReady;
+            }
+            if (!supportsHandInteractionStateV1() ||
+                !RockProviderApi::inst->getHandInteractionStateV1) {
+                return RockProviderResultV1::UnsupportedVersion;
+            }
+            RockProviderHandInteractionStateV1 state{};
+            const auto result = RockProviderApi::inst->getHandInteractionStateV1(
+                _ownerToken, isLeft ? RockProviderHand::Left : RockProviderHand::Right, &state);
+            if (result != RockProviderResultV1::Ok) {
+                return result;
+            }
+            if ((state.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid)) == 0) {
+                return RockProviderResultV1::NotReady;
+            }
+            // HeldObject includes HeldInit/Catching and stash/consume candidates;
+            // phase == Holding alone would miss those still-held references.
+            const bool held = state.targetKind == RockProviderBodyContactTargetKind::HeldObject ||
+                (state.phase == RockProviderHandInteractionPhaseV1::Holding &&
+                    (state.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::TouchGrab)) != 0);
+            if (!held || state.targetFormId == 0) {
+                return RockProviderResultV1::Ok;
+            }
+            reference = _resolveReference(state.targetFormId);
+            return reference ? RockProviderResultV1::Ok : RockProviderResultV1::TargetUnavailable;
+        }
+
+        std::uint64_t _ownerToken;
+        ResolveReference _resolveReference;
+    };
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
