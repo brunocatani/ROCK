@@ -127,6 +127,8 @@ namespace rock
                 return "probe";
             case WeaponInteractionAcquisitionSource::AuthoredSeat:
                 return "authored-seat";
+            case WeaponInteractionAcquisitionSource::FiringGripZone:
+                return "firing-grip-zone";
             case WeaponInteractionAcquisitionSource::None:
                 return "none";
             }

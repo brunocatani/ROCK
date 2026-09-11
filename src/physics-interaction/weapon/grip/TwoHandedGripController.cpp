@@ -424,28 +424,53 @@ namespace rock
             !supportRuntimeState.providerPartAuthority.active;
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         firing_grip_reattach_zone_policy::ZoneResult handoffZone{};
-        // Preview only: the existing contact/probe or authored-seat route
-        // still owns acquisition and the grab button still commits it.
-        const bool handoffIndicatorAvailable =
-            (routedSupportTouching || authoredSeatAcquisitionAvailable) &&
+        // Evaluate the same cylinders as detached firing-grip reattachment,
+        // even without a contact/probe or authored support seat. Keep the
+        // debug boundary available while the firing grip is occupied.
+        const auto& handoffRuntime = runtime_state::currentFrame();
+        const bool handoffZoneEvaluated =
             _session.state != TwoHandedState::PartCarry &&
-            _session.state != TwoHandedState::Gripping &&
+            handoffRuntime.weaponDrawn && f4vr::isNodeVisible(weaponNode) &&
+            !handoffRuntime.localMenuBlocking && !handoffRuntime.compatibilityConfigBlocking &&
+            !frameInput.animationBoundaryActive &&
             _handlingSettings.ambidextrousHandoffEnabled &&
             firingGripProximityAuthorityEnabled &&
-            supportRuntimeState.supportGripAllowed &&
-            !supportRuntimeState.providerPartAuthority.active &&
-            !supportHandHoldingObject &&
             canBeginPrimaryOnlyGripForHand(supportHandIsLeft) &&
             tryBuildFiringGripZoneInput(weaponNode, currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey,
-                _handlingSettings.firingGripPromotionRadiusGameUnits, handoffInput) &&
-            tryEvaluateFiringGripZoneForHand(supportHandIsLeft, handoffInput, handoffZone) &&
-            handoffZone.inside;
-        if (handoffIndicatorAvailable) {
+                _handlingSettings.firingGripReattachRadiusGameUnits, handoffInput) &&
+            tryEvaluateFiringGripZoneForHand(supportHandIsLeft, handoffInput, handoffZone);
+        // A station without a collision contact must still obey a provider's
+        // exclusive part whitelist for this weapon generation.
+        provider::RockProviderWeaponPartTargetResolutionV1 handoffPartResolution{};
+        if (handoffZoneEvaluated && handoffZone.inside) {
+            provider::RockProviderWeaponPartTargetQueryV1 handoffPartQuery{};
+            handoffPartQuery.weaponGenerationKey = currentWeaponGenerationKey;
+            handoffPartQuery.bodyId = weapon_part_runtime::kInvalidBodyId;
+            (void)provider::resolveWeaponPartTargetV1(handoffPartQuery, handoffPartResolution);
+        }
+        const bool handoffAcquisitionAvailable =
+            handoffZoneEvaluated && !partGrip(supportHandIsLeft).active &&
+            !supportHandHoldingObject && canAcquireFiringGripHandoff(
+                handoffZone.inside, supportRuntimeState,
+                handoffPartResolution.whitelistActive != 0);
+        if (handoffAcquisitionAvailable) {
             updateFiringGripZoneIndicator(weaponNode, currentWeaponGenerationKey,
                 supportHandIsLeft, handoffZone);
         }
-        if (authoredSeatAcquisitionAvailable) {
+        if (supportGripHeld && handoffZoneEvaluated &&
+            !partGrip(supportHandIsLeft).active && !supportHandHoldingObject) {
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
+                "TwoHandedGrip: firing-grip handoff acquisition hand={} inside={} along={:.2f} perp={:.2f} reach={:.2f} radius={:.2f} allowed={} contactRoute={} authoredRoute={} reserved={} provider={} whitelist={}",
+                supportHandIsLeft ? "left" : "right", handoffZone.inside,
+                handoffZone.alongAxisGameUnits, handoffZone.perpendicularDistanceGameUnits,
+                handoffInput.reachGameUnits, handoffInput.radiusGameUnits,
+                handoffAcquisitionAvailable, routedSupportTouching,
+                authoredSeatAcquisitionAvailable, !supportRuntimeState.supportGripAllowed,
+                supportRuntimeState.providerPartAuthority.active,
+                handoffPartResolution.whitelistActive != 0);
+        }
+        if (handoffAcquisitionAvailable || authoredSeatAcquisitionAvailable) {
             decision = WeaponInteractionDecision{
                 .kind = WeaponInteractionKind::SupportGrip,
                 .partKind = WeaponPartKind::Other,
@@ -455,13 +480,15 @@ namespace rock
                 .sourceRoot = weaponNode,
                 .weaponGenerationKey = currentWeaponGenerationKey,
                 .acquisitionSource =
-                    WeaponInteractionAcquisitionSource::AuthoredSeat,
+                    handoffAcquisitionAvailable ?
+                        WeaponInteractionAcquisitionSource::FiringGripZone :
+                        WeaponInteractionAcquisitionSource::AuthoredSeat,
             };
         }
         const bool supportTouchingSupport =
-            routedSupportTouching || authoredSeatAcquisitionAvailable;
+            routedSupportTouching || authoredSeatAcquisitionAvailable || handoffAcquisitionAvailable;
         RE::NiNode* interactionWeaponNode =
-            authoredSeatAcquisitionAvailable ?
+            (handoffAcquisitionAvailable || authoredSeatAcquisitionAvailable) ?
             weaponNode :
             sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
         authoredIndicatorInput =
@@ -478,7 +505,7 @@ namespace rock
                     authoredCapabilityAllowsIndicator,
                 .activationSpatialPass =
                     authoredActivation.activationSpatialPass &&
-                    !handoffIndicatorAvailable,
+                    !handoffAcquisitionAvailable,
                 .supportGripAllowed = supportRuntimeState.supportGripAllowed,
                 .providerPartAuthorityActive =
                     supportRuntimeState.providerPartAuthority.active,

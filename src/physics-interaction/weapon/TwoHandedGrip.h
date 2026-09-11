@@ -1216,6 +1216,8 @@ namespace rock
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
+            WeaponInteractionAcquisitionSource acquisitionSource{
+                WeaponInteractionAcquisitionSource::None };
             // Both authored support topologies keep axis aiming and the
             // primary-anchored solve but never apply palm-normal twist.
             bool disableAuthoredSupportNormalTwist{ false };

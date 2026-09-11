@@ -128,10 +128,18 @@ namespace rock::weapon_support_authority_policy
         bool authoredSeatInsideHandoffZone{ false };
     };
 
+    [[nodiscard]] inline constexpr float firingGripCaptureReach(
+        const bool acquiredThroughFiringGripZone,
+        const float reattachReach,
+        const float supportPromotionReach) noexcept
+    {
+        return acquiredThroughFiringGripZone ? reattachReach : supportPromotionReach;
+    }
+
     /*
      * Support-pose selection must not remove the separate dynamic ambidextrous
-     * handoff station at the firing grip. This bypass exists only during an
-     * ordinary support acquisition with the live support palm inside the
+     * handoff station at the firing grip. This bypass exists only during a
+     * two-hand acquisition with the live support palm inside the
      * lateral cylinders. Exact provider authority remains ahead of it. If a
      * usable authored seat is itself inside that same zone (the common pistol
      * case), retain the authored seat instead of replacing it with dynamic.

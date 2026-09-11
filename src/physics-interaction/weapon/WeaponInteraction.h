@@ -12,6 +12,17 @@
 
 namespace rock
 {
+    // The firing-grip station has its own spatial admission. Normal support
+    // and provider part grabs continue through their existing routes below.
+    [[nodiscard]] inline bool canAcquireFiringGripHandoff(
+        const bool insideFiringGripZone,
+        const WeaponInteractionRuntimeState& runtimeState,
+        const bool providerWhitelistActive)
+    {
+        return insideFiringGripZone && runtimeState.supportGripAllowed &&
+               !runtimeState.providerPartAuthority.active && !providerWhitelistActive;
+    }
+
     namespace weapon_interaction_acquisition_policy
     {
         inline constexpr std::uint8_t kTouchGraceFrames = 2;

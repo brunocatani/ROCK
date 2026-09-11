@@ -3404,6 +3404,58 @@ int main()
 
     using rock::weapon_support_authority_policy::DynamicHandoffGripCaptureInput;
     using rock::weapon_support_authority_policy::shouldCaptureDynamicHandoffGrip;
+    {
+        namespace zone = rock::firing_grip_reattach_zone_policy;
+        using rock::weapon_support_authority_policy::firingGripCaptureReach;
+        const rock::WeaponInteractionRuntimeState normal{};
+        const rock::WeaponInteractionContact noContact{};
+        ok &= expectEqual("normal support still needs its existing acquisition route",
+            rock::routeWeaponInteraction(noContact, normal).kind,
+            rock::WeaponInteractionKind::None);
+        const float reach = firingGripCaptureReach(true, 10.0f, 5.0f);
+        ok &= expectNear("direct handoff retains reattachment reach through capture and promotion",
+            reach, 10.0f);
+        ok &= expectNear("ordinary support promotion keeps its existing reach",
+            firingGripCaptureReach(false, 10.0f, 5.0f), 5.0f);
+        for (const float side : { -1.0f, 1.0f }) {
+            for (const float distance : { 7.76f, 10.0f }) {
+                const auto inside = zone::evaluateZone({
+                    .palmWorld = { side * distance, 3.0f, 0.0f },
+                    .weaponLeftAxisWorld = { 1.0f, 0.0f, 0.0f },
+                    .reachGameUnits = reach,
+                    .radiusGameUnits = 3.0f,
+                });
+                const bool available = rock::canAcquireFiringGripHandoff(inside.inside, normal, false);
+                ok &= expectTrue("firing-grip cylinders admit either side without a contact or authored seat",
+                    available && inside.indicatorValid);
+                ok &= expectFalse("entering the cylinder alone does not attach",
+                    rock::weapon_two_handed_grip_math::canStartSupportGrip(available, false, false));
+                ok &= expectTrue("grab commits the cylinder-admitted support hand",
+                    rock::weapon_two_handed_grip_math::canStartSupportGrip(available, true, false));
+            }
+        }
+        for (const auto palm : { zone::Vec3{ 10.01f, 0.0f, 0.0f },
+                 zone::Vec3{ -10.01f, 0.0f, 0.0f }, zone::Vec3{ 0.0f, 3.01f, 0.0f } }) {
+            const auto outside = zone::evaluateZone({
+                .palmWorld = palm,
+                .weaponLeftAxisWorld = { 1.0f, 0.0f, 0.0f },
+                .reachGameUnits = reach,
+                .radiusGameUnits = 3.0f,
+            });
+            ok &= expectFalse("outside the shared cylinders has neither handoff admission nor marker",
+                rock::canAcquireFiringGripHandoff(outside.inside, normal, false) || outside.indicatorValid);
+        }
+        auto reserved = normal;
+        reserved.supportGripAllowed = false;
+        ok &= expectFalse("handoff respects support reservations",
+            rock::canAcquireFiringGripHandoff(true, reserved, false));
+        auto providerPart = normal;
+        providerPart.providerPartAuthority.active = true;
+        ok &= expectFalse("provider parts retain their own grab route",
+            rock::canAcquireFiringGripHandoff(true, providerPart, false));
+        ok &= expectFalse("no-contact handoff cannot bypass an exclusive part whitelist",
+            rock::canAcquireFiringGripHandoff(true, normal, true));
+    }
     const DynamicHandoffGripCaptureInput dynamicHandoffGrip{
         .normalSupportAcquisition = true,
         .ambidextrousHandoffEnabled = true,

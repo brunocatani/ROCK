@@ -929,8 +929,8 @@ namespace rock
                     _firing.rightCanonicalGenerationKey,
                     decision.weaponGenerationKey) ||
             (usesNativeRightCarry() &&
-                _firing.rightCanonicalSource ==
-                    RightFiringCanonicalSource::AuthoredAnimation &&
+                (_firing.rightCanonicalSource == RightFiringCanonicalSource::AuthoredAnimation ||
+                    decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone) &&
                 hasRightFiringHandCanonicalFrame(
                     weaponNode,
                     decision.weaponGenerationKey,
@@ -961,7 +961,14 @@ namespace rock
          * The right hand recaptures as before - its frames deliberately ride
          * FRIK's authored carry and feed the canonical snapshot.
          */
-        const bool keepLeftFiringHold = usesLeftFiringCarry() && _firing.hasPrimaryHandWeaponLocal;
+        // A direct handoff must capture against the same firing seat used by
+        // its admission cylinder, without rebasing it onto the live wrist.
+        const bool keepFiringHold = _firing.hasPrimaryHandWeaponLocal &&
+            (usesLeftFiringCarry() ||
+                (decision.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone &&
+                    _session.weaponNode == weaponNode &&
+                    _session.weaponGenerationKey == decision.weaponGenerationKey &&
+                    _session.equippedWeaponOwnershipKey == currentEquippedWeaponOwnershipKey));
 
         const auto previousAuthorityMode = _session.authorityMode;
         RE::NiNode* const previousActiveWeaponNode = _session.weaponNode;
@@ -1019,18 +1026,18 @@ namespace rock
         _session.equippedWeaponOwnershipKey = currentEquippedWeaponOwnershipKey;
         _weaponNodeLocalBaseline = nativeWeaponLocalBaseline;
         _hasWeaponNodeLocalBaseline = true;
-        if (!keepLeftFiringHold) {
+        if (!keepFiringHold) {
             _firing.primaryGripConfidence = 0.0f;
             _firing.hasPrimaryHandWeaponLocal = false;
         }
-        if (reuseRightFiringCanonicalGrip) {
+        if (reuseRightFiringCanonicalGrip && !keepFiringHold) {
             _firing.primaryHandWeaponLocal = _firing.rightCanonicalHandWeaponLocal;
             _firing.primaryGripLocal = _firing.rightCanonicalGripWeaponLocal;
         }
 
         const RE::NiPoint3 primaryPalmPos =
             reuseRightFiringCanonicalGrip ? weaponLocalToWorld(_firing.primaryGripLocal, weaponNode) : computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
-        if (!keepLeftFiringHold) {
+        if (!keepFiringHold) {
             if (!reuseRightFiringCanonicalGrip) {
                 _firing.primaryGripLocal = worldToWeaponLocal(primaryPalmPos, weaponNode);
                 _firing.primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), primaryTransform);
@@ -1170,7 +1177,7 @@ namespace rock
          * role tag is replaced by publishGripHandPoses in the same update, and
          * applyPartGripLockedVisual replaces its world authority.
          */
-        if (!keepLeftFiringHold) {
+        if (!keepFiringHold) {
             _session.firingGripSequence = ++_session.gripCaptureSequence;
             // A right-hand capture here rides hFRIK's authored carry. Commit
             // the canonical snapshot only after every support baseline is
@@ -2791,6 +2798,7 @@ namespace rock
         grip.socketRole = decision.socketRole;
         grip.actionRole = decision.actionRole;
         grip.weaponGenerationKey = decision.weaponGenerationKey;
+        grip.acquisitionSource = decision.acquisitionSource;
         grip.gripSequence = ++_session.gripCaptureSequence;
         {
             // The routing decision carries no support role or authored source
@@ -2941,6 +2949,8 @@ namespace rock
 
         const bool authoredInteractionAcquisitionValid =
             decision.acquisitionSource ==
+                WeaponInteractionAcquisitionSource::FiringGripZone ||
+            decision.acquisitionSource ==
                 WeaponInteractionAcquisitionSource::AuthoredSeat ||
             decision.acquisitionSource ==
                 WeaponInteractionAcquisitionSource::PhysicalContact ||
@@ -2969,11 +2979,16 @@ namespace rock
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         bool supportPalmInsideHandoffZone = false;
         bool authoredSeatInsideHandoffZone = false;
+        const bool firingGripZoneAcquisition = decision.acquisitionSource ==
+            WeaponInteractionAcquisitionSource::FiringGripZone;
         if (ambidextrousHandoffCaptureContext &&
             _handlingSettings.ambidextrousHandoffEnabled &&
             tryBuildFiringGripZoneInput(weaponNode,
                 decision.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
-                _handlingSettings.firingGripPromotionRadiusGameUnits, handoffInput)) {
+                weapon_support_authority_policy::firingGripCaptureReach(
+                    firingGripZoneAcquisition,
+                    _handlingSettings.firingGripReattachRadiusGameUnits,
+                    _handlingSettings.firingGripPromotionRadiusGameUnits), handoffInput)) {
             handoffInput.palmWorld = { palmPos.x, palmPos.y, palmPos.z };
             supportPalmInsideHandoffZone =
                 firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
@@ -2984,6 +2999,13 @@ namespace rock
                 authoredSeatInsideHandoffZone =
                     firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
             }
+        }
+        if (firingGripZoneAcquisition && !supportPalmInsideHandoffZone) {
+            ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
+                "TwoHandedGrip: firing-grip handoff capture rejected hand={} reason=zone-no-longer-current",
+                isLeft ? "left" : "right");
+            grip = {};
+            return authored_support_grab_policy::Selection::Reject;
         }
         const bool useDynamicHandoffGrip =
             weapon_support_authority_policy::
@@ -3210,6 +3232,13 @@ namespace rock
             grip.attachmentRoot = weaponNode;
             grip.gripLocal = _firing.primaryGripLocal;
             grip.grabNormalWorld = palmDir;
+            if (firingGripZoneAcquisition) {
+                // The cylinder admits a distant palm, but the captured station
+                // is the firing grip itself. Coincident seats use visual-only
+                // support, never a full two-hand solver selected by approach distance.
+                _session.authorityMode = weapon_support_authority_policy::
+                    WeaponSupportAuthorityMode::VisualOnlySupport;
+            }
         } else if (meshFound) {
             grip.gripLocal = worldToWeaponLocal(grabPoint.position, weaponNode);
             grip.grabNormalWorld = grabPoint.normal;

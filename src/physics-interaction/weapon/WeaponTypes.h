@@ -210,6 +210,7 @@ namespace rock
         PhysicalContact,
         ProximityProbe,
         AuthoredSeat,
+        FiringGripZone,
     };
 
     /*

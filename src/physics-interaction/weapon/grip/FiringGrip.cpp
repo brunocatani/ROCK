@@ -1791,9 +1791,16 @@ namespace rock
          */
         const RE::NiPoint3 supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
         firing_grip_reattach_zone_policy::ZoneInput promotionInput{};
+        // A grip admitted by the firing-grip cylinders must retain that same
+        // reach through transfer. Ordinary support-grip promotion keeps its
+        // existing tuning and does not change authored support acquisition.
+        const float promotionReach = weapon_support_authority_policy::firingGripCaptureReach(
+            supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone,
+            _handlingSettings.firingGripReattachRadiusGameUnits,
+            _handlingSettings.firingGripPromotionRadiusGameUnits);
         if (!tryBuildFiringGripZoneInput(weaponNode,
                 _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
-                _handlingSettings.firingGripPromotionRadiusGameUnits, promotionInput)) {
+                promotionReach, promotionInput)) {
             return false;
         }
         promotionInput.palmWorld = {
