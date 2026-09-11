@@ -2,6 +2,7 @@
 
 #include <SimpleIni.h>
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <exception>
 #include <filesystem>
@@ -113,11 +114,18 @@ namespace
             const double defaultValue)
         {
             if (shouldMaterialize(section, key)) {
+                // Loadable numeric tuning values are floats. Preserve their
+                // round-trip defaults instead of SimpleIni's six-decimal rounding.
+                std::array<char, 64> text{};
+                const auto [end, error] = std::to_chars(text.data(), text.data() + text.size() - 1,
+                    static_cast<float>(defaultValue));
+                if (error != std::errc{}) throw std::runtime_error("Cannot format compiled float default");
+                *end = '\0';
                 requireSet(
-                    _storage.SetDoubleValue(
+                    _storage.SetValue(
                         section,
                         key,
-                        defaultValue,
+                        text.data(),
                         nullptr,
                         true),
                     section,
@@ -220,6 +228,12 @@ namespace
 
 namespace rock
 {
+    void RockConfig::buildCompiledDefaults(CSimpleIniA& target)
+    {
+        RockConfig defaults;
+        defaults.readValuesFromIni(target, true);
+    }
+
     void RockConfig::readValuesFromIni(
         CSimpleIniA& storage,
         const bool materializeMissingDefaults)
@@ -276,9 +290,6 @@ namespace rock
         rockPerformanceProfilerWarmupFrames =
             std::clamp(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iPerformanceProfilerWarmupFrames", rockPerformanceProfilerWarmupFrames)), 0, 54000);
         rockPerformanceProfilerOverlayText = ini.GetBoolValue(DEBUG_SECTION, "bPerformanceProfilerOverlayText", rockPerformanceProfilerOverlayText);
-#if !defined(ROCK_POLICY_TEST_NO_RUNTIME_LOGGER)
-        logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
-#endif
 
         rockHavokTimingFixEnabled = ini.GetBoolValue(SECTION, "bHavokTimingFixEnabled", rockHavokTimingFixEnabled);
         rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::sanitizeMinPhysicsFrameRate(

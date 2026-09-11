@@ -24,6 +24,7 @@
 #undef ROCK_DEFINED_MAX_PATH_FOR_FILEWATCH
 #endif
 
+#include "config/ConfigurationStore.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
@@ -540,6 +541,11 @@ namespace rock
 
         void reload();
 
+        static void buildCompiledDefaults(CSimpleIniA& target);
+        [[nodiscard]] std::uint64_t configRevision() const noexcept { return _configRevision.load(std::memory_order_acquire); }
+        [[nodiscard]] bool visitSettings(configuration_api::Group group, configuration_api::VisitorV1 visitor, void* context) const;
+        [[nodiscard]] bool persistSetting(configuration_api::Group group, const char* section, const char* key, const char* value, std::string& error);
+
         void processPendingConfigReload();
 
         void stopFileWatch();
@@ -556,23 +562,15 @@ namespace rock
 
         void readValuesFromIni(CSimpleIniA& ini, bool materializeMissingDefaults = false);
 
-        [[nodiscard]] bool createDefaultIniIfMissing();
-
-        [[nodiscard]] bool saveRuntimeIni(CSimpleIniA& ini, const char* reason);
+        [[nodiscard]] bool loadStore(bool createConsumer);
 
         void startFileWatch();
 
-        std::string _iniFilePath;
-
+        std::unique_ptr<config::ConfigurationStore> _store;
         std::unique_ptr<filewatch::FileWatch<std::string>> _fileWatch;
-
-        std::atomic<std::filesystem::file_time_type> _lastIniFileWriteTime;
-
         std::unordered_map<std::string, std::function<void(const std::string&)>> _onConfigChangedSubscribers;
-
-        std::atomic<bool> _selfIniWriteInProgress = false;
-
-        std::atomic<std::filesystem::file_time_type> _lastSelfIniWriteTime{};
+        std::atomic<std::uint64_t> _configRevision{ 0 };
+        std::atomic<std::int64_t> _lastFileEventTicks{ 0 };
 
         std::atomic<bool> _reloadPending = false;
     };

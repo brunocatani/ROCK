@@ -1,28 +1,29 @@
 #include "RockConfig.h"
-
 #include "rock_support/ResourceUtils.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
 
-#include <filesystem>
-#include <thread>
+#include <array>
+#include <chrono>
+#include <cstring>
+#include <format>
 
 namespace
 {
     constexpr auto SECTION = "PhysicsInteraction";
-    std::string resolveIniPath()
+    using rock::configuration_api::Group;
+
+    std::filesystem::path resolveConfigDirectory()
     {
-        try {
-            return rock::resources::getPathInDocuments(
-                R"(\My Games\Fallout4VR\Mods_Config\ROCK\ROCK.ini)");
-        } catch (const std::exception& error) {
-            ROCK_LOG_ERROR(Config,
-                "Failed to resolve the only supported ROCK.ini path: {}",
-                error.what());
-            return {};
-        }
+        return rock::resources::getPathInDocuments(
+            R"(\My Games\Fallout4VR\Mods_Config\ROCK)");
     }
 
+    std::int64_t eventTicks() noexcept
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
 }
 
 namespace rock
@@ -32,315 +33,189 @@ namespace rock
         static_cast<RockConfigValues&>(*this) = RockConfigValues{};
     }
 
-    bool RockConfig::createDefaultIniIfMissing()
+    void RockConfig::load()
     {
-        if (_iniFilePath.empty()) {
-            return false;
-        }
-
-        const std::filesystem::path targetPath(_iniFilePath);
-        std::error_code ec;
-        const bool targetExists = std::filesystem::exists(targetPath, ec);
-        if (ec) {
-            ROCK_LOG_ERROR(Config,
-                "Cannot inspect the production ROCK.ini path '{}': {}",
-                _iniFilePath,
-                ec.message());
-            return false;
-        }
-        if (targetExists) {
-            return true;
-        }
-
         try {
-            rock::resources::createDirectoryTreeForFile(_iniFilePath);
-
-            CSimpleIniA defaults;
-            defaults.SetUnicode(false);
-            resetToDefaults();
-            readValuesFromIni(defaults, true);
-
-            auto temporaryPath = targetPath;
-            temporaryPath += ".creating";
-            const SI_Error saveResult =
-                defaults.SaveFile(temporaryPath.string().c_str(), false);
-            if (saveResult < 0) {
-                std::filesystem::remove(temporaryPath, ec);
-                ROCK_LOG_ERROR(Config,
-                    "Failed to write complete compiled ROCK.ini defaults to temporary file '{}' (code {})",
-                    temporaryPath.string(),
-                    static_cast<int>(saveResult));
-                return false;
+            if (!_store) {
+                CSimpleIniA defaults;
+                buildCompiledDefaults(defaults);
+                _store = std::make_unique<config::ConfigurationStore>(resolveConfigDirectory(), defaults);
+                resetToDefaults();
             }
-
-            ec.clear();
-            std::filesystem::rename(temporaryPath, targetPath, ec);
-            if (ec) {
-                std::error_code targetCheckError;
-                const bool createdElsewhere =
-                    std::filesystem::exists(targetPath, targetCheckError) &&
-                    !targetCheckError;
-                std::error_code cleanupError;
-                std::filesystem::remove(temporaryPath, cleanupError);
-                if (createdElsewhere) {
-                    return true;
-                }
-
-                ROCK_LOG_ERROR(Config,
-                    "Failed to publish generated ROCK.ini '{}': {}",
-                    _iniFilePath,
-                    ec.message());
-                return false;
-            }
-
-            ROCK_LOG_INFO(Config,
-                "Created complete production ROCK.ini from compiled C++ defaults: {}",
-                _iniFilePath);
-            return true;
+            ROCK_LOG_INFO(Config, "Loading ROCK configuration from: {}", _store->directory().string());
+            (void)loadStore(true);
+            startFileWatch();
         } catch (const std::exception& error) {
-            ROCK_LOG_ERROR(Config,
-                "Failed to create production ROCK.ini '{}': {}",
-                _iniFilePath,
-                error.what());
-            return false;
+            ROCK_LOG_ERROR(Config, "Cannot initialize ROCK configuration: {}", error.what());
         }
     }
 
-    void RockConfig::load()
+    bool RockConfig::loadStore(bool createConsumer)
     {
-        _iniFilePath = resolveIniPath();
-        resetToDefaults();
-        if (_iniFilePath.empty()) {
-            ROCK_LOG_ERROR(Config,
-                "ROCK.ini path is unavailable; using compiled defaults in memory without creating a fallback file");
-            return;
+        if (!_store || !_store->load(createConsumer)) {
+            ROCK_LOG_WARN(Config, "Configuration reload failed; retaining current values: {}",
+                _store ? _store->error() : "configuration is not initialized");
+            return false;
         }
+        if (_store->revision() == configRevision()) return true;
 
-        ROCK_LOG_INFO(Config, "Loading the only active ROCK config from: {}", _iniFilePath);
-        (void)createDefaultIniIfMissing();
-
-        CSimpleIniA ini;
-        ini.SetUnicode(false);
-        const SI_Error rc = ini.LoadFile(_iniFilePath.c_str());
-        if (rc < 0) {
-            ROCK_LOG_WARN(Config, "ROCK.ini not found or unreadable (code {}), using compiled-in defaults", static_cast<int>(rc));
-            return;
-        }
-
-        resetToDefaults();
-        readValuesFromIni(ini);
-
-        ROCK_LOG_INFO(Config,
-            "ROCK config loaded (logLevel={} {}, sample={}ms)",
-            rockLogLevel,
-            logging_policy::logLevelName(rockLogLevel),
-            rockLogSampleMilliseconds);
-
-        startFileWatch();
+        CSimpleIniA combined;
+        _store->appendLoadedValues(combined);
+        RockConfig parsed;
+        parsed.readValuesFromIni(combined);
+        static_cast<RockConfigValues&>(*this) = std::move(static_cast<RockConfigValues&>(parsed));
+        logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
+        _configRevision.store(_store->revision(), std::memory_order_release);
+        ROCK_LOG_INFO(Config, "ROCK configuration applied (revision={}, logLevel={} {})",
+            configRevision(), rockLogLevel, logging_policy::logLevelName(rockLogLevel));
+        for (const auto& [key, subscriber] : _onConfigChangedSubscribers) subscriber(key);
+        return true;
     }
 
     void RockConfig::reload()
     {
-        if (_iniFilePath.empty()) {
-            ROCK_LOG_WARN(Config, "reload() called before load() — delegating to load()");
+        if (!_store) {
             load();
             return;
         }
-
-        CSimpleIniA ini;
-        ini.SetUnicode(false);
-        const SI_Error rc = ini.LoadFile(_iniFilePath.c_str());
-        if (rc < 0) {
-            ROCK_LOG_WARN(Config, "ROCK.ini reload failed (code {}), retaining current values", static_cast<int>(rc));
-            return;
+        try {
+            (void)loadStore(false);
+        } catch (const std::exception& error) {
+            ROCK_LOG_ERROR(Config, "Cannot reload ROCK configuration: {}", error.what());
         }
-
-        resetToDefaults();
-        readValuesFromIni(ini);
-        ROCK_LOG_INFO(Config,
-            "ROCK config reloaded (logLevel={} {}, sample={}ms)",
-            rockLogLevel,
-            logging_policy::logLevelName(rockLogLevel),
-            rockLogSampleMilliseconds);
     }
 
     std::filesystem::path RockConfig::getConfigDirectory() const
     {
-        if (_iniFilePath.empty()) {
-            return std::filesystem::path(resolveIniPath()).parent_path();
-        }
-        return std::filesystem::path(_iniFilePath).parent_path();
+        return _store ? _store->directory() : resolveConfigDirectory();
     }
 
-    bool RockConfig::saveRuntimeIni(CSimpleIniA& ini, const char* reason)
+    bool RockConfig::visitSettings(Group group, configuration_api::VisitorV1 visitor, void* context) const
     {
-        const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
-        if (path.empty()) {
-            ROCK_LOG_WARN(Config,
-                "Cannot persist ROCK.ini runtime change '{}': production path is unavailable",
-                reason ? reason : "unknown");
+        if (!_store || !visitor || configRevision() == 0) return false;
+        if (group != Group::Consumer && group != Group::Developer) return false;
+        for (const auto& setting : _store->settings()) {
+            if (setting.group != group) continue;
+            const configuration_api::SettingV1 record{
+                setting.section.c_str(), setting.key.c_str(), setting.value.c_str(),
+                setting.defaultValue.c_str(), setting.category.c_str(), setting.description.c_str(),
+                setting.type, config::ConfigurationStore::isDefault(setting, setting.value) ? 0u : 1u,
+            };
+            visitor(&record, context);
+        }
+        return true;
+    }
+
+    bool RockConfig::persistSetting(Group group, const char* section, const char* key,
+        const char* value, std::string& error)
+    {
+        if (!_store || !section || !key || !value) {
+            error = "ROCK configuration is unavailable";
             return false;
         }
-        _selfIniWriteInProgress.store(true, std::memory_order_release);
-
-        const SI_Error saveRc = ini.SaveFile(path.c_str(), false);
-        std::error_code ec;
-        const auto writeTime = std::filesystem::last_write_time(path, ec);
-        if (!ec) {
-            _lastSelfIniWriteTime.store(writeTime, std::memory_order_release);
-            _lastIniFileWriteTime.store(writeTime, std::memory_order_release);
-        }
-
-        _selfIniWriteInProgress.store(false, std::memory_order_release);
-
-        if (saveRc < 0) {
-            ROCK_LOG_WARN(Config, "Failed to persist ROCK.ini runtime change '{}' (code {})", reason ? reason : "unknown", static_cast<int>(saveRc));
+        if (!_store->setValue(group, section, key, value)) {
+            error = _store->error();
+            ROCK_LOG_WARN(Config, "Cannot persist [{}] {}: {}", section, key, error);
             return false;
         }
-
-        ROCK_LOG_DEBUG(Config, "Persisted ROCK.ini runtime change '{}'", reason ? reason : "unknown");
+        _lastFileEventTicks.store(eventTicks(), std::memory_order_release);
+        _reloadPending.store(true, std::memory_order_release);
         return true;
     }
 
     bool RockConfig::persistPhysicsBool(const char* key, bool value)
     {
-        if (!key || !key[0]) {
-            return false;
-        }
-
-        const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
-        if (path.empty()) {
-            ROCK_LOG_WARN(Config,
-                "Cannot persist ROCK.ini bool '{}': production path is unavailable",
-                key);
-            return false;
-        }
-        CSimpleIniA ini;
-        ini.SetUnicode(false);
-        const SI_Error loadRc = ini.LoadFile(path.c_str());
-        if (loadRc < 0) {
-            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini bool '{}': load failed with code {}", key, static_cast<int>(loadRc));
-            return false;
-        }
-
-        const SI_Error setRc = ini.SetBoolValue(SECTION, key, value, nullptr, true);
-        if (setRc < 0) {
-            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini bool '{}': set failed with code {}", key, static_cast<int>(setRc));
-            return false;
-        }
-
-        return saveRuntimeIni(ini, key);
+        if (!key || !key[0]) return false;
+        std::string error;
+        return persistSetting(config::settingGroup(SECTION, key), SECTION, key, value ? "true" : "false", error);
     }
 
     bool RockConfig::persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value)
     {
-        const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
-        if (path.empty()) {
-            ROCK_LOG_WARN(Config,
-                "Cannot persist ROCK.ini {} legacy palm pivot A: production path is unavailable",
-                isLeft ? "left" : "right");
+        if (!_store) return false;
+        const std::array values{ std::format("{:.9g}", value.x), std::format("{:.9g}", value.y), std::format("{:.9g}", value.z) };
+        const std::array keys = isLeft ?
+            std::array{ "fLeftGrabLegacyPalmPivotAHandspaceX", "fLeftGrabLegacyPalmPivotAHandspaceY", "fLeftGrabLegacyPalmPivotAHandspaceZ" } :
+            std::array{ "fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ" };
+        const std::array changes{
+            config::Change{ SECTION, keys[0], values[0] },
+            config::Change{ SECTION, keys[1], values[1] },
+            config::Change{ SECTION, keys[2], values[2] },
+        };
+        if (!_store->setValues(Group::Consumer, changes)) {
+            ROCK_LOG_WARN(Config, "Cannot persist {} palm pivot: {}", isLeft ? "left" : "right", _store->error());
             return false;
         }
-        CSimpleIniA ini;
-        ini.SetUnicode(false);
-        const SI_Error loadRc = ini.LoadFile(path.c_str());
-        if (loadRc < 0) {
-            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} legacy palm pivot A: load failed with code {}", isLeft ? "left" : "right", static_cast<int>(loadRc));
-            return false;
-        }
-
-        const char* keyX = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceX" : "fRightGrabLegacyPalmPivotAHandspaceX";
-        const char* keyY = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceY" : "fRightGrabLegacyPalmPivotAHandspaceY";
-        const char* keyZ = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceZ" : "fRightGrabLegacyPalmPivotAHandspaceZ";
-        bool ok = true;
-        ok &= ini.SetDoubleValue(SECTION, keyX, value.x, nullptr, true) >= 0;
-        ok &= ini.SetDoubleValue(SECTION, keyY, value.y, nullptr, true) >= 0;
-        ok &= ini.SetDoubleValue(SECTION, keyZ, value.z, nullptr, true) >= 0;
-        if (!ok) {
-            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} legacy palm pivot A: set failed", isLeft ? "left" : "right");
-            return false;
-        }
-
-        return saveRuntimeIni(ini, isLeft ? "left legacy palm pivot A" : "right legacy palm pivot A");
+        _lastFileEventTicks.store(eventTicks(), std::memory_order_release);
+        _reloadPending.store(true, std::memory_order_release);
+        return true;
     }
 
     void RockConfig::processPendingConfigReload()
     {
-        if (!_reloadPending.exchange(false, std::memory_order_acq_rel)) {
-            return;
-        }
-
-        ROCK_LOG_INFO(Config, "ROCK.ini change detected, reloading on frame thread...");
-        reload();
-
-        for (const auto& [key, subscriber] : _onConfigChangedSubscribers) {
-            ROCK_LOG_DEBUG(Config, "Notify config change subscriber '{}'", key);
-            subscriber(key);
-        }
+        // The watcher only publishes a change notification. Editor bursts are
+        // coalesced without sleeping in the callback or on the game thread.
+        if (!_reloadPending.load(std::memory_order_acquire) ||
+            eventTicks() - _lastFileEventTicks.load(std::memory_order_acquire) < 200) return;
+        if (_reloadPending.exchange(false, std::memory_order_acq_rel)) reload();
     }
 
     void RockConfig::startFileWatch()
     {
-        if (_fileWatch) {
-            return;
-        }
-        if (_iniFilePath.empty()) {
-            ROCK_LOG_WARN(Config, "Cannot start file watch — INI path not resolved");
-            return;
-        }
-
-        ROCK_LOG_DEBUG(Config, "Starting file watch on '{}'", _iniFilePath);
-        _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_iniFilePath, [this](const std::string&, const filewatch::Event changeType) {
-            if (changeType != filewatch::Event::modified &&
-                changeType != filewatch::Event::added &&
-                changeType != filewatch::Event::renamed_new) {
-                return;
-            }
-
-            constexpr auto delay = std::chrono::milliseconds(200);
-
-            auto prevWriteTime = _lastIniFileWriteTime.load();
-            std::error_code ec;
-            const auto writeTime = std::filesystem::last_write_time(_iniFilePath, ec);
-            if (ec || writeTime - prevWriteTime < delay) {
-                return;
-            }
-
-            const auto selfWriteTime = _lastSelfIniWriteTime.load(std::memory_order_acquire);
-            if (_selfIniWriteInProgress.load(std::memory_order_acquire) ||
-                (selfWriteTime != std::filesystem::file_time_type{} && writeTime <= selfWriteTime)) {
-                _lastIniFileWriteTime.store(writeTime, std::memory_order_release);
-                if (!_selfIniWriteInProgress.load(std::memory_order_acquire)) {
-                    _lastSelfIniWriteTime.store(std::filesystem::file_time_type{}, std::memory_order_release);
-                }
-                return;
-            }
-
-            if (!_lastIniFileWriteTime.compare_exchange_strong(prevWriteTime, writeTime)) {
-                return;
-            }
-
-            auto now = std::filesystem::file_time_type::clock::now();
-            auto lastEventTime = _lastIniFileWriteTime.load();
-            while (now - lastEventTime < delay) {
-                std::this_thread::sleep_for(std::max(std::chrono::milliseconds(0), std::chrono::duration_cast<std::chrono::milliseconds>(delay - (now - lastEventTime))));
-                now = std::filesystem::file_time_type::clock::now();
-                lastEventTime = _lastIniFileWriteTime.load();
-            }
-
-            _reloadPending.store(true, std::memory_order_release);
-        });
+        if (_fileWatch || !_store) return;
+        // Watch the directory so creation, replacement and removal of the
+        // optional developer file are observed even when it did not exist.
+        _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_store->directory().string(),
+            [this](const std::string& name, filewatch::Event) {
+                if (_stricmp(name.c_str(), "ROCK.ini") != 0 &&
+                    _stricmp(name.c_str(), "ROCK_Developer.ini") != 0) return;
+                _lastFileEventTicks.store(eventTicks(), std::memory_order_release);
+                _reloadPending.store(true, std::memory_order_release);
+            });
     }
 
-    void RockConfig::stopFileWatch()
-    {
-        if (_fileWatch) {
-            ROCK_LOG_DEBUG(Config, "Stopping file watch on ROCK.ini");
-            _fileWatch.reset();
-        }
-    }
-
+    void RockConfig::stopFileWatch() { _fileWatch.reset(); }
     void RockConfig::subscribeForConfigChanged(const std::string& key, std::function<void(const std::string&)> callback) { _onConfigChangedSubscribers[key] = std::move(callback); }
-
     void RockConfig::unsubscribeFromConfigChanged(const std::string& key) { _onConfigChangedSubscribers.erase(key); }
+}
+
+namespace
+{
+    std::uint64_t configRevision() noexcept { return rock::g_rockConfig.configRevision(); }
+
+    bool visitConfig(Group group, rock::configuration_api::VisitorV1 visitor, void* context) noexcept
+    {
+        try { return rock::g_rockConfig.visitSettings(group, visitor, context); }
+        catch (const std::exception& error) { ROCK_LOG_WARN(Config, "Configuration snapshot failed: {}", error.what()); }
+        catch (...) { ROCK_LOG_WARN(Config, "Configuration snapshot callback failed"); }
+        return false;
+    }
+
+    bool setConfigValue(Group group, const char* section, const char* key, const char* value,
+        char* errorBuffer, std::uint32_t errorCapacity) noexcept
+    {
+        const auto report = [&](const char* error) {
+            if (errorBuffer && errorCapacity) {
+                const auto count = std::min(std::strlen(error), static_cast<std::size_t>(errorCapacity - 1));
+                std::memcpy(errorBuffer, error, count);
+                errorBuffer[count] = '\0';
+            }
+        };
+        try {
+            std::string error;
+            const bool saved = rock::g_rockConfig.persistSetting(group, section, key, value, error);
+            report(error.c_str());
+            return saved;
+        } catch (const std::exception& error) { report(error.what()); }
+        catch (...) { report("Configuration write failed"); }
+        return false;
+    }
+}
+
+extern "C" __declspec(dllexport) const rock::configuration_api::ApiV1* GetROCKConfigurationApi(std::uint32_t version) noexcept
+{
+    static constexpr rock::configuration_api::ApiV1 api{
+        1, sizeof(rock::configuration_api::ApiV1), configRevision, visitConfig, setConfigValue,
+    };
+    return version == api.version ? &api : nullptr;
 }

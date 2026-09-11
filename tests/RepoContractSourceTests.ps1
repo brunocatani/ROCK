@@ -50,9 +50,8 @@ foreach ($file in $productionFiles) {
 }
 
 # --- ROCK.ini configuration-authority packaging contract ------------------
-# The only active runtime configuration is the production My Games ROCK.ini.
-# No other ROCK.ini may exist, ship, deploy, or embed; ROCK_example.ini is
-# human reference only and must never be a build input or runtime source.
+# Runtime configuration is consumer ROCK.ini plus optional developer overrides.
+# Both examples are human references, never build inputs or runtime sources.
 
 foreach ($removedPath in @(
         'data/config/ROCK.ini',
@@ -64,29 +63,31 @@ foreach ($removedPath in @(
     }
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $Root 'data/config/ROCK_example.ini'))) {
-    $failures.Add('The sole Git-tracked ROCK_example.ini is missing.')
+foreach ($example in @('ROCK_example.ini', 'ROCK_Developer_example.ini')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $Root ('data/config/' + $example)))) {
+        $failures.Add("Missing configuration reference: $example")
+    }
 }
 
-if ($cmakeText -match 'ROCK_example\.ini|data/config/ROCK\.ini|resources\.rc') {
+if ($cmakeText -match 'ROCK_(Developer_)?example\.ini|data/config/ROCK(_Developer)?\.ini|resources\.rc') {
     $failures.Add('CMakeLists.txt: ROCK_example.ini must not be a build input, resource, or packaged file.')
 }
 
-$configSource = Read-Source 'src/RockConfig.cpp'
-if ($configSource -match 'ROCK_example\.ini|IDR_ROCK_INI|createFileFromResourceIfMissing|Data\\+F4SE\\+Plugins\\+ROCK\.ini') {
+$configSource = (Read-Source 'src/RockConfig.cpp') + (Read-Source 'src/config/ConfigurationStore.cpp')
+if ($configSource -match 'ROCK_(Developer_)?example\.ini|IDR_ROCK_INI|createFileFromResourceIfMissing|Data\\+F4SE\\+Plugins\\+ROCK\.ini') {
     $failures.Add('src/RockConfig.cpp: runtime configuration must not read the example, use an embedded INI, or retain a Data-folder fallback.')
 }
 if ((Read-Source 'src/rock_support/ResourceUtils.cpp') -match 'FindResource|LoadResource|LockResource') {
     $failures.Add('src/rock_support/ResourceUtils.cpp: resource helpers must not retain removed INI-resource creation code.')
 }
 
-# ROCK_example.ini must mirror the loadable key catalog exactly.
-$exampleText = Read-Source 'data/config/ROCK_example.ini'
+# The two examples together must mirror the loadable key catalog exactly.
+$exampleText = (Read-Source 'data/config/ROCK_example.ini') + "`n" + (Read-Source 'data/config/ROCK_Developer_example.ini')
 $exampleKeyMatches = [regex]::Matches($exampleText, '(?m)^\s*([A-Za-z][A-Za-z0-9]*)\s*=')
 $exampleKeys = @($exampleKeyMatches | ForEach-Object { $_.Groups[1].Value })
 $duplicateExampleKeys = @($exampleKeys | Group-Object | Where-Object Count -gt 1)
 if ($duplicateExampleKeys.Count -ne 0) {
-    $failures.Add("ROCK_example.ini contains duplicate keys: $($duplicateExampleKeys.Name -join ', ')")
+    $failures.Add("The configuration examples contain duplicate keys: $($duplicateExampleKeys.Name -join ', ')")
 }
 $loaderSource = Read-Source 'src/RockConfigLoad.cpp'
 $loaderKeys = @(
@@ -97,7 +98,7 @@ $loaderKeys = @(
 $exampleUniqueKeys = @($exampleKeys | Sort-Object -Unique)
 $catalogDifference = @(Compare-Object $loaderKeys $exampleUniqueKeys)
 if ($catalogDifference.Count -ne 0) {
-    $failures.Add("ROCK_example.ini and the loadable code catalog differ: $($catalogDifference.InputObject -join ', ')")
+    $failures.Add("The configuration examples and loadable code catalog differ: $($catalogDifference.InputObject -join ', ')")
 }
 
 # --- Negative guards for specific past bugs -------------------------------

@@ -907,6 +907,16 @@ if(BUILD_ROCK_TESTS)
     target_link_libraries(ROCKPolicyTestSupport PUBLIC xbyak::xbyak)
   endif()
 
+  add_executable(ROCKConfigurationStoreTests
+    "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
+    "${SOURCE_DIR}/config/ConfigurationStore.cpp"
+    "${SOURCE_DIR}/RockConfigLoad.cpp"
+  )
+  target_compile_features(ROCKConfigurationStoreTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKConfigurationStoreTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config")
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKConfigurationStoreTests)
+  add_rock_test(ROCKConfigurationStoreTests)
+
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)
     target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} REUSE_FROM ROCKPolicyTestSupport)
     target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE ROCKPolicyTestSupport)
