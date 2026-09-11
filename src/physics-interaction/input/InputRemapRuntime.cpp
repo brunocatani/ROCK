@@ -694,7 +694,6 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::Settings{
                 .grabButtonId = input_remap_policy::kGrabButtonId,
-                .suppressRightFavoritesGameInput = g_rockConfig.rockBipodMode || g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressPipboyGameInputWhileHolding = g_rockConfig.rockSuppressPipboyGameInputWhileHolding,
             };
         }
@@ -1156,7 +1155,7 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeFavoritesAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockBipodMode || g_rockConfig.rockSuppressRightFavoritesGameInput,
+                makeNativeActionSuppressionInput(true,
                     eventNameMatches(event, kNativeEventWandThumbClick)));
         }
 
@@ -1652,7 +1651,7 @@ namespace rock::input_remap_runtime
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native WandThumbClick Favorites event while ROCK owns right-stick weapon toggle");
+                    "Suppressed native WandThumbClick Favorites event");
                 return;
             }
 
@@ -2229,15 +2228,13 @@ namespace rock::input_remap_runtime
             return true;
         }
 
-        bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings)
+        bool updateNativeActionSuppressionHooks()
         {
             bool ready = installNativeVatsVansInputSuppressionHook();
             ready = installLogicalJumpObservationHook() && ready;
             ready = installReadyWeaponEventSuppressionHook() && ready;
             ready = installActivateEventReloadHook() && ready;
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(true, settings.suppressRightFavoritesGameInput)) {
-                ready = installFavoritesEventSuppressionHook() && ready;
-            }
+            ready = installFavoritesEventSuppressionHook() && ready;
             ready = installMeleeThrowEventSuppressionHook() && ready;
             ready = installPipboyPauseArbitrationHooks() && ready;
             return ready;
@@ -2313,8 +2310,7 @@ namespace rock::input_remap_runtime
     {
         ensureMenuInputGateRegistered();
 
-        const auto settings = makeSettings();
-        const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks(settings);
+        const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks();
 
         if (s_hooksInstalled.load(std::memory_order_acquire)) {
             return nativeActionSuppressionReady;

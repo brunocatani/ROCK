@@ -21,7 +21,6 @@ namespace rock::input_remap_policy
     struct Settings
     {
         int grabButtonId{ kGrabButtonId };
-        bool suppressRightFavoritesGameInput{ true };
         bool suppressPipboyGameInputWhileHolding{ true };
     };
 
@@ -264,7 +263,9 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.eventMatched;
+        // Native Favorites never owns WandThumbClick while ROCK is installed.
+        // Raw OpenVR input remains available to ROCK and its API consumers.
+        return input.eventMatched;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
@@ -318,11 +319,6 @@ namespace rock::input_remap_policy
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
                input.eventMatched && input.takeEquipHandEngaged && input.takeEquipTargetEligible;
-    }
-
-    [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)
-    {
-        return remapEnabled && suppressionEnabled;
     }
 
     [[nodiscard]] constexpr bool shouldInstallPipboyPauseArbitrationHooks(const bool remapEnabled)

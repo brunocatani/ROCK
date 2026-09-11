@@ -158,6 +158,14 @@ int main()
     auto favorites = base;
     favorites.weaponDrawn = true;
     ok &= expectTrue("WandThumbClick suppresses native favorites even with weapon drawn", shouldSuppressNativeFavoritesAction(favorites));
+    auto mandatoryFavorites = favorites;
+    mandatoryFavorites.remapEnabled = false;
+    mandatoryFavorites.suppressionEnabled = false;
+    mandatoryFavorites.gameplayInputAllowed = false;
+    mandatoryFavorites.menuInputActive = true;
+    ok &= expectTrue("native favorites suppression cannot be disabled by optional input gates", shouldSuppressNativeFavoritesAction(mandatoryFavorites));
+    mandatoryFavorites.eventMatched = false;
+    ok &= expectFalse("mandatory favorites suppression leaves unrelated events untouched", shouldSuppressNativeFavoritesAction(mandatoryFavorites));
 
     auto meleeThrow = base;
     meleeThrow.weaponDrawn = true;
@@ -379,8 +387,6 @@ int main()
     outsideGripZoneEquipInput.gripZoneEquipSettled = false;
     ok &= expectFalse("palm outside grip zone does not equip held weapon", shouldRequestHeldWeaponEquip(outsideGripZoneEquipInput));
 
-    ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
-    ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
     ok &= expectTrue("enabled remap installs mandatory Pip-Boy/Pause arbitration hooks", shouldInstallPipboyPauseArbitrationHooks(true));
     ok &= expectFalse("disabled remap leaves native Pip-Boy and Pause handlers untouched", shouldInstallPipboyPauseArbitrationHooks(false));
     nativeVats::RuntimeState nativeVatsState{};

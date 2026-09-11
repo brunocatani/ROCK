@@ -38,7 +38,6 @@ namespace rock
         float rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
         int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
-        bool rockSuppressRightFavoritesGameInput = true;
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
         bool rockSuppressPipboyGameInputWhileHolding = true;
