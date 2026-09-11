@@ -501,35 +501,34 @@ namespace rock
                distance <= _handlingSettings.firingGripReattachRadiusGameUnits;
     }
 
-    bool TwoHandedGrip::tryEvaluateFiringGripReattachZoneForHand(
+    bool TwoHandedGrip::tryBuildFiringGripZoneInput(
         RE::NiNode* weaponNode,
-        const bool handIsLeft,
-        firing_grip_reattach_zone_policy::ZoneResult& outZone)
+        const std::uint64_t weaponGenerationKey,
+        const std::uint64_t weaponOwnershipKey,
+        const float reachGameUnits,
+        firing_grip_reattach_zone_policy::ZoneInput& outInput) const
     {
-        outZone = {};
-        RE::NiTransform handTransform{};
+        outInput = {};
         if (!weaponNode ||
-            !isFiniteTransform(weaponNode->world) ||
-            !tryGetSolverHandTransform(handIsLeft, handTransform)) {
+            !isInvertibleTransform(weaponNode->world)) {
             return false;
         }
         /*
          * The lateral axis is the seated canonical RIGHT palm normal on this
          * weapon (weapon LEFT), the same axis the authored support activation
          * cone is built from. The zone is symmetric in its sign, so one axis
-         * serves both hands and both sides. Part carry always follows a
-         * captured firing grip, so the canonical hold is expected; without it
-         * the zone fails closed instead of guessing a weapon axis.
+         * serves handoff and reattachment on both sides. Before acquisition,
+         * use the current canonical grip; an active session keeps its captured
+         * grip. Missing or stale canonical data cannot create a hover zone.
          */
         if (!hasRightFiringHandCanonicalFrame(
                 weaponNode,
-                _session.weaponGenerationKey,
-                _session.equippedWeaponOwnershipKey)) {
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "TwoHandedGrip: firing-grip reattach zone unavailable hand={} reason=noCanonicalRightHold",
-                handIsLeft ? "left" : "right");
+                weaponGenerationKey,
+                weaponOwnershipKey)) {
+            if (_session.state == TwoHandedState::PartCarry) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds,
+                    "TwoHandedGrip: firing-grip zone unavailable reason=noCurrentCanonicalRightHold");
+            }
             return false;
         }
         const RE::NiTransform seatedRightHandWorld =
@@ -540,40 +539,59 @@ namespace rock
             return false;
         }
 
-        const RE::NiPoint3 gripWorld =
-            weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
-        const RE::NiPoint3 palmWorld =
-            computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                handTransform,
-                handIsLeft);
+        const bool capturedGripCurrent =
+            _firing.hasPrimaryHandWeaponLocal &&
+            _session.weaponNode == weaponNode &&
+            _session.weaponGenerationKey == weaponGenerationKey &&
+            _session.equippedWeaponOwnershipKey == weaponOwnershipKey;
+        const RE::NiPoint3 gripWorld = weaponLocalToWorld(
+            capturedGripCurrent ? _firing.primaryGripLocal :
+                _firing.rightCanonicalGripWeaponLocal,
+            weaponNode);
         const RE::NiPoint3 weaponLeftAxisWorld =
             computePalmNormalFromHandBasis(seatedRightHandWorld, false);
         using firing_grip_reattach_zone_policy::Vec3;
         const auto toZoneVector = [](const RE::NiPoint3& value) {
             return Vec3{ value.x, value.y, value.z };
         };
-        outZone = firing_grip_reattach_zone_policy::evaluateZone(
-            firing_grip_reattach_zone_policy::ZoneInput{
-                .gripWorld = toZoneVector(gripWorld),
-                .palmWorld = toZoneVector(palmWorld),
-                .weaponLeftAxisWorld = toZoneVector(weaponLeftAxisWorld),
-                .reachGameUnits =
-                    _handlingSettings.firingGripReattachRadiusGameUnits,
-                .radiusGameUnits =
-                    _handlingSettings.firingGripReattachCylinderRadiusGameUnits,
-            });
+        outInput = {
+            .gripWorld = toZoneVector(gripWorld),
+            .weaponLeftAxisWorld = toZoneVector(weaponLeftAxisWorld),
+            .reachGameUnits = reachGameUnits,
+            .radiusGameUnits =
+                _handlingSettings.firingGripReattachCylinderRadiusGameUnits,
+        };
+        return true;
+    }
+
+    bool TwoHandedGrip::tryEvaluateFiringGripZoneForHand(
+        const bool handIsLeft,
+        const firing_grip_reattach_zone_policy::ZoneInput& input,
+        firing_grip_reattach_zone_policy::ZoneResult& outZone)
+    {
+        outZone = {};
+        RE::NiTransform handTransform{};
+        if (!tryGetSolverHandTransform(handIsLeft, handTransform)) {
+            return false;
+        }
+        const RE::NiPoint3 palmWorld =
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
+        auto handInput = input;
+        handInput.palmWorld = { palmWorld.x, palmWorld.y, palmWorld.z };
+        outZone = firing_grip_reattach_zone_policy::evaluateZone(handInput);
         if (!outZone.axisValid) {
             return false;
         }
 
         // Overlay record: values only, rebuilt every update().
         auto& debugSnapshot = _firing.reattachDebugSnapshot;
-        debugSnapshot.gripWorld = gripWorld;
-        debugSnapshot.weaponLeftAxisWorld = weaponLeftAxisWorld;
-        debugSnapshot.reachGameUnits =
-            _handlingSettings.firingGripReattachRadiusGameUnits;
-        debugSnapshot.cylinderRadiusGameUnits =
-            _handlingSettings.firingGripReattachCylinderRadiusGameUnits;
+        debugSnapshot.gripWorld = {
+            input.gripWorld.x, input.gripWorld.y, input.gripWorld.z };
+        debugSnapshot.weaponLeftAxisWorld = {
+            input.weaponLeftAxisWorld.x, input.weaponLeftAxisWorld.y,
+            input.weaponLeftAxisWorld.z };
+        debugSnapshot.reachGameUnits = input.reachGameUnits;
+        debugSnapshot.cylinderRadiusGameUnits = input.radiusGameUnits;
         debugSnapshot.valid = true;
         auto& handSample = debugSnapshot.hands[handIsLeft ? 0u : 1u];
         handSample.palmWorld = palmWorld;
@@ -587,6 +605,32 @@ namespace rock
         handSample.radiusPass = outZone.radiusPass;
         handSample.inside = outZone.inside;
         return true;
+    }
+
+    void TwoHandedGrip::updateFiringGripZoneIndicator(
+        RE::NiNode* weaponNode,
+        const std::uint64_t weaponGenerationKey,
+        const bool handIsLeft,
+        const firing_grip_reattach_zone_policy::ZoneResult& zone)
+    {
+        _firing.reattachIndicatorFrame = {};
+        if (!weaponNode || !zone.inside || !zone.indicatorValid ||
+            !isInvertibleTransform(weaponNode->world)) {
+            return;
+        }
+        const RE::NiPoint3 indicatorWorld{
+            zone.indicatorWorld.x, zone.indicatorWorld.y, zone.indicatorWorld.z };
+        const auto indicatorLocal = transform_math::worldPointToLocal(
+            weaponNode->world, indicatorWorld);
+        const bool valid = std::isfinite(indicatorLocal.x) &&
+            std::isfinite(indicatorLocal.y) && std::isfinite(indicatorLocal.z);
+        _firing.reattachIndicatorFrame = {
+            .positionWeaponLocal = indicatorLocal,
+            .weaponGenerationKey = weaponGenerationKey,
+            .handIsLeft = handIsLeft,
+            .weaponLocalValid = valid,
+            .visible = valid,
+        };
     }
 
     bool TwoHandedGrip::tryResolveAuthoredFiringHandCanonicalForProbe(
@@ -1730,7 +1774,7 @@ namespace rock
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         // Pose selection (provider/authored/dynamic) and current transform
         // authority (visual-only/full) are orthogonal to handoff capability.
-        // AttachOnly glue alone cannot inherit the firing grip. The distance
+        // AttachOnly glue alone cannot inherit the firing grip. The cylinder
         // gate below keeps every other promotable grip tied to the firing grip.
         if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(
                 supportGrip.active,
@@ -1739,19 +1783,24 @@ namespace rock
         }
 
         /*
-         * Promotion distance uses the support GRIP POINT (where the hand
+         * Promotion uses the support GRIP POINT (where the hand
          * actually grabbed the weapon), not the palm pivot: a shooting-cup
          * palm sits a hand-width away from the grip center and the tight
-         * reattach radius silently declined every takeover. The dedicated
-         * promotion radius keeps handguard/foregrip support grips out.
+         * cylinder would decline a seated takeover. The same lateral zone
+         * used for acquisition keeps handguard/foregrip support grips out.
          */
         const RE::NiPoint3 supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
-        const RE::NiPoint3 gripDelta = sub(supportGripWorld, firingGripWorld);
-        const float supportGripToFiringGripDistance = std::sqrt(dot(gripDelta, gripDelta));
-        if (!std::isfinite(supportGripToFiringGripDistance) ||
-            supportGripToFiringGripDistance >
-                _handlingSettings.firingGripPromotionRadiusGameUnits) {
+        firing_grip_reattach_zone_policy::ZoneInput promotionInput{};
+        if (!tryBuildFiringGripZoneInput(weaponNode,
+                _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
+                _handlingSettings.firingGripPromotionRadiusGameUnits, promotionInput)) {
+            return false;
+        }
+        promotionInput.palmWorld = {
+            supportGripWorld.x, supportGripWorld.y, supportGripWorld.z };
+        const auto promotionZone =
+            firing_grip_reattach_zone_policy::evaluateZone(promotionInput);
+        if (!promotionZone.inside) {
             return false;
         }
 
@@ -1774,44 +1823,26 @@ namespace rock
          * canonical native hold directly - the promoted hand's live bone is
          * still part-grip-locked here, so a live capture froze that locked
          * angle and (for the right) poisoned the canonical snapshot below.
-         * The live capture remains only as the no-canonical fallback.
+         * The cylinder gate has already validated the current canonical.
          */
         RE::NiTransform newFiringHandWeaponLocal{};
-        bool usedCanonicalHold = false;
         bool usedAuthoredCanonical = false;
-        const char* holdSource = "live-capture";
+        const char* holdSource = nullptr;
         if (supportHandIsLeft) {
-            if (tryComputeMirroredLeftFiringHandWeaponLocal(
+            if (!tryComputeMirroredLeftFiringHandWeaponLocal(
                     newFiringHandWeaponLocal,
                     &usedAuthoredCanonical)) {
-                usedCanonicalHold = true;
-                holdSource = usedAuthoredCanonical ?
-                    "authored-mirror" :
-                    "native-mirror";
+                restoreFrikPrimaryWeaponPose();
+                return false;
             }
-        } else if (hasRightFiringHandCanonicalFrame(
-                       _session.weaponNode,
-                       _session.weaponGenerationKey,
-                       _session.equippedWeaponOwnershipKey)) {
+            holdSource = usedAuthoredCanonical ? "authored-mirror" : "native-mirror";
+        } else {
             newFiringHandWeaponLocal = _firing.rightCanonicalHandWeaponLocal;
-            usedCanonicalHold = true;
             holdSource = _firing.rightCanonicalSource ==
                     RightFiringCanonicalSource::AuthoredAnimation ?
                 "authored-canonical" :
                 "native-canonical";
         }
-        if (supportHandIsLeft && !usedCanonicalHold) {
-            restoreFrikPrimaryWeaponPose();
-            return false;
-        }
-        if (!usedCanonicalHold) {
-            const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, supportHandIsLeft);
-            const RE::NiTransform adjustedHandTransform =
-                weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
-            newFiringHandWeaponLocal =
-                transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
-        }
-
         beginHandVisualReturn(isFiringHandLeft(), "ambidextrous-firing-hand-promotion");
         if (_handlingSettings.detachAuthority ==
             immersive_weapon_policy::DetachAuthority::
@@ -1850,9 +1881,11 @@ namespace rock
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = isFiringHandLeft();
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: support hand promoted to firing grip hand={} gripToGrip={:.2f} hold={}",
+            "TwoHandedGrip: support hand promoted to firing grip hand={} zoneSide={} along={:.2f} perp={:.2f} hold={}",
             firingHandName(),
-            supportGripToFiringGripDistance,
+            firing_grip_reattach_zone_policy::sideName(promotionZone.side),
+            promotionZone.alongAxisGameUnits,
+            promotionZone.perpendicularDistanceGameUnits,
             holdSource);
         return true;
     }

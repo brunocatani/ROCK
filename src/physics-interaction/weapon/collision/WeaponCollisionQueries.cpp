@@ -4,6 +4,71 @@
 
 namespace rock
 {
+    std::size_t WeaponCollision::collectAttachOnlyGripIndicators(
+        const RE::NiAVObject* currentWeaponRoot,
+        std::span<const weapon_part_runtime::Target> targets,
+        std::span<RE::NiPoint3> outPositions) const
+    {
+        const auto generation = getCurrentWeaponGenerationKey();
+        if (!currentWeaponRoot || generation == 0 || outPositions.empty() ||
+            !activeWeaponBodyRootMatches(currentWeaponRoot) ||
+            !std::any_of(targets.begin(), targets.end(), [generation](const auto& target) {
+                return weapon_part_runtime::targetAppliesToGeneration(target, generation) &&
+                    target.grabMode == weapon_part_runtime::GrabMode::AttachOnly;
+            })) {
+            return 0;
+        }
+
+        std::array<std::uintptr_t, MAX_WEAPON_BODIES> markedSources{};
+        std::size_t count = 0;
+        for (const auto& instance : activeWeaponBodies()) {
+            if (count == outPositions.size() || count == markedSources.size()) {
+                break;
+            }
+            if (!instance.body.isValid() || !instance.sourceNode) {
+                continue;
+            }
+            const auto source = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
+            if (std::find(markedSources.begin(), markedSources.begin() + count, source) !=
+                markedSources.begin() + count) {
+                continue;
+            }
+            // Resolve the same identity and semantic fields as contact routing.
+            // A higher-priority full-authority target must suppress an attach-only mark.
+            const auto resolution = weapon_part_runtime::resolveTarget(targets, {
+                .weaponGenerationKey = generation,
+                .bodyId = instance.body.getBodyId().value,
+                .sourceRoot = source,
+                .sourceName = instance.sourceName,
+                .partKind = instance.semantic.partKind,
+                .reloadRole = instance.semantic.reloadRole,
+                .supportRole = instance.semantic.supportGripRole,
+                .socketRole = instance.semantic.socketRole,
+                .actionRole = instance.semantic.actionRole,
+            });
+            if (!resolution.matched ||
+                resolution.grabMode != weapon_part_runtime::GrabMode::AttachOnly) {
+                continue;
+            }
+            RE::NiTransform sourceWorld{};
+            if (!tryResolveDescendantWorldTransform(currentWeaponRoot,
+                    currentWeaponRoot->world, instance.sourceNode, sourceWorld) ||
+                !f4vr::isNodeVisible(instance.sourceNode) ||
+                std::abs(sourceWorld.scale) <= 0.000001f) {
+                continue;
+            }
+            const auto position = transform_math::localPointToWorld(
+                sourceWorld, instance.generatedSourceLocalCenterGame);
+            if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+                !std::isfinite(position.z)) {
+                continue;
+            }
+            markedSources[count] = source;
+            outPositions[count++] = position;
+        }
+        return generation == getCurrentWeaponGenerationKey() ? count : 0;
+    }
+
     bool WeaponCollision::getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const
     {
         outSnapshot = {};

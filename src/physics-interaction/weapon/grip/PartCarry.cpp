@@ -256,6 +256,11 @@ namespace rock
                 supportGripHeld,
                 &supportHandContact },
         };
+        firing_grip_reattach_zone_policy::ZoneInput reattachInput{};
+        const bool reattachInputValid = tryBuildFiringGripZoneInput(
+            weaponNode, currentWeaponGenerationKey,
+            _session.equippedWeaponOwnershipKey,
+            _handlingSettings.firingGripReattachRadiusGameUnits, reattachInput);
         for (const FiringGripReattachCandidate& candidate : reattachCandidates) {
             if (candidate.isLeft != firingHandIsLeft &&
                 (!_handlingSettings.ambidextrousHandoffEnabled ||
@@ -266,9 +271,9 @@ namespace rock
                 continue;
             }
             firing_grip_reattach_zone_policy::ZoneResult reattachZone{};
-            if (!tryEvaluateFiringGripReattachZoneForHand(
-                    weaponNode,
+            if (!reattachInputValid || !tryEvaluateFiringGripZoneForHand(
                     candidate.isLeft,
+                    reattachInput,
                     reattachZone)) {
                 continue;
             }
@@ -289,33 +294,8 @@ namespace rock
                     reattachZone.inside)) {
                 _firing.reattachHoverInsideZone = true;
                 _firing.reattachHoverHandIsLeft = candidate.isLeft;
-                // Marker on the side the palm sits on, mirroring the authored
-                // support seat indicator.
-                const RE::NiPoint3 indicatorWorld{
-                    reattachZone.indicatorWorld.x,
-                    reattachZone.indicatorWorld.y,
-                    reattachZone.indicatorWorld.z,
-                };
-                RE::NiPoint3 indicatorWeaponLocal{};
-                bool indicatorWeaponLocalValid = false;
-                if (reattachZone.indicatorValid &&
-                    isInvertibleTransform(weaponNode->world)) {
-                    indicatorWeaponLocal = transform_math::worldPointToLocal(
-                        weaponNode->world,
-                        indicatorWorld);
-                    indicatorWeaponLocalValid =
-                        std::isfinite(indicatorWeaponLocal.x) &&
-                        std::isfinite(indicatorWeaponLocal.y) &&
-                        std::isfinite(indicatorWeaponLocal.z);
-                }
-                _firing.reattachIndicatorFrame =
-                    FiringGripReattachIndicatorFrame{
-                        .positionWeaponLocal = indicatorWeaponLocal,
-                        .weaponGenerationKey = currentWeaponGenerationKey,
-                        .handIsLeft = candidate.isLeft,
-                        .weaponLocalValid = indicatorWeaponLocalValid,
-                        .visible = reattachZone.indicatorValid,
-                    };
+                updateFiringGripZoneIndicator(weaponNode,
+                    currentWeaponGenerationKey, candidate.isLeft, reattachZone);
             }
             if (reattachRequested &&
                 tryReattachFiringGrip(

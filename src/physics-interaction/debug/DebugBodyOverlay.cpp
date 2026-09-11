@@ -99,6 +99,7 @@ namespace rock::debug
         constexpr std::size_t kBodyDiagnosticPhaseCount = 4;
         constexpr std::size_t kBodyInstanceCapacity = kBodySourceCapacity * kBodyDiagnosticPhaseCount;
         static_assert(kBodySourceCapacity == debug_overlay_runtime::kMaxBodyInstances);
+        static_assert(GripZoneIndicatorOverlayFrame::kCapacity <= kBodyInstanceCapacity);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr UINT kMaxShaderClassInstances = 256;

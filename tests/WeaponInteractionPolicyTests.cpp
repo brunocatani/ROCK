@@ -3165,13 +3165,45 @@ int main()
         .firingGripProximityAuthorityEnabled = true,
         .providerPartAuthorityActive = false,
         .authoredCaptureEligible = false,
-        .supportPalmToFiringGripDistance = 3.0f,
-        .authoredSeatToFiringGripDistance = 12.0f,
-        .firingGripPromotionRadius = 5.0f,
+        .supportPalmInsideHandoffZone = true,
+        .authoredSeatInsideHandoffZone = false,
     };
     ok &= expectTrue(
         "firing-grip station restores dynamic ambidextrous handoff",
         shouldCaptureDynamicHandoffGrip(dynamicHandoffGrip));
+    {
+        namespace zone = rock::firing_grip_reattach_zone_policy;
+        const auto evaluateHandoff = [](const zone::Vec3& palm) {
+            return zone::evaluateZone({
+                .palmWorld = palm,
+                .weaponLeftAxisWorld = { 1.0f, 0.0f, 0.0f },
+                .reachGameUnits = 5.0f,
+                .radiusGameUnits = 2.0f,
+            });
+        };
+        auto input = dynamicHandoffGrip;
+        for (const float side : { -1.0f, 1.0f }) {
+            const auto inside = evaluateHandoff({ side * 5.0f, 2.0f, 0.0f });
+            input.supportPalmInsideHandoffZone = inside.inside;
+            ok &= expectTrue("both cylinder rims admit handoff beyond the former sphere",
+                inside.radialDistanceGameUnits > 5.0f &&
+                    shouldCaptureDynamicHandoffGrip(input));
+            ok &= expectTrue("an eligible cylinder rim has an indicator on its approach side",
+                inside.indicatorValid && inside.indicatorWorld.x * side > 0.0f);
+        }
+        for (const auto palm : { zone::Vec3{ 0.0f, 2.1f, 0.0f },
+                 zone::Vec3{ 5.1f, 0.0f, 0.0f } }) {
+            const auto outside = evaluateHandoff(palm);
+            input.supportPalmInsideHandoffZone = outside.inside;
+            ok &= expectFalse("outside cylinder width or reach rejects handoff and its indicator",
+                shouldCaptureDynamicHandoffGrip(input) || outside.indicatorValid);
+        }
+        input.supportPalmInsideHandoffZone = true;
+        input.authoredCaptureEligible = true;
+        input.authoredSeatInsideHandoffZone = evaluateHandoff({ 0.0f, 3.0f, 0.0f }).inside;
+        ok &= expectTrue("an authored seat inside the old sphere but outside the cylinder does not steal handoff",
+            shouldCaptureDynamicHandoffGrip(input));
+    }
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
@@ -3182,16 +3214,16 @@ int main()
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
-        input.authoredSeatToFiringGripDistance = 4.0f;
+        input.authoredSeatInsideHandoffZone = true;
         ok &= expectFalse(
             "authored firing-grip seat remains preferred for pistols",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
         auto input = dynamicHandoffGrip;
-        input.supportPalmToFiringGripDistance = 6.0f;
+        input.supportPalmInsideHandoffZone = false;
         ok &= expectFalse(
-            "dynamic handoff cannot escape the promotion radius",
+            "dynamic handoff cannot escape the lateral cylinders",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
@@ -4121,6 +4153,24 @@ int main()
         });
     ok &= expectTrue("exclusive target still activates whitelist gating alongside non-exclusive", mixedUnmatched.whitelistActive);
     ok &= expectFalse("mixed whitelist still fails closed for unmatched contact", mixedUnmatched.matched);
+    {
+        const Contact bolt{ .weaponGenerationKey = 0xABC,
+            .bodyId = 42, .actionRole = rock::WeaponActionRole::Bolt };
+        auto targets = mixedExclusivityTargets;
+        targets[1].bodyId = 42;
+        targets[1].priority = 10;
+        ok &= expectEqual("marker snapshot respects full-authority target priority",
+            resolveTarget(std::span<const Target>(targets), bolt).grabMode,
+            GrabMode::FullTwoHandAuthority);
+        ok &= expectEqual("a cleared target outside the snapshot count cannot suppress an attach-only marker",
+            resolveTarget(std::span<const Target>(targets).first(1), bolt).grabMode,
+            GrabMode::AttachOnly);
+        ok &= expectFalse("clearing all provider targets removes marker eligibility",
+            resolveTarget(std::span<const Target>(targets).first(0), bolt).matched);
+        targets[0].weaponGenerationKey = 0xDEF;
+        ok &= expectFalse("a stale weapon generation cannot retain an attach-only marker",
+            resolveTarget(std::span<const Target>(targets).first(1), bolt).matched);
+    }
 
     std::array<Target, 1> semanticsOnlyTarget{};
     semanticsOnlyTarget[0].active = true;

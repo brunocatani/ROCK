@@ -1705,6 +1705,14 @@ namespace rock
             firingReattachFrame,
             firingReattachFrame.handIsLeft ? _leftHand : _rightHand);
 
+        std::array<weapon_part_runtime::Target,
+            provider::ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> partTargets{};
+        const auto targetCount = provider::copyWeaponPartTargets(partTargets);
+        overlayFrame.count += static_cast<std::uint32_t>(
+            _weaponCollision.collectAttachOnlyGripIndicators(weaponNode,
+                std::span(partTargets).first(targetCount),
+                std::span(overlayFrame.positions).subspan(overlayFrame.count)));
+
         if (overlayFrame.count > 0) {
             debug::Install();
         }

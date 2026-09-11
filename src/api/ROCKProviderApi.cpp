@@ -6441,18 +6441,28 @@ namespace rock::provider
         pruneExpiredNativeAnimationAuthorityLocked(frameIndex);
     }
 
+    std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets)
+    {
+        std::size_t count = 0;
+        std::scoped_lock lock(s_weaponPartMutex);
+        for (const auto& slot : s_weaponPartTargets) {
+            if (count == outTargets.size()) {
+                break;
+            }
+            if (slot.active) {
+                outTargets[count++] = toRuntimeTarget(slot);
+            }
+        }
+        return count;
+    }
+
     bool resolveWeaponPartTargetV1(
         const RockProviderWeaponPartTargetQueryV1& query,
         RockProviderWeaponPartTargetResolutionV1& outResolution)
     {
         outResolution = {};
         std::array<weapon_part_runtime::Target, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> runtimeTargets{};
-        {
-            std::scoped_lock lock(s_weaponPartMutex);
-            for (std::size_t i = 0; i < s_weaponPartTargets.size(); ++i) {
-                runtimeTargets[i] = toRuntimeTarget(s_weaponPartTargets[i]);
-            }
-        }
+        const auto targetCount = copyWeaponPartTargets(runtimeTargets);
 
         const weapon_part_runtime::Contact contact{
             .weaponGenerationKey = query.weaponGenerationKey,
@@ -6465,7 +6475,8 @@ namespace rock::provider
             .socketRole = static_cast<WeaponSocketRole>(query.socketRole),
             .actionRole = static_cast<WeaponActionRole>(query.actionRole),
         };
-        const auto resolution = weapon_part_runtime::resolveTarget(runtimeTargets, contact);
+        const auto resolution = weapon_part_runtime::resolveTarget(
+            std::span(runtimeTargets).first(targetCount), contact);
         outResolution.whitelistActive = resolution.whitelistActive ? 1u : 0u;
         outResolution.matched = resolution.matched ? 1u : 0u;
         outResolution.grabMode = fromRuntimeGrabMode(resolution.grabMode);

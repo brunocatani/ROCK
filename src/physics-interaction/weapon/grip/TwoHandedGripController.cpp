@@ -130,6 +130,11 @@ namespace rock
                                       &authoredIndicatorWeaponWorldValid]() {
             const EquippedWeaponGripOccupancy occupancyAfter =
                 getGripOccupancy();
+            const auto& markerHand = _firing.reattachIndicatorFrame.handIsLeft ?
+                occupancyAfter.left : occupancyAfter.right;
+            if (markerHand.weaponEngaged()) {
+                _firing.reattachIndicatorFrame = {};
+            }
             authoredIndicatorInput.supportHandWeaponEngaged =
                 authoredIndicatorSupportHandIsLeft ?
                 occupancyAfter.left.weaponEngaged() :
@@ -417,6 +422,29 @@ namespace rock
             authoredCapabilityAllowsIndicator &&
             supportRuntimeState.supportGripAllowed &&
             !supportRuntimeState.providerPartAuthority.active;
+        firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
+        firing_grip_reattach_zone_policy::ZoneResult handoffZone{};
+        // Preview only: the existing contact/probe or authored-seat route
+        // still owns acquisition and the grab button still commits it.
+        const bool handoffIndicatorAvailable =
+            (routedSupportTouching || authoredSeatAcquisitionAvailable) &&
+            _session.state != TwoHandedState::PartCarry &&
+            _session.state != TwoHandedState::Gripping &&
+            _handlingSettings.ambidextrousHandoffEnabled &&
+            firingGripProximityAuthorityEnabled &&
+            supportRuntimeState.supportGripAllowed &&
+            !supportRuntimeState.providerPartAuthority.active &&
+            !supportHandHoldingObject &&
+            canBeginPrimaryOnlyGripForHand(supportHandIsLeft) &&
+            tryBuildFiringGripZoneInput(weaponNode, currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey,
+                _handlingSettings.firingGripPromotionRadiusGameUnits, handoffInput) &&
+            tryEvaluateFiringGripZoneForHand(supportHandIsLeft, handoffInput, handoffZone) &&
+            handoffZone.inside;
+        if (handoffIndicatorAvailable) {
+            updateFiringGripZoneIndicator(weaponNode, currentWeaponGenerationKey,
+                supportHandIsLeft, handoffZone);
+        }
         if (authoredSeatAcquisitionAvailable) {
             decision = WeaponInteractionDecision{
                 .kind = WeaponInteractionKind::SupportGrip,
@@ -449,7 +477,8 @@ namespace rock
                     authoredActivationStateMatches &&
                     authoredCapabilityAllowsIndicator,
                 .activationSpatialPass =
-                    authoredActivation.activationSpatialPass,
+                    authoredActivation.activationSpatialPass &&
+                    !handoffIndicatorAvailable,
                 .supportGripAllowed = supportRuntimeState.supportGripAllowed,
                 .providerPartAuthorityActive =
                     supportRuntimeState.providerPartAuthority.active,

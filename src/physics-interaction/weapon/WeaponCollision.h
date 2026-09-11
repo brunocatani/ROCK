@@ -19,6 +19,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
+#include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
@@ -259,6 +260,11 @@ namespace rock
         std::uint32_t getWeaponBodyIdAtomic(std::size_t index) const;
 
         WeaponBodySnapshot getWeaponBodySnapshotAtomic() const;
+        // Main-thread presentation query; the output contains current positions only.
+        std::size_t collectAttachOnlyGripIndicators(
+            const RE::NiAVObject* currentWeaponRoot,
+            std::span<const weapon_part_runtime::Target> targets,
+            std::span<RE::NiPoint3> outPositions) const;
         // Main-thread debug publication only. Returns the exact pending target
         // for one generated weapon body in the active bank.
         bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;

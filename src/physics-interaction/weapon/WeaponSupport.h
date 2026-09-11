@@ -113,7 +113,7 @@ namespace rock::weapon_support_authority_policy
         // active grip's handoff capability. AttachOnly is the sole grip
         // contract that may never inherit firing-grip ownership; promotion is
         // still independently gated by ambidextrous mode, infrastructure, and
-        // firing-grip distance at the call site.
+        // firing-grip cylinder at the call site.
         return supportGripActive && !attachOnly;
     }
 
@@ -124,24 +124,16 @@ namespace rock::weapon_support_authority_policy
         bool firingGripProximityAuthorityEnabled{ false };
         bool providerPartAuthorityActive{ false };
         bool authoredCaptureEligible{ false };
-        float supportPalmToFiringGripDistance{ 0.0f };
-        float authoredSeatToFiringGripDistance{ 0.0f };
-        float firingGripPromotionRadius{ 0.0f };
+        bool supportPalmInsideHandoffZone{ false };
+        bool authoredSeatInsideHandoffZone{ false };
     };
-
-    [[nodiscard]] inline constexpr bool isInsideFiringGripPromotionRadius(
-        const float distance,
-        const float radius) noexcept
-    {
-        return distance >= 0.0f && radius >= 0.0f && distance <= radius;
-    }
 
     /*
      * Support-pose selection must not remove the separate dynamic ambidextrous
      * handoff station at the firing grip. This bypass exists only during an
      * ordinary support acquisition with the live support palm inside the
-     * promotion radius. Exact provider authority remains ahead of it. If a
-     * usable authored seat is itself inside that same radius (the common pistol
+     * lateral cylinders. Exact provider authority remains ahead of it. If a
+     * usable authored seat is itself inside that same zone (the common pistol
      * case), retain the authored seat instead of replacing it with dynamic.
      */
     [[nodiscard]] inline constexpr bool shouldCaptureDynamicHandoffGrip(
@@ -151,16 +143,12 @@ namespace rock::weapon_support_authority_policy
             !input.ambidextrousHandoffEnabled ||
             !input.firingGripProximityAuthorityEnabled ||
             input.providerPartAuthorityActive ||
-            !isInsideFiringGripPromotionRadius(
-                input.supportPalmToFiringGripDistance,
-                input.firingGripPromotionRadius)) {
+            !input.supportPalmInsideHandoffZone) {
             return false;
         }
 
         return !input.authoredCaptureEligible ||
-               !isInsideFiringGripPromotionRadius(
-                   input.authoredSeatToFiringGripDistance,
-                   input.firingGripPromotionRadius);
+               !input.authoredSeatInsideHandoffZone;
     }
 
     template <class Transform>

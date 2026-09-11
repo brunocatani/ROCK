@@ -1594,16 +1594,27 @@ namespace rock
             bool handIsLeft) const;
 
         /*
-         * Evaluates the firing-grip reattach zone for one free hand: its palm
+         * Evaluates the firing-grip handoff/reattach zone for one free hand: its palm
          * pivot against the lateral cylinders that start at the captured grip
          * point. The lateral axis is the seated canonical right palm normal on
          * the current weapon; without that canonical hold the zone fails
          * closed. Records the overlay sample for that hand.
          */
-        bool tryEvaluateFiringGripReattachZoneForHand(
+        bool tryBuildFiringGripZoneInput(
             RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey,
+            float reachGameUnits,
+            firing_grip_reattach_zone_policy::ZoneInput& outInput) const;
+        bool tryEvaluateFiringGripZoneForHand(
             bool handIsLeft,
+            const firing_grip_reattach_zone_policy::ZoneInput& input,
             firing_grip_reattach_zone_policy::ZoneResult& outZone);
+        void updateFiringGripZoneIndicator(
+            RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey,
+            bool handIsLeft,
+            const firing_grip_reattach_zone_policy::ZoneResult& zone);
 
         /*
          * Firing-hand role transition. Clears role-tagged FRIK publications of

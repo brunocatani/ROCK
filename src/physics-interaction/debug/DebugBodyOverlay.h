@@ -341,7 +341,7 @@ namespace rock::debug
 
     struct GripZoneIndicatorOverlayFrame
     {
-        static constexpr std::size_t kCapacity = 2;
+        static constexpr std::size_t kCapacity = MAX_WEAPON_COLLISION_BODIES + 2;
 
         std::array<RE::NiPoint3, kCapacity> positions{};
         std::uint64_t gameFrameIndex{ 0 };

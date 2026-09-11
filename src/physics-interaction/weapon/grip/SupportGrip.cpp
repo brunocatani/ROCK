@@ -2820,11 +2820,6 @@ namespace rock
         const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
         const RE::NiPoint3 firingGripWorld =
             weaponLocalToWorld(_firing.primaryGripLocal, weaponNode);
-        const RE::NiPoint3 palmToFiringGrip =
-            sub(palmPos, firingGripWorld);
-        const float supportPalmToFiringGripDistance =
-            std::sqrt(dot(palmToFiringGrip, palmToFiringGrip));
-
         /*
          * Acquisition-only grip priority. Physical contact and the proximity
          * probe are equivalent entry sources. Exact provider authority wins
@@ -2971,6 +2966,25 @@ namespace rock
                         authoredSupportFingerLocalTransformMask ==
                         kCompleteAuthoredFingerMask,
                 });
+        firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
+        bool supportPalmInsideHandoffZone = false;
+        bool authoredSeatInsideHandoffZone = false;
+        if (ambidextrousHandoffCaptureContext &&
+            _handlingSettings.ambidextrousHandoffEnabled &&
+            tryBuildFiringGripZoneInput(weaponNode,
+                decision.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
+                _handlingSettings.firingGripPromotionRadiusGameUnits, handoffInput)) {
+            handoffInput.palmWorld = { palmPos.x, palmPos.y, palmPos.z };
+            supportPalmInsideHandoffZone =
+                firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
+            if (authoredSupportFrameValid) {
+                const auto seatWorld = transform_math::localPointToWorld(
+                    weaponNode->world, authoredSupportPalmWeaponLocal);
+                handoffInput.palmWorld = { seatWorld.x, seatWorld.y, seatWorld.z };
+                authoredSeatInsideHandoffZone =
+                    firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
+            }
+        }
         const bool useDynamicHandoffGrip =
             weapon_support_authority_policy::
                 shouldCaptureDynamicHandoffGrip(
@@ -2987,13 +3001,10 @@ namespace rock
                                 providerPartAuthority.active,
                             .authoredCaptureEligible =
                                 useAuthoredSupportGrip,
-                            .supportPalmToFiringGripDistance =
-                                supportPalmToFiringGripDistance,
-                            .authoredSeatToFiringGripDistance =
-                                authoredSupportPalmToFiringGripDistance,
-                            .firingGripPromotionRadius =
-                                _handlingSettings.
-                                    firingGripPromotionRadiusGameUnits,
+                            .supportPalmInsideHandoffZone =
+                                supportPalmInsideHandoffZone,
+                            .authoredSeatInsideHandoffZone =
+                                authoredSeatInsideHandoffZone,
                         });
         if (_handlingSettings.authoredOnlySupportGrabsEnabled &&
             !providerPartAuthority.active) {
