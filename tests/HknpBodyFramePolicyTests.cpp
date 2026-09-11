@@ -1,4 +1,5 @@
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 #include "RE/NetImmerse/NiPoint.h"
@@ -59,6 +60,27 @@ int main()
      * pivots appear to slide around rotated objects.
      */
     bool ok = true;
+
+    // The Boston session allocated weapon authority motion 4253. Rejecting it
+    // at 4096 switched live readback from MOTION to BODY and inverted rotation.
+    const auto expectMotionSlot = [&](const char* label, std::uint32_t motion,
+                                      std::uint32_t count, std::uint32_t flags, bool expected) {
+        const bool actual = rock::body_frame::motionSlotCanBeRead(motion, count, flags);
+        if (actual != expected) {
+            std::printf("%s expected %d got %d\n", label, expected, actual);
+            ok = false;
+        }
+    };
+    expectMotionSlot("last slot below old cutoff", 4095, 8192, 0x80002000, true);
+    expectMotionSlot("old cutoff is a valid slot", 4096, 8192, 0x80002000, true);
+    expectMotionSlot("Boston weapon authority", 4253, 8192, 0x80002000, true);
+    expectMotionSlot("last live array slot", 8191, 8192, 0x80002000, true);
+    expectMotionSlot("one past live array", 8192, 8192, 0x80002000, false);
+    expectMotionSlot("capacity alone does not admit a slot", 4253, 4096, 0x80002000, false);
+    expectMotionSlot("count exceeds capacity", 4253, 8192, 0x80001000, false);
+    expectMotionSlot("static motion is not dynamic", 0, 8192, 0x80002000, false);
+    expectMotionSlot("free motion is rejected", 0x7FFFFFFF, 8192, 0x80002000, false);
+    expectMotionSlot("corrupt array size is rejected", 4253, 0xFFFFFFFF, 0xFFFFFFFF, false);
 
     constexpr float bodyFloats[16]{
         0.0f, -1.0f, 0.0f, 2.0f,

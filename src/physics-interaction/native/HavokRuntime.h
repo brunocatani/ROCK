@@ -139,7 +139,6 @@ namespace rock::havok_runtime
     bool tryReadBodyHighWaterMark(RE::hknpWorld* world, std::uint32_t& outHighWaterMark);
     bool bodySlotLooksReadable(RE::hknpWorld* world, RE::hknpBodyId bodyId);
     RE::hknpBody* getBodyArray(RE::hknpWorld* world);
-    RE::hknpMotion* getMotionArray(RE::hknpWorld* world);
     RE::hknpBody* getBody(RE::hknpWorld* world, RE::hknpBodyId bodyId);
     RE::hknpMotion* getMotion(RE::hknpWorld* world, std::uint32_t motionIndex);
     RE::hknpMotion* getBodyMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId);
