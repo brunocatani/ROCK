@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/consume/ImmersiveAid.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 
@@ -654,8 +655,10 @@ namespace rock
          * contact evidence for both.
          */
         if (_touchGrabRuntime.isHandActive(isLeft)) {
-            if (rawGrabInput.released ||
-                !rawGrabInput.held) {
+            TouchGrabRuntime::HandReport touchReport{};
+            (void)_touchGrabRuntime.getHandReport(isLeft, touchReport);
+            if (global_surface_grab_policy::releaseOnInput(
+                    touchReport.commandOwned, rawGrabInput.held, rawGrabInput.released)) {
                 _touchGrabRuntime.releaseHand(
                     isLeft,
                     frame.bhkWorld,
@@ -707,8 +710,8 @@ namespace rock
             physicsWritesAllowedForWorld(frame.hknpWorld);
         /*
          * One grip edge has a strict candidate order: explicit provider touch
-         * targets, an eligible close-selected object, then provider wildcard
-         * or built-in world surfaces. The close selection was classified as
+         * targets, a nearby native PA point, an eligible close-selected object,
+         * then provider wildcard or built-in world surfaces. The close selection was classified as
          * grabbable by the selection path; a far selection does not suppress an
          * intentional surface grab at the hand.
          */
@@ -804,6 +807,9 @@ namespace rock
                 tryTargetClass(
                     TouchGrabRuntime::TargetClass::
                         Explicit) ||
+                _touchGrabRuntime.tryAcquirePowerArmor(isLeft, _powerArmorCandidates[handIndex],
+                    frame.bhkWorld, frame.hknpWorld, worldGeneration, skeletonGeneration,
+                    providerGeneration, collisionGeneration) ||
                 tryTargetClass(
                     TouchGrabRuntime::TargetClass::
                         Wildcard);
@@ -2316,6 +2322,19 @@ namespace rock
         };
         publishHandInputOwnership(_rightHand, false);
         publishHandInputOwnership(_leftHand, true);
+        _powerArmorCandidates = {};
+        _powerArmorCandidateFrame = runtime_state::currentFrame().frameIndex;
+        for (const bool isLeft : {false, true}) {
+            const auto& input = isLeft ? frame.left : frame.right;
+            const auto& hand = isLeft ? _leftHand : _rightHand;
+            RE::NiTransform presented{};
+            if (frame.worldReady && !frame.menuBlocked && !input.disabled &&
+                forceGrabHandBlockerMask(hand, isLeft, false, true) == 0 &&
+                _dynamicHandCollision.getLastPresentedHandWorld(isLeft, presented)) {
+                _powerArmorCandidates[isLeft ? 1u : 0u] =
+                    _touchGrabRuntime.findPowerArmorCandidate(frame.hknpWorld, presented.translate);
+            }
+        }
         processProviderInteractionCommands(frame);
         serviceLooseGrenadeQuickDraw(frame);
         servicePendingForceGrabCommits(frame);

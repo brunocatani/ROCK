@@ -12,6 +12,7 @@ namespace rock
 
 namespace rock::provider
 {
+    bool isPowerArmorGrabOwnerRegisteredV1(std::uint64_t ownerToken);
     struct RockProviderWeaponPartTargetQueryV1
     {
         std::uint64_t weaponGenerationKey{ 0 };

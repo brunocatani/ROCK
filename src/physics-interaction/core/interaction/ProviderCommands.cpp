@@ -195,6 +195,25 @@ namespace rock
             };
 
             if (isForceReleaseCommand || isThrownDropCommand) {
+                TouchGrabRuntime::HandReport surface{};
+                if (isForceReleaseCommand && _touchGrabRuntime.getHandReport(isLeft, surface) && surface.globalSurface) {
+                    if (!heldObjectMatchesRequest(surface.referenceFormId, surface.bodyId)) {
+                        complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HeldObjectMismatch);
+                        continue;
+                    }
+                    if ((command.forceRelease.flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok)) != 0) {
+                        complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                        continue;
+                    }
+                    result.targetFormId = surface.referenceFormId;
+                    result.targetBodyId = surface.bodyId;
+                    _touchGrabRuntime.releaseHand(isLeft, frame.bhkWorld, frame.hknpWorld,
+                        RockProviderTouchGrabReleaseReasonV1::HandUnavailable,
+                        _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
+                    clearProviderReleaseInputState();
+                    complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None);
+                    continue;
+                }
                 if (!hand.isHolding()) {
                     complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandNotHolding);
                     continue;
@@ -295,6 +314,38 @@ namespace rock
 
             if (command.forceGrab.targetFormId == 0) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                continue;
+            }
+
+            if (command.powerArmorPoint != RockProviderPowerArmorPointV1::None) {
+                RockProviderReferenceQueryV1 query{};
+                query.referenceFormId = command.forceGrab.targetFormId;
+                query.referenceNativeHandle = command.powerArmorReferenceNativeHandle;
+                RockProviderPowerArmorTargetV1 target{};
+                RE::NiTransform presented{};
+                if (frame.menuBlocked || !reference_interaction::describePowerArmor(reference_interaction::resolveQuery(query), target) ||
+                    target.frameReference.referenceFormId == 0 || !_dynamicHandCollision.getLastPresentedHandWorld(isLeft, presented)) {
+                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                    continue;
+                }
+                const auto candidate = _touchGrabRuntime.findPowerArmorCandidate(frame.hknpWorld, presented.translate,
+                    target.frameReference.referenceFormId, command.powerArmorPoint,
+                    command.forceGrab.maxDistanceGame > 0 ? command.forceGrab.maxDistanceGame : TouchGrabRuntime::kPowerArmorProximityRadiusGame);
+                if (!candidate.valid || !_touchGrabRuntime.tryAcquirePowerArmor(isLeft, candidate, frame.bhkWorld,
+                    frame.hknpWorld, result.worldGeneration, result.skeletonGeneration, result.providerGeneration,
+                    _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire), command.ownerToken)) {
+                    complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                    continue;
+                }
+                result.targetFormId = candidate.referenceFormId;
+                result.targetBodyId = candidate.bodyId;
+                if (hand.hasSelection()) hand.clearSelectionState(false);
+                clearProviderReleaseInputState();
+                if (!complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None)) {
+                    _touchGrabRuntime.releaseHand(isLeft, frame.bhkWorld, frame.hknpWorld,
+                        RockProviderTouchGrabReleaseReasonV1::OwnerYield,
+                        _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire));
+                }
                 continue;
             }
 

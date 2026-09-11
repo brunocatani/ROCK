@@ -635,6 +635,48 @@
         return static_cast<std::uint32_t>(copied);
     }
 
+    bool PhysicsInteraction::getProviderHandTargetDetailsV1(const bool isLeft,
+        ::rock::provider::RockProviderHandTargetDetailsV1& out) const
+    {
+        using Flag = provider::RockProviderTargetDetailFlagV1;
+        out = {};
+        std::array<provider::RockProviderHandInteractionStateV1, 2> states{};
+        fillProviderHandInteractionStates(states);
+        out.handState = states[isLeft ? 1u : 0u];
+        TouchGrabRuntime::HandReport touch{};
+        if (_touchGrabRuntime.getHandReport(isLeft, touch)) {
+            if (touch.hasSurfaceAnchor) {
+                out.anchorGame = makeProviderPoint(touch.surfaceAnchorGame);
+                out.flags |= static_cast<std::uint32_t>(Flag::Anchor);
+            }
+            if (touch.hasNormal) {
+                out.normalGame = makeProviderPoint(touch.normalGame);
+                out.flags |= static_cast<std::uint32_t>(Flag::Normal);
+            }
+            out.powerArmorPoint = touch.powerArmorPoint;
+            out.sourceTriangleIndex = touch.sourceTriangleIndex;
+            std::copy(std::begin(touch.meshPartName), std::end(touch.meshPartName), std::begin(out.meshPartName));
+            if (out.sourceTriangleIndex != 0xFFFF'FFFFu) out.flags |= static_cast<std::uint32_t>(Flag::MeshPart);
+        }
+        auto* world = _lifecycle.cachedHknpWorld;
+        const auto body = havok_runtime::snapshotBody(world, RE::hknpBodyId{out.handState.primaryBodyId});
+        RE::TESObjectREFR* ref = nullptr;
+        if (body.valid) {
+            out.collisionLayer = body.collisionFilterInfo & 0x7Fu;
+            out.flags |= static_cast<std::uint32_t>(Flag::Body);
+            if (auto* node = havok_runtime::getOwnerNodeFromBody(body.body); node && node->name.c_str())
+                strncpy_s(out.collisionNodeName, node->name.c_str(), _TRUNCATE);
+            ref = reference_interaction::resolveBody(world, body.bodyId.value);
+        }
+        if (!ref && out.handState.targetFormId != 0)
+            ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(out.handState.targetFormId);
+        if (reference_interaction::describe(ref, out.reference)) {
+            out.flags |= static_cast<std::uint32_t>(Flag::Reference);
+            out.reference.worldGeneration = out.handState.worldGeneration;
+        }
+        return true;
+    }
+
     void PhysicsInteraction::fillProviderHandInteractionStates(
         std::array<::rock::provider::RockProviderHandInteractionStateV1, 2>& outStates) const
     {

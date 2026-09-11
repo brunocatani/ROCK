@@ -26,7 +26,7 @@ namespace rock
     /*
      * TouchGrabRuntime is intentionally separate from Hand's loose-object
      * state machine. Provider targets retain first authority, then a selected
-     * close object, while the optional built-in surface policy supplies only a
+     * native PA point and a selected close object, while the optional built-in surface policy supplies only a
      * FixedAnchor wildcard fallback.
      * Mechanisms receive one stock limited joint plus finite hand attachment,
      * while FixedAnchor latches the rendered hand and dynamic hand twins
@@ -51,6 +51,7 @@ namespace rock
         struct HandReport
         {
             bool globalSurface = false;
+            bool commandOwned = false;
             bool hasSurfaceAnchor = false;
             provider::RockProviderTouchGrabKindV1 kind{
                 provider::RockProviderTouchGrabKindV1::FixedAnchor
@@ -62,7 +63,32 @@ namespace rock
             std::uint32_t referenceFormId = 0;
             std::uint32_t referenceNativeHandle = 0;
             RE::NiPoint3 surfaceAnchorGame{};
+            bool hasNormal = false;
+            RE::NiPoint3 normalGame{};
+            provider::RockProviderPowerArmorPointV1 powerArmorPoint{};
+            std::uint32_t sourceTriangleIndex = 0xFFFF'FFFFu;
+            char meshPartName[64]{};
         };
+
+        struct PowerArmorCandidate
+        {
+            bool valid = false;
+            std::uint32_t referenceFormId = 0;
+            std::uint32_t referenceNativeHandle = 0;
+            std::uint32_t bodyId = 0x7FFF'FFFFu;
+            provider::RockProviderPowerArmorPointV1 point{};
+            RE::NiPoint3 positionGame{};
+        };
+        static constexpr float kPowerArmorProximityRadiusGame = 8.0f;
+        PowerArmorCandidate findPowerArmorCandidate(RE::hknpWorld* world,
+            const RE::NiPoint3& handPosition, std::uint32_t frameFormId = 0,
+            provider::RockProviderPowerArmorPointV1 point = {},
+            float radius = kPowerArmorProximityRadiusGame) const;
+        bool tryAcquirePowerArmor(bool isLeft, const PowerArmorCandidate& candidate,
+            RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
+            std::uint32_t worldGeneration, std::uint32_t skeletonGeneration,
+            std::uint32_t providerGeneration, std::uint32_t collisionGeneration,
+            std::uint64_t commandOwnerToken = 0);
 
         enum class AttemptFailure : std::uint8_t
         {
@@ -134,7 +160,8 @@ namespace rock
             std::uint32_t collisionGeneration,
             TargetClass targetClass,
             ContactSource contactSource,
-            bool closeObjectCandidate);
+            bool closeObjectCandidate,
+            provider::RockProviderPowerArmorPointV1 powerArmorPoint = {});
 
         void service(
             RE::bhkWorld* bhkWorld,
@@ -173,6 +200,7 @@ namespace rock
         {
             bool active = false;
             bool isLeft = false;
+            std::uint64_t commandOwnerToken = 0;
             std::uint32_t handBodyId = kInvalidId;
             std::uint32_t constraintId = kInvalidId;
             bool hasContactPoint = false;
@@ -187,6 +215,9 @@ namespace rock
             RE::NiPoint3 contactPointInTargetBody{};
             RE::NiPoint3 contactNormalInTargetBody{};
             float shellToMeshDistanceGameUnits = 0.0f;
+            provider::RockProviderPowerArmorPointV1 powerArmorPoint{};
+            std::uint32_t sourceTriangleIndex = 0xFFFF'FFFFu;
+            char meshPartName[64]{};
         };
 
         struct ActiveTarget
@@ -230,7 +261,8 @@ namespace rock
             bool isLeft,
             const hand_semantic_contact_state::SemanticContactRecord& contact,
             RE::hknpWorld* world,
-            ContactSource contactSource);
+            ContactSource contactSource,
+            provider::RockProviderPowerArmorPointV1 powerArmorPoint = {});
         [[nodiscard]] bool createMechanism(
             ActiveTarget& active,
             RE::bhkWorld* bhkWorld,

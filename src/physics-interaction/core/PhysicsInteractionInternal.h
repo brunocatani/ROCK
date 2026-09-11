@@ -54,6 +54,7 @@
 #include "physics-interaction/hand/DynamicHandCollisionPolicy.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"

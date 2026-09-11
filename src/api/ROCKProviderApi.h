@@ -218,6 +218,7 @@ namespace rock::provider
         CollisionAnchor = 0,
         MeshAnchor = 1,
         CollisionFallback = 2,
+        AnimatedArmorBone = 3,
     };
 
     enum class RockProviderTouchGrabHandMaskV1 : std::uint32_t
@@ -371,6 +372,8 @@ namespace rock::provider
         WorldRaycasts = 1u << 25,
         ColliderVisualizationOverride = 1u << 26,
         PlayerController = 1u << 27,
+        TargetDetails = 1u << 28,
+        PowerArmor = 1u << 29,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -884,6 +887,12 @@ namespace rock::provider
         LogicalInputActionState = 67,
         PlayerControllerState = 68,
         PlayerControllerJumpRequest = 69,
+        ReferenceQuery = 70,
+        ReferenceInteraction = 71,
+        HandTargetDetails = 72,
+        PowerArmorPointPose = 73,
+        PowerArmorTarget = 74,
+        PowerArmorGrabRequest = 75,
     };
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
@@ -2885,6 +2894,110 @@ namespace rock::provider
         const RockProviderAnimationPhaseContextV1* context,
         void* userData);
 
+    enum class RockProviderPowerArmorPointV1 : std::uint32_t
+    {
+        None = 0,
+        LeftArmorHand = 1,
+        RightArmorHand = 2,
+    };
+
+    enum class RockProviderNativeOpenStateV1 : std::uint32_t
+    {
+        NotApplicable = 0, Open = 1, Opening = 2, Closed = 3, Closing = 4,
+    };
+
+    // Availability is independent of boolean values. Node names are descriptive,
+    // not globally unique part IDs. All transforms use game units.
+    enum class RockProviderTargetDetailFlagV1 : std::uint32_t
+    {
+        Reference = 1u << 0, Body = 1u << 1, Anchor = 1u << 2,
+        Normal = 1u << 3, MeshPart = 1u << 4,
+        ActivationBlocked = 1u << 5, OpenState = 1u << 6,
+        FurnitureUse = 1u << 7, PowerArmorClassification = 1u << 8,
+        PowerArmorFrame = 1u << 9, PowerArmorActor = 1u << 10,
+    };
+
+    struct RockProviderReferenceQueryV1
+    {
+        std::uint32_t size{ sizeof(RockProviderReferenceQueryV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t referenceFormId{ 0 };
+        // Optional additional identity check; zero means unspecified.
+        std::uint32_t referenceNativeHandle{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        // Native furniture use is indexed. Zero is marker 0, not "any marker".
+        std::int32_t furnitureMarkerIndex{ 0 };
+    };
+
+    struct RockProviderReferenceInteractionV1
+    {
+        std::uint32_t size{ sizeof(RockProviderReferenceInteractionV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t referenceFormId{ 0 };
+        std::uint32_t referenceNativeHandle{ 0 };
+        std::uint32_t baseFormId{ 0 };
+        std::uint32_t baseFormType{ 0 };
+        std::uint32_t activationBlocked{ 0 };
+        RockProviderNativeOpenStateV1 openState{};
+        std::uint32_t furnitureInUse{ 0 };
+        std::uint32_t furnitureInUseIncludingReservations{ 0 };
+        std::int32_t furnitureMarkerIndex{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint64_t frameIndex{ 0 };
+    };
+
+    struct RockProviderHandTargetDetailsV1
+    {
+        std::uint32_t size{ sizeof(RockProviderHandTargetDetailsV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHandInteractionStateV1 handState{};
+        RockProviderReferenceInteractionV1 reference{};
+        std::uint32_t flags{ 0 };
+        std::uint32_t collisionLayer{ 0 };
+        RockProviderPoint3 anchorGame{};
+        RockProviderPoint3 normalGame{};
+        RockProviderPowerArmorPointV1 powerArmorPoint{};
+        std::uint32_t sourceTriangleIndex{ 0xFFFF'FFFFu };
+        char collisionNodeName[64]{};
+        char meshPartName[64]{};
+    };
+
+    struct RockProviderPowerArmorPointPoseV1
+    {
+        RockProviderPowerArmorPointV1 point{};
+        // Animated armor-bone origin, not a sampled human palm pose.
+        std::uint32_t valid{ 0 };
+        RockProviderTransform world{};
+        RockProviderTransform frameLocal{};
+    };
+
+    struct RockProviderPowerArmorTargetV1
+    {
+        std::uint32_t size{ sizeof(RockProviderPowerArmorTargetV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderReferenceInteractionV1 touchedReference{};
+        RockProviderReferenceInteractionV1 frameReference{};
+        std::uint32_t flags{ 0 };
+        // Nonzero only when the queried reference is a verified PA actor.
+        // Furniture reservations do not imply a wearer.
+        std::uint32_t actorFormId{ 0 };
+        RockProviderPowerArmorPointPoseV1 points[2]{};
+    };
+
+    struct RockProviderPowerArmorGrabRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderPowerArmorGrabRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderReferenceQueryV1 target{};
+        RockProviderHand hand{ RockProviderHand::None };
+        RockProviderPowerArmorPointV1 point{};
+        // Zero uses the native proximity radius. Maximum 32 game units.
+        float maxDistanceGame{ 0.0f };
+    };
+
     struct RockProviderApi
     {
         static constexpr auto ROCK_F4SE_MOD_NAME = "ROCK";
@@ -3201,6 +3314,24 @@ namespace rock::provider
         // Does not claim input or expose engine pointers. Check table size first.
         std::uint32_t(ROCK_PROVIDER_CALL* getNativeInputContextV1)();
 
+        // Animation-owner thread (normally an owner frame callback) only.
+        // TargetDetails capability; observes either hand regardless of owner.
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getHandTargetDetailsV1)(
+            std::uint64_t ownerToken, RockProviderHand hand,
+            RockProviderHandTargetDetailsV1* outDetails);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* queryReferenceInteractionV1)(
+            std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query,
+            RockProviderReferenceInteractionV1* outState);
+        // PowerArmor capability. Returns copied live bone poses, never pointers.
+        RockProviderResultV1(ROCK_PROVIDER_CALL* queryPowerArmorTargetV1)(
+            std::uint64_t ownerToken, const RockProviderReferenceQueryV1* query,
+            RockProviderPowerArmorTargetV1* outTarget);
+        // PowerArmor + InteractionCommands. Result kind is ForceGrab; poll/cancel
+        // with existing command APIs and release with requestForceReleaseV1.
+        RockProviderResultV1(ROCK_PROVIDER_CALL* requestPowerArmorGrabV1)(
+            std::uint64_t ownerToken, const RockProviderPowerArmorGrabRequestV1* request,
+            std::uint64_t* outCommandId);
+
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
             const std::uint32_t minProviderApiByteSize = 0)
@@ -3285,6 +3416,8 @@ namespace rock::provider
 
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_RAW_WAND_THUMBSTICK_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, getRawWandThumbstickV1) + sizeof(std::declval<RockProviderApi>().getRawWandThumbstickV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_POWER_ARMOR_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, requestPowerArmorGrabV1) + sizeof(std::declval<RockProviderApi>().requestPowerArmorGrabV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_FORCE_GRAB_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, getInteractionCommandResultV1) + sizeof(std::declval<RockProviderApi>().getInteractionCommandResultV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_FORCE_RELEASE_TABLE_BYTES = static_cast<std::uint32_t>(
@@ -4149,7 +4282,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 760);
+    static_assert(sizeof(RockProviderApi) == 792);
+    static_assert(offsetof(RockProviderApi, getHandTargetDetailsV1) == 760);
+    static_assert(std::is_trivially_copyable_v<RockProviderPowerArmorTargetV1>);
+    static_assert(std::is_standard_layout_v<RockProviderHandTargetDetailsV1>);
     static_assert(offsetof(RockProviderApi, getNativeInputContextV1) == 752);
     static_assert(offsetof(RockProviderApi, getRawWandThumbstickV1) == 744);
     static_assert(alignof(RockProviderApi) == 8);

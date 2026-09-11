@@ -134,6 +134,10 @@ int main()
         allowedLayerMask(),
         ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER));
     assert(!maskEnablesLayer(allowedLayerMask(), FO4_LAYER_CLUTTER));
-    assert(targetIdForHand(false) != targetIdForHand(true));
+    assert(targetIdForBody(123) != targetIdForBody(456));
+    assert(releaseOnInput(false, false, false));
+    assert(!releaseOnInput(false, true, false));
+    assert(!releaseOnInput(true, false, false));
+    assert(releaseOnInput(true, false, true));
     return 0;
 }

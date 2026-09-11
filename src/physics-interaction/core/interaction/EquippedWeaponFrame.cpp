@@ -1657,6 +1657,17 @@ namespace rock
         overlayFrame.diameterGameUnits =
             g_rockConfig.rockGripZoneIndicatorDiameterGameUnits;
 
+        if (_powerArmorCandidateFrame == gameFrameIndex) {
+            for (const bool isLeft : {false, true}) {
+                const auto& candidate = _powerArmorCandidates[isLeft ? 1u : 0u];
+                if (candidate.valid && !_touchGrabRuntime.isHandActive(isLeft) &&
+                    !(isLeft ? _leftHand : _rightHand).isHolding()) {
+                    overlayFrame.positions[overlayFrame.count++] = candidate.positionGame;
+                }
+            }
+            if (overlayFrame.count) debug::Install();
+        }
+
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         const std::uint64_t currentWeaponGenerationKey =
             _weaponCollision.getCurrentWeaponGenerationKey();

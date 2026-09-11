@@ -1,5 +1,7 @@
 #pragma once
 
+#include "api/ROCKProviderApi.h"
+
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
 #include "physics-interaction/hand/DynamicHandCollisionTransitionPolicy.h"
@@ -167,6 +169,9 @@ namespace rock
             RE::NiPoint3 meshNormalWorld{};
             float shellToMeshDistanceGameUnits = 0.0f;
             bool valid = false;
+            std::uint32_t animatedReferenceFormId = 0;
+            std::uint32_t animatedReferenceNativeHandle = 0;
+            provider::RockProviderPowerArmorPointV1 animatedPoint{};
         };
 
         /*
@@ -338,6 +343,10 @@ namespace rock
             struct SurfaceLatch
             {
                 bool active = false;
+                std::uint32_t animatedReferenceFormId = 0;
+                std::uint32_t animatedReferenceNativeHandle = 0;
+                provider::RockProviderPowerArmorPointV1 animatedPoint{};
+                RE::NiAVObject* animatedRootIdentity = nullptr;
                 std::uint32_t targetBodyId =
                     hand_semantic_contact_state::kInvalidBodyId;
                 RE::hknpBody* targetBodyIdentity = nullptr;

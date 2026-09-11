@@ -179,6 +179,8 @@ namespace rock
         bool queryProviderWorldRaycastV1(
             const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
             ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const;
+        bool getProviderHandTargetDetailsV1(bool isLeft,
+            ::rock::provider::RockProviderHandTargetDetailsV1& outDetails) const;
         std::uint32_t copyProviderBodyContacts(
             ::rock::provider::RockProviderBodyContactV1* outContacts,
             std::uint32_t maxContacts) const;
@@ -989,6 +991,8 @@ namespace rock
         Hand _rightHand{ false };
         Hand _leftHand{ true };
         TouchGrabRuntime _touchGrabRuntime;
+        std::array<TouchGrabRuntime::PowerArmorCandidate, 2> _powerArmorCandidates{};
+        std::uint64_t _powerArmorCandidateFrame = 0;
         BodyBoneColliderSet _bodyBoneColliders;
         WeaponCollision _weaponCollision;
         DynamicWeaponCollisionRuntime _dynamicWeaponCollision;

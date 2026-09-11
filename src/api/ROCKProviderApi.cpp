@@ -22,6 +22,7 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
+#include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -209,6 +210,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TouchGrabTargets) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WorldRaycasts) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerController) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TargetDetails) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PowerArmor) |
         static_cast<std::uint32_t>(
             RockProviderConsumerCapabilityV1::ColliderVisualizationOverride);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
@@ -2237,6 +2240,12 @@ namespace
         const RockProviderStructureIdV1 structureId)
     {
         switch (structureId) {
+        case RockProviderStructureIdV1::ReferenceQuery: return sizeof(RockProviderReferenceQueryV1);
+        case RockProviderStructureIdV1::ReferenceInteraction: return sizeof(RockProviderReferenceInteractionV1);
+        case RockProviderStructureIdV1::HandTargetDetails: return sizeof(RockProviderHandTargetDetailsV1);
+        case RockProviderStructureIdV1::PowerArmorPointPose: return sizeof(RockProviderPowerArmorPointPoseV1);
+        case RockProviderStructureIdV1::PowerArmorTarget: return sizeof(RockProviderPowerArmorTargetV1);
+        case RockProviderStructureIdV1::PowerArmorGrabRequest: return sizeof(RockProviderPowerArmorGrabRequestV1);
         case RockProviderStructureIdV1::ApiDescriptor:
             return sizeof(RockProviderApiDescriptorV1);
         case RockProviderStructureIdV1::ConsumerRegistration:
@@ -4069,6 +4078,92 @@ namespace
         return RockProviderResultV1::HandUnavailable;
     }
 
+    RockProviderResultV1 validateTargetQuery(std::uint64_t ownerToken,
+        const RockProviderReferenceQueryV1* query, RockProviderConsumerCapabilityV1 capability)
+    {
+        if (!query || !ownerToken || !query->referenceFormId || query->furnitureMarkerIndex < 0) return RockProviderResultV1::InvalidArgument;
+        if (query->size != sizeof(*query)) return RockProviderResultV1::InvalidSize;
+        if (query->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto permission = validateReadCapability(ownerToken, capability);
+        if (permission != RockProviderResultV1::Ok) return permission;
+        if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
+        if (!apiIsProviderReady()) return RockProviderResultV1::NotReady;
+        return validateGenerationGuards(query->worldGeneration, query->skeletonGeneration, query->providerGeneration);
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandTargetDetailsV1(std::uint64_t ownerToken,
+        RockProviderHand hand, RockProviderHandTargetDetailsV1* out)
+    {
+        if (!out || (hand != RockProviderHand::Left && hand != RockProviderHand::Right)) return RockProviderResultV1::InvalidArgument;
+        if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
+        if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto permission = validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::TargetDetails);
+        if (permission != RockProviderResultV1::Ok) return permission;
+        if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!apiIsProviderReady() || !pi) return RockProviderResultV1::NotReady;
+        pi->getProviderHandTargetDetailsV1(hand == RockProviderHand::Left, *out);
+        out->handState.frameIndex = currentProviderFrameIndex();
+        out->reference.frameIndex = out->handState.frameIndex;
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryReferenceInteractionV1(std::uint64_t ownerToken,
+        const RockProviderReferenceQueryV1* query, RockProviderReferenceInteractionV1* out)
+    {
+        if (!out) return RockProviderResultV1::InvalidArgument;
+        if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
+        if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::TargetDetails);
+        if (valid != RockProviderResultV1::Ok) return valid;
+        if (!rock::reference_interaction::describe(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return RockProviderResultV1::TargetUnavailable;
+        out->frameIndex = currentProviderFrameIndex();
+        out->worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryPowerArmorTargetV1(std::uint64_t ownerToken,
+        const RockProviderReferenceQueryV1* query, RockProviderPowerArmorTargetV1* out)
+    {
+        if (!out) return RockProviderResultV1::InvalidArgument;
+        if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
+        if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::PowerArmor);
+        if (valid != RockProviderResultV1::Ok) return valid;
+        if (!rock::reference_interaction::describePowerArmor(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return RockProviderResultV1::TargetUnavailable;
+        out->touchedReference.frameIndex = out->frameReference.frameIndex = currentProviderFrameIndex();
+        out->touchedReference.worldGeneration = out->frameReference.worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPowerArmorGrabV1(std::uint64_t ownerToken,
+        const RockProviderPowerArmorGrabRequestV1* request, std::uint64_t* outCommandId)
+    {
+        if (outCommandId) *outCommandId = 0;
+        if (!request || !outCommandId || !ownerToken) return RockProviderResultV1::InvalidArgument;
+        if (request->size != sizeof(*request) || request->target.size != sizeof(request->target)) return RockProviderResultV1::InvalidSize;
+        if (request->version != ROCK_PROVIDER_API_VERSION || request->target.version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        if ((request->hand != RockProviderHand::Left && request->hand != RockProviderHand::Right) ||
+            !rock::reference_interaction::pointName(request->point) || !request->target.referenceFormId ||
+            !request->target.worldGeneration || !request->target.skeletonGeneration || !request->target.providerGeneration ||
+            !std::isfinite(request->maxDistanceGame) || request->maxDistanceGame < 0 || request->maxDistanceGame > 32) return RockProviderResultV1::InvalidArgument;
+        const auto permission = validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::PowerArmor);
+        if (permission != RockProviderResultV1::Ok) return permission;
+        QueuedInteractionCommandV1 command{};
+        command.kind = RockProviderInteractionCommandKindV1::ForceGrab;
+        command.ownerToken = ownerToken;
+        command.powerArmorPoint = request->point;
+        command.powerArmorReferenceNativeHandle = request->target.referenceNativeHandle;
+        auto& grab = command.forceGrab;
+        grab.hand = request->hand;
+        grab.targetFormId = request->target.referenceFormId;
+        grab.worldGeneration = request->target.worldGeneration;
+        grab.skeletonGeneration = request->target.skeletonGeneration;
+        grab.providerGeneration = request->target.providerGeneration;
+        grab.maxDistanceGame = request->maxDistanceGame;
+        return enqueueInteractionCommand(command, outCommandId);
+    }
+
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(
         const std::uint64_t ownerToken,
         const RockProviderWorldRaycastRequestV1* request,
@@ -5487,6 +5582,10 @@ namespace
             &apiRequestPlayerControllerJumpV1,
         .getRawWandThumbstickV1 = &apiGetRawWandThumbstickV1,
         .getNativeInputContextV1 = &apiGetNativeInputContextV1,
+        .getHandTargetDetailsV1 = &apiGetHandTargetDetailsV1,
+        .queryReferenceInteractionV1 = &apiQueryReferenceInteractionV1,
+        .queryPowerArmorTargetV1 = &apiQueryPowerArmorTargetV1,
+        .requestPowerArmorGrabV1 = &apiRequestPowerArmorGrabV1,
     };
 
     constexpr RockProviderApiDescriptorV1 ROCK_PROVIDER_API_DESCRIPTOR{
@@ -5501,6 +5600,10 @@ namespace
 
 namespace rock::provider
 {
+    bool isPowerArmorGrabOwnerRegisteredV1(const std::uint64_t ownerToken)
+    {
+        return validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::PowerArmor) == RockProviderResultV1::Ok;
+    }
     ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi()
     {
         return &ROCK_PROVIDER_API_FUNCTION_TABLE;

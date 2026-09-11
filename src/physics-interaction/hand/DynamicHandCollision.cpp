@@ -16,6 +16,7 @@
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/ReferenceInteraction.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -837,6 +838,19 @@ namespace rock
         candidate.targetBodyId = targetBodyId;
         candidate.targetBodyIdentity = targetSnapshot.body;
         candidate.targetCollisionIdentity = targetSnapshot.collisionObject;
+        if (presentation && presentation->animatedReferenceFormId != 0) {
+            provider::RockProviderReferenceQueryV1 query{};
+            query.referenceFormId = presentation->animatedReferenceFormId;
+            query.referenceNativeHandle = presentation->animatedReferenceNativeHandle;
+            auto* ref = reference_interaction::resolveQuery(query);
+            if (!ref || !reference_interaction::pointTransform(ref, presentation->animatedPoint, targetWorld)) {
+                return reject(SurfaceLatchFailure::TargetTransformUnavailable);
+            }
+            candidate.animatedReferenceFormId = query.referenceFormId;
+            candidate.animatedReferenceNativeHandle = query.referenceNativeHandle;
+            candidate.animatedPoint = presentation->animatedPoint;
+            candidate.animatedRootIdentity = ref->Get3D();
+        }
         const bool meshPresentationRequested =
             presentation && presentation->valid &&
             isFiniteTransform(presentation->handWorld) &&
@@ -2150,7 +2164,19 @@ namespace rock
                     frame.hknpWorld,
                     RE::hknpBodyId{ latch.targetBodyId });
                 RE::NiTransform targetWorld{};
+                bool animatedTargetValid = true;
+                RE::NiTransform animatedWorld{};
+                if (latch.animatedReferenceFormId != 0) {
+                    provider::RockProviderReferenceQueryV1 query{};
+                    query.referenceFormId = latch.animatedReferenceFormId;
+                    query.referenceNativeHandle = latch.animatedReferenceNativeHandle;
+                    auto* ref = reference_interaction::resolveQuery(query);
+                    animatedTargetValid = ref && ref->Get3D() == latch.animatedRootIdentity &&
+                        reference_interaction::pointTransform(ref, latch.animatedPoint, animatedWorld);
+                    if (!animatedTargetValid) endSurfaceLatch(isLeft);
+                }
                 if (targetSnapshot.valid &&
+                    animatedTargetValid && latch.active &&
                     targetSnapshot.body == latch.targetBodyIdentity &&
                     targetSnapshot.collisionObject == latch.targetCollisionIdentity &&
                     havok_runtime::tryResolveLiveBodyWorldTransform(
@@ -2158,6 +2184,7 @@ namespace rock
                         RE::hknpBodyId{ latch.targetBodyId },
                         targetWorld) &&
                     isFiniteTransform(targetWorld)) {
+                    if (latch.animatedReferenceFormId != 0) targetWorld = animatedWorld;
                     latch.lastHandWorld = transform_math::composeTransforms(
                         targetWorld,
                         latch.handInTargetBody);

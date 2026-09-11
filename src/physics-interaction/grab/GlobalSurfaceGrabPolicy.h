@@ -8,8 +8,7 @@ namespace rock::global_surface_grab_policy
 {
     inline constexpr std::uint64_t kOwnerToken = 0x524F'434B'474C'4F42ULL;
     inline constexpr std::uint64_t kScopeToken = 0x5355'5246'4143'4501ULL;
-    inline constexpr std::uint64_t kRightTargetId = 0x474C'4F42'5249'4748ULL;
-    inline constexpr std::uint64_t kLeftTargetId = 0x474C'4F42'4C45'4654ULL;
+    inline constexpr std::uint64_t kTargetIdPrefix = 0x474C'4F42'0000'0000ULL;
     inline constexpr std::uint32_t kTargetGeneration = 1;
 
     struct FallbackContext
@@ -53,10 +52,17 @@ namespace rock::global_surface_grab_policy
         return globalSurfaceFallback && fixedAnchor;
     }
 
-    [[nodiscard]] inline constexpr std::uint64_t targetIdForHand(
-        const bool isLeft) noexcept
+    // Either hand may leave a shared target and grab a different body while
+    // its peer retains the original. Target identity therefore belongs to the body.
+    [[nodiscard]] inline constexpr std::uint64_t targetIdForBody(
+        const std::uint32_t bodyId) noexcept
     {
-        return isLeft ? kLeftTargetId : kRightTargetId;
+        return kTargetIdPrefix | bodyId;
+    }
+
+    [[nodiscard]] inline constexpr bool releaseOnInput(bool commandOwned, bool held, bool released) noexcept
+    {
+        return released || (!held && !commandOwned);
     }
 
     [[nodiscard]] inline constexpr std::uint64_t allowedLayerMask() noexcept
