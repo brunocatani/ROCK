@@ -430,7 +430,9 @@ namespace rock
             return nullptr;
 
         auto* body = havok_runtime::getBody(hknpWorld, bodyId);
-        if (!body || body->motionIndex > 4096)
+        // Reference ownership depends on the validated body and collision
+        // wrapper, not the world's dynamically allocated motion-slot number.
+        if (!body)
             return nullptr;
 
         auto layer = body->collisionFilterInfo & 0x7F;

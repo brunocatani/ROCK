@@ -157,6 +157,10 @@ namespace rock::performance_profiler
                 return "grabAuthorityFlush";
             case Scope::GrabAuthorityAfterSolveDiagnostics:
                 return "grabAuthorityAfterSolveDiagnostics";
+            case Scope::GrabNearbyDampingRestore:
+                return "grabNearbyDampingRestore";
+            case Scope::GrabNearbyDampingRestoreBodySearch:
+                return "grabNearbyDampingRestoreBodySearch";
             case Scope::Count:
                 break;
             }
@@ -200,6 +204,8 @@ namespace rock::performance_profiler
                 return "grabAcquisitionCacheMiss";
             case Counter::GrabAcquisitionCacheInvalidated:
                 return "grabAcquisitionCacheInvalidated";
+            case Counter::GrabNearbyDampingRestoreFailed:
+                return "grabNearbyDampingRestoreFailed";
             case Counter::Count:
                 break;
             }

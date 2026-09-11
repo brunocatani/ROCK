@@ -42,6 +42,7 @@
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSGraphics.h"
+#include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
 
@@ -56,23 +57,7 @@ namespace rock::debug
 {
     namespace
     {
-        constexpr std::uintptr_t kBodyArrayOffset = 0x20;
-        constexpr std::uintptr_t kHighWaterMarkOffset = 0x70;
-        constexpr std::uintptr_t kMotionArrayOffset = 0xE0;
-        constexpr std::uintptr_t kBodyStride = 0x90;
-        constexpr std::uintptr_t kMotionStride = 0x80;
-        constexpr std::uintptr_t kBodyFlagsOffset = 0x40;
-        constexpr std::uintptr_t kBodyFilterOffset = 0x44;
-        constexpr std::uintptr_t kBodyShapeOffset = 0x48;
-        constexpr std::uintptr_t kBodyMotionIndexOffset = 0x68;
-        constexpr std::uintptr_t kBodyIdOffset = 0x6C;
         constexpr std::uintptr_t kBodyMotionPropertiesOffset = 0x72;
-        constexpr std::uintptr_t kMotionPositionOffset = 0x00;
-        constexpr std::uintptr_t kMotionOrientationOffset = 0x10;
-        // hknpMotion +0x40 world-space linear velocity (Havok units/s).
-        // Layout Ghidra-verified in CommonLibF4VR RE/Havok/hknpMotion.h;
-        // +0x20 is packed inverse inertia, never velocity.
-        constexpr std::uintptr_t kMotionLinearVelocityOffset = 0x40;
         // Concrete scaled/compound layouts are absent from CommonLibF4VR.
         // These FO4VR offsets were independently verified in the constructors,
         // alloc/copy helpers, key-mask code, and shape consumers recorded in
@@ -90,7 +75,6 @@ namespace rock::debug
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
         constexpr std::uint32_t kFreeMotionIndex = 0x7FFF'FFFF;
         constexpr std::uint32_t kMaxBodyIndex = body_frame::kMaxReadableBodyIndex;
-        constexpr std::uint32_t kMaxMotionIndex = 4096;
         constexpr float kRawAxisLength = 8.0f;
         constexpr float kColliderAxisLength = 12.0f;
         constexpr float kBodyAxisLength = 16.0f;
@@ -848,48 +832,29 @@ namespace rock::debug
 
         bool extractBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, BodyOverlayFrameSource frameSource, BodyRenderInfo& out)
         {
-            if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
+            const auto* body = havok_runtime::getBody(world, bodyId);
+            if (!body || !body->shape) {
                 return false;
             }
 
-            auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
-            auto bodyArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kBodyArrayOffset);
-            auto motionArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kMotionArrayOffset);
-            auto highWaterMark = *reinterpret_cast<std::uint32_t*>(worldAddress + kHighWaterMarkOffset);
-            if (!bodyArray || !motionArray || bodyId.value > highWaterMark || highWaterMark > kMaxBodyIndex) {
-                return false;
-            }
-
-            const auto bodyAddress = bodyArray + static_cast<std::uintptr_t>(bodyId.value) * kBodyStride;
-            const auto motionIndex = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyMotionIndexOffset);
-            if (motionIndex == kFreeMotionIndex) {
-                return false;
-            }
-
-            const auto shapeAddress = *reinterpret_cast<std::uintptr_t*>(bodyAddress + kBodyShapeOffset);
-            if (!shapeAddress) {
-                return false;
-            }
-
+            const auto bodyAddress = reinterpret_cast<std::uintptr_t>(body);
             out.bodyAddress = bodyAddress;
-            out.shapeAddress = shapeAddress;
-            out.bodyId = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyIdOffset);
-            out.motionIndex = motionIndex;
-            out.flags = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFlagsOffset);
-            out.filterInfo = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFilterOffset);
+            out.shapeAddress = reinterpret_cast<std::uintptr_t>(body->shape);
+            out.bodyId = bodyId.value;
+            out.motionIndex = body->motionIndex;
+            out.flags = body->flags;
+            out.filterInfo = body->collisionFilterInfo;
             out.motionPropertiesId = *reinterpret_cast<std::uint16_t*>(bodyAddress + kBodyMotionPropertiesOffset);
 
-            if (frameSource == BodyOverlayFrameSource::BodyArrayTransform) {
+            if (frameSource == BodyOverlayFrameSource::BodyArrayTransform || body->motionIndex == 0) {
                 const auto* transform = reinterpret_cast<const float*>(bodyAddress);
                 out.worldMatrix = bodyToWorldMatrix(transform);
-            } else if (motionIndex > 0 && motionIndex < kMaxMotionIndex) {
-                const auto motionAddress = motionArray + static_cast<std::uintptr_t>(motionIndex) * kMotionStride;
-                const auto* position = reinterpret_cast<const float*>(motionAddress + kMotionPositionOffset);
-                const auto* orientation = reinterpret_cast<const float*>(motionAddress + kMotionOrientationOffset);
-                out.worldMatrix = motionToWorldMatrix(position, orientation);
             } else {
-                const auto* transform = reinterpret_cast<const float*>(bodyAddress);
-                out.worldMatrix = bodyToWorldMatrix(transform);
+                const auto* motion = havok_runtime::getMotion(world, body->motionIndex);
+                if (!motion) {
+                    return false;
+                }
+                out.worldMatrix = motionToWorldMatrix(&motion->position.x, &motion->orientation.x);
             }
 
             return true;
@@ -903,33 +868,19 @@ namespace rock::debug
             RE::hknpBodyId bodyId,
             float outVelocity[3]) noexcept
         {
-            if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
+            const auto* motion = havok_runtime::getBodyMotion(world, bodyId);
+            if (!motion) {
                 return false;
             }
 
-            auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
-            auto bodyArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kBodyArrayOffset);
-            auto motionArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kMotionArrayOffset);
-            auto highWaterMark = *reinterpret_cast<std::uint32_t*>(worldAddress + kHighWaterMarkOffset);
-            if (!bodyArray || !motionArray || bodyId.value > highWaterMark || highWaterMark > kMaxBodyIndex) {
+            const auto& velocity = motion->linearVelocity;
+            if (!std::isfinite(velocity.x) || !std::isfinite(velocity.y) || !std::isfinite(velocity.z)) {
                 return false;
             }
 
-            const auto bodyAddress = bodyArray + static_cast<std::uintptr_t>(bodyId.value) * kBodyStride;
-            const auto motionIndex = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyMotionIndexOffset);
-            if (motionIndex == kFreeMotionIndex || motionIndex == 0 || motionIndex >= kMaxMotionIndex) {
-                return false;
-            }
-
-            const auto motionAddress = motionArray + static_cast<std::uintptr_t>(motionIndex) * kMotionStride;
-            const auto* velocity = reinterpret_cast<const float*>(motionAddress + kMotionLinearVelocityOffset);
-            if (!std::isfinite(velocity[0]) || !std::isfinite(velocity[1]) || !std::isfinite(velocity[2])) {
-                return false;
-            }
-
-            outVelocity[0] = velocity[0];
-            outVelocity[1] = velocity[1];
-            outVelocity[2] = velocity[2];
+            outVelocity[0] = velocity.x;
+            outVelocity[1] = velocity.y;
+            outVelocity[2] = velocity.z;
             return true;
         }
 

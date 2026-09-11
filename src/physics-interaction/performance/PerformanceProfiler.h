@@ -56,6 +56,8 @@ namespace rock::performance_profiler
         GrabHeldObjectUpdate,
         GrabAuthorityFlush,
         GrabAuthorityAfterSolveDiagnostics,
+        GrabNearbyDampingRestore,
+        GrabNearbyDampingRestoreBodySearch,
         Count
     };
 
@@ -78,6 +80,7 @@ namespace rock::performance_profiler
         GrabAcquisitionCacheHit,
         GrabAcquisitionCacheMiss,
         GrabAcquisitionCacheInvalidated,
+        GrabNearbyDampingRestoreFailed,
         Count
     };
 
