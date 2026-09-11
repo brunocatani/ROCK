@@ -274,18 +274,6 @@ namespace rock::dynamic_weapon_collision_policy
         return result;
     }
 
-    inline RE::NiPoint3 makeCompoundChildPointHavok(
-        const RE::NiPoint3& pointWeaponLocal,
-        const RE::NiPoint3& childCenterWeaponLocal,
-        float pointScaleHavok)
-    {
-        return RE::NiPoint3{
-            (pointWeaponLocal.x - childCenterWeaponLocal.x) * pointScaleHavok,
-            (pointWeaponLocal.y - childCenterWeaponLocal.y) * pointScaleHavok,
-            (pointWeaponLocal.z - childCenterWeaponLocal.z) * pointScaleHavok,
-        };
-    }
-
     inline RE::NiTransform makeProxyBodyTarget(
         const RE::NiTransform& weaponRootWorld,
         const RE::NiPoint3& centerWeaponLocal)

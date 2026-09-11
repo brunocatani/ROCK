@@ -156,31 +156,6 @@ namespace rock::shoulder_stash
                speedGameUnitsPerSecond > maxSpeedGameUnitsPerSecond;
     }
 
-    [[nodiscard]] inline constexpr bool shouldArmEquippedWeaponFastReleaseCommitLease(
-        bool previouslyConfirmed,
-        bool speedLimitExceeded,
-        bool gripPhysicallyHeld,
-        bool sameSpatialCandidate) noexcept
-    {
-        return previouslyConfirmed && speedLimitExceeded && !gripPhysicallyHeld && sameSpatialCandidate;
-    }
-
-    [[nodiscard]] inline constexpr bool equippedWeaponFastReleaseCommitLeaseIsUsable(
-        bool active,
-        std::uint64_t leaseOwnershipKey,
-        std::uint64_t currentOwnershipKey,
-        std::uint8_t remainingOpenFrames,
-        bool gripPhysicallyHeld,
-        bool sameSpatialCandidate) noexcept
-    {
-        return active &&
-               leaseOwnershipKey != 0 &&
-               leaseOwnershipKey == currentOwnershipKey &&
-               remainingOpenFrames > 0 &&
-               !gripPhysicallyHeld &&
-               sameSpatialCandidate;
-    }
-
     [[nodiscard]] inline bool shoulderStashDwellIdentityMatches(
         body_zone::BodyZoneKind previousZone,
         EvidenceSource previousSource,

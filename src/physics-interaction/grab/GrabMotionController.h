@@ -633,47 +633,6 @@ namespace rock::grab_motion_controller
     }
 
     template <class Vector>
-    inline Vector scaleWeakPivotTwistAngularVelocity(const Vector& angularVelocity, const Vector& pivotToCenterOfMass, bool enabled, float twistScale)
-    {
-        if (!enabled) {
-            return angularVelocity;
-        }
-
-        const float axisLengthSquared = vectorLengthSquared(pivotToCenterOfMass);
-        if (!std::isfinite(axisLengthSquared) || axisLengthSquared <= 1.0e-6f) {
-            return angularVelocity;
-        }
-
-        const float scale = std::clamp(std::isfinite(twistScale) ? twistScale : 1.0f, 0.0f, 1.0f);
-        if (scale >= 0.999f) {
-            return angularVelocity;
-        }
-
-        const float invAxisLength = 1.0f / std::sqrt(axisLengthSquared);
-        const Vector axis{
-            pivotToCenterOfMass.x * invAxisLength,
-            pivotToCenterOfMass.y * invAxisLength,
-            pivotToCenterOfMass.z * invAxisLength,
-        };
-        const float twistMagnitude = vectorDot(angularVelocity, axis);
-        const Vector twist{
-            axis.x * twistMagnitude,
-            axis.y * twistMagnitude,
-            axis.z * twistMagnitude,
-        };
-        const Vector swing{
-            angularVelocity.x - twist.x,
-            angularVelocity.y - twist.y,
-            angularVelocity.z - twist.z,
-        };
-        return Vector{
-            swing.x + twist.x * scale,
-            swing.y + twist.y * scale,
-            swing.z + twist.z * scale,
-        };
-    }
-
-    template <class Vector>
     inline Vector scaleAngularVelocityComponentAroundAxis(const Vector& angularVelocity, const Vector& axisRaw, float scale)
     {
         const float axisLengthSquared = vectorLengthSquared(axisRaw);
@@ -768,11 +727,4 @@ namespace rock::grab_motion_controller
         return out;
     }
 
-    inline MotorOutput solveMotorTargets(const MotorInput& input)
-    {
-        return solveMotorTargetsWithAuthority(input, HeldAuthorityState{
-            .softenForContact = input.heldBodyColliding,
-            .reason = input.heldBodyColliding ? "contact-softened-authority" : "full-authority",
-        });
-    }
 }

@@ -3699,12 +3699,6 @@ namespace rock::grab_finger_local_transform_math
         return inspectStoredRotationBasis(transform);
     }
 
-    template <class Transform>
-    [[nodiscard]] inline bool fingerLocalTransformIsSafeForPublication(const Transform& transform)
-    {
-        return inspectFingerLocalTransformForPublication(transform) == FingerLocalTransformSafetyFailure::None;
-    }
-
     [[nodiscard]] inline float exponentialSmoothingAlpha(float speed, float deltaTime)
     {
         if (!std::isfinite(speed) || speed <= 0.0f || !std::isfinite(deltaTime) || deltaTime <= 0.0f) {

@@ -146,1248 +146,1561 @@ namespace
     }
 }
 
+static bool testRecoilProfiles()
+{
+    bool ok = true;
+    using namespace rock::weapon_recoil_policy;
+    using rock::weapon_recoil_authority_math::tryBuildControlledKick;
+    ok &= expectTrue("ordinary one hand selects independent profile",
+        selectProfile(false, false, false) == Profile::OneHand);
+    for (const bool armor : { false, true }) {
+        for (const bool twoHands : { false, true }) {
+            for (const bool close : { false, true }) {
+                ok &= expectTrue("latched bipod overrides all hand and armor profiles",
+                    selectProfile(armor, close, twoHands, true) == Profile::Bipod);
+                ok &= expectTrue("unlatched bipod restores ordinary profile selection",
+                    selectProfile(armor, close, twoHands, false) == selectProfile(armor, close, twoHands));
+            }
+        }
+    }
+    for (const float percent : { 0.0f, 80.0f, 100.0f, 292.1f, 300.0f }) {
+        const auto bipodGains = effectiveGains(Profile::Bipod, percent);
+        ok &= expectTrue("bipod gains are ten percent regardless of weapon tuning",
+            bipodGains.translation == 0.10f && bipodGains.rotation == 0.10f);
+    }
+    ok &= expectTrue("close support chooses its own profile",
+        selectProfile(false, true, false) == Profile::CloseSupport);
+    for (const bool supported : { false, true }) {
+        ok &= expectTrue("armor profile wins independently of support",
+            selectProfile(true, supported, false) == Profile::PowerArmor);
+    }
+    for (const bool nativeLeft : { false, true }) {
+        for (const bool firingLeft : { false, true }) {
+            const auto nativeMask = deliveryHand(false, firingLeft, nativeLeft);
+            ok &= expectTrue("native recoil selects the physical firing hand",
+                nativeMask == (firingLeft == nativeLeft ? HandMask::Primary : HandMask::Offhand));
+            ok &= expectTrue("owned weapon/solver has no additional FRIK hand kick",
+                deliveryHand(true, firingLeft, nativeLeft) == HandMask::None);
+        }
+    }
+    ok &= expectTrue("full two-hand has a separately tunable profile",
+        selectProfile(false, false, true) == Profile::FullTwoHand);
+    ok &= expectTrue("armor overrides full two-hand profile",
+        selectProfile(true, false, true) == Profile::PowerArmor);
+    ok &= expectTrue("close support remains distinct from one hand",
+        selectProfile(false, true, false) != Profile::OneHand);
+    ok &= expectFalse("idle recoil must not acquire weapon or hand", needsOneHandPresentation(false, false));
+    ok &= expectTrue("active kick acquires direct presentation", needsOneHandPresentation(true, false));
+    ok &= expectTrue("settling publishes one final neutral frame", needsOneHandPresentation(false, true));
+    const auto neutralKick = rock::transform_math::makeIdentityTransform<TestTransform>();
+    auto distantFrame = neutralKick;
+    distantFrame.translate = { -70700.0f, 80000.0f, 7450.0f };
+    distantFrame.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 27.0f);
+    ok &= expectTransformNear("identity recoil stays exact at distant world coordinates",
+        rock::weapon_recoil_authority_math::resolveWorldDelta(neutralKick, distantFrame, distantFrame, distantFrame, true),
+        neutralKick);
+    const auto flags = [](const rock::WeaponKeywordFlag flag) { return static_cast<std::uint64_t>(flag); };
+    WeaponEvidence evidence{
+        .formID = 0x123u, .keywordFlags = flags(rock::WeaponKeywordFlag::Pistol),
+        .sizeClass = rock::WeaponSizeClass::Pistol,
+        .source = rock::WeaponClassificationSource::Keyword, .resolved = true,
+    };
+    ok &= expectTrue("pistol evidence selects pistol multiplier", classifyFamily(evidence) == Family::Pistol);
+    evidence.keywordFlags |= flags(rock::WeaponKeywordFlag::Rifle);
+    evidence.sizeClass = rock::WeaponSizeClass::Rifle;
+    evidence.source = rock::WeaponClassificationSource::EquipSlot;
+    ok &= expectTrue("converted pistol respects resolved effective rifle slot", classifyFamily(evidence) == Family::Rifle);
+    evidence.keywordFlags |= flags(rock::WeaponKeywordFlag::Shotgun);
+    ok &= expectTrue("shotgun family wins over broad rifle tag", classifyFamily(evidence) == Family::Shotgun);
+    evidence.sizeClass = rock::WeaponSizeClass::Heavy;
+    ok &= expectTrue("heavy family wins over shotgun tag", classifyFamily(evidence) == Family::Heavy);
+    evidence.resolved = false;
+    ok &= expectTrue("unresolved conflicting evidence uses explicit default", classifyFamily(evidence) == Family::Default);
+    evidence.resolved = true;
+    evidence.sizeClass = rock::WeaponSizeClass::Rifle;
+    evidence.keywordFlags = flags(rock::WeaponKeywordFlag::Rifle) | flags(rock::WeaponKeywordFlag::Laser) |
+        flags(rock::WeaponKeywordFlag::Automatic);
+    ok &= expectTrue("laser automatic rifle selects one family only", classifyFamily(evidence) == Family::Rifle);
+    for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport }) {
+        const auto off = effectiveGains(profile, 0.0f);
+        const auto normal = effectiveGains(profile, 100.0f);
+        const auto doubleKick = effectiveGains(profile, 200.0f);
+        const auto base = gainsFor(profile);
+        ok &= expectTrue("zero percent suppresses both kick components", off.translation == 0.0f && off.rotation == 0.0f);
+        ok &= expectTrue("100 percent preserves the hold profile", normal.translation == base.translation && normal.rotation == base.rotation);
+        ok &= expectTrue("200 percent doubles both hold gains", doubleKick.translation == base.translation * 2.0f && doubleKick.rotation == base.rotation * 2.0f);
+    }
+    for (const float percent : { 0.0f, 100.0f, 200.0f }) {
+        const auto armorGains = effectiveGains(Profile::PowerArmor, percent);
+        ok &= expectTrue("armor umbrella ignores weapon percentages",
+            armorGains.translation == kPowerArmor.translation && armorGains.rotation == kPowerArmor.rotation);
+    }
+    ok &= expectTrue("one-hand percentage is a direct override, not stacked on family tuning",
+        selectHoldPercent(true, 300.0f, 200.0f) == 300.0f);
+    ok &= expectTrue("two-hand retains custom low tuning", selectHoldPercent(false, 300.0f, 50.0f) == 50.0f);
+    ok &= expectTrue("two-hand retains custom high tuning", selectHoldPercent(false, 300.0f, 200.0f) == 200.0f);
+    for (const auto profile : { Profile::FullTwoHand, Profile::CloseSupport }) {
+        for (const float currentPercent : { 50.0f, 100.0f, 200.0f }) {
+            const auto before = effectiveGains(profile, currentPercent);
+            const auto after = effectiveGains(profile, selectHoldPercent(false, 300.0f, currentPercent));
+            ok &= expectTrue("two-hand full and close profiles preserve today's response",
+                before.translation == after.translation && before.rotation == after.rotation);
+        }
+    }
+    for (const bool oneHanded : { false, true }) {
+        const auto unchangedArmor = effectiveGains(Profile::PowerArmor, selectHoldPercent(oneHanded, 300.0f, 200.0f));
+        ok &= expectTrue("power armor ignores either hold's percentage",
+            unchangedArmor.translation == kPowerArmor.translation && unchangedArmor.rotation == kPowerArmor.rotation);
+    }
+    TestTransform shot = rock::transform_math::makeIdentityTransform<TestTransform>();
+    shot.translate = { 10.0f, -4.0f, 2.0f };
+    shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
+    auto modestShot = shot;
+    modestShot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 20.0f);
+    TestTransform tripleKick{};
+    ok &= expectTrue("300 percent builds a valid three-times impulse",
+        tryBuildControlledKick(modestShot, effectiveGains(Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));
+    auto tripleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
+    tripleExpected.translate = { 30.0f, -12.0f, 6.0f };
+    tripleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
+    ok &= expectTransformNear("one hand gets 300 percent rather than 600 percent", tripleKick, tripleExpected);
+    TestTransform amplified{};
+    ok &= expectTrue("200 percent produces a rigid amplified transform",
+        tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 200.0f), amplified));
+    auto doubleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
+    doubleExpected.translate = { 20.0f, -8.0f, 4.0f };
+    doubleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 120.0f);
+    ok &= expectTransformNear("200 percent doubles translation and angular displacement", amplified, doubleExpected);
+    ok &= expectTrue("zero percent accepts and neutralizes native recoil",
+        tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 0.0f), amplified));
+    ok &= expectTransformNear("zero percent produces identity rather than native fallback", amplified,
+        rock::transform_math::makeIdentityTransform<TestTransform>());
+    TestTransform armor{};
+    ok &= expectTrue("armor builds a rigid reduced kick",
+        tryBuildControlledKick(shot, gainsFor(Profile::PowerArmor), armor));
+    auto expected = rock::transform_math::makeIdentityTransform<TestTransform>();
+    expected.translate = { 4.5f, -1.8f, 0.9f };
+    expected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 18.0f);
+    ok &= expectTransformNear("armor starts with the requested attenuation", armor, expected);
+    TestTransform bipod{};
+    ok &= expectTrue("bipod builds a rigid reduced kick",
+        tryBuildControlledKick(shot, effectiveGains(Profile::Bipod, 300.0f), bipod));
+    auto bipodExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
+    bipodExpected.translate = { 1.0f, -0.4f, 0.2f };
+    bipodExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 6.0f);
+    ok &= expectTransformNear("bipod applies ten percent of native translation and angle", bipod, bipodExpected);
+    auto independentlyTunedSupport = kCloseSupport;
+    independentlyTunedSupport.translation = 0.2f;
+    independentlyTunedSupport.rotation = 0.1f;
+    TestTransform tuned{};
+    ok &= expectTrue("support profile can be independently tuned",
+        tryBuildControlledKick(shot, independentlyTunedSupport, tuned));
+    ok &= expectTrue("support tuning produces a different impulse",
+        std::abs(tuned.translate.x - armor.translate.x) > 1.0f);
+    TestTransform unchangedArmor{};
+    ok &= expectTrue("armor remains independently selectable",
+        tryBuildControlledKick(shot, gainsFor(Profile::PowerArmor), unchangedArmor));
+    ok &= expectTransformNear("support tuning leaves armor unchanged", unchangedArmor, armor);
+    TestTransform native{};
+    ok &= expectTrue("native profile builds an unchanged rigid sample",
+        tryBuildControlledKick(shot, gainsFor(Profile::OneHand), native));
+    ok &= expectTransformNear("unassisted native sample is preserved", native, shot);
+    TestTransform fullTwoHand{};
+    ok &= expectTrue("two-hand profile retains unscaled kick",
+        tryBuildControlledKick(shot, gainsFor(Profile::FullTwoHand), fullTwoHand));
+    ok &= expectTransformNear("one-hand and full two-hand start with identical gains", fullTwoHand, native);
+    auto tunedOneHand = kOneHand;
+    tunedOneHand.rotation = 0.5f;
+    TestTransform oneHandTuned{};
+    ok &= expectTrue("one-hand profile accepts independent tuning",
+        tryBuildControlledKick(shot, tunedOneHand, oneHandTuned));
+    ok &= expectTrue("one-hand tuning leaves full two-hand gains intact",
+        gainsFor(Profile::FullTwoHand).rotation == 1.0f);
+
+    // Both baselines (authored and reconstructed native) pass through this
+    // operation. The hand must retain its weapon-local seat as recoil changes.
+    auto weaponBase = rock::transform_math::makeIdentityTransform<TestTransform>();
+    weaponBase.translate = { 12.0f, 28.0f, 7.0f };
+    auto handLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+    handLocal.translate = { 2.0f, -3.0f, 0.5f };
+    handLocal.rotate = makeAxisAngleRotation(TestVector3{ 1.0f, 0.0f, 0.0f }, 15.0f);
+    const auto handBase = rock::transform_math::composeTransforms(weaponBase, handLocal);
+    TestTransform weaponTarget{};
+    TestTransform handTarget{};
+    for (const auto kick : { native, armor,
+            rock::transform_math::makeIdentityTransform<TestTransform>() }) {
+        rock::weapon_recoil_authority_math::applyOneHandKick(
+            kick, weaponBase, handBase, weaponTarget, handTarget);
+        ok &= expectTransformNear("direct recoil preserves the firing-hand seat",
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(weaponTarget), handTarget), handLocal);
+    }
+    ok &= expectTransformNear("identity sample fully removes previous recoil", weaponTarget, weaponBase);
+    ok &= expectTransformNear("firing hand returns to its clean baseline", handTarget, handBase);
+    auto invalid = shot;
+    invalid.rotate.entry[0][0] = 0.0f;
+    ok &= expectFalse("non-rigid input cannot become a plausible controlled kick",
+        tryBuildControlledKick(invalid, kPowerArmor, tuned));
+    ok &= expectTransformNear("invalid input outputs identity", tuned,
+        rock::transform_math::makeIdentityTransform<TestTransform>());
+    invalid = rock::transform_math::makeIdentityTransform<TestTransform>();
+    invalid.rotate.entry[0][0] = -1.0f;
+    ok &= expectFalse("reflection is not a rigid recoil rotation",
+        tryBuildControlledKick(invalid, kPowerArmor, tuned));
+
+    const SampleIdentity captured{
+        .weaponNode = 0x1234, .weaponGeneration = 2, .equippedOwnership = 3,
+        .profile = Profile::PowerArmor, .firingHandIsLeft = true,
+        .nativePrimaryIsLeft = false, .fullTwoHanded = false,
+    };
+    SampleTicket ticket{ .identity = captured, .sequence = 1, .valid = true };
+    ticket.beginUpdate(true);
+    ok &= expectTrue("fresh callback can be consumed", ticket.consume(captured));
+    ok &= expectFalse("one sample cannot kick both carry and solver", ticket.consume(captured));
+    ticket.beginUpdate(true);
+    ok &= expectFalse("skipped callback never replays a shot", ticket.consume(captured));
+    for (int changed = 0; changed < 11; ++changed) {
+        auto current = captured;
+        switch (changed) {
+        case 0: ++current.weaponNode; break;
+        case 1: ++current.weaponGeneration; break;
+        case 2: ++current.equippedOwnership; break;
+        case 3: current.profile = Profile::OneHand; break;
+        case 4: current.firingHandIsLeft = false; break;
+        case 5: current.nativePrimaryIsLeft = true; break;
+        case 6: current.fullTwoHanded = true; break;
+        case 7: current.oneHanded = true; break;
+        case 8: current.familyPercent = 200.0f; break;
+        case 9: current.family = Family::Shotgun; break;
+        case 10: current.formID = 0x234u; break;
+        }
+        ++ticket.sequence;
+        ticket.valid = true;
+        ticket.beginUpdate(true);
+        ok &= expectFalse("owner/profile/role/solver changes discard the old shot", ticket.consume(current));
+        ok &= expectFalse("rejected ticket cannot replay after identity returns", ticket.consume(captured));
+    }
+    ++ticket.sequence;
+    ticket.valid = true;
+    ticket.beginUpdate(true);
+    ticket.invalidate();
+    ok &= expectFalse("lifecycle reset discards pending recoil", ticket.consume(captured));
+    ++ticket.sequence;
+    ticket.valid = true;
+    ticket.beginUpdate(false);
+    ok &= expectFalse("disabled immersive recoil discards a captured kick", ticket.consume(captured));
+    ticket.beginUpdate(true);
+    ok &= expectFalse("reenabling recoil cannot replay the pre-disable sample", ticket.consume(captured));
+    ++ticket.sequence;
+    ticket.valid = true;
+    ticket.beginUpdate(true);
+    ok &= expectTrue("reenabled recoil accepts a fresh callback sample", ticket.consume(captured));
+    return ok;
+}
+
+static bool testNativeGripFrames()
+{
+    bool ok = true;
+    TestTransform rightNativeWeaponInWand =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    rightNativeWeaponInWand.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.23f, 0.51f, 0.83f }),
+        31.0f);
+    rightNativeWeaponInWand.translate = { 8.0f, -3.0f, 4.0f };
+    rightNativeWeaponInWand.scale = 2.0f;
+
+    const TestTransform leftWeaponInWand =
+        rock::left_firing_position_only_math::
+            mirrorRightWeaponInWandOrientation(
+                rightNativeWeaponInWand);
+    const TestVector3 weaponForward{ 0.0f, 1.0f, 0.0f };
+    const TestTransform rightNativeWeaponOrientation =
+        rock::left_firing_position_only_math::orientationOnly(
+            rightNativeWeaponInWand);
+    const TestVector3 rightBarrel =
+        rock::transform_math::localVectorToWorld(
+            rightNativeWeaponOrientation,
+            weaponForward);
+    const TestVector3 leftBarrel =
+        rock::transform_math::localVectorToWorld(
+            leftWeaponInWand,
+            weaponForward);
+    ok &= expectVectorNear(
+        "left native weapon mirror negates only barrel lateral component",
+        leftBarrel,
+        TestVector3{ -rightBarrel.x, rightBarrel.y, rightBarrel.z });
+    const TestVector3 rightLateral =
+        rock::transform_math::localVectorToWorld(
+            rightNativeWeaponOrientation,
+            TestVector3{ 1.0f, 0.0f, 0.0f });
+    const TestVector3 leftCorrespondingLateral =
+        rock::transform_math::localVectorToWorld(
+            leftWeaponInWand,
+            TestVector3{ -1.0f, 0.0f, 0.0f });
+    ok &= expectVectorNear(
+        "left native weapon mirror maps right +X to left -X",
+        leftCorrespondingLateral,
+        TestVector3{
+            -rightLateral.x,
+            rightLateral.y,
+            rightLateral.z });
+    const TestVector3 rightUp =
+        rock::transform_math::localVectorToWorld(
+            rightNativeWeaponOrientation,
+            TestVector3{ 0.0f, 0.0f, 1.0f });
+    const TestVector3 leftUp =
+        rock::transform_math::localVectorToWorld(
+            leftWeaponInWand,
+            TestVector3{ 0.0f, 0.0f, 1.0f });
+    ok &= expectVectorNear(
+        "left native weapon mirror maps right +Z to left +Z",
+        leftUp,
+        TestVector3{ -rightUp.x, rightUp.y, rightUp.z });
+    ok &= expectVectorNear(
+        "left native weapon orientation discards right-wand translation",
+        leftWeaponInWand.translate,
+        TestVector3{});
+    ok &= expectNear(
+        "left native weapon orientation is unit scale",
+        leftWeaponInWand.scale,
+        1.0f);
+    const auto& mirroredRotation = leftWeaponInWand.rotate.entry;
+    const float mirroredDeterminant =
+        mirroredRotation[0][0] *
+            (mirroredRotation[1][1] * mirroredRotation[2][2] -
+                mirroredRotation[1][2] * mirroredRotation[2][1]) -
+        mirroredRotation[0][1] *
+            (mirroredRotation[1][0] * mirroredRotation[2][2] -
+                mirroredRotation[1][2] * mirroredRotation[2][0]) +
+        mirroredRotation[0][2] *
+            (mirroredRotation[1][0] * mirroredRotation[2][1] -
+                mirroredRotation[1][1] * mirroredRotation[2][0]);
+    ok &= expectNear(
+        "bilateral weapon mirror remains a proper rotation",
+        mirroredDeterminant,
+        1.0f);
+
+    TestTransform rawLeftWandWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    rawLeftWandWorld.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ -0.4f, 0.7f, 0.2f }),
+        28.0f);
+    rawLeftWandWorld.translate = { 15.0f, -6.0f, 11.0f };
+    TestTransform referenceHandInWand =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    referenceHandInWand.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.6f, 0.1f, -0.5f }),
+        -19.0f);
+    referenceHandInWand.translate = { 2.0f, -5.0f, 3.0f };
+    const TestTransform rawReferenceHandWorld =
+        rock::transform_math::composeTransforms(
+            rawLeftWandWorld,
+            referenceHandInWand);
+
+    TestTransform hfrikDampingWorldDelta =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    hfrikDampingWorldDelta.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.2f, -0.3f, 0.8f }),
+        7.0f);
+    hfrikDampingWorldDelta.translate = { -4.0f, 9.0f, 1.0f };
+    const TestTransform dampedPhysicalHandWorld =
+        rock::transform_math::composeTransforms(
+            hfrikDampingWorldDelta,
+            rawReferenceHandWorld);
+    const TestTransform dampedAimCarrierWorld =
+        rock::left_firing_position_only_math::
+            resolveDampedAimCarrierWorld(
+                rawLeftWandWorld,
+                referenceHandInWand,
+                dampedPhysicalHandWorld);
+    TestTransform expectedDampedCarrierWorld = rawLeftWandWorld;
+    expectedDampedCarrierWorld.rotate =
+        rock::transform_math::composeTransforms(
+            rock::left_firing_position_only_math::orientationOnly(
+                hfrikDampingWorldDelta),
+            rock::left_firing_position_only_math::orientationOnly(
+                rawLeftWandWorld))
+            .rotate;
+    ok &= expectTransformNear(
+        "hFRIK damped follow applies only the observed hand rotation delta",
+        dampedAimCarrierWorld,
+        expectedDampedCarrierWorld);
+    ok &= expectTransformNear(
+        "zero hFRIK damping delta preserves the raw aim carrier",
+        rock::left_firing_position_only_math::
+            resolveDampedAimCarrierWorld(
+                rawLeftWandWorld,
+                referenceHandInWand,
+                rawReferenceHandWorld),
+        rawLeftWandWorld);
+
+    const TestTransform weaponOnDampedCarrier =
+        rock::transform_math::composeTransforms(
+            dampedAimCarrierWorld,
+            leftWeaponInWand);
+    const TestTransform weaponBackInDampedCarrier =
+        rock::transform_math::composeTransforms(
+            rock::transform_math::invertTransform(
+                dampedAimCarrierWorld),
+            weaponOnDampedCarrier);
+    ok &= expectTransformNear(
+        "shared damping preserves mirrored weapon aim in the corrected carrier",
+        weaponBackInDampedCarrier,
+        leftWeaponInWand);
+
+    TestTransform leftWandWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    leftWandWorld.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.3f, 0.7f, -0.2f }),
+        23.0f);
+    leftWandWorld.translate = { 40.0f, -12.0f, 9.0f };
+
+    TestTransform liveWeaponWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    liveWeaponWorld.rotate = makeAxisAngleRotation(
+        TestVector3{ 1.0f, 0.0f, 0.0f },
+        -67.0f);
+    liveWeaponWorld.translate = { -100.0f, 55.0f, 13.0f };
+    liveWeaponWorld.scale = 1.25f;
+    const TestVector3 firingGripWeaponLocal{ 2.0f, 6.0f, -1.0f };
+    const TestVector3 physicalLeftGripTargetWorld{ 18.0f, 27.0f, 33.0f };
+    const TestTransform solvedLeftWeapon =
+        rock::left_firing_position_only_math::
+            resolveWeaponWorldPositionOnly(
+                leftWandWorld,
+                leftWeaponInWand,
+                liveWeaponWorld,
+                firingGripWeaponLocal,
+                physicalLeftGripTargetWorld);
+    const TestVector3 solvedGripWorld =
+        rock::transform_math::localPointToWorld(
+            solvedLeftWeapon,
+            firingGripWeaponLocal);
+    ok &= expectVectorNear(
+        "left position-only weapon solve seats authored firing point",
+        solvedGripWorld,
+        physicalLeftGripTargetWorld);
+    ok &= expectNear(
+        "left position-only weapon solve preserves live weapon scale",
+        solvedLeftWeapon.scale,
+        liveWeaponWorld.scale);
+
+    TestTransform expectedLeftWeaponOrientation =
+        rock::transform_math::composeTransforms(
+            leftWandWorld,
+            leftWeaponInWand);
+    expectedLeftWeaponOrientation.translate = solvedLeftWeapon.translate;
+    expectedLeftWeaponOrientation.scale = liveWeaponWorld.scale;
+    ok &= expectTransformNear(
+        "left weapon orientation depends only on native aim, not authored wrist",
+        solvedLeftWeapon,
+        expectedLeftWeaponOrientation);
+
+    TestTransform authoredLeftWristA =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    authoredLeftWristA.translate = { 1.5f, -2.0f, 0.75f };
+    TestTransform authoredLeftWristB = authoredLeftWristA;
+    authoredLeftWristB.rotate = makeAxisAngleRotation(
+        TestVector3{ 1.0f, 0.0f, 0.0f },
+        47.0f);
+    const TestTransform solvedAfterAuthoredWristChange =
+        rock::left_firing_position_only_math::
+            resolveWeaponWorldPositionOnly(
+                leftWandWorld,
+                leftWeaponInWand,
+                liveWeaponWorld,
+                firingGripWeaponLocal,
+                physicalLeftGripTargetWorld);
+    ok &= expectTransformNear(
+        "authored wrist rotation cannot alter left weapon aim",
+        solvedAfterAuthoredWristChange,
+        solvedLeftWeapon);
+
+    const TestTransform presentedLeftWristA =
+        rock::transform_math::composeTransforms(
+            solvedLeftWeapon,
+            authoredLeftWristA);
+    const TestTransform presentedLeftWristB =
+        rock::transform_math::composeTransforms(
+            solvedLeftWeapon,
+            authoredLeftWristB);
+    const TestVector3 presentedFingerAxisA =
+        rock::transform_math::localVectorToWorld(
+            presentedLeftWristA,
+            TestVector3{ 0.0f, 1.0f, 0.0f });
+    const TestVector3 presentedFingerAxisB =
+        rock::transform_math::localVectorToWorld(
+            presentedLeftWristB,
+            TestVector3{ 0.0f, 1.0f, 0.0f });
+    const TestVector3 presentedAxisDelta{
+        presentedFingerAxisA.x - presentedFingerAxisB.x,
+        presentedFingerAxisA.y - presentedFingerAxisB.y,
+        presentedFingerAxisA.z - presentedFingerAxisB.z,
+    };
+    ok &= expectTrue(
+        "authored wrist rotation remains visible on the presented hand",
+        std::sqrt(
+            presentedAxisDelta.x * presentedAxisDelta.x +
+            presentedAxisDelta.y * presentedAxisDelta.y +
+            presentedAxisDelta.z * presentedAxisDelta.z) >
+            0.1f);
+    return ok;
+}
+
+static bool testSupportRelease()
+{
+    bool ok = true;
+    /*
+     * Support release on the left carry: the last rendered two-hand pose
+     * rides the physical firing hand and eases into the wand-aimed
+     * position-only pose while the firing grip stays on the hand.
+     */
+    const TestVector3 firingGripWeaponLocal{ 2.0f, -4.0f, -4.0f };
+    const TestVector3 gripHandLocal{ 1.0f, 4.0f, 0.5f };
+    const auto seatGripOnHand = [&](TestTransform weaponInHand) {
+        const TestVector3 gripWithoutTranslation =
+            rock::transform_math::localPointToWorld(
+                rock::left_firing_position_only_math::orientationOnly(
+                    weaponInHand),
+                TestVector3{
+                    firingGripWeaponLocal.x * weaponInHand.scale,
+                    firingGripWeaponLocal.y * weaponInHand.scale,
+                    firingGripWeaponLocal.z * weaponInHand.scale });
+        weaponInHand.translate = {
+            gripHandLocal.x - gripWithoutTranslation.x,
+            gripHandLocal.y - gripWithoutTranslation.y,
+            gripHandLocal.z - gripWithoutTranslation.z,
+        };
+        return weaponInHand;
+    };
+
+    TestTransform twoHandWeaponInHand =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    twoHandWeaponInHand.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 0.0f, 1.0f },
+        40.0f);
+    twoHandWeaponInHand.scale = 1.25f;
+    twoHandWeaponInHand = seatGripOnHand(twoHandWeaponInHand);
+    TestTransform wandAimedWeaponInHand =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    wandAimedWeaponInHand.rotate = makeAxisAngleRotation(
+        TestVector3{ 1.0f, 0.0f, 0.0f },
+        -5.0f);
+    wandAimedWeaponInHand.scale = 1.25f;
+    wandAimedWeaponInHand = seatGripOnHand(wandAimedWeaponInHand);
+
+    TestTransform handAtRelease =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    handAtRelease.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(TestVector3{ 0.2f, -0.6f, 0.4f }),
+        35.0f);
+    handAtRelease.translate = { 12.0f, -4.0f, 30.0f };
+    const TestTransform renderedTwoHandWeapon =
+        rock::transform_math::composeTransforms(
+            handAtRelease,
+            twoHandWeaponInHand);
+    const TestTransform startHandLocal =
+        rock::left_firing_position_only_math::
+            weaponWorldToPhysicalHandLocal(
+                handAtRelease,
+                renderedTwoHandWeapon);
+    ok &= expectTransformNear(
+        "left carry return start captures the rendered pose in the hand frame",
+        startHandLocal,
+        twoHandWeaponInHand);
+
+    TestTransform handLater =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    handLater.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(TestVector3{ -0.3f, 0.5f, 0.8f }),
+        -22.0f);
+    handLater.translate = { 20.0f, 3.0f, 26.0f };
+    const TestTransform positionOnlyWeapon =
+        rock::transform_math::composeTransforms(
+            handLater,
+            wandAimedWeaponInHand);
+    const TestTransform targetHandLocal =
+        rock::left_firing_position_only_math::
+            weaponWorldToPhysicalHandLocal(
+                handLater,
+                positionOnlyWeapon);
+    const auto blendedWeaponAt = [&](const float alpha) {
+        return rock::left_firing_position_only_math::
+            physicalHandLocalToWeaponWorld(
+                handLater,
+                rock::hand_visual_lerp_math::interpolateTransform(
+                    startHandLocal,
+                    targetHandLocal,
+                    alpha),
+                positionOnlyWeapon.scale);
+    };
+    ok &= expectTransformNear(
+        "left carry return start rides the moved firing hand",
+        blendedWeaponAt(0.0f),
+        rock::transform_math::composeTransforms(
+            handLater,
+            twoHandWeaponInHand));
+    ok &= expectTransformNear(
+        "left carry return ends on the wand-aimed pose",
+        blendedWeaponAt(1.0f),
+        positionOnlyWeapon);
+
+    const TestVector3 physicalGripWorld =
+        rock::transform_math::localPointToWorld(
+            handLater,
+            gripHandLocal);
+    for (const float alpha : { 0.25f, 0.5f, 0.75f }) {
+        const TestVector3 blendedGripWorld =
+            rock::transform_math::localPointToWorld(
+                blendedWeaponAt(alpha),
+                firingGripWeaponLocal);
+        const TestVector3 gripDrift{
+            blendedGripWorld.x - physicalGripWorld.x,
+            blendedGripWorld.y - physicalGripWorld.y,
+            blendedGripWorld.z - physicalGripWorld.z,
+        };
+        ok &= expectTrue(
+            "left carry return keeps the firing grip on the hand",
+            std::sqrt(
+                gripDrift.x * gripDrift.x +
+                gripDrift.y * gripDrift.y +
+                gripDrift.z * gripDrift.z) < 1.0f);
+    }
+    return ok;
+}
+
+static bool testPoseHandoffResidual()
+{
+    bool ok = true;
+    // Weapon pose handoff residual: firing-grip detach into part carry
+    // and reattach into the two-hand solve ease from the rendered pose.
+    const TestTransform identity =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    TestTransform renderedWeapon = identity;
+    renderedWeapon.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(TestVector3{ 0.3f, 0.2f, -0.9f }),
+        40.0f);
+    renderedWeapon.translate = { 10.0f, -5.0f, 30.0f };
+    TestTransform solvedWeapon = identity;
+    solvedWeapon.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(TestVector3{ -0.5f, 0.7f, 0.4f }),
+        -25.0f);
+    solvedWeapon.translate = { 14.0f, -1.0f, 27.0f };
+
+    const TestTransform residual =
+        rock::hand_visual_lerp_math::captureHandoffResidualLocal(
+            solvedWeapon,
+            renderedWeapon);
+    ok &= expectTransformNear(
+        "handoff residual alpha zero reproduces the rendered pose",
+        rock::hand_visual_lerp_math::applyHandoffResidual(
+            solvedWeapon,
+            residual,
+            0.0f),
+        renderedWeapon);
+    ok &= expectTransformNear(
+        "handoff residual alpha one lands on the solve",
+        rock::hand_visual_lerp_math::applyHandoffResidual(
+            solvedWeapon,
+            residual,
+            1.0f),
+        solvedWeapon);
+
+    TestTransform movedSolvedWeapon = identity;
+    movedSolvedWeapon.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(TestVector3{ 0.1f, 0.9f, 0.3f }),
+        15.0f);
+    movedSolvedWeapon.translate = { 20.0f, 3.0f, 26.0f };
+    ok &= expectTransformNear(
+        "handoff residual rides the moved solve",
+        rock::hand_visual_lerp_math::applyHandoffResidual(
+            movedSolvedWeapon,
+            residual,
+            0.0f),
+        rock::transform_math::composeTransforms(
+            movedSolvedWeapon,
+            residual));
+
+    const float fullResidualDegrees =
+        rock::hand_visual_lerp_math::rotationDistanceDegrees(
+            residual,
+            identity);
+    ok &= expectTrue(
+        "handoff residual carries a measurable rotation",
+        fullResidualDegrees > 10.0f);
+    const TestTransform halfBlended =
+        rock::hand_visual_lerp_math::applyHandoffResidual(
+            solvedWeapon,
+            residual,
+            0.5f);
+    ok &= expectNear(
+        "handoff residual half alpha slerps half the rotation",
+        rock::hand_visual_lerp_math::rotationDistanceDegrees(
+            halfBlended,
+            solvedWeapon),
+        fullResidualDegrees * 0.5f,
+        0.01f);
+
+    const float residualDuration =
+        rock::hand_visual_lerp_math::computeVisualReturnDuration(
+            residual,
+            identity,
+            rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
+    ok &= expectTrue(
+        "handoff residual outside tolerance blends within the return window",
+        residualDuration >= 0.12f && residualDuration <= 0.20f);
+    TestTransform exactResidual = identity;
+    exactResidual.translate = { 0.2f, -0.1f, 0.3f };
+    exactResidual.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(TestVector3{ 0.0f, 0.0f, 1.0f }),
+        2.0f);
+    ok &= expectNear(
+        "handoff residual inside tolerance needs no blend",
+        rock::hand_visual_lerp_math::computeVisualReturnDuration(
+            exactResidual,
+            identity,
+            rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig),
+        0.0f);
+    return ok;
+}
+
+static bool testSupportInputFrames()
+{
+    bool ok = true;
+    TestTransform supportInputAtAttach =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportInputAtAttach.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.3f, -0.4f, 0.8f }),
+        37.0f);
+    supportInputAtAttach.translate = { 11.0f, -4.0f, 8.0f };
+
+    TestTransform supportGripTargetAtAttach =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportGripTargetAtAttach.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ -0.2f, 0.9f, 0.3f }),
+        -24.0f);
+    supportGripTargetAtAttach.translate = { -7.0f, 13.0f, 5.0f };
+
+    TestTransform inputToGripTargetLocal{};
+    ok &= expectTrue(
+        "support baseline captures damped support input to authored grip baseline",
+        rock::weapon_support_acquisition_math::
+            tryCaptureSupportInputBaseline(
+                supportInputAtAttach,
+                supportGripTargetAtAttach,
+                inputToGripTargetLocal));
+
+    TestTransform resolvedAttachTarget{};
+    ok &= expectTrue(
+        "support baseline resolves captured support baseline",
+        rock::weapon_support_acquisition_math::
+            tryResolveSupportInputTarget(
+                supportInputAtAttach,
+                inputToGripTargetLocal,
+                resolvedAttachTarget));
+    ok &= expectTransformNear(
+        "support baseline unchanged support input reproduces exact authored target",
+        resolvedAttachTarget,
+        supportGripTargetAtAttach);
+
+    TestTransform laterWorldDelta =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    laterWorldDelta.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.7f, 0.1f, -0.5f }),
+        29.0f);
+    laterWorldDelta.translate = { 2.0f, -3.0f, 1.5f };
+    const TestTransform movedSupportInput =
+        rock::transform_math::composeTransforms(
+            laterWorldDelta,
+            supportInputAtAttach);
+    const TestTransform expectedMovedTarget =
+        rock::transform_math::composeTransforms(
+            laterWorldDelta,
+            supportGripTargetAtAttach);
+    TestTransform resolvedMovedTarget{};
+    ok &= expectTrue(
+        "support baseline resolves post-attach support delta",
+        rock::weapon_support_acquisition_math::
+            tryResolveSupportInputTarget(
+                movedSupportInput,
+                inputToGripTargetLocal,
+                resolvedMovedTarget));
+    ok &= expectTransformNear(
+        "support baseline carries only the post-attach rigid support delta",
+        resolvedMovedTarget,
+        expectedMovedTarget);
+
+    TestTransform degenerateInput = supportInputAtAttach;
+    degenerateInput.scale = 0.0f;
+    ok &= expectFalse(
+        "support baseline rejects degenerate support input at capture",
+        rock::weapon_support_acquisition_math::
+            tryCaptureSupportInputBaseline(
+                degenerateInput,
+                supportGripTargetAtAttach,
+                inputToGripTargetLocal));
+
+    TestTransform nonFiniteRelation = inputToGripTargetLocal;
+    nonFiniteRelation.translate.x =
+        (std::numeric_limits<float>::quiet_NaN)();
+    ok &= expectFalse(
+        "support baseline rejects non-finite captured support baseline",
+        rock::weapon_support_acquisition_math::
+            tryResolveSupportInputTarget(
+                supportInputAtAttach,
+                nonFiniteRelation,
+                resolvedMovedTarget));
+    return ok;
+}
+
+static bool testPrimaryDriverFrames()
+{
+    bool ok = true;
+    TestTransform primaryDriver =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    primaryDriver.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 0.0f, 1.0f },
+        14.0f);
+    primaryDriver.translate = { 2.0f, -5.0f, 7.0f };
+    TestTransform supportDriver =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportDriver.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 1.0f, 0.0f },
+        -31.0f);
+    supportDriver.translate = { -4.0f, 12.0f, 3.0f };
+
+    TestTransform primaryTarget =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    primaryTarget.rotate = makeAxisAngleRotation(
+        TestVector3{ 1.0f, 0.0f, 0.0f },
+        22.0f);
+    primaryTarget.translate = { 8.0f, 1.0f, -2.0f };
+    TestTransform supportTarget =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportTarget.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.3f, 0.7f, -0.2f }),
+        -19.0f);
+    supportTarget.translate = { -9.0f, 6.0f, 11.0f };
+
+    TestTransform primaryRelation{};
+    TestTransform supportRelation{};
+    ok &= expectTrue(
+        "dynamic support captures both controller-driver relations atomically",
+        rock::weapon_support_acquisition_math::
+            tryCaptureDynamicSupportDriverBaseline(
+                primaryDriver,
+                primaryTarget,
+                supportDriver,
+                supportTarget,
+                primaryRelation,
+                supportRelation));
+
+    TestTransform resolvedPrimary{};
+    TestTransform resolvedSupport{};
+    ok &= expectTrue(
+        "dynamic support resolves both controller-driver targets atomically",
+        rock::weapon_support_acquisition_math::
+            tryResolveDynamicSupportDriverTargets(
+                primaryDriver,
+                primaryRelation,
+                supportDriver,
+                supportRelation,
+                resolvedPrimary,
+                resolvedSupport));
+    ok &= expectTransformNear(
+        "unchanged primary driver reproduces captured primary target",
+        resolvedPrimary,
+        primaryTarget);
+    ok &= expectTransformNear(
+        "unchanged support driver reproduces captured support target",
+        resolvedSupport,
+        supportTarget);
+
+    TestTransform primaryDelta =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    primaryDelta.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 1.0f, 0.0f },
+        9.0f);
+    primaryDelta.translate = { 3.0f, 0.0f, -1.0f };
+    TestTransform supportDelta =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportDelta.rotate = makeAxisAngleRotation(
+        TestVector3{ 1.0f, 0.0f, 0.0f },
+        -12.0f);
+    supportDelta.translate = { -2.0f, 4.0f, 0.5f };
+    const TestTransform movedPrimaryDriver =
+        rock::transform_math::composeTransforms(
+            primaryDelta,
+            primaryDriver);
+    const TestTransform movedSupportDriver =
+        rock::transform_math::composeTransforms(
+            supportDelta,
+            supportDriver);
+    ok &= expectTrue(
+        "dynamic support resolves independent post-capture driver deltas",
+        rock::weapon_support_acquisition_math::
+            tryResolveDynamicSupportDriverTargets(
+                movedPrimaryDriver,
+                primaryRelation,
+                movedSupportDriver,
+                supportRelation,
+                resolvedPrimary,
+                resolvedSupport));
+    ok &= expectTransformNear(
+        "primary target follows only primary driver delta",
+        resolvedPrimary,
+        rock::transform_math::composeTransforms(
+            primaryDelta,
+            primaryTarget));
+    ok &= expectTransformNear(
+        "support target follows only support driver delta",
+        resolvedSupport,
+        rock::transform_math::composeTransforms(
+            supportDelta,
+            supportTarget));
+
+    TestTransform invalidSupportDriver = supportDriver;
+    invalidSupportDriver.scale = 0.0f;
+    ok &= expectFalse(
+        "dynamic support fails closed when either current driver is invalid",
+        rock::weapon_support_acquisition_math::
+            tryResolveDynamicSupportDriverTargets(
+                primaryDriver,
+                primaryRelation,
+                invalidSupportDriver,
+                supportRelation,
+                resolvedPrimary,
+                resolvedSupport));
+    return ok;
+}
+
+static bool testWeaponGripTransforms()
+{
+    bool ok = true;
+    TestTransform weaponWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    weaponWorld.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 0.0f, 1.0f },
+        18.0f);
+    weaponWorld.translate = { 4.0f, -6.0f, 2.0f };
+    const TestVector3 primaryGripLocal{ 0.0f, 0.0f, 0.0f };
+    const TestVector3 supportGripLocal{ 0.0f, 12.0f, 0.0f };
+    const TestVector3 supportNormalLocal{ 1.0f, 0.0f, 0.0f };
+    const TestVector3 primaryTargetWorld =
+        rock::transform_math::localPointToWorld(
+            weaponWorld,
+            primaryGripLocal);
+    const TestVector3 supportGripWorld =
+        rock::transform_math::localPointToWorld(
+            weaponWorld,
+            supportGripLocal);
+
+    TestTransform supportGripHandWorld = weaponWorld;
+    supportGripHandWorld.translate = supportGripWorld;
+    TestTransform dampedSupportInput =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    dampedSupportInput.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 1.0f, 0.0f },
+        -41.0f);
+    dampedSupportInput.translate = { 20.0f, 7.0f, -3.0f };
+
+    TestTransform inputToGripTargetLocal{};
+    TestTransform calibratedSupportTarget{};
+    ok &= expectTrue(
+        "support baseline solver test captures authored hand target",
+        rock::weapon_support_acquisition_math::
+            tryCaptureSupportInputBaseline(
+                dampedSupportInput,
+                supportGripHandWorld,
+                inputToGripTargetLocal));
+    ok &= expectTrue(
+        "support baseline solver test resolves authored hand target",
+        rock::weapon_support_acquisition_math::
+            tryResolveSupportInputTarget(
+                dampedSupportInput,
+                inputToGripTargetLocal,
+                calibratedSupportTarget));
+
+    const TestVector3 lockedSupportTarget =
+        rock::makeLockedSupportGripTarget(
+            primaryTargetWorld,
+            calibratedSupportTarget.translate,
+            supportGripWorld,
+            rock::weaponSolverLength(
+                rock::weaponSolverSub(
+                    supportGripWorld,
+                    primaryTargetWorld)),
+            0.001f);
+    rock::WeaponTwoHandedSolverInput<
+        TestTransform,
+        TestVector3> solverInput{};
+    solverInput.weaponWorldTransform = weaponWorld;
+    solverInput.primaryGripLocal = primaryGripLocal;
+    solverInput.supportGripLocal = supportGripLocal;
+    solverInput.primaryTargetWorld = primaryTargetWorld;
+    solverInput.supportTargetWorld = lockedSupportTarget;
+    solverInput.supportNormalLocal = supportNormalLocal;
+    solverInput.supportNormalTargetWorld =
+        rock::transform_math::localVectorToWorld(
+            calibratedSupportTarget,
+            supportNormalLocal);
+    solverInput.useSupportNormalTwist = true;
+    solverInput.supportNormalTwistFactor = 0.5f;
+
+    const auto attachSolve =
+        rock::solveTwoHandedWeaponTransformFrikPivot(solverInput);
+    ok &= expectTrue(
+        "support baseline calibrated attach target solves",
+        attachSolve.solved);
+    ok &= expectTransformNear(
+        "support baseline calibrated attach target leaves weapon unchanged",
+        attachSolve.weaponWorldTransform,
+        weaponWorld);
+    return ok;
+}
+
+static bool testAttachRelativeFrames()
+{
+    bool ok = true;
+    const TestTransform weaponAtAttach =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    const TestVector3 primaryGripLocal{ 0.0f, 0.0f, 0.0f };
+    const TestVector3 supportGripLocal{ 0.0f, 10.0f, 0.0f };
+    const TestVector3 supportNormalLocal{ 1.0f, 0.0f, 0.0f };
+
+    TestTransform supportGripHandAtAttach = weaponAtAttach;
+    supportGripHandAtAttach.translate = supportGripLocal;
+    TestTransform supportInputAtAttach =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportInputAtAttach.rotate = makeAxisAngleRotation(
+        TestVector3{ 1.0f, 0.0f, 0.0f },
+        45.0f);
+    supportInputAtAttach.translate = { 7.0f, 3.0f, -2.0f };
+
+    TestTransform inputToGripTargetLocal{};
+    ok &= expectTrue(
+        "support baseline tandem test captures attach baseline",
+        rock::weapon_support_acquisition_math::
+            tryCaptureSupportInputBaseline(
+                supportInputAtAttach,
+                supportGripHandAtAttach,
+                inputToGripTargetLocal));
+
+    TestTransform supportDelta =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    supportDelta.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 0.0f, 1.0f },
+        30.0f);
+    const TestTransform movedSupportInput =
+        rock::transform_math::composeTransforms(
+            supportDelta,
+            supportInputAtAttach);
+    TestTransform movedCalibratedTarget{};
+    ok &= expectTrue(
+        "support baseline tandem test resolves moved support input",
+        rock::weapon_support_acquisition_math::
+            tryResolveSupportInputTarget(
+                movedSupportInput,
+                inputToGripTargetLocal,
+                movedCalibratedTarget));
+
+    rock::WeaponTwoHandedSolverInput<
+        TestTransform,
+        TestVector3> solverInput{};
+    solverInput.weaponWorldTransform = weaponAtAttach;
+    solverInput.primaryGripLocal = primaryGripLocal;
+    solverInput.supportGripLocal = supportGripLocal;
+    solverInput.primaryTargetWorld = primaryGripLocal;
+    solverInput.supportTargetWorld =
+        rock::makeLockedSupportGripTarget(
+            primaryGripLocal,
+            movedCalibratedTarget.translate,
+            supportGripLocal,
+            10.0f,
+            0.001f);
+    solverInput.supportNormalLocal = supportNormalLocal;
+    solverInput.supportNormalTargetWorld =
+        rock::transform_math::localVectorToWorld(
+            movedCalibratedTarget,
+            supportNormalLocal);
+    solverInput.useSupportNormalTwist = true;
+    solverInput.supportNormalTwistFactor = 0.5f;
+
+    const auto movedSolve =
+        rock::solveTwoHandedWeaponTransformFrikPivot(solverInput);
+    ok &= expectTrue(
+        "support baseline post-attach tandem delta solves",
+        movedSolve.solved);
+    ok &= expectTransformNear(
+        "support baseline post-attach support delta drives existing tandem solver",
+        movedSolve.weaponWorldTransform,
+        supportDelta);
+    ok &= expectVectorNear(
+        "support baseline tandem delta keeps primary pivot fixed",
+        rock::transform_math::localPointToWorld(
+            movedSolve.weaponWorldTransform,
+            primaryGripLocal),
+        primaryGripLocal);
+    return ok;
+}
+
+static bool testLiveHandDriver()
+{
+    bool ok = true;
+    TestTransform liveHandWorld = rock::transform_math::makeIdentityTransform<TestTransform>();
+    liveHandWorld.translate = { 10.0f, 5.0f, -2.0f };
+    const TestVector3 livePalmPivot{ 12.0f, 8.0f, 1.0f };
+    const TestVector3 selectedGripPoint{ 18.0f, 6.0f, 5.0f };
+
+    TestTransform partWorld = rock::transform_math::makeIdentityTransform<TestTransform>();
+    partWorld.translate = { 30.0f, 40.0f, 50.0f };
+    partWorld.rotate.entry[0][0] = 0.0f;
+    partWorld.rotate.entry[0][1] = 1.0f;
+    partWorld.rotate.entry[1][0] = -1.0f;
+    partWorld.rotate.entry[1][1] = 0.0f;
+    partWorld.scale = 1.25f;
+
+    const TestTransform seatedHandWorld = rock::weapon_two_handed_grip_math::alignHandFrameToGripPoint(
+        liveHandWorld,
+        livePalmPivot,
+        selectedGripPoint);
+    const TestTransform virtualPartWorld = rock::weapon_two_handed_grip_math::virtualizeMeshForTranslatedHandSeat(
+        partWorld,
+        livePalmPivot,
+        selectedGripPoint);
+    const TestVector3 virtualGripPoint = rock::weapon_two_handed_grip_math::virtualizeGripPointForTranslatedHandSeat(
+        livePalmPivot,
+        selectedGripPoint);
+
+    ok &= expectNear("support grip seats hand translation x", seatedHandWorld.translate.x, 16.0f);
+    ok &= expectNear("support grip seats hand translation y", seatedHandWorld.translate.y, 3.0f);
+    ok &= expectNear("support grip seats hand translation z", seatedHandWorld.translate.z, 2.0f);
+    ok &= expectNear("support grip virtual mesh applies inverse seat x", virtualPartWorld.translate.x, 24.0f);
+    ok &= expectNear("support grip virtual mesh applies inverse seat y", virtualPartWorld.translate.y, 42.0f);
+    ok &= expectNear("support grip virtual mesh applies inverse seat z", virtualPartWorld.translate.z, 46.0f);
+    ok &= expectNear("support grip virtual seat resolves to live palm x", virtualGripPoint.x, livePalmPivot.x);
+    ok &= expectNear("support grip virtual seat resolves to live palm y", virtualGripPoint.y, livePalmPivot.y);
+    ok &= expectNear("support grip virtual seat resolves to live palm z", virtualGripPoint.z, livePalmPivot.z);
+    ok &= expectNear("support grip virtual mesh preserves scale", virtualPartWorld.scale, partWorld.scale);
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            ok &= expectNear("support grip virtual mesh preserves rotation", virtualPartWorld.rotate.entry[row][column], partWorld.rotate.entry[row][column]);
+        }
+    }
+
+    const TestVector3 finalGripFromHand{
+        selectedGripPoint.x - seatedHandWorld.translate.x,
+        selectedGripPoint.y - seatedHandWorld.translate.y,
+        selectedGripPoint.z - seatedHandWorld.translate.z,
+    };
+    const TestVector3 virtualGripFromHand{
+        virtualGripPoint.x - liveHandWorld.translate.x,
+        virtualGripPoint.y - liveHandWorld.translate.y,
+        virtualGripPoint.z - liveHandWorld.translate.z,
+    };
+    ok &= expectNear("support grip frozen solve preserves final hand/mesh relation x", virtualGripFromHand.x, finalGripFromHand.x);
+    ok &= expectNear("support grip frozen solve preserves final hand/mesh relation y", virtualGripFromHand.y, finalGripFromHand.y);
+    ok &= expectNear("support grip frozen solve preserves final hand/mesh relation z", virtualGripFromHand.z, finalGripFromHand.z);
+    return ok;
+}
+
+static bool testRawHandDriver()
+{
+    bool ok = true;
+    TestTransform rawHandWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    rawHandWorld.translate = { 10.0f, -5.0f, 3.0f };
+    const TestVector3 palmPivotWorld{ 12.0f, -5.0f, 3.0f };
+    const TestVector3 palmNormalWorld{ 1.0f, 0.0f, 0.0f };
+    const TestVector3 surfaceNormalWorld{ 0.0f, -1.0f, 0.0f };
+    const TestVector3 targetGripPointWorld{ 30.0f, 9.0f, -4.0f };
+    constexpr float kThirtyDegreesRadians =
+        0.52359877559829887308f;
+
+    const auto seated =
+        rock::weapon_support_acquisition_math::
+            alignHandFrameToGripSurface<
+                TestTransform,
+                TestVector3>(
+                rawHandWorld,
+                palmPivotWorld,
+                palmNormalWorld,
+                targetGripPointWorld,
+                surfaceNormalWorld,
+                kThirtyDegreesRadians);
+    ok &= expectTrue(
+        "support surface seat produces a finite hand frame",
+        seated.valid);
+    ok &= expectNear(
+        "support surface seat clamps wrist swing",
+        seated.appliedRotationRadians,
+        kThirtyDegreesRadians);
+
+    const TestVector3 rawOriginToPalm =
+        rock::weaponSolverSub(
+            palmPivotWorld,
+            rawHandWorld.translate);
+    const TestVector3 seatedPalmPoint =
+        rock::weaponSolverAdd(
+            seated.handWorld.translate,
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                seated.handWorld.rotate,
+                rawOriginToPalm));
+    ok &= expectVectorNear(
+        "support surface seat preserves exact palm contact pivot",
+        seatedPalmPoint,
+        targetGripPointWorld);
+
+    const TestVector3 seatedPalmNormal =
+        rock::weaponSolverNormalize(
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                seated.handWorld.rotate,
+                palmNormalWorld));
+    ok &= expectNear(
+        "support surface seat rotates palm toward inward normal",
+        rock::weaponSolverDot(
+            seatedPalmNormal,
+            TestVector3{ 0.0f, 1.0f, 0.0f }),
+        0.5f);
+
+    TestTransform weaponWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    weaponWorld.rotate = makeAxisAngleRotation(
+        rock::weaponSolverNormalize(
+            TestVector3{ 0.2f, 0.7f, -0.4f }),
+        23.0f);
+    weaponWorld.translate = { -40.0f, 70.0f, 18.0f };
+    weaponWorld.scale = 1.3f;
+    const TestVector3 meshPointLocal{ 4.0f, -3.0f, 2.0f };
+    const TestVector3 originalMeshPointWorld =
+        rock::transform_math::localPointToWorld(
+            weaponWorld,
+            meshPointLocal);
+    const TestTransform virtualWeaponWorld =
+        rock::weapon_two_handed_grip_math::
+            virtualizeMeshForSeatedHand(
+                weaponWorld,
+                rawHandWorld,
+                seated.handWorld);
+    const TestVector3 virtualMeshPointWorld =
+        rock::transform_math::localPointToWorld(
+            virtualWeaponWorld,
+            meshPointLocal);
+    ok &= expectVectorNear(
+        "full surface seat virtualization preserves hand-mesh relation",
+        rock::transform_math::worldPointToLocal(
+            rawHandWorld,
+            virtualMeshPointWorld),
+        rock::transform_math::worldPointToLocal(
+            seated.handWorld,
+            originalMeshPointWorld));
+    return ok;
+}
+
+static bool testWeaponPresentationDelta()
+{
+    bool ok = true;
+    TestTransform oldWeaponWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    oldWeaponWorld.translate = { 8.0f, -3.0f, 4.0f };
+    oldWeaponWorld.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 0.0f, 1.0f },
+        25.0f);
+    oldWeaponWorld.scale = 1.2f;
+
+    TestTransform newWeaponWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    newWeaponWorld.translate = { -6.0f, 12.0f, 2.0f };
+    newWeaponWorld.rotate = makeAxisAngleRotation(
+        TestVector3{ 1.0f, 0.0f, 0.0f },
+        -35.0f);
+    newWeaponWorld.scale = 0.85f;
+
+    TestTransform animatedPresentationWorld =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    animatedPresentationWorld.translate = { 15.0f, 7.0f, -2.0f };
+    animatedPresentationWorld.rotate = makeAxisAngleRotation(
+        TestVector3{ 0.0f, 1.0f, 0.0f },
+        48.0f);
+    animatedPresentationWorld.scale = 0.9f;
+
+    const TestTransform presentationWorldDelta =
+        rock::weapon_visual_authority_math::makePresentationWorldDelta(
+            oldWeaponWorld,
+            newWeaponWorld);
+    const TestTransform reframedPresentationWorld =
+        rock::weapon_visual_authority_math::applyPresentationWorldDelta(
+            presentationWorldDelta,
+            animatedPresentationWorld);
+    const TestTransform oldWeaponRelativePresentation =
+        rock::transform_math::composeTransforms(
+            rock::transform_math::invertTransform(oldWeaponWorld),
+            animatedPresentationWorld);
+    const TestTransform newWeaponRelativePresentation =
+        rock::transform_math::composeTransforms(
+            rock::transform_math::invertTransform(newWeaponWorld),
+            reframedPresentationWorld);
+    ok &= expectTransformNear(
+        "weapon presentation reframe preserves evaluated root-relative world",
+        newWeaponRelativePresentation,
+        oldWeaponRelativePresentation);
+
+    TestTransform staleAuthoredLocal =
+        rock::transform_math::makeIdentityTransform<TestTransform>();
+    staleAuthoredLocal.translate = { 100.0f, 200.0f, 300.0f };
+    const TestTransform staleLocalRebuild =
+        rock::transform_math::composeTransforms(
+            newWeaponWorld,
+            staleAuthoredLocal);
+    ok &= expectTrue(
+        "weapon presentation reframe ignores stale descendant local",
+        std::fabs(
+            reframedPresentationWorld.translate.x -
+            staleLocalRebuild.translate.x) > 1.0f);
+    return ok;
+}
+
+static bool testPartGripReporting()
+{
+    bool ok = true;
+    using namespace rock::weapon_part_grip_report_policy;
+    ok &= expectTrue("active non-attach part grip counts as carry", partGripCountsAsCarry(true, false));
+    ok &= expectFalse("attach-only part grip never counts as carry", partGripCountsAsCarry(true, true));
+    ok &= expectFalse("inactive part grip never counts as carry", partGripCountsAsCarry(false, false));
+
+    ok &= expectTrue("provider AttachOnly grab mode resolves attach-only",
+        providerGrabModeIsAttachOnly(true, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::AttachOnly)));
+    ok &= expectFalse("provider full-authority grab mode is not attach-only",
+        providerGrabModeIsAttachOnly(true, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::FullTwoHandAuthority)));
+    ok &= expectFalse("attach-only requires an active provider authority",
+        providerGrabModeIsAttachOnly(false, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::AttachOnly)));
+
+    ok &= expectEqual("firing hand in gripping state reports the firing grip",
+        resolveHandGripKind(true, false, false, true, false, false, false),
+        HandGripKind::FiringGrip);
+    ok &= expectEqual("firing hand in primary-only state reports the firing grip",
+        resolveHandGripKind(false, false, true, true, false, false, false),
+        HandGripKind::FiringGrip);
+    ok &= expectEqual("offhand full-authority support grip reports full authority",
+        resolveHandGripKind(true, false, false, false, true, false, false),
+        HandGripKind::SupportFullAuthority);
+    ok &= expectEqual("offhand visual-only support grip reports visual-only",
+        resolveHandGripKind(true, false, false, false, true, false, true),
+        HandGripKind::SupportVisualOnly);
+    ok &= expectEqual("attach-only grip reports attach-only in gripping state",
+        resolveHandGripKind(true, false, false, false, true, true, true),
+        HandGripKind::AttachOnly);
+    ok &= expectEqual("carry part grip in part-carry reports part carry",
+        resolveHandGripKind(false, true, false, false, true, false, false),
+        HandGripKind::PartCarry);
+    ok &= expectEqual("detached firing hand attach-only grip reports attach-only",
+        resolveHandGripKind(false, true, false, true, true, true, false),
+        HandGripKind::AttachOnly);
+    ok &= expectEqual("detached firing hand carry grip reports part carry",
+        resolveHandGripKind(false, true, false, true, true, false, false),
+        HandGripKind::PartCarry);
+    ok &= expectEqual("idle hand reports no grip",
+        resolveHandGripKind(false, false, false, false, false, false, false),
+        HandGripKind::None);
+    ok &= expectEqual("firing hand without part grip in part-carry reports no grip",
+        resolveHandGripKind(false, true, false, true, false, false, false),
+        HandGripKind::None);
+    return ok;
+}
+
+static bool testPartStructureIdentity()
+{
+    bool ok = true;
+    using namespace rock::weapon_part_record_identity_policy;
+    ok &= expectEqual("P-Mag resolves the magazine slot anchor",
+        resolveStructureAnchor("P-Mag"), StructureAnchor::SlotMagazine);
+    ok &= expectEqual("P-Stock resolves the rear-furniture slot anchor",
+        resolveStructureAnchor("P-Stock"), StructureAnchor::SlotRearFurniture);
+    ok &= expectEqual("P-Barrel resolves the barrel slot anchor",
+        resolveStructureAnchor("P-Barrel"), StructureAnchor::SlotBarrel);
+    ok &= expectEqual("P-Compensator resolves the muzzle slot anchor",
+        resolveStructureAnchor("P-Compensator"), StructureAnchor::SlotMuzzle);
+    ok &= expectEqual("P-Bipod resolves the dedicated bipod slot anchor",
+        resolveStructureAnchor("P-Bipod"), StructureAnchor::SlotBipod);
+    ok &= expectEqual("mod-prefixed bipod connect point resolves the bipod slot anchor",
+        resolveStructureAnchor("P-SV98Bipod"), StructureAnchor::SlotBipod);
+    ok &= expectEqual("WeaponBolt resolves the bolt rig anchor",
+        resolveStructureAnchor("WeaponBolt"), StructureAnchor::RigBolt);
+    ok &= expectEqual("WeaponMagazineChild3 resolves the magazine display rig anchor",
+        resolveStructureAnchor("WeaponMagazineChild3"), StructureAnchor::RigMagazineDisplay);
+    ok &= expectEqual("dedicated magazine slot outranks its internal display rig",
+        chooseStructureAnchor(StructureAnchor::SlotMagazine, StructureAnchor::RigMagazineDisplay), StructureAnchor::SlotMagazine);
+    ok &= expectEqual("bolt rig outranks the catch-all receiver slot",
+        chooseStructureAnchor(StructureAnchor::SlotReceiver, StructureAnchor::RigBolt), StructureAnchor::RigBolt);
+    ok &= expectEqual("unknown mod-added connect point resolves no anchor",
+        resolveStructureAnchor("P-CustomThing"), StructureAnchor::None);
+    ok &= expectEqual("plain mesh name resolves no anchor",
+        resolveStructureAnchor("AK74M_Body"), StructureAnchor::None);
+    const auto otherByName = rock::classifyWeaponPartKind(rock::WeaponPartKind::Other);
+    const auto magFromSlot = applyStructureAnchor(otherByName, StructureAnchor::SlotMagazine);
+    ok &= expectEqual("magazine slot classifies an unnamed part as magazine",
+        magFromSlot.partKind, rock::WeaponPartKind::Magazine);
+    ok &= expectEqual("magazine slot classification is slot-sourced",
+        magFromSlot.classificationSource, rock::WeaponPartClassificationSource::SlotAnchor);
+    ok &= expectEqual("magazine slot carries the vanilla attach-point form id",
+        magFromSlot.attachPointFormId, kAttachPointMagazine);
+    const auto cartridgeKeptInMagazineSlot = applyStructureAnchor(
+        rock::classifyWeaponPartKind(rock::WeaponPartKind::Round), StructureAnchor::SlotMagazine);
+    ok &= expectEqual("magazine slot preserves an explicitly named cartridge",
+        cartridgeKeptInMagazineSlot.partKind, rock::WeaponPartKind::Round);
+    const auto cosmeticBulletKeptInMagazineSlot = applyStructureAnchor(
+        rock::classifyWeaponPartKind(rock::WeaponPartKind::CosmeticAmmo), StructureAnchor::SlotMagazine);
+    ok &= expectEqual("magazine slot preserves explicitly cosmetic bullet geometry",
+        cosmeticBulletKeptInMagazineSlot.partKind, rock::WeaponPartKind::CosmeticAmmo);
+
+    const auto receiverByWeakToken = rock::classifyWeaponPartKind(rock::WeaponPartKind::Receiver);
+    const auto barrelOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotBarrel);
+    ok &= expectEqual("barrel slot overrides a weak receiver name match",
+        barrelOverride.partKind, rock::WeaponPartKind::Barrel);
+    const auto muzzleOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotMuzzle);
+    ok &= expectEqual("muzzle slot classifies its physical module separately from the barrel",
+        muzzleOverride.partKind, rock::WeaponPartKind::MuzzleDevice);
+    ok &= expectEqual("muzzle slot carries the vanilla attach-point form id",
+        muzzleOverride.attachPointFormId, kAttachPointMuzzle);
+
+    const auto slideByName = rock::classifyWeaponPartKind(rock::WeaponPartKind::Slide);
+    const auto slideKept = applyStructureAnchor(slideByName, StructureAnchor::RigBolt);
+    ok &= expectEqual("action-named part keeps its name under the bolt rig",
+        slideKept.partKind, rock::WeaponPartKind::Slide);
+    ok &= expectEqual("kept action name stays name-sourced",
+        slideKept.classificationSource, rock::WeaponPartClassificationSource::NameToken);
+    const auto pumpKept = applyStructureAnchor(
+        rock::classifyWeaponPartKind(rock::WeaponPartKind::Pump), StructureAnchor::SlotHandguard);
+    ok &= expectEqual("pump keeps its action role inside the handguard slot",
+        pumpKept.partKind, rock::WeaponPartKind::Pump);
+
+    const auto receiverFill = applyStructureAnchor(otherByName, StructureAnchor::SlotReceiver);
+    ok &= expectEqual("receiver slot fills unclassified parts",
+        receiverFill.partKind, rock::WeaponPartKind::Receiver);
+    const auto stockKeptOverReceiver = applyStructureAnchor(
+        rock::classifyWeaponPartKind(rock::WeaponPartKind::Stock), StructureAnchor::SlotReceiver);
+    ok &= expectEqual("receiver slot never overrides a critical name match",
+        stockKeptOverReceiver.partKind, rock::WeaponPartKind::Stock);
+
+    const auto roundKept = applyStructureAnchor(
+        rock::classifyWeaponPartKind(rock::WeaponPartKind::Round), StructureAnchor::RigMagazineDisplay);
+    ok &= expectEqual("named ammo round keeps its reload role under the magazine rig",
+        roundKept.partKind, rock::WeaponPartKind::Round);
+    const auto followerFill = applyStructureAnchor(otherByName, StructureAnchor::RigMagazineDisplay);
+    ok &= expectEqual("unnamed magazine-rig part fills as cosmetic ammo",
+        followerFill.partKind, rock::WeaponPartKind::CosmeticAmmo);
+
+    const auto noAnchor = applyStructureAnchor(otherByName, StructureAnchor::None);
+    ok &= expectEqual("no anchor keeps the name classification",
+        noAnchor.partKind, rock::WeaponPartKind::Other);
+    ok &= expectEqual("no anchor keeps the name source",
+        noAnchor.classificationSource, rock::WeaponPartClassificationSource::NameToken);
+
+    ok &= expectEqual("authored suppressor name classifies as a muzzle device",
+        rock::classifyWeaponPartName("AK_Suppressor_Mesh").partKind,
+        rock::WeaponPartKind::MuzzleDevice);
+    ok &= expectEqual("barrel remains distinct from its installed muzzle device",
+        rock::classifyWeaponPartName("WeaponBarrel").partKind,
+        rock::WeaponPartKind::Barrel);
+    ok &= expectEqual("authored bipod name classifies without deployment inference",
+        rock::classifyWeaponPartName("Rifle_BiPod").partKind,
+        rock::WeaponPartKind::Bipod);
+    ok &= expectEqual("bipod identity outranks incidental cylinder export token",
+        rock::classifyWeaponPartName("bipod_Cylinder_009_Bipod").partKind,
+        rock::WeaponPartKind::Bipod);
+    const auto bipodOverActionName = applyStructureAnchor(
+        rock::classifyWeaponPartKind(rock::WeaponPartKind::Cylinder), StructureAnchor::SlotBipod);
+    ok &= expectEqual("dedicated bipod slot overrides incidental action-name classification",
+        bipodOverActionName.partKind, rock::WeaponPartKind::Bipod);
+    return ok;
+}
+
+static bool testAccessoryClassification()
+{
+    bool ok = true;
+    using namespace rock::weapon_accessory_part_kind_policy;
+
+    auto sight = rock::classifyWeaponPartKind(rock::WeaponPartKind::Sight);
+    sight.attachPointFormId = rock::weapon_part_record_identity_policy::kAttachPointSight;
+    const auto unchangedSight = applyAttachmentEvidence(sight, {});
+    ok &= expectEqual("reticle-only optic remains Sight",
+        unchangedSight.partKind, rock::WeaponPartKind::Sight);
+    ok &= expectEqual("unchanged sight retains its original classification source",
+        unchangedSight.classificationSource, rock::WeaponPartClassificationSource::NameToken);
+
+    const auto laser = applyAttachmentEvidence(sight, Evidence{ .laserEmitter = true });
+    ok &= expectEqual("laser emitter refines the physical module to LaserSight",
+        laser.partKind, rock::WeaponPartKind::LaserSight);
+    ok &= expectEqual("laser module reports attachment-backed classification",
+        laser.classificationSource, rock::WeaponPartClassificationSource::AttachmentEvidence);
+    ok &= expectEqual("attachment refinement retains the owning slot FormID",
+        laser.attachPointFormId, sight.attachPointFormId);
+
+    const auto flashlight = applyAttachmentEvidence(sight, Evidence{ .flashlightEmitter = true });
+    ok &= expectEqual("flashlight emitter refines the physical module to Flashlight",
+        flashlight.partKind, rock::WeaponPartKind::Flashlight);
+
+    const auto combo = applyAttachmentEvidence(sight, Evidence{ .laserEmitter = true, .flashlightEmitter = true });
+    ok &= expectEqual("co-owned laser and flashlight emitters produce the combo kind",
+        combo.partKind, rock::WeaponPartKind::LaserFlashlightCombo);
+
+    const auto nativeScope = applyAttachmentEvidence(
+        rock::classifyWeaponPartKind(rock::WeaponPartKind::Barrel),
+        Evidence{ .nativeScopeOverlay = true, .laserEmitter = true, .flashlightEmitter = true });
+    ok &= expectEqual("native overlay OMOD evidence is authoritative for Scope",
+        nativeScope.partKind, rock::WeaponPartKind::Scope);
+
+    static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Other) == 22);
+    static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::LaserSight) == 23);
+    static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Flashlight) == 24);
+    static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::LaserFlashlightCombo) == 25);
+    static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Scope) == 26);
+    static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::MuzzleDevice) == 27);
+    static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Bipod) == 28);
+    return ok;
+}
+
 int main()
 {
     bool ok = true;
 
-    {
-        using namespace rock::weapon_recoil_policy;
-        using rock::weapon_recoil_authority_math::tryBuildControlledKick;
-        ok &= expectTrue("ordinary one hand selects independent profile",
-            selectProfile(false, false, false) == Profile::OneHand);
-        for (const bool armor : { false, true }) {
-            for (const bool twoHands : { false, true }) {
-                for (const bool close : { false, true }) {
-                    ok &= expectTrue("latched bipod overrides all hand and armor profiles",
-                        selectProfile(armor, close, twoHands, true) == Profile::Bipod);
-                    ok &= expectTrue("unlatched bipod restores ordinary profile selection",
-                        selectProfile(armor, close, twoHands, false) == selectProfile(armor, close, twoHands));
-                }
-            }
-        }
-        for (const float percent : { 0.0f, 80.0f, 100.0f, 292.1f, 300.0f }) {
-            const auto bipodGains = effectiveGains(Profile::Bipod, percent);
-            ok &= expectTrue("bipod gains are ten percent regardless of weapon tuning",
-                bipodGains.translation == 0.10f && bipodGains.rotation == 0.10f);
-        }
-        ok &= expectTrue("close support chooses its own profile",
-            selectProfile(false, true, false) == Profile::CloseSupport);
-        for (const bool supported : { false, true }) {
-            ok &= expectTrue("armor profile wins independently of support",
-                selectProfile(true, supported, false) == Profile::PowerArmor);
-        }
-        for (const bool nativeLeft : { false, true }) {
-            for (const bool firingLeft : { false, true }) {
-                const auto nativeMask = deliveryHand(false, firingLeft, nativeLeft);
-                ok &= expectTrue("native recoil selects the physical firing hand",
-                    nativeMask == (firingLeft == nativeLeft ? HandMask::Primary : HandMask::Offhand));
-                ok &= expectTrue("owned weapon/solver has no additional FRIK hand kick",
-                    deliveryHand(true, firingLeft, nativeLeft) == HandMask::None);
-            }
-        }
-        ok &= expectTrue("full two-hand has a separately tunable profile",
-            selectProfile(false, false, true) == Profile::FullTwoHand);
-        ok &= expectTrue("armor overrides full two-hand profile",
-            selectProfile(true, false, true) == Profile::PowerArmor);
-        ok &= expectTrue("close support remains distinct from one hand",
-            selectProfile(false, true, false) != Profile::OneHand);
-        ok &= expectFalse("idle recoil must not acquire weapon or hand", needsOneHandPresentation(false, false));
-        ok &= expectTrue("active kick acquires direct presentation", needsOneHandPresentation(true, false));
-        ok &= expectTrue("settling publishes one final neutral frame", needsOneHandPresentation(false, true));
-        const auto neutralKick = rock::transform_math::makeIdentityTransform<TestTransform>();
-        auto distantFrame = neutralKick;
-        distantFrame.translate = { -70700.0f, 80000.0f, 7450.0f };
-        distantFrame.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 27.0f);
-        ok &= expectTransformNear("identity recoil stays exact at distant world coordinates",
-            rock::weapon_recoil_authority_math::resolveWorldDelta(neutralKick, distantFrame, distantFrame, distantFrame, true),
-            neutralKick);
-        const auto flags = [](const rock::WeaponKeywordFlag flag) { return static_cast<std::uint64_t>(flag); };
-        WeaponEvidence evidence{
-            .formID = 0x123u, .keywordFlags = flags(rock::WeaponKeywordFlag::Pistol),
-            .sizeClass = rock::WeaponSizeClass::Pistol,
-            .source = rock::WeaponClassificationSource::Keyword, .resolved = true,
-        };
-        ok &= expectTrue("pistol evidence selects pistol multiplier", classifyFamily(evidence) == Family::Pistol);
-        evidence.keywordFlags |= flags(rock::WeaponKeywordFlag::Rifle);
-        evidence.sizeClass = rock::WeaponSizeClass::Rifle;
-        evidence.source = rock::WeaponClassificationSource::EquipSlot;
-        ok &= expectTrue("converted pistol respects resolved effective rifle slot", classifyFamily(evidence) == Family::Rifle);
-        evidence.keywordFlags |= flags(rock::WeaponKeywordFlag::Shotgun);
-        ok &= expectTrue("shotgun family wins over broad rifle tag", classifyFamily(evidence) == Family::Shotgun);
-        evidence.sizeClass = rock::WeaponSizeClass::Heavy;
-        ok &= expectTrue("heavy family wins over shotgun tag", classifyFamily(evidence) == Family::Heavy);
-        evidence.resolved = false;
-        ok &= expectTrue("unresolved conflicting evidence uses explicit default", classifyFamily(evidence) == Family::Default);
-        evidence.resolved = true;
-        evidence.sizeClass = rock::WeaponSizeClass::Rifle;
-        evidence.keywordFlags = flags(rock::WeaponKeywordFlag::Rifle) | flags(rock::WeaponKeywordFlag::Laser) |
-            flags(rock::WeaponKeywordFlag::Automatic);
-        ok &= expectTrue("laser automatic rifle selects one family only", classifyFamily(evidence) == Family::Rifle);
-        for (const auto profile : { Profile::OneHand, Profile::FullTwoHand, Profile::CloseSupport }) {
-            const auto off = effectiveGains(profile, 0.0f);
-            const auto normal = effectiveGains(profile, 100.0f);
-            const auto doubleKick = effectiveGains(profile, 200.0f);
-            const auto base = gainsFor(profile);
-            ok &= expectTrue("zero percent suppresses both kick components", off.translation == 0.0f && off.rotation == 0.0f);
-            ok &= expectTrue("100 percent preserves the hold profile", normal.translation == base.translation && normal.rotation == base.rotation);
-            ok &= expectTrue("200 percent doubles both hold gains", doubleKick.translation == base.translation * 2.0f && doubleKick.rotation == base.rotation * 2.0f);
-        }
-        for (const float percent : { 0.0f, 100.0f, 200.0f }) {
-            const auto armorGains = effectiveGains(Profile::PowerArmor, percent);
-            ok &= expectTrue("armor umbrella ignores weapon percentages",
-                armorGains.translation == kPowerArmor.translation && armorGains.rotation == kPowerArmor.rotation);
-        }
-        ok &= expectTrue("one-hand percentage is a direct override, not stacked on family tuning",
-            selectHoldPercent(true, 300.0f, 200.0f) == 300.0f);
-        ok &= expectTrue("two-hand retains custom low tuning", selectHoldPercent(false, 300.0f, 50.0f) == 50.0f);
-        ok &= expectTrue("two-hand retains custom high tuning", selectHoldPercent(false, 300.0f, 200.0f) == 200.0f);
-        for (const auto profile : { Profile::FullTwoHand, Profile::CloseSupport }) {
-            for (const float currentPercent : { 50.0f, 100.0f, 200.0f }) {
-                const auto before = effectiveGains(profile, currentPercent);
-                const auto after = effectiveGains(profile, selectHoldPercent(false, 300.0f, currentPercent));
-                ok &= expectTrue("two-hand full and close profiles preserve today's response",
-                    before.translation == after.translation && before.rotation == after.rotation);
-            }
-        }
-        for (const bool oneHanded : { false, true }) {
-            const auto unchangedArmor = effectiveGains(Profile::PowerArmor, selectHoldPercent(oneHanded, 300.0f, 200.0f));
-            ok &= expectTrue("power armor ignores either hold's percentage",
-                unchangedArmor.translation == kPowerArmor.translation && unchangedArmor.rotation == kPowerArmor.rotation);
-        }
-        TestTransform shot = rock::transform_math::makeIdentityTransform<TestTransform>();
-        shot.translate = { 10.0f, -4.0f, 2.0f };
-        shot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
-        auto modestShot = shot;
-        modestShot.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 20.0f);
-        TestTransform tripleKick{};
-        ok &= expectTrue("300 percent builds a valid three-times impulse",
-            tryBuildControlledKick(modestShot, effectiveGains(Profile::OneHand, selectHoldPercent(true, 300.0f, 200.0f)), tripleKick));
-        auto tripleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
-        tripleExpected.translate = { 30.0f, -12.0f, 6.0f };
-        tripleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 60.0f);
-        ok &= expectTransformNear("one hand gets 300 percent rather than 600 percent", tripleKick, tripleExpected);
-        TestTransform amplified{};
-        ok &= expectTrue("200 percent produces a rigid amplified transform",
-            tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 200.0f), amplified));
-        auto doubleExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
-        doubleExpected.translate = { 20.0f, -8.0f, 4.0f };
-        doubleExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 120.0f);
-        ok &= expectTransformNear("200 percent doubles translation and angular displacement", amplified, doubleExpected);
-        ok &= expectTrue("zero percent accepts and neutralizes native recoil",
-            tryBuildControlledKick(shot, effectiveGains(Profile::OneHand, 0.0f), amplified));
-        ok &= expectTransformNear("zero percent produces identity rather than native fallback", amplified,
-            rock::transform_math::makeIdentityTransform<TestTransform>());
-        TestTransform armor{};
-        ok &= expectTrue("armor builds a rigid reduced kick",
-            tryBuildControlledKick(shot, gainsFor(Profile::PowerArmor), armor));
-        auto expected = rock::transform_math::makeIdentityTransform<TestTransform>();
-        expected.translate = { 4.5f, -1.8f, 0.9f };
-        expected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 18.0f);
-        ok &= expectTransformNear("armor starts with the requested attenuation", armor, expected);
-        TestTransform bipod{};
-        ok &= expectTrue("bipod builds a rigid reduced kick",
-            tryBuildControlledKick(shot, effectiveGains(Profile::Bipod, 300.0f), bipod));
-        auto bipodExpected = rock::transform_math::makeIdentityTransform<TestTransform>();
-        bipodExpected.translate = { 1.0f, -0.4f, 0.2f };
-        bipodExpected.rotate = makeAxisAngleRotation(TestVector3{ 0.0f, 0.0f, 1.0f }, 6.0f);
-        ok &= expectTransformNear("bipod applies ten percent of native translation and angle", bipod, bipodExpected);
-        auto independentlyTunedSupport = kCloseSupport;
-        independentlyTunedSupport.translation = 0.2f;
-        independentlyTunedSupport.rotation = 0.1f;
-        TestTransform tuned{};
-        ok &= expectTrue("support profile can be independently tuned",
-            tryBuildControlledKick(shot, independentlyTunedSupport, tuned));
-        ok &= expectTrue("support tuning produces a different impulse",
-            std::abs(tuned.translate.x - armor.translate.x) > 1.0f);
-        TestTransform unchangedArmor{};
-        ok &= expectTrue("armor remains independently selectable",
-            tryBuildControlledKick(shot, gainsFor(Profile::PowerArmor), unchangedArmor));
-        ok &= expectTransformNear("support tuning leaves armor unchanged", unchangedArmor, armor);
-        TestTransform native{};
-        ok &= expectTrue("native profile builds an unchanged rigid sample",
-            tryBuildControlledKick(shot, gainsFor(Profile::OneHand), native));
-        ok &= expectTransformNear("unassisted native sample is preserved", native, shot);
-        TestTransform fullTwoHand{};
-        ok &= expectTrue("two-hand profile retains unscaled kick",
-            tryBuildControlledKick(shot, gainsFor(Profile::FullTwoHand), fullTwoHand));
-        ok &= expectTransformNear("one-hand and full two-hand start with identical gains", fullTwoHand, native);
-        auto tunedOneHand = kOneHand;
-        tunedOneHand.rotation = 0.5f;
-        TestTransform oneHandTuned{};
-        ok &= expectTrue("one-hand profile accepts independent tuning",
-            tryBuildControlledKick(shot, tunedOneHand, oneHandTuned));
-        ok &= expectTrue("one-hand tuning leaves full two-hand gains intact",
-            gainsFor(Profile::FullTwoHand).rotation == 1.0f);
+    ok &= testRecoilProfiles();
 
-        // Both baselines (authored and reconstructed native) pass through this
-        // operation. The hand must retain its weapon-local seat as recoil changes.
-        auto weaponBase = rock::transform_math::makeIdentityTransform<TestTransform>();
-        weaponBase.translate = { 12.0f, 28.0f, 7.0f };
-        auto handLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
-        handLocal.translate = { 2.0f, -3.0f, 0.5f };
-        handLocal.rotate = makeAxisAngleRotation(TestVector3{ 1.0f, 0.0f, 0.0f }, 15.0f);
-        const auto handBase = rock::transform_math::composeTransforms(weaponBase, handLocal);
-        TestTransform weaponTarget{};
-        TestTransform handTarget{};
-        for (const auto kick : { native, armor,
-                rock::transform_math::makeIdentityTransform<TestTransform>() }) {
-            rock::weapon_recoil_authority_math::applyOneHandKick(
-                kick, weaponBase, handBase, weaponTarget, handTarget);
-            ok &= expectTransformNear("direct recoil preserves the firing-hand seat",
-                rock::transform_math::composeTransforms(
-                    rock::transform_math::invertTransform(weaponTarget), handTarget), handLocal);
-        }
-        ok &= expectTransformNear("identity sample fully removes previous recoil", weaponTarget, weaponBase);
-        ok &= expectTransformNear("firing hand returns to its clean baseline", handTarget, handBase);
-        auto invalid = shot;
-        invalid.rotate.entry[0][0] = 0.0f;
-        ok &= expectFalse("non-rigid input cannot become a plausible controlled kick",
-            tryBuildControlledKick(invalid, kPowerArmor, tuned));
-        ok &= expectTransformNear("invalid input outputs identity", tuned,
-            rock::transform_math::makeIdentityTransform<TestTransform>());
-        invalid = rock::transform_math::makeIdentityTransform<TestTransform>();
-        invalid.rotate.entry[0][0] = -1.0f;
-        ok &= expectFalse("reflection is not a rigid recoil rotation",
-            tryBuildControlledKick(invalid, kPowerArmor, tuned));
+    ok &= testNativeGripFrames();
 
-        const SampleIdentity captured{
-            .weaponNode = 0x1234, .weaponGeneration = 2, .equippedOwnership = 3,
-            .profile = Profile::PowerArmor, .firingHandIsLeft = true,
-            .nativePrimaryIsLeft = false, .fullTwoHanded = false,
-        };
-        SampleTicket ticket{ .identity = captured, .sequence = 1, .valid = true };
-        ticket.beginUpdate(true);
-        ok &= expectTrue("fresh callback can be consumed", ticket.consume(captured));
-        ok &= expectFalse("one sample cannot kick both carry and solver", ticket.consume(captured));
-        ticket.beginUpdate(true);
-        ok &= expectFalse("skipped callback never replays a shot", ticket.consume(captured));
-        for (int changed = 0; changed < 11; ++changed) {
-            auto current = captured;
-            switch (changed) {
-            case 0: ++current.weaponNode; break;
-            case 1: ++current.weaponGeneration; break;
-            case 2: ++current.equippedOwnership; break;
-            case 3: current.profile = Profile::OneHand; break;
-            case 4: current.firingHandIsLeft = false; break;
-            case 5: current.nativePrimaryIsLeft = true; break;
-            case 6: current.fullTwoHanded = true; break;
-            case 7: current.oneHanded = true; break;
-            case 8: current.familyPercent = 200.0f; break;
-            case 9: current.family = Family::Shotgun; break;
-            case 10: current.formID = 0x234u; break;
-            }
-            ++ticket.sequence;
-            ticket.valid = true;
-            ticket.beginUpdate(true);
-            ok &= expectFalse("owner/profile/role/solver changes discard the old shot", ticket.consume(current));
-            ok &= expectFalse("rejected ticket cannot replay after identity returns", ticket.consume(captured));
-        }
-        ++ticket.sequence;
-        ticket.valid = true;
-        ticket.beginUpdate(true);
-        ticket.invalidate();
-        ok &= expectFalse("lifecycle reset discards pending recoil", ticket.consume(captured));
-        ++ticket.sequence;
-        ticket.valid = true;
-        ticket.beginUpdate(false);
-        ok &= expectFalse("disabled immersive recoil discards a captured kick", ticket.consume(captured));
-        ticket.beginUpdate(true);
-        ok &= expectFalse("reenabling recoil cannot replay the pre-disable sample", ticket.consume(captured));
-        ++ticket.sequence;
-        ticket.valid = true;
-        ticket.beginUpdate(true);
-        ok &= expectTrue("reenabled recoil accepts a fresh callback sample", ticket.consume(captured));
-    }
+    ok &= testSupportRelease();
 
-    {
-        TestTransform rightNativeWeaponInWand =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        rightNativeWeaponInWand.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.23f, 0.51f, 0.83f }),
-            31.0f);
-        rightNativeWeaponInWand.translate = { 8.0f, -3.0f, 4.0f };
-        rightNativeWeaponInWand.scale = 2.0f;
+    ok &= testPoseHandoffResidual();
 
-        const TestTransform leftWeaponInWand =
-            rock::left_firing_position_only_math::
-                mirrorRightWeaponInWandOrientation(
-                    rightNativeWeaponInWand);
-        const TestVector3 weaponForward{ 0.0f, 1.0f, 0.0f };
-        const TestTransform rightNativeWeaponOrientation =
-            rock::left_firing_position_only_math::orientationOnly(
-                rightNativeWeaponInWand);
-        const TestVector3 rightBarrel =
-            rock::transform_math::localVectorToWorld(
-                rightNativeWeaponOrientation,
-                weaponForward);
-        const TestVector3 leftBarrel =
-            rock::transform_math::localVectorToWorld(
-                leftWeaponInWand,
-                weaponForward);
-        ok &= expectVectorNear(
-            "left native weapon mirror negates only barrel lateral component",
-            leftBarrel,
-            TestVector3{ -rightBarrel.x, rightBarrel.y, rightBarrel.z });
-        const TestVector3 rightLateral =
-            rock::transform_math::localVectorToWorld(
-                rightNativeWeaponOrientation,
-                TestVector3{ 1.0f, 0.0f, 0.0f });
-        const TestVector3 leftCorrespondingLateral =
-            rock::transform_math::localVectorToWorld(
-                leftWeaponInWand,
-                TestVector3{ -1.0f, 0.0f, 0.0f });
-        ok &= expectVectorNear(
-            "left native weapon mirror maps right +X to left -X",
-            leftCorrespondingLateral,
-            TestVector3{
-                -rightLateral.x,
-                rightLateral.y,
-                rightLateral.z });
-        const TestVector3 rightUp =
-            rock::transform_math::localVectorToWorld(
-                rightNativeWeaponOrientation,
-                TestVector3{ 0.0f, 0.0f, 1.0f });
-        const TestVector3 leftUp =
-            rock::transform_math::localVectorToWorld(
-                leftWeaponInWand,
-                TestVector3{ 0.0f, 0.0f, 1.0f });
-        ok &= expectVectorNear(
-            "left native weapon mirror maps right +Z to left +Z",
-            leftUp,
-            TestVector3{ -rightUp.x, rightUp.y, rightUp.z });
-        ok &= expectVectorNear(
-            "left native weapon orientation discards right-wand translation",
-            leftWeaponInWand.translate,
-            TestVector3{});
-        ok &= expectNear(
-            "left native weapon orientation is unit scale",
-            leftWeaponInWand.scale,
-            1.0f);
-        const auto& mirroredRotation = leftWeaponInWand.rotate.entry;
-        const float mirroredDeterminant =
-            mirroredRotation[0][0] *
-                (mirroredRotation[1][1] * mirroredRotation[2][2] -
-                    mirroredRotation[1][2] * mirroredRotation[2][1]) -
-            mirroredRotation[0][1] *
-                (mirroredRotation[1][0] * mirroredRotation[2][2] -
-                    mirroredRotation[1][2] * mirroredRotation[2][0]) +
-            mirroredRotation[0][2] *
-                (mirroredRotation[1][0] * mirroredRotation[2][1] -
-                    mirroredRotation[1][1] * mirroredRotation[2][0]);
-        ok &= expectNear(
-            "bilateral weapon mirror remains a proper rotation",
-            mirroredDeterminant,
-            1.0f);
+    ok &= testSupportInputFrames();
 
-        TestTransform rawLeftWandWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        rawLeftWandWorld.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ -0.4f, 0.7f, 0.2f }),
-            28.0f);
-        rawLeftWandWorld.translate = { 15.0f, -6.0f, 11.0f };
-        TestTransform referenceHandInWand =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        referenceHandInWand.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.6f, 0.1f, -0.5f }),
-            -19.0f);
-        referenceHandInWand.translate = { 2.0f, -5.0f, 3.0f };
-        const TestTransform rawReferenceHandWorld =
-            rock::transform_math::composeTransforms(
-                rawLeftWandWorld,
-                referenceHandInWand);
+    ok &= testPrimaryDriverFrames();
 
-        TestTransform hfrikDampingWorldDelta =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        hfrikDampingWorldDelta.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.2f, -0.3f, 0.8f }),
-            7.0f);
-        hfrikDampingWorldDelta.translate = { -4.0f, 9.0f, 1.0f };
-        const TestTransform dampedPhysicalHandWorld =
-            rock::transform_math::composeTransforms(
-                hfrikDampingWorldDelta,
-                rawReferenceHandWorld);
-        const TestTransform dampedAimCarrierWorld =
-            rock::left_firing_position_only_math::
-                resolveDampedAimCarrierWorld(
-                    rawLeftWandWorld,
-                    referenceHandInWand,
-                    dampedPhysicalHandWorld);
-        TestTransform expectedDampedCarrierWorld = rawLeftWandWorld;
-        expectedDampedCarrierWorld.rotate =
-            rock::transform_math::composeTransforms(
-                rock::left_firing_position_only_math::orientationOnly(
-                    hfrikDampingWorldDelta),
-                rock::left_firing_position_only_math::orientationOnly(
-                    rawLeftWandWorld))
-                .rotate;
-        ok &= expectTransformNear(
-            "hFRIK damped follow applies only the observed hand rotation delta",
-            dampedAimCarrierWorld,
-            expectedDampedCarrierWorld);
-        ok &= expectTransformNear(
-            "zero hFRIK damping delta preserves the raw aim carrier",
-            rock::left_firing_position_only_math::
-                resolveDampedAimCarrierWorld(
-                    rawLeftWandWorld,
-                    referenceHandInWand,
-                    rawReferenceHandWorld),
-            rawLeftWandWorld);
+    ok &= testWeaponGripTransforms();
 
-        const TestTransform weaponOnDampedCarrier =
-            rock::transform_math::composeTransforms(
-                dampedAimCarrierWorld,
-                leftWeaponInWand);
-        const TestTransform weaponBackInDampedCarrier =
-            rock::transform_math::composeTransforms(
-                rock::transform_math::invertTransform(
-                    dampedAimCarrierWorld),
-                weaponOnDampedCarrier);
-        ok &= expectTransformNear(
-            "shared damping preserves mirrored weapon aim in the corrected carrier",
-            weaponBackInDampedCarrier,
-            leftWeaponInWand);
-
-        TestTransform leftWandWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        leftWandWorld.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.3f, 0.7f, -0.2f }),
-            23.0f);
-        leftWandWorld.translate = { 40.0f, -12.0f, 9.0f };
-
-        TestTransform liveWeaponWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        liveWeaponWorld.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            -67.0f);
-        liveWeaponWorld.translate = { -100.0f, 55.0f, 13.0f };
-        liveWeaponWorld.scale = 1.25f;
-        const TestVector3 firingGripWeaponLocal{ 2.0f, 6.0f, -1.0f };
-        const TestVector3 physicalLeftGripTargetWorld{ 18.0f, 27.0f, 33.0f };
-        const TestTransform solvedLeftWeapon =
-            rock::left_firing_position_only_math::
-                resolveWeaponWorldPositionOnly(
-                    leftWandWorld,
-                    leftWeaponInWand,
-                    liveWeaponWorld,
-                    firingGripWeaponLocal,
-                    physicalLeftGripTargetWorld);
-        const TestVector3 solvedGripWorld =
-            rock::transform_math::localPointToWorld(
-                solvedLeftWeapon,
-                firingGripWeaponLocal);
-        ok &= expectVectorNear(
-            "left position-only weapon solve seats authored firing point",
-            solvedGripWorld,
-            physicalLeftGripTargetWorld);
-        ok &= expectNear(
-            "left position-only weapon solve preserves live weapon scale",
-            solvedLeftWeapon.scale,
-            liveWeaponWorld.scale);
-
-        TestTransform expectedLeftWeaponOrientation =
-            rock::transform_math::composeTransforms(
-                leftWandWorld,
-                leftWeaponInWand);
-        expectedLeftWeaponOrientation.translate = solvedLeftWeapon.translate;
-        expectedLeftWeaponOrientation.scale = liveWeaponWorld.scale;
-        ok &= expectTransformNear(
-            "left weapon orientation depends only on native aim, not authored wrist",
-            solvedLeftWeapon,
-            expectedLeftWeaponOrientation);
-
-        TestTransform authoredLeftWristA =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        authoredLeftWristA.translate = { 1.5f, -2.0f, 0.75f };
-        TestTransform authoredLeftWristB = authoredLeftWristA;
-        authoredLeftWristB.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            47.0f);
-        const TestTransform solvedAfterAuthoredWristChange =
-            rock::left_firing_position_only_math::
-                resolveWeaponWorldPositionOnly(
-                    leftWandWorld,
-                    leftWeaponInWand,
-                    liveWeaponWorld,
-                    firingGripWeaponLocal,
-                    physicalLeftGripTargetWorld);
-        ok &= expectTransformNear(
-            "authored wrist rotation cannot alter left weapon aim",
-            solvedAfterAuthoredWristChange,
-            solvedLeftWeapon);
-
-        const TestTransform presentedLeftWristA =
-            rock::transform_math::composeTransforms(
-                solvedLeftWeapon,
-                authoredLeftWristA);
-        const TestTransform presentedLeftWristB =
-            rock::transform_math::composeTransforms(
-                solvedLeftWeapon,
-                authoredLeftWristB);
-        const TestVector3 presentedFingerAxisA =
-            rock::transform_math::localVectorToWorld(
-                presentedLeftWristA,
-                TestVector3{ 0.0f, 1.0f, 0.0f });
-        const TestVector3 presentedFingerAxisB =
-            rock::transform_math::localVectorToWorld(
-                presentedLeftWristB,
-                TestVector3{ 0.0f, 1.0f, 0.0f });
-        const TestVector3 presentedAxisDelta{
-            presentedFingerAxisA.x - presentedFingerAxisB.x,
-            presentedFingerAxisA.y - presentedFingerAxisB.y,
-            presentedFingerAxisA.z - presentedFingerAxisB.z,
-        };
-        ok &= expectTrue(
-            "authored wrist rotation remains visible on the presented hand",
-            std::sqrt(
-                presentedAxisDelta.x * presentedAxisDelta.x +
-                presentedAxisDelta.y * presentedAxisDelta.y +
-                presentedAxisDelta.z * presentedAxisDelta.z) >
-                0.1f);
-    }
-
-    {
-        /*
-         * Support release on the left carry: the last rendered two-hand pose
-         * rides the physical firing hand and eases into the wand-aimed
-         * position-only pose while the firing grip stays on the hand.
-         */
-        const TestVector3 firingGripWeaponLocal{ 2.0f, -4.0f, -4.0f };
-        const TestVector3 gripHandLocal{ 1.0f, 4.0f, 0.5f };
-        const auto seatGripOnHand = [&](TestTransform weaponInHand) {
-            const TestVector3 gripWithoutTranslation =
-                rock::transform_math::localPointToWorld(
-                    rock::left_firing_position_only_math::orientationOnly(
-                        weaponInHand),
-                    TestVector3{
-                        firingGripWeaponLocal.x * weaponInHand.scale,
-                        firingGripWeaponLocal.y * weaponInHand.scale,
-                        firingGripWeaponLocal.z * weaponInHand.scale });
-            weaponInHand.translate = {
-                gripHandLocal.x - gripWithoutTranslation.x,
-                gripHandLocal.y - gripWithoutTranslation.y,
-                gripHandLocal.z - gripWithoutTranslation.z,
-            };
-            return weaponInHand;
-        };
-
-        TestTransform twoHandWeaponInHand =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        twoHandWeaponInHand.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 0.0f, 1.0f },
-            40.0f);
-        twoHandWeaponInHand.scale = 1.25f;
-        twoHandWeaponInHand = seatGripOnHand(twoHandWeaponInHand);
-        TestTransform wandAimedWeaponInHand =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        wandAimedWeaponInHand.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            -5.0f);
-        wandAimedWeaponInHand.scale = 1.25f;
-        wandAimedWeaponInHand = seatGripOnHand(wandAimedWeaponInHand);
-
-        TestTransform handAtRelease =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        handAtRelease.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(TestVector3{ 0.2f, -0.6f, 0.4f }),
-            35.0f);
-        handAtRelease.translate = { 12.0f, -4.0f, 30.0f };
-        const TestTransform renderedTwoHandWeapon =
-            rock::transform_math::composeTransforms(
-                handAtRelease,
-                twoHandWeaponInHand);
-        const TestTransform startHandLocal =
-            rock::left_firing_position_only_math::
-                weaponWorldToPhysicalHandLocal(
-                    handAtRelease,
-                    renderedTwoHandWeapon);
-        ok &= expectTransformNear(
-            "left carry return start captures the rendered pose in the hand frame",
-            startHandLocal,
-            twoHandWeaponInHand);
-
-        TestTransform handLater =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        handLater.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(TestVector3{ -0.3f, 0.5f, 0.8f }),
-            -22.0f);
-        handLater.translate = { 20.0f, 3.0f, 26.0f };
-        const TestTransform positionOnlyWeapon =
-            rock::transform_math::composeTransforms(
-                handLater,
-                wandAimedWeaponInHand);
-        const TestTransform targetHandLocal =
-            rock::left_firing_position_only_math::
-                weaponWorldToPhysicalHandLocal(
-                    handLater,
-                    positionOnlyWeapon);
-        const auto blendedWeaponAt = [&](const float alpha) {
-            return rock::left_firing_position_only_math::
-                physicalHandLocalToWeaponWorld(
-                    handLater,
-                    rock::hand_visual_lerp_math::interpolateTransform(
-                        startHandLocal,
-                        targetHandLocal,
-                        alpha),
-                    positionOnlyWeapon.scale);
-        };
-        ok &= expectTransformNear(
-            "left carry return start rides the moved firing hand",
-            blendedWeaponAt(0.0f),
-            rock::transform_math::composeTransforms(
-                handLater,
-                twoHandWeaponInHand));
-        ok &= expectTransformNear(
-            "left carry return ends on the wand-aimed pose",
-            blendedWeaponAt(1.0f),
-            positionOnlyWeapon);
-
-        const TestVector3 physicalGripWorld =
-            rock::transform_math::localPointToWorld(
-                handLater,
-                gripHandLocal);
-        for (const float alpha : { 0.25f, 0.5f, 0.75f }) {
-            const TestVector3 blendedGripWorld =
-                rock::transform_math::localPointToWorld(
-                    blendedWeaponAt(alpha),
-                    firingGripWeaponLocal);
-            const TestVector3 gripDrift{
-                blendedGripWorld.x - physicalGripWorld.x,
-                blendedGripWorld.y - physicalGripWorld.y,
-                blendedGripWorld.z - physicalGripWorld.z,
-            };
-            ok &= expectTrue(
-                "left carry return keeps the firing grip on the hand",
-                std::sqrt(
-                    gripDrift.x * gripDrift.x +
-                    gripDrift.y * gripDrift.y +
-                    gripDrift.z * gripDrift.z) < 1.0f);
-        }
-    }
-
-    {
-        // Weapon pose handoff residual: firing-grip detach into part carry
-        // and reattach into the two-hand solve ease from the rendered pose.
-        const TestTransform identity =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        TestTransform renderedWeapon = identity;
-        renderedWeapon.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(TestVector3{ 0.3f, 0.2f, -0.9f }),
-            40.0f);
-        renderedWeapon.translate = { 10.0f, -5.0f, 30.0f };
-        TestTransform solvedWeapon = identity;
-        solvedWeapon.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(TestVector3{ -0.5f, 0.7f, 0.4f }),
-            -25.0f);
-        solvedWeapon.translate = { 14.0f, -1.0f, 27.0f };
-
-        const TestTransform residual =
-            rock::hand_visual_lerp_math::captureHandoffResidualLocal(
-                solvedWeapon,
-                renderedWeapon);
-        ok &= expectTransformNear(
-            "handoff residual alpha zero reproduces the rendered pose",
-            rock::hand_visual_lerp_math::applyHandoffResidual(
-                solvedWeapon,
-                residual,
-                0.0f),
-            renderedWeapon);
-        ok &= expectTransformNear(
-            "handoff residual alpha one lands on the solve",
-            rock::hand_visual_lerp_math::applyHandoffResidual(
-                solvedWeapon,
-                residual,
-                1.0f),
-            solvedWeapon);
-
-        TestTransform movedSolvedWeapon = identity;
-        movedSolvedWeapon.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(TestVector3{ 0.1f, 0.9f, 0.3f }),
-            15.0f);
-        movedSolvedWeapon.translate = { 20.0f, 3.0f, 26.0f };
-        ok &= expectTransformNear(
-            "handoff residual rides the moved solve",
-            rock::hand_visual_lerp_math::applyHandoffResidual(
-                movedSolvedWeapon,
-                residual,
-                0.0f),
-            rock::transform_math::composeTransforms(
-                movedSolvedWeapon,
-                residual));
-
-        const float fullResidualDegrees =
-            rock::hand_visual_lerp_math::rotationDistanceDegrees(
-                residual,
-                identity);
-        ok &= expectTrue(
-            "handoff residual carries a measurable rotation",
-            fullResidualDegrees > 10.0f);
-        const TestTransform halfBlended =
-            rock::hand_visual_lerp_math::applyHandoffResidual(
-                solvedWeapon,
-                residual,
-                0.5f);
-        ok &= expectNear(
-            "handoff residual half alpha slerps half the rotation",
-            rock::hand_visual_lerp_math::rotationDistanceDegrees(
-                halfBlended,
-                solvedWeapon),
-            fullResidualDegrees * 0.5f,
-            0.01f);
-
-        const float residualDuration =
-            rock::hand_visual_lerp_math::computeVisualReturnDuration(
-                residual,
-                identity,
-                rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig);
-        ok &= expectTrue(
-            "handoff residual outside tolerance blends within the return window",
-            residualDuration >= 0.12f && residualDuration <= 0.20f);
-        TestTransform exactResidual = identity;
-        exactResidual.translate = { 0.2f, -0.1f, 0.3f };
-        exactResidual.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(TestVector3{ 0.0f, 0.0f, 1.0f }),
-            2.0f);
-        ok &= expectNear(
-            "handoff residual inside tolerance needs no blend",
-            rock::hand_visual_lerp_math::computeVisualReturnDuration(
-                exactResidual,
-                identity,
-                rock::hand_visual_lerp_math::kEquippedWeaponReturnConfig),
-            0.0f);
-    }
-
-    {
-        TestTransform supportInputAtAttach =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportInputAtAttach.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.3f, -0.4f, 0.8f }),
-            37.0f);
-        supportInputAtAttach.translate = { 11.0f, -4.0f, 8.0f };
-
-        TestTransform supportGripTargetAtAttach =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportGripTargetAtAttach.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ -0.2f, 0.9f, 0.3f }),
-            -24.0f);
-        supportGripTargetAtAttach.translate = { -7.0f, 13.0f, 5.0f };
-
-        TestTransform inputToGripTargetLocal{};
-        ok &= expectTrue(
-            "support baseline captures damped support input to authored grip baseline",
-            rock::weapon_support_acquisition_math::
-                tryCaptureSupportInputBaseline(
-                    supportInputAtAttach,
-                    supportGripTargetAtAttach,
-                    inputToGripTargetLocal));
-
-        TestTransform resolvedAttachTarget{};
-        ok &= expectTrue(
-            "support baseline resolves captured support baseline",
-            rock::weapon_support_acquisition_math::
-                tryResolveSupportInputTarget(
-                    supportInputAtAttach,
-                    inputToGripTargetLocal,
-                    resolvedAttachTarget));
-        ok &= expectTransformNear(
-            "support baseline unchanged support input reproduces exact authored target",
-            resolvedAttachTarget,
-            supportGripTargetAtAttach);
-
-        TestTransform laterWorldDelta =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        laterWorldDelta.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.7f, 0.1f, -0.5f }),
-            29.0f);
-        laterWorldDelta.translate = { 2.0f, -3.0f, 1.5f };
-        const TestTransform movedSupportInput =
-            rock::transform_math::composeTransforms(
-                laterWorldDelta,
-                supportInputAtAttach);
-        const TestTransform expectedMovedTarget =
-            rock::transform_math::composeTransforms(
-                laterWorldDelta,
-                supportGripTargetAtAttach);
-        TestTransform resolvedMovedTarget{};
-        ok &= expectTrue(
-            "support baseline resolves post-attach support delta",
-            rock::weapon_support_acquisition_math::
-                tryResolveSupportInputTarget(
-                    movedSupportInput,
-                    inputToGripTargetLocal,
-                    resolvedMovedTarget));
-        ok &= expectTransformNear(
-            "support baseline carries only the post-attach rigid support delta",
-            resolvedMovedTarget,
-            expectedMovedTarget);
-
-        TestTransform degenerateInput = supportInputAtAttach;
-        degenerateInput.scale = 0.0f;
-        ok &= expectFalse(
-            "support baseline rejects degenerate support input at capture",
-            rock::weapon_support_acquisition_math::
-                tryCaptureSupportInputBaseline(
-                    degenerateInput,
-                    supportGripTargetAtAttach,
-                    inputToGripTargetLocal));
-
-        TestTransform nonFiniteRelation = inputToGripTargetLocal;
-        nonFiniteRelation.translate.x =
-            (std::numeric_limits<float>::quiet_NaN)();
-        ok &= expectFalse(
-            "support baseline rejects non-finite captured support baseline",
-            rock::weapon_support_acquisition_math::
-                tryResolveSupportInputTarget(
-                    supportInputAtAttach,
-                    nonFiniteRelation,
-                    resolvedMovedTarget));
-    }
-
-    {
-        TestTransform primaryDriver =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        primaryDriver.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 0.0f, 1.0f },
-            14.0f);
-        primaryDriver.translate = { 2.0f, -5.0f, 7.0f };
-        TestTransform supportDriver =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportDriver.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 1.0f, 0.0f },
-            -31.0f);
-        supportDriver.translate = { -4.0f, 12.0f, 3.0f };
-
-        TestTransform primaryTarget =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        primaryTarget.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            22.0f);
-        primaryTarget.translate = { 8.0f, 1.0f, -2.0f };
-        TestTransform supportTarget =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportTarget.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.3f, 0.7f, -0.2f }),
-            -19.0f);
-        supportTarget.translate = { -9.0f, 6.0f, 11.0f };
-
-        TestTransform primaryRelation{};
-        TestTransform supportRelation{};
-        ok &= expectTrue(
-            "dynamic support captures both controller-driver relations atomically",
-            rock::weapon_support_acquisition_math::
-                tryCaptureDynamicSupportDriverBaseline(
-                    primaryDriver,
-                    primaryTarget,
-                    supportDriver,
-                    supportTarget,
-                    primaryRelation,
-                    supportRelation));
-
-        TestTransform resolvedPrimary{};
-        TestTransform resolvedSupport{};
-        ok &= expectTrue(
-            "dynamic support resolves both controller-driver targets atomically",
-            rock::weapon_support_acquisition_math::
-                tryResolveDynamicSupportDriverTargets(
-                    primaryDriver,
-                    primaryRelation,
-                    supportDriver,
-                    supportRelation,
-                    resolvedPrimary,
-                    resolvedSupport));
-        ok &= expectTransformNear(
-            "unchanged primary driver reproduces captured primary target",
-            resolvedPrimary,
-            primaryTarget);
-        ok &= expectTransformNear(
-            "unchanged support driver reproduces captured support target",
-            resolvedSupport,
-            supportTarget);
-
-        TestTransform primaryDelta =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        primaryDelta.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 1.0f, 0.0f },
-            9.0f);
-        primaryDelta.translate = { 3.0f, 0.0f, -1.0f };
-        TestTransform supportDelta =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportDelta.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            -12.0f);
-        supportDelta.translate = { -2.0f, 4.0f, 0.5f };
-        const TestTransform movedPrimaryDriver =
-            rock::transform_math::composeTransforms(
-                primaryDelta,
-                primaryDriver);
-        const TestTransform movedSupportDriver =
-            rock::transform_math::composeTransforms(
-                supportDelta,
-                supportDriver);
-        ok &= expectTrue(
-            "dynamic support resolves independent post-capture driver deltas",
-            rock::weapon_support_acquisition_math::
-                tryResolveDynamicSupportDriverTargets(
-                    movedPrimaryDriver,
-                    primaryRelation,
-                    movedSupportDriver,
-                    supportRelation,
-                    resolvedPrimary,
-                    resolvedSupport));
-        ok &= expectTransformNear(
-            "primary target follows only primary driver delta",
-            resolvedPrimary,
-            rock::transform_math::composeTransforms(
-                primaryDelta,
-                primaryTarget));
-        ok &= expectTransformNear(
-            "support target follows only support driver delta",
-            resolvedSupport,
-            rock::transform_math::composeTransforms(
-                supportDelta,
-                supportTarget));
-
-        TestTransform invalidSupportDriver = supportDriver;
-        invalidSupportDriver.scale = 0.0f;
-        ok &= expectFalse(
-            "dynamic support fails closed when either current driver is invalid",
-            rock::weapon_support_acquisition_math::
-                tryResolveDynamicSupportDriverTargets(
-                    primaryDriver,
-                    primaryRelation,
-                    invalidSupportDriver,
-                    supportRelation,
-                    resolvedPrimary,
-                    resolvedSupport));
-    }
-
-    {
-        TestTransform weaponWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        weaponWorld.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 0.0f, 1.0f },
-            18.0f);
-        weaponWorld.translate = { 4.0f, -6.0f, 2.0f };
-        const TestVector3 primaryGripLocal{ 0.0f, 0.0f, 0.0f };
-        const TestVector3 supportGripLocal{ 0.0f, 12.0f, 0.0f };
-        const TestVector3 supportNormalLocal{ 1.0f, 0.0f, 0.0f };
-        const TestVector3 primaryTargetWorld =
-            rock::transform_math::localPointToWorld(
-                weaponWorld,
-                primaryGripLocal);
-        const TestVector3 supportGripWorld =
-            rock::transform_math::localPointToWorld(
-                weaponWorld,
-                supportGripLocal);
-
-        TestTransform supportGripHandWorld = weaponWorld;
-        supportGripHandWorld.translate = supportGripWorld;
-        TestTransform dampedSupportInput =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        dampedSupportInput.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 1.0f, 0.0f },
-            -41.0f);
-        dampedSupportInput.translate = { 20.0f, 7.0f, -3.0f };
-
-        TestTransform inputToGripTargetLocal{};
-        TestTransform calibratedSupportTarget{};
-        ok &= expectTrue(
-            "support baseline solver test captures authored hand target",
-            rock::weapon_support_acquisition_math::
-                tryCaptureSupportInputBaseline(
-                    dampedSupportInput,
-                    supportGripHandWorld,
-                    inputToGripTargetLocal));
-        ok &= expectTrue(
-            "support baseline solver test resolves authored hand target",
-            rock::weapon_support_acquisition_math::
-                tryResolveSupportInputTarget(
-                    dampedSupportInput,
-                    inputToGripTargetLocal,
-                    calibratedSupportTarget));
-
-        const TestVector3 lockedSupportTarget =
-            rock::makeLockedSupportGripTarget(
-                primaryTargetWorld,
-                calibratedSupportTarget.translate,
-                supportGripWorld,
-                rock::weaponSolverLength(
-                    rock::weaponSolverSub(
-                        supportGripWorld,
-                        primaryTargetWorld)),
-                0.001f);
-        rock::WeaponTwoHandedSolverInput<
-            TestTransform,
-            TestVector3> solverInput{};
-        solverInput.weaponWorldTransform = weaponWorld;
-        solverInput.primaryGripLocal = primaryGripLocal;
-        solverInput.supportGripLocal = supportGripLocal;
-        solverInput.primaryTargetWorld = primaryTargetWorld;
-        solverInput.supportTargetWorld = lockedSupportTarget;
-        solverInput.supportNormalLocal = supportNormalLocal;
-        solverInput.supportNormalTargetWorld =
-            rock::transform_math::localVectorToWorld(
-                calibratedSupportTarget,
-                supportNormalLocal);
-        solverInput.useSupportNormalTwist = true;
-        solverInput.supportNormalTwistFactor = 0.5f;
-
-        const auto attachSolve =
-            rock::solveTwoHandedWeaponTransformFrikPivot(solverInput);
-        ok &= expectTrue(
-            "support baseline calibrated attach target solves",
-            attachSolve.solved);
-        ok &= expectTransformNear(
-            "support baseline calibrated attach target leaves weapon unchanged",
-            attachSolve.weaponWorldTransform,
-            weaponWorld);
-    }
-
-    {
-        const TestTransform weaponAtAttach =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        const TestVector3 primaryGripLocal{ 0.0f, 0.0f, 0.0f };
-        const TestVector3 supportGripLocal{ 0.0f, 10.0f, 0.0f };
-        const TestVector3 supportNormalLocal{ 1.0f, 0.0f, 0.0f };
-
-        TestTransform supportGripHandAtAttach = weaponAtAttach;
-        supportGripHandAtAttach.translate = supportGripLocal;
-        TestTransform supportInputAtAttach =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportInputAtAttach.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            45.0f);
-        supportInputAtAttach.translate = { 7.0f, 3.0f, -2.0f };
-
-        TestTransform inputToGripTargetLocal{};
-        ok &= expectTrue(
-            "support baseline tandem test captures attach baseline",
-            rock::weapon_support_acquisition_math::
-                tryCaptureSupportInputBaseline(
-                    supportInputAtAttach,
-                    supportGripHandAtAttach,
-                    inputToGripTargetLocal));
-
-        TestTransform supportDelta =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportDelta.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 0.0f, 1.0f },
-            30.0f);
-        const TestTransform movedSupportInput =
-            rock::transform_math::composeTransforms(
-                supportDelta,
-                supportInputAtAttach);
-        TestTransform movedCalibratedTarget{};
-        ok &= expectTrue(
-            "support baseline tandem test resolves moved support input",
-            rock::weapon_support_acquisition_math::
-                tryResolveSupportInputTarget(
-                    movedSupportInput,
-                    inputToGripTargetLocal,
-                    movedCalibratedTarget));
-
-        rock::WeaponTwoHandedSolverInput<
-            TestTransform,
-            TestVector3> solverInput{};
-        solverInput.weaponWorldTransform = weaponAtAttach;
-        solverInput.primaryGripLocal = primaryGripLocal;
-        solverInput.supportGripLocal = supportGripLocal;
-        solverInput.primaryTargetWorld = primaryGripLocal;
-        solverInput.supportTargetWorld =
-            rock::makeLockedSupportGripTarget(
-                primaryGripLocal,
-                movedCalibratedTarget.translate,
-                supportGripLocal,
-                10.0f,
-                0.001f);
-        solverInput.supportNormalLocal = supportNormalLocal;
-        solverInput.supportNormalTargetWorld =
-            rock::transform_math::localVectorToWorld(
-                movedCalibratedTarget,
-                supportNormalLocal);
-        solverInput.useSupportNormalTwist = true;
-        solverInput.supportNormalTwistFactor = 0.5f;
-
-        const auto movedSolve =
-            rock::solveTwoHandedWeaponTransformFrikPivot(solverInput);
-        ok &= expectTrue(
-            "support baseline post-attach tandem delta solves",
-            movedSolve.solved);
-        ok &= expectTransformNear(
-            "support baseline post-attach support delta drives existing tandem solver",
-            movedSolve.weaponWorldTransform,
-            supportDelta);
-        ok &= expectVectorNear(
-            "support baseline tandem delta keeps primary pivot fixed",
-            rock::transform_math::localPointToWorld(
-                movedSolve.weaponWorldTransform,
-                primaryGripLocal),
-            primaryGripLocal);
-    }
+    ok &= testAttachRelativeFrames();
 
     ok &= expectTrue("one-hand sword is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kOneHandSword));
     ok &= expectTrue("two-hand axe is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kTwoHandAxe));
     ok &= expectFalse("gun does not bit-alias melee", rock::weapon_type_policy::isMelee(TestWeaponType::kGun));
     ok &= expectFalse("grenade is not melee", rock::weapon_type_policy::isMelee(TestWeaponType::kGrenade));
 
-    {
-        TestTransform liveHandWorld = rock::transform_math::makeIdentityTransform<TestTransform>();
-        liveHandWorld.translate = { 10.0f, 5.0f, -2.0f };
-        const TestVector3 livePalmPivot{ 12.0f, 8.0f, 1.0f };
-        const TestVector3 selectedGripPoint{ 18.0f, 6.0f, 5.0f };
+    ok &= testLiveHandDriver();
 
-        TestTransform partWorld = rock::transform_math::makeIdentityTransform<TestTransform>();
-        partWorld.translate = { 30.0f, 40.0f, 50.0f };
-        partWorld.rotate.entry[0][0] = 0.0f;
-        partWorld.rotate.entry[0][1] = 1.0f;
-        partWorld.rotate.entry[1][0] = -1.0f;
-        partWorld.rotate.entry[1][1] = 0.0f;
-        partWorld.scale = 1.25f;
-
-        const TestTransform seatedHandWorld = rock::weapon_two_handed_grip_math::alignHandFrameToGripPoint(
-            liveHandWorld,
-            livePalmPivot,
-            selectedGripPoint);
-        const TestTransform virtualPartWorld = rock::weapon_two_handed_grip_math::virtualizeMeshForTranslatedHandSeat(
-            partWorld,
-            livePalmPivot,
-            selectedGripPoint);
-        const TestVector3 virtualGripPoint = rock::weapon_two_handed_grip_math::virtualizeGripPointForTranslatedHandSeat(
-            livePalmPivot,
-            selectedGripPoint);
-
-        ok &= expectNear("support grip seats hand translation x", seatedHandWorld.translate.x, 16.0f);
-        ok &= expectNear("support grip seats hand translation y", seatedHandWorld.translate.y, 3.0f);
-        ok &= expectNear("support grip seats hand translation z", seatedHandWorld.translate.z, 2.0f);
-        ok &= expectNear("support grip virtual mesh applies inverse seat x", virtualPartWorld.translate.x, 24.0f);
-        ok &= expectNear("support grip virtual mesh applies inverse seat y", virtualPartWorld.translate.y, 42.0f);
-        ok &= expectNear("support grip virtual mesh applies inverse seat z", virtualPartWorld.translate.z, 46.0f);
-        ok &= expectNear("support grip virtual seat resolves to live palm x", virtualGripPoint.x, livePalmPivot.x);
-        ok &= expectNear("support grip virtual seat resolves to live palm y", virtualGripPoint.y, livePalmPivot.y);
-        ok &= expectNear("support grip virtual seat resolves to live palm z", virtualGripPoint.z, livePalmPivot.z);
-        ok &= expectNear("support grip virtual mesh preserves scale", virtualPartWorld.scale, partWorld.scale);
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                ok &= expectNear("support grip virtual mesh preserves rotation", virtualPartWorld.rotate.entry[row][column], partWorld.rotate.entry[row][column]);
-            }
-        }
-
-        const TestVector3 finalGripFromHand{
-            selectedGripPoint.x - seatedHandWorld.translate.x,
-            selectedGripPoint.y - seatedHandWorld.translate.y,
-            selectedGripPoint.z - seatedHandWorld.translate.z,
-        };
-        const TestVector3 virtualGripFromHand{
-            virtualGripPoint.x - liveHandWorld.translate.x,
-            virtualGripPoint.y - liveHandWorld.translate.y,
-            virtualGripPoint.z - liveHandWorld.translate.z,
-        };
-        ok &= expectNear("support grip frozen solve preserves final hand/mesh relation x", virtualGripFromHand.x, finalGripFromHand.x);
-        ok &= expectNear("support grip frozen solve preserves final hand/mesh relation y", virtualGripFromHand.y, finalGripFromHand.y);
-        ok &= expectNear("support grip frozen solve preserves final hand/mesh relation z", virtualGripFromHand.z, finalGripFromHand.z);
-    }
-
-    {
-        TestTransform rawHandWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        rawHandWorld.translate = { 10.0f, -5.0f, 3.0f };
-        const TestVector3 palmPivotWorld{ 12.0f, -5.0f, 3.0f };
-        const TestVector3 palmNormalWorld{ 1.0f, 0.0f, 0.0f };
-        const TestVector3 surfaceNormalWorld{ 0.0f, -1.0f, 0.0f };
-        const TestVector3 targetGripPointWorld{ 30.0f, 9.0f, -4.0f };
-        constexpr float kThirtyDegreesRadians =
-            0.52359877559829887308f;
-
-        const auto seated =
-            rock::weapon_support_acquisition_math::
-                alignHandFrameToGripSurface<
-                    TestTransform,
-                    TestVector3>(
-                    rawHandWorld,
-                    palmPivotWorld,
-                    palmNormalWorld,
-                    targetGripPointWorld,
-                    surfaceNormalWorld,
-                    kThirtyDegreesRadians);
-        ok &= expectTrue(
-            "support surface seat produces a finite hand frame",
-            seated.valid);
-        ok &= expectNear(
-            "support surface seat clamps wrist swing",
-            seated.appliedRotationRadians,
-            kThirtyDegreesRadians);
-
-        const TestVector3 rawOriginToPalm =
-            rock::weaponSolverSub(
-                palmPivotWorld,
-                rawHandWorld.translate);
-        const TestVector3 seatedPalmPoint =
-            rock::weaponSolverAdd(
-                seated.handWorld.translate,
-                rock::weaponSolverApplyStoredWorldRotationToVector<
-                    TestMatrix3,
-                    TestVector3>(
-                    seated.handWorld.rotate,
-                    rawOriginToPalm));
-        ok &= expectVectorNear(
-            "support surface seat preserves exact palm contact pivot",
-            seatedPalmPoint,
-            targetGripPointWorld);
-
-        const TestVector3 seatedPalmNormal =
-            rock::weaponSolverNormalize(
-                rock::weaponSolverApplyStoredWorldRotationToVector<
-                    TestMatrix3,
-                    TestVector3>(
-                    seated.handWorld.rotate,
-                    palmNormalWorld));
-        ok &= expectNear(
-            "support surface seat rotates palm toward inward normal",
-            rock::weaponSolverDot(
-                seatedPalmNormal,
-                TestVector3{ 0.0f, 1.0f, 0.0f }),
-            0.5f);
-
-        TestTransform weaponWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        weaponWorld.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.2f, 0.7f, -0.4f }),
-            23.0f);
-        weaponWorld.translate = { -40.0f, 70.0f, 18.0f };
-        weaponWorld.scale = 1.3f;
-        const TestVector3 meshPointLocal{ 4.0f, -3.0f, 2.0f };
-        const TestVector3 originalMeshPointWorld =
-            rock::transform_math::localPointToWorld(
-                weaponWorld,
-                meshPointLocal);
-        const TestTransform virtualWeaponWorld =
-            rock::weapon_two_handed_grip_math::
-                virtualizeMeshForSeatedHand(
-                    weaponWorld,
-                    rawHandWorld,
-                    seated.handWorld);
-        const TestVector3 virtualMeshPointWorld =
-            rock::transform_math::localPointToWorld(
-                virtualWeaponWorld,
-                meshPointLocal);
-        ok &= expectVectorNear(
-            "full surface seat virtualization preserves hand-mesh relation",
-            rock::transform_math::worldPointToLocal(
-                rawHandWorld,
-                virtualMeshPointWorld),
-            rock::transform_math::worldPointToLocal(
-                seated.handWorld,
-                originalMeshPointWorld));
-    }
+    ok &= testRawHandDriver();
 
     {
         TestTransform oneHandWeapon =
@@ -1578,75 +1891,7 @@ int main()
             oneHandWeapon);
     }
 
-    {
-        TestTransform oldWeaponWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        oldWeaponWorld.translate = { 8.0f, -3.0f, 4.0f };
-        oldWeaponWorld.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 0.0f, 1.0f },
-            25.0f);
-        oldWeaponWorld.scale = 1.2f;
-
-        TestTransform newWeaponWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        newWeaponWorld.translate = { -6.0f, 12.0f, 2.0f };
-        newWeaponWorld.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            -35.0f);
-        newWeaponWorld.scale = 0.85f;
-
-        TestTransform animatedPresentationWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        animatedPresentationWorld.translate = { 15.0f, 7.0f, -2.0f };
-        animatedPresentationWorld.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 1.0f, 0.0f },
-            48.0f);
-        animatedPresentationWorld.scale = 0.9f;
-
-        const TestTransform presentationWorldDelta =
-            rock::weapon_visual_authority_math::makePresentationWorldDelta(
-                oldWeaponWorld,
-                newWeaponWorld);
-        const TestTransform reframedPresentationWorld =
-            rock::weapon_visual_authority_math::applyPresentationWorldDelta(
-                presentationWorldDelta,
-                animatedPresentationWorld);
-        const TestTransform directReframedPresentationWorld =
-            rock::weapon_visual_authority_math::reframePresentationWorld(
-                oldWeaponWorld,
-                newWeaponWorld,
-                animatedPresentationWorld);
-        ok &= expectTransformNear(
-            "weapon presentation precomputed delta matches direct reframe",
-            reframedPresentationWorld,
-            directReframedPresentationWorld);
-
-        const TestTransform oldWeaponRelativePresentation =
-            rock::transform_math::composeTransforms(
-                rock::transform_math::invertTransform(oldWeaponWorld),
-                animatedPresentationWorld);
-        const TestTransform newWeaponRelativePresentation =
-            rock::transform_math::composeTransforms(
-                rock::transform_math::invertTransform(newWeaponWorld),
-                reframedPresentationWorld);
-        ok &= expectTransformNear(
-            "weapon presentation reframe preserves evaluated root-relative world",
-            newWeaponRelativePresentation,
-            oldWeaponRelativePresentation);
-
-        TestTransform staleAuthoredLocal =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        staleAuthoredLocal.translate = { 100.0f, 200.0f, 300.0f };
-        const TestTransform staleLocalRebuild =
-            rock::transform_math::composeTransforms(
-                newWeaponWorld,
-                staleAuthoredLocal);
-        ok &= expectTrue(
-            "weapon presentation reframe ignores stale descendant local",
-            std::fabs(
-                reframedPresentationWorld.translate.x -
-                staleLocalRebuild.translate.x) > 1.0f);
-    }
+    ok &= testWeaponPresentationDelta();
 
     {
         TestTransform nativeKickLocal =
@@ -3799,209 +4044,11 @@ int main()
         resolveEquippedWeaponStashCarryHand(false, false, false, false, false),
         SourceHand::None);
 
-    {
-        using namespace rock::weapon_part_grip_report_policy;
-        ok &= expectTrue("active non-attach part grip counts as carry", partGripCountsAsCarry(true, false));
-        ok &= expectFalse("attach-only part grip never counts as carry", partGripCountsAsCarry(true, true));
-        ok &= expectFalse("inactive part grip never counts as carry", partGripCountsAsCarry(false, false));
+    ok &= testPartGripReporting();
 
-        ok &= expectTrue("provider AttachOnly grab mode resolves attach-only",
-            providerGrabModeIsAttachOnly(true, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::AttachOnly)));
-        ok &= expectFalse("provider full-authority grab mode is not attach-only",
-            providerGrabModeIsAttachOnly(true, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::FullTwoHandAuthority)));
-        ok &= expectFalse("attach-only requires an active provider authority",
-            providerGrabModeIsAttachOnly(false, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::AttachOnly)));
+    ok &= testPartStructureIdentity();
 
-        ok &= expectEqual("firing hand in gripping state reports the firing grip",
-            resolveHandGripKind(true, false, false, true, false, false, false),
-            HandGripKind::FiringGrip);
-        ok &= expectEqual("firing hand in primary-only state reports the firing grip",
-            resolveHandGripKind(false, false, true, true, false, false, false),
-            HandGripKind::FiringGrip);
-        ok &= expectEqual("offhand full-authority support grip reports full authority",
-            resolveHandGripKind(true, false, false, false, true, false, false),
-            HandGripKind::SupportFullAuthority);
-        ok &= expectEqual("offhand visual-only support grip reports visual-only",
-            resolveHandGripKind(true, false, false, false, true, false, true),
-            HandGripKind::SupportVisualOnly);
-        ok &= expectEqual("attach-only grip reports attach-only in gripping state",
-            resolveHandGripKind(true, false, false, false, true, true, true),
-            HandGripKind::AttachOnly);
-        ok &= expectEqual("carry part grip in part-carry reports part carry",
-            resolveHandGripKind(false, true, false, false, true, false, false),
-            HandGripKind::PartCarry);
-        ok &= expectEqual("detached firing hand attach-only grip reports attach-only",
-            resolveHandGripKind(false, true, false, true, true, true, false),
-            HandGripKind::AttachOnly);
-        ok &= expectEqual("detached firing hand carry grip reports part carry",
-            resolveHandGripKind(false, true, false, true, true, false, false),
-            HandGripKind::PartCarry);
-        ok &= expectEqual("idle hand reports no grip",
-            resolveHandGripKind(false, false, false, false, false, false, false),
-            HandGripKind::None);
-        ok &= expectEqual("firing hand without part grip in part-carry reports no grip",
-            resolveHandGripKind(false, true, false, true, false, false, false),
-            HandGripKind::None);
-    }
-
-    {
-        using namespace rock::weapon_part_record_identity_policy;
-        ok &= expectEqual("P-Mag resolves the magazine slot anchor",
-            resolveStructureAnchor("P-Mag"), StructureAnchor::SlotMagazine);
-        ok &= expectEqual("P-Stock resolves the rear-furniture slot anchor",
-            resolveStructureAnchor("P-Stock"), StructureAnchor::SlotRearFurniture);
-        ok &= expectEqual("P-Barrel resolves the barrel slot anchor",
-            resolveStructureAnchor("P-Barrel"), StructureAnchor::SlotBarrel);
-        ok &= expectEqual("P-Compensator resolves the muzzle slot anchor",
-            resolveStructureAnchor("P-Compensator"), StructureAnchor::SlotMuzzle);
-        ok &= expectEqual("P-Bipod resolves the dedicated bipod slot anchor",
-            resolveStructureAnchor("P-Bipod"), StructureAnchor::SlotBipod);
-        ok &= expectEqual("mod-prefixed bipod connect point resolves the bipod slot anchor",
-            resolveStructureAnchor("P-SV98Bipod"), StructureAnchor::SlotBipod);
-        ok &= expectEqual("WeaponBolt resolves the bolt rig anchor",
-            resolveStructureAnchor("WeaponBolt"), StructureAnchor::RigBolt);
-        ok &= expectEqual("WeaponMagazineChild3 resolves the magazine display rig anchor",
-            resolveStructureAnchor("WeaponMagazineChild3"), StructureAnchor::RigMagazineDisplay);
-        ok &= expectEqual("dedicated magazine slot outranks its internal display rig",
-            chooseStructureAnchor(StructureAnchor::SlotMagazine, StructureAnchor::RigMagazineDisplay), StructureAnchor::SlotMagazine);
-        ok &= expectEqual("bolt rig outranks the catch-all receiver slot",
-            chooseStructureAnchor(StructureAnchor::SlotReceiver, StructureAnchor::RigBolt), StructureAnchor::RigBolt);
-        ok &= expectEqual("unknown mod-added connect point resolves no anchor",
-            resolveStructureAnchor("P-CustomThing"), StructureAnchor::None);
-        ok &= expectEqual("plain mesh name resolves no anchor",
-            resolveStructureAnchor("AK74M_Body"), StructureAnchor::None);
-        ok &= expectTrue("standard barrel attach point recovers a P-Barrel node",
-            canonicalConnectPointForAttachPoint(kAttachPointBarrel) == "P-Barrel");
-        ok &= expectTrue("muzzle recovery reads parent metadata from the installed barrel",
-            recoveryProviderAttachPointForAttachPoint(kAttachPointMuzzle) == kAttachPointBarrel);
-        ok &= expectTrue("magazine recovery reads parent metadata from the installed receiver",
-            recoveryProviderAttachPointForAttachPoint(kAttachPointMagazine) == kAttachPointReceiver);
-        ok &= expectTrue("receiver recovery precedes dependent barrel recovery",
-            recoveryDependencyRank(kAttachPointReceiver) < recoveryDependencyRank(kAttachPointBarrel));
-        ok &= expectTrue("barrel recovery precedes dependent muzzle recovery",
-            recoveryDependencyRank(kAttachPointBarrel) < recoveryDependencyRank(kAttachPointMuzzle));
-        ok &= expectTrue("custom attach points do not synthesize guessed nodes",
-            canonicalConnectPointForAttachPoint(0xFE123456).empty());
-
-        const auto otherByName = rock::classifyWeaponPartKind(rock::WeaponPartKind::Other);
-        const auto magFromSlot = applyStructureAnchor(otherByName, StructureAnchor::SlotMagazine);
-        ok &= expectEqual("magazine slot classifies an unnamed part as magazine",
-            magFromSlot.partKind, rock::WeaponPartKind::Magazine);
-        ok &= expectEqual("magazine slot classification is slot-sourced",
-            magFromSlot.classificationSource, rock::WeaponPartClassificationSource::SlotAnchor);
-        ok &= expectEqual("magazine slot carries the vanilla attach-point form id",
-            magFromSlot.attachPointFormId, kAttachPointMagazine);
-        const auto cartridgeKeptInMagazineSlot = applyStructureAnchor(
-            rock::classifyWeaponPartKind(rock::WeaponPartKind::Round), StructureAnchor::SlotMagazine);
-        ok &= expectEqual("magazine slot preserves an explicitly named cartridge",
-            cartridgeKeptInMagazineSlot.partKind, rock::WeaponPartKind::Round);
-        const auto cosmeticBulletKeptInMagazineSlot = applyStructureAnchor(
-            rock::classifyWeaponPartKind(rock::WeaponPartKind::CosmeticAmmo), StructureAnchor::SlotMagazine);
-        ok &= expectEqual("magazine slot preserves explicitly cosmetic bullet geometry",
-            cosmeticBulletKeptInMagazineSlot.partKind, rock::WeaponPartKind::CosmeticAmmo);
-
-        const auto receiverByWeakToken = rock::classifyWeaponPartKind(rock::WeaponPartKind::Receiver);
-        const auto barrelOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotBarrel);
-        ok &= expectEqual("barrel slot overrides a weak receiver name match",
-            barrelOverride.partKind, rock::WeaponPartKind::Barrel);
-        const auto muzzleOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotMuzzle);
-        ok &= expectEqual("muzzle slot classifies its physical module separately from the barrel",
-            muzzleOverride.partKind, rock::WeaponPartKind::MuzzleDevice);
-        ok &= expectEqual("muzzle slot carries the vanilla attach-point form id",
-            muzzleOverride.attachPointFormId, kAttachPointMuzzle);
-
-        const auto slideByName = rock::classifyWeaponPartKind(rock::WeaponPartKind::Slide);
-        const auto slideKept = applyStructureAnchor(slideByName, StructureAnchor::RigBolt);
-        ok &= expectEqual("action-named part keeps its name under the bolt rig",
-            slideKept.partKind, rock::WeaponPartKind::Slide);
-        ok &= expectEqual("kept action name stays name-sourced",
-            slideKept.classificationSource, rock::WeaponPartClassificationSource::NameToken);
-        const auto pumpKept = applyStructureAnchor(
-            rock::classifyWeaponPartKind(rock::WeaponPartKind::Pump), StructureAnchor::SlotHandguard);
-        ok &= expectEqual("pump keeps its action role inside the handguard slot",
-            pumpKept.partKind, rock::WeaponPartKind::Pump);
-
-        const auto receiverFill = applyStructureAnchor(otherByName, StructureAnchor::SlotReceiver);
-        ok &= expectEqual("receiver slot fills unclassified parts",
-            receiverFill.partKind, rock::WeaponPartKind::Receiver);
-        const auto stockKeptOverReceiver = applyStructureAnchor(
-            rock::classifyWeaponPartKind(rock::WeaponPartKind::Stock), StructureAnchor::SlotReceiver);
-        ok &= expectEqual("receiver slot never overrides a critical name match",
-            stockKeptOverReceiver.partKind, rock::WeaponPartKind::Stock);
-
-        const auto roundKept = applyStructureAnchor(
-            rock::classifyWeaponPartKind(rock::WeaponPartKind::Round), StructureAnchor::RigMagazineDisplay);
-        ok &= expectEqual("named ammo round keeps its reload role under the magazine rig",
-            roundKept.partKind, rock::WeaponPartKind::Round);
-        const auto followerFill = applyStructureAnchor(otherByName, StructureAnchor::RigMagazineDisplay);
-        ok &= expectEqual("unnamed magazine-rig part fills as cosmetic ammo",
-            followerFill.partKind, rock::WeaponPartKind::CosmeticAmmo);
-
-        const auto noAnchor = applyStructureAnchor(otherByName, StructureAnchor::None);
-        ok &= expectEqual("no anchor keeps the name classification",
-            noAnchor.partKind, rock::WeaponPartKind::Other);
-        ok &= expectEqual("no anchor keeps the name source",
-            noAnchor.classificationSource, rock::WeaponPartClassificationSource::NameToken);
-
-        ok &= expectEqual("authored suppressor name classifies as a muzzle device",
-            rock::classifyWeaponPartName("AK_Suppressor_Mesh").partKind,
-            rock::WeaponPartKind::MuzzleDevice);
-        ok &= expectEqual("barrel remains distinct from its installed muzzle device",
-            rock::classifyWeaponPartName("WeaponBarrel").partKind,
-            rock::WeaponPartKind::Barrel);
-        ok &= expectEqual("authored bipod name classifies without deployment inference",
-            rock::classifyWeaponPartName("Rifle_BiPod").partKind,
-            rock::WeaponPartKind::Bipod);
-        ok &= expectEqual("bipod identity outranks incidental cylinder export token",
-            rock::classifyWeaponPartName("bipod_Cylinder_009_Bipod").partKind,
-            rock::WeaponPartKind::Bipod);
-        const auto bipodOverActionName = applyStructureAnchor(
-            rock::classifyWeaponPartKind(rock::WeaponPartKind::Cylinder), StructureAnchor::SlotBipod);
-        ok &= expectEqual("dedicated bipod slot overrides incidental action-name classification",
-            bipodOverActionName.partKind, rock::WeaponPartKind::Bipod);
-    }
-
-    {
-        using namespace rock::weapon_accessory_part_kind_policy;
-
-        auto sight = rock::classifyWeaponPartKind(rock::WeaponPartKind::Sight);
-        sight.attachPointFormId = rock::weapon_part_record_identity_policy::kAttachPointSight;
-        const auto unchangedSight = applyAttachmentEvidence(sight, {});
-        ok &= expectEqual("reticle-only optic remains Sight",
-            unchangedSight.partKind, rock::WeaponPartKind::Sight);
-        ok &= expectEqual("unchanged sight retains its original classification source",
-            unchangedSight.classificationSource, rock::WeaponPartClassificationSource::NameToken);
-
-        const auto laser = applyAttachmentEvidence(sight, Evidence{ .laserEmitter = true });
-        ok &= expectEqual("laser emitter refines the physical module to LaserSight",
-            laser.partKind, rock::WeaponPartKind::LaserSight);
-        ok &= expectEqual("laser module reports attachment-backed classification",
-            laser.classificationSource, rock::WeaponPartClassificationSource::AttachmentEvidence);
-        ok &= expectEqual("attachment refinement retains the owning slot FormID",
-            laser.attachPointFormId, sight.attachPointFormId);
-
-        const auto flashlight = applyAttachmentEvidence(sight, Evidence{ .flashlightEmitter = true });
-        ok &= expectEqual("flashlight emitter refines the physical module to Flashlight",
-            flashlight.partKind, rock::WeaponPartKind::Flashlight);
-
-        const auto combo = applyAttachmentEvidence(sight, Evidence{ .laserEmitter = true, .flashlightEmitter = true });
-        ok &= expectEqual("co-owned laser and flashlight emitters produce the combo kind",
-            combo.partKind, rock::WeaponPartKind::LaserFlashlightCombo);
-
-        const auto nativeScope = applyAttachmentEvidence(
-            rock::classifyWeaponPartKind(rock::WeaponPartKind::Barrel),
-            Evidence{ .nativeScopeOverlay = true, .laserEmitter = true, .flashlightEmitter = true });
-        ok &= expectEqual("native overlay OMOD evidence is authoritative for Scope",
-            nativeScope.partKind, rock::WeaponPartKind::Scope);
-
-        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Other) == 22);
-        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::LaserSight) == 23);
-        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Flashlight) == 24);
-        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::LaserFlashlightCombo) == 25);
-        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Scope) == 26);
-        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::MuzzleDevice) == 27);
-        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Bipod) == 28);
-    }
+    ok &= testAccessoryClassification();
 
     using namespace rock::weapon_part_runtime;
     std::array<Target, 3> weaponPartTargets{};

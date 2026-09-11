@@ -184,16 +184,6 @@ namespace rock::weapon_visual_authority_math
             presentationWorld);
     }
 
-    template <class Transform>
-    [[nodiscard]] inline Transform reframePresentationWorld(
-        const Transform& oldWeaponWorld,
-        const Transform& newWeaponWorld,
-        const Transform& presentationWorld)
-    {
-        return applyPresentationWorldDelta(
-            makePresentationWorldDelta(oldWeaponWorld, newWeaponWorld),
-            presentationWorld);
-    }
 }
 
 // ---- NativeScopeRotationMath.h ----
@@ -1257,11 +1247,4 @@ namespace rock::weapon_generation_identity_policy
         return key;
     }
 
-    inline std::uint64_t makeEquippedWeaponGenerationKey(
-        std::uint64_t visualCompositionKey,
-        const EquippedWeaponGenerationIdentity& identity)
-    {
-        (void)visualCompositionKey;
-        return makeEquippedWeaponIdentityKey(identity);
-    }
 }

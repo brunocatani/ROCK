@@ -104,25 +104,25 @@ int main()
     singleHand.fadeInEnabled = false;
     singleHand.authorityForceScale = 1.0f;
 
-    const auto single = solveMotorTargets(singleHand);
+    const auto single = solveMotorTargetsWithAuthority(singleHand, HeldAuthorityState{});
     ok &= expectNear("single hand mass cap", single.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("single hand angular matches linear authority", single.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput shared = singleHand;
     shared.authorityForceScale = 0.5f;
-    const auto twoHand = solveMotorTargets(shared);
+    const auto twoHand = solveMotorTargetsWithAuthority(shared, HeldAuthorityState{});
     ok &= expectNear("two hands share mass-capped linear authority", twoHand.linearMaxForce, 500.0f, 0.001f);
     ok &= expectNear("two hands share angular authority", twoHand.angularMaxForce, 500.0f, 0.001f);
 
     MotorInput mediumMass = singleHand;
     mediumMass.mass = 10.0f;
-    const auto mediumMassOutput = solveMotorTargets(mediumMass);
+    const auto mediumMassOutput = solveMotorTargetsWithAuthority(mediumMass, HeldAuthorityState{});
     ok &= expectNear("medium generic object keeps fixed HIGGS-style force", mediumMassOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("medium generic object angular force follows full fixed force", mediumMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
     MotorInput heavyMass = singleHand;
     heavyMass.mass = 50.0f;
-    const auto heavyMassOutput = solveMotorTargets(heavyMass);
+    const auto heavyMassOutput = solveMotorTargetsWithAuthority(heavyMass, HeldAuthorityState{});
     ok &= expectNear("heavy generic object does not receive loose-weapon force", heavyMassOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("heavy generic object angular force follows full generic force", heavyMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
@@ -130,7 +130,7 @@ int main()
     looseWeapon.baseMaxForce = 9000.0f;
     looseWeapon.angularForceMultiplier = 2.0f;
     looseWeapon.mass = 1000.0f;
-    const auto looseWeaponOutput = solveMotorTargets(looseWeapon);
+    const auto looseWeaponOutput = solveMotorTargetsWithAuthority(looseWeapon, HeldAuthorityState{});
     ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
     ok &= expectNear("loose weapon angular force can exceed linear pull authority", looseWeaponOutput.angularMaxForce, 18000.0f, 0.001f);
 
@@ -166,19 +166,19 @@ int main()
     scaledAt60Hz.physicsRateForceScalingEnabled = true;
     scaledAt60Hz.physicsDeltaSeconds = 1.0f / 60.0f;
     scaledAt60Hz.mass = 100.0f;
-    const auto scaledAt60HzOutput = solveMotorTargets(scaledAt60Hz);
+    const auto scaledAt60HzOutput = solveMotorTargetsWithAuthority(scaledAt60Hz, HeldAuthorityState{});
     ok &= expectNear("60hz motor output records physics hz", scaledAt60HzOutput.physicsHz, 60.0f, 0.001f);
     ok &= expectNear("60hz force scale applies before mass cap", scaledAt60HzOutput.linearMaxForce, 2449.49f, 0.02f);
     ok &= expectNear("60hz angular force follows scaled linear force", scaledAt60HzOutput.angularMaxForce, 2449.49f, 0.02f);
 
     MotorInput massCappedScaled = scaledAt60Hz;
     massCappedScaled.mass = 2.0f;
-    const auto massCappedScaledOutput = solveMotorTargets(massCappedScaled);
+    const auto massCappedScaledOutput = solveMotorTargetsWithAuthority(massCappedScaled, HeldAuthorityState{});
     ok &= expectNear("physics-rate scaling still obeys mass cap", massCappedScaledOutput.linearMaxForce, 1000.0f, 0.001f);
 
     MotorInput authorityScaled = scaledAt60Hz;
     authorityScaled.authorityForceScale = 0.5f;
-    const auto authorityScaledOutput = solveMotorTargets(authorityScaled);
+    const auto authorityScaledOutput = solveMotorTargetsWithAuthority(authorityScaled, HeldAuthorityState{});
     ok &= expectNear("authority scale applies after physics-rate force scale", authorityScaledOutput.linearMaxForce, 1224.745f, 0.02f);
 
     MotorInput angularFixedTau = singleHand;
@@ -187,38 +187,22 @@ int main()
     angularFixedTau.currentAngularTau = 0.8f;
     angularFixedTau.deltaTime = 1.0f;
     angularFixedTau.tauLerpSpeed = 1.0f;
-    const auto angularFixedTauOutput = solveMotorTargets(angularFixedTau);
+    const auto angularFixedTauOutput = solveMotorTargetsWithAuthority(angularFixedTau, HeldAuthorityState{});
     ok &= expectNear("angular follow does not boost linear force", angularFixedTauOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("linear follow keeps HIGGS-style tau fixed", angularFixedTauOutput.linearTau, 0.03f, 0.001f);
     ok &= expectNear("angular follow keeps HIGGS-style tau fixed", angularFixedTauOutput.angularTau, 0.03f, 0.001f);
-
-    MotorInput positionOnlyPivot = singleHand;
-    const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
-    ok &= expectNear("position-only small weak pivot does not reduce held linear force", positionOnlyOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("position-only small weak pivot does not reduce held angular force", positionOnlyOutput.angularMaxForce, 1000.0f, 0.001f);
-
-    MotorInput weakAngularFixedTau = positionOnlyPivot;
-    weakAngularFixedTau.deltaTime = 1.0f;
-    weakAngularFixedTau.tauLerpSpeed = 1.0f;
-    const auto weakAngularFixedTauOutput = solveMotorTargets(weakAngularFixedTau);
-    ok &= expectNear("weak support still leaves angular tau fixed", weakAngularFixedTauOutput.angularTau, 0.03f, 0.001f);
-
-    MotorInput longHandleMotor = singleHand;
-    const auto longHandleMotorOutput = solveMotorTargets(longHandleMotor);
-    ok &= expectNear("long-handle patch shape does not reduce held linear force", longHandleMotorOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("long-handle patch shape does not reduce held angular force", longHandleMotorOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput tinyMassFloor = singleHand;
     tinyMassFloor.mass = 0.02f;
     tinyMassFloor.effectiveMotorMassFloorEnabled = true;
     tinyMassFloor.effectiveMotorMassFloor = 2.0f;
-    const auto tinyMassFloorOutput = solveMotorTargets(tinyMassFloor);
+    const auto tinyMassFloorOutput = solveMotorTargetsWithAuthority(tinyMassFloor, HeldAuthorityState{});
     ok &= expectNear("tiny loose object uses motor-only effective mass floor", tinyMassFloorOutput.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("tiny loose object angular force follows floored linear force", tinyMassFloorOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput tinyMassRaw = tinyMassFloor;
     tinyMassRaw.effectiveMotorMassFloorEnabled = false;
-    const auto tinyMassRawOutput = solveMotorTargets(tinyMassRaw);
+    const auto tinyMassRawOutput = solveMotorTargetsWithAuthority(tinyMassRaw, HeldAuthorityState{});
     ok &= expectNear("disabled effective mass floor preserves raw mass cap", tinyMassRawOutput.linearMaxForce, 10.0f, 0.001f);
     ok &= expectNear("disabled effective mass floor preserves raw angular cap", tinyMassRawOutput.angularMaxForce, 10.0f, 0.001f);
 
@@ -284,11 +268,6 @@ int main()
     });
     ok &= expectTrue("trusted single-point support classifies as point", trustedPointAuthority.contactSupportShape == ContactSupportShape::Point);
     ok &= expectNear("trusted point limits twist around grab point", trustedPointAuthority.twistScale, 0.35f, 0.001f);
-
-    const Vec3 twistLimited = scaleWeakPivotTwistAngularVelocity(Vec3{ 1.0f, 2.0f, 3.0f }, Vec3{ 0.0f, 0.0f, 2.0f }, true, 0.25f);
-    ok &= expectNear("weak pivot twist preserves swing x", twistLimited.x, 1.0f, 0.001f);
-    ok &= expectNear("weak pivot twist preserves swing y", twistLimited.y, 2.0f, 0.001f);
-    ok &= expectNear("weak pivot twist scales twist z", twistLimited.z, 0.75f, 0.001f);
 
     const auto longHandleAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,

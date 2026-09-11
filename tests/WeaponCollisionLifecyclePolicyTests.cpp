@@ -268,7 +268,7 @@ int main()
     ok &= expectFalse("body-set key requires epoch", makeGeneratedWeaponBodySetKey(0xABC, derivedCompact, 0) != 0);
 
     EquippedWeaponGenerationIdentity identity{};
-    ok &= expectFalse("empty equipped identity and empty visual key produce no generation key", makeEquippedWeaponGenerationKey(0, identity) != 0);
+    ok &= expectFalse("empty equipped identity produces no content key", makeEquippedWeaponIdentityKey(identity) != 0);
     identity.hasEquippedWeapon = true;
     identity.formID = 0x1234;
     identity.formAddress = 0x2222;
@@ -282,11 +282,10 @@ int main()
     identity.objectIndexDataCount = 2;
     identity.activeModCount = 2;
     identity.displayName = "Test Weapon";
-    const std::uint64_t generationKey = makeEquippedWeaponGenerationKey(0x4444, identity);
+    const std::uint64_t contentKey = makeEquippedWeaponIdentityKey(identity);
     const std::uint64_t ownershipKey = makeEquippedWeaponOwnershipKey(identity);
-    ok &= expectNonZero("equipped identity creates generation key", generationKey);
+    ok &= expectNonZero("equipped identity creates content key", contentKey);
     ok &= expectNonZero("equipped instance witnesses create ownership key", ownershipKey);
-    ok &= expectSame("visual-only witness changes do not change generation key", generationKey, makeEquippedWeaponGenerationKey(0x5555, identity));
     auto pointerChurnIdentity = identity;
     pointerChurnIdentity.formAddress = 0x9000;
     pointerChurnIdentity.instanceDataAddress = 0x9001;
@@ -294,7 +293,7 @@ int main()
     pointerChurnIdentity.objectInstanceExtraAddress = 0x9003;
     pointerChurnIdentity.equippedDataAddress = 0x9004;
     pointerChurnIdentity.equippedObjectAddress = 0x9005;
-    ok &= expectSame("runtime pointer churn does not change generation key", generationKey, makeEquippedWeaponGenerationKey(0x4444, pointerChurnIdentity));
+    ok &= expectSame("runtime pointer churn does not change content key", contentKey, makeEquippedWeaponIdentityKey(pointerChurnIdentity));
     ok &= expectDifferent("different equipped instance witnesses change ownership key", ownershipKey, makeEquippedWeaponOwnershipKey(pointerChurnIdentity));
     auto transientEquipWrapperChurn = identity;
     transientEquipWrapperChurn.objectInstanceExtraAddress = 0xA001;
@@ -329,10 +328,10 @@ int main()
     missingInstanceWitness.equippedObjectAddress = 0;
     ok &= expectFalse("manual ownership fails closed without an instance witness", makeEquippedWeaponOwnershipKey(missingInstanceWitness) != 0);
     identity.instanceContentKey = 0x3334;
-    ok &= expectDifferent("generation key changes with equipped instance content", generationKey, makeEquippedWeaponGenerationKey(0x4444, identity));
+    ok &= expectDifferent("content key changes with equipped instance content", contentKey, makeEquippedWeaponIdentityKey(identity));
     identity.instanceContentKey = 0x3333;
     identity.objectIndexDataSignature = 0xAAAB;
-    ok &= expectDifferent("generation key changes with equipped mod index content", generationKey, makeEquippedWeaponGenerationKey(0x4444, identity));
+    ok &= expectDifferent("content key changes with equipped mod index content", contentKey, makeEquippedWeaponIdentityKey(identity));
 
     return ok ? 0 : 1;
 }

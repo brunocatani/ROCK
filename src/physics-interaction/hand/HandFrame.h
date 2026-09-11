@@ -63,11 +63,6 @@ namespace rock
         return RE::NiPoint3{ 0.0f, -1.0f, 0.0f };
     }
 
-    inline RE::NiPoint3 authoredHandspaceToRawHandspace(RE::NiPoint3 value)
-    {
-        return handspace_convention::authoredToRaw(value);
-    }
-
     inline RE::NiPoint3 authoredHandspaceToRawHandspaceForHand(RE::NiPoint3 value, bool isLeft)
     {
         return handspace_convention::authoredToRawForHand(value, isLeft);

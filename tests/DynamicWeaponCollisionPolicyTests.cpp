@@ -152,13 +152,7 @@ int main()
     ok &= compoundFrame.valid;
     ok &= expectNear("compound point scale", compoundFrame.pointScaleHavok, 0.2f);
     ok &= expectPoint("compound child translation", compoundFrame.translationHavok, RE::NiPoint3{ -3.0f, 0.2f, 0.4f });
-    ok &= expectPoint(
-        "compound centered point",
-        makeCompoundChildPointHavok(
-            RE::NiPoint3{ -4.0f, 0.0f, 6.0f },
-            RE::NiPoint3{ -5.0f, 2.0f, 3.0f },
-            compoundFrame.pointScaleHavok),
-        RE::NiPoint3{ 0.2f, -0.4f, 0.6f });
+
     ok &= !makeCompoundChildFrame(
                RE::NiPoint3{},
                RE::NiPoint3{},

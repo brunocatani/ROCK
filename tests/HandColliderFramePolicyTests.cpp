@@ -196,19 +196,19 @@ int main()
 
     {
         ok &= expectVectorNear("authored palm depth maps to raw palm depth",
-            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+            rock::handspace_convention::authoredToRaw(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
             RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
         ok &= expectVectorNear("authored signed cross-palm maps to raw signed cross-palm",
-            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+            rock::handspace_convention::authoredToRaw(RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
             RE::NiPoint3{ 0.0f, 0.0f, -1.0f });
         ok &= expectVectorNear("migrated palm normal preserves old raw direction",
-            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+            rock::handspace_convention::authoredToRaw(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
             RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
         ok &= expectVectorNear("migrated right pivot preserves old raw point",
-            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 6.0f, -2.0f, 0.2f }),
+            rock::handspace_convention::authoredToRaw(RE::NiPoint3{ 6.0f, -2.0f, 0.2f }),
             RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
         ok &= expectVectorNear("migrated left pivot preserves old raw point",
-            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 6.0f, -2.0f, -0.2f }),
+            rock::handspace_convention::authoredToRaw(RE::NiPoint3{ 6.0f, -2.0f, -0.2f }),
             RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
         ok &= expectVectorNear("fixed palm normal includes final reversal",
             rock::palmNormalHandspace(),
@@ -371,7 +371,7 @@ int main()
     {
         /*
          * Tip-segment extrapolation must follow the distal bone's own long
-         * axis (the rendered phalanx flexion), not continue the middle→distal
+         * axis (the rendered phalanx flexion), not continue the middleâ†’distal
          * segment straight. Convention detection happens on the previous bone.
          */
         RE::NiTransform middle = identityTransform();
@@ -380,8 +380,8 @@ int main()
         distal.translate = RE::NiPoint3{ 4.0f, 0.0f, 0.0f };
 
         // Distal joint curled 60 degrees: with the stored-rotation row
-        // convention the builder's local→world helper uses, this matrix maps
-        // local +X to (cos60, +sin60, 0) in world — the bent phalanx axis.
+        // convention the builder's localâ†’world helper uses, this matrix maps
+        // local +X to (cos60, +sin60, 0) in world â€” the bent phalanx axis.
         const float curl = 60.0f * 3.14159265f / 180.0f;
         const RE::NiPoint3 curledX{ std::cos(curl), -std::sin(curl), 0.0f };
         const RE::NiPoint3 curledY{ std::sin(curl), std::cos(curl), 0.0f };
