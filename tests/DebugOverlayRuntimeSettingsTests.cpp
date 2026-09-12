@@ -22,7 +22,7 @@ int main()
     bool passed = true;
     const auto defaults = sanitize(RequestedLimits{});
     passed &= expect(defaults.maxShapeCapturesPerFrame == 32, "Shape capture default drifted from the effective historical cap.");
-    passed &= expect(defaults.maxConvexSupportVertices == 8, "Convex support default is not aligned with the shipped INIs.");
+    passed &= expect(defaults.maxConvexSupportVertices == 8, "Convex support default is not aligned with the compiled configuration contract.");
     passed &= expect(defaults.maxCompoundChildren == 256 && defaults.maxCompoundDepth == 4,
         "Compound fidelity defaults changed.");
     passed &= expect(defaults.maxShapeQueuedJobs == 64 && defaults.maxShapeCompletedJobs == 64,

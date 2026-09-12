@@ -6,6 +6,7 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "RE/Havok/hknpAllHitsCollector.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -474,7 +475,11 @@ namespace rock::nearby_grab_damping
             }
             outSearchCompleted = true;
 
+            performance_profiler::ScopedTimer searchTimer(performance_profiler::Scope::GrabNearbyDampingRestoreBodySearch);
+            std::uint32_t scannedSlots = 0;
+            bool found = false;
             for (std::uint32_t bodyId = 0; bodyId <= highWaterMark; ++bodyId) {
+                ++scannedSlots;
                 if (!havok_runtime::bodySlotCanBeRead(bodyId, highWaterMark)) {
                     continue;
                 }
@@ -483,11 +488,16 @@ namespace rock::nearby_grab_damping
                 if (tryReadCurrentBodyMotionState(world, bodyId, candidate) && candidate.motionId == motionId) {
                     outBodyId = bodyId;
                     outState = candidate;
-                    return true;
+                    found = true;
+                    break;
                 }
             }
 
-            return false;
+            // The profiler's search events count examined body slots. Compare
+            // search time with total restore time to separate world-size cost
+            // from native property writes without changing cleanup behavior.
+            performance_profiler::addEventCount(performance_profiler::Scope::GrabNearbyDampingRestoreBodySearch, scannedSlots);
+            return found;
         }
 
         bool setBodyMotionPropertiesVerified(
@@ -602,6 +612,7 @@ namespace rock::nearby_grab_damping
 
         LeaseRestoreAttempt attemptFinalLeaseRestore(RE::hknpWorld* world, const MotionDampingLeaseEntry& lease)
         {
+            performance_profiler::ScopedTimer restoreTimer(performance_profiler::Scope::GrabNearbyDampingRestore);
             LeaseRestoreAttempt attempt{};
             attempt.result.finalLease = true;
 
@@ -634,6 +645,12 @@ namespace rock::nearby_grab_damping
                 attempt.completed = true;
             } else {
                 attempt.result.restoreFailed = true;
+                performance_profiler::addCounter(performance_profiler::Counter::GrabNearbyDampingRestoreFailed);
+                ROCK_LOG_SAMPLE_WARN(Hand, 1000,
+                    "Nearby damping restore pending: motion={} preferredBody={} found={} searched={} candidateBody={} currentMotion={} properties(current/original/damped)={}/{}/{}",
+                    lease.motionId, lease.representativeBodyId, bodyFound, bodySearchCompleted,
+                    restoreBodyId, current.motionId, current.motionPropertiesId,
+                    lease.originalMotionPropertiesId, lease.dampedMotionPropertiesId);
             }
 
             return attempt;
@@ -812,7 +829,8 @@ namespace rock::nearby_grab_damping
         state.angularDamping = safeAngularDamping;
         state.remainingSeconds = duration;
 
-        RE::hknpAllHitsCollector collector;
+        physics_query_resources::AllHitsCollector ownedCollector;
+        auto& collector = ownedCollector.get();
         physics_shape_cast::SphereCastDiagnostics diagnostics;
         if (!physics_shape_cast::castSelectionSphere(
                 hknpWorld,

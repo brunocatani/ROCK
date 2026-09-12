@@ -26,6 +26,8 @@ endmacro()
 message(">>> Setup vcpkg")
 set_from_environment(VCPKG_ROOT)
 if(DEFINED VCPKG_ROOT)
+  # Build-triggered regeneration does not inherit configure-preset environment.
+  set(VCPKG_ROOT "${VCPKG_ROOT}" CACHE PATH "Selected vcpkg installation")
   set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
   set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "")
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "")
@@ -66,6 +68,7 @@ if(NOT F4SE_SUPPORT_XBYAK OR ENABLE_FALLOUT_F4 OR ENABLE_FALLOUT_NG OR NOT ENABL
 endif()
 
 add_subdirectory(${COMMON_LIB_F4VR_PATH_SELECTED} "CommonLibF4" EXCLUDE_FROM_ALL)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 set(ROCK_OPENVR_ROOT "${ROOT_DIR}/third_party/openvr")
 if(NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr.h" OR NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr_api.lib")
@@ -81,27 +84,19 @@ add_library(ROCK::OpenVR ALIAS ROCKOpenVR)
 
 configure_file(${ROOT_DIR}/cmake/version.rc.in  ${BUILD_DIR}/version.rc  @ONLY)
 configure_file(${ROOT_DIR}/cmake/Version.h.in   ${BUILD_DIR}/include/Version.h @ONLY)
-configure_file(${ROOT_DIR}/cmake/resources.rc.in ${BUILD_DIR}/resources.rc @ONLY)
-source_group(TREE ${BUILD_DIR} FILES ${BUILD_DIR}/include/Version.h ${BUILD_DIR}/resources.rc)
+source_group(TREE ${BUILD_DIR} FILES ${BUILD_DIR}/include/Version.h)
 
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "${SOURCE_DIR}/*.h")
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${SOURCE_DIR}/*.cpp")
 file(GLOB_RECURSE inls    CONFIGURE_DEPENDS "${SOURCE_DIR}/*.inl")
 source_group(TREE ${ROOT_DIR} FILES ${headers} ${sources} ${inls})
 
-list(APPEND resource_files
-  "${ROOT_DIR}/data/config/${NAME}.ini"
-)
-source_group("Resource Files" FILES ${resource_files})
-
 add_library(${PROJECT_NAME} SHARED
   ${headers}
   ${sources}
   ${inls}
-  ${resource_files}
   ${BUILD_DIR}/include/Version.h
   ${BUILD_DIR}/version.rc
-  ${BUILD_DIR}/resources.rc
   "${ROOT_DIR}/.clang-format"
   "${ROOT_DIR}/.editorconfig"
 )
@@ -118,6 +113,7 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
     CommonLibF4::CommonLibF4
+    nlohmann_json::nlohmann_json
     ROCK::OpenVR
     d3d11.lib
     dxgi.lib
@@ -182,6 +178,40 @@ string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}
 option(POST_BUILD_COPY_PLUGIN "Copy ROCK.dll and ROCK.pdb to configured mod root after building." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots that contain F4SE/Plugins.")
 option(ROCK_PACKAGE_RELEASE "Package Release builds into a .7z archive after ROCK is built." ON)
+option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
+set(RPS_SDK_ROOT "" CACHE PATH "Path to the independent RPS_SDK repository.")
+
+if(RPS_SDK_ROOT STREQUAL "")
+  get_filename_component(
+    RPS_SDK_ROOT
+    "${ROOT_DIR}/../RPS_SDK"
+    ABSOLUTE
+  )
+  set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)
+endif()
+set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
+target_include_directories(${PROJECT_NAME} PRIVATE "${RPS_SDK_ROOT}/SDK/UI/include")
+
+if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
+  foreach(ROCK_REQUIRED_SDK_PATH IN ITEMS
+      "${RPS_SDK_ROOT}/CMakeLists.txt"
+      "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKProviderApi.h"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKApi.h"
+      "${ROCK_PUBLIC_SDK_DIR}/examples/CMakeLists.txt")
+    if(NOT EXISTS "${ROCK_REQUIRED_SDK_PATH}")
+      message(FATAL_ERROR
+        ">> Independent RPS_SDK is incomplete at '${RPS_SDK_ROOT}'; missing '${ROCK_REQUIRED_SDK_PATH}'.")
+    endif()
+  endforeach()
+  message(">>> Using independent ROCK SDK from: '${ROCK_PUBLIC_SDK_DIR}'")
+endif()
+
+include("${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake")
+get_target_property(ROCK_BUILD_INPUTS ${PROJECT_NAME} SOURCES)
+rock_verify_distribution_inputs(
+  TREES "${ROOT_DIR}/data/mod" "${ROCK_PUBLIC_SDK_DIR}"
+  FILES ${ROCK_BUILD_INPUTS})
 
 if(POST_BUILD_COPY_PLUGIN)
   if(DEFINED COPY_PLUGIN_BASE_PATH AND NOT COPY_PLUGIN_BASE_PATH STREQUAL "")
@@ -194,6 +224,9 @@ if(POST_BUILD_COPY_PLUGIN)
         TARGET ${PROJECT_NAME}
         POST_BUILD
         COMMENT "Copying ${PROJECT_NAME}.dll and .pdb to plugins folder: '${copy_path}/F4SE/Plugins/'"
+        COMMAND ${CMAKE_COMMAND}
+          "-DINPUT_TREES=${ROOT_DIR}/data/mod"
+          -P "${ROOT_DIR}/cmake/VerifyDistributionInputs.cmake"
         COMMAND ${CMAKE_COMMAND} -E make_directory ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E rm -f "${copy_path}/ROCK.esp"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Scripts/ROCK"
@@ -220,6 +253,7 @@ if(ROCK_PACKAGE_RELEASE)
             -DPROJECT_FRIENDLY_NAME=${FRIENDLY_NAME}
             -DPROJECT_VERSION=${PROJECT_VERSION}
             -DROOT_DIR=${ROOT_DIR}
+            "-DRPS_SDK_ROOT=${RPS_SDK_ROOT}"
             -DBUILD_DIR=${BUILD_DIR}
             -DTARGET_FILE="$<TARGET_FILE:${PROJECT_NAME}>"
             -DTARGET_PDB_FILE="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
@@ -230,14 +264,21 @@ else()
   message(">>> Release package post build command disabled")
 endif()
 
-option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
 if(BUILD_ROCK_TESTS)
   enable_testing()
 
-  function(add_rock_test TARGET_NAME)
-    add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
-    set_tests_properties(${TARGET_NAME} PROPERTIES LABELS "policy")
-  endfunction()
+  add_subdirectory(
+    "${ROCK_PUBLIC_SDK_DIR}/examples"
+    "${BUILD_DIR}/sdk-examples"
+  )
+
+  # Aggregate build target for every registered policy test. add_rock_test
+  # attaches each test executable as a dependency, so the full-suite runner
+  # (tools/Invoke-RockTests.ps1) cannot run a test whose binary was never
+  # built. Do not list test targets here manually.
+  add_custom_target(ROCKPolicyTestBinaries)
+
+  include("${ROOT_DIR}/cmake/RockTestRegistration.cmake")
 
   add_executable(ROCKGrabInputIntentPolicyTests
     "${ROOT_DIR}/tests/GrabInputIntentPolicyTests.cpp"
@@ -260,6 +301,27 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponInteractionPolicyTests)
 
+  add_executable(ROCKVirtualHolstersCompatibilityTests
+    "${ROOT_DIR}/tests/VirtualHolstersCompatibilityTests.cpp"
+  )
+  target_compile_features(ROCKVirtualHolstersCompatibilityTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKVirtualHolstersCompatibilityTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKVirtualHolstersCompatibilityTests)
+
+  add_executable(ROCKWeaponGapDecompositionTests
+    "${ROOT_DIR}/tests/WeaponGapDecompositionTests.cpp"
+  )
+  target_compile_features(ROCKWeaponGapDecompositionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponGapDecompositionTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponGapDecompositionTests)
+
+  add_executable(ROCKEquippedWeaponShoulderCoordinatorPolicyTests
+    "${ROOT_DIR}/tests/EquippedWeaponShoulderCoordinatorPolicyTests.cpp"
+  )
+  target_compile_features(ROCKEquippedWeaponShoulderCoordinatorPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKEquippedWeaponShoulderCoordinatorPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKEquippedWeaponShoulderCoordinatorPolicyTests)
+
   add_executable(ROCKInteractionSafetyPolicyTests
     "${ROOT_DIR}/tests/InteractionSafetyPolicyTests.cpp"
   )
@@ -267,8 +329,28 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKInteractionSafetyPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKInteractionSafetyPolicyTests)
 
+  add_executable(ROCKCharacterProxyFaultPolicyTests
+    "${ROOT_DIR}/tests/CharacterProxyFaultPolicyTests.cpp"
+  )
+  target_compile_features(ROCKCharacterProxyFaultPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKCharacterProxyFaultPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKCharacterProxyFaultPolicyTests)
+
+  add_executable(ROCKHavokRefCountTests "${ROOT_DIR}/tests/HavokRefCountTests.cpp")
+  target_compile_features(ROCKHavokRefCountTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHavokRefCountTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHavokRefCountTests)
+
+  add_executable(ROCKFo4VrActorStatePolicyTests
+    "${ROOT_DIR}/tests/Fo4VrActorStatePolicyTests.cpp"
+  )
+  target_compile_features(ROCKFo4VrActorStatePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFo4VrActorStatePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKFo4VrActorStatePolicyTests)
+
   add_executable(ROCKGrabFingerLocalTransformPolicyTests
     "${ROOT_DIR}/tests/GrabFingerLocalTransformPolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/grab/GeneratedGrabFingerCalibration.cpp"
   )
   target_compile_features(ROCKGrabFingerLocalTransformPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKGrabFingerLocalTransformPolicyTests PRIVATE ${SOURCE_DIR})
@@ -287,6 +369,20 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKDynamicHandCollisionFeedbackPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKDynamicHandCollisionFeedbackPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicHandCollisionFeedbackPolicyTests)
+
+  add_executable(ROCKSurfaceFingerCollisionPolicyTests
+    "${ROOT_DIR}/tests/SurfaceFingerCollisionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKSurfaceFingerCollisionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSurfaceFingerCollisionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKSurfaceFingerCollisionPolicyTests)
+
+  add_executable(ROCKSurfaceMeshGrabPolicyTests
+    "${ROOT_DIR}/tests/SurfaceMeshGrabPolicyTests.cpp"
+  )
+  target_compile_features(ROCKSurfaceMeshGrabPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSurfaceMeshGrabPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKSurfaceMeshGrabPolicyTests)
 
   add_executable(ROCKGrabContactEvidencePolicyTests
     "${ROOT_DIR}/tests/GrabContactEvidencePolicyTests.cpp"
@@ -365,6 +461,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabThreePhasePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabThreePhasePolicyTests)
 
+  add_executable(ROCKGrabPalmSeatPolicyTests
+    "${ROOT_DIR}/tests/GrabPalmSeatPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabPalmSeatPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabPalmSeatPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGrabPalmSeatPolicyTests)
+
   add_executable(ROCKGrabPinchPocketPolicyTests
     "${ROOT_DIR}/tests/GrabPinchPocketPolicyTests.cpp"
   )
@@ -421,6 +524,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKSkinnedBodyResolverPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKSkinnedBodyResolverPolicyTests)
 
+  add_executable(ROCKRagdollInteractionTests
+    "${ROOT_DIR}/tests/RagdollInteractionTests.cpp"
+  )
+  target_compile_features(ROCKRagdollInteractionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKRagdollInteractionTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKRagdollInteractionTests)
+
   add_executable(ROCKMechanicalConnectedBodySetPolicyTests
     "${ROOT_DIR}/tests/MechanicalConnectedBodySetPolicyTests.cpp"
   )
@@ -449,13 +559,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabAuthoritySourceClockPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabAuthoritySourceClockPolicyTests)
 
-  add_executable(ROCKGrabLocomotionJagPolicyTests
-    "${ROOT_DIR}/tests/GrabLocomotionJagPolicyTests.cpp"
-  )
-  target_compile_features(ROCKGrabLocomotionJagPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKGrabLocomotionJagPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKGrabLocomotionJagPolicyTests)
-
   add_executable(ROCKHandColliderFramePolicyTests
     "${ROOT_DIR}/tests/HandColliderFramePolicyTests.cpp"
   )
@@ -469,13 +572,6 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKHknpBodyFramePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHknpBodyFramePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHknpBodyFramePolicyTests)
-
-  add_executable(ROCKGrabNodeNamePolicyTests
-    "${ROOT_DIR}/tests/GrabNodeNamePolicyTests.cpp"
-  )
-  target_compile_features(ROCKGrabNodeNamePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKGrabNodeNamePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKGrabNodeNamePolicyTests)
 
   add_executable(ROCKShoulderStashPolicyTests
     "${ROOT_DIR}/tests/ShoulderStashPolicyTests.cpp"
@@ -492,6 +588,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKMouthConsumePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKMouthConsumePolicyTests)
 
+  add_executable(ROCKImmersiveAidPolicyTests
+    "${ROOT_DIR}/tests/ImmersiveAidPolicyTests.cpp"
+  )
+  target_compile_features(ROCKImmersiveAidPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKImmersiveAidPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKImmersiveAidPolicyTests)
+
   add_executable(ROCKFeedbackHapticsPolicyTests
     "${ROOT_DIR}/tests/FeedbackHapticsPolicyTests.cpp"
     "${SOURCE_DIR}/physics-interaction/feedback/FeedbackHaptics.cpp"
@@ -506,6 +609,25 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKWeaponCollisionLifecyclePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKWeaponCollisionLifecyclePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponCollisionLifecyclePolicyTests)
+
+  add_executable(ROCKNativeScopeAdmissionTests
+    "${ROOT_DIR}/tests/NativeScopeAdmissionTests.cpp"
+  )
+  target_compile_features(ROCKNativeScopeAdmissionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeScopeAdmissionTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKNativeScopeAdmissionTests PRIVATE CommonLibF4::CommonLibF4)
+  add_rock_test(ROCKNativeScopeAdmissionTests)
+
+  add_executable(ROCKNativeScopeShotPolicyTests "${ROOT_DIR}/tests/NativeScopeShotPolicyTests.cpp")
+  target_compile_features(ROCKNativeScopeShotPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeScopeShotPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeScopeShotPolicyTests)
+
+  add_executable(ROCKWorldTextStereoTests "${ROOT_DIR}/tests/WorldTextStereoTests.cpp")
+  target_compile_features(ROCKWorldTextStereoTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWorldTextStereoTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKWorldTextStereoTests PRIVATE d3d11 d3dcompiler)
+  add_rock_test(ROCKWorldTextStereoTests)
 
   add_executable(ROCKActiveGrabBodyLifecyclePolicyTests
     "${ROOT_DIR}/tests/ActiveGrabBodyLifecyclePolicyTests.cpp"
@@ -528,13 +650,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKSelectionPrecisionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKSelectionPrecisionPolicyTests)
 
-  add_executable(ROCKSelectionBeamPolicyTests
-    "${ROOT_DIR}/tests/SelectionBeamPolicyTests.cpp"
-  )
-  target_compile_features(ROCKSelectionBeamPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKSelectionBeamPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKSelectionBeamPolicyTests)
-
   add_executable(ROCKNativePlayerCollisionSuppressionPolicyTests
     "${ROOT_DIR}/tests/NativePlayerCollisionSuppressionPolicyTests.cpp"
   )
@@ -542,19 +657,19 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativePlayerCollisionSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativePlayerCollisionSuppressionPolicyTests)
 
+  add_executable(ROCKNativeMeleeSuppressionPolicyTests
+    "${ROOT_DIR}/tests/NativeMeleeSuppressionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKNativeMeleeSuppressionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeMeleeSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeMeleeSuppressionPolicyTests)
+
   add_executable(ROCKNativeGrabHapticSuppressionPolicyTests
     "${ROOT_DIR}/tests/NativeGrabHapticSuppressionPolicyTests.cpp"
   )
   target_compile_features(ROCKNativeGrabHapticSuppressionPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKNativeGrabHapticSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeGrabHapticSuppressionPolicyTests)
-
-  add_executable(ROCKPipboyEquipPolicyTests
-    "${ROOT_DIR}/tests/PipboyEquipPolicyTests.cpp"
-  )
-  target_compile_features(ROCKPipboyEquipPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKPipboyEquipPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKPipboyEquipPolicyTests)
 
   add_executable(ROCKEquippedWeaponTransitionPolicyTests
     "${ROOT_DIR}/tests/EquippedWeaponTransitionPolicyTests.cpp"
@@ -570,6 +685,20 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHeldWeaponInstantTransitionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHeldWeaponInstantTransitionPolicyTests)
 
+  add_executable(ROCKHeldScenePresentationPolicyTests
+    "${ROOT_DIR}/tests/HeldScenePresentationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHeldScenePresentationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHeldScenePresentationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHeldScenePresentationPolicyTests)
+
+  add_executable(ROCKWeaponTransitionAnimationAccelerationPolicyTests
+    "${ROOT_DIR}/tests/WeaponTransitionAnimationAccelerationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKWeaponTransitionAnimationAccelerationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponTransitionAnimationAccelerationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponTransitionAnimationAccelerationPolicyTests)
+
   add_executable(ROCKWeaponInventoryStackSelectionPolicyTests
     "${ROOT_DIR}/tests/WeaponInventoryStackSelectionPolicyTests.cpp"
   )
@@ -584,12 +713,51 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKAuthoredWeaponGripCapturePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKAuthoredWeaponGripCapturePolicyTests)
 
+  add_executable(ROCKHandFingerMirrorMathTests
+    "${ROOT_DIR}/tests/HandFingerMirrorMathTests.cpp"
+  )
+  target_compile_features(ROCKHandFingerMirrorMathTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHandFingerMirrorMathTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHandFingerMirrorMathTests)
+
+  add_executable(ROCKAuthoredSupportGrabPolicyTests
+    "${ROOT_DIR}/tests/AuthoredSupportGrabPolicyTests.cpp"
+  )
+  target_compile_features(ROCKAuthoredSupportGrabPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKAuthoredSupportGrabPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKAuthoredSupportGrabPolicyTests)
+
+  add_executable(ROCKWeaponClassificationPolicyTests
+    "${ROOT_DIR}/tests/WeaponClassificationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKWeaponClassificationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponClassificationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponClassificationPolicyTests)
+
+  add_executable(ROCKAuthoredWeaponGripActivationPolicyTests
+    "${ROOT_DIR}/tests/AuthoredWeaponGripActivationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKAuthoredWeaponGripActivationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKAuthoredWeaponGripActivationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKAuthoredWeaponGripActivationPolicyTests)
+
   add_executable(ROCKNativeIdleGripPreharvestPolicyTests
     "${ROOT_DIR}/tests/NativeIdleGripPreharvestPolicyTests.cpp"
   )
   target_compile_features(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeIdleGripPreharvestPolicyTests)
+
+  add_executable(ROCKAuthoredWeaponGripCacheFormatTests
+    "${ROOT_DIR}/tests/AuthoredWeaponGripCacheFormatTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/weapon/AuthoredWeaponGripCacheFormat.cpp"
+  )
+  target_compile_features(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ROCK_TEST_FIXTURE_DIR="${ROOT_DIR}/tests/fixtures")
+  target_sources(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE "${ROOT_DIR}/tests/fixtures/AuthoredGripCache.json")
+  target_include_directories(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE nlohmann_json::nlohmann_json)
+  add_rock_test(ROCKAuthoredWeaponGripCacheFormatTests)
 
   add_executable(ROCKAuthoredWeaponGripAuthorityPolicyTests
     "${ROOT_DIR}/tests/AuthoredWeaponGripAuthorityPolicyTests.cpp"
@@ -619,14 +787,71 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicHandCollisionTransitionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicHandCollisionTransitionPolicyTests)
 
+  add_executable(ROCKHavokCompoundShapeKeyPolicyTests
+    "${ROOT_DIR}/tests/HavokCompoundShapeKeyPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHavokCompoundShapeKeyPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHavokCompoundShapeKeyPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHavokCompoundShapeKeyPolicyTests)
+
+  add_executable(ROCKDynamicWeaponCollisionPolicyTests
+    "${ROOT_DIR}/tests/DynamicWeaponCollisionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKDynamicWeaponCollisionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDynamicWeaponCollisionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDynamicWeaponCollisionPolicyTests)
+
+  add_executable(ROCKWeaponSurfaceSupportTests "${ROOT_DIR}/tests/WeaponSurfaceSupportTests.cpp")
+  target_compile_features(ROCKWeaponSurfaceSupportTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponSurfaceSupportTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponSurfaceSupportTests)
+
+  add_executable(ROCKHandWorldClaimRegistryPolicyTests
+    "${ROOT_DIR}/tests/HandWorldClaimRegistryPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHandWorldClaimRegistryPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHandWorldClaimRegistryPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHandWorldClaimRegistryPolicyTests)
+
+  add_executable(ROCKDampenedDriverPredictionPolicyTests
+    "${ROOT_DIR}/tests/DampenedDriverPredictionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKDampenedDriverPredictionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDampenedDriverPredictionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDampenedDriverPredictionPolicyTests)
+
+  add_executable(ROCKTrackedHandIsolationPolicyTests
+    "${ROOT_DIR}/tests/TrackedHandIsolationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKTrackedHandIsolationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKTrackedHandIsolationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKTrackedHandIsolationPolicyTests)
+
+  add_executable(ROCKRenderedBoneTransportPolicyTests
+    "${ROOT_DIR}/tests/RenderedBoneTransportPolicyTests.cpp"
+  )
+  target_compile_features(ROCKRenderedBoneTransportPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKRenderedBoneTransportPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKRenderedBoneTransportPolicyTests)
+
+  add_executable(ROCKArmPresentationPolicyTests
+    "${ROOT_DIR}/tests/ArmPresentationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKArmPresentationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKArmPresentationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKArmPresentationPolicyTests)
+
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
     ROCKWeaponInteractionPolicyTests
+    ROCKEquippedWeaponShoulderCoordinatorPolicyTests
     ROCKInteractionSafetyPolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKDynamicHandCollisionFeedbackPolicyTests
+    ROCKSurfaceFingerCollisionPolicyTests
+    ROCKSurfaceMeshGrabPolicyTests
     ROCKGrabContactEvidencePolicyTests
     ROCKHandSemanticContactPolicyTests
     ROCKGrabContactPatchClusterPolicyTests
@@ -638,11 +863,13 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabAuthorityFramePolicyTests
     ROCKTransformMathDoublePrecisionPolicyTests
     ROCKGrabThreePhasePolicyTests
+    ROCKGrabPalmSeatPolicyTests
     ROCKGrabPinchPocketPolicyTests
     ROCKGeneratedKeyframedBodyDrivePolicyTests
     ROCKGeneratedBodyContactRegistryPolicyTests
     ROCKHavokTimingFixPolicyTests
     ROCKHeldObjectStutterGuardPolicyTests
+    ROCKHeldScenePresentationPolicyTests
     ROCKEquippedWeaponDropMomentumPolicyTests
     ROCKHeldBodySetDrivePolicyTests
     ROCKSkinnedBodyResolverPolicyTests
@@ -650,30 +877,40 @@ if(BUILD_ROCK_TESTS)
     ROCKArticulatedAcquisitionPolicyTests
     ROCKGrabAuthorityProxyPolicyTests
     ROCKGrabAuthoritySourceClockPolicyTests
-    ROCKGrabLocomotionJagPolicyTests
     ROCKHandColliderFramePolicyTests
     ROCKHknpBodyFramePolicyTests
-    ROCKGrabNodeNamePolicyTests
     ROCKShoulderStashPolicyTests
     ROCKMouthConsumePolicyTests
+    ROCKImmersiveAidPolicyTests
     ROCKFeedbackHapticsPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests
     ROCKActiveGrabBodyLifecyclePolicyTests
     ROCKDynamicMovableStaticGrabPolicyTests
     ROCKSelectionPrecisionPolicyTests
-    ROCKSelectionBeamPolicyTests
     ROCKNativePlayerCollisionSuppressionPolicyTests
+    ROCKNativeMeleeSuppressionPolicyTests
     ROCKNativeGrabHapticSuppressionPolicyTests
-    ROCKPipboyEquipPolicyTests
     ROCKEquippedWeaponTransitionPolicyTests
     ROCKHeldWeaponInstantTransitionPolicyTests
+    ROCKWeaponTransitionAnimationAccelerationPolicyTests
     ROCKWeaponInventoryStackSelectionPolicyTests
     ROCKAuthoredWeaponGripCapturePolicyTests
+    ROCKAuthoredSupportGrabPolicyTests
+    ROCKWeaponClassificationPolicyTests
+    ROCKAuthoredWeaponGripActivationPolicyTests
     ROCKNativeIdleGripPreharvestPolicyTests
     ROCKAuthoredWeaponGripAuthorityPolicyTests
     ROCKPhysicsCallbackQuiescenceGateTests
     ROCKDynamicHandTwinGeometryPolicyTests
     ROCKDynamicHandCollisionTransitionPolicyTests
+    ROCKHavokCompoundShapeKeyPolicyTests
+    ROCKDynamicWeaponCollisionPolicyTests
+    ROCKWeaponSurfaceSupportTests
+    ROCKHandWorldClaimRegistryPolicyTests
+    ROCKDampenedDriverPredictionPolicyTests
+    ROCKTrackedHandIsolationPolicyTests
+    ROCKRenderedBoneTransportPolicyTests
+    ROCKArmPresentationPolicyTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and
   # config stub. Build those once, then reuse the PCH artifact and support library
@@ -697,17 +934,28 @@ if(BUILD_ROCK_TESTS)
       ENABLE_FALLOUT_VR=1
       ROCK_POLICY_TEST_NO_RUNTIME_LOGGER=1
   )
+  # Match the assertion policy of every consumer reusing this PCH.
+  target_compile_options(ROCKPolicyTestSupport PRIVATE /UNDEBUG)
   target_precompile_headers(ROCKPolicyTestSupport PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h")
   target_link_libraries(ROCKPolicyTestSupport PUBLIC spdlog::spdlog mmio::mmio)
   if(TARGET xbyak::xbyak)
     target_link_libraries(ROCKPolicyTestSupport PUBLIC xbyak::xbyak)
   endif()
 
+  add_executable(ROCKConfigurationStoreTests
+    "${ROOT_DIR}/tests/ConfigurationStoreTests.cpp"
+    "${SOURCE_DIR}/config/ConfigurationStore.cpp"
+    "${SOURCE_DIR}/RockConfigLoad.cpp"
+  )
+  target_compile_features(ROCKConfigurationStoreTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKConfigurationStoreTests PRIVATE ROCK_CONFIG_REFERENCE_DIR="${ROOT_DIR}/data/config")
+  list(APPEND ROCK_COMMONLIB_TEST_TARGETS ROCKConfigurationStoreTests)
+  add_rock_test(ROCKConfigurationStoreTests)
+
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)
     target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} REUSE_FROM ROCKPolicyTestSupport)
     target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE ROCKPolicyTestSupport)
   endforeach()
-  add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
 
   add_executable(ROCKDebugOverlayFrameAdmissionTests
     "${ROOT_DIR}/tests/DebugOverlayFrameAdmissionTests.cpp"
@@ -715,6 +963,13 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKDebugOverlayFrameAdmissionTests PRIVATE cxx_std_23)
   target_include_directories(ROCKDebugOverlayFrameAdmissionTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDebugOverlayFrameAdmissionTests)
+
+  add_executable(ROCKDebugVisualizationPolicyTests
+    "${ROOT_DIR}/tests/DebugVisualizationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKDebugVisualizationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugVisualizationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDebugVisualizationPolicyTests)
 
   add_executable(ROCKDebugOverlaySnapshotPoolTests
     "${ROOT_DIR}/tests/DebugOverlaySnapshotPoolTests.cpp"
@@ -745,6 +1000,14 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderDebugOverlayRuntimeTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderDebugOverlayRuntimeTests)
 
+  add_executable(ROCKProviderColliderVisualizationRuntimeTests
+    "${ROOT_DIR}/tests/ProviderColliderVisualizationRuntimeTests.cpp"
+    "${SOURCE_DIR}/api/ProviderColliderVisualizationRuntime.cpp"
+  )
+  target_compile_features(ROCKProviderColliderVisualizationRuntimeTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderColliderVisualizationRuntimeTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderColliderVisualizationRuntimeTests)
+
   add_executable(ROCKProviderApiAbiTests
     "${ROOT_DIR}/tests/ProviderApiAbiTests.cpp"
   )
@@ -758,6 +1021,13 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKProviderApiNegotiationTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderApiNegotiationTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderApiNegotiationTests)
+
+  add_executable(ROCKProviderHandItemClientTests
+    "${ROOT_DIR}/tests/ProviderHandItemClientTests.cpp"
+  )
+  target_compile_features(ROCKProviderHandItemClientTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderHandItemClientTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderHandItemClientTests)
 
   add_executable(ROCKProviderExternalBodyRegistryTests
     "${ROOT_DIR}/tests/ProviderExternalBodyRegistryTests.cpp"
@@ -779,6 +1049,34 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKTouchGrabMathTests PRIVATE cxx_std_23)
   target_include_directories(ROCKTouchGrabMathTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKTouchGrabMathTests)
+
+  add_executable(ROCKGameFrameTimingPolicyTests
+    "${ROOT_DIR}/tests/GameFrameTimingPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGameFrameTimingPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGameFrameTimingPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGameFrameTimingPolicyTests)
+
+  add_executable(ROCKPhysicsTimingSamplePolicyTests
+    "${ROOT_DIR}/tests/PhysicsTimingSamplePolicyTests.cpp"
+  )
+  target_compile_features(ROCKPhysicsTimingSamplePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPhysicsTimingSamplePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPhysicsTimingSamplePolicyTests)
+
+  add_executable(ROCKContactActivityTrackerPolicyTests
+    "${ROOT_DIR}/tests/ContactActivityTrackerPolicyTests.cpp"
+  )
+  target_compile_features(ROCKContactActivityTrackerPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKContactActivityTrackerPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKContactActivityTrackerPolicyTests)
+
+  add_executable(ROCKDynamicHandSurfaceContactStateTests
+    "${ROOT_DIR}/tests/DynamicHandSurfaceContactStateTests.cpp"
+  )
+  target_compile_features(ROCKDynamicHandSurfaceContactStateTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDynamicHandSurfaceContactStateTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDynamicHandSurfaceContactStateTests)
 
   add_executable(ROCKProviderLeasePolicyTests
     "${ROOT_DIR}/tests/ProviderLeasePolicyTests.cpp"
@@ -813,26 +1111,36 @@ if(BUILD_ROCK_TESTS)
   target_link_libraries(ROCKDebugOverlayShaderCompileTests PRIVATE d3dcompiler.lib)
   add_rock_test(ROCKDebugOverlayShaderCompileTests)
 
-  add_dependencies(
-    ROCKPolicyTestBinaries
-    ROCKDebugOverlayFrameAdmissionTests
-    ROCKDebugOverlayLineBatchTests
-    ROCKProviderDebugOverlayRuntimeTests
-    ROCKProviderApiAbiTests
-    ROCKProviderApiNegotiationTests
-    ROCKProviderExternalBodyRegistryTests
-    ROCKProviderTouchGrabRegistryTests
-    ROCKTouchGrabMathTests
-    ROCKProviderLeasePolicyTests
-    ROCKDebugOverlayShapeGeometryTests
-    ROCKDebugOverlayShapePipelineTests
-    ROCKDebugOverlayRuntimeSettingsTests
-    ROCKDebugOverlaySnapshotPoolTests
-    ROCKDebugOverlayShaderCompileTests
+  add_executable(ROCKMainLoopHookPolicyTests
+    "${ROOT_DIR}/tests/MainLoopHookPolicyTests.cpp"
   )
+  target_compile_features(ROCKMainLoopHookPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKMainLoopHookPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKMainLoopHookPolicyTests)
+
+  add_executable(ROCKWeaponTelemetryTraversalTests "${ROOT_DIR}/tests/WeaponTelemetryTraversalTests.cpp")
+  target_compile_features(ROCKWeaponTelemetryTraversalTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponTelemetryTraversalTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponTelemetryTraversalTests)
+
+  rock_write_test_catalog()
+
 
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
   if(ROCK_POWERSHELL_EXECUTABLE)
+    add_test(
+      NAME RpsSdkRockContractTests
+      COMMAND "${ROCK_POWERSHELL_EXECUTABLE}"
+              -NoProfile
+              -ExecutionPolicy Bypass
+              -File "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
+              -Root "${RPS_SDK_ROOT}"
+    )
+    set_tests_properties(
+      RpsSdkRockContractTests
+      PROPERTIES LABELS "sdk" TIMEOUT 60
+    )
+
     file(GLOB ROCK_SOURCE_BOUNDARY_TESTS CONFIGURE_DEPENDS "${ROOT_DIR}/tests/*SourceTests.ps1")
     foreach(ROCK_SOURCE_BOUNDARY_TEST IN LISTS ROCK_SOURCE_BOUNDARY_TESTS)
       get_filename_component(ROCK_SOURCE_BOUNDARY_TEST_NAME "${ROCK_SOURCE_BOUNDARY_TEST}" NAME_WE)
@@ -844,7 +1152,13 @@ if(BUILD_ROCK_TESTS)
                 -File "${ROCK_SOURCE_BOUNDARY_TEST}"
                 -Root "${ROOT_DIR}"
       )
-      set_tests_properties(${ROCK_SOURCE_BOUNDARY_TEST_NAME} PROPERTIES LABELS "source-boundary")
+      set_tests_properties(
+        ${ROCK_SOURCE_BOUNDARY_TEST_NAME}
+        PROPERTIES
+          LABELS "source-boundary"
+          TIMEOUT 60
+          ENVIRONMENT "RPS_SDK_ROOT=${RPS_SDK_ROOT}"
+      )
     endforeach()
   else()
     message(WARNING "PowerShell was not found; ROCK source-boundary .ps1 tests will not be registered in this configure.")

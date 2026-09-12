@@ -55,55 +55,6 @@ namespace rock::weapon_part_record_identity_policy
     inline constexpr std::uint32_t kAttachPointGripStock = 0x0002249F;
     inline constexpr std::uint32_t kAttachPointReceiver = 0x00024004;
 
-    [[nodiscard]] inline constexpr std::string_view canonicalConnectPointForAttachPoint(std::uint32_t attachPointFormId) noexcept
-    {
-        switch (attachPointFormId) {
-        case kAttachPointMagazine:
-            return "P-Mag";
-        case kAttachPointBarrel:
-            return "P-Barrel";
-        case kAttachPointMuzzle:
-            return "P-Muzzle";
-        case kAttachPointSight:
-            return "P-Scope";
-        case kAttachPointGripStock:
-            return "P-Grip";
-        case kAttachPointReceiver:
-            return "P-Receiver";
-        default:
-            return {};
-        }
-    }
-
-    [[nodiscard]] inline constexpr std::uint32_t recoveryProviderAttachPointForAttachPoint(
-        std::uint32_t attachPointFormId) noexcept
-    {
-        switch (attachPointFormId) {
-        case kAttachPointMuzzle:
-            // The barrel model owns P-Muzzle metadata.
-            return kAttachPointBarrel;
-        case kAttachPointMagazine:
-        case kAttachPointBarrel:
-        case kAttachPointSight:
-        case kAttachPointGripStock:
-            // Standard top-level slots are authored by the receiver model.
-            return kAttachPointReceiver;
-        default:
-            return 0;
-        }
-    }
-
-    [[nodiscard]] inline constexpr std::uint8_t recoveryDependencyRank(std::uint32_t attachPointFormId) noexcept
-    {
-        if (attachPointFormId == kAttachPointReceiver) {
-            return 0;
-        }
-        if (attachPointFormId == kAttachPointMuzzle) {
-            return 2;
-        }
-        return 1;
-    }
-
     [[nodiscard]] inline constexpr StructureAnchor resolveStructureAnchor(std::string_view nodeName)
     {
         // Exact matches for the CK-standard connect points observed in

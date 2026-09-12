@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/body/BodyZone.h"
+#include "physics-interaction/VectorMath.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -59,13 +60,15 @@ namespace rock::shoulder_stash
         std::uint32_t sustainedHeldBodyId = kInvalidBodyId;
         RE::NiPoint3 sustainedHeldBodyLocalPointGame{};
         RE::NiPoint3 sustainedPointGame{};
-        std::uint32_t sustainedMissFrames = 0;
+        // Elapsed measured time without sustained-contact evidence.
+        float sustainedMissSeconds = 0.0f;
         bool hasSustainedContactAnchor = false;
         bool hasSustainedPointGame = false;
         float dwellSeconds = 0.0f;
         float nextCandidatePulseTimeSeconds = 0.0f;
-        RE::NiPoint3 lastProbePointGame{};
-        bool hasLastProbePoint = false;
+        RE::NiPoint3 lastKinematicProbePointGame{};
+        bool hasLastKinematicProbePoint = false;
+        bool lastKinematicProbePointWasHmdRelative = false;
     };
 
     struct Decision
@@ -109,9 +112,10 @@ namespace rock::shoulder_stash
                source == EvidenceSource::BodyZoneColliderAndContact;
     }
 
-    [[nodiscard]] inline bool sustainedContactMissWithinTolerance(std::uint32_t missFrames, int maxMissFrames) noexcept
+    [[nodiscard]] inline bool sustainedContactMissWithinTolerance(float missSeconds, float maxMissSeconds) noexcept
     {
-        return maxMissFrames >= 0 && missFrames <= static_cast<std::uint32_t>(maxMissFrames);
+        return std::isfinite(maxMissSeconds) && maxMissSeconds >= 0.0f &&
+               std::isfinite(missSeconds) && missSeconds <= maxMissSeconds;
     }
 
     inline void clearSustainedContact(RuntimeState& state) noexcept
@@ -121,7 +125,7 @@ namespace rock::shoulder_stash
         state.sustainedHeldBodyId = kInvalidBodyId;
         state.sustainedHeldBodyLocalPointGame = {};
         state.sustainedPointGame = {};
-        state.sustainedMissFrames = 0;
+        state.sustainedMissSeconds = 0.0f;
         state.hasSustainedContactAnchor = false;
         state.hasSustainedPointGame = false;
     }
@@ -150,31 +154,6 @@ namespace rock::shoulder_stash
                std::isfinite(maxSpeedGameUnitsPerSecond) &&
                maxSpeedGameUnitsPerSecond > 0.0f &&
                speedGameUnitsPerSecond > maxSpeedGameUnitsPerSecond;
-    }
-
-    [[nodiscard]] inline constexpr bool shouldArmEquippedWeaponFastReleaseCommitLease(
-        bool previouslyConfirmed,
-        bool speedLimitExceeded,
-        bool gripPhysicallyHeld,
-        bool sameSpatialCandidate) noexcept
-    {
-        return previouslyConfirmed && speedLimitExceeded && !gripPhysicallyHeld && sameSpatialCandidate;
-    }
-
-    [[nodiscard]] inline constexpr bool equippedWeaponFastReleaseCommitLeaseIsUsable(
-        bool active,
-        std::uint64_t leaseOwnershipKey,
-        std::uint64_t currentOwnershipKey,
-        std::uint8_t remainingOpenFrames,
-        bool gripPhysicallyHeld,
-        bool sameSpatialCandidate) noexcept
-    {
-        return active &&
-               leaseOwnershipKey != 0 &&
-               leaseOwnershipKey == currentOwnershipKey &&
-               remainingOpenFrames > 0 &&
-               !gripPhysicallyHeld &&
-               sameSpatialCandidate;
     }
 
     [[nodiscard]] inline bool shoulderStashDwellIdentityMatches(
@@ -207,7 +186,7 @@ namespace rock::shoulder_stash
 
     [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& value) noexcept
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     [[nodiscard]] inline RE::NiPoint3 add(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
@@ -227,21 +206,17 @@ namespace rock::shoulder_stash
 
     [[nodiscard]] inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     [[nodiscard]] inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) noexcept
     {
-        return RE::NiPoint3{
-            a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x,
-        };
+        return vector_math::cross(a, b);
     }
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value) noexcept
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     [[nodiscard]] inline float length(const RE::NiPoint3& value) noexcept
@@ -282,6 +257,13 @@ namespace rock::shoulder_stash
     [[nodiscard]] inline float probeSpeed(const Probe& probe) noexcept
     {
         return probe.hasVelocity ? length(probe.velocityGamePerSecond) : 0.0f;
+    }
+
+    [[nodiscard]] inline RE::NiPoint3 probePointRelativeToHmdTranslation(
+        const RE::NiPoint3& probePointGame,
+        const RE::NiPoint3& hmdPositionWorld) noexcept
+    {
+        return sub(probePointGame, hmdPositionWorld);
     }
 
     [[nodiscard]] inline bool isShoulderZone(body_zone::BodyZoneKind zone) noexcept

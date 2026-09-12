@@ -23,12 +23,16 @@ namespace rock::havok_physics_timing
 
     PhysicsTimingSample sampleCurrentTiming()
     {
+        /*
+         * Unreadable globals report zero so makeTimingSample classifies the
+         * sample as fallback; missing native timing must never look measured.
+         */
         return makeTimingSample(
-            readFloatGlobal(offsets::kData_BhkWorldRawDeltaSeconds, kFallbackPhysicsDeltaSeconds),
-            readFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, kFallbackPhysicsDeltaSeconds),
+            readFloatGlobal(offsets::kData_BhkWorldRawDeltaSeconds, 0.0f),
+            readFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, 0.0f),
             readFloatGlobal(offsets::kData_BhkWorldRemainderDeltaSeconds, 0.0f),
-            readFloatGlobal(offsets::kData_BhkWorldAccumulatedDeltaSeconds, kFallbackPhysicsDeltaSeconds),
-            readUintGlobal(offsets::kData_BhkWorldSubstepCount, 1));
+            readFloatGlobal(offsets::kData_BhkWorldAccumulatedDeltaSeconds, 0.0f),
+            readUintGlobal(offsets::kData_BhkWorldSubstepCount, 0));
     }
 
 }

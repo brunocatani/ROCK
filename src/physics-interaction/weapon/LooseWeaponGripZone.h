@@ -39,6 +39,25 @@ namespace rock::loose_weapon_grip_zone
     };
 
     /*
+     * Canonical primary-hand frame for this frame's loose-hold solves. Every
+     * loose placement mirrors from the physical RIGHT hand; while ROCK
+     * presents that hand (support lock, part carry, authored seat) the
+     * rendered bone is ROCK's own output and must not feed the solve.
+     * PhysicsInteraction publishes the weapon-authority physical frame once
+     * per frame before any grab commit. A publication without a frame while
+     * ROCK presents the hand fails the authored placement closed; without
+     * ROCK presentation the rendered bone remains the legacy source.
+     */
+    struct CanonicalPrimaryHandFrame
+    {
+        RE::NiTransform handWorld{};
+        bool valid{ false };
+        bool presentedByRock{ false };
+    };
+
+    void publishCanonicalPrimaryHandFrame(const CanonicalPrimaryHandFrame& frame);
+
+    /*
      * Refresh one hand's grip-zone state. Call once per frame per hand.
      * heldSettled must be true only while the grab is in its settled held
      * state (HeldBody); the inside-radius settle timer only accumulates then.
@@ -71,14 +90,14 @@ namespace rock::loose_weapon_grip_zone
         RE::NiPoint3& outFiringGripWeaponLocal);
 
     /*
-     * Stateless one-shot resolver of the canonical firing hold for a loose
-     * weapon in the tested hand: the primary hand receives the selected
-     * canonical pose, the other hand receives ROCK's mirrored firing hold, both
-     * expressed as the tested hand's live root-flattened frame plus the hand
-     * transform in weapon-root-local space (weapon world = hand world o
-     * inverse(hold)). Used by the pull-catch/force-grab commit to seat a far
-     * grabbed weapon directly on its firing grip; the grip-zone runtimes
-     * above share the same projection. Frame-thread only.
+     * Stateless one-shot resolver of the loose weapon PLACEMENT hold. For an
+     * authored grip this always derives the position-only hold from the
+     * native/hFRIK carrier. It deliberately ignores the equipped-position
+     * cache so every loose grab uses the same path as the first loose grab.
+     * Full authored placement is the final aligned fallback. The other hand
+     * receives the matching mirrored hold. Weapon world = hand world o
+     * inverse(hold). Used by pull-catch and force-grab commit; frame-thread
+     * only.
      */
     bool tryResolveLooseWeaponFiringHandHold(
         bool isLeft,

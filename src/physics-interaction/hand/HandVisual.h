@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <utility>
 
 namespace rock::hand_visual_lerp_math
 {
@@ -38,6 +40,16 @@ namespace rock::hand_visual_lerp_math
         float maxDistanceGameUnits = 0.0f;
         float minAngleDegrees = 0.0f;
         float maxAngleDegrees = 0.0f;
+    };
+
+    inline constexpr bool kEquippedWeaponReturnEnabled = true;
+    inline constexpr VisualReturnConfig kEquippedWeaponReturnConfig{
+        .minSeconds = 0.12f,
+        .maxSeconds = 0.20f,
+        .minDistanceGameUnits = 1.0f,
+        .maxDistanceGameUnits = 14.0f,
+        .minAngleDegrees = 5.0f,
+        .maxAngleDegrees = 90.0f,
     };
 
     /*
@@ -336,6 +348,96 @@ namespace rock::hand_visual_lerp_math
         state.lastApplied = result.transform;
         state.lastAlpha = timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
         return result;
+    }
+
+    /*
+     * Handoff residual: a replacement solve takes over a rendered pose (the
+     * firing grip detaches into part carry, or reattaches into the two-hand
+     * solve). The residual is the rendered pose expressed in the solved
+     * frame. Decaying it to identity while the solve keeps moving starts the
+     * presentation exactly on the last rendered pose, rides the live hands
+     * during the blend, and ends exactly on the live solve.
+     */
+    template <class Transform>
+    inline Transform captureHandoffResidualLocal(const Transform& solvedWorld, const Transform& renderedWorld)
+    {
+        return transform_math::composeTransforms(transform_math::invertTransform(solvedWorld), renderedWorld);
+    }
+
+    template <class Transform>
+    inline Transform applyHandoffResidual(const Transform& solvedWorld, const Transform& residualLocal, float alpha)
+    {
+        return transform_math::composeTransforms(
+            solvedWorld,
+            interpolateTransform(residualLocal, transform_math::makeIdentityTransform<Transform>(), alpha));
+    }
+
+    enum class VisualReturnDriveStatus : std::uint8_t
+    {
+        Inactive,
+        InvalidTransform,
+        PublishFailed,
+        Active,
+        Completed,
+    };
+
+    template <class Transform>
+    struct VisualReturnDriveResult
+    {
+        Transform transform{};
+        VisualReturnDriveStatus status = VisualReturnDriveStatus::Inactive;
+        float initialDistanceGameUnits = 0.0f;
+        float initialAngleDegrees = 0.0f;
+        float durationSeconds = 0.0f;
+        bool timingInitializedThisFrame = false;
+    };
+
+    template <class Transform, class ValidateTransform, class PublishTransform>
+    inline VisualReturnDriveResult<Transform> driveVisualReturn(
+        VisualReturnTransition<Transform>& state,
+        const Transform& movingTarget,
+        float deltaTime,
+        const VisualReturnConfig& config,
+        ValidateTransform&& validateTransform,
+        PublishTransform&& publishTransform)
+    {
+        VisualReturnDriveResult<Transform> output{};
+        if (!state.active) {
+            return output;
+        }
+
+        output.timingInitializedThisFrame = !state.durationInitialized;
+        if (output.timingInitializedThisFrame) {
+            output.initialDistanceGameUnits =
+                distanceGameUnits(state.start.translate, movingTarget.translate);
+            output.initialAngleDegrees =
+                rotationDistanceDegrees(state.start, movingTarget);
+        }
+
+        const auto advanced = advanceVisualReturn(
+            state,
+            movingTarget,
+            deltaTime,
+            config);
+        output.transform = advanced.transform;
+        output.durationSeconds = state.durationSeconds;
+        if (!std::invoke(
+                std::forward<ValidateTransform>(validateTransform),
+                output.transform)) {
+            output.status = VisualReturnDriveStatus::InvalidTransform;
+            return output;
+        }
+        if (!std::invoke(
+                std::forward<PublishTransform>(publishTransform),
+                output.transform)) {
+            output.status = VisualReturnDriveStatus::PublishFailed;
+            return output;
+        }
+
+        output.status = advanced.reachedTarget ?
+            VisualReturnDriveStatus::Completed :
+            VisualReturnDriveStatus::Active;
+        return output;
     }
 
     template <class Vector>

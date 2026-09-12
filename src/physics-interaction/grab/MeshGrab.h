@@ -1,9 +1,13 @@
 #pragma once
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/grab/GrabNodeNamePolicy.h"
+#include "physics-interaction/VectorMath.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/SkinnedSurfaceMath.h"
+#include "physics-interaction/grab/SegmentVisibilityPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "RE/Fallout.h"
+#include "physics-interaction/grab/SkinnedBoneOwner.h"
 
 #include <algorithm>
 #include <array>
@@ -12,7 +16,6 @@
 #include <cstring>
 #include <functional>
 #include <limits>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -45,16 +48,16 @@ namespace rock
 
     namespace BSSkinOffset
     {
-        /*
-         * Mesh grab reads BSSkin::Instance through guarded native-memory copies.
-         * Keep these offsets aligned with the local FO4VR BSSkin layout in
-         * CommonLibF4VR so non-dynamic skinned bodies keep their live bone
-         * ownership path instead of collapsing to ownerless/no-triangle meshes.
-         */
+        // Live counts, not capacities: native resize 141C358D0/141C35960,
+        // iterator 1402888E0, render palette 141DABC60/141DB6CA0.
         constexpr int bonesData = 0x10;
-        constexpr int bonesCount = 0x18;
+        constexpr int bonesCount = 0x20;
+        constexpr int worldTransforms = 0x28;
+        constexpr int worldTransformCount = 0x38;
         constexpr int boneData = 0x40;
+        constexpr int extraScale = 0x50;
         constexpr int transformArrayData = 0x10;
+        constexpr int transformArrayCount = 0x20;
     }
 
     constexpr std::uint32_t kMaxMeshExtractionTriangles = 1'000'000;
@@ -94,7 +97,6 @@ namespace rock
         Dynamic,
         Skinned,
         CollisionQuery,
-        AuthoredNode,
         Fallback
     };
 
@@ -123,6 +125,7 @@ namespace rock
         float distance = 1e30f;
         RE::NiAVObject* sourceNode = nullptr;
         RE::BSTriShape* sourceShape = nullptr;
+        std::uint32_t sourceTriangleIndex = 0;
         TriangleData triangle{};
         GrabSurfaceSourceKind sourceKind = GrabSurfaceSourceKind::Fallback;
         std::uint32_t shapeKey = 0xFFFF'FFFF;
@@ -151,8 +154,6 @@ namespace rock
             return "skinned";
         case GrabSurfaceSourceKind::CollisionQuery:
             return "collisionQuery";
-        case GrabSurfaceSourceKind::AuthoredNode:
-            return "authoredNode";
         case GrabSurfaceSourceKind::Fallback:
         default:
             return "fallback";
@@ -259,34 +260,9 @@ namespace rock
         std::uint32_t staticTriangles = 0;
         std::uint32_t dynamicTriangles = 0;
         std::uint32_t skinnedTriangles = 0;
-        std::uint32_t blacklistedShapes = 0;
 
         [[nodiscard]] std::uint32_t totalTriangles() const noexcept { return staticTriangles + dynamicTriangles + skinnedTriangles; }
     };
-
-    inline std::string_view meshExtractionNodeName(const RE::NiAVObject* node)
-    {
-        if (!node || !node->name.c_str()) {
-            return {};
-        }
-        return std::string_view(node->name.c_str());
-    }
-
-    inline bool shouldSkipMeshExtractionNode(RE::NiAVObject* node, std::string_view grabNodeNameBlacklist, MeshExtractionStats* stats)
-    {
-        if (!node || !node->IsTriShape()) {
-            return false;
-        }
-
-        if (!grab_node_name_policy::shouldSkipNodeForMeshSurface(grabNodeNameBlacklist, meshExtractionNodeName(node))) {
-            return false;
-        }
-
-        if (stats) {
-            ++stats->blacklistedShapes;
-        }
-        return true;
-    }
 
     inline bool readTriShapeRawGeometry(RE::BSTriShape* triShape, TriShapeRawGeometry& out)
     {
@@ -411,7 +387,8 @@ namespace rock
     inline int extractTrianglesFromDynamicTriShape(
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
-        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
+        std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
 
@@ -460,27 +437,100 @@ namespace rock
                 continue;
             }
 
-            TriangleData tri;
-            tri.v0 = readDynamicVertexPosition(verts + i0 * dynamicStride);
-            tri.v1 = readDynamicVertexPosition(verts + i1 * dynamicStride);
-            tri.v2 = readDynamicVertexPosition(verts + i2 * dynamicStride);
-            tri.applyTransform(worldTransform);
+            TriangleData localTriangle;
+            localTriangle.v0 = readDynamicVertexPosition(verts + i0 * dynamicStride);
+            localTriangle.v1 = readDynamicVertexPosition(verts + i1 * dynamicStride);
+            localTriangle.v2 = readDynamicVertexPosition(verts + i2 * dynamicStride);
+            TriangleData worldTriangle = localTriangle;
+            worldTriangle.applyTransform(worldTransform);
 
-            outTriangles.push_back(tri);
-            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Dynamic);
+            outTriangles.push_back(worldTriangle);
+            if (outLocalTriangles) {
+                outLocalTriangles->push_back(localTriangle);
+            }
+            appendSurfaceTriangle(outSurfaceTriangles, worldTriangle, triShape, i, GrabSurfaceSourceKind::Dynamic);
             added++;
         }
 
         return added;
     }
 
+    inline bool readVisibleTriangleRanges(RE::BSTriShape* shape, std::uint32_t triangleCount,
+        segment_visibility::VisibleRanges& visible)
+    {
+        std::uint8_t type = 0;
+        if (!native_memory::tryReadField(shape, VROffset::geometryType, type)) return false;
+        visible = {};
+        if (type != 8) { visible.ranges[0] = {0,triangleCount}; visible.count = 1; visible.valid = true; return true; }
+        // BSSubIndexTriShape constructor 141D56860 and accessor 141D571D0.
+        static const bool verified = [] {
+            constexpr std::array<std::uint8_t,8> expected{0x48,0x8B,0x81,0xB0,0x01,0x00,0x00,0xC3};
+            std::array<std::uint8_t,8> live{};
+            return native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(REL::Module::get().base()+0x1D571D0),
+                live.data(),live.size()) && live==expected;
+        }();
+        void* data=nullptr;
+        void* shared=nullptr;
+        const segment_visibility::Segment* entries=nullptr;
+        const std::uint32_t* rootMap=nullptr;
+        std::uint32_t rootCount=0, segmentCount=0, specialRoot=0, contiguousCount=0;
+        std::uint8_t contiguous=0;
+        if (!verified || !native_memory::tryReadField(shape,0x1B0,data) || !data ||
+            !native_memory::tryReadField(data,0x10,shared) ||
+            !native_memory::tryReadField(data,0x18,entries) ||
+            !native_memory::tryReadField(data,0x2C,rootCount) ||
+            !native_memory::tryReadField(data,0x30,segmentCount) ||
+            !native_memory::tryReadField(data,0x34,contiguousCount) ||
+            !native_memory::tryReadField(data,0x38,specialRoot) ||
+            !native_memory::tryReadField(data,0x3D,contiguous) ||
+            rootCount>segment_visibility::kMaxSegments || segmentCount>segment_visibility::kMaxSegments ||
+            (segmentCount && !entries) || (shared && !native_memory::tryReadField(shared,0x18,rootMap))) {
+            ROCK_LOG_SAMPLE_WARN(MeshGrab,2000,"Mesh visibility rejected '{}': invalid segment arrays roots={} segments={}",
+                shape->name.c_str(),rootCount,segmentCount);
+            return false;
+        }
+        // Native render consumers 141DA03D0 and 142891340 use this optimized whole range.
+        if (contiguous && contiguousCount) {
+            if (contiguousCount>triangleCount) return false;
+            visible.ranges[0] = {0,contiguousCount}; visible.count = 1; visible.valid = true;
+            return true;
+        }
+        std::array<segment_visibility::Segment,segment_visibility::kMaxSegments> segments{};
+        std::array<std::uint32_t,segment_visibility::kMaxSegments> roots{};
+        if (segmentCount && !native_memory::guardedCopyFromMemory(entries,segments.data(),segmentCount*sizeof(segments[0]))) return false;
+        for (std::uint32_t i=0;i<rootCount;++i) {
+            auto index=i==specialRoot ? 0u : i;
+            if (shared) {
+                if (!rootMap || !native_memory::tryReadValue(rootMap+index,roots[i])) return false;
+            } else roots[i]=index;
+        }
+        const auto ranges=segment_visibility::resolve({segments.data(),segmentCount},{roots.data(),rootCount},triangleCount);
+        if (!ranges.valid) {
+            ROCK_LOG_SAMPLE_WARN(MeshGrab,2000,"Mesh visibility rejected '{}': invalid segment hierarchy/range",shape->name.c_str());
+            return false;
+        }
+        visible = ranges;
+        return true;
+    }
+
+    inline bool readVisibleTriangles(RE::BSTriShape* shape, std::uint32_t triangleCount, std::vector<std::uint8_t>& visible)
+    {
+        segment_visibility::VisibleRanges ranges{};
+        if (!readVisibleTriangleRanges(shape, triangleCount, ranges)) return false;
+        if (ranges.count == 1 && ranges.ranges[0].first == 0 && ranges.ranges[0].count == triangleCount) return true;
+        visible.assign(triangleCount,0);
+        for (std::size_t i=0;i<ranges.count;++i) std::fill_n(visible.begin()+ranges.ranges[i].first,ranges.ranges[i].count,1);
+        return true;
+    }
+
     inline int extractTrianglesFromTriShape(
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
-        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
+        std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
         if (isDynamicTriShape(triShape)) {
-            return extractTrianglesFromDynamicTriShape(triShape, outTriangles, outSurfaceTriangles);
+            return extractTrianglesFromDynamicTriShape(triShape, outTriangles, outSurfaceTriangles, outLocalTriangles);
         }
 
         TriShapeRawGeometry geometry;
@@ -504,8 +554,11 @@ namespace rock
 
         RE::NiTransform worldTransform = triShape->world;
 
+        std::vector<std::uint8_t> visibleTriangles;
+        if (!readVisibleTriangles(triShape, geometry.numTriangles, visibleTriangles)) return 0;
         int added = 0;
         for (std::uint32_t i = 0; i < geometry.numTriangles; i++) {
+            if (!visibleTriangles.empty() && !visibleTriangles[i]) continue;
             std::uint16_t i0 = geometry.triangles[i * 3 + 0];
             std::uint16_t i1 = geometry.triangles[i * 3 + 1];
             std::uint16_t i2 = geometry.triangles[i * 3 + 2];
@@ -513,14 +566,18 @@ namespace rock
             if (i0 >= geometry.numVertices || i1 >= geometry.numVertices || i2 >= geometry.numVertices)
                 continue;
 
-            TriangleData tri;
-            tri.v0 = readVertexPosition(verts + i0 * vtxStride, posOffset, fullPrecision);
-            tri.v1 = readVertexPosition(verts + i1 * vtxStride, posOffset, fullPrecision);
-            tri.v2 = readVertexPosition(verts + i2 * vtxStride, posOffset, fullPrecision);
+            TriangleData localTriangle;
+            localTriangle.v0 = readVertexPosition(verts + i0 * vtxStride, posOffset, fullPrecision);
+            localTriangle.v1 = readVertexPosition(verts + i1 * vtxStride, posOffset, fullPrecision);
+            localTriangle.v2 = readVertexPosition(verts + i2 * vtxStride, posOffset, fullPrecision);
 
-            tri.applyTransform(worldTransform);
-            outTriangles.push_back(tri);
-            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Static);
+            TriangleData worldTriangle = localTriangle;
+            worldTriangle.applyTransform(worldTransform);
+            outTriangles.push_back(worldTriangle);
+            if (outLocalTriangles) {
+                outLocalTriangles->push_back(localTriangle);
+            }
+            appendSurfaceTriangle(outSurfaceTriangles, worldTriangle, triShape, i, GrabSurfaceSourceKind::Static);
             added++;
         }
         return added;
@@ -539,7 +596,8 @@ namespace rock
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
-        bool allowPositionOnlySkinnedSurface = false)
+        bool allowPositionOnlySkinnedSurface = false,
+        std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
         const bool dynamicSkinned = isDynamicTriShape(triShape);
@@ -652,124 +710,72 @@ namespace rock
             return 0;
         }
 
-        std::uint32_t boneCount = 0;
-        if (!native_memory::tryReadField(skinInst, BSSkinOffset::bonesCount, boneCount)) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable boneCount", shapeName);
-            return 0;
-        }
-        if (boneCount == 0 || boneCount > 512) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': suspicious boneCount={}", shapeName, boneCount);
-            return 0;
-        }
+        // Verify the live image before using the corrected native skin layout.
+        if (!nativeSkinLayoutVerified()) return 0;
 
-        RE::NiNode** boneNodes = nullptr;
-        if (!native_memory::tryReadField(skinInst, BSSkinOffset::bonesData, boneNodes)) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable bone node array pointer", shapeName);
-            return 0;
-        }
-        if (!boneNodes) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null bone node array", shapeName);
-            return 0;
-        }
-
-        RE::BSSkin::BoneData* boneData = nullptr;
-        if (!dynamicSkinned && !native_memory::tryReadField(skinInst, BSSkinOffset::boneData, boneData)) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable BSSkin::BoneData pointer", shapeName);
-            return 0;
-        }
-        if (!dynamicSkinned && !boneData) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null BSSkin::BoneData", shapeName);
-            return 0;
-        }
-        std::uintptr_t skinToBoneArrayAddress = 0;
-        if (!dynamicSkinned && !native_memory::tryReadField(boneData, BSSkinOffset::transformArrayData, skinToBoneArrayAddress)) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable skinToBone transform array pointer", shapeName);
-            return 0;
-        }
-        const char* skinToBoneArray = reinterpret_cast<const char*>(skinToBoneArrayAddress);
-        if (!dynamicSkinned && !skinToBoneArray) {
-            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null skinToBone transform array", shapeName);
+        std::uint32_t boneCount = 0, nodeCount = 0, bindCount = 0;
+        RE::NiAVObject** boneNodes = nullptr;
+        const RE::NiTransform** worldTransforms = nullptr;
+        void* boneData = nullptr;
+        const char* skinToBoneArray = nullptr;
+        const char* extraScales = nullptr;
+        RE::NiAVObject* skinRoot = nullptr;
+        if (!native_memory::tryReadField(skinInst, BSSkinOffset::worldTransformCount, boneCount) ||
+            !native_memory::tryReadField(skinInst, BSSkinOffset::bonesCount, nodeCount) ||
+            boneCount == 0 || boneCount > 512 || nodeCount > boneCount ||
+            !native_memory::tryReadField(skinInst, BSSkinOffset::bonesData, boneNodes) ||
+            !native_memory::tryReadField(skinInst, BSSkinOffset::worldTransforms, worldTransforms) ||
+            !native_memory::tryReadField(skinInst, BSSkinOffset::boneData, boneData) ||
+            !native_memory::tryReadField(boneData, BSSkinOffset::transformArrayData, skinToBoneArray) ||
+            !native_memory::tryReadField(boneData, BSSkinOffset::transformArrayCount, bindCount) ||
+            bindCount < boneCount || bindCount > 512 || !worldTransforms || !skinToBoneArray ||
+            !native_memory::tryReadField(skinInst, 0x48, skinRoot) ||
+            !native_memory::tryReadField(skinInst, BSSkinOffset::extraScale, extraScales)) {
+            ROCK_LOG_SAMPLE_WARN(MeshGrab, 2000, "Skinned '{}': invalid live palette arrays nodes={} worlds={} binds={}",
+                shapeName, nodeCount, boneCount, bindCount);
             return 0;
         }
 
         struct BoneCombined
         {
-            float m[12];
-            RE::NiNode* node = nullptr;
+            skinned_surface_math::Affine matrix{};
             bool valid = false;
         };
         std::vector<BoneCombined> boneTransforms(boneCount);
-        std::vector<RE::NiNode*> boneNodesByIndex(boneCount, nullptr);
+        std::vector<RE::NiAVObject*> boneNodesByIndex(boneCount, nullptr);
         std::uint32_t invalidBoneNodePointers = 0;
         std::uint32_t invalidBoneTransforms = 0;
-
-        for (std::uint32_t b = 0; b < boneCount; b++) {
-            boneTransforms[b].valid = false;
-            boneTransforms[b].node = nullptr;
-
-            RE::NiNode* boneNode = nullptr;
-            if (!native_memory::tryReadValue(boneNodes + b, boneNode) || !boneNode ||
-                !native_memory::pointerRangeLooksReadable(reinterpret_cast<const char*>(boneNode) + 0x70, 0x40)) {
-                ++invalidBoneNodePointers;
-                continue;
-            }
-
-            boneNodesByIndex[b] = boneNode;
-            if (dynamicSkinned) {
-                continue;
-            }
-
-            std::array<float, 16> boneWorld{};
-            std::array<float, 16> skinToBone{};
-            if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const char*>(boneNode) + 0x70, boneWorld.data(), boneWorld.size() * sizeof(float)) ||
-                !native_memory::guardedCopyFromMemory(skinToBoneArray + b * 0x50 + 0x10, skinToBone.data(), skinToBone.size() * sizeof(float)) ||
-                !finiteFloatArray(boneWorld.data(), boneWorld.size()) ||
-                !finiteFloatArray(skinToBone.data(), skinToBone.size())) {
+        for (std::uint32_t b = 0; b < boneCount; ++b) {
+            const RE::NiTransform* worldTransform = nullptr;
+            skinned_surface_math::Transform boneWorld{}, skinToBone{};
+            std::array<float, 3> extraScale{};
+            if (!native_memory::tryReadValue(worldTransforms + b, worldTransform) || !worldTransform ||
+                !native_memory::guardedCopyFromMemory(worldTransform, boneWorld.data(), sizeof(boneWorld)) ||
+                !native_memory::guardedCopyFromMemory(skinToBoneArray + b * 0x50 + 0x10, skinToBone.data(), sizeof(skinToBone)) ||
+                (extraScales && !native_memory::guardedCopyFromMemory(extraScales + b * 0x10, extraScale.data(), sizeof(extraScale))) ||
+                !skinned_surface_math::worldFromSkin(boneWorld, skinToBone, extraScale, boneTransforms[b].matrix)) {
                 ++invalidBoneTransforms;
                 continue;
             }
-
-            const float* bwRot = boneWorld.data();
-            const float* bwTrans = boneWorld.data() + 12;
-            float bwScale = boneWorld[15];
-            const float* stb = skinToBone.data();
-            float stbScale = skinToBone[15];
-
-            float combinedScale = bwScale * stbScale;
-
-            float cr[9];
-            for (int r = 0; r < 3; r++) {
-                for (int c = 0; c < 3; c++) {
-                    cr[r * 3 + c] = (bwRot[r * 4 + 0] * stb[0 * 4 + c] + bwRot[r * 4 + 1] * stb[1 * 4 + c] + bwRot[r * 4 + 2] * stb[2 * 4 + c]) * combinedScale;
-                }
-            }
-
-            float stbTx = stb[12], stbTy = stb[13], stbTz = stb[14];
-            float ct[3];
-            for (int r = 0; r < 3; r++) {
-                ct[r] = (bwRot[r * 4 + 0] * stbTx + bwRot[r * 4 + 1] * stbTy + bwRot[r * 4 + 2] * stbTz) * bwScale + bwTrans[r];
-            }
-
-            boneTransforms[b].m[0] = cr[0];
-            boneTransforms[b].m[1] = cr[1];
-            boneTransforms[b].m[2] = cr[2];
-            boneTransforms[b].m[3] = ct[0];
-            boneTransforms[b].m[4] = cr[3];
-            boneTransforms[b].m[5] = cr[4];
-            boneTransforms[b].m[6] = cr[5];
-            boneTransforms[b].m[7] = ct[1];
-            boneTransforms[b].m[8] = cr[6];
-            boneTransforms[b].m[9] = cr[7];
-            boneTransforms[b].m[10] = cr[8];
-            boneTransforms[b].m[11] = ct[2];
-            boneTransforms[b].node = boneNode;
             boneTransforms[b].valid = true;
+            RE::NiAVObject* boneNode = nullptr;
+            if (b < nodeCount && boneNodes && native_memory::tryReadValue(boneNodes + b, boneNode) && boneNode &&
+                native_memory::pointerRangeLooksReadable(boneNode, sizeof(RE::NiAVObject))) {
+                boneNodesByIndex[b] = boneNode;
+            } else {
+                boneNodesByIndex[b] = resolveFlattenedSkinBoneOwner(skinRoot, worldTransform);
+                if (!boneNodesByIndex[b]) ++invalidBoneNodePointers;
+            }
         }
 
         ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={}, dynamic={})", shapeName, numTris, numVerts,
             boneCount, vtxStride, skinOffset, fullPrecision ? 1 : 0, dynamicSkinned ? 1 : 0);
 
         std::vector<RE::NiPoint3> worldVerts(numVerts);
+        std::vector<RE::NiPoint3> dynamicLocalVerts;
+        if (dynamicSkinned && outLocalTriangles) {
+            dynamicLocalVerts.resize(numVerts);
+        }
         std::vector<std::uint8_t> worldVertexValid(numVerts, 0);
         std::vector<std::uint8_t> vertexSkinInfluencesValid(numVerts, 0);
         std::vector<std::array<GrabSurfaceVertexInfluence, 4>> vertexInfluences(numVerts);
@@ -778,10 +784,9 @@ namespace rock
         for (std::uint16_t vi = 0; vi < numVerts; vi++) {
             const std::uint8_t* vtx = verts + vi * vtxStride;
 
-            RE::NiPoint3 bindPos{};
-            if (!dynamicSkinned) {
-                bindPos = readVertexPosition(vtx, posOffset, fullPrecision);
-            }
+            const RE::NiPoint3 bindPos = dynamicSkinned ?
+                readDynamicVertexPosition(dynamicVerts + vi * dynamicStride) :
+                readVertexPosition(vtx, posOffset, fullPrecision);
 
             const std::uint16_t* weightPtr = reinterpret_cast<const std::uint16_t*>(vtx + skinOffset);
             float w0 = halfToFloat(weightPtr[0]);
@@ -795,16 +800,17 @@ namespace rock
             std::uint8_t bi2 = idxPtr[2];
             std::uint8_t bi3 = idxPtr[3];
 
-            float weights[4] = { w0, w1, w2, w3 };
+            std::array<float,4> weights{ w0, w1, w2, w3 };
+            std::array<const skinned_surface_math::Affine*,4> weightedMatrices{};
             std::uint8_t indices[4] = { bi0, bi1, bi2, bi3 };
 
-            float wx = 0.0f, wy = 0.0f, wz = 0.0f;
             float validWeight = 0.0f;
             bool missingWeightedBone = false;
             bool hasWeightedBoneInfluence = false;
+            bool completeBoneOwners = true;
             for (int k = 0; k < 4; k++) {
                 float w = weights[k];
-                if (!std::isfinite(w) || w <= 0.00001f)
+                if (!std::isfinite(w) || w <= 0.0f)
                     continue;
 
                 std::uint8_t bIdx = indices[k];
@@ -812,73 +818,40 @@ namespace rock
                     missingWeightedBone = true;
                     continue;
                 }
-                if (!boneNodesByIndex[bIdx]) {
-                    /*
-                     * BSDynamicTriShape already exposes live vertex positions.
-                     * Missing bone owners only reduce body-matching metadata,
-                     * not surface-position authority for close hand grabs.
-                     */
-                    if (!dynamicSkinned) {
-                        missingWeightedBone = true;
-                    }
-                    continue;
-                }
-                if (!dynamicSkinned && !boneTransforms[bIdx].valid) {
+                if (!boneTransforms[bIdx].valid) {
                     missingWeightedBone = true;
                     continue;
                 }
-
-                if (!dynamicSkinned) {
-                    const float* m = boneTransforms[bIdx].m;
-
-                    float rx = m[0] * bindPos.x + m[1] * bindPos.y + m[2] * bindPos.z + m[3];
-                    float ry = m[4] * bindPos.x + m[5] * bindPos.y + m[6] * bindPos.z + m[7];
-                    float rz = m[8] * bindPos.x + m[9] * bindPos.y + m[10] * bindPos.z + m[11];
-
-                    wx += w * rx;
-                    wy += w * ry;
-                    wz += w * rz;
-                }
+                weightedMatrices[k] = &boneTransforms[bIdx].matrix;
                 validWeight += w;
-                hasWeightedBoneInfluence = true;
+                hasWeightedBoneInfluence = hasWeightedBoneInfluence || boneNodesByIndex[bIdx] != nullptr;
+                completeBoneOwners = completeBoneOwners && boneNodesByIndex[bIdx] != nullptr;
                 vertexInfluences[vi][k] = GrabSurfaceVertexInfluence{ boneNodesByIndex[bIdx], w };
             }
 
-            if (dynamicSkinned) {
-                const RE::NiPoint3 dynamicLocal = readDynamicVertexPosition(dynamicVerts + vi * dynamicStride);
-                const RE::NiPoint3 dynamicWorld = transformPoint(triShape->world, dynamicLocal);
-                if (!std::isfinite(dynamicWorld.x) || !std::isfinite(dynamicWorld.y) || !std::isfinite(dynamicWorld.z)) {
-                    ++invalidSkinnedVertices;
-                    continue;
-                }
-                worldVerts[vi] = dynamicWorld;
-            } else {
-                if (!missingWeightedBone && validWeight > 0.00001f && std::isfinite(wx) && std::isfinite(wy) && std::isfinite(wz)) {
-                    worldVerts[vi] = RE::NiPoint3(wx, wy, wz);
-                } else if (allowPositionOnlySkinnedSurface) {
-                    const RE::NiPoint3 bindWorld = transformPoint(triShape->world, bindPos);
-                    if (!std::isfinite(bindWorld.x) || !std::isfinite(bindWorld.y) || !std::isfinite(bindWorld.z)) {
-                        ++invalidSkinnedVertices;
-                        continue;
-                    }
-                    worldVerts[vi] = bindWorld;
-                    ++positionOnlySkinnedVertices;
-                } else {
-                    ++invalidSkinnedVertices;
-                    continue;
-                }
+            if (missingWeightedBone || validWeight <= 0.00001f ||
+                !skinned_surface_math::blendVertex(weightedMatrices, weights, bindPos, triShape->world.translate, worldVerts[vi])) {
+                ++invalidSkinnedVertices;
+                continue;
             }
-            if (!missingWeightedBone && hasWeightedBoneInfluence && validWeight > 0.00001f) {
+            if (dynamicSkinned && outLocalTriangles) {
+                dynamicLocalVerts[vi] = transform_math::worldPointToLocal(triShape->world, worldVerts[vi]);
+            }
+            if (hasWeightedBoneInfluence && completeBoneOwners) {
                 vertexSkinInfluencesValid[vi] = 1;
-            } else if (dynamicSkinned) {
+            } else {
                 ++positionOnlySkinnedVertices;
+                if (outSurfaceTriangles && !allowPositionOnlySkinnedSurface) continue;
             }
             worldVertexValid[vi] = 1;
         }
 
+        std::vector<std::uint8_t> visibleTriangles;
+        if (!readVisibleTriangles(triShape, numTris, visibleTriangles)) return 0;
         int added = 0;
         std::uint32_t skippedInvalidVertexTriangles = 0;
         for (std::uint32_t i = 0; i < numTris; i++) {
+            if (!visibleTriangles.empty() && !visibleTriangles[i]) continue;
             std::uint16_t i0 = tris[i * 3 + 0];
             std::uint16_t i1 = tris[i * 3 + 1];
             std::uint16_t i2 = tris[i * 3 + 2];
@@ -896,6 +869,13 @@ namespace rock
             tri.v2 = worldVerts[i2];
 
             outTriangles.push_back(tri);
+            if (dynamicSkinned && outLocalTriangles) {
+                outLocalTriangles->push_back(TriangleData{
+                    .v0 = dynamicLocalVerts[i0],
+                    .v1 = dynamicLocalVerts[i1],
+                    .v2 = dynamicLocalVerts[i2],
+                });
+            }
             std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3> skinInfluences{};
             skinInfluences[0] = vertexInfluences[i0];
             skinInfluences[1] = vertexInfluences[i1];
@@ -907,7 +887,7 @@ namespace rock
         }
 
         if (invalidBoneNodePointers != 0 || invalidBoneTransforms != 0 || invalidSkinnedVertices != 0 || skippedInvalidVertexTriangles != 0) {
-            ROCK_LOG_WARN(MeshGrab,
+            ROCK_LOG_SAMPLE_WARN(MeshGrab, 2000,
                 "Skinned '{}': skipped invalid data bonePtrs={} boneTransforms={} vertices={} triangles={}",
                 shapeName,
                 invalidBoneNodePointers,
@@ -922,16 +902,12 @@ namespace rock
     inline void extractAllTriangles(RE::NiAVObject* root,
         std::vector<TriangleData>& outTriangles,
         int maxDepth = 10,
-        MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {})
+        MeshExtractionStats* stats = nullptr)
     {
         if (!root || maxDepth <= 0)
             return;
 
         if (root->flags.flags & 1)
-            return;
-
-        if (shouldSkipMeshExtractionNode(root, grabNodeNameBlacklist, stats))
             return;
 
         auto* triShape = root->IsTriShape();
@@ -986,7 +962,7 @@ namespace rock
             for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
                 auto* kid = kids[i].get();
                 if (kid)
-                    extractAllTriangles(kid, outTriangles, maxDepth - 1, stats, grabNodeNameBlacklist);
+                    extractAllTriangles(kid, outTriangles, maxDepth - 1, stats);
             }
         }
     }
@@ -1049,16 +1025,12 @@ namespace rock
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         int maxDepth = 10,
         MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         if (!root || maxDepth <= 0)
             return;
 
         if (root->flags.flags & 1)
-            return;
-
-        if (shouldSkipMeshExtractionNode(root, grabNodeNameBlacklist, stats))
             return;
 
         auto* triShape = root->IsTriShape();
@@ -1073,7 +1045,7 @@ namespace rock
             for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
                 auto* kid = kids[i].get();
                 if (kid)
-                    extractAllSurfaceTrianglesRecursive(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+                    extractAllSurfaceTrianglesRecursive(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, allowPositionOnlySkinnedSurface);
             }
         }
     }
@@ -1082,7 +1054,6 @@ namespace rock
         std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         if (!root) {
@@ -1109,10 +1080,6 @@ namespace rock
                 return RE::BSVisit::BSVisitControl::kContinue;
             }
 
-            if (shouldSkipMeshExtractionNode(triShape, grabNodeNameBlacklist, stats)) {
-                return RE::BSVisit::BSVisitControl::kContinue;
-            }
-
             extractSurfaceTrianglesFromTriShape(triShape, outTriangles, outSurfaceTriangles, stats, allowPositionOnlySkinnedSurface);
             return RE::BSVisit::BSVisitControl::kContinue;
         });
@@ -1123,25 +1090,143 @@ namespace rock
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         int maxDepth = 10,
         MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {},
         bool allowPositionOnlySkinnedSurface = false)
     {
         const auto beforeTriangles = outTriangles.size();
-        extractAllSurfaceTrianglesRecursive(root, outTriangles, outSurfaceTriangles, maxDepth, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+        extractAllSurfaceTrianglesRecursive(root, outTriangles, outSurfaceTriangles, maxDepth, stats, allowPositionOnlySkinnedSurface);
         if (outTriangles.size() != beforeTriangles || !root || maxDepth <= 0) {
             return;
         }
 
-        extractAllSurfaceTrianglesWithScenegraphVisitor(root, outTriangles, outSurfaceTriangles, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+        extractAllSurfaceTrianglesWithScenegraphVisitor(root, outTriangles, outSurfaceTriangles, stats, allowPositionOnlySkinnedSurface);
     }
 
-    inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+    struct BoundedSurfaceMeshExtraction
+    {
+        MeshExtractionStats stats{};
+        std::uint32_t candidateShapes = 0;
+        std::uint32_t examinedTriangles = 0;
+        std::uint32_t visitedNodes = 0;
+        bool nodeBudgetExceeded = false;
+        bool shapeBudgetExceeded = false;
+        bool triangleBudgetExceeded = false;
 
-    inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) { return RE::NiPoint3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
+        [[nodiscard]] bool hasTriangles() const noexcept
+        {
+            return stats.totalTriangles() != 0;
+        }
+    };
+
+    inline void extractBoundedSurfaceTrianglesRecursive(
+        RE::NiAVObject* root,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        int maxDepth,
+        std::uint32_t maxShapes,
+        std::uint32_t maxTriangles,
+        BoundedSurfaceMeshExtraction& result,
+        bool allowPositionOnlySkinnedSurface = false)
+    {
+        if (!root || maxDepth <= 0 || maxShapes == 0 || maxTriangles == 0) {
+            return;
+        }
+        if (result.visitedNodes >= 4096) {
+            result.nodeBudgetExceeded = true;
+            return;
+        }
+        ++result.visitedNodes;
+        if (root->flags.flags & 1) {
+            return;
+        }
+        if (auto* triShape = root->IsTriShape()) {
+            if (result.nodeBudgetExceeded || result.candidateShapes >= maxShapes) {
+                result.shapeBudgetExceeded = true;
+                return;
+            }
+            ++result.candidateShapes;
+
+            TriShapeRawGeometry geometry{};
+            if (!readTriShapeRawGeometry(triShape, geometry)) {
+                ++result.stats.emptyShapes;
+                return;
+            }
+            const std::uint32_t remaining =
+                result.examinedTriangles < maxTriangles ?
+                maxTriangles - result.examinedTriangles :
+                0;
+            if (geometry.numTriangles > remaining) {
+                result.triangleBudgetExceeded = true;
+                return;
+            }
+
+            result.examinedTriangles += geometry.numTriangles;
+            extractSurfaceTrianglesFromTriShape(
+                triShape,
+                outTriangles,
+                outSurfaceTriangles,
+                &result.stats,
+                allowPositionOnlySkinnedSurface);
+            return;
+        }
+
+        auto* node = root->IsNode();
+        if (!node) {
+            return;
+        }
+        auto& children = node->GetRuntimeData().children;
+        for (auto index = decltype(children.size()){ 0 };
+             index < children.size();
+             ++index) {
+            if (result.nodeBudgetExceeded) return;
+            if (result.candidateShapes >= maxShapes) {
+                result.shapeBudgetExceeded = true;
+                return;
+            }
+            auto* child = children[index].get();
+            if (!child) {
+                continue;
+            }
+            extractBoundedSurfaceTrianglesRecursive(
+                child,
+                outTriangles,
+                outSurfaceTriangles,
+                maxDepth - 1,
+                maxShapes,
+                maxTriangles,
+                result,
+                allowPositionOnlySkinnedSurface);
+        }
+    }
+
+    inline BoundedSurfaceMeshExtraction extractBoundedSurfaceTriangles(
+        RE::NiAVObject* root,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        int maxDepth,
+        std::uint32_t maxShapes,
+        std::uint32_t maxTriangles,
+        bool allowPositionOnlySkinnedSurface = false)
+    {
+        BoundedSurfaceMeshExtraction result{};
+        extractBoundedSurfaceTrianglesRecursive(
+            root,
+            outTriangles,
+            outSurfaceTriangles,
+            maxDepth,
+            maxShapes,
+            maxTriangles,
+            result,
+            allowPositionOnlySkinnedSurface);
+        return result;
+    }
+
+    inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) { return vector_math::dot(a, b); }
+
+    inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) { return vector_math::cross(a, b); }
 
     inline RE::NiPoint3 normalize(const RE::NiPoint3& v)
     {
-        float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        float len = std::sqrt(vector_math::lengthSquared(v));
         if (len < 1e-8f)
             return RE::NiPoint3(0, 0, 0);
         return RE::NiPoint3(v.x / len, v.y / len, v.z / len);
@@ -1296,7 +1381,10 @@ namespace rock
             return surfaceTriangle.sourceNode;
         }
 
-        std::unordered_map<RE::NiAVObject*, float> accumulated;
+        // Three vertices, four influences each. Preserve influence order for
+        // deterministic ties at a joint instead of relying on hash iteration.
+        std::array<std::pair<RE::NiAVObject*, float>, 12> accumulated{};
+        std::size_t ownerCount = 0;
         const RE::NiPoint3 vertices[3] = { surfaceTriangle.triangle.v0, surfaceTriangle.triangle.v1, surfaceTriangle.triangle.v2 };
         for (std::size_t vertex = 0; vertex < 3; ++vertex) {
             const RE::NiPoint3 delta = sub(vertices[vertex], hitPoint);
@@ -1309,7 +1397,10 @@ namespace rock
                 if (!influence.bone || influence.weight <= 0.0f) {
                     continue;
                 }
-                accumulated[influence.bone] += influence.weight * distanceWeight;
+                std::size_t owner = 0;
+                for (; owner < ownerCount; ++owner) if (accumulated[owner].first == influence.bone) break;
+                if (owner == ownerCount) accumulated[ownerCount++].first = influence.bone;
+                accumulated[owner].second += influence.weight * distanceWeight;
             }
         }
 
@@ -1450,6 +1541,7 @@ namespace rock
             outResult.distance = bestDist;
             outResult.sourceNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, bestPos);
             outResult.sourceShape = surfaceTriangle.sourceShape;
+        outResult.sourceTriangleIndex = surfaceTriangle.triangleIndex;
             outResult.triangle = tri;
             outResult.sourceKind = surfaceTriangle.sourceKind;
             outResult.hasSkinInfluences = surfaceTriangle.hasSkinInfluences;
@@ -1518,6 +1610,7 @@ namespace rock
         outResult.distance = bestDistSq;
         outResult.sourceNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, bestPoint);
         outResult.sourceShape = surfaceTriangle.sourceShape;
+        outResult.sourceTriangleIndex = surfaceTriangle.triangleIndex;
         outResult.triangle = surfaceTriangle.triangle;
         outResult.sourceKind = surfaceTriangle.sourceKind;
         outResult.hasSkinInfluences = surfaceTriangle.hasSkinInfluences;
@@ -1592,6 +1685,7 @@ namespace rock
         outResult.distance = bestDistSq;
         outResult.sourceNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, bestPoint);
         outResult.sourceShape = surfaceTriangle.sourceShape;
+        outResult.sourceTriangleIndex = surfaceTriangle.triangleIndex;
         outResult.triangle = surfaceTriangle.triangle;
         outResult.sourceKind = surfaceTriangle.sourceKind;
         outResult.hasSkinInfluences = surfaceTriangle.hasSkinInfluences;

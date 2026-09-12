@@ -104,25 +104,25 @@ int main()
     singleHand.fadeInEnabled = false;
     singleHand.authorityForceScale = 1.0f;
 
-    const auto single = solveMotorTargets(singleHand);
+    const auto single = solveMotorTargetsWithAuthority(singleHand, HeldAuthorityState{});
     ok &= expectNear("single hand mass cap", single.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("single hand angular matches linear authority", single.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput shared = singleHand;
     shared.authorityForceScale = 0.5f;
-    const auto twoHand = solveMotorTargets(shared);
+    const auto twoHand = solveMotorTargetsWithAuthority(shared, HeldAuthorityState{});
     ok &= expectNear("two hands share mass-capped linear authority", twoHand.linearMaxForce, 500.0f, 0.001f);
     ok &= expectNear("two hands share angular authority", twoHand.angularMaxForce, 500.0f, 0.001f);
 
     MotorInput mediumMass = singleHand;
     mediumMass.mass = 10.0f;
-    const auto mediumMassOutput = solveMotorTargets(mediumMass);
+    const auto mediumMassOutput = solveMotorTargetsWithAuthority(mediumMass, HeldAuthorityState{});
     ok &= expectNear("medium generic object keeps fixed HIGGS-style force", mediumMassOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("medium generic object angular force follows full fixed force", mediumMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
     MotorInput heavyMass = singleHand;
     heavyMass.mass = 50.0f;
-    const auto heavyMassOutput = solveMotorTargets(heavyMass);
+    const auto heavyMassOutput = solveMotorTargetsWithAuthority(heavyMass, HeldAuthorityState{});
     ok &= expectNear("heavy generic object does not receive loose-weapon force", heavyMassOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("heavy generic object angular force follows full generic force", heavyMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
@@ -130,7 +130,7 @@ int main()
     looseWeapon.baseMaxForce = 9000.0f;
     looseWeapon.angularForceMultiplier = 2.0f;
     looseWeapon.mass = 1000.0f;
-    const auto looseWeaponOutput = solveMotorTargets(looseWeapon);
+    const auto looseWeaponOutput = solveMotorTargetsWithAuthority(looseWeapon, HeldAuthorityState{});
     ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
     ok &= expectNear("loose weapon angular force can exceed linear pull authority", looseWeaponOutput.angularMaxForce, 18000.0f, 0.001f);
 
@@ -140,23 +140,45 @@ int main()
     ok &= expectNear("high physics rate clamps to minimum force scale", computePhysicsRateForceScale(true, 1.0f / 240.0f, 90.0f, 0.5f, 0.75f, 1.35f), 0.75f, 0.001f);
     ok &= expectNear("invalid physics delta keeps neutral force scale", computePhysicsRateForceScale(true, 0.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.0f, 0.001f);
 
+    /*
+     * Effective substep rates produced by the Havok timing fix for the
+     * supported game frame rates (min physics rate 70 Hz, max 3 substeps):
+     * 45 FPS -> 2 x 90 Hz, 60 FPS -> 2 x 120 Hz, 72 FPS -> 1 x 72 Hz,
+     * 90 FPS -> 1 x 90 Hz, 120 FPS -> 1 x 120 Hz. Force scaling must consume
+     * the EFFECTIVE substep rate, so 45 FPS play lands on the neutral
+     * calibration point and 72 FPS strengthens.
+     */
+    ok &= expectNear("45fps effective 90hz substeps stay neutral", computePhysicsRateForceScale(true, (1.0f / 45.0f) * 0.5f, 90.0f, 0.5f, 0.75f, 1.35f), 1.0f, 0.001f);
+    ok &= expectNear("72hz physics force scale strengthens held motors", computePhysicsRateForceScale(true, 1.0f / 72.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.118034f, 0.001f);
+    ok &= expectNear("60fps effective 120hz substeps soften held motors", computePhysicsRateForceScale(true, (1.0f / 60.0f) * 0.5f, 90.0f, 0.5f, 0.75f, 1.35f), 0.866025f, 0.001f);
+
+    // Unknown physics rate is reported honestly as zero, never as a
+    // pretended nominal measurement.
+    ok &= expectNear("unknown physics delta reports zero hz", computePhysicsHz(0.0f), 0.0f, 0.0f);
+    ok &= expectNear("measured physics delta reports its rate", computePhysicsHz(1.0f / 72.0f), 72.0f, 0.01f);
+
+    // An unmeasured frame holds tau interpolation instead of stepping by a
+    // fabricated nominal delta.
+    ok &= expectNear("unmeasured delta holds tau advance", advanceToward(0.8f, 0.03f, 1.0f, 0.0f), 0.8f, 0.0f);
+    ok &= expectNear("measured delta advances tau", advanceToward(0.8f, 0.03f, 1.0f, 1.0f), 0.03f, 0.001f);
+
     MotorInput scaledAt60Hz = singleHand;
     scaledAt60Hz.physicsRateForceScalingEnabled = true;
     scaledAt60Hz.physicsDeltaSeconds = 1.0f / 60.0f;
     scaledAt60Hz.mass = 100.0f;
-    const auto scaledAt60HzOutput = solveMotorTargets(scaledAt60Hz);
+    const auto scaledAt60HzOutput = solveMotorTargetsWithAuthority(scaledAt60Hz, HeldAuthorityState{});
     ok &= expectNear("60hz motor output records physics hz", scaledAt60HzOutput.physicsHz, 60.0f, 0.001f);
     ok &= expectNear("60hz force scale applies before mass cap", scaledAt60HzOutput.linearMaxForce, 2449.49f, 0.02f);
     ok &= expectNear("60hz angular force follows scaled linear force", scaledAt60HzOutput.angularMaxForce, 2449.49f, 0.02f);
 
     MotorInput massCappedScaled = scaledAt60Hz;
     massCappedScaled.mass = 2.0f;
-    const auto massCappedScaledOutput = solveMotorTargets(massCappedScaled);
+    const auto massCappedScaledOutput = solveMotorTargetsWithAuthority(massCappedScaled, HeldAuthorityState{});
     ok &= expectNear("physics-rate scaling still obeys mass cap", massCappedScaledOutput.linearMaxForce, 1000.0f, 0.001f);
 
     MotorInput authorityScaled = scaledAt60Hz;
     authorityScaled.authorityForceScale = 0.5f;
-    const auto authorityScaledOutput = solveMotorTargets(authorityScaled);
+    const auto authorityScaledOutput = solveMotorTargetsWithAuthority(authorityScaled, HeldAuthorityState{});
     ok &= expectNear("authority scale applies after physics-rate force scale", authorityScaledOutput.linearMaxForce, 1224.745f, 0.02f);
 
     MotorInput angularFixedTau = singleHand;
@@ -165,38 +187,22 @@ int main()
     angularFixedTau.currentAngularTau = 0.8f;
     angularFixedTau.deltaTime = 1.0f;
     angularFixedTau.tauLerpSpeed = 1.0f;
-    const auto angularFixedTauOutput = solveMotorTargets(angularFixedTau);
+    const auto angularFixedTauOutput = solveMotorTargetsWithAuthority(angularFixedTau, HeldAuthorityState{});
     ok &= expectNear("angular follow does not boost linear force", angularFixedTauOutput.linearMaxForce, 2000.0f, 0.001f);
     ok &= expectNear("linear follow keeps HIGGS-style tau fixed", angularFixedTauOutput.linearTau, 0.03f, 0.001f);
     ok &= expectNear("angular follow keeps HIGGS-style tau fixed", angularFixedTauOutput.angularTau, 0.03f, 0.001f);
-
-    MotorInput positionOnlyPivot = singleHand;
-    const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
-    ok &= expectNear("position-only small weak pivot does not reduce held linear force", positionOnlyOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("position-only small weak pivot does not reduce held angular force", positionOnlyOutput.angularMaxForce, 1000.0f, 0.001f);
-
-    MotorInput weakAngularFixedTau = positionOnlyPivot;
-    weakAngularFixedTau.deltaTime = 1.0f;
-    weakAngularFixedTau.tauLerpSpeed = 1.0f;
-    const auto weakAngularFixedTauOutput = solveMotorTargets(weakAngularFixedTau);
-    ok &= expectNear("weak support still leaves angular tau fixed", weakAngularFixedTauOutput.angularTau, 0.03f, 0.001f);
-
-    MotorInput longHandleMotor = singleHand;
-    const auto longHandleMotorOutput = solveMotorTargets(longHandleMotor);
-    ok &= expectNear("long-handle patch shape does not reduce held linear force", longHandleMotorOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("long-handle patch shape does not reduce held angular force", longHandleMotorOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput tinyMassFloor = singleHand;
     tinyMassFloor.mass = 0.02f;
     tinyMassFloor.effectiveMotorMassFloorEnabled = true;
     tinyMassFloor.effectiveMotorMassFloor = 2.0f;
-    const auto tinyMassFloorOutput = solveMotorTargets(tinyMassFloor);
+    const auto tinyMassFloorOutput = solveMotorTargetsWithAuthority(tinyMassFloor, HeldAuthorityState{});
     ok &= expectNear("tiny loose object uses motor-only effective mass floor", tinyMassFloorOutput.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("tiny loose object angular force follows floored linear force", tinyMassFloorOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput tinyMassRaw = tinyMassFloor;
     tinyMassRaw.effectiveMotorMassFloorEnabled = false;
-    const auto tinyMassRawOutput = solveMotorTargets(tinyMassRaw);
+    const auto tinyMassRawOutput = solveMotorTargetsWithAuthority(tinyMassRaw, HeldAuthorityState{});
     ok &= expectNear("disabled effective mass floor preserves raw mass cap", tinyMassRawOutput.linearMaxForce, 10.0f, 0.001f);
     ok &= expectNear("disabled effective mass floor preserves raw angular cap", tinyMassRawOutput.angularMaxForce, 10.0f, 0.001f);
 
@@ -262,11 +268,6 @@ int main()
     });
     ok &= expectTrue("trusted single-point support classifies as point", trustedPointAuthority.contactSupportShape == ContactSupportShape::Point);
     ok &= expectNear("trusted point limits twist around grab point", trustedPointAuthority.twistScale, 0.35f, 0.001f);
-
-    const Vec3 twistLimited = scaleWeakPivotTwistAngularVelocity(Vec3{ 1.0f, 2.0f, 3.0f }, Vec3{ 0.0f, 0.0f, 2.0f }, true, 0.25f);
-    ok &= expectNear("weak pivot twist preserves swing x", twistLimited.x, 1.0f, 0.001f);
-    ok &= expectNear("weak pivot twist preserves swing y", twistLimited.y, 2.0f, 0.001f);
-    ok &= expectNear("weak pivot twist scales twist z", twistLimited.z, 0.75f, 0.001f);
 
     const auto longHandleAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,
@@ -435,6 +436,63 @@ int main()
     ok &= expectReason("seated palm pocket large delta reason",
         seatedLargeDeltaSupportOnly.reason,
         "seatedPalmPocketPromotionCandidateTooFarKeepFrozen");
+
+    const auto seatedProgrammaticArrival = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateNormalTrusted = true,
+        .supportPatchValid = true,
+        .supportPatchNormalTrusted = true,
+        .programmaticArrival = true,
+        .supportPatchSampleCount = 5,
+        .candidateLocalDeltaGameUnits = 20.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectTrue("programmatic arrival replaces stale far-ray seat", seatedProgrammaticArrival.promotePivot);
+    ok &= expectTrue("programmatic arrival completes verified seated relation", seatedProgrammaticArrival.completeSeatedRelation);
+    ok &= expectReason("programmatic arrival seated promotion reason",
+        seatedProgrammaticArrival.reason,
+        "seatedProgrammaticArrivalPromotion");
+
+    const auto seatedProgrammaticArrivalNoSupport = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateNormalTrusted = true,
+        .supportPatchValid = false,
+        .supportPatchNormalTrusted = false,
+        .programmaticArrival = true,
+        .supportPatchSampleCount = 0,
+        .candidateLocalDeltaGameUnits = 20.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectTrue("programmatic arrival promotes a trusted mesh pivot without a support patch",
+        seatedProgrammaticArrivalNoSupport.promotePivot);
+    ok &= expectTrue("programmatic arrival without support completes the seated relation",
+        seatedProgrammaticArrivalNoSupport.completeSeatedRelation);
+    ok &= expectReason("programmatic arrival without support reason",
+        seatedProgrammaticArrivalNoSupport.reason,
+        "seatedProgrammaticArrivalPromotion");
+
+    const auto seatedProgrammaticArrivalUntrusted = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateNormalTrusted = false,
+        .supportPatchValid = false,
+        .programmaticArrival = true,
+        .candidateLocalDeltaGameUnits = 20.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectFalse("programmatic arrival keeps the frozen seat without a trusted pivot or support",
+        seatedProgrammaticArrivalUntrusted.promotePivot);
+    ok &= expectReason("programmatic arrival untrusted reason",
+        seatedProgrammaticArrivalUntrusted.reason,
+        "seatedSupportGroupPromotionMissingSupport");
 
     const auto seatedNotWeak = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = false,

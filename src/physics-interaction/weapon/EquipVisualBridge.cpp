@@ -1,13 +1,17 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
+#include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -18,7 +22,6 @@ namespace rock
     {
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
         constexpr int kSubtreeWalkBudget = 1024;
-        constexpr float kMinimumSafetyLifetimeSeconds = 12.0f;
         constexpr const char* kHandPoseHandoffTag = "ROCK_EquipPoseBridge";
         constexpr const char* kRightHandPoseBlockTag = "ROCK_EquipPoseBridgeRight";
         constexpr const char* kLeftHandPoseBlockTag = "ROCK_EquipPoseBridgeLeft";
@@ -45,6 +48,29 @@ namespace rock
             return true;
         }
 
+        [[nodiscard]] float rotationDistanceDegrees(
+            const RE::NiTransform& lhs,
+            const RE::NiTransform& rhs)
+        {
+            float lhsQuaternion[4]{};
+            float rhsQuaternion[4]{};
+            transform_math::niRowsToHavokQuaternion(
+                lhs.rotate,
+                lhsQuaternion);
+            transform_math::niRowsToHavokQuaternion(
+                rhs.rotate,
+                rhsQuaternion);
+            const float dot = std::clamp(std::abs(
+                lhsQuaternion[0] * rhsQuaternion[0] +
+                lhsQuaternion[1] * rhsQuaternion[1] +
+                lhsQuaternion[2] * rhsQuaternion[2] +
+                lhsQuaternion[3] * rhsQuaternion[3]),
+                0.0f,
+                1.0f);
+            constexpr float kRadiansToDegrees = 57.29577951308232f;
+            return 2.0f * std::acos(dot) * kRadiansToDegrees;
+        }
+
         [[nodiscard]] bool buildPhysicalHandFingerPose(
             const bool isLeftHand,
             const authored_weapon_grip_library::FiringFingerPose& rightPose,
@@ -59,35 +85,36 @@ namespace rock
 
             if (!isLeftHand) {
                 outTransforms = rightPose.localTransforms;
-                outMask = rightPose.enabledMask;
-            } else {
-                frik_visual_authority::FingerLocalTransformOverride right{};
-                right.enabledMask = rightPose.enabledMask;
-                for (std::size_t index = 0; index < rightPose.localTransforms.size(); ++index) {
-                    right.localTransforms[index] = rightPose.localTransforms[index];
-                }
-
-                frik_visual_authority::FingerLocalTransformOverride left{};
-                if (!frik_visual_authority::mirrorPrimaryWeaponFingerLocalTransforms(right, left) ||
-                    left.enabledMask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
-                    return false;
-                }
-                for (std::size_t index = 0; index < outTransforms.size(); ++index) {
-                    outTransforms[index] = left.localTransforms[index];
-                }
-                outMask = left.enabledMask;
+            } else if (!hand_finger_mirror_math::mirrorFingerLocalsAcrossHands<RE::NiTransform>(
+                           std::span<const RE::NiTransform>(rightPose.localTransforms),
+                           std::span<RE::NiTransform>(outTransforms))) {
+                // Exact skeleton mirror; bone order and mask are shared.
+                outTransforms = {};
+                return false;
             }
+            outMask = rightPose.enabledMask;
 
             return outMask == authored_weapon_grip_library::kCompleteFiringFingerMask &&
                    std::ranges::all_of(outTransforms, isFiniteTransform);
         }
 
+        /*
+         * The glue reference must be the WAND (controller device node), never
+         * the hand bone. Hand-pose authority changes during the equip - the
+         * loose-grab wrap releasing, then the left carry's authored wrist -
+         * flip the bone's basis convention by ~180 degrees while the hand
+         * still looks correct, and a model glued through the old basis flips
+         * with it. The wand basis is authority-independent.
+         */
         [[nodiscard]] RE::NiNode* resolveHandWandNode(bool isLeftHand)
         {
-            if (!f4vr::getPlayer()) {
+            auto* playerNodes = f4vr::getPlayerNodes();
+            if (!f4vr::getPlayer() || !playerNodes) {
                 return nullptr;
             }
-            return isLeftHand ? f4vr::getLeftHandNode() : f4vr::getRightHandNode();
+            return isLeftHand ?
+                playerNodes->SecondaryWandNode :
+                playerNodes->primaryWandNode;
         }
 
         /*
@@ -179,6 +206,23 @@ namespace rock
         }
 
         _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
+        RE::NiPoint3 physicalPalmWorld{};
+        RE::NiTransform physicalHandWorld{};
+        _hasPhysicalHandInWandLocal =
+            TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(
+                input.isLeftHand,
+                physicalPalmWorld,
+                physicalHandWorld);
+        if (_hasPhysicalHandInWandLocal) {
+            _physicalHandInWandLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(handNode->world),
+                physicalHandWorld);
+            _hasPhysicalHandInWandLocal =
+                isFiniteTransform(_physicalHandInWandLocal);
+        }
+        if (!_hasPhysicalHandInWandLocal) {
+            _physicalHandInWandLocal = {};
+        }
 
         // Re-resolving from the still-live detached model against the
         // filewatch-published cache guarantees that a newly created custom
@@ -226,12 +270,17 @@ namespace rock
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;
         _blendSeconds = input.blendSeconds;
-        _timeoutSeconds = (std::max)(input.timeoutSeconds, kMinimumSafetyLifetimeSeconds);
+        _presentationLeaseSeconds =
+            equip_visual_bridge_policy::effectivePresentationLeaseSeconds(
+                input.timeoutSeconds);
+        _presentationLeaseStartedAt = std::chrono::steady_clock::now();
         _modelPresented = true;
+        _nativeCarrierTraceLogged = false;
+        _nativeCarrierWasUsable = false;
         _active = true;
 
         if (authoredLookup.found &&
-            authoredLookup.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest &&
+            authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source) &&
             buildPhysicalHandFingerPose(
                 _isLeftHand,
                 authoredLookup.rightFiringFingerPose,
@@ -241,18 +290,6 @@ namespace rock
             _handPoseHandoffActive = true;
             if (!publishHandPoseHandoff()) {
                 clearHandPoseHandoff("initial-publish-failed", false, false);
-            } else if (_hasFiringHandWeaponLocal) {
-                const RE::NiTransform handWorld = transform_math::composeTransforms(
-                    model->world,
-                    _firingHandWeaponLocal);
-                if (!isFiniteTransform(handWorld) ||
-                    !frik_visual_authority::applyExternalHandWorldTransform(
-                        kHandPoseHandoffTag,
-                        handFromBool(_isLeftHand),
-                        handWorld,
-                        kHandPoseHandoffPriority)) {
-                    clearHandPoseHandoff("initial-hand-transform-publish-failed", false, false);
-                }
             }
         }
 
@@ -265,8 +302,9 @@ namespace rock
          * live scene node.
          */
         const bool attachedNow = !model->parent && tryAttachToWorldRoot();
-        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s timeout={:.2f}s target={} exactPoseHandoff={}",
-            _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds, _timeoutSeconds,
+        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s requestedTimeout={:.2f}s presentationLease={:.2f}s target={} exactPoseHandoff={}",
+            _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds,
+            input.timeoutSeconds, _presentationLeaseSeconds,
             targetReason, _handPoseHandoffActive ? "yes" : "no");
         return true;
     }
@@ -309,7 +347,7 @@ namespace rock
             _handPoseBlockEngaged = true;
         }
 
-        if (!frik_visual_authority::setHandPoseCustomWithPriority(
+        if (!frik_visual_authority::setHandPoseCustom(
                 kHandPoseHandoffTag,
                 hand,
                 frik_visual_authority::HandPoseData{},
@@ -322,11 +360,54 @@ namespace rock
         for (std::size_t index = 0; index < _handoffFingerLocalTransforms.size(); ++index) {
             exactPose.localTransforms[index] = _handoffFingerLocalTransforms[index];
         }
-        return frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
+        return frik_visual_authority::setHandPoseCustomLocalTransforms(
             kHandPoseHandoffTag,
             hand,
             &exactPose,
             kHandPoseHandoffPriority);
+    }
+
+    bool EquipVisualBridge::advancePresentationLeaseImpl(
+        const float deltaSeconds,
+        const bool presentedForLogging)
+    {
+        if (!_active) {
+            return false;
+        }
+
+        _lifetimeSeconds += (std::max)(0.0f, deltaSeconds);
+        const float wallLifetimeSeconds = std::chrono::duration<float>(
+            std::chrono::steady_clock::now() -
+            _presentationLeaseStartedAt).count();
+        _lifetimeSeconds = (std::max)(_lifetimeSeconds, wallLifetimeSeconds);
+        if (!equip_visual_bridge_policy::presentationLeaseExpired(
+                _lifetimeSeconds,
+                _presentationLeaseSeconds)) {
+            return false;
+        }
+
+        if (presentedForLogging) {
+            ROCK_LOG_WARN(Weapon,
+                "EquipVisualBridge presentation lease expired while visible formID={:08X} hand={} lease={:.3f}s; releasing visual-only model",
+                _weaponFormID,
+                _isLeftHand ? "left" : "right",
+                _presentationLeaseSeconds);
+        } else {
+            ROCK_LOG_INFO(Weapon,
+                "EquipVisualBridge lease expired after visual handoff formID={:08X} hand={} lease={:.3f}s",
+                _weaponFormID,
+                _isLeftHand ? "left" : "right",
+                _presentationLeaseSeconds);
+        }
+        clear("presentation-lease-expired", _parent != nullptr);
+        return true;
+    }
+
+    void EquipVisualBridge::advancePresentationLease(const float deltaSeconds)
+    {
+        static_cast<void>(advancePresentationLeaseImpl(
+            deltaSeconds,
+            _modelPresented && _model != nullptr));
     }
 
     void EquipVisualBridge::update(const UpdateInput& input)
@@ -336,44 +417,23 @@ namespace rock
         }
 
         const float frameSeconds = (std::max)(0.0f, input.deltaSeconds);
-        if (input.advanceLifetime) {
-            _lifetimeSeconds += frameSeconds;
-            if (_lifetimeSeconds >= _timeoutSeconds) {
-                clear("safety-timeout", _parent != nullptr);
-                return;
-            }
+        const bool presentThisFrame = input.presentModel && _model != nullptr;
+        if (input.advanceLifetime &&
+            advancePresentationLeaseImpl(frameSeconds, presentThisFrame)) {
+            return;
         }
 
-        const bool wasModelPresented = _modelPresented;
-        _modelPresented = input.presentModel && _model != nullptr;
-        if (_modelPresented && !wasModelPresented) {
-            // A late native detach begins a fresh bounded recovery period. The
-            // coordinator remains the outer watchdog; this only prevents the
-            // bridge's independent safety lease from expiring mid-repair.
-            _lifetimeSeconds = 0.0f;
-        }
+        _modelPresented = presentThisFrame;
         synchronizeNativeInstanceCull(input.nativeVisual, _modelPresented);
 
         if (!_modelPresented) {
-            hideModelForNativeStandby("native-stable");
+            // A false presentation decision is terminal for the loose model.
+            // Keeping it as a hidden standby allowed later native graph loss
+            // during sheath/drop/throw to resurrect an equip-only phantom.
+            clearModel("presentation-ended", _parent != nullptr);
             if (_handPoseHandoffActive) {
                 if (!publishHandPoseHandoff()) {
-                    clearHandPoseHandoff("native-standby-republish-failed", true, false);
-                } else if (_hasFiringHandWeaponLocal &&
-                           input.nativeVisual &&
-                           input.nativeVisual->weaponRoot &&
-                           isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
-                    const RE::NiTransform handWorld = transform_math::composeTransforms(
-                        input.nativeVisual->weaponRoot->world,
-                        _firingHandWeaponLocal);
-                    if (!isFiniteTransform(handWorld) ||
-                        !frik_visual_authority::applyExternalHandWorldTransform(
-                            kHandPoseHandoffTag,
-                            handFromBool(_isLeftHand),
-                            handWorld,
-                            kHandPoseHandoffPriority)) {
-                        clearHandPoseHandoff("native-standby-hand-transform-failed", true, false);
-                    }
+                    clearHandPoseHandoff("native-handoff-republish-failed", true, false);
                 }
             }
             if (!_model && !_handPoseHandoffActive) {
@@ -387,8 +447,6 @@ namespace rock
             _handPoseHandoffActive = true;
         }
 
-        RE::NiTransform handoffWeaponWorld{};
-        bool hasHandoffWeaponWorld = false;
         auto* model = _model.get();
         if (model && !_parent) {
             /*
@@ -397,12 +455,7 @@ namespace rock
              * orphan, ROCK moves it under the world root without stealing a
              * live scene node.
              */
-            if (model->parent) {
-                if (isFiniteTransform(model->world)) {
-                    handoffWeaponWorld = model->world;
-                    hasHandoffWeaponWorld = true;
-                }
-            } else if (!tryAttachToWorldRoot()) {
+            if (!model->parent && !tryAttachToWorldRoot()) {
                 clear("attach-failed", false);
                 return;
             }
@@ -420,20 +473,102 @@ namespace rock
                 return;
             }
 
+            /*
+             * Rotation carrier selection. RIGHT bridges follow the live
+             * native root (its right-hand glue is the final carry). LEFT
+             * bridges must use the carry's solved pose supplied by the
+             * caller: this update runs before ROCK's carry re-poses the node
+             * each frame, so a live root read would return the right-glue or
+             * draw-animation orientation. Until a carrier is usable the model
+             * stays glued to the hand, and the short blend restarts when it
+             * becomes usable so the correction converges instead of snapping.
+             */
+            RE::NiTransform nativeCarrierWorld{};
+            bool nativePositionOnlyCarrierAvailable = false;
+            if (_isLeftHand) {
+                nativePositionOnlyCarrierAvailable =
+                    input.leftCarrySolvedWeaponWorldValid &&
+                    isFiniteTransform(input.leftCarrySolvedWeaponWorld);
+                if (nativePositionOnlyCarrierAvailable) {
+                    nativeCarrierWorld = input.leftCarrySolvedWeaponWorld;
+                }
+            } else {
+                nativePositionOnlyCarrierAvailable =
+                    input.nativeVisual &&
+                    input.nativeVisual->weaponRoot &&
+                    isFiniteTransform(
+                        input.nativeVisual->weaponRoot->world);
+                if (nativePositionOnlyCarrierAvailable) {
+                    nativeCarrierWorld =
+                        input.nativeVisual->weaponRoot->world;
+                }
+            }
+            if (_isLeftHand &&
+                nativePositionOnlyCarrierAvailable &&
+                !_nativeCarrierWasUsable) {
+                _elapsedSeconds = 0.0f;
+            }
+            _nativeCarrierWasUsable = nativePositionOnlyCarrierAvailable;
+
             RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
             if (_hasFiringHandWeaponLocal) {
-                RE::NiPoint3 palmWorld{};
-                RE::NiTransform rootFlattenedHandWorld{};
-                if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(_isLeftHand, palmWorld, rootFlattenedHandWorld) &&
-                    isFiniteTransform(rootFlattenedHandWorld)) {
-                    blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
+                if (_hasPhysicalHandInWandLocal) {
+                    const RE::NiTransform physicalHandWorld =
+                        transform_math::composeTransforms(
+                            handNode->world,
+                            _physicalHandInWandLocal);
+                    const RE::NiPoint3 authoredGripWeaponLocal =
+                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                            _firingHandWeaponLocal,
+                            _isLeftHand);
+                    const RE::NiPoint3 physicalPalmWorld =
+                        computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                            physicalHandWorld,
+                            _isLeftHand);
+                    const RE::NiTransform& positionOnlyCarrierWorld =
+                        nativePositionOnlyCarrierAvailable ?
+                            nativeCarrierWorld :
+                            desiredWorld;
+                    blendTarget = authored_weapon_grip_capture_policy::
+                        resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                            positionOnlyCarrierWorld,
+                            authoredGripWeaponLocal,
+                            physicalPalmWorld,
+                            [](const RE::NiTransform& transform,
+                                const RE::NiPoint3& point) {
+                                return transform_math::localPointToWorld(
+                                    transform,
+                                    point);
+                            });
                     haveBlendTarget = isFiniteTransform(blendTarget);
+                    if (nativePositionOnlyCarrierAvailable &&
+                        haveBlendTarget &&
+                        !_nativeCarrierTraceLogged) {
+                        const RE::NiPoint3 looseGripWorld =
+                            transform_math::localPointToWorld(
+                                desiredWorld,
+                                authoredGripWeaponLocal);
+                        const float dx =
+                            looseGripWorld.x - physicalPalmWorld.x;
+                        const float dy =
+                            looseGripWorld.y - physicalPalmWorld.y;
+                        const float dz =
+                            looseGripWorld.z - physicalPalmWorld.z;
+                        ROCK_LOG_INFO(Weapon,
+                            "EquipVisualBridge native position-only convergence formID={:08X} hand={} rotationDelta={:.2f}deg gripCorrection={:.3f}gu",
+                            _weaponFormID,
+                            _isLeftHand ? "left" : "right",
+                            rotationDistanceDegrees(
+                                desiredWorld,
+                                positionOnlyCarrierWorld),
+                            std::sqrt(dx * dx + dy * dy + dz * dz));
+                        _nativeCarrierTraceLogged = true;
+                    }
                 }
-            } else if (input.nativeVisual && input.nativeVisual->weaponRoot &&
-                       isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
-                blendTarget = input.nativeVisual->weaponRoot->world;
+            } else if (nativePositionOnlyCarrierAvailable) {
+                blendTarget = nativeCarrierWorld;
                 haveBlendTarget = true;
             }
             if (haveBlendTarget && _blendSeconds > 0.0001f) {
@@ -447,25 +582,11 @@ namespace rock
 
             model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
             f4vr::updateDown(model, true);
-            handoffWeaponWorld = desiredWorld;
-            hasHandoffWeaponWorld = true;
         }
 
         if (_handPoseHandoffActive) {
             if (!publishHandPoseHandoff()) {
                 clearHandPoseHandoff("republish-failed", true, false);
-            } else if (_hasFiringHandWeaponLocal && hasHandoffWeaponWorld) {
-                const RE::NiTransform handWorld = transform_math::composeTransforms(
-                    handoffWeaponWorld,
-                    _firingHandWeaponLocal);
-                if (!isFiniteTransform(handWorld) ||
-                    !frik_visual_authority::applyExternalHandWorldTransform(
-                        kHandPoseHandoffTag,
-                        handFromBool(_isLeftHand),
-                        handWorld,
-                        kHandPoseHandoffPriority)) {
-                    clearHandPoseHandoff("hand-transform-publish-failed", true, false);
-                }
             }
         }
     }
@@ -512,28 +633,7 @@ namespace rock
         _culledNativeInstanceWasVisible = false;
     }
 
-    void EquipVisualBridge::hideModelForNativeStandby(const char* reason)
-    {
-        auto* model = _model.get();
-        if (!model || !_parent) {
-            return;
-        }
-        if (model->parent != _parent) {
-            clear(reason ? reason : "standby-parent-changed", false);
-            return;
-        }
-
-        RE::NiPointer<RE::NiAVObject> detached;
-        _parent->DetachChild(model, detached);
-        _parent = nullptr;
-        ROCK_LOG_DEBUG(Weapon,
-            "EquipVisualBridge model parked as recovery standby reason={} formID={:08X} elapsed={:.3f}s",
-            reason ? reason : "unknown",
-            _weaponFormID,
-            _elapsedSeconds);
-    }
-
-    void EquipVisualBridge::releaseStandbyModel(const char* reason)
+    void EquipVisualBridge::release(const char* reason)
     {
         if (!_active) {
             return;
@@ -576,6 +676,7 @@ namespace rock
         _model.reset();
         _parent = nullptr;
         _modelInHandLocal = {};
+        _physicalHandInWandLocal = {};
         _modelPresented = false;
     }
 
@@ -589,7 +690,7 @@ namespace rock
         const char* blockTag = _isLeftHand ? kLeftHandPoseBlockTag : kRightHandPoseBlockTag;
         if (_handPoseHandoffActive || _handPoseBlockEngaged) {
             (void)frik_visual_authority::clearHandPose(kHandPoseHandoffTag, hand);
-            (void)frik_visual_authority::clearExternalHandWorldTransform(kHandPoseHandoffTag, hand);
+            (void)frik_visual_authority::clearHandWorld(kHandPoseHandoffTag, hand);
         }
         if (_handPoseBlockEngaged) {
             (void)frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, false);
@@ -631,11 +732,15 @@ namespace rock
 
         _firingHandWeaponLocal = {};
         _hasFiringHandWeaponLocal = false;
+        _hasPhysicalHandInWandLocal = false;
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;
+        _presentationLeaseStartedAt = {};
         _weaponFormID = 0;
         _isLeftHand = false;
         _modelPresented = false;
+        _nativeCarrierTraceLogged = false;
+        _nativeCarrierWasUsable = false;
         _active = false;
     }
 }

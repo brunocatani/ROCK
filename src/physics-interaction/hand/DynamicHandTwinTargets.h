@@ -14,7 +14,7 @@ namespace rock::dynamic_hand_twin
     /*
      * Per-frame publication from HandBoneColliderSet for the stage A dynamic
      * hand twins: the EXACT role frames and dimensions the keyframed palm
-     * anchor and fingertip (Tip segment) colliders are driven with, so the
+     * anchor and all 15 finger-segment colliders are driven with, so the
      * dynamic proxies mirror the production collider conventions by
      * construction instead of re-deriving hand geometry. Main-thread only:
      * written by HandBoneColliderSet::update and consumed by
@@ -27,7 +27,7 @@ namespace rock::dynamic_hand_twin
         float length = 0.0f;
         float radius = 0.0f;
         float convexRadius = 0.0f;
-        // Palm/fingertip proxies map 1:1 to the hand target. The merged
+        // Palm/finger proxies map 1:1 to the hand target. The merged
         // forearm proxy publishes its pose-derived IK leverage correction.
         float handTargetResponseScale = 1.0f;
     };
@@ -35,7 +35,10 @@ namespace rock::dynamic_hand_twin
     struct TwinTargets
     {
         TwinSlotFrame palm{};
-        std::array<TwinSlotFrame, hand_collider_semantics::kHandFingerCount> fingertips{};
+        std::array<
+            std::array<TwinSlotFrame, hand_collider_semantics::kHandFingerSegmentCount>,
+            hand_collider_semantics::kHandFingerCount>
+            fingers{};
         std::uint64_t updateCounter = 0;
         // Changes only when the owning keyframed collider set is rebuilt for
         // a real source/tuning/lifetime reason; never changes for live pose.
@@ -90,10 +93,14 @@ namespace rock::dynamic_hand_twin
         const TwinTargets& canonicalTargets)
     {
         applyCanonicalSlotDimensions(liveTargets.palm, canonicalTargets.palm);
-        for (std::size_t index = 0; index < liveTargets.fingertips.size(); ++index) {
-            applyCanonicalSlotDimensions(
-                liveTargets.fingertips[index],
-                canonicalTargets.fingertips[index]);
+        for (std::size_t finger = 0; finger < liveTargets.fingers.size(); ++finger) {
+            for (std::size_t segment = 0;
+                 segment < liveTargets.fingers[finger].size();
+                 ++segment) {
+                applyCanonicalSlotDimensions(
+                    liveTargets.fingers[finger][segment],
+                    canonicalTargets.fingers[finger][segment]);
+            }
         }
     }
 

@@ -29,24 +29,28 @@ namespace rock::equipped_weapon_drop_policy
         return "none";
     }
 
-    [[nodiscard]] inline constexpr SourceHand sourceForSupportRelease(bool primaryReleasedThisFrame) noexcept
+    [[nodiscard]] inline constexpr SourceHand sourceForSupportRelease(
+        const bool primaryReleasedThisFrame,
+        const bool firingHandIsLeft) noexcept
     {
-        return primaryReleasedThisFrame ? SourceHand::Right : SourceHand::Left;
+        const bool sourceHandIsLeft = primaryReleasedThisFrame ?
+            firingHandIsLeft :
+            !firingHandIsLeft;
+        return sourceHandIsLeft ? SourceHand::Left : SourceHand::Right;
     }
 
     [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(
-        bool primaryDetachEnabled,
         bool shoulderStashConfigured) noexcept
     {
-        return primaryDetachEnabled && shoulderStashConfigured;
+        return shoulderStashConfigured;
     }
 
     /*
-     * Equipped-weapon shoulder stash only tracks a single carrying hand: the
-     * gesture is "carry the weapon over the shoulder and let go", which
-     * requires that releasing this hand is what would drop the weapon. With
-     * two active holds no single release drops, so no hand is a stash carry
-     * candidate until one grip lets go.
+     * Provider/manual carry resolves to a shoulder source only when one hand
+     * currently owns the weapon's drop action. With two active holds no single
+     * release drops, so neither hand is a manual carry candidate until one grip
+     * lets go. The attached native firing-hand fallback is selected by the
+     * coordinator adapter, outside this drop policy.
      */
     [[nodiscard]] inline constexpr SourceHand resolveEquippedWeaponStashCarryHand(
         bool primaryOnlyActive,

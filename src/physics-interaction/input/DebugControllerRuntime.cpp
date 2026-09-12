@@ -92,7 +92,9 @@ namespace rock::debug_controller_runtime
                 return deltaSeconds;
             }
 
-            return 1.0f / 90.0f;
+            // Unmeasurable frame: debug-stick motion holds instead of
+            // advancing by fabricated time.
+            return 0.0f;
         }
 
         [[nodiscard]] float normalizeThumb(std::int16_t value)
@@ -210,18 +212,20 @@ namespace rock::debug_controller_runtime
 
         void toggleHandColliders()
         {
-            const bool visible = g_rockConfig.rockDebugShowColliders && (g_rockConfig.rockDebugDrawHandColliders || g_rockConfig.rockDebugDrawHandBoneColliders);
+            const bool visible =
+                g_rockConfig.rockDebugShowColliders &&
+                g_rockConfig.rockDebugDrawHandColliders;
             const bool enabled = !visible;
             g_rockConfig.rockDebugDrawHandColliders = enabled;
-            g_rockConfig.rockDebugDrawHandBoneColliders = enabled;
             if (enabled) {
                 g_rockConfig.rockDebugShowColliders = true;
                 persistColliderState("bDebugShowColliders", true);
             }
 
             persistColliderState("bDebugDrawHandColliders", enabled);
-            persistColliderState("bDebugDrawHandBoneColliders", enabled);
-            notify(std::format("hand collider visualizers {}", enabled ? "ON" : "OFF"));
+            notify(std::format(
+                "hand palm collider visualizer {}",
+                enabled ? "ON" : "OFF"));
         }
 
         void toggleWeaponColliders()

@@ -3,11 +3,14 @@
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
+#include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/PhysicsRayCast.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandSelection.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -259,43 +262,27 @@ namespace rock
             return motionType == physics_body_classifier::BodyMotionType::Dynamic;
         }
 
-        bool hasDynamicActorBodyEvidence(RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
+        grab_target::Kind classifyDeadActorPhysics(RE::TESObjectREFR* ref, RE::NiAVObject* hitNode,
+            RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
-            if (!hknpWorld || bodyId.value == kInvalidBodyId) {
-                return false;
-            }
-
-            auto* body = havok_runtime::getBody(hknpWorld, bodyId);
-            if (!body) {
-                return false;
-            }
-
-            const auto layer = body->collisionFilterInfo & 0x7F;
-            if (!collision_layer_policy::isActorOrBipedLayer(layer)) {
-                return false;
-            }
-
+            auto* body = world && bodyId.value != kInvalidBodyId ? havok_runtime::getBody(world, bodyId) : nullptr;
+            if (!body) return grab_target::Kind::BlockedWholeActorBody;
+            const auto layer = body->collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
             auto motionType = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
             if (motionType == physics_body_classifier::BodyMotionType::Unknown) {
                 motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
             }
-            return motionType == physics_body_classifier::BodyMotionType::Dynamic;
-        }
-
-        bool hasDetachedGoreEvidence(RE::TESObjectREFR* ref, RE::NiAVObject* hitNode, RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
-        {
-            if (!hasDynamicDeadBipedBodyEvidence(hknpWorld, bodyId)) {
-                return false;
+            auto* root = ref ? ref->Get3D() : nullptr;
+            const bool outsideRoot = grab_target::isDetachedGoreLayer(layer) && hitNode && root &&
+                !actor_equipment_grab::nodeContainsNode(root, hitNode, 64);
+            const auto kind = grab_target::classifyDeadActorPhysicalTarget(
+                motionType == physics_body_classifier::BodyMotionType::Dynamic, layer, outsideRoot);
+            if (kind == grab_target::Kind::DetachedGore) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
+                    "Detached actor part admitted: actor={:08X} body={} layer={} owner='{}' outsideRoot={}",
+                    ref ? ref->GetFormID() : 0, bodyId.value, layer, hitNode ? hitNode->name.c_str() : "none", outsideRoot);
             }
-
-            /*
-             * Whole dead actor bodies can expose dynamic DEADBIP bodies after
-             * ragdolling. Detached gore is only accepted when the hit node is no
-             * longer owned by the actor 3D tree; this keeps the earlier invariant
-             * that a normal NPC body is not a pull target.
-             */
-            auto* root3D = ref ? ref->Get3D() : nullptr;
-            return hitNode && root3D && !actor_equipment_grab::nodeContainsNode(root3D, hitNode, 64);
+            return kind;
         }
 
         bool readSelectionBodyInteractionState(
@@ -375,11 +362,12 @@ namespace rock
                 }
             }
 
-            if (hasDetachedGoreEvidence(ref, hitNode, hknpWorld, bodyId)) {
-                return { .kind = grab_target::Kind::DetachedGore, .reason = "detached-deadbip-gore", .grabbable = true };
+            const auto physicalKind = classifyDeadActorPhysics(ref, hitNode, hknpWorld, bodyId);
+            if (physicalKind == grab_target::Kind::DetachedGore) {
+                return { .kind = physicalKind, .reason = "detached-actor-part-dynamic", .grabbable = true };
             }
 
-            if (hasDynamicActorBodyEvidence(hknpWorld, bodyId)) {
+            if (physicalKind == grab_target::Kind::DeadActorBody) {
                 return { .kind = grab_target::Kind::DeadActorBody, .reason = "dead-actor-body-dynamic", .grabbable = true };
             }
 
@@ -387,6 +375,17 @@ namespace rock
         }
 
         if (baseForm->Is(RE::ENUM_FORM_ID::kMSTT) && hasDynamicMovableStaticBodyEvidence(hknpWorld, bodyId)) {
+            const bool targetIsCar = fo4vr::isExplodableCar(baseForm);
+            const auto carSelectionDecision = car_interaction_policy::evaluateSelection(car_interaction_policy::GrabPolicyInput{
+                .targetIsCar = targetIsCar,
+                .playerInPowerArmor = targetIsCar && fo4vr::isInPowerArmor(),
+            }, isFarSelection);
+            if (!carSelectionDecision.allowed) {
+                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carSelectionDecision.reason, .grabbable = false };
+            }
+            if (targetIsCar) {
+                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carSelectionDecision.reason, .grabbable = true };
+            }
             return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = "dynamic-mstt-body", .grabbable = true };
         }
 
@@ -431,7 +430,9 @@ namespace rock
             return nullptr;
 
         auto* body = havok_runtime::getBody(hknpWorld, bodyId);
-        if (!body || body->motionIndex > 4096)
+        // Reference ownership depends on the validated body and collision
+        // wrapper, not the world's dynamically allocated motion-slot number.
+        if (!body)
             return nullptr;
 
         auto layer = body->collisionFilterInfo & 0x7F;
@@ -498,11 +499,6 @@ namespace rock
         {
             const RE::NiPoint3 startToHit(hit.x - start.x, hit.y - start.y, hit.z - start.z);
             return startToHit.x * directionUnit.x + startToHit.y * directionUnit.y + startToHit.z * directionUnit.z;
-        }
-
-        float configuredNearReachDistance()
-        {
-            return g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : g_rockConfig.rockNearDetectionRange;
         }
 
         bool promotesFarHitToCloseSelection(const GrabTargetClassification& classification, const RE::NiPoint3& start, const RE::NiPoint3& hitPoint, float nearReachDistance)
@@ -615,8 +611,8 @@ namespace rock
 
                 const bool farBlacklistConfigured =
                     isFarSelection &&
-                    (!g_rockConfig.rockFarSelectionBlockedReferenceFormIds.empty() || !g_rockConfig.rockFarSelectionBlockedBaseFormIds.empty() ||
-                        !g_rockConfig.rockFarSelectionBlockedFormTypes.empty() || !g_rockConfig.rockFarSelectionBlockedLayers.empty());
+                    (!selection_query_policy::kFarSelectionBlockedReferenceFormIds.empty() || !selection_query_policy::kFarSelectionBlockedBaseFormIds.empty() ||
+                        !selection_query_policy::kFarSelectionBlockedFormTypes.empty() || !selection_query_policy::kFarSelectionBlockedLayers.empty());
                 if (farBlacklistConfigured) {
                     const auto farRejectTelemetry = makeSelectionRejectTelemetry(ref, hitNode, hknpWorld, hitBodyId);
                     const auto farBlacklistDecision =
@@ -626,10 +622,10 @@ namespace rock
                             .baseFormId = baseForm ? baseForm->formID : 0,
                             .collisionLayer = farRejectTelemetry.layer,
                             .formType = baseForm && baseForm->GetFormTypeString() ? baseForm->GetFormTypeString() : "",
-                            .blockedReferenceFormIds = g_rockConfig.rockFarSelectionBlockedReferenceFormIds,
-                            .blockedBaseFormIds = g_rockConfig.rockFarSelectionBlockedBaseFormIds,
-                            .blockedFormTypes = g_rockConfig.rockFarSelectionBlockedFormTypes,
-                            .blockedLayers = g_rockConfig.rockFarSelectionBlockedLayers,
+                            .blockedReferenceFormIds = selection_query_policy::kFarSelectionBlockedReferenceFormIds,
+                            .blockedBaseFormIds = selection_query_policy::kFarSelectionBlockedBaseFormIds,
+                            .blockedFormTypes = selection_query_policy::kFarSelectionBlockedFormTypes,
+                            .blockedLayers = selection_query_policy::kFarSelectionBlockedLayers,
                         });
                     if (farBlacklistDecision.blocked) {
                         ++outRejectedNotGrabbable;
@@ -662,7 +658,10 @@ namespace rock
                 ++outCandidates;
                 const float lateralDistance = lateralDistanceToRay(start, directionUnit, hitPoint);
                 const float signedAlongDistance = signedAlongDistanceOnRay(start, directionUnit, hitPoint);
-                if (selection_query_policy::shouldRejectBehindPalmHit(isFarSelection, signedAlongDistance, g_rockConfig.rockCloseSelectionBehindPalmToleranceGameUnits)) {
+                if (selection_query_policy::shouldRejectBehindPalmHit(
+                        isFarSelection,
+                        signedAlongDistance,
+                        selection_query_policy::kCloseSelectionBehindPalmToleranceGameUnits)) {
                     ++outRejectedBehindPalm;
                     if (logRejectTelemetry) {
                         logSelectionRejectTelemetry(queryName, "behind-palm", i, ref, hitNode, hknpWorld, hitBodyId, &classification, "behind-palm", isFarSelection, signedAlongDistance,
@@ -689,8 +688,8 @@ namespace rock
                 const bool hasHitNormal = normalizeGameDirection(hkDirectionToNiPoint(hit.normal), hitNormal);
                 const std::uint32_t shapeKey = hit.hitBodyInfo.m_shapeKey.storage;
                 const float normalDotDirection = hasHitNormal ? hitNormal.x * directionUnit.x + hitNormal.y * directionUnit.y + hitNormal.z * directionUnit.z : 0.0f;
-                const float lateralScoreScale = isFarSelection ? g_rockConfig.rockFarCastRadiusGameUnits : g_rockConfig.rockNearCastRadiusGameUnits;
-                const float alongScoreScale = isFarSelection ? g_rockConfig.rockFarDetectionRange : configuredNearReachDistance();
+                const float lateralScoreScale = isFarSelection ? selection_query_policy::kFarCastRadiusGameUnits : selection_query_policy::kNearCastRadiusGameUnits;
+                const float alongScoreScale = isFarSelection ? selection_query_policy::kFarDetectionRangeGameUnits : selection_query_policy::kNearCastDistanceGameUnits;
                 const auto candidateScore = selection_query_policy::scoreShapeCastCandidate(selection_query_policy::ShapeCastCandidateScoringInput{
                     .isFarSelection = isFarSelection,
                     .lateralDistance = lateralDistance,
@@ -731,14 +730,41 @@ namespace rock
                 insertRankedSelectionCandidate(rankedCandidates, rankedCandidateCount, candidate, candidateScore);
             }
 
-            if (rankedCandidateCount > 0) {
-                result = rankedCandidates[0].selection;
+            for (std::size_t index = 0; index < rankedCandidateCount; ++index) {
+                auto& candidate = rankedCandidates[index].selection;
+                auto* ref = candidate.refr;
+                const auto hitBodyId = candidate.bodyId;
+                const auto& hitPoint = candidate.hitPointWorld;
+                const auto hmdConeDot = candidate.hmdConeDot;
+                if (candidate.targetKind == grab_target::Kind::ActorEquipment) {
+                    auto* owner = havok_runtime::getCollisionObjectFromBody(hknpWorld, hitBodyId);
+                    RE::hknpWorld* ownerWorld = nullptr;
+                    RE::hknpBodyId ownerBody{kInvalidBodyId};
+                    RE::NiTransform bodyWorld{};
+                    if (!owner || !havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerBody) ||
+                        ownerWorld != hknpWorld || ownerBody.value != hitBodyId.value ||
+                        !tryResolveLiveBodyWorldTransform(hknpWorld, hitBodyId, bodyWorld) ||
+                        !candidate.equipmentAnchor.capture(bodyWorld, hitPoint)) {
+                        ++outRejectedNotGrabbable;
+                        ROCK_LOG_SAMPLE_WARN(Hand, 2000, "Actor equipment selection rejected: unreadable hit-body anchor actor={:08X} body={}",
+                            ref->GetFormID(), hitBodyId.value);
+                        continue;
+                    }
+                    candidate.equipmentAnchorOwner = reinterpret_cast<std::uintptr_t>(owner);
+                    ROCK_LOG_SAMPLE_DEBUG(Hand, 2000,
+                        "Actor equipment anchor: actor={:08X} item={:08X} body={} point=({:.2f},{:.2f},{:.2f}) local=({:.2f},{:.2f},{:.2f}) hmdDot={:.3f}",
+                        ref->GetFormID(), candidate.actorEquipment.itemFormId, hitBodyId.value,
+                        hitPoint.x, hitPoint.y, hitPoint.z, candidate.equipmentAnchor.localPoint.x,
+                        candidate.equipmentAnchor.localPoint.y, candidate.equipmentAnchor.localPoint.z, hmdConeDot);
+                }
+                result = candidate;
+                break;
             }
             return result;
         }
     }
 
-    SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, float nearRange, bool isLeft,
+    SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, bool isLeft,
         const OtherHandSelectionContext& otherHandContext, const char* debugQueryName)
     {
         SelectedObject result;
@@ -750,11 +776,11 @@ namespace rock
         if (!normalizeGameDirection(palmForward, direction))
             return result;
 
-        const float configuredCastDistance = g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : nearRange;
-        const float castDistance = (std::max)(0.0f, configuredCastDistance);
-        const float castRadius = (std::max)(0.0f, g_rockConfig.rockNearCastRadiusGameUnits);
+        const float castDistance = selection_query_policy::kNearCastDistanceGameUnits;
+        const float castRadius = selection_query_policy::kNearCastRadiusGameUnits;
 
-        RE::hknpAllHitsCollector collector;
+        physics_query_resources::AllHitsCollector ownedCollector;
+        auto& collector = ownedCollector.get();
         physics_shape_cast::SphereCastDiagnostics diagnostics;
         if (!physics_shape_cast::castSelectionSphere(
                 hknpWorld,
@@ -762,7 +788,7 @@ namespace rock
                     .directionGame = direction,
                     .distanceGame = castDistance,
                     .radiusGame = castRadius,
-                    .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                    .collisionFilterInfo = selection_query_policy::kShapeCastFilterInfo },
                 collector,
                 &diagnostics)) {
             return result;
@@ -805,7 +831,7 @@ namespace rock
         return result;
     }
 
-    SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir, float farRange,
+    SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir,
         const FarSelectionHmdConeGate& hmdConeGate,
         const OtherHandSelectionContext& otherHandContext)
     {
@@ -818,27 +844,33 @@ namespace rock
         if (!normalizeGameDirection(pointingDir, direction))
             return result;
 
+        constexpr float farRange = selection_query_policy::kFarDetectionRangeGameUnits;
         float clippedFarRange = farRange;
         RE::NiPoint3 rayEnd(handPos.x + direction.x * farRange, handPos.y + direction.y * farRange, handPos.z + direction.z * farRange);
 
-        RE::bhkPickData pickData;
-        pickData.SetStartEnd(handPos, rayEnd);
-
-        pickData.collisionFilter.filter = g_rockConfig.rockFarClipRayFilterInfo;
-
-        if (bhkWorld->PickObject(pickData) && pickData.HasHit()) {
-            clippedFarRange = (std::max)(0.0f, pickData.GetHitFraction() * farRange);
+        physics_ray_cast::ClosestSegmentResult rayResult{};
+        if (physics_ray_cast::castClosestSegment(
+                bhkWorld,
+                handPos,
+                rayEnd,
+                selection_query_policy::kFarClipRayFilterInfo,
+                rayResult) &&
+            rayResult.hit) {
+            clippedFarRange = (std::max)(
+                0.0f,
+                rayResult.hitFraction * farRange);
         }
 
-        RE::hknpAllHitsCollector collector;
+        physics_query_resources::AllHitsCollector ownedCollector;
+        auto& collector = ownedCollector.get();
         physics_shape_cast::SphereCastDiagnostics diagnostics;
         if (!physics_shape_cast::castSelectionSphere(
                 hknpWorld,
                 physics_shape_cast::SphereCastInput{ .startGame = handPos,
                     .directionGame = direction,
                     .distanceGame = clippedFarRange,
-                    .radiusGame = g_rockConfig.rockFarCastRadiusGameUnits,
-                    .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                    .radiusGame = selection_query_policy::kFarCastRadiusGameUnits,
+                    .collisionFilterInfo = selection_query_policy::kShapeCastFilterInfo },
                 collector,
                 &diagnostics)) {
             return result;
@@ -851,7 +883,7 @@ namespace rock
         int rejectedBehindPalm = 0;
         int rejectedHmdCone = 0;
         int duplicateBodies = 0;
-        const float configuredNearReach = configuredNearReachDistance();
+        constexpr float configuredNearReach = selection_query_policy::kNearCastDistanceGameUnits;
         bool logFarMetric = false;
         if (g_rockConfig.rockDebugVerboseLogging) {
             static int farDiagCounter = 0;
@@ -878,7 +910,7 @@ namespace rock
                     .isFarSelection = false,
                     .lateralDistance = result.lateralDistance,
                     .alongDistance = hitDistance,
-                    .lateralScale = g_rockConfig.rockNearCastRadiusGameUnits,
+                    .lateralScale = selection_query_policy::kNearCastRadiusGameUnits,
                     .alongScale = configuredNearReach,
                     .normalDotDirection = normalDotDirection,
                     .hasHitNormal = result.hasHitNormal,
@@ -893,7 +925,7 @@ namespace rock
                     "Far shape cast: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f}/{:.1f} "
                     "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} rejectBehind={} rejectHmdCone={} hmdGate={} hmdDot={:.3f} selected={} formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f} "
                     "score={:.4f} normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
-                    handPos.x, handPos.y, handPos.z, direction.x, direction.y, direction.z, g_rockConfig.rockFarCastRadiusGameUnits, clippedFarRange, farRange,
+                    handPos.x, handPos.y, handPos.z, direction.x, direction.y, direction.z, selection_query_policy::kFarCastRadiusGameUnits, clippedFarRange, farRange,
                     diagnostics.collisionFilterInfo, diagnostics.hitCount, candidatesChecked, duplicateBodies, rejectedInvalidBody, rejectedNoRef, rejectedNotGrabbable,
                     rejectedBehindPalm, rejectedHmdCone, hmdConeGate.enabled ? (hmdConeGate.hasHmdFrame ? "ready" : "missing") : "off",
                     result.hasHmdConeDot ? result.hmdConeDot : -1.0f,

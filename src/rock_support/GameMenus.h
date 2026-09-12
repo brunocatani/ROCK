@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rock_support/Logger.h"
+#include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 
 #include <array>
 #include <string_view>
@@ -82,6 +83,7 @@ namespace rock::fo4vr
             const std::string_view menuName{ rawName };
             if (menuName == "ScopeMenu") {
                 _scopeMenuOpen = event.opening;
+                scope_transition_telemetry::onMenuEvent(event.opening);
             }
             if (menuName == "LoadingMenu") {
                 _loadingMenuOpen = event.opening;

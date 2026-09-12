@@ -32,7 +32,6 @@ namespace rock::held_weapon_instant_transition
         EntryHookChanged,
         DrawCallsiteChanged,
         SheatheCallsiteChanged,
-        CompletionEntryChanged,
     };
 
     struct Readiness
@@ -68,46 +67,12 @@ namespace rock::held_weapon_instant_transition
         ReadinessReason readinessReason{ ReadinessReason::NotInstalled };
         RequestReason reason{ RequestReason::SameHandTrigger };
         held_weapon_instant_transition_policy::ActionTrace actionTrace{};
-        std::uint64_t completionPermit{ 0 };
         bool attempted{ false };
         bool managerAccepted{ false };
 
         [[nodiscard]] bool success() const noexcept
         {
-            return code == ImmediateEquipCode::Accepted && completionPermit != 0;
-        }
-    };
-
-    struct EquippedIdentity
-    {
-        std::uint32_t formID{ 0 };
-        std::uintptr_t instanceData{ 0 };
-        std::uint32_t equipIndex{ 0 };
-    };
-
-    enum class CompletionCode : std::uint8_t
-    {
-        NotAttempted,
-        Completed,
-        CapabilityUnavailable,
-        UnauthorizedTransaction,
-        MissingPlayer,
-        IdentityChangedBeforeCompletion,
-        IdentityChangedAfterCompletion,
-        InvalidWeaponState,
-        NativeCompletionFailed,
-    };
-
-    struct CompletionResult
-    {
-        CompletionCode code{ CompletionCode::NotAttempted };
-        ReadinessReason readinessReason{ ReadinessReason::NotInstalled };
-        std::uint32_t stateBefore{ 0 };
-        std::uint32_t stateAfter{ 0 };
-
-        [[nodiscard]] bool success() const noexcept
-        {
-            return code == CompletionCode::Completed;
+            return code == ImmediateEquipCode::Accepted;
         }
     };
 
@@ -119,19 +84,13 @@ namespace rock::held_weapon_instant_transition
 
     // Main-thread-only transaction. The scope surrounds exactly one immediate
     // EquipObject call and suppresses only its verified player draw/sheathe
-    // virtual callsites.
+    // virtual callsites. Exact equipped identity/stack validation belongs to
+    // WeaponEquipTransfer; normal native draw presentation belongs to the
+    // equipped-weapon transition coordinator.
     [[nodiscard]] ImmediateEquipResult equipImmediatelyWithoutActions(
         const ImmediateEquipInput& input) noexcept;
-    void discardCompletionPermit(const ImmediateEquipResult& equip) noexcept;
-
-    // Consumes the one-shot permit returned by the immediately preceding exact
-    // transaction and runs the verified engine-owned draw completion helper.
-    [[nodiscard]] CompletionResult completeDrawForExactCurrent(
-        const ImmediateEquipResult& equip,
-        const EquippedIdentity& expected) noexcept;
 
     [[nodiscard]] const char* requestReasonName(RequestReason reason) noexcept;
     [[nodiscard]] const char* readinessReasonName(ReadinessReason reason) noexcept;
     [[nodiscard]] const char* immediateEquipCodeName(ImmediateEquipCode code) noexcept;
-    [[nodiscard]] const char* completionCodeName(CompletionCode code) noexcept;
 }

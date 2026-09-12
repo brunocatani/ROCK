@@ -57,15 +57,15 @@ namespace rock::shoulder_stash
             return bodyId != kInvalidBodyId && bodyId != body_contact_runtime::kInvalidBodyContactId;
         }
 
-        [[nodiscard]] bool contactIsRecent(std::uint32_t currentFrame, std::uint32_t recordFrame, int recentFrames) noexcept
+        [[nodiscard]] bool contactIsRecent(double nowElapsedSeconds, double recordElapsedSeconds, float recentSeconds) noexcept
         {
-            if (recentFrames < 0) {
+            if (!std::isfinite(recentSeconds) || recentSeconds < 0.0f) {
                 return false;
             }
-            if (recordFrame > currentFrame) {
+            if (recordElapsedSeconds > nowElapsedSeconds) {
                 return false;
             }
-            return (currentFrame - recordFrame) <= static_cast<std::uint32_t>(recentFrames);
+            return (nowElapsedSeconds - recordElapsedSeconds) <= static_cast<double>(recentSeconds);
         }
 
         [[nodiscard]] float candidateConfidence(float distanceGameUnits, float radiusGameUnits, float thresholdGameUnits, bool sameSide) noexcept
@@ -95,6 +95,32 @@ namespace rock::shoulder_stash
         [[nodiscard]] const Probe& hmdKinematicProbe(const DetectorInput& input) noexcept
         {
             return input.config.useHmdBackVolume && input.hasHmdProbe && finitePoint(input.hmdProbe.pointGame) ? input.hmdProbe : input.probe;
+        }
+
+        struct SpeedProbePoint
+        {
+            RE::NiPoint3 pointGame{};
+            bool hmdRelative = false;
+        };
+
+        [[nodiscard]] SpeedProbePoint speedProbePoint(const DetectorInput& input) noexcept
+        {
+            const Probe& probe = hmdKinematicProbe(input);
+            if (input.hasHmdFrame && finitePoint(input.hmdPositionWorld)) {
+                /*
+                 * The speed ceiling protects against a fast hand gesture, not
+                 * player locomotion. Removing the HMD's common translation
+                 * keeps stick movement and crouching out of the measurement.
+                 */
+                return {
+                    .pointGame = probePointRelativeToHmdTranslation(
+                        probe.pointGame,
+                        input.hmdPositionWorld),
+                    .hmdRelative = true,
+                };
+            }
+
+            return { .pointGame = probe.pointGame };
         }
 
         [[nodiscard]] bool tryBuildShoulderCapsule(
@@ -159,16 +185,19 @@ namespace rock::shoulder_stash
             runtime.sustainedHeldBodyId = contact.heldBodyId;
             runtime.sustainedHeldBodyLocalPointGame = transform_math::worldPointToLocal(heldWorld, contact.nearestPointGame);
             runtime.sustainedPointGame = contact.nearestPointGame;
-            runtime.sustainedMissFrames = 0;
+            runtime.sustainedMissSeconds = 0.0f;
             runtime.hasSustainedContactAnchor = true;
             runtime.hasSustainedPointGame = true;
         }
 
         [[nodiscard]] Candidate makeSustainedMissToleranceCandidate(const DetectorInput& input, RuntimeState& runtime)
         {
-            ++runtime.sustainedMissFrames;
+            // Measured elapsed time only: an unmeasurable frame holds the
+            // miss tolerance instead of advancing it.
+            runtime.sustainedMissSeconds +=
+                std::isfinite(input.deltaSeconds) && input.deltaSeconds > 0.0f ? input.deltaSeconds : 0.0f;
             if (!runtime.hasSustainedPointGame ||
-                !sustainedContactMissWithinTolerance(runtime.sustainedMissFrames, input.config.sustainedContactMissFrames)) {
+                !sustainedContactMissWithinTolerance(runtime.sustainedMissSeconds, input.config.sustainedContactMissSeconds)) {
                 clearSustainedContact(runtime);
                 return {};
             }
@@ -226,7 +255,7 @@ namespace rock::shoulder_stash
                 return {};
             }
 
-            runtime.sustainedMissFrames = 0;
+            runtime.sustainedMissSeconds = 0.0f;
             runtime.sustainedPointGame = anchorWorld;
             runtime.hasSustainedPointGame = true;
 
@@ -315,7 +344,7 @@ namespace rock::shoulder_stash
             const auto count = input.bodyContacts->snapshot(records.data(), records.size());
             for (std::size_t i = 0; i < count; ++i) {
                 const auto& record = records[i];
-                if (!contactIsRecent(input.contactFrame, record.frame, input.config.recentContactFrames) || !isShoulderZone(record.zone)) {
+                if (!contactIsRecent(input.contactElapsedSeconds, record.elapsedSeconds, input.config.recentContactSeconds) || !isShoulderZone(record.zone)) {
                     continue;
                 }
                 if (!heldBodyContains(input.heldBodyIds, record.targetBodyId)) {
@@ -397,13 +426,16 @@ namespace rock::shoulder_stash
         [[nodiscard]] float resolvedProbeSpeed(const DetectorInput& input, const RuntimeState& runtime) noexcept
         {
             const Probe& probe = hmdKinematicProbe(input);
-            if (probe.hasVelocity) {
+            const SpeedProbePoint point = speedProbePoint(input);
+            if (!point.hmdRelative && probe.hasVelocity) {
                 return probeSpeed(probe);
             }
-            if (!runtime.hasLastProbePoint || input.deltaSeconds <= 0.000001f) {
+            if (!runtime.hasLastKinematicProbePoint ||
+                runtime.lastKinematicProbePointWasHmdRelative != point.hmdRelative ||
+                input.deltaSeconds <= 0.000001f) {
                 return 0.0f;
             }
-            return length(sub(probe.pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
+            return length(sub(point.pointGame, runtime.lastKinematicProbePointGame)) / input.deltaSeconds;
         }
     }
 
@@ -419,9 +451,10 @@ namespace rock::shoulder_stash
         decision.speedGameUnitsPerSecond = speed;
 
         auto updateProbeHistory = [&]() {
-            const Probe& probe = hmdKinematicProbe(input);
-            runtime.lastProbePointGame = probe.pointGame;
-            runtime.hasLastProbePoint = finitePoint(probe.pointGame);
+            const SpeedProbePoint point = speedProbePoint(input);
+            runtime.lastKinematicProbePointGame = point.pointGame;
+            runtime.hasLastKinematicProbePoint = finitePoint(point.pointGame);
+            runtime.lastKinematicProbePointWasHmdRelative = point.hmdRelative;
         };
 
         if (!input.config.enabled || !finitePoint(input.probe.pointGame)) {

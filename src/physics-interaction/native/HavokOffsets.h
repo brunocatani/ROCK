@@ -10,6 +10,13 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kCollisionObject_PhysSystemPtr = 0x20;
 
+    /*
+     * FO4VR's collision-object-local body index. The two independent native
+     * scene-update callers load this dword before resolving the corresponding
+     * hknp body through bhkPhysicsSystem.
+     */
+    constexpr std::uintptr_t kCollisionObject_SystemBodyIndex = 0x28;
+
     constexpr std::uintptr_t kBhkPhysicsSystem_Instance = 0x18;
 
     constexpr std::uintptr_t kHknpPhysicsSystemInstance_World = 0x18;
@@ -20,13 +27,61 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kHknpWorld_ModifierManager = 0x150;
 
+    /*
+     * FO4VR 1.2.72 collision-query lifetime state. Raw disassembly verified
+     * 2026-08-29: hknpHybridBroadPhase::castShape loads the dispatcher from
+     * world+0x200; hknpWorld::~hknpWorld frees and then nulls that field while
+     * the broadphase can still be present at +0x178. The destructor installs
+     * the vtable at module+0x2DFC540 before beginning teardown.
+     */
+    constexpr std::uintptr_t kHknpWorld_BodyArrayPtr = 0x20;
+    constexpr std::uintptr_t kHknpWorld_ConstraintArrayPtr = 0x128;
+    constexpr std::uintptr_t kHknpWorld_ConstraintCount = 0x130;
+    constexpr std::uintptr_t kHknpWorld_BroadPhase = 0x178;
+    constexpr std::uintptr_t kHknpWorld_CollisionQueryDispatcher = 0x200;
+    constexpr std::uintptr_t kHknpWorld_InternalQueryLock = 0x690;
+    constexpr std::uintptr_t kVtable_HknpWorldDestroying = 0x2DFC540;
+
     constexpr std::uintptr_t kModifierMgr_FilterPtr = 0x5E8;
 
     constexpr std::uintptr_t kFilter_CollisionMatrix = 0x1A0;
 
+    // FO4VR raw disassembly: 1E11800 consumes 8-byte body-ID pairs and
+    // compacts the admitted prefix; bhkCollisionFilter ctor 1E11460 installs
+    // vtable 2E84308. Ray traversal 1816CB8 uses slot +38 (1E11910), while
+    // simulation uses +20. Never hook the shared 1E115B0 bit predicate.
+    constexpr std::uintptr_t kFunc_BhkCollisionFilter_FilterBodyPairs = 0x1E11800;
+    constexpr std::uintptr_t kVtableEntry_BhkCollisionFilter_FilterBodyPairs = 0x2E84328;
+    // Both native SetCollisionFilterInfo (153AF7A) and DisablePair
+    // (196DF62) call this world/body-ID cache invalidation routine.
+    constexpr std::uintptr_t kFunc_RebuildBodyCollisionCaches = 0x153C5A0;
+
     constexpr std::uintptr_t kHknpWorld_MotionArrayPtr = 0xE0;
 
     constexpr std::uintptr_t kHknpWorld_MotionPropertiesLibraryPtr = 0x5D0;
+
+    /*
+     * FO4VR 1.2.72 hknpConstraintCollisionFilter ownership and counted-pair
+     * contract. Blind raw-disassembly verification on 2026-08-12 established:
+     * world+0x560/0x568 are the constraint-added/removed signal heads; each
+     * 0x20-byte slot stores tagged-next, owner, and callback at +0x08/+0x10/
+     * +0x18. The owner is the derived pair filter only when its vtable, type
+     * byte, reciprocal world pointer, and both signal callbacks agree.
+     * Pair add/remove sort the two body IDs, reference-count the key in the
+     * table at filter+0x18, and invalidate the affected collision caches.
+     */
+    constexpr std::uintptr_t kHknpWorld_ConstraintAddedSignal = 0x560;
+    constexpr std::uintptr_t kHknpWorld_ConstraintRemovedSignal = 0x568;
+    constexpr std::uintptr_t kSignalSlot_NextTagged = 0x08;
+    constexpr std::uintptr_t kSignalSlot_Owner = 0x10;
+    constexpr std::uintptr_t kSignalSlot_Callback = 0x18;
+    constexpr std::uintptr_t kConstraintCollisionFilter_Type = 0x10;
+    constexpr std::uintptr_t kConstraintCollisionFilter_World = 0x30;
+    constexpr std::uintptr_t kVtable_ConstraintCollisionFilter = 0x2E06258;
+    constexpr std::uintptr_t kFunc_ConstraintFilterOnConstraintAdded = 0x17ED740;
+    constexpr std::uintptr_t kFunc_ConstraintFilterOnConstraintRemoved = 0x17ED7D0;
+    constexpr std::uintptr_t kFunc_PairCollisionFilterDisablePair = 0x196DE70;
+    constexpr std::uintptr_t kFunc_PairCollisionFilterEnablePair = 0x196DF80;
 
     /*
      * FO4VR's world reader-writer lock (BSReadWriteLock: u32 owner thread id,
@@ -97,6 +152,10 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_StaticCompoundShape_Ctor = 0x1E9C950;
 
+    constexpr std::uintptr_t kFunc_DynamicCompoundShape_Ctor = 0x16E42B0;
+
+    constexpr std::uintptr_t kFunc_DynamicCompoundShape_UpdateInstances = 0x16E4850;
+
     constexpr std::uintptr_t kFunc_ShapeInstance_SetShape = 0x16E1780;
 
     constexpr std::uintptr_t kFunc_ShapeInstance_SetTransform = 0x16E1840;
@@ -114,6 +173,18 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_PhysicsSystem_Ctor = 0x1E0C2B0;
 
     constexpr std::uintptr_t kFunc_PhysicsSystem_GetBodyId = 0x1E0C460;
+
+    /*
+     * FO4VR held-body presentation boundary. Blind raw-disassembly
+     * verification on 2026-08-23 established the scene transform writer ABI,
+     * its main/proxy return sites, and the native full-transform predictor.
+     * The main caller predicts by the residual Havok time before writing a
+     * 3x4 rotation/translation transform to the collision object's owner node.
+     */
+    constexpr std::uintptr_t kFunc_SceneTransformWriter = 0x1E06B00;
+    constexpr std::uintptr_t kReturn_SceneTransformWriterMain = 0x1E09B5B;
+    constexpr std::uintptr_t kReturn_SceneTransformWriterProxy = 0x1E0A585;
+    constexpr std::uintptr_t kFunc_PredictBodyTransform = 0x15451A0;
 
     constexpr std::uintptr_t kFunc_PhysicsSystemData_Ctor = 0x5EAB0;
 
@@ -160,6 +231,19 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_World_EnableCollision = 0x1DF9940;
 
     constexpr std::uintptr_t kFunc_World_PickObject = 0x1DF8D60;
+
+    constexpr std::uintptr_t kFunc_HknpWorld_CastShape = 0x15A6C00;
+
+    constexpr std::uintptr_t kFunc_HknpCollisionQueryDispatcherBase_CastShape = 0x15FFC30;
+
+    constexpr std::uintptr_t kFunc_HkbnpRagdollInterface_UpdateConstraints = 0x17B74B0;
+    constexpr std::uintptr_t kFault_HkbnpRagdollInterface_ConstraintRead = 0x17B7534;
+
+    constexpr std::uintptr_t kFunc_BhkNPCollisionObject_GetCollisionFilterInfo = 0x1E08D60;
+    constexpr std::uintptr_t kFault_BhkNPCollisionObject_BodyFilterRead = 0x1E08DF3;
+
+    constexpr std::uintptr_t kFunc_BhkCharProxyController_WorldAccessor = 0x1E4DEC0;
+    constexpr std::uintptr_t kFault_BhkCharProxyController_BodyFieldRead = 0x1E4DEED;
 
     constexpr std::uintptr_t kFunc_World_AddStepListener = 0x1DFA7B0;
 
@@ -240,6 +324,28 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_CreateSphereShape = 0x15FF4E0;
 
     constexpr std::uintptr_t kFunc_NativeVRGrabDrop = 0xF1AB90;
+
+    /*
+     * Player preparation immediately before the native VR weapon-equip draw.
+     * Fallout4VR.exe 1.2.72 calls 0x140EF8E60 at 0x140E10794, then calls
+     * PlayerCharacter::DrawWeaponMagicHands(true) at 0x140E107A1. The helper
+     * refreshes the player equip-transition flag and timing fields. A draw
+     * recovery after a menu-time rejection must repeat this preparation once
+     * the preceding holster has reached the stable sheathed state.
+     */
+    constexpr std::uintptr_t kFunc_PrepareEquippedWeaponDraw = 0xEF8E60;
+
+    /*
+     * Post-acceptance work performed by
+     * PlayerCharacter::DrawWeaponMagicHands at 0x140F78D10. After ActionDraw
+     * accepts, FO4VR sets ActorState to Drawing, calls 0x140F203B0 with false,
+     * then calls 0x140E08A80. A custom weapon graph can partially accept the
+     * action while the aggregate dispatcher reports failure. Recovery may
+     * complete this sequence only with exact-identity player-graph evidence.
+     */
+    constexpr std::uintptr_t kFunc_ApplyAcceptedWeaponDraw = 0xF203B0;
+    constexpr std::uintptr_t kFunc_RefreshActorEquipmentAfterAction = 0xE08A80;
+    constexpr std::uintptr_t kData_DrawSheatheSafetyTimer = 0x37D04E8;
 
     /*
      * Equipped-weapon 3D attach task submission. Blind raw-disassembly
@@ -358,33 +464,13 @@ namespace rock::offsets
     constexpr std::uintptr_t kData_NativeWorldScopePrimaryVtable = 0x2D68718;
 
     /*
-     * BGSModelMaterialSwap application used by TryAttach3DRecurse immediately
-     * after cloning an OMOD model. Manual physical-housing enrichment calls the
-     * same entry so recovered geometry keeps the equipped instance's skins.
-     */
-    constexpr std::uintptr_t kFunc_ApplyOmodModelCustomization = 0x53CD0;
-
-    /*
      * PlayerCharacter flag storage is independently witnessed in the scope
      * update at 0x140EF84AF and the state transition at 0x140EFAAF7. Bit 0x08
-     * is the native force-true branch immediately before the cone decision and
-     * must retain priority over ROCK's replacement geometry.
+     * is the native force-true branch immediately before the scope decision and
+     * must retain priority over ROCK's held-button state.
      */
     constexpr std::ptrdiff_t kPlayerCharacter_NativeScopeFlags = 0x12A1;
     constexpr std::uint8_t kPlayerCharacter_NativeScopeForceDecisionMask = 0x08;
-
-    /* Engine Setting objects; the live float value is the first four bytes. */
-    constexpr std::uintptr_t kSetting_HmdScopeOffsetX = 0x37CF468;
-    constexpr std::uintptr_t kSetting_HmdScopeOffsetY = 0x37CF480;
-    constexpr std::uintptr_t kSetting_HmdScopeOffsetZ = 0x37CF498;
-    constexpr std::uintptr_t kSetting_HmdScopeAngleEnterDegrees = 0x37CF4F8;
-    constexpr std::uintptr_t kSetting_HmdScopeAngleExitDegrees = 0x37CF528;
-    constexpr std::uintptr_t kSetting_WeaponScopeAngleEnterDegrees = 0x37CF540;
-    constexpr std::uintptr_t kSetting_WeaponScopeAngleExitDegrees = 0x37CF570;
-    constexpr std::uintptr_t kSetting_WeaponScopeDistanceEnter = 0x37CF5A0;
-    constexpr std::uintptr_t kSetting_WeaponScopeDistanceExit = 0x37CF5B8;
-    constexpr std::uintptr_t kSetting_ScopeWeaponAngleWideningFactor = 0x37CF5E8;
-    constexpr std::uintptr_t kSetting_ScopeWeaponAngleExponent = 0x37CF600;
 
     constexpr std::uintptr_t kData_CollisionFilterSingleton = 0x59429B8;
 

@@ -17,7 +17,6 @@ namespace rock::body_frame
      * body-array BODY frame, while MOTION stays COM/weight diagnostics only.
      */
     inline constexpr std::uint32_t kFreeMotionIndex = 0x7FFF'FFFF;
-    inline constexpr std::uint32_t kMaxUsableMotionIndex = 4096;
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
     /*
      * Long FO4VR sessions can push the hknp body array past 8192 while valid
@@ -45,7 +44,17 @@ namespace rock::body_frame
 
     inline bool hasUsableMotionIndex(std::uint32_t motionIndex)
     {
-        return motionIndex > 0 && motionIndex < kMaxUsableMotionIndex && motionIndex != kFreeMotionIndex;
+        // Busy exterior worlds allocate valid motions above 4096. This checks
+        // identity only; dereferences must also check the live motion array.
+        return motionIndex > 0 && motionIndex < kFreeMotionIndex;
+    }
+
+    inline bool motionSlotCanBeRead(std::uint32_t motionIndex, std::uint32_t slotCount,
+        std::uint32_t capacityAndFlags)
+    {
+        const auto capacity = capacityAndFlags & 0x3FFF'FFFFu;
+        return hasUsableMotionIndex(motionIndex) && motionIndex < slotCount &&
+               slotCount <= capacity && capacity <= kMaxReadableBodyIndex + 1u;
     }
 
     inline bool bodySlotCanBeRead(std::uint32_t bodyId, std::uint32_t highWaterMark)

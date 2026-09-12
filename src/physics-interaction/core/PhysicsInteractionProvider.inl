@@ -4,28 +4,32 @@
     void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const
     {
         const auto& runtime = runtime_state::currentFrame();
-        outSnapshot.providerReady = (_initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable) ? 1u : 0u;
+        outSnapshot.providerReady = (_lifecycle.initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable) ? 1u : 0u;
         outSnapshot.frikSkeletonReady = runtime.localSkeletonReady ? 1u : 0u;
         outSnapshot.menuBlocking = runtime.localMenuBlocking ? 1u : 0u;
         outSnapshot.configBlocking = runtime.compatibilityConfigBlocking ? 1u : 0u;
-        outSnapshot.bhkWorld = reinterpret_cast<std::uintptr_t>(_cachedBhkWorld);
-        outSnapshot.hknpWorld = reinterpret_cast<std::uintptr_t>(_cachedHknpWorld);
+        outSnapshot.bhkWorld = reinterpret_cast<std::uintptr_t>(_lifecycle.cachedBhkWorld);
+        outSnapshot.hknpWorld = reinterpret_cast<std::uintptr_t>(_lifecycle.cachedHknpWorld);
         outSnapshot.gameToHavokScale = physics_scale::gameToHavok();
         outSnapshot.havokToGameScale = physics_scale::havokToGame();
         outSnapshot.physicsScaleRevision = physics_scale::revision();
-        outSnapshot.lifecycleFlags = _lifecycleFlagsAtomic.load(std::memory_order_acquire);
+        outSnapshot.lifecycleFlags = _lifecycle.flagsAtomic.load(std::memory_order_acquire);
         outSnapshot.lastLifecycleReason = static_cast<::rock::provider::RockProviderLifecycleReason>(
-            _lastLifecycleReasonAtomic.load(std::memory_order_acquire));
-        outSnapshot.worldGeneration = _worldGenerationAtomic.load(std::memory_order_acquire);
-        outSnapshot.skeletonGeneration = _skeletonGenerationAtomic.load(std::memory_order_acquire);
-        outSnapshot.providerGeneration = _providerGenerationAtomic.load(std::memory_order_acquire);
-        outSnapshot.stableFrameCount = _stableFrameCountAtomic.load(std::memory_order_acquire);
-        outSnapshot.deltaSeconds =
-            std::isfinite(_deltaTime) && _deltaTime > 0.0f ?
-                _deltaTime :
-                (1.0f / 90.0f);
-        outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
-            ::rock::provider::RockProviderFrameEnrichmentFlagV1::DeltaSecondsValid);
+            _lifecycle.lastReasonAtomic.load(std::memory_order_acquire));
+        outSnapshot.worldGeneration = _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+        outSnapshot.skeletonGeneration = _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+        outSnapshot.providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+        outSnapshot.stableFrameCount = _lifecycle.stableFrameCountAtomic.load(std::memory_order_acquire);
+        /*
+         * Truthful timing publication: the validity flag is set only for a
+         * measured game delta. Consumers guard for non-positive values, so an
+         * unmeasurable frame publishes zero instead of a fabricated rate.
+         */
+        outSnapshot.deltaSeconds = runtime.timing.valid ? runtime.timing.deltaSeconds : 0.0f;
+        if (runtime.timing.valid) {
+            outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderFrameEnrichmentFlagV1::DeltaSecondsValid);
+        }
         if (auto* playerNodes = f4vr::getPlayerNodes();
             playerNodes && playerNodes->HmdNode &&
             finiteNiTransform(playerNodes->HmdNode->world)) {
@@ -58,11 +62,11 @@
         outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
             ::rock::provider::RockProviderFrameEnrichmentFlagV1::CoherentHandRoles);
         outSnapshot.collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
             ::rock::provider::RockProviderFrameEnrichmentFlagV1::CollisionGenerationValid);
         outSnapshot.equippedWeaponTransitionSequence =
-            _equippedWeaponTransition.getPublicSnapshot().transitionSequence;
+            _equipped.transition.getPublicSnapshot().transitionSequence;
         outSnapshot.enrichmentFlags |= static_cast<std::uint32_t>(
             ::rock::provider::RockProviderFrameEnrichmentFlagV1::EquippedTransitionSequenceValid);
 
@@ -79,9 +83,14 @@
             outSnapshot.weaponBodyIds[i] = weaponSnapshot.bodyIds[i];
         }
 
-        if (_handBoneCache.isReady()) {
-            fillProviderTransform(_handBoneCache.getWorldTransform(false), outSnapshot.rightHandTransform);
-            fillProviderTransform(_handBoneCache.getWorldTransform(true), outSnapshot.leftHandTransform);
+        // Providers get the controller hand ROCK interacts with, not the
+        // rendered bone (ROCK's previous claim while a claim is active).
+        RE::NiTransform providerHandWorld{};
+        if (_handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(false, providerHandWorld)) {
+            fillProviderTransform(providerHandWorld, outSnapshot.rightHandTransform);
+        }
+        if (_handBoneCache.isReady() && frik_hand_world_authority::tryGetRawHandWorld(true, providerHandWorld)) {
+            fillProviderTransform(providerHandWorld, outSnapshot.leftHandTransform);
         }
 
         outSnapshot.rightHandBodyId = _rightHand.getCollisionBodyId().value;
@@ -89,6 +98,107 @@
         outSnapshot.rightHandState = providerHandStateFlags(_rightHand, false);
         outSnapshot.leftHandState = providerHandStateFlags(_leftHand, true);
         outSnapshot.offhandReservation = ::rock::provider::currentOffhandReservation();
+    }
+
+    bool PhysicsInteraction::isProviderWeaponBodyCurrentV1(
+        const std::uint64_t weaponGenerationKey,
+        const std::uint32_t bodyId) const
+    {
+        // Collider focus originates from the complete evidence catalog, while
+        // the frame snapshot intentionally carries only a compact body prefix.
+        if (weaponGenerationKey == 0 || bodyId == 0x7FFF'FFFF) {
+            return false;
+        }
+        const auto snapshot =
+            _weaponCollision.getWeaponBodySnapshotAtomic();
+        if (snapshot.generationKey != weaponGenerationKey) {
+            return false;
+        }
+        for (std::uint32_t index = 0;
+             index < snapshot.count;
+             ++index) {
+            if (snapshot.bodyIds[index] == bodyId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool PhysicsInteraction::queryProviderWorldRaycastV1(
+        const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
+        ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const
+    {
+        const RE::NiPoint3 start{
+            request.startGame.x,
+            request.startGame.y,
+            request.startGame.z,
+        };
+        RE::NiPoint3 direction{
+            request.directionGame.x,
+            request.directionGame.y,
+            request.directionGame.z,
+        };
+        const float directionLengthSquared =
+            direction.x * direction.x +
+            direction.y * direction.y +
+            direction.z * direction.z;
+        if (!std::isfinite(directionLengthSquared) ||
+            directionLengthSquared <= 1.0e-8f) {
+            return false;
+        }
+        const float inverseDirectionLength =
+            1.0f / std::sqrt(directionLengthSquared);
+        direction.x *= inverseDirectionLength;
+        direction.y *= inverseDirectionLength;
+        direction.z *= inverseDirectionLength;
+
+        const RE::NiPoint3 end{
+            start.x + direction.x * request.maxDistanceGame,
+            start.y + direction.y * request.maxDistanceGame,
+            start.z + direction.z * request.maxDistanceGame,
+        };
+
+        physics_ray_cast::ClosestSegmentResult rayResult{};
+        if (!physics_ray_cast::castClosestSegment(
+                _lifecycle.cachedBhkWorld,
+                start,
+                end,
+                selection_query_policy::kFarClipRayFilterInfo,
+                rayResult)) {
+            return false;
+        }
+
+        outResult.hit = rayResult.hit ? 1u : 0u;
+        outResult.flags = rayResult.hit ?
+            static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderWorldRaycastResultFlagV1::Hit) :
+            0u;
+        outResult.hitFraction =
+            rayResult.hit ? rayResult.hitFraction : 1.0f;
+        outResult.hitDistanceGame =
+            outResult.hitFraction * request.maxDistanceGame;
+        outResult.hitPointGame = {
+            start.x + direction.x * outResult.hitDistanceGame,
+            start.y + direction.y * outResult.hitDistanceGame,
+            start.z + direction.z * outResult.hitDistanceGame,
+        };
+        if (rayResult.normalValid) {
+            outResult.flags |= static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderWorldRaycastResultFlagV1::
+                    NormalValid);
+            outResult.hitNormalGame = {
+                rayResult.normalGame.x,
+                rayResult.normalGame.y,
+                rayResult.normalGame.z,
+            };
+        }
+        outResult.worldGeneration =
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
+        outResult.skeletonGeneration =
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
+        outResult.providerGeneration =
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
+        return true;
     }
     void PhysicsInteraction::fillProviderWeaponPartGripStates(
         std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const
@@ -168,7 +278,10 @@
     {
         outResult = {};
         const auto identity = _weaponCollision.getEquippedWeaponClassification();
-        outResult.valid = identity.hasEquippedWeapon ? 1u : 0u;
+        outResult.valid = identity.hasEquippedWeapon &&
+                identity.classificationResolved ?
+            1u :
+            0u;
         outResult.formId = identity.formID;
         outResult.keywordFlags = identity.keywordFlags;
         outResult.sizeClass = static_cast<::rock::provider::RockProviderWeaponSizeClassV1>(identity.sizeClass);
@@ -178,19 +291,27 @@
         using Source = WeaponClassificationSource;
         using Provenance =
             ::rock::provider::RockProviderWeaponClassificationProvenanceFlagV1;
+        if (identity.keywordFlags != 0) {
+            outResult.provenanceFlags |= static_cast<std::uint32_t>(
+                Provenance::KeywordEvidence);
+        }
+        if (identity.usedEffectiveInstanceKeywordData) {
+            outResult.provenanceFlags |= static_cast<std::uint32_t>(
+                Provenance::EffectiveInstanceKeywordEvidence);
+        }
         switch (identity.classificationSource) {
         case Source::Keyword:
             outResult.confidence = 1.0f;
-            outResult.provenanceFlags |= static_cast<std::uint32_t>(
-                Provenance::KeywordEvidence);
             break;
-        case Source::WeightFallback:
-            outResult.confidence = 0.65f;
+        case Source::WeaponData:
+            outResult.confidence = 1.0f;
             outResult.provenanceFlags |= static_cast<std::uint32_t>(
-                Provenance::MeshBoundsFallback);
+                Provenance::WeaponDataEvidence);
             break;
-        case Source::Default:
-            outResult.confidence = 0.35f;
+        case Source::EquipSlot:
+            outResult.confidence = 0.85f;
+            outResult.provenanceFlags |= static_cast<std::uint32_t>(
+                Provenance::EquipSlotEvidence);
             break;
         default:
             outResult.confidence = 0.0f;
@@ -210,7 +331,7 @@
 
         outState = {};
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
-        if (!_initialized.load(std::memory_order_acquire) || !weaponNode) {
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !weaponNode) {
             return false;
         }
 
@@ -253,6 +374,35 @@
                 static_cast<std::uint32_t>(Flag::LeftHandInWeaponValid);
         }
 
+        /*
+         * EquippedWeaponData::fireNode is Bethesda's equip-time projectile
+         * origin. It is valid before muzzle-flash presentation state exists,
+         * so publishing it makes the muzzle snapshot available as soon as the
+         * weapon is equipped instead of after its first shot.
+         */
+        if (const auto* projectileNode =
+                getEquippedProjectileNode();
+            projectileNode &&
+            finiteNiTransform(projectileNode->world)) {
+            const auto& projectileWorld = projectileNode->world;
+            RE::NiPoint3 muzzleDirection{
+                projectileWorld.rotate.entry[1][0],
+                projectileWorld.rotate.entry[1][1],
+                projectileWorld.rotate.entry[1][2],
+            };
+            const float directionLength = muzzleDirection.Length();
+            if (std::isfinite(directionLength) &&
+                directionLength > 0.000001f) {
+                muzzleDirection /= directionLength;
+                outState.muzzleOriginGame =
+                    makeProviderPoint(projectileWorld.translate);
+                outState.muzzleDirectionGame =
+                    makeProviderPoint(muzzleDirection);
+                outState.flags |=
+                    static_cast<std::uint32_t>(Flag::MuzzleWorldValid);
+            }
+        }
+
         return true;
     }
 
@@ -263,8 +413,9 @@
             ::rock::provider::RockProviderEquippedWeaponHandlingRuntimeFlagV1;
 
         outState = {};
-        outState.fixedFiringHand = _fixedFiringHandIsLeft ?
-            ::rock::provider::RockProviderHand::Left :
+        // The fixed-hand configuration mode was removed; the native right
+        // hand is the only default carrier. The ABI field remains.
+        outState.fixedFiringHand =
             ::rock::provider::RockProviderHand::Right;
         outState.currentFiringHand = _twoHandedGrip.isFiringHandLeft() ?
             ::rock::provider::RockProviderHand::Left :
@@ -276,9 +427,8 @@
         const auto setFlag = [&outState](const RuntimeFlag flag) {
             outState.runtimeFlags |= static_cast<std::uint32_t>(flag);
         };
-        if (_fixedFiringHandIsLeft) {
-            setFlag(RuntimeFlag::FixedHandLeft);
-        }
+        // RuntimeFlag::FixedHandLeft is never reported: the fixed-hand
+        // configuration mode was removed with the ABI value retained.
         if (_twoHandedGrip.isFiringHandLeft()) {
             setFlag(RuntimeFlag::FiringHandLeft);
         }
@@ -297,12 +447,15 @@
         if (resolveEquippedWeaponInteractionNode()) {
             setFlag(RuntimeFlag::WeaponPresent);
         }
-        return _initialized.load(std::memory_order_acquire);
+        return _lifecycle.initialized.load(std::memory_order_acquire);
     }
 
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
     {
-        return static_cast<std::uint32_t>(_weaponCollision.getProfileEvidenceDescriptors().size());
+        return (std::min)(
+            static_cast<std::uint32_t>(
+                _weaponCollision.getProfileEvidenceDescriptors().size()),
+            ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1);
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailsV1(
@@ -314,7 +467,11 @@
         }
 
         const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
-        const std::uint32_t count = (std::min)(maxDetails, static_cast<std::uint32_t>(descriptors.size()));
+        const std::uint32_t count = (std::min)(
+            (std::min)(
+                maxDetails,
+                ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1),
+            static_cast<std::uint32_t>(descriptors.size()));
         for (std::uint32_t i = 0; i < count; ++i) {
             const auto& descriptor = descriptors[i];
             auto& out = outDetails[i];
@@ -448,7 +605,7 @@
 
         std::array<body_contact_runtime::BodyContactRecord, body_contact_runtime::kMaxBodyContactRecords> records{};
         const auto requested = (std::min)(static_cast<std::size_t>(maxContacts), records.size());
-        const auto copied = _bodyContactRuntime.snapshot(records.data(), requested);
+        const auto copied = _contacts.bodyRuntime.snapshot(records.data(), requested);
         for (std::size_t i = 0; i < copied; ++i) {
             const auto& record = records[i];
             auto& out = outContacts[i];
@@ -476,6 +633,48 @@
         }
 
         return static_cast<std::uint32_t>(copied);
+    }
+
+    bool PhysicsInteraction::getProviderHandTargetDetailsV1(const bool isLeft,
+        ::rock::provider::RockProviderHandTargetDetailsV1& out) const
+    {
+        using Flag = provider::RockProviderTargetDetailFlagV1;
+        out = {};
+        std::array<provider::RockProviderHandInteractionStateV1, 2> states{};
+        fillProviderHandInteractionStates(states);
+        out.handState = states[isLeft ? 1u : 0u];
+        TouchGrabRuntime::HandReport touch{};
+        if (_touchGrabRuntime.getHandReport(isLeft, touch)) {
+            if (touch.hasSurfaceAnchor) {
+                out.anchorGame = makeProviderPoint(touch.surfaceAnchorGame);
+                out.flags |= static_cast<std::uint32_t>(Flag::Anchor);
+            }
+            if (touch.hasNormal) {
+                out.normalGame = makeProviderPoint(touch.normalGame);
+                out.flags |= static_cast<std::uint32_t>(Flag::Normal);
+            }
+            out.powerArmorPoint = touch.powerArmorPoint;
+            out.sourceTriangleIndex = touch.sourceTriangleIndex;
+            std::copy(std::begin(touch.meshPartName), std::end(touch.meshPartName), std::begin(out.meshPartName));
+            if (out.sourceTriangleIndex != 0xFFFF'FFFFu) out.flags |= static_cast<std::uint32_t>(Flag::MeshPart);
+        }
+        auto* world = _lifecycle.cachedHknpWorld;
+        const auto body = havok_runtime::snapshotBody(world, RE::hknpBodyId{out.handState.primaryBodyId});
+        RE::TESObjectREFR* ref = nullptr;
+        if (body.valid) {
+            out.collisionLayer = body.collisionFilterInfo & 0x7Fu;
+            out.flags |= static_cast<std::uint32_t>(Flag::Body);
+            if (auto* node = havok_runtime::getOwnerNodeFromBody(body.body); node && node->name.c_str())
+                strncpy_s(out.collisionNodeName, node->name.c_str(), _TRUNCATE);
+            ref = reference_interaction::resolveBody(world, body.bodyId.value);
+        }
+        if (!ref && out.handState.targetFormId != 0)
+            ref = RE::TESForm::GetFormByID<RE::TESObjectREFR>(out.handState.targetFormId);
+        if (reference_interaction::describe(ref, out.reference)) {
+            out.flags |= static_cast<std::uint32_t>(Flag::Reference);
+            out.reference.worldGeneration = out.handState.worldGeneration;
+        }
+        return true;
     }
 
     void PhysicsInteraction::fillProviderHandInteractionStates(
@@ -522,13 +721,13 @@
         };
 
         const auto worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         const auto skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         const auto providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         const auto collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         const bool primaryIsLeft = _twoHandedGrip.isFiringHandLeft();
 
         for (const bool isLeft : { false, true }) {
@@ -538,8 +737,16 @@
             state.hand = isLeft ?
                 ::rock::provider::RockProviderHand::Left :
                 ::rock::provider::RockProviderHand::Right;
-            state.phase = phaseForState(hand.getState());
-            if (state.phase == Phase::Idle && hand.isTouching()) {
+            TouchGrabRuntime::HandReport touchGrabReport{};
+            const bool touchGrabActive =
+                _touchGrabRuntime.getHandReport(
+                    isLeft,
+                    touchGrabReport);
+            state.phase = touchGrabActive ?
+                Phase::Holding :
+                phaseForState(hand.getState());
+            if (!touchGrabActive &&
+                state.phase == Phase::Idle && hand.isTouching()) {
                 state.phase = Phase::Touching;
             }
             state.flags = static_cast<std::uint32_t>(Flag::Valid);
@@ -549,7 +756,54 @@
                 state.flags |= static_cast<std::uint32_t>(Flag::Offhand);
             }
 
-            if (hand.isHolding()) {
+            if (touchGrabActive) {
+                state.reservedTargetIdentity =
+                    touchGrabReport.referenceNativeHandle;
+                state.targetFormId =
+                    touchGrabReport.referenceFormId;
+                state.primaryBodyId = touchGrabReport.bodyId;
+                state.targetKind =
+                    touchGrabReport.kind ==
+                            ::rock::provider::
+                                RockProviderTouchGrabKindV1::FixedAnchor ?
+                    TargetKind::WorldSurface :
+                    TargetKind::DynamicProp;
+                state.flags |= static_cast<std::uint32_t>(
+                    Flag::TouchGrab);
+                if (touchGrabReport.kind ==
+                    ::rock::provider::
+                        RockProviderTouchGrabKindV1::FixedAnchor) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::FixedSurfaceLatch);
+                }
+                if (touchGrabReport.globalSurface) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::GlobalSurfaceLatch);
+                }
+                state.surfaceGripMode =
+                    touchGrabReport.surfaceGripMode;
+                if (touchGrabReport.hasSurfaceAnchor) {
+                    state.surfaceAnchorGame = {
+                        touchGrabReport.surfaceAnchorGame.x,
+                        touchGrabReport.surfaceAnchorGame.y,
+                        touchGrabReport.surfaceAnchorGame.z
+                    };
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::SurfaceAnchorValid);
+                }
+                if (touchGrabReport.surfaceGripMode ==
+                    ::rock::provider::RockProviderSurfaceGripModeV1::
+                        MeshAnchor) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::MeshSurfaceAnchor);
+                } else if (touchGrabReport.surfaceGripMode ==
+                           ::rock::provider::
+                               RockProviderSurfaceGripModeV1::
+                                   CollisionFallback) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::MeshCollisionFallback);
+                }
+            } else if (hand.isHolding()) {
                 auto* heldRef = hand.getHeldRef();
                 state.targetFormId = heldRef ? heldRef->GetFormID() : 0;
                 state.primaryBodyId = hand.getSavedObjectState().bodyId.value;
@@ -628,6 +882,21 @@
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::TransitionSuppressed);
                 }
+                if ((collisionState.flags & static_cast<std::uint32_t>(
+                         ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::DynamicOtherHandContact)) != 0) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::DynamicOtherHandContact);
+                }
+                if ((collisionState.flags & static_cast<std::uint32_t>(
+                         ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::DynamicWeaponContact)) != 0) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::DynamicWeaponContact);
+                }
+                if ((collisionState.flags & static_cast<std::uint32_t>(
+                         ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::DynamicWeaponPairSuppressed)) != 0) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::DynamicWeaponPairSuppressed);
+                }
             }
             state.worldGeneration = worldGeneration;
             state.skeletonGeneration = skeletonGeneration;
@@ -642,7 +911,7 @@
         using Flag =
             ::rock::provider::RockProviderEquippedWeaponStateFlagV1;
         outState = {};
-        const auto transition = _equippedWeaponTransition.getPublicSnapshot();
+        const auto transition = _equipped.transition.getPublicSnapshot();
         outState.weaponFormId = transition.weaponFormID != 0 ?
             transition.weaponFormID :
             currentEquippedWeaponFormId();
@@ -693,11 +962,11 @@
         setFlag(Flag::RecoveryExhausted, transition.recoveryExhausted);
         setFlag(Flag::TransitionActive, transition.active);
         outState.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) != 0 ||
                transition.transitionSequence != 0 ||
                transition.terminalSequence != 0;
@@ -731,7 +1000,7 @@
             auto& out = outParts[i];
             out = {};
             out.frameIndex =
-                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             out.weaponGenerationKey = descriptor.weaponGenerationKey;
             out.bodyId = descriptor.bodyId;
             out.partKind = static_cast<std::uint32_t>(
@@ -785,11 +1054,11 @@
         }
         std::uint32_t copied = 0;
         const auto count = (std::min)(
-            _providerWeaponPartDriveResultCount,
+            _providerDrives.resultCount,
             static_cast<std::uint32_t>(
-                _providerWeaponPartDriveResults.size()));
+                _providerDrives.results.size()));
         for (std::uint32_t i = 0; i < count && copied < maxResults; ++i) {
-            const auto& result = _providerWeaponPartDriveResults[i];
+            const auto& result = _providerDrives.results[i];
             if (result.ownerToken == ownerToken) {
                 outResults[copied++] = result;
             }
@@ -862,26 +1131,20 @@
 
         const bool menuOpen = _twoHandedGrip.isScopeMenuOpenThisFrame();
         if (menuOpen) {
-            outState.flags |=
-                static_cast<std::uint32_t>(Flag::MenuOpen) |
-                static_cast<std::uint32_t>(Flag::Active);
+            outState.flags |= static_cast<std::uint32_t>(Flag::MenuOpen);
         }
         const auto activation =
             _twoHandedGrip.getNativeScopeActivationDebugSnapshot();
-        outState.publicationSequence = activation.evaluationSequence;
-        if (menuOpen &&
+        outState.publicationSequence = activation.publicationSequence;
+        const bool active = activation.rendererStateValid ?
+                                activation.rendererActive :
+                                menuOpen;
+        if (active &&
             activation.weaponGenerationKey == anchor.weaponGenerationKey) {
-            if (activation.nativeScopeAlreadyActive ||
-                activation.nativeGeometryDecision) {
-                outState.activationSource =
-                    ::rock::provider::RockProviderScopeActivationSourceV1::NativeGeometry;
-            } else if (activation.rockGeometryDecision) {
-                outState.activationSource =
-                    ::rock::provider::RockProviderScopeActivationSourceV1::RockGeometry;
-            } else {
-                outState.activationSource =
-                    ::rock::provider::RockProviderScopeActivationSourceV1::ManualInput;
-            }
+            outState.flags |= static_cast<std::uint32_t>(Flag::Active);
+            outState.activationSource = g_rockConfig.rockEnableImmersiveScopes ?
+                ::rock::provider::RockProviderScopeActivationSourceV1::ManualInput :
+                ::rock::provider::RockProviderScopeActivationSourceV1::NativeGeometry;
         }
 
         const auto descriptors =
@@ -907,13 +1170,13 @@
             outState.publicationSequence = composition.publicationSequence;
         }
         outState.frameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         outState.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
 
@@ -1022,11 +1285,11 @@
                 Flag::LeftFingersValid);
         }
         outPose.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outPose.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outPose.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
 
@@ -1042,10 +1305,12 @@
             !frik_visual_authority::isSkeletonReadyHint()) {
             return false;
         }
-        const auto handWorld = frik_visual_authority::getHandWorldTransform(
-            isLeft ? frik_visual_authority::Hand::Left :
-                     frik_visual_authority::Hand::Right);
-        if (!finiteNiTransform(handWorld)) {
+        RE::NiTransform handWorld{};
+        if (!frik_visual_authority::tryGetHandWorldTransform(
+                isLeft ? frik_visual_authority::Hand::Left :
+                         frik_visual_authority::Hand::Right,
+                handWorld) ||
+            !finiteNiTransform(handWorld)) {
             return false;
         }
         outPose.hand = hand;
@@ -1055,9 +1320,10 @@
         fillProviderTransform(handWorld, outPose.handWorld);
 
         DirectSkeletonBoneSnapshot skeleton{};
-        if (_providerPresentedPoseReader.capture(
+        if (_providerDrives.presentedPoseReader.capture(
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Rendered,
                 skeleton)) {
             const auto findBone = [&skeleton](const char* name) ->
                 const DirectSkeletonBoneEntry* {
@@ -1108,11 +1374,11 @@
             }
         }
         outPose.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outPose.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outPose.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
 
@@ -1157,7 +1423,7 @@
             auto& out = outContacts[copied++];
             out = {};
             out.frameIndex =
-                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             out.hand = handValue;
             out.role = static_cast<std::uint32_t>(record.role);
             out.finger = static_cast<std::uint32_t>(record.finger);
@@ -1194,10 +1460,10 @@
                     record.contactNormalGame.z,
                 };
             }
-            if (_cachedBhkWorld && _cachedHknpWorld) {
+            if (_lifecycle.cachedBhkWorld && _lifecycle.cachedHknpWorld) {
                 if (auto* target = resolveBodyToRef(
-                        _cachedBhkWorld,
-                        _cachedHknpWorld,
+                        _lifecycle.cachedBhkWorld,
+                        _lifecycle.cachedHknpWorld,
                         RE::hknpBodyId{ record.otherBodyId })) {
                     out.targetFormId = target->GetFormID();
                     out.flags |= static_cast<std::uint32_t>(
@@ -1217,7 +1483,7 @@
                     Flag::TransitionSuppressed);
             }
             out.collisionGeneration =
-                _collisionGenerationAtomic.load(std::memory_order_acquire);
+                _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         }
         return copied;
     }
@@ -1232,11 +1498,11 @@
         using Kind = ::rock::provider::RockProviderPlayerColliderKindV1;
         using Flag = ::rock::provider::RockProviderPlayerColliderFlagV1;
         const auto frameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         const auto lifecycleFlags =
-            _lifecycleFlagsAtomic.load(std::memory_order_acquire);
+            _lifecycle.flagsAtomic.load(std::memory_order_acquire);
         const bool enabled =
             ::rock::provider::hasLifecycleFlag(
                 lifecycleFlags,
@@ -1336,9 +1602,9 @@
         const Hand& hand = isLeft ? _leftHand : _rightHand;
         outState.hand = handValue;
         outState.frameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
         outState.collisionGeneration =
-            _collisionGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         outState.handBodyCount = hand.getHandColliderBodyCount();
         if (outState.handBodyCount != 0) {
             outState.flags |= static_cast<std::uint32_t>(Flag::BodiesReady);
@@ -1373,6 +1639,31 @@
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::HandDisabled);
             }
+            if (handTelemetry.dynamicInteractionsEnabled) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicInteractionsEnabled);
+            }
+            if (handTelemetry.pairFilterReady) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicPairFilterReady);
+            }
+            if (handTelemetry.otherHandContactMask != 0) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicOtherHandContact);
+            }
+            if (handTelemetry.weaponContactMask != 0) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicWeaponContact);
+            }
+            if (handTelemetry.weaponPairSuppressed) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicWeaponPairSuppressed);
+            }
+            outState.reserved[0] = handTelemetry.otherHandContactMask;
+            outState.reserved[1] = handTelemetry.weaponContactMask;
+            outState.reserved[2] = handTelemetry.dynamicInteractionLayer;
+            outState.reserved[3] =
+                handTelemetry.suppressedWeaponPairCount;
             if (outState.handBodyCount != 0 && telemetry.worldReady &&
                 telemetry.physicsWritesAllowed && !telemetry.menuBlocked &&
                 !telemetry.transitionCollisionSuppressed &&
@@ -1382,10 +1673,10 @@
             }
         }
         outState.worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire);
         outState.providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
+            _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }

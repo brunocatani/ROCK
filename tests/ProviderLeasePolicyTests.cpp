@@ -1,8 +1,5 @@
 #include "api/ProviderLeasePolicy.h"
 
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <cassert>
 #include <cstdint>
 #include <limits>

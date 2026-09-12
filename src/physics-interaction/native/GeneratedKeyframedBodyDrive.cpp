@@ -95,11 +95,15 @@ namespace rock
             float driveDeltaSeconds,
             GeneratedKeyframedBodyDriveResult& result)
         {
-            const float driveDelta = havok_physics_timing::isUsableDelta(driveDeltaSeconds) ? driveDeltaSeconds : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            if (!havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
+                result.requiredLinearVelocityHavok = 0.0f;
+                result.requiredAngularVelocityRadians = 0.0f;
+                return;
+            }
             const float linearGame = pointLength(pointDelta(liveTransform.translate, target.translate));
-            result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDelta;
+            result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDeltaSeconds;
             const float angle = generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
-            result.requiredAngularVelocityRadians = std::isfinite(angle) ? angle / driveDelta : 0.0f;
+            result.requiredAngularVelocityRadians = std::isfinite(angle) ? angle / driveDeltaSeconds : 0.0f;
         }
 
         void fillRotationReadbackTelemetry(
@@ -133,6 +137,8 @@ namespace rock
             const RE::hkTransformf& targetHavok,
             GeneratedKeyframedBodyDriveResult& result)
         {
+            result.hasCommandedTargetGameTransform = true;
+            result.commandedTargetGameTransform = target;
             result.targetGamePosition = target.translate;
             result.targetHavokPosition = havokTranslationToGamePoint(targetHavok);
         }
@@ -145,6 +151,7 @@ namespace rock
             GeneratedKeyframedBodyDriveResult& result)
         {
             result.hasLiveBodyTransform = true;
+            result.liveBodyGameTransform = liveTransform;
             result.liveBodyGamePosition = liveTransform.translate;
             result.liveBodyFrameSource = frameSource;
             result.motionIndex = motionIndex;
@@ -313,7 +320,7 @@ namespace rock
             state.pendingTarget = {};
             state.previousTarget = {};
             state.sampledLinearVelocityHavok = {};
-            state.sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            state.sourceDeltaSeconds = 0.0f;
             state.secondsSinceSourceSample = generated_keyframed_body_drive_math::kMaxStaleSeconds;
             state.teleportDistanceGameUnits = 1000.0f;
             state.stepsWithoutSource = 0;
@@ -340,7 +347,7 @@ namespace rock
         state.previousTarget = target;
         state.hasPendingTarget = true;
         state.hasPreviousTarget = true;
-        state.sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+        state.sourceDeltaSeconds = 0.0f;
         state.secondsSinceSourceSample = 0.0f;
         state.queuedSequence = 1;
         state.consumedSequence = 1;
@@ -411,7 +418,8 @@ namespace rock
             BethesdaPhysicsBody& body,
             const RE::NiTransform& target,
             float driveDeltaSeconds,
-            const GeneratedBodyDriveMode& mode)
+            const GeneratedBodyDriveMode& mode,
+            GeneratedKeyframedBodyDriveResult& result)
         {
             if (!world || !body.isValid() || !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
                 return false;
@@ -436,6 +444,8 @@ namespace rock
                 return false;
             }
 
+            result.dynamicVelocityValid = true;
+            result.dynamicLinearBeforePressHavok = { linearVelocityHavok[0], linearVelocityHavok[1], linearVelocityHavok[2] };
             if (mode.hasContactPressDirection && mode.contactPressMaxVelocityHavok > 0.0f) {
                 const float dirLengthSq =
                     mode.contactPressDirection[0] * mode.contactPressDirection[0] +
@@ -448,6 +458,7 @@ namespace rock
                         linearVelocityHavok[2] * mode.contactPressDirection[2];
                     const float excess = along - mode.contactPressMaxVelocityHavok;
                     if (std::isfinite(excess) && excess > 0.0f) {
+                        result.contactPressClamped = true;
                         linearVelocityHavok[0] -= mode.contactPressDirection[0] * excess;
                         linearVelocityHavok[1] -= mode.contactPressDirection[1] * excess;
                         linearVelocityHavok[2] -= mode.contactPressDirection[2] * excess;
@@ -457,6 +468,7 @@ namespace rock
 
             linearVelocityHavok[3] = 0.0f;
             angularVelocityRadians[3] = 0.0f;
+            result.dynamicLinearAfterPressHavok = { linearVelocityHavok[0], linearVelocityHavok[1], linearVelocityHavok[2] };
             return body.setVelocity(linearVelocityHavok, angularVelocityRadians);
         }
     }
@@ -486,7 +498,23 @@ namespace rock
         const GeneratedBodyDriveMode& mode)
     {
         GeneratedKeyframedBodyDriveResult result{};
-        result.driveDeltaSeconds = havok_physics_timing::driveDeltaSeconds(timing);
+        if (!havok_physics_timing::tryGetDriveDeltaSeconds(timing, result.driveDeltaSeconds)) {
+            /*
+             * No measured native physics time for this callback: hold the body
+             * and keep the queued target for the next measured substep instead
+             * of integrating against a fabricated rate.
+             */
+            result.skippedInvalidTiming = true;
+            ROCK_LOG_SAMPLE_WARN(Physics,
+                1000,
+                "Generated keyframed body drive skipped unmeasured physics timing owner={} bodyIndex={} bodyId={} phase={} fallback={}",
+                ownerName ? ownerName : "unknown",
+                bodyIndex,
+                body.getBodyId().value,
+                physicsStepPhaseName(timing.phase),
+                timing.usedFallback ? "yes" : "no");
+            return result;
+        }
 
         std::scoped_lock lock(state.mutex);
         if (!hasGeneratedKeyframedBodyDriveTargetUnlocked(state)) {
@@ -496,6 +524,7 @@ namespace rock
 
         refreshGeneratedKeyframedBodySourceClockForDriveUnlocked(state, result.driveDeltaSeconds);
         result.sourceDeltaSeconds = state.sourceDeltaSeconds;
+        result.sourceSequence = state.queuedSequence;
         result.sourceAgeSeconds = state.secondsSinceSourceSample;
         result.sourceStale = generated_keyframed_body_drive_math::sourceIsStale(state.secondsSinceSourceSample);
         result.stepsWithoutSource = state.stepsWithoutSource;
@@ -544,6 +573,8 @@ namespace rock
         const bool hardSyncForVelocity = false;
         const bool immediatePlacement = state.pendingTeleport || hardSyncForVelocity;
         const RE::NiTransform requestedTarget = immediatePlacement ? selectGeneratedImmediatePlacementTarget(state) : selectGeneratedDriveTarget(state, timing);
+        result.hasRequestedTargetGameTransform = true;
+        result.requestedTargetGameTransform = requestedTarget;
         result.requestedTargetGamePosition = requestedTarget.translate;
         RE::NiTransform target = requestedTarget;
         RE::hkTransformf targetHavok = makeHavokTransform(target);
@@ -577,6 +608,7 @@ namespace rock
         }
 
         if (immediatePlacement) {
+            result.sourceJumpPlacement = state.pendingTeleport;
             result.hardSynced = hardSyncForVelocity;
             result.teleported = placeGeneratedKeyframedBodyImmediately(body, target);
             result.driven = result.teleported;
@@ -617,6 +649,7 @@ namespace rock
                 std::isfinite(requestedGapGameUnits) &&
                 requestedGapGameUnits > mode.divergenceTeleportGameUnits;
             if (divergenceTeleport) {
+                result.divergencePlacement = true;
                 // The requested target becomes the commanded one: post-solve
                 // consumers measure the solver's ejection against what was
                 // actually placed.
@@ -627,7 +660,7 @@ namespace rock
                 result.driven = result.teleported;
                 result.placementFailed = !result.teleported;
             } else {
-                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, mode);
+                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, mode, result);
                 result.nativeDriveFailed = !result.driven;
             }
             if (!result.driven) {

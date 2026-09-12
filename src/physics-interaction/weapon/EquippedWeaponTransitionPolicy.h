@@ -6,19 +6,32 @@
 
 namespace rock::equipped_weapon_transition_policy
 {
+    /*
+     * Renderability confirmation uses consecutive observations. Draw,
+     * visibility, and native-attach recovery use elapsed seconds because the
+     * engine can publish many game frames before its queued equipment work has
+     * settled. A frame-count repair budget can otherwise be consumed in a few
+     * milliseconds at VR frame rates.
+     */
     constexpr std::uint8_t kStableFramesBeforeNativeHandoff = 3;
     constexpr std::uint8_t kMissingFramesBeforeRepair = 2;
-    constexpr std::uint8_t kAttachSettleFrames = 6;
-    constexpr std::uint8_t kMaximumLocalVisibilityAttempts = 2;
-    constexpr std::uint8_t kMaximumAttachAttempts = 2;
-    constexpr std::uint8_t kDrawSettleFrames = 6;
-    constexpr std::uint8_t kMaximumDrawAttempts = 3;
-    constexpr std::uint8_t kWantToDrawStallFrames = 45;
+    constexpr std::uint8_t kMaximumLocalVisibilityAttempts = 3;
+    constexpr std::uint8_t kMaximumAttachAttempts = 3;
+    constexpr float kDrawRetryIntervalSeconds = 0.50f;
+    constexpr float kWantToDrawStallSeconds = 1.00f;
+    constexpr float kDrawRecoveryDeadlineSeconds = 3.00f;
+    constexpr float kPartialDrawCompletionDeadlineSeconds = 1.00f;
+    constexpr float kPresentationRecoveryGraceSeconds = 0.35f;
+    constexpr float kLocalVisibilitySettleSeconds = 0.15f;
+    constexpr float kNativeAttachSettleSeconds = 0.35f;
+    constexpr float kPresentationRecoveryDeadlineSeconds = 2.50f;
 
     enum class RepairAction : std::uint8_t
     {
         None,
         RequestDraw,
+        RequestPreparedDraw,
+        FinalizePartialDraw,
         DrawExhausted,
         RestoreLocalVisibility,
         QueueNativeAttach,
@@ -29,17 +42,25 @@ namespace rock::equipped_weapon_transition_policy
     {
         std::uint8_t stableFrames{ 0 };
         std::uint8_t missingFrames{ 0 };
-        std::uint8_t attachSettleFramesRemaining{ 0 };
         std::uint8_t localVisibilityAttempts{ 0 };
         std::uint8_t attachAttempts{ 0 };
-        std::uint8_t drawSettleFramesRemaining{ 0 };
-        std::uint8_t drawAttempts{ 0 };
-        std::uint8_t wantToDrawFrames{ 0 };
+        float drawRecoveryWindowStartedAtSeconds{ 0.0f };
+        float nextDrawRequestAtSeconds{ 0.0f };
+        float partialDrawRecoveryStartedAtSeconds{ 0.0f };
+        float presentationRecoveryWindowStartedAtSeconds{ 0.0f };
+        float nextPresentationRepairAtSeconds{ 0.0f };
+        std::uint32_t drawRequests{ 0 };
+        bool drawRecoveryWindowActive{ false };
+        bool partialDrawRecoveryActive{ false };
+        bool presentationRecoveryWindowActive{ false };
+        bool wantToDrawObserved{ false };
+        bool drawRecoveryExhausted{ false };
         bool nativeHandoffObserved{ false };
     };
 
     struct FrameInput
     {
+        float drawRecoveryElapsedSeconds{ 0.0f };
         bool mutationAllowed{ false };
         bool identityMatches{ false };
         bool weaponExactlyDrawn{ false };
@@ -57,6 +78,30 @@ namespace rock::equipped_weapon_transition_policy
         bool handoffBridgeToNative{ false };
         RepairAction repair{ RepairAction::None };
     };
+
+    inline constexpr void resetDrawRecoveryWindow(State& state) noexcept
+    {
+        state.drawRecoveryWindowStartedAtSeconds = 0.0f;
+        state.nextDrawRequestAtSeconds = 0.0f;
+        state.drawRecoveryWindowActive = false;
+        state.wantToDrawObserved = false;
+        state.drawRecoveryExhausted = false;
+    }
+
+    inline constexpr void resetPresentationRecoveryWindow(State& state) noexcept
+    {
+        state.presentationRecoveryWindowStartedAtSeconds = 0.0f;
+        state.nextPresentationRepairAtSeconds = 0.0f;
+        state.localVisibilityAttempts = 0;
+        state.attachAttempts = 0;
+        state.presentationRecoveryWindowActive = false;
+    }
+
+    inline constexpr void resetPartialDrawRecovery(State& state) noexcept
+    {
+        state.partialDrawRecoveryStartedAtSeconds = 0.0f;
+        state.partialDrawRecoveryActive = false;
+    }
 
     [[nodiscard]] inline constexpr bool matchesExpectedIdentity(
         const std::uint32_t currentFormID,
@@ -90,14 +135,17 @@ namespace rock::equipped_weapon_transition_policy
         if (!input.identityMatches) {
             state.stableFrames = 0;
             state.missingFrames = 0;
-            state.drawSettleFramesRemaining = 0;
-            state.wantToDrawFrames = 0;
+            state.drawRequests = 0;
+            resetDrawRecoveryWindow(state);
+            resetPartialDrawRecovery(state);
+            resetPresentationRecoveryWindow(state);
             return decision;
         }
 
         if (!input.weaponExactlyDrawn) {
             state.stableFrames = 0;
             state.missingFrames = 0;
+            resetPresentationRecoveryWindow(state);
             // Before the first native handoff, WantToDraw/Drawing may leave a
             // real gap which the bridge must cover. After a completed handoff,
             // a later non-drawn state belongs to a new engine/menu transition;
@@ -109,49 +157,135 @@ namespace rock::equipped_weapon_transition_policy
                 return decision;
             }
 
-            if (state.drawSettleFramesRemaining > 0) {
-                --state.drawSettleFramesRemaining;
-            }
-
             using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
             const auto nativeState = static_cast<NativeWeaponState>(input.nativeWeaponState);
-            if (nativeState == NativeWeaponState::WantToDraw) {
-                if (state.wantToDrawFrames < kWantToDrawStallFrames) {
-                    ++state.wantToDrawFrames;
-                }
-                if (state.wantToDrawFrames < kWantToDrawStallFrames ||
-                    state.drawSettleFramesRemaining > 0) {
-                    return decision;
-                }
-            } else if (nativeState == NativeWeaponState::Drawing) {
-                state.wantToDrawFrames = 0;
+            if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
+                    input.nativeWeaponState)) {
+                state.drawRecoveryExhausted = true;
+                decision.repair = RepairAction::DrawExhausted;
                 return decision;
-            } else {
-                state.wantToDrawFrames = 0;
-                if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(
-                        input.nativeWeaponState) ||
-                    state.drawSettleFramesRemaining > 0) {
-                    if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
-                            input.nativeWeaponState)) {
-                        decision.repair = RepairAction::DrawExhausted;
-                    }
-                    return decision;
-                }
             }
 
-            if (state.drawAttempts < kMaximumDrawAttempts) {
-                ++state.drawAttempts;
-                state.drawSettleFramesRemaining = kDrawSettleFrames;
-                state.wantToDrawFrames = 0;
-                decision.repair = RepairAction::RequestDraw;
-            } else {
-                decision.repair = RepairAction::DrawExhausted;
+            if (nativeState != NativeWeaponState::Drawing) {
+                resetPartialDrawRecovery(state);
             }
+
+            // Ordinary Drawing is an explicit native acknowledgment and owns
+            // its progress. A partial-action recovery is different: ROCK
+            // supplied Drawing after verified clip activation, so it retains
+            // a bounded completion deadline until the graph reaches Drawn.
+            if (nativeState == NativeWeaponState::Drawing) {
+                if (!state.partialDrawRecoveryActive) {
+                    resetDrawRecoveryWindow(state);
+                    return decision;
+                }
+
+                state.drawRecoveryWindowStartedAtSeconds = 0.0f;
+                state.nextDrawRequestAtSeconds = 0.0f;
+                state.drawRecoveryWindowActive = false;
+                state.wantToDrawObserved = false;
+                const float partialRecoveryElapsedSeconds =
+                    input.drawRecoveryElapsedSeconds -
+                    state.partialDrawRecoveryStartedAtSeconds;
+                if (state.drawRecoveryExhausted) {
+                    decision.repair = RepairAction::DrawExhausted;
+                } else if (partialRecoveryElapsedSeconds >=
+                           kPartialDrawCompletionDeadlineSeconds) {
+                    decision.repair = RepairAction::FinalizePartialDraw;
+                }
+                return decision;
+            }
+
+            /*
+             * A menu weapon swap first completes the old weapon's holster.
+             * FO4VR can reject ActionDraw while that transition owns the graph.
+             * Wait for stable Sheathed, then repeat the engine's equip-draw
+             * preparation before requesting the new weapon.
+             */
+            if (nativeState == NativeWeaponState::WantToSheathe ||
+                nativeState == NativeWeaponState::Sheathing) {
+                resetDrawRecoveryWindow(state);
+                return decision;
+            }
+
+            if (nativeState == NativeWeaponState::WantToDraw) {
+                if (!state.wantToDrawObserved) {
+                    state.drawRecoveryWindowStartedAtSeconds =
+                        input.drawRecoveryElapsedSeconds;
+                    state.nextDrawRequestAtSeconds =
+                        input.drawRecoveryElapsedSeconds +
+                        kWantToDrawStallSeconds;
+                    state.drawRecoveryWindowActive = true;
+                    state.wantToDrawObserved = true;
+                    state.drawRecoveryExhausted = false;
+                    return decision;
+                }
+
+                const float wantToDrawElapsedSeconds =
+                    input.drawRecoveryElapsedSeconds -
+                    state.drawRecoveryWindowStartedAtSeconds;
+                if (state.drawRecoveryExhausted ||
+                    wantToDrawElapsedSeconds >=
+                        kDrawRecoveryDeadlineSeconds) {
+                    state.drawRecoveryExhausted = true;
+                    decision.repair = RepairAction::DrawExhausted;
+                    return decision;
+                }
+                if (input.drawRecoveryElapsedSeconds <
+                    state.nextDrawRequestAtSeconds) {
+                    return decision;
+                }
+
+                ++state.drawRequests;
+                state.nextDrawRequestAtSeconds =
+                    input.drawRecoveryElapsedSeconds +
+                    kWantToDrawStallSeconds;
+                decision.repair = RepairAction::RequestDraw;
+                return decision;
+            }
+
+            const bool returnedFromWantToDraw =
+                state.wantToDrawObserved;
+            state.wantToDrawObserved = false;
+            if (nativeState != NativeWeaponState::Sheathed) {
+                return decision;
+            }
+            if (returnedFromWantToDraw ||
+                !state.drawRecoveryWindowActive) {
+                state.drawRecoveryWindowStartedAtSeconds =
+                    input.drawRecoveryElapsedSeconds;
+                state.nextDrawRequestAtSeconds =
+                    input.drawRecoveryElapsedSeconds;
+                state.drawRecoveryWindowActive = true;
+                state.drawRecoveryExhausted = false;
+            }
+
+            const float unacknowledgedSeconds =
+                input.drawRecoveryElapsedSeconds -
+                state.drawRecoveryWindowStartedAtSeconds;
+            if (state.drawRecoveryExhausted ||
+                unacknowledgedSeconds >= kDrawRecoveryDeadlineSeconds) {
+                state.drawRecoveryExhausted = true;
+                decision.repair = RepairAction::DrawExhausted;
+                return decision;
+            }
+            if (input.drawRecoveryElapsedSeconds <
+                state.nextDrawRequestAtSeconds) {
+                return decision;
+            }
+
+            // The coordinator repeats FO4VR's equip-draw preparation before
+            // this request. Only native state acknowledgment counts as progress.
+            ++state.drawRequests;
+            state.nextDrawRequestAtSeconds =
+                input.drawRecoveryElapsedSeconds +
+                kDrawRetryIntervalSeconds;
+            decision.repair = RepairAction::RequestPreparedDraw;
             return decision;
         }
 
-        state.drawSettleFramesRemaining = 0;
-        state.wantToDrawFrames = 0;
+        resetDrawRecoveryWindow(state);
+        resetPartialDrawRecovery(state);
 
         const bool exactInstanceRenderable =
             input.nativeInstanceFound &&
@@ -159,18 +293,19 @@ namespace rock::equipped_weapon_transition_policy
             (input.nativeInstanceLocallyVisible || input.bridgeOwnsNativeInstanceCull);
         if (exactInstanceRenderable) {
             state.missingFrames = 0;
+            resetPresentationRecoveryWindow(state);
             if (state.stableFrames < kStableFramesBeforeNativeHandoff) {
                 ++state.stableFrames;
             }
-            if (state.attachSettleFramesRemaining > 0) {
-                --state.attachSettleFramesRemaining;
-            }
 
             if (state.stableFrames >= kStableFramesBeforeNativeHandoff) {
-                state.nativeHandoffObserved = true;
-                decision.handoffBridgeToNative = input.bridgeModelAvailable;
+                if (!state.nativeHandoffObserved) {
+                    state.nativeHandoffObserved = true;
+                    decision.handoffBridgeToNative = input.bridgeModelAvailable;
+                }
             } else {
-                decision.presentBridgeModel = input.bridgeModelAvailable;
+                decision.presentBridgeModel =
+                    input.bridgeModelAvailable && !state.nativeHandoffObserved;
             }
             return decision;
         }
@@ -179,32 +314,65 @@ namespace rock::equipped_weapon_transition_policy
         if (state.missingFrames < kMissingFramesBeforeRepair) {
             ++state.missingFrames;
         }
-        if (state.attachSettleFramesRemaining > 0) {
-            --state.attachSettleFramesRemaining;
-        }
-        decision.presentBridgeModel = input.bridgeModelAvailable;
+        // Native recovery remains active after the equip handoff, but the
+        // loose-model bridge is equip-only and may never be resurrected.
+        decision.presentBridgeModel =
+            input.bridgeModelAvailable && !state.nativeHandoffObserved;
 
-        if (!input.mutationAllowed || state.missingFrames < kMissingFramesBeforeRepair ||
-            state.attachSettleFramesRemaining > 0) {
+        if (!state.presentationRecoveryWindowActive) {
+            state.presentationRecoveryWindowStartedAtSeconds =
+                input.drawRecoveryElapsedSeconds;
+            state.nextPresentationRepairAtSeconds =
+                input.drawRecoveryElapsedSeconds +
+                kPresentationRecoveryGraceSeconds;
+            state.presentationRecoveryWindowActive = true;
+        }
+
+        if (!input.mutationAllowed ||
+            state.missingFrames < kMissingFramesBeforeRepair ||
+            input.drawRecoveryElapsedSeconds <
+                state.nextPresentationRepairAtSeconds) {
             return decision;
         }
 
-        if (input.nativeInstanceFound &&
-            state.localVisibilityAttempts < kMaximumLocalVisibilityAttempts) {
+        const float presentationRecoveryElapsedSeconds =
+            input.drawRecoveryElapsedSeconds -
+            state.presentationRecoveryWindowStartedAtSeconds;
+        if (presentationRecoveryElapsedSeconds >=
+            kPresentationRecoveryDeadlineSeconds) {
+            decision.repair = RepairAction::Exhausted;
+            return decision;
+        }
+
+        const bool localVisibilityRepairAvailable =
+            input.nativeInstanceFound &&
+            state.localVisibilityAttempts < kMaximumLocalVisibilityAttempts;
+        if (localVisibilityRepairAvailable &&
+            state.localVisibilityAttempts <= state.attachAttempts) {
             ++state.localVisibilityAttempts;
             decision.repair = RepairAction::RestoreLocalVisibility;
-            state.attachSettleFramesRemaining = 1;
+            state.nextPresentationRepairAtSeconds =
+                input.drawRecoveryElapsedSeconds +
+                kLocalVisibilitySettleSeconds;
             return decision;
         }
 
         if (state.attachAttempts < kMaximumAttachAttempts) {
             ++state.attachAttempts;
-            state.attachSettleFramesRemaining = kAttachSettleFrames;
             decision.repair = RepairAction::QueueNativeAttach;
+            state.nextPresentationRepairAtSeconds =
+                input.drawRecoveryElapsedSeconds +
+                kNativeAttachSettleSeconds;
             return decision;
         }
 
-        decision.repair = RepairAction::Exhausted;
+        if (localVisibilityRepairAvailable) {
+            ++state.localVisibilityAttempts;
+            decision.repair = RepairAction::RestoreLocalVisibility;
+            state.nextPresentationRepairAtSeconds =
+                input.drawRecoveryElapsedSeconds +
+                kLocalVisibilitySettleSeconds;
+        }
         return decision;
     }
 }

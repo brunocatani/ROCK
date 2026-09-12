@@ -1,32 +1,34 @@
 #include "rock_support/Fo4VrRuntime.h"
 
+#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
+#include "physics-interaction/object/CarInteractionPolicy.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
 #include <algorithm>
 #include <cstring>
-#include <filesystem>
 #include <ranges>
-#include <stdexcept>
 
 namespace rock::fo4vr
 {
     namespace
     {
-        [[nodiscard]] bool hasKeyword(const RE::TESObjectARMO* armor, const std::uint32_t keywordFormId) noexcept
+        [[nodiscard]] bool hasKeyword(const RE::BGSKeywordForm* keywordForm, const std::uint32_t keywordFormId) noexcept
         {
-            if (!armor || !armor->keywords) {
+            if (!keywordForm || !keywordForm->keywords) {
                 return false;
             }
-            for (std::uint32_t index = 0; index < armor->numKeywords; ++index) {
-                const auto* keyword = armor->keywords[index];
+            for (std::uint32_t index = 0; index < keywordForm->numKeywords; ++index) {
+                const auto* keyword = keywordForm->keywords[index];
                 if (keyword && keyword->formID == keywordFormId) {
                     return true;
                 }
             }
             return false;
         }
+
     }
 
     RE::PlayerCharacter* getPlayer() noexcept
@@ -78,19 +80,36 @@ namespace rock::fo4vr
         return reinterpret_cast<BSFlattenedBoneTree*>(skeleton->children[0]->IsNode());
     }
 
-    RE::EquippedItem* getEquippedItem() noexcept
+    RE::EquippedItem* getEquippedWeaponItem() noexcept
     {
         auto* player = getPlayer();
         auto* middleHigh = player && player->currentProcess ? player->currentProcess->middleHigh : nullptr;
         if (!middleHigh || middleHigh->equippedItems.empty()) {
             return nullptr;
         }
-        return std::addressof(middleHigh->equippedItems[0]);
+
+        auto* equippedItem = std::addressof(middleHigh->equippedItems[0]);
+        auto* object = equippedItem->item.object;
+        if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP) {
+            return nullptr;
+        }
+
+        const auto* weapon = static_cast<const RE::TESObjectWEAP*>(object);
+        const auto weaponType = weapon->weaponData.type.get();
+        if (weaponType == RE::WEAPON_TYPE::kGrenade ||
+            weaponType == RE::WEAPON_TYPE::kMine) {
+            // FO4VR keeps the selected throwable in equippedItems[0] when no
+            // hand weapon is equipped. It is inventory selection state, not a
+            // weapon presentation/occupancy identity for ROCK's hand systems.
+            return nullptr;
+        }
+
+        return equippedItem;
     }
 
     RE::EquippedWeaponData* getEquippedWeaponData() noexcept
     {
-        auto* equippedItem = getEquippedItem();
+        auto* equippedItem = getEquippedWeaponItem();
         return equippedItem && equippedItem->data ?
             static_cast<RE::EquippedWeaponData*>(equippedItem->data.get()) : nullptr;
     }
@@ -129,10 +148,42 @@ namespace rock::fo4vr
         return nodes->primaryWandNode;
     }
 
+    std::uint32_t getNativeWeaponState(const RE::Actor* actor) noexcept
+    {
+        if (!actor) {
+            return fo4vr_actor_state_policy::kInvalidWeaponState;
+        }
+
+        const auto* actorState = static_cast<const RE::ActorState*>(actor);
+        std::uint32_t actorStateStorage = 0;
+        std::memcpy(
+            &actorStateStorage,
+            reinterpret_cast<const std::byte*>(actorState) +
+                fo4vr_actor_state_policy::kWeaponStateStorageOffset,
+            sizeof(actorStateStorage));
+        return fo4vr_actor_state_policy::decodeWeaponState(actorStateStorage);
+    }
+
+    std::uint32_t getNativeGunState(const RE::Actor* actor) noexcept
+    {
+        if (!actor) {
+            return fo4vr_actor_state_policy::kInvalidGunState;
+        }
+
+        const auto* actorState = static_cast<const RE::ActorState*>(actor);
+        std::uint32_t actorStateStorage = 0;
+        std::memcpy(
+            &actorStateStorage,
+            reinterpret_cast<const std::byte*>(actorState) +
+                fo4vr_actor_state_policy::kWeaponStateStorageOffset,
+            sizeof(actorStateStorage));
+        return fo4vr_actor_state_policy::decodeGunState(actorStateStorage);
+    }
+
     bool IsWeaponDrawn() noexcept
     {
-        auto* player = getPlayer();
-        return player && player->GetWeaponMagicDrawn();
+        return fo4vr_actor_state_policy::isWeaponMagicDrawn(
+            getNativeWeaponState(getPlayer()));
     }
 
     bool isMeleeWeaponEquipped() noexcept
@@ -143,8 +194,8 @@ namespace rock::fo4vr
         }
 
         return std::ranges::any_of(player->inventoryList->data, [](const RE::BGSInventoryItem& item) {
-            return item.object &&
-                item.object->formType == RE::ENUM_FORM_ID::kWEAP &&
+            const auto* weapon = item.object ? item.object->As<RE::TESObjectWEAP>() : nullptr;
+            return weapon && weapon_type_policy::isEquippedMelee(weapon->weaponData.type.get()) &&
                 item.stackData &&
                 item.stackData->IsEquipped();
         });
@@ -164,6 +215,16 @@ namespace rock::fo4vr
         }
         const auto* armor = static_cast<const RE::TESObjectARMO*>(equippedForm);
         return hasKeyword(armor, kPowerArmorKeywordFormId) || hasKeyword(armor, kPowerArmorFrameKeywordFormId);
+    }
+
+    bool isExplodableCar(const RE::TESBoundObject* baseForm) noexcept
+    {
+        if (!baseForm || !baseForm->Is(RE::ENUM_FORM_ID::kMSTT)) {
+            return false;
+        }
+
+        const auto* movableStatic = static_cast<const RE::BGSMovableStatic*>(baseForm);
+        return hasKeyword(movableStatic, car_interaction_policy::kExplodableCarKeywordFormId);
     }
 
     RE::Setting* getIniSetting(const char* name) noexcept
@@ -307,21 +368,5 @@ namespace rock::fo4vr
                 updateTransforms(triShape);
             }
         }
-    }
-
-    RE::NiNode* loadNifFromFile(const std::string& path)
-    {
-        const std::string normalizedPath = path.starts_with("Data") ? path : "Data/Meshes/" + path;
-        if (!std::filesystem::exists(normalizedPath)) {
-            throw std::runtime_error("NIF file not found: " + normalizedPath);
-        }
-
-        std::uint64_t flags[2]{ 0x0, 0xED };
-        std::uint64_t loadedNode = 0;
-        loadNif(
-            reinterpret_cast<std::uint64_t>(normalizedPath.c_str()),
-            reinterpret_cast<std::uint64_t>(&loadedNode),
-            reinterpret_cast<std::uint64_t>(&flags));
-        return reinterpret_cast<RE::NiNode*>(loadedNode);
     }
 }

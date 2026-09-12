@@ -1,9 +1,32 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace rock::input_remap_policy
 {
+    // ROCK uses the OpenVR grip button as its fixed grab input.
+    inline constexpr int kGrabButtonId = 2;
+
+    [[nodiscard]] constexpr bool buttonChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm, std::uint64_t chord) noexcept
+    {
+        return available && chord != 0 && (rearm & chord) == 0 && (pressed & chord) == chord;
+    }
+
+    [[nodiscard]] constexpr bool triggerGripChordHeld(bool available, std::uint64_t pressed, std::uint64_t rearm) noexcept
+    {
+        constexpr auto chord = (std::uint64_t{1} << kGrabButtonId) | (std::uint64_t{1} << 33);
+        return buttonChordHeld(available, pressed, rearm, chord);
+    }
+
+    // These native take/equip targets are always protected while the activating hand holds a ROCK object.
+    inline constexpr std::string_view kNativeTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
+
+    [[nodiscard]] constexpr bool providerSuppressionApplies(bool menuActive, bool requested) noexcept
+    {
+        return !menuActive && requested;
+    }
+
     enum class Hand : std::uint8_t
     {
         Left,
@@ -12,13 +35,7 @@ namespace rock::input_remap_policy
 
     struct Settings
     {
-        bool enabled{ true };
-        int grabButtonId{ 2 };
-        bool suppressRightGrabGameInput{ true };
-        bool suppressRightFavoritesGameInput{ true };
-        bool suppressRightTriggerGameInput{ true };
-        bool suppressNativeMeleeThrowGameInput{ true };
-        bool suppressPipboyGameInputWhileHolding{ true };
+        int grabButtonId{ kGrabButtonId };
     };
 
     struct Input
@@ -39,6 +56,19 @@ namespace rock::input_remap_policy
         bool grabReleased{ false };
     };
 
+    [[nodiscard]] constexpr Decision suppressGrabInput(Decision input, bool suppressPress, bool suppressRelease, bool holding) noexcept
+    {
+        if (suppressPress) {
+            input.grabPressed = false;
+            if (!holding) input.grabHeld = false;
+        }
+        if (suppressRelease) {
+            input.grabReleased = false;
+            if (holding) input.grabHeld = true;
+        }
+        return input;
+    }
+
     struct NativeActionSuppressionInput
     {
         bool remapEnabled{ true };
@@ -50,7 +80,9 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
-        bool pipboyHandEngaged{ false };
+        bool equippedWeaponShoulderSheathActive{ false };
+        bool realMeleeWeaponEquipped{ false };
+        bool nativeMeleeSuppressionActive{ false };
         bool takeEquipHandEngaged{ false };
         bool takeEquipTargetEligible{ false };
         bool eventMatched{ false };
@@ -59,8 +91,7 @@ namespace rock::input_remap_policy
     struct LegacyPipboyTriggerOpenInput
     {
         bool remapEnabled{ true };
-        bool gameplayInputAllowed{ true };
-        bool menuInputActive{ false };
+        bool pipboyMenuOpen{ false };
         bool eventMatched{ false };
         bool secondaryWandEvent{ false };
     };
@@ -79,7 +110,6 @@ namespace rock::input_remap_policy
 
     struct ManualScopeActivateInput
     {
-        bool manualScopeEnabled{ false };
         bool rawInputCaptureAvailable{ false };
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
@@ -87,22 +117,6 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool firingHandIsPrimaryHand{ false };
         bool eventMatched{ false };
-    };
-
-    /*
-     * X-side reload input: the secondary wand's accept button never produces
-     * an engine event ROCK can hook (see shouldRouteFiringHandActivateReload),
-     * so the runtime polls ROCK's own raw OpenVR press edge for it once per
-     * frame and dispatches the native reload action directly.
-     */
-    struct SecondaryHandReloadInput
-    {
-        bool remapEnabled{ true };
-        bool gameplayInputAllowed{ true };
-        bool menuInputActive{ false };
-        bool weaponDrawn{ false };
-        bool firingHandIsSecondaryHand{ false };
-        bool acceptButtonPressedEdge{ false };
     };
 
     struct EquippedWeaponFiringGripInputGate
@@ -183,20 +197,37 @@ namespace rock::input_remap_policy
         return mask != 0 && (pressedMask & mask) != 0;
     }
 
+    [[nodiscard]] constexpr bool shouldAllowNativeRealMeleeInput(const NativeActionSuppressionInput& input)
+    {
+        return input.realMeleeWeaponEquipped &&
+               !input.nativeMeleeSuppressionActive &&
+               input.weaponDrawn &&
+               !input.equippedWeaponShoulderSheathActive;
+    }
+
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
+        if (shouldAllowNativeRealMeleeInput(input)) {
+            return false;
+        }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive);
+               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive || input.equippedWeaponShoulderSheathActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
+        if (shouldAllowNativeRealMeleeInput(input)) {
+            return false;
+        }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached);
+               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached || input.equippedWeaponShoulderSheathActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)
     {
+        if (shouldAllowNativeRealMeleeInput(input)) {
+            return false;
+        }
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
                input.weaponDrawn && input.primaryHandEvent;
     }
@@ -213,7 +244,7 @@ namespace rock::input_remap_policy
      * both controllers held their shared accept-button bit). The event's
      * physical hand therefore IS the primary-wand hand; reload routes only
      * while that same hand occupies the firing grip. A secondary-hand firing
-     * grip is fed by shouldDispatchSecondaryHandReloadPress instead.
+     * grip is handled by the raw A/X gesture classifier instead.
      */
     [[nodiscard]] constexpr bool shouldRouteFiringHandActivateReload(const NativeActivateReloadInput& input)
     {
@@ -223,26 +254,15 @@ namespace rock::input_remap_policy
     }
 
     /*
-     * In manual-scope mode the complete primary-wand A/X event is claimed by
-     * ROCK. Raw physical state decides later whether release means reload or
-     * whether the hold threshold converted the gesture into scope ownership.
+     * The complete primary-wand A/X event is claimed by ROCK. Raw physical
+     * state decides later whether release means reload or whether the hold
+     * threshold converted the gesture into scope ownership.
      */
     [[nodiscard]] constexpr bool shouldDeferFiringHandActivateForManualScope(const ManualScopeActivateInput& input)
     {
-        return input.manualScopeEnabled && input.rawInputCaptureAvailable && input.gameplayInputAllowed &&
+        return input.rawInputCaptureAvailable && input.gameplayInputAllowed &&
                !input.menuInputActive && input.weaponDrawn && input.primaryHandEvent &&
                input.firingHandIsPrimaryHand && input.eventMatched;
-    }
-
-    /*
-     * X-side route twin of the gate above, evaluated per frame from the raw
-     * press edge of the SECONDARY wand's accept button while that physical
-     * hand occupies the firing grip.
-     */
-    [[nodiscard]] constexpr bool shouldDispatchSecondaryHandReloadPress(const SecondaryHandReloadInput& input)
-    {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn &&
-               input.firingHandIsSecondaryHand && input.acceptButtonPressedEdge;
     }
 
     [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponFiringGripInput(const EquippedWeaponFiringGripInputGate& input)
@@ -269,11 +289,15 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.eventMatched;
+        // Native Favorites never owns WandThumbClick while ROCK is installed.
+        // Raw OpenVR input remains available to ROCK and its API consumers.
+        return input.eventMatched;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
     {
+        // OpenVR grip is ROCK's fixed grab button. It never belongs to the
+        // native grenade/throw handler, including for a real melee weapon.
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
     }
 
@@ -281,27 +305,14 @@ namespace rock::input_remap_policy
      * ROCK permanently moves gameplay Pip-Boy opening off the secondary-wand
      * trigger. Only the verified VR WandTrigger event is claimed here: direct
      * keyboard/gamepad Pipboy bindings and primary-wand attack events remain
-     * native, and menu input remains native so an open Pip-Boy keeps its
-     * existing controls. Flashlight suppression remains separately governed
-     * by shouldSuppressNativePipboyAction below.
+     * native. Only an already-open Pip-Boy retains native trigger handling;
+     * another menu or a gameplay gate must not restore trigger opening.
+     * Holding a ROCK object does not change native flashlight handling.
      */
     [[nodiscard]] constexpr bool shouldSuppressLegacyPipboyTriggerOpen(const LegacyPipboyTriggerOpenInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+        return input.remapEnabled && !input.pipboyMenuOpen &&
                input.eventMatched && input.secondaryWandEvent;
-    }
-
-    /*
-     * FO4VR's separate PipboyLightHandler still owns the secondary trigger's
-     * flashlight hold. While the pipboy hand is engaged in a ROCK interaction
-     * that remaining native action is suppressed, while the raw OpenVR button
-     * stays readable. The same policy continues to protect direct Pipboy input
-     * bindings during an engaged interaction. Menu input stays native.
-     */
-    [[nodiscard]] constexpr bool shouldSuppressNativePipboyAction(const NativeActionSuppressionInput& input)
-    {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               !input.primaryHandEvent && input.pipboyHandEngaged;
     }
 
     /*
@@ -311,35 +322,20 @@ namespace rock::input_remap_policy
      * input action, the Take-vs-other outcome is decided deep inside the target ref's own
      * per-FormType virtual Activate dispatch, not reachable as a flat branch from the input
      * handler. ROCK does not chase that internal dispatch; it instead classifies the same wand
-     * pick-ref target the handler is about to act on by FormType (ini-configurable allowlist)
+     * pick-ref target the handler is about to act on by FormType (fixed allowlist)
      * and only suppresses when the SAME hand whose wand fired the press is currently holding a
      * ROCK object, so Talk/Open/Search/Read and the opposite hand's Activate keep working on
      * the same button.
      */
     [[nodiscard]] constexpr bool shouldSuppressNativeTakeEquipAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
                input.eventMatched && input.takeEquipHandEngaged && input.takeEquipTargetEligible;
-    }
-
-    [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)
-    {
-        return remapEnabled && suppressionEnabled;
     }
 
     [[nodiscard]] constexpr bool shouldInstallPipboyPauseArbitrationHooks(const bool remapEnabled)
     {
         return remapEnabled;
-    }
-
-    [[nodiscard]] constexpr bool shouldInstallActivateEventHook(const bool remapEnabled, const bool manualScopeEnabled)
-    {
-        return remapEnabled || manualScopeEnabled;
-    }
-
-    [[nodiscard]] constexpr bool shouldInstallRawControllerHooks(const bool remapEnabled, const bool manualScopeEnabled)
-    {
-        return remapEnabled || manualScopeEnabled;
     }
 
     [[nodiscard]] constexpr EdgeTransition evaluateEdgeTransition(bool hadPrevious, std::uint64_t previousPressed, std::uint64_t currentPressed)

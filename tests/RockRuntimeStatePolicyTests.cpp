@@ -45,11 +45,6 @@ int main()
 
     bool ok = true;
 
-    ok &= expectEqual("positive frame delta preserved", sanitizeFrameDelta(1.0f / 72.0f), 1.0f / 72.0f);
-    ok &= expectEqual("zero frame delta falls back", sanitizeFrameDelta(0.0f), kFallbackDeltaSeconds);
-    ok &= expectEqual("negative frame delta falls back", sanitizeFrameDelta(-0.01f), kFallbackDeltaSeconds);
-    ok &= expectEqual("huge frame delta falls back", sanitizeFrameDelta(0.5f), kFallbackDeltaSeconds);
-
     PlayerSpaceTrackerState tracker{};
     auto decision = updatePlayerSpaceTracker(tracker, PlayerSpaceTrackerInput{
         .positionValid = true,

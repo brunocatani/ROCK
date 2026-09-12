@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/consume/ImmersiveAidPolicy.h"
 
 namespace rock::mouth_consume
 {
@@ -13,6 +14,7 @@ namespace rock::mouth_consume
 
     struct RuntimeState
     {
+        immersive_aid::ContactState injection{};
         bool candidate = false;
         bool confirmed = false;
         float dwellSeconds = 0.0f;

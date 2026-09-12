@@ -3,7 +3,10 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripCacheFormat.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h"
 
@@ -22,12 +25,15 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <numbers>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -118,6 +124,9 @@ namespace rock::native_idle_grip_preharvest
         constexpr std::uint64_t kPreharvestCaptureSequenceDomain = 1ull << 63;
         constexpr std::int32_t kWeaponAnimationRole = 1;
         constexpr std::int32_t kIoTaskPriority = 3;
+        static_assert(
+            native_idle_grip_preharvest_policy::kPersistenceSampleFractions.size() ==
+            authored_weapon_grip_cache::kRequiredPersistenceSamples);
 
         constexpr std::array<const char*, authored_weapon_grip_library::kFiringFingerBoneCount> kRightFiringFingerBoneNames{
             "RArm_Finger11",
@@ -135,6 +144,27 @@ namespace rock::native_idle_grip_preharvest
             "RArm_Finger51",
             "RArm_Finger52",
             "RArm_Finger53",
+        };
+
+        // Index order must match the live capture's support finger table
+        // (AuthoredWeaponGripCapture.cpp): TwoHandedGrip consumes the
+        // support finger locals by position.
+        constexpr std::array<const char*, authored_weapon_grip_library::kFiringFingerBoneCount> kLeftSupportFingerBoneNames{
+            "LArm_Finger11",
+            "LArm_Finger12",
+            "LArm_Finger13",
+            "LArm_Finger21",
+            "LArm_Finger22",
+            "LArm_Finger23",
+            "LArm_Finger31",
+            "LArm_Finger32",
+            "LArm_Finger33",
+            "LArm_Finger41",
+            "LArm_Finger42",
+            "LArm_Finger43",
+            "LArm_Finger51",
+            "LArm_Finger52",
+            "LArm_Finger53",
         };
 
         struct alignas(16) HkQsTransform
@@ -249,6 +279,20 @@ namespace rock::native_idle_grip_preharvest
             IncompleteFiringFingerPose,
         };
 
+        // The support relation rides the primary sample: its failure never
+        // fails the primary pose, it only leaves the entry without support.
+        enum class SupportExtractionFailure : std::uint8_t
+        {
+            None,
+            NotAttempted,
+            SupportHandBoneUnavailable,
+            BoneChainInvalid,
+            BoneLocalUnavailable,
+            SupportTransformInvalid,
+            IncompleteSupportFingerPose,
+            ValidationSampleUnavailable,
+        };
+
         struct IdleGripExtractionDiagnostics
         {
             IdleGripExtractionFailure failure{ IdleGripExtractionFailure::None };
@@ -276,11 +320,33 @@ namespace rock::native_idle_grip_preharvest
             int floatTrackCount{ -1 };
             int mappingCount{ 0 };
             float animationDurationSeconds{ -1.0f };
+            float maxHandTranslationDelta{ 0.0f };
+            float maxHandRotationDeltaDegrees{ 0.0f };
+            float maxFingerTranslationDelta{ 0.0f };
+            float maxFingerRotationDeltaDegrees{ 0.0f };
+            float maxScaleDelta{ 0.0f };
             std::uint16_t sampledFingerMask{ 0 };
             std::uint16_t referenceFingerMask{ 0 };
             std::uint16_t missingFingerMask{ authored_weapon_grip_library::kCompleteFiringFingerMask };
             bool usedGraphClipPathFallback{ false };
             bool graphIdlePathAmbiguous{ false };
+            std::uint32_t validationSampleCount{ 0 };
+            bool stableForPersistence{ false };
+            SupportExtractionFailure supportFailure{ SupportExtractionFailure::NotAttempted };
+            std::uint16_t supportMissingFingerMask{ authored_weapon_grip_library::kCompleteFiringFingerMask };
+            float maxSupportHandTranslationDelta{ 0.0f };
+            float maxSupportHandRotationDeltaDegrees{ 0.0f };
+            float maxSupportFingerTranslationDelta{ 0.0f };
+            float maxSupportFingerRotationDeltaDegrees{ 0.0f };
+            float maxSupportScaleDelta{ 0.0f };
+            bool supportStableForPersistence{ false };
+        };
+
+        struct SupportGripSample
+        {
+            RE::NiTransform handInWeapon{};
+            authored_weapon_grip_library::FiringFingerPose fingerPose{};
+            bool valid{ false };
         };
 
         struct Job
@@ -295,6 +361,7 @@ namespace rock::native_idle_grip_preharvest
             RE::TESObjectWEAP* weapon{ nullptr }; // Stable loaded-form identity; never owns the form.
             RE::TESRace* race{ nullptr }; // Stable loaded-form identity; never owns the form.
             authored_weapon_grip_library::WeaponVariantIdentity variant{};
+            std::uint64_t graphProfileKey{ 0 };
             std::uintptr_t instanceIdentity{ 0 };
             std::uint32_t referenceFormId{ 0 };
             std::uint32_t weaponFormId{ 0 };
@@ -311,8 +378,10 @@ namespace rock::native_idle_grip_preharvest
         {
             std::uint32_t weaponFormId{ 0 };
             std::uint64_t variantKey{ 0 };
+            std::uint64_t instanceContentKey{ 0 };
             ULONGLONG retryAfterMilliseconds{ 0 };
             bool inPowerArmor{ false };
+            bool instanceContentKnown{ false };
             bool occupied{ false };
         };
 
@@ -533,6 +602,29 @@ namespace rock::native_idle_grip_preharvest
             return "unknownExtractionFailure";
         }
 
+        [[nodiscard]] const char* supportExtractionFailureName(const SupportExtractionFailure failure)
+        {
+            switch (failure) {
+            case SupportExtractionFailure::None:
+                return "none";
+            case SupportExtractionFailure::NotAttempted:
+                return "notAttempted";
+            case SupportExtractionFailure::SupportHandBoneUnavailable:
+                return "supportHandBoneUnavailable";
+            case SupportExtractionFailure::BoneChainInvalid:
+                return "boneChainInvalid";
+            case SupportExtractionFailure::BoneLocalUnavailable:
+                return "boneLocalUnavailable";
+            case SupportExtractionFailure::SupportTransformInvalid:
+                return "supportTransformInvalid";
+            case SupportExtractionFailure::IncompleteSupportFingerPose:
+                return "incompleteSupportFingerPose";
+            case SupportExtractionFailure::ValidationSampleUnavailable:
+                return "validationSampleUnavailable";
+            }
+            return "unknownSupportExtractionFailure";
+        }
+
         [[nodiscard]] bool failExtraction(IdleGripExtractionDiagnostics& diagnostics, const IdleGripExtractionFailure failure)
         {
             diagnostics.failure = failure;
@@ -550,6 +642,8 @@ namespace rock::native_idle_grip_preharvest
             return entry.occupied &&
                    entry.weaponFormId == job.weaponFormId &&
                    entry.variantKey == job.variant.key &&
+                   entry.instanceContentKey == job.variant.instanceContentKey &&
+                   entry.instanceContentKnown == job.variant.instanceContentKnown &&
                    entry.inPowerArmor == job.inPowerArmor;
         }
 
@@ -588,8 +682,10 @@ namespace rock::native_idle_grip_preharvest
             *destination = FailureEntry{
                 .weaponFormId = job.weaponFormId,
                 .variantKey = job.variant.key,
+                .instanceContentKey = job.variant.instanceContentKey,
                 .retryAfterMilliseconds = now + kFailureRetryDelayMilliseconds,
                 .inPowerArmor = job.inPowerArmor,
+                .instanceContentKnown = job.variant.instanceContentKnown,
                 .occupied = true,
             };
         }
@@ -658,6 +754,278 @@ namespace rock::native_idle_grip_preharvest
             }
             return std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) && std::isfinite(transform.translate.z) && std::isfinite(transform.scale) &&
                 std::abs(transform.scale) > 0.000001f;
+        }
+
+        [[nodiscard]] std::uint64_t graphProfileKey(
+            const RE::BSScrapArray<RE::BSStaticStringT<260>>& graphProjects,
+            const bool inPowerArmor) noexcept
+        {
+            constexpr std::uint64_t offsetBasis = 14695981039346656037ull;
+            constexpr std::uint64_t prime = 1099511628211ull;
+            std::uint64_t hash = offsetBasis;
+            const auto mixByte = [&](const std::uint8_t value) {
+                hash ^= value;
+                hash *= prime;
+            };
+            constexpr std::string_view domain{ "ROCK.exact-native-idle-graph-profile.v1" };
+            for (const char value : domain) {
+                mixByte(static_cast<std::uint8_t>(value));
+            }
+            mixByte(inPowerArmor ? 1u : 0u);
+            for (const auto& graphProject : graphProjects) {
+                mixByte(0xFFu);
+                const char* characters = graphProject.c_str();
+                if (!characters) {
+                    continue;
+                }
+                for (std::size_t index = 0; characters[index] != '\0' && index < 260; ++index) {
+                    char value = characters[index];
+                    if (value == '/') {
+                        value = '\\';
+                    } else if (value >= 'A' && value <= 'Z') {
+                        value = static_cast<char>(value + ('a' - 'A'));
+                    }
+                    mixByte(static_cast<std::uint8_t>(value));
+                }
+            }
+            return hash != 0 ? hash : 1;
+        }
+
+        [[nodiscard]] authored_weapon_grip_cache::PersistedTransform persistTransform(const RE::NiTransform& transform) noexcept
+        {
+            authored_weapon_grip_cache::PersistedTransform persisted{};
+            for (std::size_t row = 0; row < 3; ++row) {
+                for (std::size_t column = 0; column < 3; ++column) {
+                    persisted.rotate[row * 3 + column] = transform.rotate.entry[row][column];
+                }
+            }
+            persisted.translate = { transform.translate.x, transform.translate.y, transform.translate.z };
+            persisted.scale = transform.scale;
+            return persisted;
+        }
+
+        [[nodiscard]] bool restoreTransform(
+            const authored_weapon_grip_cache::PersistedTransform& persisted,
+            RE::NiTransform& transform) noexcept
+        {
+            if (!authored_weapon_grip_cache::validTransform(persisted)) {
+                return false;
+            }
+            for (std::size_t row = 0; row < 3; ++row) {
+                for (std::size_t column = 0; column < 3; ++column) {
+                    transform.rotate.entry[row][column] = persisted.rotate[row * 3 + column];
+                }
+            }
+            transform.translate = RE::NiPoint3{ persisted.translate[0], persisted.translate[1], persisted.translate[2] };
+            transform.scale = persisted.scale;
+            return isFiniteTransform(transform);
+        }
+
+        [[nodiscard]] float translationDelta(const RE::NiTransform& left, const RE::NiTransform& right) noexcept
+        {
+            const float x = left.translate.x - right.translate.x;
+            const float y = left.translate.y - right.translate.y;
+            const float z = left.translate.z - right.translate.z;
+            return std::sqrt(x * x + y * y + z * z);
+        }
+
+        [[nodiscard]] float rotationDeltaDegrees(const RE::NiTransform& left, const RE::NiTransform& right) noexcept
+        {
+            float trace = 0.0f;
+            for (std::size_t row = 0; row < 3; ++row) {
+                for (std::size_t column = 0; column < 3; ++column) {
+                    trace += left.rotate.entry[row][column] * right.rotate.entry[row][column];
+                }
+            }
+            const float cosine = std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f);
+            return std::acos(cosine) * 180.0f / std::numbers::pi_v<float>;
+        }
+
+        void accumulateHandPoseDelta(
+            const RE::NiTransform& baselineHand,
+            const authored_weapon_grip_library::FiringFingerPose& baselineFingers,
+            const RE::NiTransform& sampledHand,
+            const authored_weapon_grip_library::FiringFingerPose& sampledFingers,
+            float& maxHandTranslationDelta,
+            float& maxHandRotationDeltaDegrees,
+            float& maxFingerTranslationDelta,
+            float& maxFingerRotationDeltaDegrees,
+            float& maxScaleDelta) noexcept
+        {
+            maxHandTranslationDelta = (std::max)(maxHandTranslationDelta, translationDelta(baselineHand, sampledHand));
+            maxHandRotationDeltaDegrees = (std::max)(maxHandRotationDeltaDegrees, rotationDeltaDegrees(baselineHand, sampledHand));
+            maxScaleDelta = (std::max)(maxScaleDelta, std::abs(baselineHand.scale - sampledHand.scale));
+            for (std::size_t index = 0; index < baselineFingers.localTransforms.size(); ++index) {
+                const auto& baseline = baselineFingers.localTransforms[index];
+                const auto& sampled = sampledFingers.localTransforms[index];
+                maxFingerTranslationDelta = (std::max)(maxFingerTranslationDelta, translationDelta(baseline, sampled));
+                maxFingerRotationDeltaDegrees = (std::max)(maxFingerRotationDeltaDegrees, rotationDeltaDegrees(baseline, sampled));
+                maxScaleDelta = (std::max)(maxScaleDelta, std::abs(baseline.scale - sampled.scale));
+            }
+        }
+
+        void accumulatePoseDelta(
+            const RE::NiTransform& baselineHand,
+            const authored_weapon_grip_library::FiringFingerPose& baselineFingers,
+            const RE::NiTransform& sampledHand,
+            const authored_weapon_grip_library::FiringFingerPose& sampledFingers,
+            IdleGripExtractionDiagnostics& diagnostics) noexcept
+        {
+            accumulateHandPoseDelta(baselineHand, baselineFingers, sampledHand, sampledFingers,
+                diagnostics.maxHandTranslationDelta, diagnostics.maxHandRotationDeltaDegrees,
+                diagnostics.maxFingerTranslationDelta, diagnostics.maxFingerRotationDeltaDegrees, diagnostics.maxScaleDelta);
+        }
+
+        void accumulateSupportPoseDelta(
+            const SupportGripSample& baseline,
+            const SupportGripSample& sampled,
+            IdleGripExtractionDiagnostics& diagnostics) noexcept
+        {
+            accumulateHandPoseDelta(baseline.handInWeapon, baseline.fingerPose, sampled.handInWeapon, sampled.fingerPose,
+                diagnostics.maxSupportHandTranslationDelta, diagnostics.maxSupportHandRotationDeltaDegrees,
+                diagnostics.maxSupportFingerTranslationDelta, diagnostics.maxSupportFingerRotationDeltaDegrees, diagnostics.maxSupportScaleDelta);
+        }
+
+        [[nodiscard]] bool makeJobCacheKey(const Job& job, authored_weapon_grip_cache::CacheKey& out) noexcept
+        {
+            out = {};
+            return job.origin == CandidateOrigin::EquippedWeapon &&
+                   job.variant.instanceContentKnown &&
+                   job.graphProfileKey != 0 &&
+                   authored_weapon_grip_cache::makeCacheKey(
+                       job.weaponFormId,
+                       job.variant.key,
+                       job.variant.instanceContentKey,
+                       job.graphProfileKey,
+                       job.inPowerArmor,
+                       out);
+        }
+
+        [[nodiscard]] bool hydrateCachedPose(Runtime& state)
+        {
+            auto& job = state.job;
+            authored_weapon_grip_cache::CacheKey key{};
+            authored_weapon_grip_cache::CacheRecord record{};
+            if (!makeJobCacheKey(job, key) || !authored_weapon_grip_cache::find(key, record)) {
+                return false;
+            }
+
+            RE::NiTransform handInWeapon{};
+            authored_weapon_grip_library::FiringFingerPose fingers{};
+            if (!restoreTransform(record.rightHandWeaponLocal, handInWeapon)) {
+                ROCK_LOG_WARN(Animation, "Authored weapon grip disk-cache transform restore failed formID={:08X}", job.weaponFormId);
+                return false;
+            }
+            for (std::size_t index = 0; index < fingers.localTransforms.size(); ++index) {
+                if (!restoreTransform(record.rightFiringFingerLocals[index], fingers.localTransforms[index])) {
+                    ROCK_LOG_WARN(Animation,
+                        "Authored weapon grip disk-cache finger restore failed formID={:08X} finger={}",
+                        job.weaponFormId,
+                        index);
+                    return false;
+                }
+            }
+            fingers.enabledMask = record.rightFiringFingerMask;
+            if (!fingers.complete()) {
+                return false;
+            }
+
+            const std::uint64_t captureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
+            if (!authored_weapon_grip_library::publishResolvedVariant(
+                    job.weapon,
+                    job.variant,
+                    job.inPowerArmor,
+                    handInWeapon,
+                    captureSequence,
+                    authored_weapon_grip_library::CaptureSource::PersistedNativeIdle,
+                    &fingers)) {
+                return false;
+            }
+
+            if (record.supportValid) {
+                RE::NiTransform supportHandInWeapon{};
+                authored_weapon_grip_library::FiringFingerPose supportFingers{};
+                bool supportRestored = restoreTransform(record.supportHandWeaponLocal, supportHandInWeapon);
+                for (std::size_t index = 0; supportRestored && index < supportFingers.localTransforms.size(); ++index) {
+                    supportRestored = restoreTransform(record.supportFingerLocals[index], supportFingers.localTransforms[index]);
+                }
+                supportFingers.enabledMask = record.supportFingerMask;
+                const std::uint64_t supportCaptureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
+                if (!supportRestored ||
+                    !supportFingers.complete() ||
+                    !authored_weapon_grip_library::publishSupportRelation(
+                        job.weapon,
+                        job.variant,
+                        job.inPowerArmor,
+                        supportHandInWeapon,
+                        supportFingers,
+                        supportCaptureSequence,
+                        authored_weapon_grip_library::CaptureSource::PersistedNativeIdle)) {
+                    ROCK_LOG_WARN(Animation,
+                        "Authored weapon grip disk-cache support restore failed formID={:08X}",
+                        job.weaponFormId);
+                }
+            }
+
+            ROCK_LOG_INFO(Animation,
+                "Native idle-grip restored exact persisted pose formID={:08X} variant={:016X} instance={:016X} graph={:016X} clip={} samples={} capture={}",
+                job.weaponFormId,
+                job.variant.key,
+                job.variant.instanceContentKey,
+                job.graphProfileKey,
+                record.idleClipPath,
+                record.quality.sampleCount,
+                captureSequence);
+            return true;
+        }
+
+        void persistFreshPose(
+            const Job& job,
+            const RE::NiTransform& handInWeapon,
+            const authored_weapon_grip_library::FiringFingerPose& fingers,
+            const SupportGripSample& support,
+            const std::string_view clipPath,
+            const std::uint64_t requestedSubgraphIdentifier,
+            const IdleGripExtractionDiagnostics& diagnostics)
+        {
+            authored_weapon_grip_cache::CacheKey key{};
+            if (!diagnostics.stableForPersistence ||
+                !fingers.complete() ||
+                clipPath.empty() ||
+                !makeJobCacheKey(job, key)) {
+                return;
+            }
+
+            authored_weapon_grip_cache::CacheRecord record{};
+            record.key = std::move(key);
+            record.rightHandWeaponLocal = persistTransform(handInWeapon);
+            for (std::size_t index = 0; index < fingers.localTransforms.size(); ++index) {
+                record.rightFiringFingerLocals[index] = persistTransform(fingers.localTransforms[index]);
+            }
+            record.rightFiringFingerMask = fingers.enabledMask;
+            if (support.valid && diagnostics.supportStableForPersistence && support.fingerPose.complete()) {
+                record.supportHandWeaponLocal = persistTransform(support.handInWeapon);
+                for (std::size_t index = 0; index < support.fingerPose.localTransforms.size(); ++index) {
+                    record.supportFingerLocals[index] = persistTransform(support.fingerPose.localTransforms[index]);
+                }
+                record.supportFingerMask = support.fingerPose.enabledMask;
+                record.supportValid = true;
+            }
+            record.idleClipPath = clipPath;
+            record.requestedSubgraphIdentifier = requestedSubgraphIdentifier;
+            record.bindingSubgraphIdentifier = diagnostics.bindingSubgraphIdentifier;
+            record.quality = authored_weapon_grip_cache::SampleQuality{
+                .sampleCount = diagnostics.validationSampleCount,
+                .selectedTimeSeconds = 0.0f,
+                .durationSeconds = diagnostics.animationDurationSeconds,
+                .maxHandTranslationDelta = diagnostics.maxHandTranslationDelta,
+                .maxHandRotationDeltaDegrees = diagnostics.maxHandRotationDeltaDegrees,
+                .maxFingerTranslationDelta = diagnostics.maxFingerTranslationDelta,
+                .maxFingerRotationDeltaDegrees = diagnostics.maxFingerRotationDeltaDegrees,
+                .maxScaleDelta = diagnostics.maxScaleDelta,
+                .stable = diagnostics.stableForPersistence,
+            };
+            authored_weapon_grip_cache::save(std::move(record));
         }
 
         [[nodiscard]] bool copyBorrowedFixedString(const void* stringEntry, std::array<char, 260>& outPath)
@@ -811,17 +1179,22 @@ namespace rock::native_idle_grip_preharvest
             return protection == PAGE_EXECUTE || protection == PAGE_EXECUTE_READ || protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY;
         }
 
-        [[nodiscard]] bool guardedSampleTracks(const SampleAnimationTracksFn sample, void* animation, const int transformTrackCount, HkQsTransform* output) noexcept
+        [[nodiscard]] bool guardedSampleTracks(
+            const SampleAnimationTracksFn sample,
+            void* animation,
+            const float timeSeconds,
+            const int transformTrackCount,
+            HkQsTransform* output) noexcept
         {
 #if defined(_MSC_VER)
             __try {
-                sample(animation, 0.0f, transformTrackCount, output, 0, nullptr);
+                sample(animation, timeSeconds, transformTrackCount, output, 0, nullptr);
                 return true;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
             }
 #else
-            sample(animation, 0.0f, transformTrackCount, output, 0, nullptr);
+            sample(animation, timeSeconds, transformTrackCount, output, 0, nullptr);
             return true;
 #endif
         }
@@ -877,58 +1250,194 @@ namespace rock::native_idle_grip_preharvest
             return isFiniteTransform(outHandInWeapon);
         }
 
-        void extractRightFiringFingerPose(Runtime& state, void* skeleton, const int boneCount, const int transformTrackCount, const std::span<const std::int16_t> mapping,
-            const std::array<HkQsTransform, kMaxBonesAndTracks>& sampledTracks, authored_weapon_grip_library::FiringFingerPose& outPose, IdleGripExtractionDiagnostics& diagnostics)
+        struct SkeletonReferencePoseView
         {
-            outPose = {};
-            diagnostics.sampledFingerMask = 0;
-            diagnostics.referenceFingerMask = 0;
-            diagnostics.missingFingerMask = authored_weapon_grip_library::kCompleteFiringFingerMask;
+            const HkQsTransform* pose{ nullptr };
+            int count{ 0 };
+        };
 
+        [[nodiscard]] SkeletonReferencePoseView readSkeletonReferencePose(void* skeleton, const int boneCount)
+        {
+            SkeletonReferencePoseView view{};
             const HkQsTransform* referencePose = nullptr;
             int referencePoseCount = 0;
-            const bool referencePoseAvailable = native_memory::tryReadField(skeleton, kSkeletonReferencePoseOffset, referencePose) &&
+            if (native_memory::tryReadField(skeleton, kSkeletonReferencePoseOffset, referencePose) &&
                 native_memory::tryReadField(skeleton, kSkeletonReferencePoseCountOffset, referencePoseCount) && referencePose && referencePoseCount >= boneCount &&
-                referencePoseCount <= static_cast<int>(kMaxBonesAndTracks);
+                referencePoseCount <= static_cast<int>(kMaxBonesAndTracks)) {
+                view.pose = referencePose;
+                view.count = referencePoseCount;
+            }
+            return view;
+        }
 
-            for (std::size_t fingerIndex = 0; fingerIndex < kRightFiringFingerBoneNames.size(); ++fingerIndex) {
+        // Graph-local transform of one bone at the sampled clip time: its
+        // animation track when the binding animates it, otherwise the
+        // skeleton reference pose (the engine's own rule for untracked
+        // bones).
+        [[nodiscard]] bool readSampledBoneLocal(const int boneIndex, const int transformTrackCount, const std::span<const std::int16_t> mapping,
+            const std::array<HkQsTransform, kMaxBonesAndTracks>& sampledTracks, const SkeletonReferencePoseView& referencePose, HkQsTransform& outLocal,
+            bool& outFromReferencePose)
+        {
+            outFromReferencePose = false;
+            const int trackIndex = native_idle_grip_preharvest_policy::findTransformTrackForBone(boneIndex, transformTrackCount, mapping);
+            if (trackIndex >= 0) {
+                outLocal = sampledTracks[static_cast<std::size_t>(trackIndex)];
+                return true;
+            }
+            if (!referencePose.pose || boneIndex < 0 || boneIndex >= referencePose.count ||
+                !native_memory::guardedCopyFromMemory(referencePose.pose + boneIndex, &outLocal, sizeof(outLocal))) {
+                return false;
+            }
+            outFromReferencePose = true;
+            return true;
+        }
+
+        void extractFingerPose(Runtime& state, void* skeleton, const int boneCount, const int transformTrackCount, const std::span<const std::int16_t> mapping,
+            const std::array<HkQsTransform, kMaxBonesAndTracks>& sampledTracks, const SkeletonReferencePoseView& referencePose,
+            const std::array<const char*, authored_weapon_grip_library::kFiringFingerBoneCount>& boneNames,
+            authored_weapon_grip_library::FiringFingerPose& outPose, std::uint16_t& outSampledMask, std::uint16_t& outReferenceMask)
+        {
+            outPose = {};
+            outSampledMask = 0;
+            outReferenceMask = 0;
+
+            for (std::size_t fingerIndex = 0; fingerIndex < boneNames.size(); ++fingerIndex) {
                 const std::uint16_t bit = static_cast<std::uint16_t>(1U << fingerIndex);
-                const std::uint64_t boneRaw = state.native.findBoneWithName(skeleton, kRightFiringFingerBoneNames[fingerIndex], nullptr);
+                const std::uint64_t boneRaw = state.native.findBoneWithName(skeleton, boneNames[fingerIndex], nullptr);
                 if (boneRaw == 0xFFFFFFFFull || boneRaw >= static_cast<std::uint64_t>(boneCount)) {
                     continue;
                 }
 
-                const int boneIndex = static_cast<int>(boneRaw);
-                const int trackIndex = native_idle_grip_preharvest_policy::findTransformTrackForBone(boneIndex, transformTrackCount, mapping);
                 HkQsTransform local{};
-                bool localAvailable = false;
-                if (trackIndex >= 0) {
-                    local = sampledTracks[static_cast<std::size_t>(trackIndex)];
-                    diagnostics.sampledFingerMask = static_cast<std::uint16_t>(diagnostics.sampledFingerMask | bit);
-                    localAvailable = true;
-                } else if (referencePoseAvailable && boneIndex < referencePoseCount && native_memory::guardedCopyFromMemory(referencePose + boneIndex, &local, sizeof(local))) {
-                    diagnostics.referenceFingerMask = static_cast<std::uint16_t>(diagnostics.referenceFingerMask | bit);
-                    localAvailable = true;
-                }
-
+                bool fromReferencePose = false;
                 RE::NiTransform converted{};
-                if (!localAvailable || !convertHavokLocalTransform(local, converted)) {
-                    diagnostics.sampledFingerMask = static_cast<std::uint16_t>(diagnostics.sampledFingerMask & ~bit);
-                    diagnostics.referenceFingerMask = static_cast<std::uint16_t>(diagnostics.referenceFingerMask & ~bit);
+                if (!readSampledBoneLocal(static_cast<int>(boneRaw), transformTrackCount, mapping, sampledTracks, referencePose, local, fromReferencePose) ||
+                    !convertHavokLocalTransform(local, converted)) {
                     continue;
                 }
 
+                if (fromReferencePose) {
+                    outReferenceMask = static_cast<std::uint16_t>(outReferenceMask | bit);
+                } else {
+                    outSampledMask = static_cast<std::uint16_t>(outSampledMask | bit);
+                }
                 outPose.localTransforms[fingerIndex] = converted;
                 outPose.enabledMask = static_cast<std::uint16_t>(outPose.enabledMask | bit);
             }
+        }
 
+        void extractRightFiringFingerPose(Runtime& state, void* skeleton, const int boneCount, const int transformTrackCount, const std::span<const std::int16_t> mapping,
+            const std::array<HkQsTransform, kMaxBonesAndTracks>& sampledTracks, const SkeletonReferencePoseView& referencePose,
+            authored_weapon_grip_library::FiringFingerPose& outPose, IdleGripExtractionDiagnostics& diagnostics)
+        {
+            extractFingerPose(state, skeleton, boneCount, transformTrackCount, mapping, sampledTracks, referencePose, kRightFiringFingerBoneNames, outPose,
+                diagnostics.sampledFingerMask, diagnostics.referenceFingerMask);
             diagnostics.missingFingerMask = static_cast<std::uint16_t>(authored_weapon_grip_library::kCompleteFiringFingerMask & ~outPose.enabledMask);
         }
 
+        /*
+         * Support relation from the same sampled clip: LArm_Hand in Weapon
+         * plus the left finger locals. Both hands are composed from graph-
+         * local bone transforms down their arm chains to the shared root,
+         * then reduced exactly like the live capture
+         * (inverse(primary) * support, re-expressed through the primary
+         * hand-in-weapon). This is the settled authored pose; the live
+         * equipped-graph capture is only a fallback for clips this cannot
+         * serve.
+         */
+        [[nodiscard]] SupportExtractionFailure trySampleSupportGrip(Runtime& state, void* skeleton, const int boneCount, const int transformTrackCount,
+            const std::span<const std::int16_t> mapping, const std::span<const std::int16_t> parentIndices,
+            const std::array<HkQsTransform, kMaxBonesAndTracks>& sampledTracks, const SkeletonReferencePoseView& referencePose, const int primaryHandBoneIndex,
+            const RE::NiTransform& primaryHandInWeapon, SupportGripSample& outSample, std::uint16_t& outMissingFingerMask)
+        {
+            outSample = {};
+            outMissingFingerMask = authored_weapon_grip_library::kCompleteFiringFingerMask;
+
+            const std::uint64_t supportHandRaw = state.native.findBoneWithName(skeleton, "LArm_Hand", nullptr);
+            if (supportHandRaw == 0xFFFFFFFFull || supportHandRaw >= static_cast<std::uint64_t>(boneCount)) {
+                return SupportExtractionFailure::SupportHandBoneUnavailable;
+            }
+            const int supportHandBoneIndex = static_cast<int>(supportHandRaw);
+
+            std::array<int, native_idle_grip_preharvest_policy::kMaxBoneChainLength> chain{};
+            const auto composeModel = [&](const int leafBoneIndex, RE::NiTransform& outModel, int& outRootBoneIndex) {
+                const std::size_t length = native_idle_grip_preharvest_policy::collectBoneChainToRoot(leafBoneIndex, parentIndices, chain);
+                if (length == 0) {
+                    return SupportExtractionFailure::BoneChainInvalid;
+                }
+                RE::NiTransform model = transform_math::makeIdentityTransform<RE::NiTransform>();
+                for (std::size_t position = length; position > 0; --position) {
+                    HkQsTransform local{};
+                    bool fromReferencePose = false;
+                    RE::NiTransform converted{};
+                    if (!readSampledBoneLocal(chain[position - 1], transformTrackCount, mapping, sampledTracks, referencePose, local, fromReferencePose) ||
+                        !convertHavokLocalTransform(local, converted)) {
+                        return SupportExtractionFailure::BoneLocalUnavailable;
+                    }
+                    model = transform_math::composeTransforms(model, converted);
+                    if (!isFiniteTransform(model)) {
+                        return SupportExtractionFailure::SupportTransformInvalid;
+                    }
+                }
+                outRootBoneIndex = chain[length - 1];
+                outModel = model;
+                return SupportExtractionFailure::None;
+            };
+
+            RE::NiTransform primaryHandModel{};
+            RE::NiTransform supportHandModel{};
+            int primaryRootBoneIndex = -1;
+            int supportRootBoneIndex = -1;
+            if (const auto failure = composeModel(primaryHandBoneIndex, primaryHandModel, primaryRootBoneIndex); failure != SupportExtractionFailure::None) {
+                return failure;
+            }
+            if (const auto failure = composeModel(supportHandBoneIndex, supportHandModel, supportRootBoneIndex); failure != SupportExtractionFailure::None) {
+                return failure;
+            }
+            if (primaryRootBoneIndex != supportRootBoneIndex) {
+                return SupportExtractionFailure::BoneChainInvalid;
+            }
+
+            const RE::NiTransform supportHandInPrimaryHand = authored_weapon_grip_capture_policy::resolveAuthoredSupportHandInPrimaryHand(
+                primaryHandModel,
+                supportHandModel,
+                [](const RE::NiTransform& parent, const RE::NiTransform& child) { return transform_math::composeTransforms(parent, child); },
+                [](const RE::NiTransform& transform) { return transform_math::invertTransform(transform); });
+            const RE::NiTransform supportHandInWeapon = authored_weapon_grip_capture_policy::resolveAuthoredSupportHandInWeapon(
+                primaryHandInWeapon,
+                supportHandInPrimaryHand,
+                [](const RE::NiTransform& parent, const RE::NiTransform& child) { return transform_math::composeTransforms(parent, child); });
+            if (!isFiniteTransform(supportHandInPrimaryHand) || !isFiniteTransform(supportHandInWeapon)) {
+                return SupportExtractionFailure::SupportTransformInvalid;
+            }
+
+            std::uint16_t sampledMask = 0;
+            std::uint16_t referenceMask = 0;
+            extractFingerPose(state, skeleton, boneCount, transformTrackCount, mapping, sampledTracks, referencePose, kLeftSupportFingerBoneNames, outSample.fingerPose,
+                sampledMask, referenceMask);
+            outMissingFingerMask = static_cast<std::uint16_t>(authored_weapon_grip_library::kCompleteFiringFingerMask & ~outSample.fingerPose.enabledMask);
+            if (!outSample.fingerPose.complete()) {
+                return SupportExtractionFailure::IncompleteSupportFingerPose;
+            }
+
+            outSample.handInWeapon = supportHandInWeapon;
+            outSample.valid = true;
+            return SupportExtractionFailure::None;
+        }
+
         [[nodiscard]] bool trySampleAnimationBinding(Runtime& state, RE::BShkbAnimationGraph* graph, void* binding, RE::NiTransform& outHandInWeapon,
-            authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, IdleGripExtractionDiagnostics& diagnostics)
+            authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, SupportGripSample& outSupport, IdleGripExtractionDiagnostics& diagnostics)
         {
             outRightFiringFingerPose = {};
+            outSupport = {};
+            diagnostics.supportFailure = SupportExtractionFailure::NotAttempted;
+            diagnostics.supportMissingFingerMask = authored_weapon_grip_library::kCompleteFiringFingerMask;
+            diagnostics.maxSupportHandTranslationDelta = 0.0f;
+            diagnostics.maxSupportHandRotationDeltaDegrees = 0.0f;
+            diagnostics.maxSupportFingerTranslationDelta = 0.0f;
+            diagnostics.maxSupportFingerRotationDeltaDegrees = 0.0f;
+            diagnostics.maxSupportScaleDelta = 0.0f;
+            diagnostics.supportStableForPersistence = false;
             diagnostics.weaponBone = 0xFFFFFFFFull;
             diagnostics.handBone = 0xFFFFFFFFull;
             diagnostics.weaponParentIndex = -1;
@@ -938,6 +1447,13 @@ namespace rock::native_idle_grip_preharvest
             diagnostics.mappingCount = 0;
             diagnostics.animationDurationSeconds = -1.0f;
             diagnostics.bindingBlendHint = 0xFFFFFFFFu;
+            diagnostics.validationSampleCount = 0;
+            diagnostics.maxHandTranslationDelta = 0.0f;
+            diagnostics.maxHandRotationDeltaDegrees = 0.0f;
+            diagnostics.maxFingerTranslationDelta = 0.0f;
+            diagnostics.maxFingerRotationDeltaDegrees = 0.0f;
+            diagnostics.maxScaleDelta = 0.0f;
+            diagnostics.stableForPersistence = false;
 
             void* animation = nullptr;
             if (!native_memory::tryReadField(binding, kAnimationFromBindingOffset, animation) || !animation) {
@@ -1032,16 +1548,92 @@ namespace rock::native_idle_grip_preharvest
             }
 
             alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> sampledTracks{};
-            if (!guardedSampleTracks(sampleTracks, animation, transformTrackCount, sampledTracks.data())) {
+            if (!guardedSampleTracks(sampleTracks, animation, 0.0f, transformTrackCount, sampledTracks.data())) {
                 return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationSamplingFault);
             }
             if (!convertWeaponTrackToHandInWeapon(sampledTracks[static_cast<std::size_t>(weaponTrackIndex)], outHandInWeapon)) {
                 return failExtraction(diagnostics, IdleGripExtractionFailure::SampledWeaponTransformInvalid);
             }
-            extractRightFiringFingerPose(state, skeleton, boneCount, transformTrackCount, mapping, sampledTracks, outRightFiringFingerPose, diagnostics);
+            const SkeletonReferencePoseView referencePose = readSkeletonReferencePose(skeleton, boneCount);
+            extractRightFiringFingerPose(state, skeleton, boneCount, transformTrackCount, mapping, sampledTracks, referencePose, outRightFiringFingerPose, diagnostics);
             if (!outRightFiringFingerPose.complete()) {
                 return failExtraction(diagnostics, IdleGripExtractionFailure::IncompleteFiringFingerPose);
             }
+            const std::span<const std::int16_t> parents{ parentBuffer.data(), static_cast<std::size_t>(boneCount) };
+            diagnostics.supportFailure = trySampleSupportGrip(state, skeleton, boneCount, transformTrackCount, mapping, parents, sampledTracks, referencePose, handBoneIndex,
+                outHandInWeapon, outSupport, diagnostics.supportMissingFingerMask);
+
+            diagnostics.validationSampleCount = 1;
+            bool supportSamplesConsistent = outSupport.valid;
+            if (std::isfinite(diagnostics.animationDurationSeconds) &&
+                diagnostics.animationDurationSeconds >= native_idle_grip_preharvest_policy::kMinimumPersistenceDurationSeconds &&
+                diagnostics.animationDurationSeconds <= native_idle_grip_preharvest_policy::kMaximumPersistenceDurationSeconds) {
+                for (std::size_t sampleIndex = 1;
+                     sampleIndex < native_idle_grip_preharvest_policy::kPersistenceSampleFractions.size();
+                     ++sampleIndex) {
+                    alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> validationTracks{};
+                    const float sampleTime = native_idle_grip_preharvest_policy::persistenceSampleTimeSeconds(
+                        diagnostics.animationDurationSeconds,
+                        sampleIndex);
+                    if (!guardedSampleTracks(sampleTracks, animation, sampleTime, transformTrackCount, validationTracks.data())) {
+                        break;
+                    }
+
+                    RE::NiTransform validationHand{};
+                    if (!convertWeaponTrackToHandInWeapon(validationTracks[static_cast<std::size_t>(weaponTrackIndex)], validationHand)) {
+                        break;
+                    }
+                    authored_weapon_grip_library::FiringFingerPose validationFingers{};
+                    IdleGripExtractionDiagnostics validationDiagnostics{};
+                    extractRightFiringFingerPose(
+                        state,
+                        skeleton,
+                        boneCount,
+                        transformTrackCount,
+                        mapping,
+                        validationTracks,
+                        referencePose,
+                        validationFingers,
+                        validationDiagnostics);
+                    if (!validationFingers.complete()) {
+                        break;
+                    }
+                    accumulatePoseDelta(outHandInWeapon, outRightFiringFingerPose, validationHand, validationFingers, diagnostics);
+                    ++diagnostics.validationSampleCount;
+
+                    if (supportSamplesConsistent) {
+                        SupportGripSample validationSupport{};
+                        std::uint16_t validationSupportMissingFingerMask = 0;
+                        if (trySampleSupportGrip(state, skeleton, boneCount, transformTrackCount, mapping, parents, validationTracks, referencePose, handBoneIndex,
+                                validationHand, validationSupport, validationSupportMissingFingerMask) != SupportExtractionFailure::None) {
+                            supportSamplesConsistent = false;
+                            diagnostics.supportFailure = SupportExtractionFailure::ValidationSampleUnavailable;
+                        } else {
+                            accumulateSupportPoseDelta(outSupport, validationSupport, diagnostics);
+                        }
+                    }
+                }
+            }
+            diagnostics.stableForPersistence = native_idle_grip_preharvest_policy::stableForPersistence(
+                diagnostics.validationSampleCount,
+                diagnostics.animationDurationSeconds,
+                diagnostics.maxHandTranslationDelta,
+                diagnostics.maxHandRotationDeltaDegrees,
+                diagnostics.maxFingerTranslationDelta,
+                diagnostics.maxFingerRotationDeltaDegrees,
+                diagnostics.maxScaleDelta);
+            if (!supportSamplesConsistent) {
+                outSupport = {};
+            }
+            diagnostics.supportStableForPersistence = outSupport.valid &&
+                native_idle_grip_preharvest_policy::supportStableForPersistence(
+                    diagnostics.validationSampleCount,
+                    diagnostics.animationDurationSeconds,
+                    diagnostics.maxSupportHandTranslationDelta,
+                    diagnostics.maxSupportHandRotationDeltaDegrees,
+                    diagnostics.maxSupportFingerTranslationDelta,
+                    diagnostics.maxSupportFingerRotationDeltaDegrees,
+                    diagnostics.maxSupportScaleDelta);
             diagnostics.failure = IdleGripExtractionFailure::None;
             return true;
         }
@@ -1078,7 +1670,8 @@ namespace rock::native_idle_grip_preharvest
         }
 
         [[nodiscard]] ExtractionResult trySampleClip(Runtime& state, RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, char* clipName,
-            RE::NiTransform& outHandInWeapon, authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, IdleGripExtractionDiagnostics& diagnostics)
+            RE::NiTransform& outHandInWeapon, authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, SupportGripSample& outSupport,
+            IdleGripExtractionDiagnostics& diagnostics)
         {
             diagnostics.bindingSubgraphIdentifier = subgraphIdentifier;
             void* swapSingleton = nullptr;
@@ -1092,7 +1685,7 @@ namespace rock::native_idle_grip_preharvest
                 if (!native_memory::tryReadField(bindingWithTriggers, kBindingFromBindingWithTriggersOffset, binding) || !binding) {
                     return failExtractionResult(diagnostics, IdleGripExtractionFailure::AnimationBindingUnavailable);
                 }
-                return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
+                return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
             }
 
             auto& job = state.job;
@@ -1152,11 +1745,12 @@ namespace rock::native_idle_grip_preharvest
                 return failExtractionResult(diagnostics, IdleGripExtractionFailure::DirectClipBindingUnavailable);
             }
 
-            return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
+            return trySampleAnimationBinding(state, graph, binding, outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics) ? ExtractionResult::Succeeded : ExtractionResult::Failed;
         }
 
         [[nodiscard]] ExtractionResult tryExtractIdleGrip(Runtime& state, RE::BSAnimationGraphManager& manager, RE::NiTransform& outHandInWeapon,
             authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose,
+            SupportGripSample& outSupport,
             std::array<char, 260>& outClipPath,
             std::uint64_t& outSubgraphIdentifier, IdleGripExtractionDiagnostics& diagnostics)
         {
@@ -1214,7 +1808,7 @@ namespace rock::native_idle_grip_preharvest
                         diagnostics.graphHandleMatchCount, diagnostics.graphClipBucketCount, diagnostics.graphClipPathCount,
                         diagnostics.graphIdlePathCandidateCount, outClipPath.data());
                 }
-                return trySampleClip(state, graph, bindingSubgraphIdentifier, outClipPath.data(), outHandInWeapon, outRightFiringFingerPose, diagnostics);
+                return trySampleClip(state, graph, bindingSubgraphIdentifier, outClipPath.data(), outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics);
             };
 
             if (animationFiles->empty()) {
@@ -1245,7 +1839,7 @@ namespace rock::native_idle_grip_preharvest
                     outClipPath.fill('\0');
                     std::memcpy(outClipPath.data(), path.data(), path.size());
                     ++diagnostics.sampleAttemptCount;
-                    const auto sampleResult = trySampleClip(state, graph, outSubgraphIdentifier, outClipPath.data(), outHandInWeapon, outRightFiringFingerPose, diagnostics);
+                    const auto sampleResult = trySampleClip(state, graph, outSubgraphIdentifier, outClipPath.data(), outHandInWeapon, outRightFiringFingerPose, outSupport, diagnostics);
                     if (sampleResult != ExtractionResult::Failed) {
                         return sampleResult;
                     }
@@ -1336,10 +1930,11 @@ namespace rock::native_idle_grip_preharvest
             }
             RE::NiTransform handInWeapon{};
             authored_weapon_grip_library::FiringFingerPose rightFiringFingerPose{};
+            SupportGripSample supportSample{};
             std::array<char, 260> clipPath{};
             std::uint64_t subgraphIdentifier = 0;
             IdleGripExtractionDiagnostics extractionDiagnostics{};
-            const auto extractionResult = tryExtractIdleGrip(state, *manager, handInWeapon, rightFiringFingerPose, clipPath, subgraphIdentifier, extractionDiagnostics);
+            const auto extractionResult = tryExtractIdleGrip(state, *manager, handInWeapon, rightFiringFingerPose, supportSample, clipPath, subgraphIdentifier, extractionDiagnostics);
             if (extractionResult == ExtractionResult::Pending) {
                 return false;
             }
@@ -1350,7 +1945,7 @@ namespace rock::native_idle_grip_preharvest
                     "requestedSubgraph={:016X} bindingSubgraph={:016X} files={} idleMatches={} sampleAttempts={} loadedSubgraphs={} handleMatches={} "
                     "graphBuckets={} graphPaths={} idleCandidates={} graphAmbiguous={} graphFallback={} resourceState={:X} animationType={} duration={:.6f} tracks={} floatTracks={} "
                     "bindingBlendHint={:X} mapping={} weaponBone={:X} handBone={:X} weaponParent={} sampledFingerMask=0x{:04X} "
-                    "referenceFingerMask=0x{:04X} missingFingerMask=0x{:04X} clip={}",
+                    "referenceFingerMask=0x{:04X} missingFingerMask=0x{:04X} validationSamples={} stable={} clip={}",
                     job.weaponFormId, failure, extractionDiagnostics.graphCount, extractionDiagnostics.handleCount, extractionDiagnostics.identifierCount,
                     extractionDiagnostics.subgraphHandle, extractionDiagnostics.subgraphIdentifier, extractionDiagnostics.bindingSubgraphIdentifier,
                     extractionDiagnostics.animationFileCount, extractionDiagnostics.idlePathMatchCount, extractionDiagnostics.sampleAttemptCount,
@@ -1360,7 +1955,8 @@ namespace rock::native_idle_grip_preharvest
                     extractionDiagnostics.directResourceState, extractionDiagnostics.animationType, extractionDiagnostics.animationDurationSeconds,
                     extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount, extractionDiagnostics.bindingBlendHint, extractionDiagnostics.mappingCount,
                     extractionDiagnostics.weaponBone, extractionDiagnostics.handBone, extractionDiagnostics.weaponParentIndex, extractionDiagnostics.sampledFingerMask,
-                    extractionDiagnostics.referenceFingerMask, extractionDiagnostics.missingFingerMask, clipPath[0] != '\0' ? clipPath.data() : "<none>");
+                    extractionDiagnostics.referenceFingerMask, extractionDiagnostics.missingFingerMask, extractionDiagnostics.validationSampleCount,
+                    extractionDiagnostics.stableForPersistence ? "yes" : "no", clipPath[0] != '\0' ? clipPath.data() : "<none>");
                 failJob(state, failure);
                 return true;
             }
@@ -1377,17 +1973,48 @@ namespace rock::native_idle_grip_preharvest
                 return true;
             }
 
+            bool supportPublished = false;
+            if (supportSample.valid) {
+                const std::uint64_t supportCaptureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
+                supportPublished = authored_weapon_grip_library::publishSupportRelation(job.weapon, job.variant, job.inPowerArmor, supportSample.handInWeapon,
+                    supportSample.fingerPose, supportCaptureSequence, authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest);
+                if (!supportPublished) {
+                    ROCK_LOG_WARN(Animation, "Native idle-grip preharvest support relation rejected by authored library formID={:08X}", job.weaponFormId);
+                }
+            }
+
+            persistFreshPose(
+                job,
+                handInWeapon,
+                rightFiringFingerPose,
+                supportSample,
+                clipPath.data(),
+                subgraphIdentifier,
+                extractionDiagnostics);
+
             ROCK_LOG_INFO(Animation,
                 "Native idle-grip preharvest succeeded formID={:08X} refID={:08X} variant={:016X} origin={} handle={:016X} requestedSubgraph={:016X} "
                 "bindingSubgraph={:016X} clip={} powerArmor={} animationType={} duration={:.6f} "
                 "tracks={} floatTracks={} bindingBlendHint={:X} sampledFingerMask=0x{:04X} referenceFingerMask=0x{:04X} missingFingerMask=0x{:04X} "
-                "handInWeaponT=({:.6f},{:.6f},{:.6f}) scale={:.7f}",
+                "validationSamples={} stable={} maxHandT={:.6f} maxHandR={:.4f}deg maxFingerT={:.6f} maxFingerR={:.4f}deg maxScale={:.7f} "
+                "handInWeaponT=({:.6f},{:.6f},{:.6f}) scale={:.7f} "
+                "support={} supportReason={} supportStable={} supportMissingFingerMask=0x{:04X} maxSupportHandT={:.4f} maxSupportHandR={:.3f}deg "
+                "supportHandInWeaponT=({:.3f},{:.3f},{:.3f})",
                 job.weaponFormId, job.referenceFormId, job.variant.key,
                 job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
                 extractionDiagnostics.subgraphHandle, subgraphIdentifier, extractionDiagnostics.bindingSubgraphIdentifier,
                 clipPath.data(), job.inPowerArmor ? "yes" : "no", extractionDiagnostics.animationType,
                 extractionDiagnostics.animationDurationSeconds, extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount,
-                extractionDiagnostics.bindingBlendHint, extractionDiagnostics.sampledFingerMask, extractionDiagnostics.referenceFingerMask, extractionDiagnostics.missingFingerMask, handInWeapon.translate.x, handInWeapon.translate.y, handInWeapon.translate.z, handInWeapon.scale);
+                extractionDiagnostics.bindingBlendHint, extractionDiagnostics.sampledFingerMask, extractionDiagnostics.referenceFingerMask,
+                extractionDiagnostics.missingFingerMask, extractionDiagnostics.validationSampleCount,
+                extractionDiagnostics.stableForPersistence ? "yes" : "no", extractionDiagnostics.maxHandTranslationDelta,
+                extractionDiagnostics.maxHandRotationDeltaDegrees, extractionDiagnostics.maxFingerTranslationDelta,
+                extractionDiagnostics.maxFingerRotationDeltaDegrees, extractionDiagnostics.maxScaleDelta,
+                handInWeapon.translate.x, handInWeapon.translate.y, handInWeapon.translate.z, handInWeapon.scale,
+                supportPublished ? "published" : "none", supportExtractionFailureName(extractionDiagnostics.supportFailure),
+                extractionDiagnostics.supportStableForPersistence ? "yes" : "no", extractionDiagnostics.supportMissingFingerMask,
+                extractionDiagnostics.maxSupportHandTranslationDelta, extractionDiagnostics.maxSupportHandRotationDeltaDegrees,
+                supportSample.handInWeapon.translate.x, supportSample.handInWeapon.translate.y, supportSample.handInWeapon.translate.z);
             releaseJob(state);
             return true;
         }
@@ -1426,7 +2053,8 @@ namespace rock::native_idle_grip_preharvest
         [[nodiscard]] Job describeEquippedCandidate(
             RE::TESObjectWEAP* weapon,
             RE::NiAVObject* weaponRoot,
-            RE::TBO_InstanceData* instanceData)
+            RE::TBO_InstanceData* instanceData,
+            const std::uint64_t instanceContentKey)
         {
             Job candidate{};
             if (!eligibleWeapon(weapon) || !weaponRoot) {
@@ -1435,7 +2063,7 @@ namespace rock::native_idle_grip_preharvest
 
             candidate.instanceData = RE::BSTSmartPointer<RE::TBO_InstanceData>(instanceData);
             candidate.weapon = weapon;
-            candidate.variant = authored_weapon_grip_library::identifyWeaponVariant(weaponRoot);
+            candidate.variant = authored_weapon_grip_library::identifyWeaponVariant(weaponRoot, instanceContentKey, true);
             candidate.instanceIdentity = reinterpret_cast<std::uintptr_t>(candidate.instanceData.get());
             candidate.weaponFormId = weapon->GetFormID();
             candidate.inPowerArmor = f4vr::isInPowerArmor();
@@ -1460,13 +2088,13 @@ namespace rock::native_idle_grip_preharvest
             if (!candidate.weapon || candidate.weaponFormId == 0 || candidate.origin == CandidateOrigin::Unknown || !weaponRoot) {
                 return false;
             }
-            const auto existing = authored_weapon_grip_library::find(
+            const auto existing = authored_weapon_grip_library::findResolvedVariant(
                 candidate.weapon,
-                weaponRoot,
+                candidate.variant,
                 candidate.inPowerArmor);
             if (!native_idle_grip_preharvest_policy::shouldStartNativeIdleHarvest(
                     existing.found,
-                    existing.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest,
+                    authored_weapon_grip_library::isNativeIdleAuthority(existing.source),
                     existing.usedVariantFallback,
                     candidate.variant.key)) {
                 return false;
@@ -1519,6 +2147,11 @@ namespace rock::native_idle_grip_preharvest
                 failJob(state, "playerGraphProjectsUnavailable");
                 return;
             }
+            state.job.graphProfileKey = graphProfileKey(graphProjects, state.job.inPowerArmor);
+            if (hydrateCachedPose(state)) {
+                releaseJob(state);
+                return;
+            }
             if (!state.native.createBackgroundSimpleManager(state.job.graphHolderStorage.data(), &graphProjects, kIoTaskPriority)) {
                 failJob(state, "backgroundGraphLoadRequestRejected");
                 return;
@@ -1563,7 +2196,8 @@ namespace rock::native_idle_grip_preharvest
     void observeEquippedWeapon(
         RE::TESObjectWEAP* weapon,
         RE::NiAVObject* weaponRoot,
-        RE::TBO_InstanceData* instanceData) noexcept
+        RE::TBO_InstanceData* instanceData,
+        const std::uint64_t instanceContentKey) noexcept
     {
         auto& state = runtime();
         if (!claimOrValidateThread(state)) {
@@ -1574,7 +2208,7 @@ namespace rock::native_idle_grip_preharvest
             return;
         }
 
-        Job candidateDescription = describeEquippedCandidate(weapon, weaponRoot, instanceData);
+        Job candidateDescription = describeEquippedCandidate(weapon, weaponRoot, instanceData, instanceContentKey);
         if (!shouldStartCandidate(state, candidateDescription, weaponRoot)) {
             return;
         }

@@ -23,7 +23,11 @@ namespace rock::body_contact_runtime
 
     struct BodyContactRecord
     {
+        // frame is publication identity (provider V1 exposes it);
+        // elapsedSeconds is the rate-independent freshness stamp on the
+        // contact clock.
         std::uint32_t frame = 0;
+        double elapsedSeconds = -1.0e9;
         std::uint32_t bodyId = kInvalidBodyContactId;
         std::uint32_t targetBodyId = kInvalidBodyContactId;
         std::uint32_t bodyLayer = contact_pipeline_policy::kUnknownLayer;

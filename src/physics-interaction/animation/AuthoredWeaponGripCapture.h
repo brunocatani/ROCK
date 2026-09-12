@@ -60,12 +60,8 @@ namespace rock::authored_weapon_grip_capture
         queryAuthoredSupportGripCaptureStatus();
     [[nodiscard]] const char* authoredSupportGripCaptureFailureReasonName(
         AuthoredSupportGripCaptureFailureReason reason);
-    [[nodiscard]] bool tryResolvePrimaryFiringGripAlignment(
+    [[nodiscard]] bool tryGetPrimaryFiringGripRelation(
         const RE::NiNode* expectedWeaponNode,
-        const RE::NiTransform& liveWeaponWorld,
-        const RE::NiTransform& trackedPrimaryHandWorld,
-        RE::NiTransform& outWeaponWorld,
-        RE::NiTransform& outCurrentAuthoredHandWorld,
         RE::NiTransform& outAuthoredPrimaryHandInWeapon,
         std::uint64_t& outCaptureSequence);
     [[nodiscard]] bool tryResolveAuthoredSupportGrip(

@@ -9,6 +9,7 @@
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 
 #include <algorithm>
 #include <array>
@@ -513,6 +514,7 @@ namespace rock
                 return false;
             }
 
+            skeleton_bone_debug_math::applyColliderEndpointRange(descriptor, input.start.translate, input.end.translate);
             const auto frame = hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
             if (!frame.valid) {
                 return false;
@@ -644,8 +646,11 @@ namespace rock
                 return;
             }
 
+            // The twin belongs to the dynamic hand compound, which is built in
+            // controller space: carry it with the hand chain so its shape and
+            // its palm and finger twins share one frame under a ROCK claim.
             slot.valid = true;
-            slot.target = mergedFrame.transform;
+            slot.target = frik_hand_world_authority::transportHandChainWorld(isLeft, mergedFrame.transform);
             slot.length = mergedFrame.length;
             slot.radius = mergedFrame.radius;
             slot.convexRadius = mergedFrame.convexRadius;
@@ -688,8 +693,12 @@ namespace rock
 
     bool BodyBoneColliderSet::captureBoneSnapshot(DirectSkeletonBoneSnapshot& outSnapshot)
     {
+        // Body colliders collide where the body draws, so the whole snapshot
+        // stays rendered; the forearm twin handed to the dynamic hand compound
+        // is carried to the controller hand on its own below.
         if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::AllFlattenedBones,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Rendered,
                 outSnapshot)) {
             return false;
         }
@@ -1032,6 +1041,39 @@ namespace rock
         }
 
         queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
+    }
+
+    bool BodyBoneColliderSet::tryGetBodyTargetForDebug(
+        const std::uint32_t bodyId,
+        RE::NiTransform& outTarget) const
+    {
+        if (bodyId == kInvalidBodyBoneColliderBodyId) {
+            return false;
+        }
+
+        for (const auto& instance : _bodies) {
+            if (!instance.body.isValid() ||
+                instance.body.getBodyId().value != bodyId) {
+                continue;
+            }
+
+            std::unique_lock targetLock(
+                instance.driveState.mutex,
+                std::try_to_lock);
+            if (!targetLock.owns_lock()) {
+                return false;
+            }
+            if (instance.driveState.hasPendingTarget) {
+                outTarget = instance.driveState.pendingTarget;
+                return true;
+            }
+            if (instance.driveState.hasPreviousTarget) {
+                outTarget = instance.driveState.previousTarget;
+                return true;
+            }
+            return false;
+        }
+        return false;
     }
 
     void BodyBoneColliderSet::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex)

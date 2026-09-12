@@ -31,15 +31,6 @@ namespace rock::grab_target
         HandPocketOnly,
     };
 
-    enum class HandlingProfile : std::uint8_t
-    {
-        OrdinaryLooseObject,
-        CloseSimplePhysical,
-        CloseMechanicalPreferred,
-        ActorDriven,
-        Blocked,
-    };
-
     [[nodiscard]] inline constexpr const char* name(Kind kind) noexcept
     {
         switch (kind) {
@@ -65,27 +56,6 @@ namespace rock::grab_target
     [[nodiscard]] inline constexpr bool isPhysicalRockObject(Kind kind) noexcept
     {
         return kind == Kind::LooseObject || kind == Kind::DetachedGore || kind == Kind::DynamicMovableStatic || kind == Kind::DeadActorBody;
-    }
-
-    [[nodiscard]] inline constexpr HandlingProfile handlingProfile(Kind kind) noexcept
-    {
-        switch (kind) {
-        case Kind::LooseObject:
-            return HandlingProfile::OrdinaryLooseObject;
-        case Kind::DetachedGore:
-            return HandlingProfile::CloseSimplePhysical;
-        case Kind::DynamicMovableStatic:
-            return HandlingProfile::CloseMechanicalPreferred;
-        case Kind::DeadActorBody:
-            return HandlingProfile::CloseMechanicalPreferred;
-        case Kind::ActorEquipment:
-        case Kind::LiveActorScissors:
-            return HandlingProfile::ActorDriven;
-        case Kind::BlockedWholeActorBody:
-            return HandlingProfile::Blocked;
-        default:
-            return HandlingProfile::Blocked;
-        }
     }
 
     [[nodiscard]] inline constexpr GrabAcquisitionMode acquisitionMode(Kind kind) noexcept
@@ -120,6 +90,11 @@ namespace rock::grab_target
         return isPhysicalRockObject(kind);
     }
 
+    [[nodiscard]] inline constexpr bool isRagdoll(Kind kind) noexcept
+    {
+        return kind == Kind::DeadActorBody || kind == Kind::DetachedGore;
+    }
+
     [[nodiscard]] inline constexpr bool prefersMechanicalScope(Kind kind) noexcept
     {
         return kind == Kind::DeadActorBody || kind == Kind::DynamicMovableStatic;
@@ -138,5 +113,20 @@ namespace rock::grab_target
     [[nodiscard]] inline constexpr bool isDetachedGoreLayer(std::uint32_t layer) noexcept
     {
         return layer == collision_layer_policy::FO4_LAYER_DEADBIP;
+    }
+
+    // Caller must already have verified a dead NPC reference. Dismembered
+    // chunks can retain that actor's scene ancestry while using debris physics.
+    // Creature chunks such as the mongrel's Dome/Snoot use CLUTTER instead.
+    [[nodiscard]] inline constexpr Kind classifyDeadActorPhysicalTarget(
+        bool dynamicBody, std::uint32_t layer, bool hitOutsideActorRoot) noexcept
+    {
+        if (!dynamicBody) return Kind::BlockedWholeActorBody;
+        if (layer == collision_layer_policy::FO4_LAYER_CLUTTER ||
+            layer == collision_layer_policy::FO4_LAYER_DEBRIS_SMALL ||
+            layer == collision_layer_policy::FO4_LAYER_DEBRIS_LARGE ||
+            (isDetachedGoreLayer(layer) && hitOutsideActorRoot)) return Kind::DetachedGore;
+        if (collision_layer_policy::isActorOrBipedLayer(layer)) return Kind::DeadActorBody;
+        return Kind::BlockedWholeActorBody;
     }
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Hand lifecycle helpers are grouped here so lifecycle state, semantic contact state, and collision suppression share one hand-state policy surface.
  */
@@ -84,6 +86,10 @@ namespace rock::hand_semantic_contact_state
         float z = 0.0f;
     };
 
+    // Sentinel age for a record that has never seen a contact on the seconds
+    // clock; any finite freshness window classifies it as stale.
+    inline constexpr float kSemanticContactNeverSeconds = 1.0e9f;
+
     struct SemanticContactRecord
     {
         bool valid = false;
@@ -94,9 +100,16 @@ namespace rock::hand_semantic_contact_state
         std::uint32_t handBodyId = kInvalidBodyId;
         std::uint32_t otherBodyId = kInvalidBodyId;
         std::uint32_t sequence = 0;
+        /*
+         * Frame fields are publication/sequence identity and stay counters:
+         * the provider V1 contract and frame-count configuration gates consume
+         * them. secondsSinceContact is the rate-independent elapsed-freshness
+         * value internal gameplay windows consume.
+         */
         std::uint32_t contactFrame = 0xFFFF'FFFFu;
         std::uint32_t contactRunStartFrame = 0xFFFF'FFFFu;
         std::uint32_t framesSinceContact = 0xFFFF'FFFFu;
+        float secondsSinceContact = kSemanticContactNeverSeconds;
         bool hasContactPointGame = false;
         bool hasContactNormalGame = false;
         SemanticContactVector contactPointGame{};
@@ -160,7 +173,7 @@ namespace rock::hand_semantic_contact_state
 
     inline bool isFiniteVector(const SemanticContactVector& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     inline bool hasUsableContactPoint(const SemanticContactRecord& record)
@@ -173,10 +186,7 @@ namespace rock::hand_semantic_contact_state
         if (!record.valid || !record.hasContactNormalGame || !isFiniteVector(record.contactNormalGame)) {
             return false;
         }
-        const float lengthSquared =
-            record.contactNormalGame.x * record.contactNormalGame.x +
-            record.contactNormalGame.y * record.contactNormalGame.y +
-            record.contactNormalGame.z * record.contactNormalGame.z;
+        const float lengthSquared = vector_math::lengthSquared(record.contactNormalGame);
         return std::isfinite(lengthSquared) && lengthSquared > 1.0e-6f;
     }
 
@@ -273,14 +283,29 @@ namespace rock::hand_semantic_contact_state
             }
             auto stored = record;
             stored.framesSinceContact = 0;
+            stored.secondsSinceContact = 0.0f;
             _records[semanticContactSlotForRole(stored.role)] = stored;
         }
 
-        void advanceFrames()
+        /*
+         * Advance both clocks once per game frame: the frame counter always
+         * counts publications; the seconds clock accumulates only measured
+         * game time (pass zero for an invalid or unmeasurable frame so
+         * freshness never advances by fabricated time).
+         */
+        void advance(float validDeltaSeconds)
         {
+            const float delta =
+                std::isfinite(validDeltaSeconds) && validDeltaSeconds > 0.0f ? validDeltaSeconds : 0.0f;
             for (auto& record : _records) {
-                if (record.valid && record.framesSinceContact < 0xFFFF'FFFFu) {
+                if (!record.valid) {
+                    continue;
+                }
+                if (record.framesSinceContact < 0xFFFF'FFFFu) {
                     ++record.framesSinceContact;
+                }
+                if (record.secondsSinceContact < kSemanticContactNeverSeconds) {
+                    record.secondsSinceContact += delta;
                 }
             }
         }
@@ -293,6 +318,21 @@ namespace rock::hand_semantic_contact_state
                     continue;
                 }
                 if (record.framesSinceContact > maxFramesSinceContact) {
+                    continue;
+                }
+                result.add(record);
+            }
+            return result;
+        }
+
+        SemanticContactCollection collectFreshForBodyWithinSeconds(std::uint32_t targetBodyId, float maxAgeSeconds) const
+        {
+            SemanticContactCollection result{};
+            for (const auto& record : _records) {
+                if (!record.valid || record.handBodyId == kInvalidBodyId || record.otherBodyId != targetBodyId) {
+                    continue;
+                }
+                if (!(record.secondsSinceContact <= maxAgeSeconds)) {
                     continue;
                 }
                 result.add(record);
@@ -326,7 +366,7 @@ namespace rock::hand_semantic_contact_state
         bool enabled,
         const SemanticContactRecord& record,
         std::uint32_t targetBodyId,
-        std::uint32_t maxFramesSinceContact)
+        float maxAgeSeconds)
     {
         if (!enabled) {
             return { false, "disabled" };
@@ -337,7 +377,7 @@ namespace rock::hand_semantic_contact_state
         if (targetBodyId == kInvalidBodyId || record.otherBodyId != targetBodyId) {
             return { false, "targetMismatch" };
         }
-        if (record.framesSinceContact > maxFramesSinceContact) {
+        if (!(record.secondsSinceContact <= maxAgeSeconds)) {
             return { false, "staleContact" };
         }
         if (record.role == hand_collider_semantics::HandColliderRole::PalmAnchor) {
@@ -357,254 +397,10 @@ namespace rock::hand_semantic_contact_state
 
 namespace rock::hand_collision_suppression_math
 {
-    /*
-     * ROCK suppresses its own hand bodies during physical grabs because the hand body
-     * is the constraint driver, not an obstacle the held object should keep solving
-     * against. FO4VR Ghidra analysis confirms collision-filter bit 14 still
-     * disables hknp pair filtering. ROCK deliberately avoids the native body
-     * deactivation path here because generated bodies do not always have the
-     * internal table entry that function expects.
-     */
-    inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
-    inline constexpr std::uint32_t kNoCollideBit = 1u << 14;
-
-    struct SuppressionState
-    {
-        bool active = false;
-        bool wasNoCollideBeforeSuppression = false;
-        std::uint32_t bodyId = kInvalidBodyId;
-    };
-
-    struct DelayedRestoreState
-    {
-        bool pending = false;
-        float remainingSeconds = 0.0f;
-        std::uint32_t bodyId = kInvalidBodyId;
-        std::uint32_t bodyCount = 0;
-    };
-
-    struct SuppressionBeginResult
-    {
-        bool stored = false;
-        bool firstSuppression = false;
-        bool wasNoCollideBeforeSuppression = false;
-        std::uint32_t disabledFilter = 0;
-    };
-
-    template <std::size_t Count>
-    struct SuppressionSet
-    {
-        std::array<SuppressionState, Count> entries{};
-    };
-
+    // Configuration parsing still uses this pure sanitizer. Runtime lease and
+    // delayed-restore ownership now lives in CollisionSuppressionRegistry.h.
     inline float sanitizeDelaySeconds(float seconds)
     {
         return std::isfinite(seconds) && seconds > 0.0f ? seconds : 0.0f;
-    }
-
-    inline std::uint32_t beginSuppression(SuppressionState& state, std::uint32_t bodyId, std::uint32_t currentFilter)
-    {
-        if (!state.active || state.bodyId != bodyId) {
-            state.active = true;
-            state.wasNoCollideBeforeSuppression = (currentFilter & kNoCollideBit) != 0;
-            state.bodyId = bodyId;
-        }
-
-        return currentFilter | kNoCollideBit;
-    }
-
-    inline std::uint32_t restoreFilter(const SuppressionState& state, std::uint32_t currentFilter)
-    {
-        return state.wasNoCollideBeforeSuppression ? (currentFilter | kNoCollideBit) : (currentFilter & ~kNoCollideBit);
-    }
-
-    inline void clear(SuppressionState& state)
-    {
-        state.active = false;
-        state.wasNoCollideBeforeSuppression = false;
-        state.bodyId = kInvalidBodyId;
-    }
-
-    inline void clear(DelayedRestoreState& state)
-    {
-        state.pending = false;
-        state.remainingSeconds = 0.0f;
-        state.bodyId = kInvalidBodyId;
-        state.bodyCount = 0;
-    }
-
-    template <std::size_t Count>
-    inline void clear(SuppressionSet<Count>& set)
-    {
-        for (auto& entry : set.entries) {
-            clear(entry);
-        }
-    }
-
-    template <std::size_t Count>
-    inline std::size_t activeCount(const SuppressionSet<Count>& set)
-    {
-        std::size_t count = 0;
-        for (const auto& entry : set.entries) {
-            if (entry.active) {
-                ++count;
-            }
-        }
-        return count;
-    }
-
-    template <std::size_t Count>
-    inline bool hasActive(const SuppressionSet<Count>& set)
-    {
-        return activeCount(set) > 0;
-    }
-
-    template <std::size_t Count>
-    inline SuppressionState* findSuppressionState(SuppressionSet<Count>& set, std::uint32_t bodyId)
-    {
-        if (bodyId == kInvalidBodyId) {
-            return nullptr;
-        }
-        for (auto& entry : set.entries) {
-            if (entry.active && entry.bodyId == bodyId) {
-                return &entry;
-            }
-        }
-        return nullptr;
-    }
-
-    template <std::size_t Count>
-    inline const SuppressionState* findSuppressionState(const SuppressionSet<Count>& set, std::uint32_t bodyId)
-    {
-        if (bodyId == kInvalidBodyId) {
-            return nullptr;
-        }
-        for (const auto& entry : set.entries) {
-            if (entry.active && entry.bodyId == bodyId) {
-                return &entry;
-            }
-        }
-        return nullptr;
-    }
-
-    template <std::size_t Count>
-    inline SuppressionBeginResult beginSuppression(SuppressionSet<Count>& set, std::uint32_t bodyId, std::uint32_t currentFilter)
-    {
-        SuppressionBeginResult result{};
-        result.disabledFilter = currentFilter | kNoCollideBit;
-        if (bodyId == kInvalidBodyId) {
-            return result;
-        }
-
-        if (auto* existing = findSuppressionState(set, bodyId)) {
-            result.stored = true;
-            result.firstSuppression = false;
-            result.wasNoCollideBeforeSuppression = existing->wasNoCollideBeforeSuppression;
-            return result;
-        }
-
-        for (auto& entry : set.entries) {
-            if (!entry.active) {
-                entry.active = true;
-                entry.wasNoCollideBeforeSuppression = (currentFilter & kNoCollideBit) != 0;
-                entry.bodyId = bodyId;
-                result.stored = true;
-                result.firstSuppression = true;
-                result.wasNoCollideBeforeSuppression = entry.wasNoCollideBeforeSuppression;
-                return result;
-            }
-        }
-
-        return result;
-    }
-
-    template <std::size_t Count>
-    inline std::uint32_t restoreFilter(const SuppressionSet<Count>& set, std::uint32_t bodyId, std::uint32_t currentFilter)
-    {
-        const auto* entry = findSuppressionState(set, bodyId);
-        return entry ? restoreFilter(*entry, currentFilter) : currentFilter;
-    }
-
-    template <std::size_t Count>
-    inline bool wasNoCollideBeforeSuppression(const SuppressionSet<Count>& set, std::uint32_t bodyId)
-    {
-        const auto* entry = findSuppressionState(set, bodyId);
-        return entry && entry->wasNoCollideBeforeSuppression;
-    }
-
-    template <std::size_t Count>
-    inline std::uint32_t firstActiveBodyId(const SuppressionSet<Count>& set)
-    {
-        for (const auto& entry : set.entries) {
-            if (entry.active) {
-                return entry.bodyId;
-            }
-        }
-        return kInvalidBodyId;
-    }
-
-    inline bool beginDelayedRestore(DelayedRestoreState& restoreState, const SuppressionState& suppressionState, float delaySeconds)
-    {
-        const float sanitizedDelay = sanitizeDelaySeconds(delaySeconds);
-        if (!suppressionState.active || suppressionState.bodyId == kInvalidBodyId || sanitizedDelay <= 0.0f) {
-            clear(restoreState);
-            return false;
-        }
-
-        restoreState.pending = true;
-        restoreState.remainingSeconds = sanitizedDelay;
-        restoreState.bodyId = suppressionState.bodyId;
-        restoreState.bodyCount = 1;
-        return true;
-    }
-
-    template <std::size_t Count>
-    inline bool beginDelayedRestore(DelayedRestoreState& restoreState, const SuppressionSet<Count>& suppressionSet, float delaySeconds)
-    {
-        const float sanitizedDelay = sanitizeDelaySeconds(delaySeconds);
-        const std::size_t count = activeCount(suppressionSet);
-        if (count == 0 || sanitizedDelay <= 0.0f) {
-            clear(restoreState);
-            return false;
-        }
-
-        restoreState.pending = true;
-        restoreState.remainingSeconds = sanitizedDelay;
-        restoreState.bodyId = firstActiveBodyId(suppressionSet);
-        restoreState.bodyCount = static_cast<std::uint32_t>(count);
-        return true;
-    }
-
-    inline bool advanceDelayedRestore(DelayedRestoreState& restoreState, const SuppressionState& suppressionState, float deltaSeconds)
-    {
-        if (!restoreState.pending) {
-            return false;
-        }
-
-        if (!suppressionState.active || suppressionState.bodyId != restoreState.bodyId) {
-            clear(restoreState);
-            return false;
-        }
-
-        const float sanitizedDelta = sanitizeDelaySeconds(deltaSeconds);
-        restoreState.remainingSeconds = (std::max)(0.0f, restoreState.remainingSeconds - sanitizedDelta);
-        return restoreState.remainingSeconds <= 0.0f;
-    }
-
-    template <std::size_t Count>
-    inline bool advanceDelayedRestore(DelayedRestoreState& restoreState, const SuppressionSet<Count>& suppressionSet, float deltaSeconds)
-    {
-        if (!restoreState.pending) {
-            return false;
-        }
-
-        if (!hasActive(suppressionSet)) {
-            clear(restoreState);
-            return false;
-        }
-
-        const float sanitizedDelta = sanitizeDelaySeconds(deltaSeconds);
-        restoreState.remainingSeconds = (std::max)(0.0f, restoreState.remainingSeconds - sanitizedDelta);
-        return restoreState.remainingSeconds <= 0.0f;
     }
 }

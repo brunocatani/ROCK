@@ -2,6 +2,7 @@
 
 #include "physics-interaction/collision/PhysicsShapeCastMath.h"
 #include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/native/PhysicsQueryResources.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Havok/hknpAllHitsCollector.h"
@@ -10,7 +11,7 @@
 
 namespace rock::physics_shape_cast
 {
-    constexpr std::uint32_t kSelectionQueryCollisionFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
+    constexpr std::uint32_t kSelectionQueryCollisionFilterInfo = selection_query_policy::kShapeCastFilterInfo;
 
     struct SphereCastInput
     {

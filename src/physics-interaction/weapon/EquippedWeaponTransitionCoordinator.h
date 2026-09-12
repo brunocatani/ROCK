@@ -3,6 +3,7 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
 
+#include <chrono>
 #include <cstdint>
 
 namespace rock
@@ -28,6 +29,7 @@ namespace rock
             ExpectedIdentityTimeout,
             NativeAnimationHandoff,
             WeaponNoLongerDrawn,
+            IntentionalShoulderSheathe,
             RecoveryExhausted,
             ProviderLost,
             Shutdown,
@@ -57,10 +59,23 @@ namespace rock
             bool menuBlocking{ false };
             bool compatibilityBlocking{ false };
             std::uint32_t nativeWeaponState{ 0 };
+            // Exact identity lease for ROCK's physical shoulder sheath. It
+            // exempts only the instance ROCK deliberately transitioned; it is
+            // never a general permission for equipped weapons to stay hidden.
+            bool intentionalShoulderSheathActive{ false };
+            std::uint32_t shoulderSheathFormID{ 0 };
+            std::uintptr_t shoulderSheathInstanceData{ 0 };
+            std::uint32_t shoulderSheathEquipIndex{ 0 };
             // Native reload/bolt animation owns the weapon presentation while
             // this is set. Equip recovery must neither unhide nor reattach the
             // same graph during that authority window.
             bool nativeWeaponAnimationActive{ false };
+            // Solved LEFT-carry weapon world from the latest grip update. The
+            // left-hand bridge uses it as its rotation carrier; a live weapon
+            // root read at this frame phase would return the right-hand glue
+            // or draw-animation orientation instead of the rendered carry.
+            bool leftCarrySolvedWeaponWorldValid{ false };
+            RE::NiTransform leftCarrySolvedWeaponWorld{};
         };
 
         struct ExpectedIdentity
@@ -79,11 +94,6 @@ namespace rock
             const ExpectedIdentity& expected,
             Source source,
             const EquipVisualBridge::BeginInput& bridgeInput);
-        // Called synchronously after the verified native completion helper.
-        // Keeps the bridge visible and immediately owns any exact native-child
-        // cull before the renderer can observe both weapon instances.
-        void synchronizeAfterInstantCompletion();
-        void failHeldCompletion(const char* reason);
         void requestCurrentWeaponReconcile(Source source) noexcept;
         void update(const FrameInput& input);
         void shutdown();
@@ -126,7 +136,12 @@ namespace rock
             const char* reason,
             Identity previousIdentity = {},
             std::uintptr_t previousNativeInstanceNode = 0);
-        void finish(const char* reason, bool releaseSceneGraph);
+        void resetDrawRecoveryClock(bool armed) noexcept;
+        [[nodiscard]] float sampleDrawRecoveryWallDelta() noexcept;
+        void finish(
+            TerminalResult result,
+            const char* reason,
+            bool releaseSceneGraph);
 
         EquipVisualBridge _bridge;
         equipped_weapon_transition_policy::State _policyState{};
@@ -139,8 +154,17 @@ namespace rock
         Source _source{ Source::ObservedEquip };
         Source _requestedCurrentSource{ Source::MenuExit };
         float _activeSeconds{ 0.0f };
+        /*
+         * Wall-clock recovery clock by contract: draw and presentation
+         * deadlines must expire even when the game clock stalls because the
+         * native work they supervise can continue independently. This is
+         * deliberately NOT gameplay time.
+         */
+        float _drawRecoveryElapsedSeconds{ 0.0f };
+        std::chrono::steady_clock::time_point _drawRecoveryLastUpdateAt{};
         bool _observationInitialized{ false };
         bool _active{ false };
+        bool _drawRecoveryClockArmed{ false };
         bool _waitingForExpectedIdentity{ false };
         bool _requestCurrentPending{ false };
         bool _wasMenuBlocking{ false };

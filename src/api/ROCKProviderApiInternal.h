@@ -2,6 +2,8 @@
 
 #include "api/ROCKProviderApi.h"
 #include "api/TouchGrabRegistry.h"
+#include "physics-interaction/timing/GameFrameTimingPolicy.h"
+#include "physics-interaction/weapon/WeaponPartRuntime.h"
 
 namespace rock
 {
@@ -10,6 +12,7 @@ namespace rock
 
 namespace rock::provider
 {
+    bool isPowerArmorGrabOwnerRegisteredV1(std::uint64_t ownerToken);
     struct RockProviderWeaponPartTargetQueryV1
     {
         std::uint64_t weaponGenerationKey{ 0 };
@@ -55,15 +58,26 @@ namespace rock::provider
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
     bool getEquippedWeaponHandlingAuthorityV1(
         RockProviderEquippedWeaponHandlingRequestV1& outRequest);
+    bool ownsEquippedWeaponHandlingAuthorityV1(
+        std::uint64_t ownerToken,
+        std::uint32_t requiredFlags);
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
     std::uint32_t currentNativeAnimationAuthorityFlagsV1();
     void refreshNativeAnimationAuthorityLeasesV1();
+    /*
+     * Dispatches one animation phase with the frame's shared timing identity.
+     * The published context deltaSeconds is truthful: an unmeasurable frame
+     * publishes zero, never a fabricated nominal-rate value. Every workspace
+     * consumer guards for non-positive deltas before integrating.
+     */
     void dispatchAnimationPhaseCallbacksV1(
         RockProviderAnimationPhaseV1 phase,
-        float deltaSeconds);
+        const game_frame_timing_policy::GameFrameTiming& timing);
     bool resolveWeaponPartTargetV1(
         const RockProviderWeaponPartTargetQueryV1& query,
         RockProviderWeaponPartTargetResolutionV1& outResolution);
+    // Value snapshot for main-thread grip markers; never retains provider pointers.
+    std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets);
     std::uint32_t copyWeaponPartDriveTargetsV1(
         RockProviderWeaponPartDriveTargetV1* outTargets,
         std::uint32_t maxTargets,

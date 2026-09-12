@@ -62,9 +62,11 @@ namespace rock::held_weapon_equip_state_policy
 
     /*
      * FO4VR PlayerCharacter::DrawWeaponMagicHands(true) returns immediately
-     * only for Drawing/Drawn. Sheathed, WantToSheathe, and Sheathing are
-     * valid submissions; the latter two reverse an in-progress holster. The
-     * coordinator retries this request only through a bounded state machine.
+     * only for Drawing/Drawn. Other states reach the native ActionDraw gate,
+     * but the action can reject while a menu-time holster still owns the graph.
+     * Callers that recover an equip must wait for stable Sheathed and repeat
+     * the verified equip-draw preparation. Direct shoulder retrieval may still
+     * ask the engine to reverse its own intentional holster.
      */
     [[nodiscard]] inline constexpr bool shouldSubmitDrawFollowup(
         const std::uint32_t nativeState) noexcept
@@ -77,6 +79,42 @@ namespace rock::held_weapon_equip_state_policy
             return true;
         case NativeWeaponState::Drawing:
         case NativeWeaponState::Drawn:
+        default:
+            return false;
+        }
+    }
+
+    /*
+     * FO4VR PlayerCharacter::DrawWeaponMagicHands(false) returns immediately
+     * only for Sheathed/Sheathing. Raw 1.2.72 disassembly at 0x140F78D10
+     * shows that WantToDraw, Drawing, Drawn, and WantToSheathe all submit
+     * native state 5, so a physical stash can safely reverse an in-flight
+     * draw without removing the equipped inventory instance.
+     */
+    [[nodiscard]] inline constexpr bool shouldSubmitSheatheFollowup(
+        const std::uint32_t nativeState) noexcept
+    {
+        switch (static_cast<NativeWeaponState>(nativeState)) {
+        case NativeWeaponState::WantToDraw:
+        case NativeWeaponState::Drawing:
+        case NativeWeaponState::Drawn:
+        case NativeWeaponState::WantToSheathe:
+            return true;
+        case NativeWeaponState::Sheathed:
+        case NativeWeaponState::Sheathing:
+        default:
+            return false;
+        }
+    }
+
+    [[nodiscard]] inline constexpr bool isShoulderStashedPresentationState(
+        const std::uint32_t nativeState) noexcept
+    {
+        switch (static_cast<NativeWeaponState>(nativeState)) {
+        case NativeWeaponState::Sheathed:
+        case NativeWeaponState::WantToSheathe:
+        case NativeWeaponState::Sheathing:
+            return true;
         default:
             return false;
         }

@@ -1,12 +1,12 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 #include <cmath>
 #include <cstdint>
 
 namespace rock::runtime_state_policy
 {
-    inline constexpr float kFallbackDeltaSeconds = 1.0f / 90.0f;
-    inline constexpr float kMaximumFrameDeltaSeconds = 0.1f;
     inline constexpr float kDefaultMovementThresholdGameUnits = 0.05f;
 
     struct Vec3
@@ -15,11 +15,6 @@ namespace rock::runtime_state_policy
         float y = 0.0f;
         float z = 0.0f;
     };
-
-    [[nodiscard]] inline float sanitizeFrameDelta(float rawDeltaSeconds)
-    {
-        return (rawDeltaSeconds > 0.0f && rawDeltaSeconds <= kMaximumFrameDeltaSeconds) ? rawDeltaSeconds : kFallbackDeltaSeconds;
-    }
 
     [[nodiscard]] inline Vec3 subtract(Vec3 lhs, Vec3 rhs)
     {
@@ -32,7 +27,7 @@ namespace rock::runtime_state_policy
 
     [[nodiscard]] inline float lengthSquared(Vec3 value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     struct PlayerSpaceTrackerState

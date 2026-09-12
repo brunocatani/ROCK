@@ -12,11 +12,25 @@
 #include <vector>
 
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
+#include "physics-interaction/hand/ArmPresentationPolicy.h"
+#include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
 namespace rock
 {
+    /*
+     * Rendered: the root flattened tree as FRIK left it, its solve to a ROCK
+     * claim included. Controller: each hand chain (forearm, hand, fingers)
+     * carried to the isolated controller hand, which is what every consumer
+     * measuring against the controller read before FRIK API v2 deferred claims.
+     */
+    enum class SkeletonBoneCaptureSpace : std::uint8_t
+    {
+        Rendered,
+        Controller,
+    };
+
     struct DirectSkeletonBoneEntry
     {
         std::string name;
@@ -24,6 +38,10 @@ namespace rock
         int parentTreeIndex = -1;
         int drawableParentSnapshotIndex = -1;
         RE::NiTransform world{};
+        // The bone's refNode world: the scene node the array was synced from
+        // (FRIK's arm solve writes it), before FRIK's palm blend on the array.
+        RE::NiTransform nodeWorld{};
+        bool nodeWorldValid = false;
         bool included = false;
     };
 
@@ -33,6 +51,7 @@ namespace rock
         bool inPowerArmor = false;
         skeleton_bone_debug_math::DebugSkeletonBoneMode mode = skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
         skeleton_bone_debug_math::SkeletonBoneSnapshotSource source = skeleton_bone_debug_math::SkeletonBoneSnapshotSource::None;
+        SkeletonBoneCaptureSpace space = SkeletonBoneCaptureSpace::Rendered;
         const void* skeleton = nullptr;
         const void* boneTree = nullptr;
         int totalBoneCount = 0;
@@ -47,7 +66,22 @@ namespace rock
         bool capture(
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             skeleton_bone_debug_math::DebugSkeletonBoneSource source,
+            SkeletonBoneCaptureSpace space,
             DirectSkeletonBoneSnapshot& outSnapshot);
+        /*
+         * Re-solve one cached arm (upper arm and twists, forearm bones, hand,
+         * fingers) so the hand takes handDelta exactly and the elbow follows
+         * with both bone lengths kept (ArmPresentationPolicy), in the tree
+         * and its refNodes. The whole arm is validated before the first
+         * write. False when nothing was written; outElbowMoveGameUnits is how
+         * far the elbow left FRIK's solve, outReachDeficitGameUnits how far
+         * the wrist lay beyond the straight arm.
+         */
+        bool presentCachedArm(
+            rendered_bone_transport_policy::HandChainSide side,
+            const RE::NiTransform& handDelta,
+            float& outElbowMoveGameUnits,
+            float& outReachDeficitGameUnits);
         void resetCache();
 
     private:
@@ -57,6 +91,10 @@ namespace rock
             int treeIndex = -1;
             int parentTreeIndex = -1;
             int drawableParentSnapshotIndex = -1;
+            rendered_bone_transport_policy::HandChainSide chainSide = rendered_bone_transport_policy::HandChainSide::None;
+            // Presentation: which side and segment of the arm the bone belongs to.
+            rendered_bone_transport_policy::HandChainSide armSide = rendered_bone_transport_policy::HandChainSide::None;
+            arm_presentation_policy::ArmSegment armSegment = arm_presentation_policy::ArmSegment::None;
             bool included = false;
         };
 
@@ -67,7 +105,7 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneMode mode,
             bool inPowerArmor);
 
-        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot);
+        bool captureFromCachedTree(DirectSkeletonBoneSnapshot& outSnapshot, SkeletonBoneCaptureSpace space);
 
         const void* _cachedSkeleton = nullptr;
         void* _cachedBoneTree = nullptr;
@@ -103,17 +141,19 @@ namespace rock
          */
         bool resolve()
         {
+            // Rendered on purpose: this cache is the controller-hand isolation's input.
             DirectSkeletonBoneSnapshot snapshot{};
             if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                     skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                    SkeletonBoneCaptureSpace::Rendered,
                     snapshot)) {
                 clearResolvedState();
                 return false;
             }
 
-            RE::NiTransform rightHand{};
-            RE::NiTransform leftHand{};
-            if (!findBone(snapshot, "RArm_Hand", rightHand) || !findBone(snapshot, "LArm_Hand", leftHand)) {
+            const DirectSkeletonBoneEntry* rightHand = findBone(snapshot, "RArm_Hand");
+            const DirectSkeletonBoneEntry* leftHand = findBone(snapshot, "LArm_Hand");
+            if (!rightHand || !leftHand) {
                 clearResolvedState();
                 return false;
             }
@@ -127,8 +167,12 @@ namespace rock
             _skeleton = snapshot.skeleton;
             _boneTree = snapshot.boneTree;
             _inPowerArmor = snapshot.inPowerArmor;
-            _rightHandWorld = rightHand;
-            _leftHandWorld = leftHand;
+            _rightHandWorld = rightHand->world;
+            _leftHandWorld = leftHand->world;
+            _rightHandNodeWorld = rightHand->nodeWorld;
+            _leftHandNodeWorld = leftHand->nodeWorld;
+            _rightHandNodeWorldValid = rightHand->nodeWorldValid;
+            _leftHandNodeWorldValid = leftHand->nodeWorldValid;
             _ready = true;
 
             if (changed) {
@@ -151,6 +195,34 @@ namespace rock
             return isLeft ? _leftHandWorld : _rightHandWorld;
         }
 
+        /*
+         * The hand bone's refNode world (FRIK's solved body hand, unblended).
+         * False when the tree carries no readable node for the bone.
+         */
+        [[nodiscard]] bool tryGetNodeWorldTransform(bool isLeft, RE::NiTransform& outWorld) const
+        {
+            const bool valid = isLeft ? _leftHandNodeWorldValid : _rightHandNodeWorldValid;
+            outWorld = valid ? (isLeft ? _leftHandNodeWorld : _rightHandNodeWorld) : RE::NiTransform{};
+            return _ready && valid;
+        }
+
+        /*
+         * End of ROCK's frame: move the rendered hand by the change the hand
+         * world authority made to its claim since FRIK consumed it, and
+         * re-solve the arm behind it.
+         */
+        bool presentArm(bool isLeft, const RE::NiTransform& handDelta, float& outElbowMoveGameUnits, float& outReachDeficitGameUnits)
+        {
+            outElbowMoveGameUnits = 0.0f;
+            outReachDeficitGameUnits = 0.0f;
+            return isReady() &&
+                   _reader.presentCachedArm(
+                       isLeft ? rendered_bone_transport_policy::HandChainSide::Left : rendered_bone_transport_policy::HandChainSide::Right,
+                       handDelta,
+                       outElbowMoveGameUnits,
+                       outReachDeficitGameUnits);
+        }
+
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }
         [[nodiscard]] const void* getBoneTree() const { return _boneTree; }
         [[nodiscard]] bool isInPowerArmor() const { return _inPowerArmor; }
@@ -163,18 +235,21 @@ namespace rock
             _inPowerArmor = false;
             _rightHandWorld = {};
             _leftHandWorld = {};
+            _rightHandNodeWorld = {};
+            _leftHandNodeWorld = {};
+            _rightHandNodeWorldValid = false;
+            _leftHandNodeWorldValid = false;
             _ready = false;
         }
 
-        static bool findBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name, RE::NiTransform& outTransform)
+        static const DirectSkeletonBoneEntry* findBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
         {
             for (const auto& bone : snapshot.bones) {
                 if (bone.name == name) {
-                    outTransform = bone.world;
-                    return true;
+                    return &bone;
                 }
             }
-            return false;
+            return nullptr;
         }
 
         DirectSkeletonBoneReader _reader;
@@ -183,6 +258,10 @@ namespace rock
         bool _inPowerArmor = false;
         RE::NiTransform _rightHandWorld{};
         RE::NiTransform _leftHandWorld{};
+        RE::NiTransform _rightHandNodeWorld{};
+        RE::NiTransform _leftHandNodeWorld{};
+        bool _rightHandNodeWorldValid = false;
+        bool _leftHandNodeWorldValid = false;
         bool _ready = false;
     };
 }
@@ -340,6 +419,11 @@ namespace rock::root_flattened_finger_skeleton_runtime
         return set;
     }
 
+    bool buildFingerSkeletonSnapshot(
+        const DirectSkeletonBoneSnapshot& boneSnapshot,
+        bool isLeft,
+        Snapshot& outSnapshot,
+        std::string* outMissingBoneName = nullptr);
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
 }
 

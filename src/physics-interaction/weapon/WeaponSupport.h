@@ -17,6 +17,8 @@
  */
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
+#include "physics-interaction/weapon/immersive/ImmersiveWeaponPolicy.h"
 
 #include <cstdint>
 
@@ -27,6 +29,13 @@ namespace rock::weapon_support_authority_policy
         FullTwoHandedSolver = 0,
         VisualOnlySupport = 1,
     };
+
+    [[nodiscard]] inline constexpr bool
+    canCarryAfterFiringGripDetach(
+        const WeaponSupportAuthorityMode mode) noexcept
+    {
+        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
+    }
 
     /*
      * The proximity contract applies uniformly to equipped weapons. Provider-
@@ -65,16 +74,89 @@ namespace rock::weapon_support_authority_policy
         return true;
     }
 
-    inline constexpr bool canPromoteSupportGripToFiringGrip(
+    /*
+     * A close core support grip cannot safely steer the weapon because its two
+     * controller anchors are nearly coincident, but it still represents a real
+     * two-hand firing hold. Give that hold recoil-only authority without
+     * upgrading provider AttachOnly glue or changing the full two-hand solver.
+     */
+    inline constexpr bool shouldApplyVisualOnlySupportRecoilAssist(
         WeaponSupportAuthorityMode mode,
-        bool authoredSupportGrip)
+        bool supportGripActive,
+        bool providerAuthorityActive,
+        bool attachOnly)
     {
-        // A non-touch authored seat may be used for presentation under the
-        // visual-only pistol/near-grip contract, but it must never turn that
-        // acquisition into weapon authority. A true-touch dynamic visual grip
-        // retains the established explicit handoff path.
-        return mode != WeaponSupportAuthorityMode::VisualOnlySupport ||
-               !authoredSupportGrip;
+        return mode == WeaponSupportAuthorityMode::VisualOnlySupport &&
+               supportGripActive &&
+               !providerAuthorityActive &&
+               !attachOnly;
+    }
+
+    inline constexpr bool shouldUseDynamicSupportAcquisition(
+        WeaponSupportAuthorityMode mode,
+        bool authoredSupportGrip,
+        bool providerAuthorityActive,
+        bool attachOnly)
+    {
+        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver &&
+               !authoredSupportGrip &&
+               !providerAuthorityActive &&
+               !attachOnly;
+    }
+
+    inline constexpr bool canPromoteSupportGripToFiringGrip(
+        bool supportGripActive,
+        bool attachOnly)
+    {
+        // Authored versus dynamic is pose selection, while VisualOnlySupport
+        // controls transform authority before a handoff. Neither changes an
+        // active grip's handoff capability. AttachOnly is the sole grip
+        // contract that may never inherit firing-grip ownership; promotion is
+        // still independently gated by ambidextrous mode, infrastructure, and
+        // firing-grip cylinder at the call site.
+        return supportGripActive && !attachOnly;
+    }
+
+    struct DynamicHandoffGripCaptureInput
+    {
+        bool normalSupportAcquisition{ false };
+        bool ambidextrousHandoffEnabled{ false };
+        bool firingGripProximityAuthorityEnabled{ false };
+        bool providerPartAuthorityActive{ false };
+        bool authoredCaptureEligible{ false };
+        bool supportPalmInsideHandoffZone{ false };
+        bool authoredSeatInsideHandoffZone{ false };
+    };
+
+    [[nodiscard]] inline constexpr float firingGripCaptureReach(
+        const bool acquiredThroughFiringGripZone,
+        const float reattachReach,
+        const float supportPromotionReach) noexcept
+    {
+        return acquiredThroughFiringGripZone ? reattachReach : supportPromotionReach;
+    }
+
+    /*
+     * Support-pose selection must not remove the separate dynamic ambidextrous
+     * handoff station at the firing grip. This bypass exists only during a
+     * two-hand acquisition with the live support palm inside the
+     * lateral cylinders. Exact provider authority remains ahead of it. If a
+     * usable authored seat is itself inside that same zone (the common pistol
+     * case), retain the authored seat instead of replacing it with dynamic.
+     */
+    [[nodiscard]] inline constexpr bool shouldCaptureDynamicHandoffGrip(
+        const DynamicHandoffGripCaptureInput& input) noexcept
+    {
+        if (!input.normalSupportAcquisition ||
+            !input.ambidextrousHandoffEnabled ||
+            !input.firingGripProximityAuthorityEnabled ||
+            input.providerPartAuthorityActive ||
+            !input.supportPalmInsideHandoffZone) {
+            return false;
+        }
+
+        return !input.authoredCaptureEligible ||
+               !input.authoredSeatInsideHandoffZone;
     }
 
     template <class Transform>
@@ -195,17 +277,30 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool dropRequested{ false };
     };
 
+    enum class PrimaryOnlyStartSource : std::uint8_t
+    {
+        GripInput,
+        HeldWeaponEquip,
+        ShoulderRetrieval,
+    };
+
     struct PendingPrimaryOnlyStartInput
     {
         bool pending{ false };
         bool gripHeld{ false };
+        // Accepted equip/draw transfers keep their physical hand while the
+        // equipped node resolves, even if the initiating squeeze has opened.
+        PrimaryOnlyStartSource source{ PrimaryOnlyStartSource::GripInput };
         bool ownershipModeEnabled{ true };
         bool primaryPoseBlockerAvailable{ true };
     };
 
     struct FiringGripModeAvailability
     {
+        // Both provider and integrated detach follow whichever physical hand
+        // currently owns the firing role.
         bool primaryDetachEnabled{ false };
+        bool integratedDetachEnabled{ false };
         bool ambidextrousHandoffAvailable{ false };
     };
 
@@ -213,18 +308,24 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         FiringGripModeAvailability modes{};
         bool handIsLeft{ false };
-        bool gripHeld{ false };
+        bool holdingLooseWeapon{ false };
     };
 
-    [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(const FiringGripModeAvailability& modes) noexcept
+    [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(
+        const FiringGripModeAvailability& modes) noexcept
     {
-        return modes.primaryDetachEnabled || modes.ambidextrousHandoffAvailable;
+        return modes.primaryDetachEnabled ||
+               modes.integratedDetachEnabled ||
+               modes.ambidextrousHandoffAvailable;
     }
 
     [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(const HeldWeaponEquipOwnershipInput& input) noexcept
     {
-        return input.gripHeld &&
+        // Trigger equip runs before loose-grab release. The retained weapon
+        // owns the hand choice even on a simultaneous trigger/release frame.
+        return input.holdingLooseWeapon &&
                (input.modes.primaryDetachEnabled ||
+                   input.modes.integratedDetachEnabled ||
                    (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
     }
 
@@ -233,11 +334,30 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return gripZoneEquipEnabled;
     }
 
+    [[nodiscard]] inline constexpr bool shouldTrackHeldWeaponGripFrame(
+        const bool holdingLooseWeapon,
+        const bool gripZoneEquipEnabled,
+        const bool equipOwnershipEligible) noexcept
+    {
+        return holdingLooseWeapon &&
+               (gripZoneEquipEnabled || equipOwnershipEligible);
+    }
+
     [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(
         bool primaryDetachEnabled,
-        bool primaryGripHeld) noexcept
+        bool primaryGripHeld,
+        bool lastGripReleaseDropEnabled) noexcept
     {
-        return !primaryDetachEnabled || primaryGripHeld;
+        // In PrimaryOnly the firing grip is the weapon's only carrier, so a
+        // detach release here can only drop the weapon. With the last-grip
+        // drop disabled that release is refused under either input mode.
+        if (primaryDetachEnabled && !lastGripReleaseDropEnabled) {
+            return true;
+        }
+
+        // Firing grips always latch. The next press is an explicit logical
+        // release, including carries created by a non-detach ownership source.
+        return primaryGripHeld;
     }
 
     [[nodiscard]] inline constexpr bool featureAvailable(
@@ -254,11 +374,21 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(const PendingPrimaryOnlyStartInput& input) noexcept
     {
-        // Keep trigger-equip's already-held grip alive across equipped weapon node/collision generation latency.
+        // Physical release is processed by the equipped grip once the chosen
+        // hand takes ownership; it must not silently select native right.
         return input.pending &&
-               input.gripHeld &&
+               (input.gripHeld || input.source != PrimaryOnlyStartSource::GripInput) &&
                input.ownershipModeEnabled &&
                input.primaryPoseBlockerAvailable;
+    }
+
+    [[nodiscard]] inline constexpr bool shouldStartPendingPrimaryOnlyGrip(
+        bool pendingMatchesCurrentWeapon,
+        bool gripHeld,
+        PrimaryOnlyStartSource source) noexcept
+    {
+        return pendingMatchesCurrentWeapon &&
+               (gripHeld || source != PrimaryOnlyStartSource::GripInput);
     }
 
     [[nodiscard]] inline constexpr bool canPreserveManualOwnership(
@@ -273,23 +403,31 @@ namespace rock::equipped_weapon_manual_ownership_policy
     }
 
     /*
-     * A firing-grip release that confirms while the support grab is only a
-     * few frames old is part of the SAME physical gesture (reach-over
+     * A firing-grip release that confirms while the support grab is only
+     * moments old is part of the SAME physical gesture (reach-over
      * takeover) or a grab-synchronized grip flicker - never an independent,
      * deliberate release. Acting on it immediately let a fresh offhand grab
      * steal the firing role one frame after capture (left-firing round-4
-     * break, 2026-07-12). The window must exceed the release-confirm
-     * debounce so the earliest confirm reachable after a grab is always
-     * deferred; ~5 frames (about 110ms at 45Hz) also outlasts short grip
-     * click flickers while staying imperceptible for deliberate takeovers.
+     * break, 2026-07-12). This is an elapsed-time contract (the human
+     * gesture window does not shrink at higher frame rates), tuned to the
+     * historically documented 110 ms: it outlasts short grip click flickers
+     * while staying imperceptible for deliberate takeovers.
      */
-    inline constexpr std::uint32_t kFreshSupportGripPrimaryReleaseDeferFrames = 5;
-    static_assert(kFreshSupportGripPrimaryReleaseDeferFrames > kPrimaryReleaseConfirmFrames,
-        "defer window must outlast the release-confirm debounce or a grab-synchronized release acts on its first confirmable frame");
+    inline constexpr float kFreshSupportGripPrimaryReleaseDeferSeconds = 0.110f;
+    /*
+     * The release-confirm debounce stays a consecutive-publication count
+     * (grip evidence arrives once per frame), so the defer window must
+     * outlast it at the SLOWEST supported game rate (45 FPS) or a
+     * grab-synchronized release acts on its first confirmable frame.
+     */
+    static_assert(
+        kFreshSupportGripPrimaryReleaseDeferSeconds >
+            static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f,
+        "defer window must outlast the release-confirm debounce at every supported rate");
 
-    [[nodiscard]] inline constexpr bool shouldDeferPrimaryReleaseActionForFreshSupportGrip(std::uint32_t supportGripAgeFrames) noexcept
+    [[nodiscard]] inline constexpr bool shouldDeferPrimaryReleaseActionForFreshSupportGrip(float supportGripAgeSeconds) noexcept
     {
-        return supportGripAgeFrames <= kFreshSupportGripPrimaryReleaseDeferFrames;
+        return supportGripAgeSeconds <= kFreshSupportGripPrimaryReleaseDeferSeconds;
     }
 
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(
@@ -373,6 +511,7 @@ namespace rock::weapon_two_handed_grip_math
         bool firingGripOwnershipEnabled{ false };
         bool primaryDetachEnabled{ false };
         bool primaryGripHeld{ false };
+        bool lastGripReleaseDropEnabled{ true };
     };
 
     /*
@@ -420,6 +559,38 @@ namespace rock::weapon_two_handed_grip_math
         return weaponSolverSub(targetGripPointWorld, handSeatCorrection);
     }
 
+    /*
+     * General form of the frozen finger-pose relation. The live skeleton stays
+     * in rawHandWorld while the mesh is moved by rawHandWorld * inverse(seatedHandWorld).
+     * Translation-only seats reduce to virtualizeMeshForTranslatedHandSeat;
+     * bounded surface-aligned seats additionally preserve the exact rotational
+     * hand/mesh relation without moving a live scene node.
+     */
+    template <class Transform>
+    inline Transform virtualizeMeshForSeatedHand(
+        const Transform& meshWorldTransform,
+        const Transform& rawHandWorld,
+        const Transform& seatedHandWorld)
+    {
+        return transform_math::composeTransforms(
+            transform_math::composeTransforms(
+                rawHandWorld,
+                transform_math::invertTransform(seatedHandWorld)),
+            meshWorldTransform);
+    }
+
+    template <class Transform, class Vector>
+    inline Vector virtualizeWorldPointForSeatedHand(
+        const Vector& pointWorld,
+        const Transform& rawHandWorld,
+        const Transform& seatedHandWorld)
+    {
+        const Transform seatedToRawWorld = transform_math::composeTransforms(
+            rawHandWorld,
+            transform_math::invertTransform(seatedHandWorld));
+        return transform_math::localPointToWorld(seatedToRawWorld, pointWorld);
+    }
+
     inline bool canStartSupportGrip(bool touchingSupportPart, bool gripPressed, bool supportHandHoldingObject)
     {
         return touchingSupportPart && gripPressed && !supportHandHoldingObject;
@@ -436,11 +607,29 @@ namespace rock::weapon_two_handed_grip_math
             return SupportReleaseManualAction::EndSupportOnly;
         }
 
-        if (input.primaryGripHeld || !input.primaryDetachEnabled) {
+        // An open firing grip left alone by the support release would drop
+        // the weapon; with the last-grip drop disabled it keeps the weapon.
+        if (input.primaryGripHeld || !input.primaryDetachEnabled ||
+            !input.lastGripReleaseDropEnabled) {
             return SupportReleaseManualAction::KeepPrimaryOwnership;
         }
 
         return SupportReleaseManualAction::DropEquippedWeapon;
+    }
+
+    /*
+     * Open-hand release contract for one equipped-weapon grip. A grip that
+     * does not carry the weapon (attach-only glue) always releases, as does a
+     * carry grip whose peer still carries. The LAST carry grip may release
+     * only when that release is allowed to drop the weapon; otherwise the
+     * hand keeps the grip until the peer takes the weapon or it is unequipped.
+     */
+    [[nodiscard]] inline constexpr bool canReleaseCarryGrip(
+        bool gripCarries,
+        bool peerGripCarries,
+        bool lastGripReleaseDropEnabled) noexcept
+    {
+        return !gripCarries || peerGripCarries || lastGripReleaseDropEnabled;
     }
 
     /*
@@ -473,26 +662,27 @@ namespace rock::weapon_two_handed_grip_math
 
     /*
      * Firing-grip reattach contract: the grab button is the hand. A held grab
-     * with the free firing palm inside the reattach radius re-takes the grip;
-     * nothing ever attaches to an open hand. The gesture cannot re-capture a
-     * fresh detach because the detach itself requires the grab to be open,
-     * and the same squeeze outside the radius stays available for weapon part
-     * grips and world grabs.
+     * with the free palm inside the reattach zone (the lateral cylinders of
+     * firing_grip_reattach_zone_policy from the grip point) re-takes the
+     * grip; nothing ever attaches to an open hand. The gesture
+     * cannot re-capture a fresh detach because the detach itself requires the
+     * grab to be open, and the same squeeze outside the zone stays available
+     * for weapon part grips and world grabs.
      */
-    inline constexpr bool shouldReattachFiringGripOnGrab(bool gripHeld, float palmToGripDistance, float reattachRadius)
+    inline constexpr bool shouldReattachFiringGripOnGrab(bool gripHeld, bool palmInsideReattachZone)
     {
-        return gripHeld && palmToGripDistance <= reattachRadius;
+        return gripHeld && palmInsideReattachZone;
     }
 
     /*
-     * Hover twin of the reattach gate: an OPEN firing palm inside the radius
-     * means a squeeze right now would re-take the firing grip, so the runtime
-     * owner drives continuous haptic feedback while this holds. A held grab
-     * is never a hover -- it is the reattach itself.
+     * Hover twin of the reattach gate: an OPEN palm inside the zone means a
+     * squeeze right now would re-take the firing grip, so the runtime owner
+     * drives continuous haptic feedback while this holds. A held grab is
+     * never a hover -- it is the reattach itself.
      */
-    inline constexpr bool isFiringGripReattachHoverCandidate(bool gripHeld, float palmToGripDistance, float reattachRadius)
+    inline constexpr bool isFiringGripReattachHoverCandidate(bool gripHeld, bool palmInsideReattachZone)
     {
-        return !gripHeld && palmToGripDistance <= reattachRadius;
+        return !gripHeld && palmInsideReattachZone;
     }
 
     inline constexpr bool canStartFreeHandPartGrip(
@@ -511,6 +701,7 @@ namespace rock::weapon_two_handed_grip_math
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace rock
 {
@@ -568,13 +759,13 @@ namespace rock
     template <class Vector>
     inline float weaponSolverDot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline Vector weaponSolverCross(const Vector& lhs, const Vector& rhs)
     {
-        return Vector{ lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x };
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vector>
@@ -828,5 +1019,488 @@ namespace rock
          * a second aiming convention.
          */
         return solveTwoHandedWeaponTransform(input);
+    }
+
+    namespace weapon_support_acquisition_math
+    {
+        inline float smoothStepAlpha(float rawAlpha)
+        {
+            if (!std::isfinite(rawAlpha)) {
+                return 0.0f;
+            }
+            const float alpha = std::clamp(rawAlpha, 0.0f, 1.0f);
+            return alpha * alpha * (3.0f - 2.0f * alpha);
+        }
+
+        inline float timedSmoothStepAlpha(float elapsedSeconds, float durationSeconds)
+        {
+            if (!std::isfinite(elapsedSeconds) || !std::isfinite(durationSeconds)) {
+                return 1.0f;
+            }
+            if (durationSeconds <= 0.0f) {
+                return 1.0f;
+            }
+            return smoothStepAlpha((std::max)(0.0f, elapsedSeconds) / durationSeconds);
+        }
+
+        template <class Vector>
+        inline bool isFiniteVector(const Vector& value)
+        {
+            return std::isfinite(value.x) &&
+                   std::isfinite(value.y) &&
+                   std::isfinite(value.z);
+        }
+
+        template <class Matrix>
+        inline bool isFiniteRotation(const Matrix& rotation)
+        {
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(rotation.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        template <class Transform>
+        inline bool isFiniteTransform(const Transform& transform)
+        {
+            return isFiniteRotation(transform.rotate) &&
+                   isFiniteVector(transform.translate) &&
+                   std::isfinite(transform.scale);
+        }
+
+        template <class Transform>
+        inline bool isUsableTransform(const Transform& transform)
+        {
+            return isFiniteTransform(transform) &&
+                   std::abs(transform.scale) > 0.0001f;
+        }
+
+        /*
+         * A support-input baseline makes the support hand contribute only motion
+         * that happens after capture: the visual grip target remains mesh-relative
+         * to the weapon, while this frozen relation calibrates the current hand
+         * input onto that target. Resolving the same input reproduces the target
+         * exactly, without attach-time weapon correction or assumptions about
+         * controller versus authored wrist axes.
+         */
+        template <class Transform>
+        inline bool tryCaptureSupportInputBaseline(
+            const Transform& supportInputWorld,
+            const Transform& supportGripTargetWorld,
+            Transform& outInputToGripTargetLocal)
+        {
+            outInputToGripTargetLocal = {};
+            if (!isUsableTransform(supportInputWorld) ||
+                !isUsableTransform(supportGripTargetWorld)) {
+                return false;
+            }
+
+            const Transform relation = transform_math::composeTransforms(
+                transform_math::invertTransform(supportInputWorld),
+                supportGripTargetWorld);
+            if (!isUsableTransform(relation)) {
+                return false;
+            }
+
+            outInputToGripTargetLocal = relation;
+            return true;
+        }
+
+        template <class Transform>
+        inline bool tryResolveSupportInputTarget(
+            const Transform& supportInputWorld,
+            const Transform& inputToGripTargetLocal,
+            Transform& outSupportTargetWorld)
+        {
+            outSupportTargetWorld = {};
+            if (!isUsableTransform(supportInputWorld) ||
+                !isUsableTransform(inputToGripTargetLocal)) {
+                return false;
+            }
+
+            const Transform target = transform_math::composeTransforms(
+                supportInputWorld,
+                inputToGripTargetLocal);
+            if (!isUsableTransform(target)) {
+                return false;
+            }
+
+            outSupportTargetWorld = target;
+            return true;
+        }
+
+        /*
+         * Ordinary dynamic support is a two-controller transaction. Both
+         * controller/driver inputs are calibrated onto their current locked
+         * hand targets at capture, then resolved together on every later
+         * frame. Keeping this pair atomic prevents either rendered hand from
+         * becoming solver input after ROCK publishes its locked-hand visual.
+         */
+        template <class Transform>
+        inline bool tryCaptureDynamicSupportDriverBaseline(
+            const Transform& primaryDriverWorld,
+            const Transform& primaryGripTargetWorld,
+            const Transform& supportDriverWorld,
+            const Transform& supportGripTargetWorld,
+            Transform& outPrimaryDriverToTargetLocal,
+            Transform& outSupportDriverToTargetLocal)
+        {
+            outPrimaryDriverToTargetLocal = {};
+            outSupportDriverToTargetLocal = {};
+            Transform primaryRelation{};
+            Transform supportRelation{};
+            if (!tryCaptureSupportInputBaseline(
+                    primaryDriverWorld,
+                    primaryGripTargetWorld,
+                    primaryRelation) ||
+                !tryCaptureSupportInputBaseline(
+                    supportDriverWorld,
+                    supportGripTargetWorld,
+                    supportRelation)) {
+                return false;
+            }
+
+            outPrimaryDriverToTargetLocal = primaryRelation;
+            outSupportDriverToTargetLocal = supportRelation;
+            return true;
+        }
+
+        template <class Transform>
+        inline bool tryResolveDynamicSupportDriverTargets(
+            const Transform& primaryDriverWorld,
+            const Transform& primaryDriverToTargetLocal,
+            const Transform& supportDriverWorld,
+            const Transform& supportDriverToTargetLocal,
+            Transform& outPrimaryTargetWorld,
+            Transform& outSupportTargetWorld)
+        {
+            outPrimaryTargetWorld = {};
+            outSupportTargetWorld = {};
+            Transform primaryTarget{};
+            Transform supportTarget{};
+            if (!tryResolveSupportInputTarget(
+                    primaryDriverWorld,
+                    primaryDriverToTargetLocal,
+                    primaryTarget) ||
+                !tryResolveSupportInputTarget(
+                    supportDriverWorld,
+                    supportDriverToTargetLocal,
+                    supportTarget)) {
+                return false;
+            }
+
+            outPrimaryTargetWorld = primaryTarget;
+            outSupportTargetWorld = supportTarget;
+            return true;
+        }
+
+        template <class Matrix>
+        inline bool shortestArcSlerpFromIdentity(
+            const Matrix& fullRotationDelta,
+            float alpha,
+            Matrix& outPartialRotationDelta);
+
+        template <class Matrix>
+        inline float rotationAngleRadians(const Matrix& rotation);
+
+        template <class Transform, class Vector>
+        struct SurfaceAlignedHandFrameResult
+        {
+            Transform handWorld{};
+            float appliedRotationRadians{ 0.0f };
+            bool usedSurfaceNormal{ false };
+            bool valid{ false };
+        };
+
+        /*
+         * Rotate the support hand, never the weapon, around the captured palm
+         * pivot. The palm-facing axis targets the inward surface direction
+         * (-surfaceNormal), shortest-arc rotation is bounded, and the pivot is
+         * translated onto the selected mesh point exactly.
+         */
+        template <class Transform, class Vector>
+        inline SurfaceAlignedHandFrameResult<Transform, Vector>
+        alignHandFrameToGripSurface(
+            const Transform& handWorld,
+            const Vector& palmPivotWorld,
+            const Vector& palmNormalWorld,
+            const Vector& targetGripPointWorld,
+            const Vector& surfaceNormalWorld,
+            float maxCorrectionRadians)
+        {
+            SurfaceAlignedHandFrameResult<Transform, Vector> result{};
+            result.handWorld = handWorld;
+            if (!isUsableTransform(handWorld) ||
+                !isFiniteVector(palmPivotWorld) ||
+                !isFiniteVector(targetGripPointWorld)) {
+                return result;
+            }
+
+            auto seatWithoutRotation = [&]() {
+                result.handWorld.translate = weaponSolverAdd(
+                    result.handWorld.translate,
+                    weaponSolverSub(targetGripPointWorld, palmPivotWorld));
+                result.valid = isUsableTransform(result.handWorld);
+            };
+
+            const float palmLength = weaponSolverLength(palmNormalWorld);
+            const float surfaceLength = weaponSolverLength(surfaceNormalWorld);
+            if (!std::isfinite(maxCorrectionRadians) ||
+                maxCorrectionRadians <= 0.0f ||
+                palmLength <= 0.0001f ||
+                surfaceLength <= 0.0001f) {
+                seatWithoutRotation();
+                return result;
+            }
+
+            const Vector currentPalmNormal = weaponSolverNormalize(palmNormalWorld);
+            const Vector desiredPalmNormal = weaponSolverScale(
+                weaponSolverNormalize(surfaceNormalWorld),
+                -1.0f);
+            const auto fullRotation = weaponSolverRotationBetweenStored<
+                decltype(handWorld.rotate),
+                Vector>(currentPalmNormal, desiredPalmNormal);
+            const float fullAngle = rotationAngleRadians(fullRotation);
+            if (!std::isfinite(fullAngle)) {
+                seatWithoutRotation();
+                return result;
+            }
+
+            decltype(handWorld.rotate) boundedRotation =
+                transform_math::makeIdentityRotation<decltype(handWorld.rotate)>();
+            const float alpha = fullAngle > 0.000001f ?
+                std::clamp(maxCorrectionRadians / fullAngle, 0.0f, 1.0f) :
+                0.0f;
+            if (fullAngle > 0.000001f &&
+                !shortestArcSlerpFromIdentity(
+                    fullRotation,
+                    alpha,
+                    boundedRotation)) {
+                seatWithoutRotation();
+                return result;
+            }
+
+            result.handWorld.rotate =
+                weaponSolverApplyWorldRotationToStoredBasis<
+                    decltype(handWorld.rotate),
+                    Vector>(boundedRotation, handWorld.rotate);
+            const Vector originFromPalm = weaponSolverSub(
+                handWorld.translate,
+                palmPivotWorld);
+            result.handWorld.translate = weaponSolverAdd(
+                targetGripPointWorld,
+                weaponSolverApplyStoredWorldRotationToVector<
+                    decltype(handWorld.rotate),
+                    Vector>(boundedRotation, originFromPalm));
+            result.appliedRotationRadians =
+                rotationAngleRadians(boundedRotation);
+            result.usedSurfaceNormal = fullAngle > 0.000001f;
+            result.valid =
+                isUsableTransform(result.handWorld) &&
+                std::isfinite(result.appliedRotationRadians);
+            return result;
+        }
+
+        inline bool normalizeQuaternion(float quaternion[4])
+        {
+            float lengthSquared = 0.0f;
+            for (int index = 0; index < 4; ++index) {
+                if (!std::isfinite(quaternion[index])) {
+                    return false;
+                }
+                lengthSquared += quaternion[index] * quaternion[index];
+            }
+            if (!std::isfinite(lengthSquared) || lengthSquared <= 0.000001f) {
+                return false;
+            }
+
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            for (int index = 0; index < 4; ++index) {
+                quaternion[index] *= inverseLength;
+            }
+            return true;
+        }
+
+        template <class Matrix>
+        inline bool shortestArcSlerpFromIdentity(
+            const Matrix& fullRotationDelta,
+            float alpha,
+            Matrix& outPartialRotationDelta)
+        {
+            outPartialRotationDelta = transform_math::makeIdentityRotation<Matrix>();
+            if (!std::isfinite(alpha) || !isFiniteRotation(fullRotationDelta)) {
+                return false;
+            }
+
+            const float t = std::clamp(alpha, 0.0f, 1.0f);
+            if (t <= 0.0f) {
+                return true;
+            }
+            if (t >= 1.0f) {
+                outPartialRotationDelta = fullRotationDelta;
+                return true;
+            }
+
+            float target[4]{};
+            transform_math::niRowsToHavokQuaternion(fullRotationDelta, target);
+            if (!normalizeQuaternion(target)) {
+                return false;
+            }
+
+            float cosTheta = target[3];
+            if (cosTheta < 0.0f) {
+                for (float& component : target) {
+                    component = -component;
+                }
+                cosTheta = -cosTheta;
+            }
+            cosTheta = std::clamp(cosTheta, -1.0f, 1.0f);
+
+            float partial[4]{};
+            if (cosTheta > 0.9995f) {
+                partial[0] = target[0] * t;
+                partial[1] = target[1] * t;
+                partial[2] = target[2] * t;
+                partial[3] = 1.0f + (target[3] - 1.0f) * t;
+            } else {
+                const float theta = std::acos(cosTheta);
+                const float sinTheta = std::sin(theta);
+                if (!std::isfinite(sinTheta) || std::abs(sinTheta) <= 0.000001f) {
+                    return false;
+                }
+                const float identityWeight = std::sin((1.0f - t) * theta) / sinTheta;
+                const float targetWeight = std::sin(t * theta) / sinTheta;
+                partial[0] = target[0] * targetWeight;
+                partial[1] = target[1] * targetWeight;
+                partial[2] = target[2] * targetWeight;
+                partial[3] = identityWeight + target[3] * targetWeight;
+            }
+
+            if (!normalizeQuaternion(partial)) {
+                return false;
+            }
+            outPartialRotationDelta =
+                transform_math::havokQuaternionToNiRows<Matrix>(partial);
+            return isFiniteRotation(outPartialRotationDelta);
+        }
+
+        template <class Matrix>
+        inline float rotationDistanceRadians(
+            const Matrix& from,
+            const Matrix& to)
+        {
+            if (!isFiniteRotation(from) || !isFiniteRotation(to)) {
+                return (std::numeric_limits<float>::quiet_NaN)();
+            }
+
+            float fromQuaternion[4]{};
+            float toQuaternion[4]{};
+            transform_math::niRowsToHavokQuaternion(from, fromQuaternion);
+            transform_math::niRowsToHavokQuaternion(to, toQuaternion);
+            if (!normalizeQuaternion(fromQuaternion) ||
+                !normalizeQuaternion(toQuaternion)) {
+                return (std::numeric_limits<float>::quiet_NaN)();
+            }
+
+            const float dotValue = std::abs(
+                fromQuaternion[0] * toQuaternion[0] +
+                fromQuaternion[1] * toQuaternion[1] +
+                fromQuaternion[2] * toQuaternion[2] +
+                fromQuaternion[3] * toQuaternion[3]);
+            return 2.0f *
+                   std::acos(std::clamp(dotValue, 0.0f, 1.0f));
+        }
+
+        template <class Matrix>
+        inline float rotationAngleRadians(const Matrix& rotation)
+        {
+            return rotationDistanceRadians(
+                transform_math::makeIdentityRotation<Matrix>(),
+                rotation);
+        }
+
+        template <class Transform>
+        struct PivotPreservingRotationResult
+        {
+            Transform weaponWorldTransform{};
+            decltype(Transform{}.rotate) partialRotationDelta{};
+            float primaryError{ 0.0f };
+            float appliedRotationRadians{ 0.0f };
+            bool valid{ false };
+        };
+
+        /*
+         * Dynamic support acquisition ramps only the support-induced world
+         * rotation. Translation is re-solved from the live primary target at
+         * every alpha, so the firing grip never softens or drifts while the
+         * second hand gains steering authority.
+         */
+        template <class Transform, class Vector>
+        inline PivotPreservingRotationResult<Transform>
+        applyRotationAroundPrimaryPivot(
+            const Transform& oneHandWeaponWorld,
+            const decltype(Transform{}.rotate)& fullRotationDelta,
+            const Vector& primaryGripLocal,
+            const Vector& primaryTargetWorld,
+            float alpha)
+        {
+            PivotPreservingRotationResult<Transform> result{};
+            result.weaponWorldTransform = oneHandWeaponWorld;
+            result.partialRotationDelta =
+                transform_math::makeIdentityRotation<
+                    decltype(oneHandWeaponWorld.rotate)>();
+
+            if (!isFiniteTransform(oneHandWeaponWorld) ||
+                std::abs(oneHandWeaponWorld.scale) <= 0.0001f ||
+                !isFiniteRotation(fullRotationDelta) ||
+                !isFiniteVector(primaryGripLocal) ||
+                !isFiniteVector(primaryTargetWorld) ||
+                !std::isfinite(alpha) ||
+                !shortestArcSlerpFromIdentity(
+                    fullRotationDelta,
+                    alpha,
+                    result.partialRotationDelta)) {
+                return result;
+            }
+
+            result.weaponWorldTransform.rotate =
+                weaponSolverApplyWorldRotationToStoredBasis<
+                    decltype(oneHandWeaponWorld.rotate),
+                    Vector>(
+                    result.partialRotationDelta,
+                    oneHandWeaponWorld.rotate);
+
+            const Vector primaryAfterRotation =
+                transform_math::localPointToWorld(
+                    result.weaponWorldTransform,
+                    primaryGripLocal);
+            result.weaponWorldTransform.translate = weaponSolverAdd(
+                result.weaponWorldTransform.translate,
+                weaponSolverSub(primaryTargetWorld, primaryAfterRotation));
+
+            if (!isFiniteTransform(result.weaponWorldTransform)) {
+                result.weaponWorldTransform = oneHandWeaponWorld;
+                result.partialRotationDelta =
+                    transform_math::makeIdentityRotation<
+                        decltype(oneHandWeaponWorld.rotate)>();
+                return result;
+            }
+
+            const Vector primaryFinal = transform_math::localPointToWorld(
+                result.weaponWorldTransform,
+                primaryGripLocal);
+            result.primaryError = weaponSolverLength(
+                weaponSolverSub(primaryFinal, primaryTargetWorld));
+            result.appliedRotationRadians =
+                rotationAngleRadians(result.partialRotationDelta);
+            result.valid =
+                std::isfinite(result.primaryError) &&
+                std::isfinite(result.appliedRotationRadians);
+            return result;
+        }
     }
 }

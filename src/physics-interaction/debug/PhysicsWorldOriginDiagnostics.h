@@ -62,7 +62,6 @@ namespace rock::origin_diagnostics
 
     inline constexpr std::uint32_t kOriginCandidateCapacity = 9;
     inline constexpr std::uint32_t kFreeMotionIndex = 0x7FFF'FFFF;
-    inline constexpr std::uint32_t kMaxDiagnosticMotionIndex = 4096;
 
     struct OriginCandidate
     {

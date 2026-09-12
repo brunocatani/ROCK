@@ -1,5 +1,6 @@
 #define ROCK_API_EXPORTS
 #include "ROCKProviderApiInternal.h"
+#include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
 #include "api/ProviderLeasePolicy.h"
 #include "api/TouchGrabRegistry.h"
@@ -20,6 +21,9 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/CharacterControllerRuntime.h"
+#include "physics-interaction/native/ReferenceInteraction.h"
+#include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -66,6 +70,12 @@ namespace
     static_assert(static_cast<std::uint32_t>(
                       RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureFault) ==
                   (1u << 6));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::Keyword) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::Keyword));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::WeaponData) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::WeaponData));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponClassificationSourceV1::EquipSlot) ==
+                  static_cast<std::uint32_t>(WeaponClassificationSource::EquipSlot));
     // Public V1 part-kind / action-role values are a wire contract for
     // external consumers (PAPER_Toolkit); pin every enumerator to the internal
     // classification enums so a reorder breaks this build, not a consumer.
@@ -198,7 +208,13 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerColliderDescriptors) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ScopeSightState) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InputObservability) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TouchGrabTargets);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TouchGrabTargets) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WorldRaycasts) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerController) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TargetDetails) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PowerArmor) |
+        static_cast<std::uint32_t>(
+            RockProviderConsumerCapabilityV1::ColliderVisualizationOverride);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -210,6 +226,7 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::InteractionCommandQueue) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceGrabCommand) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::InventoryForceGrab) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceReleaseCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ThrownDropCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandInputSuppression) |
@@ -227,7 +244,13 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::NativeAnimationRuntimeProvider) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponHandlingAuthority) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::DebugOverlayPublication) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PresentedHandFrames);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PresentedHandFrames) |
+        // EquippedWeaponHandRequest is no longer advertised: the programmatic
+        // hand-assignment feature was removed (physical handoff is the only
+        // way to change the carrying hand). The entry point remains for ABI
+        // and declines every request.
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::ColliderVisualizationOverride);
     constexpr std::uint32_t kProviderFeatureBits2V1 =
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::SafeDescriptor) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExtendedLimits) |
@@ -258,9 +281,12 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::InputSampleMetadata) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WeaponClassificationEnrichment) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExternalContactEnrichment) |
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::TouchGrabTargets);
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::TouchGrabTargets) |
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::NativeVatsVansInputSuppression) |
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WorldRaycasts);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
+        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame) |
+        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::ImmediateCollisionRestore) |
         static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::RequireMatchingTarget) |
@@ -271,7 +297,34 @@ namespace
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok);
     constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveButtonChord);
+    std::uint32_t effectiveHandInputSuppressionFlags(RockProviderHand hand, std::uint32_t flags, std::uint64_t leftChord, std::uint64_t rightChord)
+    {
+        const auto reservation = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveTriggerGripChord);
+        const bool reserved = (flags & reservation) != 0;
+        flags &= ~reservation;
+        if (reserved && rock::input_remap_runtime::isTriggerGripChordHeld(hand == RockProviderHand::Left)) {
+            flags |= static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+        }
+        const auto generic = static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::ReserveButtonChord);
+        const bool chordReserved = (flags & generic) != 0;
+        flags &= ~generic;
+        if (chordReserved && (leftChord || rightChord) &&
+            rock::input_remap_runtime::areRawButtonsHeld(true, leftChord) &&
+            rock::input_remap_runtime::areRawButtonsHeld(false, rightChord)) {
+            flags |= static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
+                static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans);
+        }
+        return flags;
+    }
     constexpr std::uint32_t kWeaponPartTargetMatcherFlagsV1 =
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
@@ -295,6 +348,8 @@ namespace
         std::uint64_t token{ 0 };
         std::uint32_t grantedCapabilities{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        std::uint64_t worldRaycastFrameIndex{ 0 };
+        std::uint32_t worldRaycastCount{ 0 };
         char modName[64]{};
     };
 
@@ -338,6 +393,7 @@ namespace
         std::uint64_t ownerToken{ 0 };
         RockProviderHand hand{ RockProviderHand::None };
         std::uint32_t flags{ 0 };
+        std::uint64_t leftChord{ 0 }, rightChord{ 0 };
         std::uint64_t expiresAfterFrame{ 0 };
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
@@ -839,6 +895,14 @@ namespace
                std::abs(transform.scale) > 0.000001f;
     }
 
+    [[nodiscard]] bool finiteProviderPoint(
+        const RockProviderPoint3& point)
+    {
+        return std::isfinite(point.x) &&
+               std::isfinite(point.y) &&
+               std::isfinite(point.z);
+    }
+
     [[nodiscard]] RE::NiTransform toNiTransform(const RockProviderTransform& source)
     {
         RE::NiTransform target{};
@@ -895,9 +959,12 @@ namespace
             return false;
         }
 
-        const auto presentedWorld =
-            frik_visual_authority::getHandWorldTransform(
-                toVisualHand(hand));
+        RE::NiTransform presentedWorld{};
+        if (!frik_visual_authority::tryGetHandWorldTransform(
+                toVisualHand(hand),
+                presentedWorld)) {
+            return false;
+        }
         const auto providerTransform =
             toProviderTransform(presentedWorld);
         if (!finiteProviderTransform(providerTransform)) {
@@ -979,7 +1046,7 @@ namespace
             cleared = frik_visual_authority::clearHandPose(slot.tag, hand) && cleared;
         }
         if ((slot.publishedFlags & worldFlag) != 0) {
-            cleared = frik_visual_authority::clearExternalHandWorldTransform(slot.tag, hand) && cleared;
+            cleared = frik_visual_authority::clearHandWorld(slot.tag, hand) && cleared;
         }
 
         if (cleared || !frik_visual_authority::isSkeletonReadyHint() || releaseSlot) {
@@ -1917,6 +1984,7 @@ namespace
             true);
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
         provider_debug_overlay::clear(ownerToken);
+        provider_collider_visualization::clear(ownerToken);
         publishAuthorityLostEvent(
             ownerToken,
             RockProviderAuthorityKindV1::Unknown,
@@ -2044,6 +2112,7 @@ namespace
             true);
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
         provider_debug_overlay::clear(ownerToken);
+        provider_collider_visualization::clear(ownerToken);
 
         return RockProviderResultV1::Ok;
     }
@@ -2182,6 +2251,8 @@ namespace
             ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1;
         limits.maxTouchGrabTargetLeaseFrames =
             ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1;
+        limits.maxWorldRaycastsPerOwnerPerFrame =
+            ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1;
 
         const auto copySize = (std::min<std::size_t>)(
             outLimits->size,
@@ -2195,6 +2266,12 @@ namespace
         const RockProviderStructureIdV1 structureId)
     {
         switch (structureId) {
+        case RockProviderStructureIdV1::ReferenceQuery: return sizeof(RockProviderReferenceQueryV1);
+        case RockProviderStructureIdV1::ReferenceInteraction: return sizeof(RockProviderReferenceInteractionV1);
+        case RockProviderStructureIdV1::HandTargetDetails: return sizeof(RockProviderHandTargetDetailsV1);
+        case RockProviderStructureIdV1::PowerArmorPointPose: return sizeof(RockProviderPowerArmorPointPoseV1);
+        case RockProviderStructureIdV1::PowerArmorTarget: return sizeof(RockProviderPowerArmorTargetV1);
+        case RockProviderStructureIdV1::PowerArmorGrabRequest: return sizeof(RockProviderPowerArmorGrabRequestV1);
         case RockProviderStructureIdV1::ApiDescriptor:
             return sizeof(RockProviderApiDescriptorV1);
         case RockProviderStructureIdV1::ConsumerRegistration:
@@ -2319,6 +2396,20 @@ namespace
             return sizeof(RockProviderTouchGrabTargetV1);
         case RockProviderStructureIdV1::TouchGrabState:
             return sizeof(RockProviderTouchGrabStateV1);
+        case RockProviderStructureIdV1::EquippedWeaponHandRequest:
+            return sizeof(RockProviderEquippedWeaponHandRequestV1);
+        case RockProviderStructureIdV1::WorldRaycastRequest:
+            return sizeof(RockProviderWorldRaycastRequestV1);
+        case RockProviderStructureIdV1::WorldRaycastResult:
+            return sizeof(RockProviderWorldRaycastResultV1);
+        case RockProviderStructureIdV1::ColliderVisualizationRequest:
+            return sizeof(RockProviderColliderVisualizationRequestV1);
+        case RockProviderStructureIdV1::LogicalInputActionState:
+            return sizeof(RockProviderLogicalInputActionStateV1);
+        case RockProviderStructureIdV1::PlayerControllerState:
+            return sizeof(RockProviderPlayerControllerStateV1);
+        case RockProviderStructureIdV1::PlayerControllerJumpRequest:
+            return sizeof(RockProviderPlayerControllerJumpRequestV1);
         default:
             return 0;
         }
@@ -2846,8 +2937,14 @@ namespace
         if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
             return RockProviderResultV1::UnsupportedVersion;
         }
-        if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
+        const bool fromInventory = (request->flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory)) != 0;
+        if (fromInventory ? request->hand != RockProviderHand::None :
+            (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left)) {
             return RockProviderResultV1::HandUnavailable;
+        }
+        if (fromInventory && (request->flags != static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::FromPlayerInventory) ||
+            request->targetBodyId != 0x7FFF'FFFF || request->maxDistanceGame != 0.0f)) {
+            return RockProviderResultV1::InvalidArgument;
         }
         if (request->targetFormId == 0 || (request->flags & ~kImplementedForceGrabFlagsV1) != 0) {
             return RockProviderResultV1::InvalidArgument;
@@ -3050,6 +3147,15 @@ namespace
             return RockProviderResultV1::InvalidArgument;
         }
 
+        const auto leftChord = (static_cast<std::uint64_t>(request->chordButtonsHigh[0]) << 32) | request->chordButtonsLow[0];
+        const auto rightChord = (static_cast<std::uint64_t>(request->chordButtonsHigh[1]) << 32) | request->chordButtonsLow[1];
+        constexpr auto allowedButtons = (1ull << 1) | (1ull << 2) | (1ull << 7) | (1ull << 32) | (1ull << 33);
+        if (hasHandInputSuppressionFlagV1(request->flags, RockProviderHandInputSuppressionFlagV1::ReserveButtonChord) &&
+            (((leftChord | rightChord) & ~allowedButtons) != 0 ||
+             !(request->hand == RockProviderHand::Left ? leftChord : rightChord))) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
@@ -3075,6 +3181,7 @@ namespace
         for (auto& slot : s_handInputSuppressions) {
             if (slot.active && slot.ownerToken == ownerToken && slot.hand == request->hand) {
                 slot.flags = request->flags;
+                slot.leftChord = leftChord; slot.rightChord = rightChord;
                 slot.expiresAfterFrame = expiresAfterFrame;
                 slot.worldGeneration = request->worldGeneration;
                 slot.skeletonGeneration = request->skeletonGeneration;
@@ -3093,6 +3200,7 @@ namespace
                     .ownerToken = ownerToken,
                     .hand = request->hand,
                     .flags = request->flags,
+                    .leftChord = leftChord, .rightChord = rightChord,
                     .expiresAfterFrame = expiresAfterFrame,
                     .worldGeneration = request->worldGeneration,
                     .skeletonGeneration = request->skeletonGeneration,
@@ -3159,7 +3267,7 @@ namespace
                 continue;
             }
             if (slot.active) {
-                outState->effectiveFlags |= slot.flags;
+                outState->effectiveFlags |= effectiveHandInputSuppressionFlags(hand, slot.flags, slot.leftChord, slot.rightChord);
             }
             if (slot.ownerToken != ownerToken) {
                 continue;
@@ -3522,23 +3630,24 @@ namespace
                         toNiTransform(request->fingerLocalTransforms[index]);
                 }
             }
-            published = frik_visual_authority::setHandPoseCustomWithPriority(
+            published = frik_visual_authority::setHandPoseCustom(
                             slot->tag,
                             hand,
                             frik_visual_authority::HandPoseData{},
                             request->priority) &&
-                        frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
+                        frik_visual_authority::setHandPoseCustomLocalTransforms(
                             slot->tag,
                             hand,
                             &fingerLocals,
                             request->priority);
         }
         if (published && (request->flags & worldFlag) != 0) {
-            published = frik_visual_authority::applyExternalHandWorldTransform(
+            published = frik_visual_authority::publishHandWorld(
                 slot->tag,
                 hand,
                 toNiTransform(request->worldTransform),
-                request->priority);
+                request->priority,
+                frik_visual_authority::ownHandDriver(hand));
         }
         if (!published) {
             slot->publishedFlags = request->flags;
@@ -3978,6 +4087,286 @@ namespace
                 RockProviderEquippedWeaponHandlingRuntimeFlagV1::AuthorityActive);
         }
         return true;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL
+    apiRequestEquippedWeaponHandV1(
+        const std::uint64_t ownerToken,
+        const RockProviderEquippedWeaponHandRequestV1* request)
+    {
+        if (ownerToken == 0 || !request) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        if (request->size !=
+            sizeof(RockProviderEquippedWeaponHandRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 ||
+            request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        // The programmatic equipped-weapon hand assignment was removed;
+        // physical handoff is the only way to change the carrying hand. The
+        // capability feature bit is no longer advertised, and this ABI slot
+        // declines every well-formed request.
+        return RockProviderResultV1::HandUnavailable;
+    }
+
+    RockProviderResultV1 validateTargetQuery(std::uint64_t ownerToken,
+        const RockProviderReferenceQueryV1* query, RockProviderConsumerCapabilityV1 capability)
+    {
+        if (!query || !ownerToken || !query->referenceFormId || query->furnitureMarkerIndex < 0) return RockProviderResultV1::InvalidArgument;
+        if (query->size != sizeof(*query)) return RockProviderResultV1::InvalidSize;
+        if (query->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto permission = validateReadCapability(ownerToken, capability);
+        if (permission != RockProviderResultV1::Ok) return permission;
+        if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
+        if (!apiIsProviderReady()) return RockProviderResultV1::NotReady;
+        return validateGenerationGuards(query->worldGeneration, query->skeletonGeneration, query->providerGeneration);
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandTargetDetailsV1(std::uint64_t ownerToken,
+        RockProviderHand hand, RockProviderHandTargetDetailsV1* out)
+    {
+        if (!out || (hand != RockProviderHand::Left && hand != RockProviderHand::Right)) return RockProviderResultV1::InvalidArgument;
+        if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
+        if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto permission = validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::TargetDetails);
+        if (permission != RockProviderResultV1::Ok) return permission;
+        if (!onAnimationOwnerThread()) return RockProviderResultV1::WrongThread;
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!apiIsProviderReady() || !pi) return RockProviderResultV1::NotReady;
+        pi->getProviderHandTargetDetailsV1(hand == RockProviderHand::Left, *out);
+        out->handState.frameIndex = currentProviderFrameIndex();
+        out->reference.frameIndex = out->handState.frameIndex;
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryReferenceInteractionV1(std::uint64_t ownerToken,
+        const RockProviderReferenceQueryV1* query, RockProviderReferenceInteractionV1* out)
+    {
+        if (!out) return RockProviderResultV1::InvalidArgument;
+        if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
+        if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::TargetDetails);
+        if (valid != RockProviderResultV1::Ok) return valid;
+        if (!rock::reference_interaction::describe(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return RockProviderResultV1::TargetUnavailable;
+        out->frameIndex = currentProviderFrameIndex();
+        out->worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryPowerArmorTargetV1(std::uint64_t ownerToken,
+        const RockProviderReferenceQueryV1* query, RockProviderPowerArmorTargetV1* out)
+    {
+        if (!out) return RockProviderResultV1::InvalidArgument;
+        if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
+        if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        const auto valid = validateTargetQuery(ownerToken, query, RockProviderConsumerCapabilityV1::PowerArmor);
+        if (valid != RockProviderResultV1::Ok) return valid;
+        if (!rock::reference_interaction::describePowerArmor(rock::reference_interaction::resolveQuery(*query), *out, query->furnitureMarkerIndex)) return RockProviderResultV1::TargetUnavailable;
+        out->touchedReference.frameIndex = out->frameReference.frameIndex = currentProviderFrameIndex();
+        out->touchedReference.worldGeneration = out->frameReference.worldGeneration = s_currentWorldGeneration.load(std::memory_order_acquire);
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPowerArmorGrabV1(std::uint64_t ownerToken,
+        const RockProviderPowerArmorGrabRequestV1* request, std::uint64_t* outCommandId)
+    {
+        if (outCommandId) *outCommandId = 0;
+        if (!request || !outCommandId || !ownerToken) return RockProviderResultV1::InvalidArgument;
+        if (request->size != sizeof(*request) || request->target.size != sizeof(request->target)) return RockProviderResultV1::InvalidSize;
+        if (request->version != ROCK_PROVIDER_API_VERSION || request->target.version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
+        if ((request->hand != RockProviderHand::Left && request->hand != RockProviderHand::Right) ||
+            !rock::reference_interaction::pointName(request->point) || !request->target.referenceFormId ||
+            !request->target.worldGeneration || !request->target.skeletonGeneration || !request->target.providerGeneration ||
+            !std::isfinite(request->maxDistanceGame) || request->maxDistanceGame < 0 || request->maxDistanceGame > 32) return RockProviderResultV1::InvalidArgument;
+        const auto permission = validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::PowerArmor);
+        if (permission != RockProviderResultV1::Ok) return permission;
+        QueuedInteractionCommandV1 command{};
+        command.kind = RockProviderInteractionCommandKindV1::ForceGrab;
+        command.ownerToken = ownerToken;
+        command.powerArmorPoint = request->point;
+        command.powerArmorReferenceNativeHandle = request->target.referenceNativeHandle;
+        auto& grab = command.forceGrab;
+        grab.hand = request->hand;
+        grab.targetFormId = request->target.referenceFormId;
+        grab.worldGeneration = request->target.worldGeneration;
+        grab.skeletonGeneration = request->target.skeletonGeneration;
+        grab.providerGeneration = request->target.providerGeneration;
+        grab.maxDistanceGame = request->maxDistanceGame;
+        return enqueueInteractionCommand(command, outCommandId);
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(
+        const std::uint64_t ownerToken,
+        const RockProviderWorldRaycastRequestV1* request,
+        RockProviderWorldRaycastResultV1* outResult)
+    {
+        if (ownerToken == 0 || !request || !outResult) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->size != sizeof(RockProviderWorldRaycastRequestV1) ||
+            outResult->size != sizeof(RockProviderWorldRaycastResultV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version != ROCK_PROVIDER_API_VERSION ||
+            outResult->version != ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (!finiteProviderPoint(request->startGame) ||
+            !finiteProviderPoint(request->directionGame) ||
+            !std::isfinite(request->maxDistanceGame) ||
+            request->maxDistanceGame <= 0.0f ||
+            request->maxDistanceGame >
+                ROCK_PROVIDER_MAX_WORLD_RAYCAST_DISTANCE_GAME_V1) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        const float directionLengthSquared =
+            request->directionGame.x * request->directionGame.x +
+            request->directionGame.y * request->directionGame.y +
+            request->directionGame.z * request->directionGame.z;
+        if (!std::isfinite(directionLengthSquared) ||
+            directionLengthSquared <= 1.0e-8f) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        const auto generationResult = validateGenerationGuards(
+            request->worldGeneration,
+            request->skeletonGeneration,
+            request->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+        if (!apiIsProviderReady()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        const auto frameIndex = currentProviderFrameIndex();
+        {
+            std::scoped_lock lock(s_consumerMutex);
+            auto* slot = findConsumerSlotLocked(ownerToken);
+            if (!slot) {
+                return RockProviderResultV1::OwnerNotRegistered;
+            }
+            if (!hasConsumerCapabilityV1(
+                    slot->grantedCapabilities,
+                    RockProviderConsumerCapabilityV1::WorldRaycasts)) {
+                return RockProviderResultV1::PermissionDenied;
+            }
+            if (slot->worldRaycastFrameIndex != frameIndex) {
+                slot->worldRaycastFrameIndex = frameIndex;
+                slot->worldRaycastCount = 0;
+            }
+            if (slot->worldRaycastCount >=
+                ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1) {
+                return RockProviderResultV1::CapacityFull;
+            }
+            ++slot->worldRaycastCount;
+        }
+
+        *outResult = {};
+        outResult->frameIndex = frameIndex;
+        if (!pi->queryProviderWorldRaycastV1(*request, *outResult)) {
+            return RockProviderResultV1::WorldNotReady;
+        }
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL
+        apiSetColliderVisualizationOverrideV1(
+            const std::uint64_t ownerToken,
+            const RockProviderColliderVisualizationRequestV1* request)
+    {
+        if (ownerToken == 0 || !request) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->size !=
+            sizeof(RockProviderColliderVisualizationRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version != ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (request->weaponGenerationKey == 0 ||
+            request->bodyId == 0x7FFF'FFFF ||
+            request->leaseFrames == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        const auto generationResult = validateGenerationGuards(
+            request->worldGeneration,
+            request->skeletonGeneration,
+            request->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+        if (!apiIsProviderReady()) {
+            return RockProviderResultV1::NotReady;
+        }
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi) {
+            return RockProviderResultV1::NotReady;
+        }
+        const auto capabilityResult = validateReadCapability(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::
+                ColliderVisualizationOverride);
+        if (capabilityResult != RockProviderResultV1::Ok) {
+            return capabilityResult;
+        }
+
+        {
+            std::scoped_lock lock(s_snapshotMutex);
+            if (!s_hasSnapshot ||
+                request->weaponGenerationKey !=
+                    s_lastSnapshot.weaponGenerationKey) {
+                return RockProviderResultV1::TargetUnavailable;
+            }
+        }
+        if (!pi->isProviderWeaponBodyCurrentV1(
+                request->weaponGenerationKey,
+                request->bodyId)) {
+            return RockProviderResultV1::TargetInvalid;
+        }
+
+        return provider_collider_visualization::set(
+            ownerToken,
+            *request,
+            currentProviderFrameIndex());
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL
+        apiClearColliderVisualizationOverrideV1(
+            const std::uint64_t ownerToken)
+    {
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        const auto capabilityResult = validateReadCapability(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::
+                ColliderVisualizationOverride);
+        if (capabilityResult != RockProviderResultV1::Ok) {
+            return capabilityResult;
+        }
+        provider_collider_visualization::clear(ownerToken);
+        return RockProviderResultV1::Ok;
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishDebugOverlayV1(
@@ -4615,6 +5004,241 @@ namespace
         return RockProviderResultV1::Ok;
     }
 
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetLogicalInputActionStateV1(
+        const std::uint64_t ownerToken,
+        const RockProviderLogicalInputActionV1 action,
+        RockProviderLogicalInputActionStateV1* outState)
+    {
+        if (ownerToken == 0 || !outState) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (outState->size < sizeof(RockProviderLogicalInputActionStateV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (outState->version == 0 ||
+            outState->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (action != RockProviderLogicalInputActionV1::Jump) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        const auto ownerResult = validateReadCapability(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::InputObservability);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
+        RockProviderFrameSnapshot snapshot{};
+        {
+            std::scoped_lock lock(s_snapshotMutex);
+            if (!s_hasSnapshot) {
+                return RockProviderResultV1::NotReady;
+            }
+            snapshot = s_lastSnapshot;
+        }
+
+        const auto input = rock::input_remap_runtime::readLogicalJumpState();
+        *outState = {};
+        outState->action = action;
+        outState->available = input.available ? 1u : 0u;
+        outState->held = input.held ? 1u : 0u;
+        outState->availabilityReason =
+            static_cast<RockProviderInputAvailabilityReasonV1>(
+                input.availabilityReason);
+        outState->sampleSequence = input.sampleSequence;
+        outState->pressSequence = input.pressSequence;
+        outState->sampleAgeMilliseconds = input.sampleAgeMilliseconds;
+        outState->frameIndex = snapshot.frameIndex;
+        outState->worldGeneration = snapshot.worldGeneration;
+        outState->skeletonGeneration = snapshot.skeletonGeneration;
+        outState->providerGeneration = snapshot.providerGeneration;
+        return RockProviderResultV1::Ok;
+    }
+
+    [[nodiscard]] RockProviderPoint3 toProviderPoint(
+        const RE::NiPoint3& point) noexcept
+    {
+        return RockProviderPoint3{ point.x, point.y, point.z };
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetPlayerControllerStateV1(
+        const std::uint64_t ownerToken,
+        const std::uint32_t queryFlags,
+        RockProviderPlayerControllerStateV1* outState)
+    {
+        if (ownerToken == 0 || !outState) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (outState->size < sizeof(RockProviderPlayerControllerStateV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (outState->version == 0 ||
+            outState->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        constexpr std::uint32_t implementedQueryFlags =
+            static_cast<std::uint32_t>(
+                RockProviderPlayerControllerQueryFlagV1::CheckPenetration);
+        if ((queryFlags & ~implementedQueryFlags) != 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        const auto ownerResult = validateReadCapability(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::PlayerController);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        if (!apiIsProviderReady()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        RockProviderFrameSnapshot snapshot{};
+        {
+            std::scoped_lock lock(s_snapshotMutex);
+            if (!s_hasSnapshot || !hasLifecycleFlag(
+                    s_lastSnapshot.lifecycleFlags,
+                    RockProviderLifecycleFlag::ProviderReady)) {
+                return RockProviderResultV1::NotReady;
+            }
+            snapshot = s_lastSnapshot;
+        }
+
+        rock::character_controller_runtime::PlayerControllerState state{};
+        // The legacy CheckPenetration bit is accepted for ABI compatibility
+        // but intentionally produces no flags. FO4VR's controller virtual at
+        // +0x1E8 reports blocking-layer contact, not penetration depth.
+        static_cast<void>(queryFlags);
+        if (!rock::character_controller_runtime::tryGetPlayerControllerState(
+                state)) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        std::uint32_t flags = static_cast<std::uint32_t>(
+            RockProviderPlayerControllerStateFlagV1::Valid);
+        const auto addFlag = [&flags](
+                                 const bool enabled,
+                                 const RockProviderPlayerControllerStateFlagV1 flag) {
+            if (enabled) {
+                flags |= static_cast<std::uint32_t>(flag);
+            }
+        };
+        addFlag(state.positionValid,
+            RockProviderPlayerControllerStateFlagV1::PositionValid);
+        addFlag(state.velocityValid,
+            RockProviderPlayerControllerStateFlagV1::VelocityValid);
+        addFlag(state.shapeValid,
+            RockProviderPlayerControllerStateFlagV1::ShapeValid);
+        addFlag(state.supportNormalValid,
+            RockProviderPlayerControllerStateFlagV1::SupportNormalValid);
+        addFlag(
+            state.supportState ==
+                rock::character_controller_runtime::PlayerSupportState::Supported,
+            RockProviderPlayerControllerStateFlagV1::Supported);
+        addFlag(
+            state.supportState ==
+                rock::character_controller_runtime::PlayerSupportState::Sliding,
+            RockProviderPlayerControllerStateFlagV1::Sliding);
+        addFlag(
+            state.implementation == rock::character_controller_runtime::
+                PlayerControllerImplementation::Proxy,
+            RockProviderPlayerControllerStateFlagV1::Proxy);
+        addFlag(
+            state.implementation == rock::character_controller_runtime::
+                PlayerControllerImplementation::RigidBody,
+            RockProviderPlayerControllerStateFlagV1::RigidBody);
+
+        *outState = {};
+        outState->frameIndex = snapshot.frameIndex;
+        outState->flags = flags;
+        outState->implementation =
+            static_cast<RockProviderPlayerControllerImplementationV1>(
+                state.implementation);
+        outState->supportState =
+            static_cast<RockProviderPlayerSupportStateV1>(state.supportState);
+        outState->positionGame = toProviderPoint(state.positionGame);
+        outState->velocityGame = toProviderPoint(state.velocityGame);
+        outState->supportNormalGame = toProviderPoint(state.supportNormal);
+        outState->radiusGame = state.radiusGame;
+        outState->heightGame = state.heightGame;
+        outState->worldGeneration = snapshot.worldGeneration;
+        outState->skeletonGeneration = snapshot.skeletonGeneration;
+        outState->providerGeneration = snapshot.providerGeneration;
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestPlayerControllerJumpV1(
+        const std::uint64_t ownerToken,
+        const RockProviderPlayerControllerJumpRequestV1* request)
+    {
+        if (ownerToken == 0 || !request) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->size !=
+            sizeof(RockProviderPlayerControllerJumpRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 ||
+            request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (!std::isfinite(request->heightGameUnits) ||
+            request->heightGameUnits <= 0.0f ||
+            request->heightGameUnits > 256.0f ||
+            request->worldGeneration == 0 ||
+            request->skeletonGeneration == 0 ||
+            request->providerGeneration == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        const auto ownerResult = validateReadCapability(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::PlayerController);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        const auto generationResult = validateGenerationGuards(
+            request->worldGeneration,
+            request->skeletonGeneration,
+            request->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+        if (!apiIsProviderReady()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        {
+            std::scoped_lock lock(s_snapshotMutex);
+            if (!s_hasSnapshot || !hasLifecycleFlag(
+                    s_lastSnapshot.lifecycleFlags,
+                    RockProviderLifecycleFlag::ProviderReady) ||
+                !hasLifecycleFlag(
+                    s_lastSnapshot.lifecycleFlags,
+                    RockProviderLifecycleFlag::PhysicsWriteAllowed)) {
+                return RockProviderResultV1::NotReady;
+            }
+        }
+
+        rock::character_controller_runtime::PlayerControllerState state{};
+        if (!rock::character_controller_runtime::tryGetPlayerControllerState(
+                state)) {
+            return RockProviderResultV1::NotReady;
+        }
+        return rock::character_controller_runtime::requestPlayerJump(
+                   request->heightGameUnits) ?
+            RockProviderResultV1::Ok :
+            RockProviderResultV1::NotReady;
+    }
+
     bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState)
     {
         if (!outState || outState->size != sizeof(RockProviderRawWandButtonStateV1)) {
@@ -4645,6 +5269,32 @@ namespace
     bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1()
     {
         return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
+    }
+
+    std::uint32_t ROCK_PROVIDER_CALL apiGetNativeInputContextV1()
+    {
+        try {
+            using Flag = RockProviderNativeInputContextFlagV1;
+            if (!rock::input_remap_runtime::isInputRemapHookInstalled()) return 0;
+            auto flags = static_cast<std::uint32_t>(Flag::Available);
+            if (rock::input_remap_runtime::isMenuInputActive())
+                return flags | static_cast<std::uint32_t>(Flag::MenuActive);
+            if (rock::input_remap_runtime::hasNativeActivationTarget(true))
+                flags |= static_cast<std::uint32_t>(Flag::PrimaryActivationTarget);
+            return flags;
+        } catch (...) {
+            static std::atomic_bool logged{ false };
+            if (!logged.exchange(true)) logger::error("Native input context query failed; consumer input denied");
+            return 0; // Unavailable: consumers must not claim input on a failed query.
+        }
+    }
+
+    bool ROCK_PROVIDER_CALL apiGetRawWandThumbstickV1(RockProviderHand hand, float* outX, float* outY)
+    {
+        if (outX) *outX = 0.0f;
+        if (outY) *outY = 0.0f;
+        if (!outX || !outY || (hand != RockProviderHand::Left && hand != RockProviderHand::Right)) return false;
+        return rock::input_remap_runtime::peekRawThumbstick(hand == RockProviderHand::Left, *outX, *outY);
     }
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1()
@@ -4693,6 +5343,8 @@ namespace
         const RockProviderHandInteractionStateV1& right) noexcept
     {
         return left.targetKind == right.targetKind &&
+               left.reservedTargetIdentity ==
+                   right.reservedTargetIdentity &&
                left.targetFormId == right.targetFormId &&
                left.primaryBodyId == right.primaryBodyId &&
                sameHeldBodies(left, right);
@@ -4726,7 +5378,13 @@ namespace
             static_cast<std::uint32_t>(
                 RockProviderHandInteractionFlagV1::LooseObject) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::LooseWeapon);
+                RockProviderHandInteractionFlagV1::LooseWeapon) |
+            static_cast<std::uint32_t>(
+                RockProviderHandInteractionFlagV1::TouchGrab) |
+            static_cast<std::uint32_t>(
+                RockProviderHandInteractionFlagV1::FixedSurfaceLatch) |
+            static_cast<std::uint32_t>(
+                RockProviderHandInteractionFlagV1::GlobalSurfaceLatch);
         return handGripActive(left) == handGripActive(right) &&
                (left.flags & gripFlags) == (right.flags & gripFlags) &&
                sameHandTarget(left, right);
@@ -4935,6 +5593,26 @@ namespace
             &apiCopyTouchGrabStatesForScopeV1,
         .requestTouchGrabYieldV1 =
             &apiRequestTouchGrabYieldV1,
+        .requestEquippedWeaponHandV1 =
+            &apiRequestEquippedWeaponHandV1,
+        .queryWorldRaycastV1 =
+            &apiQueryWorldRaycastV1,
+        .setColliderVisualizationOverrideV1 =
+            &apiSetColliderVisualizationOverrideV1,
+        .clearColliderVisualizationOverrideV1 =
+            &apiClearColliderVisualizationOverrideV1,
+        .getLogicalInputActionStateV1 =
+            &apiGetLogicalInputActionStateV1,
+        .getPlayerControllerStateV1 =
+            &apiGetPlayerControllerStateV1,
+        .requestPlayerControllerJumpV1 =
+            &apiRequestPlayerControllerJumpV1,
+        .getRawWandThumbstickV1 = &apiGetRawWandThumbstickV1,
+        .getNativeInputContextV1 = &apiGetNativeInputContextV1,
+        .getHandTargetDetailsV1 = &apiGetHandTargetDetailsV1,
+        .queryReferenceInteractionV1 = &apiQueryReferenceInteractionV1,
+        .queryPowerArmorTargetV1 = &apiQueryPowerArmorTargetV1,
+        .requestPowerArmorGrabV1 = &apiRequestPowerArmorGrabV1,
     };
 
     constexpr RockProviderApiDescriptorV1 ROCK_PROVIDER_API_DESCRIPTOR{
@@ -4949,6 +5627,10 @@ namespace
 
 namespace rock::provider
 {
+    bool isPowerArmorGrabOwnerRegisteredV1(const std::uint64_t ownerToken)
+    {
+        return validateReadCapability(ownerToken, RockProviderConsumerCapabilityV1::PowerArmor) == RockProviderResultV1::Ok;
+    }
     ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi()
     {
         return &ROCK_PROVIDER_API_FUNCTION_TABLE;
@@ -5029,6 +5711,34 @@ namespace rock::provider
                     overlayPrune.publishers[index].reason));
         }
 
+        provider_collider_visualization::Invalidation
+            colliderVisualizationInvalidation{};
+        provider_collider_visualization::Snapshot
+            colliderVisualizationSnapshot{};
+        const bool colliderVisualizationActive =
+            provider_collider_visualization::copySnapshot(
+                colliderVisualizationSnapshot);
+        const bool colliderVisualizationBodyCurrent =
+            !colliderVisualizationActive ||
+            pi.isProviderWeaponBodyCurrentV1(
+                colliderVisualizationSnapshot.weaponGenerationKey,
+                colliderVisualizationSnapshot.bodyId);
+        provider_collider_visualization::prune(
+            snapshot.frameIndex,
+            snapshot.worldGeneration,
+            snapshot.skeletonGeneration,
+            snapshot.providerGeneration,
+            snapshot.weaponGenerationKey,
+            colliderVisualizationBodyCurrent,
+            colliderVisualizationInvalidation);
+        if (colliderVisualizationInvalidation.ownerToken != 0) {
+            publishAuthorityLostEvent(
+                colliderVisualizationInvalidation.ownerToken,
+                RockProviderAuthorityKindV1::ColliderVisualization,
+                static_cast<std::uint32_t>(
+                    colliderVisualizationInvalidation.reason));
+        }
+
         std::array<RockProviderWeaponPartGripStateV1, 2> partGripStates{};
         pi.fillProviderWeaponPartGripStates(partGripStates);
 
@@ -5038,6 +5748,19 @@ namespace rock::provider
         for (auto& state : handInteractionStates) {
             state.frameIndex = snapshot.frameIndex;
         }
+
+        std::uint8_t traceHands = 0;
+        for (const auto& state : handInteractionStates) {
+            using Flag = RockProviderHandInteractionFlagV1;
+            const auto has = [&](Flag flag) { return (state.flags & static_cast<std::uint32_t>(flag)) != 0; };
+            const bool holding = state.phase == RockProviderHandInteractionPhaseV1::Holding;
+            const std::uint8_t bits = has(Flag::Valid) ? static_cast<std::uint8_t>(1 |
+                ((holding && has(Flag::TouchGrab) && has(Flag::FixedSurfaceLatch)) ? 2 : 0) |
+                ((holding && (has(Flag::LooseObject) || has(Flag::LooseWeapon))) ? 4 : 0) |
+                (has(Flag::FiringGrip) ? 8 : 0)) : 0;
+            traceHands |= static_cast<std::uint8_t>(bits << (state.hand == RockProviderHand::Left ? 4 : 0));
+        }
+        weapon_action_trace::publishHands(snapshot.frameIndex, traceHands);
 
         RockProviderEquippedWeaponStateV1 equippedWeaponState{};
         (void)pi.queryProviderEquippedWeaponStateV1(equippedWeaponState);
@@ -5068,8 +5791,38 @@ namespace rock::provider
                     currentHand.phase =
                         RockProviderHandInteractionPhaseV1::Releasing;
                     currentHand.targetKind = previousHand.targetKind;
+                    currentHand.reservedTargetIdentity =
+                        previousHand.reservedTargetIdentity;
                     currentHand.targetFormId = previousHand.targetFormId;
                     currentHand.primaryBodyId = previousHand.primaryBodyId;
+                    constexpr std::uint32_t touchGrabClassificationFlags =
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::TouchGrab) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                FixedSurfaceLatch) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                GlobalSurfaceLatch) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                SurfaceAnchorValid) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                MeshSurfaceAnchor) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                MeshFingerPose) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                MeshCollisionFallback);
+                    currentHand.flags |=
+                        previousHand.flags &
+                        touchGrabClassificationFlags;
+                    currentHand.surfaceAnchorGame =
+                        previousHand.surfaceAnchorGame;
+                    currentHand.surfaceGripMode =
+                        previousHand.surfaceGripMode;
                     currentHand.heldBodyCount = previousHand.heldBodyCount;
                     std::copy(
                         std::begin(previousHand.heldBodyIds),
@@ -5283,7 +6036,7 @@ namespace rock::provider
 
     void dispatchAnimationPhaseCallbacksV1(
         const RockProviderAnimationPhaseV1 phase,
-        const float deltaSeconds)
+        const game_frame_timing_policy::GameFrameTiming& timing)
     {
         if (!claimOrValidateAnimationOwnerThread()) {
             if (!s_animationThreadMismatchLogged.exchange(
@@ -5320,19 +6073,18 @@ namespace rock::provider
         RockProviderAnimationPhaseContextV1 context{};
         context.phase = phase;
         context.frameIndex = phaseFrameIndex;
-        context.deltaSeconds =
-            std::isfinite(deltaSeconds) && deltaSeconds > 0.0f &&
-                    deltaSeconds <= 0.1f ?
-                deltaSeconds :
-                (1.0f / 90.0f);
+        /*
+         * Truthful timing publication: the central game clock already
+         * sanitized the delta, so an unmeasurable frame publishes zero
+         * elapsed time instead of a fabricated nominal-rate value.
+         */
+        context.deltaSeconds = timing.valid ? timing.deltaSeconds : 0.0f;
         context.activeNativeAnimationAuthorityFlags =
             s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
 
         const auto& runtime = runtime_state::currentFrame();
-        if (g_rockConfig.rockEnabled) {
-            context.flags |= static_cast<std::uint32_t>(
-                RockProviderAnimationPhaseContextFlagV1::RockEnabled);
-        }
+        context.flags |= static_cast<std::uint32_t>(
+            RockProviderAnimationPhaseContextFlagV1::RockEnabled);
         if (apiIsProviderReady()) {
             context.flags |= static_cast<std::uint32_t>(
                 RockProviderAnimationPhaseContextFlagV1::ProviderReady);
@@ -5527,6 +6279,11 @@ namespace rock::provider
         provider_debug_overlay::clearAll(
             overlayLost,
             RockProviderSuppressionInvalidationReasonV1::ProviderLost);
+        provider_collider_visualization::Invalidation
+            colliderVisualizationLost{};
+        provider_collider_visualization::clearAll(
+            colliderVisualizationLost,
+            RockProviderSuppressionInvalidationReasonV1::ProviderLost);
         {
             std::scoped_lock lock(s_offhandReservationMutex);
             clearOffhandReservationLocked(
@@ -5587,6 +6344,12 @@ namespace rock::provider
             publishAuthorityLostEvent(
                 overlayLost.publishers[index].ownerToken,
                 RockProviderAuthorityKindV1::DebugOverlay,
+                providerLost);
+        }
+        if (colliderVisualizationLost.ownerToken != 0) {
+            publishAuthorityLostEvent(
+                colliderVisualizationLost.ownerToken,
+                RockProviderAuthorityKindV1::ColliderVisualization,
                 providerLost);
         }
         s_generationStateAvailable.store(false, std::memory_order_release);
@@ -5741,6 +6504,25 @@ namespace rock::provider
         return true;
     }
 
+    bool ownsEquippedWeaponHandlingAuthorityV1(
+        const std::uint64_t ownerToken,
+        const std::uint32_t requiredFlags)
+    {
+        if (ownerToken == 0) {
+            return false;
+        }
+        const auto frameIndex = currentProviderFrameIndex();
+        std::scoped_lock lock(
+            s_equippedWeaponHandlingAuthorityMutex);
+        pruneExpiredEquippedWeaponHandlingAuthorityLocked(
+            frameIndex);
+        return s_equippedWeaponHandlingAuthority.active &&
+               s_equippedWeaponHandlingAuthority.ownerToken ==
+                   ownerToken &&
+               (s_equippedWeaponHandlingAuthority.request.flags &
+                   requiredFlags) == requiredFlags;
+    }
+
     void markInteractionCommandStageV1(
         const std::uint64_t ownerToken,
         const std::uint64_t commandId,
@@ -5779,12 +6561,12 @@ namespace rock::provider
         }
 
         const auto frameIndex = currentProviderFrameIndex();
-        std::uint32_t flags = 0;
+        std::uint32_t flags = input_remap_runtime::uiInputSuppressionFlags(hand == RockProviderHand::Left);
         std::scoped_lock lock(s_handInputSuppressionMutex);
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
         for (const auto& slot : s_handInputSuppressions) {
             if (slot.active && slot.hand == hand) {
-                flags |= slot.flags;
+                flags |= effectiveHandInputSuppressionFlags(hand, slot.flags, slot.leftChord, slot.rightChord);
             }
         }
         return flags;
@@ -5802,18 +6584,28 @@ namespace rock::provider
         pruneExpiredNativeAnimationAuthorityLocked(frameIndex);
     }
 
+    std::size_t copyWeaponPartTargets(std::span<weapon_part_runtime::Target> outTargets)
+    {
+        std::size_t count = 0;
+        std::scoped_lock lock(s_weaponPartMutex);
+        for (const auto& slot : s_weaponPartTargets) {
+            if (count == outTargets.size()) {
+                break;
+            }
+            if (slot.active) {
+                outTargets[count++] = toRuntimeTarget(slot);
+            }
+        }
+        return count;
+    }
+
     bool resolveWeaponPartTargetV1(
         const RockProviderWeaponPartTargetQueryV1& query,
         RockProviderWeaponPartTargetResolutionV1& outResolution)
     {
         outResolution = {};
         std::array<weapon_part_runtime::Target, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> runtimeTargets{};
-        {
-            std::scoped_lock lock(s_weaponPartMutex);
-            for (std::size_t i = 0; i < s_weaponPartTargets.size(); ++i) {
-                runtimeTargets[i] = toRuntimeTarget(s_weaponPartTargets[i]);
-            }
-        }
+        const auto targetCount = copyWeaponPartTargets(runtimeTargets);
 
         const weapon_part_runtime::Contact contact{
             .weaponGenerationKey = query.weaponGenerationKey,
@@ -5826,7 +6618,8 @@ namespace rock::provider
             .socketRole = static_cast<WeaponSocketRole>(query.socketRole),
             .actionRole = static_cast<WeaponActionRole>(query.actionRole),
         };
-        const auto resolution = weapon_part_runtime::resolveTarget(runtimeTargets, contact);
+        const auto resolution = weapon_part_runtime::resolveTarget(
+            std::span(runtimeTargets).first(targetCount), contact);
         outResolution.whitelistActive = resolution.whitelistActive ? 1u : 0u;
         outResolution.matched = resolution.matched ? 1u : 0u;
         outResolution.grabMode = fromRuntimeGrabMode(resolution.grabMode);

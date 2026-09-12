@@ -57,6 +57,7 @@ namespace rock::physics_body_classifier
         bool isRockWeaponSourceBody = false;
         bool isHeldBySameHand = false;
         bool isPlayerBody = false;
+        bool allowProjectileLayerForExactTarget = false;
     };
 
     struct BodyClassificationResult
@@ -190,6 +191,11 @@ namespace rock::physics_body_classifier
             mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::LooseObject &&
             input.layer == collision_layer_policy::FO4_LAYER_PROPS;
+        const bool activeExactThrowableProjectileLayer =
+            mode == InteractionMode::ActiveGrab &&
+            input.targetKind == grab_target::Kind::LooseObject &&
+            input.allowProjectileLayerForExactTarget &&
+            input.layer == collision_layer_policy::FO4_LAYER_PROJECTILE;
         const bool activeDeadActorBody =
             mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::DeadActorBody &&
@@ -202,7 +208,7 @@ namespace rock::physics_body_classifier
         }
         const bool interactionLayer =
             mode == InteractionMode::PassivePush ? collision_layer_policy::isPassivePushInteractionLayer(input.layer) :
-                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer || activeDynamicMovableStatic || activeLoosePickupLayer || activeDeadActorBody);
+                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer || activeDynamicMovableStatic || activeLoosePickupLayer || activeExactThrowableProjectileLayer || activeDeadActorBody);
         if (!interactionLayer) {
             return reject(BodyRejectReason::UnsupportedLayer);
         }

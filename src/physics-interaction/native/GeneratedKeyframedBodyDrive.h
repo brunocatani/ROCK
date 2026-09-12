@@ -28,9 +28,11 @@ namespace rock
         inline constexpr float kTinyDistanceGameUnits = 0.0001f;
         inline constexpr float kTinyRotationRadians = 0.000001f;
 
+        // Unusable source intervals stay zero: they must never fabricate a
+        // nominal rate for velocity math (callers check isUsableDelta first).
         inline float sanitizeSourceDeltaSeconds(float value)
         {
-            return havok_physics_timing::isUsableDelta(value) ? value : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            return havok_physics_timing::isUsableDelta(value) ? value : 0.0f;
         }
 
         inline float predictionLeadSeconds(float secondsSinceSourceSample, float sourceDeltaSeconds, float driveDeltaSeconds)
@@ -45,14 +47,16 @@ namespace rock
             if (!std::isfinite(secondsSinceSourceSample) || secondsSinceSourceSample < 0.0f) {
                 secondsSinceSourceSample = 0.0f;
             }
-            const float sourceDelta = sanitizeSourceDeltaSeconds(sourceDeltaSeconds);
-            const float driveDelta = havok_physics_timing::isUsableDelta(driveDeltaSeconds) ? driveDeltaSeconds : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            if (!havok_physics_timing::isUsableDelta(sourceDeltaSeconds) ||
+                !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
+                return 0.0f;
+            }
             if (secondsSinceSourceSample > kMaxStaleSeconds) {
                 return 0.0f;
             }
 
-            const float requestedLead = secondsSinceSourceSample + driveDelta;
-            const float maxLead = (std::min)(kMaxPredictionSeconds, sourceDelta * kMaxPredictionSourceFrames);
+            const float requestedLead = secondsSinceSourceSample + driveDeltaSeconds;
+            const float maxLead = (std::min)(kMaxPredictionSeconds, sourceDeltaSeconds * kMaxPredictionSourceFrames);
             return (std::max)(0.0f, (std::min)(requestedLead, maxLead));
         }
 
@@ -76,8 +80,12 @@ namespace rock
                 return false;
             }
 
-            const float sourceDelta = sanitizeSourceDeltaSeconds(sourceDeltaSeconds);
-            const float invDelta = 1.0f / sourceDelta;
+            if (!havok_physics_timing::isUsableDelta(sourceDeltaSeconds)) {
+                // No measured source interval: no velocity sample, never a
+                // fabricated-rate one.
+                return false;
+            }
+            const float invDelta = 1.0f / sourceDeltaSeconds;
             outVelocityHavok.x = (currentTargetGame.x - previousTargetGame.x) * gameToHavokScale * invDelta;
             outVelocityHavok.y = (currentTargetGame.y - previousTargetGame.y) * gameToHavokScale * invDelta;
             outVelocityHavok.z = (currentTargetGame.z - previousTargetGame.z) * gameToHavokScale * invDelta;
@@ -247,7 +255,15 @@ namespace rock
             float maxAngularVelocityRadians)
         {
             TargetVelocityLimit limit{};
-            const float driveDelta = havok_physics_timing::isUsableDelta(driveDeltaSeconds) ? driveDeltaSeconds : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            if (!havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
+                // No measured drive delta: command zero motion instead of a
+                // velocity computed against a fabricated rate.
+                limit.alpha = 0.0f;
+                limit.linearLimitExceeded = true;
+                limit.angularLimitExceeded = true;
+                return limit;
+            }
+            const float driveDelta = driveDeltaSeconds;
             const float scale = physics_scale::isUsableScale(gameToHavokScale) ? gameToHavokScale : physics_scale::kFallbackGameToHavok;
 
             if (std::isfinite(maxLinearVelocityHavok) && maxLinearVelocityHavok > 0.0f &&
@@ -339,7 +355,8 @@ namespace rock
         RE::NiTransform pendingTarget{};
         RE::NiTransform previousTarget{};
         RE::NiPoint3 sampledLinearVelocityHavok{};
-        float sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+        // Zero until a usable source interval is queued (telemetry only).
+        float sourceDeltaSeconds = 0.0f;
         float secondsSinceSourceSample = generated_keyframed_body_drive_math::kMaxStaleSeconds;
         float teleportDistanceGameUnits = 1000.0f;
         std::uint32_t stepsWithoutSource = 0;
@@ -381,11 +398,14 @@ namespace rock
             return;
         }
 
-        const float driveDelta =
-            havok_physics_timing::isUsableDelta(driveDeltaSeconds) ? driveDeltaSeconds : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+        if (!havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
+            // Unmeasured step: the source age holds instead of advancing by a
+            // fabricated rate.
+            return;
+        }
         const float currentAge =
             (std::isfinite(state.secondsSinceSourceSample) && state.secondsSinceSourceSample >= 0.0f) ? state.secondsSinceSourceSample : 0.0f;
-        state.secondsSinceSourceSample = currentAge + driveDelta;
+        state.secondsSinceSourceSample = currentAge + driveDeltaSeconds;
         if (state.stepsWithoutSource < (std::numeric_limits<std::uint32_t>::max)()) {
             ++state.stepsWithoutSource;
         }
@@ -403,6 +423,9 @@ namespace rock
         bool driven = false;
         bool teleported = false;
         bool skippedStale = false;
+        // The callback carried no measured native physics time; the drive
+        // held the body instead of integrating against a fabricated rate.
+        bool skippedInvalidTiming = false;
         bool missingBody = false;
         bool bodyCollisionObjectMismatch = false;
         bool placementFailed = false;
@@ -413,7 +436,16 @@ namespace rock
         bool linearLimitExceeded = false;
         bool angularLimitExceeded = false;
         bool hasLiveBodyTransform = false;
+        bool hasRequestedTargetGameTransform = false;
+        bool hasCommandedTargetGameTransform = false;
         bool hasSampledTargetLinearVelocityHavok = false;
+        // Observed native velocity before/after the existing contact limiter.
+        bool dynamicVelocityValid = false;
+        bool contactPressClamped = false;
+        bool sourceJumpPlacement = false;
+        bool divergencePlacement = false;
+        RE::NiPoint3 dynamicLinearBeforePressHavok{};
+        RE::NiPoint3 dynamicLinearAfterPressHavok{};
         /*
          * targetGamePosition is the COMMANDED target: velocity-limited toward
          * the live body when the raw gap exceeds maxLinearVelocity * driveDt.
@@ -428,6 +460,9 @@ namespace rock
         RE::NiPoint3 targetHavokPosition{};
         RE::NiPoint3 liveBodyGamePosition{};
         RE::NiPoint3 sampledTargetLinearVelocityHavok{};
+        RE::NiTransform requestedTargetGameTransform{};
+        RE::NiTransform commandedTargetGameTransform{};
+        RE::NiTransform liveBodyGameTransform{};
         RE::NiPoint3 targetAxisXWorld{};
         RE::NiPoint3 targetAxisYWorld{};
         RE::NiPoint3 targetAxisZWorld{};
@@ -441,8 +476,8 @@ namespace rock
         float targetToBodyAxisZDegrees = 0.0f;
         std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
         body_frame::BodyFrameSource liveBodyFrameSource = body_frame::BodyFrameSource::Fallback;
-        float driveDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
-        float sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+        float driveDeltaSeconds = 0.0f;
+        float sourceDeltaSeconds = 0.0f;
         float sourceAgeSeconds = 0.0f;
         float predictionLeadSeconds = 0.0f;
         float requiredLinearVelocityHavok = 0.0f;
@@ -451,6 +486,9 @@ namespace rock
         float uncappedRequiredAngularVelocityRadians = 0.0f;
         float targetLimitAlpha = 1.0f;
         std::uint32_t stepsWithoutSource = 0;
+
+        // Identity of the queued source actually selected under the drive lock.
+        std::uint64_t sourceSequence = 0;
 
         [[nodiscard]] bool shouldRequestRebuild() const
         {

@@ -54,7 +54,7 @@ namespace rock::native_equipped_weapon_attach
             return SubmitResult::MissingPlayer;
         }
 
-        auto* equipped = f4vr::getEquippedItem();
+        auto* equipped = f4vr::getEquippedWeaponItem();
         auto* object = equipped ? equipped->item.object : nullptr;
         auto* instanceData = equipped ? equipped->item.instanceData.get() : nullptr;
         if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP) {

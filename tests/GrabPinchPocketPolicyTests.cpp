@@ -58,7 +58,6 @@ namespace
             .mesh = mesh,
             .closeGrab = true,
             .handPocketOnlyGrab = false,
-            .authoredGrabNode = false,
             .looseWeaponGrab = false,
             .ownerMatchesResolvedBody = true,
             .hasFingerSnapshot = true,
@@ -81,11 +80,11 @@ int main()
     ok &= expectTrue("compact object flag", compact.compactObject);
     ok &= expectReason("compact object reason", compact.reason, "pinchCompact");
 
-    auto compactLimit = evaluateObject(validInput(bounds(8.0f, 5.0f, 2.0f)));
-    ok &= expectTrue("compact object accepts the configured 8gu limit", compactLimit.accept);
+    auto compactLimit = evaluateObject(validInput(bounds(10.0f, 5.0f, 2.0f)));
+    ok &= expectTrue("compact object accepts the configured 10gu limit", compactLimit.accept);
     ok &= expectReason("compact object limit reason", compactLimit.reason, "pinchCompact");
 
-    auto canSizedObject = evaluateObject(validInput(bounds(9.0f, 5.0f, 2.0f)));
+    auto canSizedObject = evaluateObject(validInput(bounds(11.0f, 5.0f, 2.0f)));
     ok &= expectFalse("can-sized object above compact limit rejected", canSizedObject.accept);
     ok &= expectReason("can-sized object reason", canSizedObject.reason, "objectTooLarge");
 
@@ -140,12 +139,6 @@ int main()
     decision = evaluateObject(looseWeapon);
     ok &= expectTrue("loose weapon can use pinch geometry", decision.accept);
     ok &= expectReason("loose weapon pinch reason", decision.reason, "pinchCompact");
-
-    auto authoredGrabNode = validInput(bounds(5.0f, 4.0f, 2.0f));
-    authoredGrabNode.authoredGrabNode = true;
-    decision = evaluateObject(authoredGrabNode);
-    ok &= expectTrue("authored node can use pinch geometry", decision.accept);
-    ok &= expectReason("authored node pinch reason", decision.reason, "pinchCompact");
 
     auto multiBody = validInput(bounds(5.0f, 4.0f, 2.0f));
     multiBody.multipleAcceptedBodies = true;
@@ -208,6 +201,30 @@ int main()
     ok &= expectTrue("pinch thumb proximal is engaged", pinchPose.jointValues[0] < 0.70f);
     ok &= expectTrue("pinch thumb distal does not over-chase", pinchPose.jointValues[2] >= 0.45f);
     ok &= expectTrue("pinch thumb curls as a chain", pinchPose.jointValues[0] > pinchPose.jointValues[1] && pinchPose.jointValues[1] > pinchPose.jointValues[2]);
+
+    const auto pinkyOppositionPose =
+        buildStableOppositionFingerPose(
+            poseConfig,
+            0.20f,
+            4);
+    ok &= expectNear(
+        "pinky opposition keeps thumb at stable endpoint value",
+        pinkyOppositionPose.values[0],
+        0.45f);
+    ok &= expectNear(
+        "pinky opposition keeps pinky at stable endpoint value",
+        pinkyOppositionPose.values[4],
+        0.45f);
+    ok &= expectNear(
+        "pinky opposition closes inner fingers coherently",
+        pinkyOppositionPose.values[1],
+        0.20f);
+    ok &= expectTrue(
+        "pinky opposition articulates the pinky endpoint chain",
+        pinkyOppositionPose.jointValues[12] >
+                pinkyOppositionPose.jointValues[13] &&
+            pinkyOppositionPose.jointValues[13] >
+                pinkyOppositionPose.jointValues[14]);
 
     poseConfig.thumbIndexMaxOpenValue = 0.05f;
     const auto clampedPinchPose = buildStablePinchFingerPose(poseConfig, 0.30f);

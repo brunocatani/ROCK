@@ -3,6 +3,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "F4SE/Impl/PCH.h"
@@ -33,6 +34,52 @@ namespace rock::havok_runtime
 {
     namespace
     {
+        struct NativeMotionArray
+        {
+            RE::hknpMotion* data = nullptr;
+            std::uint32_t slotCount = 0;
+            std::uint32_t capacityAndFlags = 0;
+        };
+        static_assert(sizeof(NativeMotionArray) == 0x10);
+
+        RE::hknpMotion* readAllocatedMotionSlot(RE::hknpWorld* world, std::uint32_t motionIndex,
+            NativeMotionArray& array, const char*& stage)
+        {
+            // FO4VR: world+0xD8 is the motion manager (0x14154639C).
+            // Its array at +0x08 has count/capacity at +0x10/+0x14:
+            // 0x1417E1C2F-49 writes all three; 0x141542FC0-CE reads capacity.
+            // Allocation byte +0x3F is set by 0x1417E1D97 and inspected by
+            // 0x1417E1B77. Keep this lookup on the caller's physics lifetime;
+            // do not retain the array across native allocation or retirement.
+#if defined(_MSC_VER)
+            __try {
+#endif
+                stage = "array-header";
+                array = *reinterpret_cast<const NativeMotionArray*>(
+                    reinterpret_cast<std::uintptr_t>(world) + 0xE0);
+                const auto address = reinterpret_cast<std::uintptr_t>(array.data);
+                stage = "array-pointer";
+                if (address < 0x10000 || (address & 0xF) != 0) {
+                    return nullptr;
+                }
+                stage = "array-bounds";
+                if (!body_frame::motionSlotCanBeRead(motionIndex, array.slotCount, array.capacityAndFlags)) {
+                    return nullptr;
+                }
+                stage = "slot-allocation";
+                auto* motion = &array.data[motionIndex];
+                if (*reinterpret_cast<const std::uint8_t*>(
+                        reinterpret_cast<std::uintptr_t>(motion) + 0x3F) == 0) {
+                    return nullptr;
+                }
+                return motion;
+#if defined(_MSC_VER)
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return nullptr;
+            }
+#endif
+        }
+
         struct alignas(16) NativeContactSignalPointBuffer
         {
             std::uint32_t pointCount = 0;
@@ -51,6 +98,7 @@ namespace rock::havok_runtime
         struct BodyFlagLeaseEntry
         {
             RE::hknpWorld* world = nullptr;
+            RE::NiPointer<RE::NiCollisionObject> collisionObject;
             std::uint32_t bodyId = body_frame::kInvalidBodyId;
             std::uint32_t flags = 0;
             std::uint32_t originalEnabledFlags = 0;
@@ -187,11 +235,6 @@ namespace rock::havok_runtime
         return world ? world->GetBodyArray() : nullptr;
     }
 
-    RE::hknpMotion* getMotionArray(RE::hknpWorld* world)
-    {
-        return world ? world->GetMotionArray() : nullptr;
-    }
-
     RE::hknpBody* getBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
     {
         auto* body = getReadableBodySlot(world, bodyId);
@@ -208,12 +251,16 @@ namespace rock::havok_runtime
             return nullptr;
         }
 
-        auto* motionArray = getMotionArray(world);
-        if (!motionArray) {
-            return nullptr;
+        NativeMotionArray array{};
+        const char* stage = "array-header";
+        auto* motion = readAllocatedMotionSlot(world, motionIndex, array, stage);
+        if (!motion) {
+            ROCK_LOG_SAMPLE_WARN(Physics, 1000,
+                "Motion lookup rejected: stage={} world={:p} motion={} array={:p} slots={} capacityFlags=0x{:08X}",
+                stage, static_cast<void*>(world), motionIndex, static_cast<void*>(array.data),
+                array.slotCount, array.capacityAndFlags);
         }
-
-        return &motionArray[motionIndex];
+        return motion;
     }
 
     RE::hknpMotion* getBodyMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId)
@@ -313,6 +360,55 @@ namespace rock::havok_runtime
             return nullptr;
         }
         return pointerRangeLooksReadable(instance, sizeof(RE::hknpPhysicsSystemInstance)) ? instance : nullptr;
+    }
+
+    bool tryResolveCollisionObjectBody(
+        RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld*& outWorld,
+        RE::hknpBodyId& outBodyId)
+    {
+        outWorld = nullptr;
+        outBodyId = RE::hknpBodyId{ body_frame::kInvalidBodyId };
+
+        auto* physicsSystem = getPhysicsSystemFromCollisionObject(collisionObject);
+        auto* instance = static_cast<RE::hknpPhysicsSystemInstance*>(
+            getPhysicsSystemInstance(physicsSystem));
+        if (!physicsSystem || !instance) {
+            return false;
+        }
+
+        std::int32_t systemBodyIndex = -1;
+        std::int32_t bodyCount = 0;
+        RE::hknpWorld* world = nullptr;
+        if (!tryReadField(
+                collisionObject,
+                offsets::kCollisionObject_SystemBodyIndex,
+                systemBodyIndex) ||
+            !tryReadValue(&instance->bodyCount, bodyCount) ||
+            !tryReadValue(&instance->world, world) ||
+            !world || systemBodyIndex < 0 || systemBodyIndex >= bodyCount) {
+            return false;
+        }
+
+        using PhysicsSystemGetBodyId = void (*)(
+            void*,
+            RE::hknpBodyId*,
+            std::int32_t);
+        static REL::Relocation<PhysicsSystemGetBodyId> getBodyId{
+            REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId)
+        };
+
+        RE::hknpBodyId bodyId{ body_frame::kInvalidBodyId };
+        getBodyId(physicsSystem, &bodyId, systemBodyIndex);
+        if (!isValidBodyId(bodyId) ||
+            !bodySlotLooksReadable(world, bodyId) ||
+            getCollisionObjectFromBody(world, bodyId) != collisionObject) {
+            return false;
+        }
+
+        outWorld = world;
+        outBodyId = bodyId;
+        return true;
     }
 
     const char* physicsSystemBodyScanStatusName(PhysicsSystemBodyScanStatus status)
@@ -829,6 +925,15 @@ namespace rock::havok_runtime
             return bodyFlagLeaseMatches(lease, world, bodyId, flags, mode);
         });
         if (leaseIt != g_bodyFlagLeases.end()) {
+            auto* live = getReadableBodySlot(world, RE::hknpBodyId{bodyId});
+            if (!live || getCollisionObjectFromBody(live) != leaseIt->collisionObject.get()) {
+                // A removed ragdoll body ID may be reused before the old hand
+                // releases. Its old lease must not transfer to the new body.
+                g_bodyFlagLeases.erase(leaseIt);
+                leaseIt = g_bodyFlagLeases.end();
+            }
+        }
+        if (leaseIt != g_bodyFlagLeases.end()) {
             if (!bodyFlagLeaseContainsOwner(*leaseIt, ownerToken)) {
                 leaseIt->ownerTokens.push_back(ownerToken);
             }
@@ -847,6 +952,7 @@ namespace rock::havok_runtime
 
         BodyFlagLeaseEntry lease{};
         lease.world = world;
+        lease.collisionObject.reset(getCollisionObjectFromBody(body));
         lease.bodyId = bodyId;
         lease.flags = flags;
         lease.originalEnabledFlags = originalEnabledFlags;
@@ -890,7 +996,9 @@ namespace rock::havok_runtime
         }
 
         const std::uint32_t flagsIntroducedByLease = leaseIt->flags & ~leaseIt->originalEnabledFlags;
-        const bool shouldRestore = restoreOnFinalLease && world && flagsIntroducedByLease != 0;
+        auto* live = world ? getReadableBodySlot(world, RE::hknpBodyId{bodyId}) : nullptr;
+        const bool sameIdentity = live && getCollisionObjectFromBody(live) == leaseIt->collisionObject.get();
+        const bool shouldRestore = restoreOnFinalLease && sameIdentity && flagsIntroducedByLease != 0;
         g_bodyFlagLeases.erase(leaseIt);
         return shouldRestore ? disableBodyFlags(world, bodyId, flagsIntroducedByLease, mode) : true;
     }
@@ -920,7 +1028,7 @@ namespace rock::havok_runtime
 
     bool rebuildMotionMassProperties(RE::hknpWorld* world, std::uint32_t motionIndex, int rebuildMode)
     {
-        if (!world || !body_frame::hasUsableMotionIndex(motionIndex)) {
+        if (!getMotion(world, motionIndex)) {
             return false;
         }
 

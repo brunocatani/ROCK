@@ -17,6 +17,14 @@ namespace rock::performance_profiler
     enum class Scope : std::uint8_t
     {
         FrameUpdate = 0,
+        RuntimePreparation,
+        WeaponEquipTransition,
+        AuthoredPrimaryGrip,
+        InteractionUpdate,
+        EquippedWeaponInteraction,
+        InteractionFinalize,
+        HandPresentation,
+        ProviderPublication,
         HandColliderUpdate,
         BodyColliderUpdate,
         GeneratedColliderPhysicsFlush,
@@ -25,6 +33,11 @@ namespace rock::performance_profiler
         GeneratedBodyContactRegistry,
         WeaponColliderBuild,
         WeaponColliderCreate,
+        WeaponGapDecomposition,
+        WeaponMeshExtraction,
+        WeaponPointFitting,
+        WeaponGapColliderBuild,
+        WeaponGapColliderCreate,
         TwoHandedGripStart,
         EquippedWeaponFingerPoseCapture,
         SupportGripSuppression,
@@ -43,6 +56,8 @@ namespace rock::performance_profiler
         GrabHeldObjectUpdate,
         GrabAuthorityFlush,
         GrabAuthorityAfterSolveDiagnostics,
+        GrabNearbyDampingRestore,
+        GrabNearbyDampingRestoreBodySearch,
         Count
     };
 
@@ -55,7 +70,6 @@ namespace rock::performance_profiler
         WeaponRebuildVisualStableWait,
         WeaponRebuildVisualSourceUnavailableRetained,
         WeaponRebuildVisualSourceUnavailableRetainExpired,
-        WeaponRebuildReasonSettingsChanged,
         WeaponRebuildReasonDriveRequested,
         WeaponRebuildReasonKeyChanged,
         WeaponRebuildReasonMissingBodies,
@@ -66,6 +80,7 @@ namespace rock::performance_profiler
         GrabAcquisitionCacheHit,
         GrabAcquisitionCacheMiss,
         GrabAcquisitionCacheInvalidated,
+        GrabNearbyDampingRestoreFailed,
         Count
     };
 
@@ -76,6 +91,9 @@ namespace rock::performance_profiler
         WeaponBuildBodiesCreated,
         WeaponBuildTransientReloadSources,
         WeaponBuildBodyCount,
+        WeaponBuildGapMode,
+        WeaponBuildConvexes,
+        WeaponBuildPoints,
         GrabAcquisitionVisitedNodes,
         GrabAcquisitionCollisionObjects,
         GrabAcquisitionBodyIds,

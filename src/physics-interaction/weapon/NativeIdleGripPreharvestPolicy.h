@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -10,6 +11,24 @@ namespace rock::native_idle_grip_preharvest_policy
     inline constexpr std::size_t kFirstPersonGraphIndex = 1;
     inline constexpr std::uint32_t kAnimationResourceStateMask = 0x70000000u;
     inline constexpr unsigned kAnimationResourceStateShift = 28;
+    inline constexpr std::array<float, 5> kPersistenceSampleFractions{ 0.0f, 0.2f, 0.4f, 0.6f, 0.8f };
+    inline constexpr float kMinimumPersistenceDurationSeconds = 0.05f;
+    inline constexpr float kMaximumPersistenceDurationSeconds = 600.0f;
+    inline constexpr float kMaximumStableHandTranslationDelta = 0.05f;
+    inline constexpr float kMaximumStableHandRotationDeltaDegrees = 0.5f;
+    inline constexpr float kMaximumStableFingerTranslationDelta = 0.02f;
+    inline constexpr float kMaximumStableFingerRotationDeltaDegrees = 1.0f;
+    inline constexpr float kMaximumStableScaleDelta = 0.001f;
+    /*
+     * The support hand is not rigidly attached to the Weapon bone, so an
+     * idle's breathing sway moves it relative to the weapon across the
+     * clip. Tolerate the same sway the runtime value witness accepts
+     * (1gu, ~3deg); a support arm that actually travels across the idle
+     * fails closed and leaves the record without a support relation.
+     */
+    inline constexpr float kMaximumStableSupportHandTranslationDelta = 1.0f;
+    inline constexpr float kMaximumStableSupportHandRotationDeltaDegrees = 3.0f;
+    inline constexpr std::size_t kMaxBoneChainLength = 64;
 
     enum class IdleClipPriority : std::uint8_t
     {
@@ -160,5 +179,76 @@ namespace rock::native_idle_grip_preharvest_policy
             }
         }
         return true;
+    }
+
+    [[nodiscard]] constexpr float persistenceSampleTimeSeconds(const float durationSeconds, const std::size_t sampleIndex) noexcept
+    {
+        return sampleIndex < kPersistenceSampleFractions.size() ? durationSeconds * kPersistenceSampleFractions[sampleIndex] : 0.0f;
+    }
+
+    [[nodiscard]] constexpr bool stableForPersistence(
+        const std::size_t sampleCount,
+        const float durationSeconds,
+        const float maxHandTranslationDelta,
+        const float maxHandRotationDeltaDegrees,
+        const float maxFingerTranslationDelta,
+        const float maxFingerRotationDeltaDegrees,
+        const float maxScaleDelta) noexcept
+    {
+        return sampleCount == kPersistenceSampleFractions.size() &&
+               durationSeconds >= kMinimumPersistenceDurationSeconds &&
+               durationSeconds <= kMaximumPersistenceDurationSeconds &&
+               maxHandTranslationDelta <= kMaximumStableHandTranslationDelta &&
+               maxHandRotationDeltaDegrees <= kMaximumStableHandRotationDeltaDegrees &&
+               maxFingerTranslationDelta <= kMaximumStableFingerTranslationDelta &&
+               maxFingerRotationDeltaDegrees <= kMaximumStableFingerRotationDeltaDegrees &&
+               maxScaleDelta <= kMaximumStableScaleDelta;
+    }
+
+    [[nodiscard]] constexpr bool supportStableForPersistence(
+        const std::size_t sampleCount,
+        const float durationSeconds,
+        const float maxSupportHandTranslationDelta,
+        const float maxSupportHandRotationDeltaDegrees,
+        const float maxSupportFingerTranslationDelta,
+        const float maxSupportFingerRotationDeltaDegrees,
+        const float maxSupportScaleDelta) noexcept
+    {
+        return sampleCount == kPersistenceSampleFractions.size() &&
+               durationSeconds >= kMinimumPersistenceDurationSeconds &&
+               durationSeconds <= kMaximumPersistenceDurationSeconds &&
+               maxSupportHandTranslationDelta <= kMaximumStableSupportHandTranslationDelta &&
+               maxSupportHandRotationDeltaDegrees <= kMaximumStableSupportHandRotationDeltaDegrees &&
+               maxSupportFingerTranslationDelta <= kMaximumStableFingerTranslationDelta &&
+               maxSupportFingerRotationDeltaDegrees <= kMaximumStableFingerRotationDeltaDegrees &&
+               maxSupportScaleDelta <= kMaximumStableScaleDelta;
+    }
+
+    /*
+     * Walk hkaSkeleton parent indices from a bone to its root, leaf first.
+     * The support relation is composed from graph-local bone transforms
+     * along both arm chains, exactly like the live capture composes
+     * logical model transforms; the shared ancestors cancel in the
+     * inverse(primary) * support product. Fails closed (length 0) on an
+     * out-of-range parent, a chain longer than the caller's buffer, or a
+     * cycle, so a malformed skeleton can never drive an unbounded walk.
+     */
+    [[nodiscard]] constexpr std::size_t collectBoneChainToRoot(
+        const int leafBoneIndex,
+        const std::span<const std::int16_t> parentIndices,
+        const std::span<int> outChain) noexcept
+    {
+        std::size_t length = 0;
+        int current = leafBoneIndex;
+        while (current >= 0) {
+            if (static_cast<std::size_t>(current) >= parentIndices.size() ||
+                length >= outChain.size() ||
+                length >= parentIndices.size()) {
+                return 0;
+            }
+            outChain[length++] = current;
+            current = parentIndices[static_cast<std::size_t>(current)];
+        }
+        return length;
     }
 }

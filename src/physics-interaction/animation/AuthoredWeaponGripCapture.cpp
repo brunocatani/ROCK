@@ -2,6 +2,7 @@
 
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -603,6 +604,21 @@ namespace rock::authored_weapon_grip_capture
             return true;
         }
 
+        /*
+         * The graph-output phase fires inside the native game update, between
+         * the previous frame's Complete and the next frame's BeforeRock. It
+         * attributes no elapsed time: consumers order against it, they do not
+         * integrate it, so the dispatched timing is zero-duration and invalid.
+         */
+        [[nodiscard]] game_frame_timing_policy::GameFrameTiming makeGraphOutputPhaseTiming()
+        {
+            game_frame_timing_policy::GameFrameTiming timing = game_timing::currentFrameTiming();
+            timing.rawDeltaSeconds = 0.0f;
+            timing.deltaSeconds = 0.0f;
+            timing.valid = false;
+            return timing;
+        }
+
         void onPostUpdateAnimationGraphManager(void* holder)
         {
 #if defined(_MSC_VER)
@@ -612,7 +628,7 @@ namespace rock::authored_weapon_grip_capture
                 // whether it must yield for this exact graph sample.
                 provider::dispatchAnimationPhaseCallbacksV1(
                     provider::RockProviderAnimationPhaseV1::NativeGraphOutput,
-                    0.0f);
+                    makeGraphOutputPhaseTiming());
                 captureAuthoredSupportGraphPose();
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 s_captureFault.store(true, std::memory_order_release);
@@ -625,7 +641,7 @@ namespace rock::authored_weapon_grip_capture
 #else
             provider::dispatchAnimationPhaseCallbacksV1(
                 provider::RockProviderAnimationPhaseV1::NativeGraphOutput,
-                0.0f);
+                makeGraphOutputPhaseTiming());
             captureAuthoredSupportGraphPose();
 #endif
             if (s_originalPostUpdate) {
@@ -871,12 +887,8 @@ namespace rock::authored_weapon_grip_capture
         return "unknown";
     }
 
-    bool tryResolvePrimaryFiringGripAlignment(
+    bool tryGetPrimaryFiringGripRelation(
         const RE::NiNode* expectedWeaponNode,
-        const RE::NiTransform& liveWeaponWorld,
-        const RE::NiTransform& trackedPrimaryHandWorld,
-        RE::NiTransform& outWeaponWorld,
-        RE::NiTransform& outCurrentAuthoredHandWorld,
         RE::NiTransform& outAuthoredPrimaryHandInWeapon,
         std::uint64_t& outCaptureSequence)
     {
@@ -891,8 +903,6 @@ namespace rock::authored_weapon_grip_capture
             !capturedHandNode ||
             expectedWeaponNode != s_primaryFiringGripWeaponNode.load(std::memory_order_acquire) ||
             expectedWeaponNode->parent != capturedHandNode ||
-            !finiteTransform(liveWeaponWorld) ||
-            !finiteTransform(trackedPrimaryHandWorld) ||
             !finiteTransform(s_authoredPrimaryHandInWeapon)) {
             return false;
         }
@@ -908,26 +918,6 @@ namespace rock::authored_weapon_grip_capture
         // takes the firing role; it must never reconstruct the canonical from
         // presentation-world transforms after hFRIK has moved the weapon.
         outAuthoredPrimaryHandInWeapon = s_authoredPrimaryHandInWeapon;
-        outCurrentAuthoredHandWorld = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryHandWorld(
-            liveWeaponWorld,
-            outAuthoredPrimaryHandInWeapon,
-            [](const RE::NiTransform& parent, const RE::NiTransform& child) {
-                return transform_math::composeTransforms(parent, child);
-            });
-        outWeaponWorld = authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorld(
-            trackedPrimaryHandWorld,
-            outAuthoredPrimaryHandInWeapon,
-            [](const RE::NiTransform& parent, const RE::NiTransform& child) {
-                return transform_math::composeTransforms(parent, child);
-            },
-            [](const RE::NiTransform& transform) {
-                return transform_math::invertTransform(transform);
-            });
-        if (!finiteTransform(outCurrentAuthoredHandWorld) ||
-            !finiteTransform(outWeaponWorld)) {
-            return false;
-        }
-
         outCaptureSequence = sequence;
         return true;
     }

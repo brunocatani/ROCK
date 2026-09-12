@@ -1,9 +1,7 @@
 #include "api/TouchGrabRegistry.h"
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 
 #include <array>
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <cassert>
 #include <cstdint>
 #include <memory>
@@ -106,6 +104,8 @@ namespace
         assert(match.matched);
         assert(!match.wildcard);
         assert(match.target.targetId == 1);
+        assert(!rock::global_surface_grab_policy::shouldYieldToCloseObject(
+            match.wildcard, true));
 
         match = registry->resolve(
             101,
@@ -119,6 +119,12 @@ namespace
         assert(match.matched);
         assert(match.wildcard);
         assert(match.target.targetId == 2);
+        // A climbing-style registration must yield to a close object, while
+        // remaining available when only a far selection (or no selection) exists.
+        assert(rock::global_surface_grab_policy::shouldYieldToCloseObject(
+            match.wildcard, true));
+        assert(!rock::global_surface_grab_policy::shouldYieldToCloseObject(
+            match.wildcard, false));
 
         match = registry->resolve(
             101,
@@ -333,6 +339,79 @@ namespace
         assert(match.matched);
         assert(match.target.targetId == original.targetId);
     }
+
+    void testDisjointTwoHandWildcardsCoexist()
+    {
+        constexpr std::uint64_t owner = 0xA030;
+        constexpr std::uint64_t scope = 0xB030;
+        auto registry = std::make_unique<TouchGrabRegistry>();
+        auto right = wildcardAnchor(30, std::uint64_t{ 1 } << 5);
+        auto left = wildcardAnchor(31, std::uint64_t{ 1 } << 5);
+        right.flags &= ~flag(
+            RockProviderTouchGrabTargetFlagV1::AllowLeftHand);
+        left.flags &= ~flag(
+            RockProviderTouchGrabTargetFlagV1::AllowRightHand);
+        right.flags |= flag(
+            RockProviderTouchGrabTargetFlagV1::AllowTwoHands);
+        left.flags |= flag(
+            RockProviderTouchGrabTargetFlagV1::AllowTwoHands);
+        const std::array targets{ right, left };
+
+        assert(registry->setScope(
+                   owner,
+                   scope,
+                   targets.data(),
+                   static_cast<std::uint32_t>(targets.size()),
+                   1) == TouchGrabRegistry::RegistrationResult::Ok);
+        const auto rightMatch = registry->resolve(
+            500,
+            5,
+            TouchGrabMotionClassV1::Static,
+            RockProviderHand::Right,
+            11,
+            12,
+            13,
+            1);
+        const auto leftMatch = registry->resolve(
+            500,
+            5,
+            TouchGrabMotionClassV1::Static,
+            RockProviderHand::Left,
+            11,
+            12,
+            13,
+            1);
+        assert(rightMatch.matched);
+        assert(leftMatch.matched);
+        assert(rightMatch.target.targetId == right.targetId);
+        assert(leftMatch.target.targetId == left.targetId);
+    }
+}
+
+void testFallbackPriority()
+{
+    using namespace rock::provider;
+    auto registry = std::make_unique<TouchGrabRegistry>();
+    auto climbing = wildcardAnchor(50, 1ull << 2);
+    climbing.flags |= flag(RockProviderTouchGrabTargetFlagV1::FallbackOnly) |
+        flag(RockProviderTouchGrabTargetFlagV1::ExcludePowerArmor);
+    auto ordinary = wildcardAnchor(51, 1ull << 2);
+    auto exact = hinge(52, 100);
+    const auto resolve = [&]() { return registry->resolve(100, 2, TouchGrabMotionClassV1::Keyframed,
+        RockProviderHand::Right, 11, 12, 13, 40); };
+    assert(registry->setScope(1, 1, &climbing, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 50);
+    // A late higher-priority wildcard is admitted even when climbing registered first.
+    assert(registry->setScope(2, 2, &ordinary, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 51);
+    assert(registry->setScope(3, 3, &exact, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 52);
+    registry->clearAll();
+    assert(registry->setScope(2, 2, &ordinary, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(registry->setScope(1, 1, &climbing, 1, 40) == TouchGrabRegistry::RegistrationResult::Ok);
+    assert(resolve().target.targetId == 51);
+    exact.flags |= flag(RockProviderTouchGrabTargetFlagV1::FallbackOnly);
+    assert(registry->setScope(3, 3, &exact, 1, 40) != TouchGrabRegistry::RegistrationResult::Ok);
 }
 
 int main()
@@ -340,5 +419,7 @@ int main()
     testValidationAndExplicitPriority();
     testLeaseRefreshStateAndYield();
     testScopeReplacementIsTransactional();
+    testDisjointTwoHandWildcardsCoexist();
+    testFallbackPriority();
     return 0;
 }

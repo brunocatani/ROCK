@@ -47,6 +47,7 @@ int main()
     ok &= expectEqual("rollover rumble setting name", kSuppressedIniSettings[0], "bRumbleOnRollover:VRInterface");
     ok &= expectEqual("hover intensity setting name", kSuppressedIniSettings[1], "fVRInputHoverRumbleIntensity:VRWand");
     ok &= expectEqual("hover duration setting name", kSuppressedIniSettings[2], "fVRInputHoverRumbleDuration:VRWand");
+    ok &= expectTrue("native grab-hover suppression is fixed production policy", kSuppressionEnabled);
 
     ok &= expectTrue("enabled ROCK suppresses native hover haptics",
         shouldSuppressNativeGrabHoverHaptics(RuntimeInput{

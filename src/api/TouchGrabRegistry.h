@@ -211,7 +211,9 @@ namespace rock::provider
                     collisionLayer < 64 &&
                     (slot.target.allowedLayerMask &
                         (std::uint64_t{ 1 } << collisionLayer)) != 0 &&
-                    !wildcardMatch.matched) {
+                    (!wildcardMatch.matched ||
+                        (hasTouchGrabTargetFlagV1(wildcardMatch.target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) &&
+                         !hasTouchGrabTargetFlagV1(slot.target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly)))) {
                     wildcardMatch = makeMatch(slot, true);
                 }
             }
@@ -388,6 +390,8 @@ namespace rock::provider
         static constexpr std::uint32_t kKnownFlags =
             kHandFlags |
             kMotionFlags |
+            static_cast<std::uint32_t>(RockProviderTouchGrabTargetFlagV1::FallbackOnly) |
+            static_cast<std::uint32_t>(RockProviderTouchGrabTargetFlagV1::ExcludePowerArmor) |
             static_cast<std::uint32_t>(
                 RockProviderTouchGrabTargetFlagV1::AllowTwoHands) |
             static_cast<std::uint32_t>(
@@ -422,6 +426,8 @@ namespace rock::provider
             const bool wildcard = hasTouchGrabTargetFlagV1(
                 target.flags,
                 RockProviderTouchGrabTargetFlagV1::MatchAnyBody);
+            if (hasTouchGrabTargetFlagV1(target.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) &&
+                (!wildcard || target.kind != RockProviderTouchGrabKindV1::FixedAnchor)) return false;
             if (target.kind == RockProviderTouchGrabKindV1::FixedAnchor) {
                 if (wildcard) {
                     return target.bodyId == kInvalidBodyId &&
@@ -503,6 +509,8 @@ namespace rock::provider
             if (leftWildcard != rightWildcard) {
                 return false;
             }
+            if (hasTouchGrabTargetFlagV1(left.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly) !=
+                hasTouchGrabTargetFlagV1(right.flags, RockProviderTouchGrabTargetFlagV1::FallbackOnly)) return false;
             return (left.allowedLayerMask & right.allowedLayerMask) != 0 &&
                    (left.flags & right.flags & kHandFlags) != 0 &&
                    (left.flags & right.flags & kMotionFlags) != 0;

@@ -7,6 +7,14 @@ namespace rock::authored_weapon_grip_authority_policy
 {
     inline constexpr std::uint16_t kCompleteFiringFingerMask = 0x7FFF;
 
+    enum class PublicationAuthority : std::uint8_t
+    {
+        Unknown,
+        LiveEquippedGraph,
+        PersistedNativeIdle,
+        FreshNativeIdle,
+    };
+
     [[nodiscard]] constexpr bool completeFiringFingerPose(const std::uint16_t enabledMask) noexcept { return enabledMask == kCompleteFiringFingerMask; }
 
     [[nodiscard]] constexpr bool publicationHasRequiredFingerPose(const bool nativeIdlePreharvest, const bool completeFingerPose) noexcept
@@ -20,9 +28,50 @@ namespace rock::authored_weapon_grip_authority_policy
      * frames cannot replace that stable authored relation or erase its exact
      * finger pose.
      */
-    [[nodiscard]] constexpr bool shouldAcceptPublication(const bool sameIdentity, const bool existingIsNativeIdlePreharvest, const bool incomingIsNativeIdlePreharvest) noexcept
+    [[nodiscard]] constexpr bool shouldAcceptPublication(
+        const bool sameIdentity,
+        const PublicationAuthority existing,
+        const PublicationAuthority incoming) noexcept
     {
-        return !sameIdentity || !existingIsNativeIdlePreharvest || incomingIsNativeIdlePreharvest;
+        return !sameIdentity || static_cast<std::uint8_t>(incoming) >= static_cast<std::uint8_t>(existing);
+    }
+
+    /*
+     * Value witness for "same authored hand-in-weapon relation". Capture
+     * sequences change whenever the same authored idle is re-published from a
+     * different source (live graph, fresh off-screen harvest, disk cache), so
+     * identity-by-sequence alone discards still-valid paired data. Two
+     * relations are the same authored pose when every rotation entry and the
+     * grip translation agree within the idle-sway tolerance below; a real
+     * authoring change (different idle, different variant geometry) exceeds
+     * it and fails closed.
+     */
+    inline constexpr float kHandRelationRotationEntryEpsilon = 0.05f;
+    inline constexpr float kHandRelationTranslationEpsilonGameUnits = 1.0f;
+
+    template <class Transform>
+    [[nodiscard]] constexpr bool handRelationValueMatches(
+        const Transform& lhs,
+        const Transform& rhs) noexcept
+    {
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                const float delta =
+                    lhs.rotate.entry[row][column] -
+                    rhs.rotate.entry[row][column];
+                if (!(delta <= kHandRelationRotationEntryEpsilon &&
+                        -delta <= kHandRelationRotationEntryEpsilon)) {
+                    return false;
+                }
+            }
+        }
+        const float dx = lhs.translate.x - rhs.translate.x;
+        const float dy = lhs.translate.y - rhs.translate.y;
+        const float dz = lhs.translate.z - rhs.translate.z;
+        const float squaredDistance = dx * dx + dy * dy + dz * dz;
+        return squaredDistance <=
+               kHandRelationTranslationEpsilonGameUnits *
+                   kHandRelationTranslationEpsilonGameUnits;
     }
 
     enum class LookupSelection : std::uint8_t

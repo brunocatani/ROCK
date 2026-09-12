@@ -10,6 +10,26 @@ namespace rock::pipboy_pause_gesture_policy
     inline constexpr float kMinimumHoldSeconds = 0.15f;
     inline constexpr float kMaximumHoldSeconds = 2.0f;
 
+    enum class PipboyRoute : std::uint8_t
+    {
+        Unavailable,
+        Native,
+        FrikWrist,
+    };
+
+    [[nodiscard]] constexpr PipboyRoute selectPipboyRoute(
+        bool settingsAvailable, bool projected, bool attachedToHmd,
+        bool inPowerArmor, bool wristBindingReady)
+    {
+        if (!settingsAvailable) {
+            return PipboyRoute::Unavailable;
+        }
+        if (projected || attachedToHmd || inPowerArmor) {
+            return PipboyRoute::Native;
+        }
+        return wristBindingReady ? PipboyRoute::FrikWrist : PipboyRoute::Unavailable;
+    }
+
     enum class State : std::uint8_t
     {
         Idle,
@@ -84,13 +104,20 @@ namespace rock::pipboy_pause_gesture_policy
         }
 
         const float threshold = sanitizedHoldSeconds(input.holdSeconds);
+        // Menus can consume the release after a Pause hold. A new native
+        // press is proof of a new gesture, even if that release never reached
+        // us. Held-only input still cannot rearm a gesture across a menu.
+        if (input.pressed) {
+            decision.reason = state.state == State::Idle ? "press" : "fresh-press-after-missed-release";
+            state.state = State::Pending;
+            decision.state = state.state;
+            decision.consume = true;
+            return decision;
+        }
+
         switch (state.state) {
         case State::Idle:
-            if (input.pressed) {
-                state.state = State::Pending;
-                decision.consume = true;
-                decision.reason = "press";
-            } else if (input.held) {
+            if (input.held) {
                 state.state = State::BlockedUntilRelease;
                 decision.consume = true;
                 decision.reason = "untracked-hold";

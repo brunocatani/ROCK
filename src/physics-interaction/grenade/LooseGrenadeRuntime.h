@@ -3,6 +3,8 @@
 #include "RE/Bethesda/BSTSmartPointer.h"
 #include "RE/Bethesda/BSPointerHandle.h"
 
+#include "physics-interaction/grenade/LooseThrowablePolicy.h"
+
 #include <cstdint>
 
 namespace RE
@@ -19,15 +21,10 @@ namespace rock::loose_grenade_runtime
 {
     enum class GrenadeDetonationMode : std::uint8_t
     {
+        Unsupported,
         TimedFuse,
-        Impact
-    };
-
-    enum class GrenadeKind : std::uint8_t
-    {
-        NotGrenade,
-        Generic,
-        Molotov
+        Impact,
+        Proximity,
     };
 
     struct GrenadeRuntimeData
@@ -35,17 +32,18 @@ namespace rock::loose_grenade_runtime
         RE::BGSProjectile* projectile{ nullptr };
         RE::BGSExplosion* explosion{ nullptr };
         float fuseSeconds{ 0.0f };
+        float proximityRadiusGameUnits{ 0.0f };
+        float directImpactDamage{ 0.0f };
+        bool preserveReferenceAfterDetonation{ false };
         GrenadeDetonationMode detonationMode{ GrenadeDetonationMode::TimedFuse };
     };
 
-    struct PendingEquipRequest
+    struct ProximityScanResult
     {
-        bool active{ false };
-        std::uint64_t requestId{ 0 };
-        RE::TESObjectWEAP* weapon{ nullptr };
-        RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
-        std::uint32_t stackId{ 0 };
-        GrenadeRuntimeData runtime{};
+        bool targetFound{ false };
+        bool truncated{ false };
+        std::uint32_t targetActorFormID{ 0 };
+        std::uint32_t actorHandlesScanned{ 0 };
     };
 
     struct DropResult
@@ -57,11 +55,8 @@ namespace rock::loose_grenade_runtime
         std::uint32_t stackId{ 0 };
     };
 
-    [[nodiscard]] bool installEquipHook();
-
-    [[nodiscard]] bool isGrenadeWeapon(const RE::TESObjectWEAP* weapon) noexcept;
-    [[nodiscard]] bool isGrenadeRef(RE::TESObjectREFR* ref) noexcept;
-    [[nodiscard]] GrenadeKind classifyGrenadeRef(RE::TESObjectREFR* ref) noexcept;
+    [[nodiscard]] bool isThrowableWeapon(const RE::TESObjectWEAP* weapon) noexcept;
+    [[nodiscard]] bool isThrowableRef(RE::TESObjectREFR* ref) noexcept;
     [[nodiscard]] bool resolveGrenadeRuntimeData(
         RE::TESObjectWEAP* weapon,
         RE::TBO_InstanceData* instanceData,
@@ -70,17 +65,14 @@ namespace rock::loose_grenade_runtime
         RE::TESObjectREFR* ref,
         GrenadeRuntimeData& outRuntime) noexcept;
 
-    [[nodiscard]] bool copyPendingEquipRequest(PendingEquipRequest& outRequest);
-    [[nodiscard]] bool hasPendingEquipRequest();
-    void discardPendingEquipRequest(std::uint64_t requestId);
-    void clearPendingEquipRequest();
-
-    [[nodiscard]] DropResult dropPendingEquipRequestToWorld(
-        const PendingEquipRequest& request,
-        const RE::NiPoint3& dropLocation);
-
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
+    // Main-thread inventory transfer; does not create a duplicate or dispatch EquipObject.
+    [[nodiscard]] DropResult dropInventoryItemToWorld(std::uint32_t baseFormId, const RE::NiPoint3& dropLocation);
+    [[nodiscard]] DropResult dropEquippedThrowableToWorld(const RE::NiPoint3& dropLocation);
     [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
+    [[nodiscard]] ProximityScanResult scanHostileActorsWithinProximity(
+        RE::TESObjectREFR* ref,
+        float radiusGameUnits) noexcept;
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);
     [[nodiscard]] bool returnDroppedReferenceToInventory(RE::TESObjectREFR* ref);
     void disableAndDeleteReference(RE::TESObjectREFR* ref);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -62,9 +64,14 @@ namespace rock::grab_motion_controller
         float currentLinearTau = 0.03f;
         float currentAngularTau = 0.03f;
         float tauLerpSpeed = 0.5f;
-        float deltaTime = 1.0f / 90.0f;
+        // Measured game-frame delta; zero (no tau advance) until measured.
+        float deltaTime = 0.0f;
         bool physicsRateForceScalingEnabled = false;
-        float physicsDeltaSeconds = 1.0f / 90.0f;
+        // Measured physics substep delta; zero means unknown rate and yields
+        // a neutral force scale.
+        float physicsDeltaSeconds = 0.0f;
+        // Named calibration reference: the physics rate the grab force tuning
+        // was authored at. A rate baseline, not a clock fallback.
         float physicsRateReferenceHz = 90.0f;
         float physicsRateForceScaleExponent = 0.5f;
         float physicsRateMinForceScale = 0.75f;
@@ -90,7 +97,8 @@ namespace rock::grab_motion_controller
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
         float fadeFactor = 1.0f;
-        float physicsHz = 90.0f;
+        // Zero until a measured physics delta produced a rate.
+        float physicsHz = 0.0f;
         float physicsRateForceScale = 1.0f;
     };
 
@@ -157,7 +165,12 @@ namespace rock::grab_motion_controller
             return target;
         }
 
-        const float dt = safePositive(deltaTime, 1.0f / 90.0f);
+        // An unmeasured frame advances no time: hold instead of stepping by a
+        // fabricated nominal rate.
+        const float dt = safePositive(deltaTime, 0.0f);
+        if (dt <= 0.0f) {
+            return current;
+        }
         const float step = speed * dt;
         const float delta = target - current;
         if (std::abs(delta) <= step) {
@@ -196,15 +209,18 @@ namespace rock::grab_motion_controller
         return (std::max)(sanitizedMass, sanitizedFloor);
     }
 
-    inline float computePhysicsHz(float physicsDeltaSeconds, float fallbackHz = 90.0f)
+    // Returns the measured physics rate, or zero when the delta is
+    // unmeasured. Zero means "unknown" honestly; force scaling treats it as
+    // the neutral calibration point.
+    inline float computePhysicsHz(float physicsDeltaSeconds)
     {
         const float sanitizedDelta = safePositive(physicsDeltaSeconds, 0.0f);
         if (sanitizedDelta <= 0.0f) {
-            return safePositive(fallbackHz, 90.0f);
+            return 0.0f;
         }
 
         const float hz = 1.0f / sanitizedDelta;
-        return std::isfinite(hz) && hz > 0.0f ? hz : safePositive(fallbackHz, 90.0f);
+        return std::isfinite(hz) && hz > 0.0f ? hz : 0.0f;
     }
 
     inline float computePhysicsRateForceScale(
@@ -220,11 +236,13 @@ namespace rock::grab_motion_controller
         }
 
         const float sanitizedReferenceHz = safePositive(referenceHz, 90.0f);
-        const float physicsHz = computePhysicsHz(physicsDeltaSeconds, sanitizedReferenceHz);
+        const float physicsHz = computePhysicsHz(physicsDeltaSeconds);
         const float sanitizedExponent = (std::isfinite(exponent) && exponent >= 0.0f) ? exponent : 0.5f;
         const float lowerScale = safePositive((std::min)(minScale, maxScale), 1.0f);
         const float upperScale = (std::max)(lowerScale, safePositive((std::max)(minScale, maxScale), 1.0f));
         if (physicsHz <= 0.0f || sanitizedReferenceHz <= 0.0f) {
+            // Unknown physics rate: neutral scale (the calibration point),
+            // never a pretended 90 Hz measurement.
             return 1.0f;
         }
 
@@ -424,6 +442,7 @@ namespace rock::grab_motion_controller
         bool candidateNormalTrusted = false;
         bool supportPatchValid = false;
         bool supportPatchNormalTrusted = false;
+        bool programmaticArrival = false;
         std::uint32_t currentContactPatchSampleCount = 0;
         std::uint32_t supportPatchSampleCount = 0;
         std::uint32_t currentMultiFingerContactGroupCount = 0;
@@ -464,6 +483,29 @@ namespace rock::grab_motion_controller
 
         if (input.motorContactSoftening && !input.reachedTouchRange) {
             decision.reason = "seatedPalmPocketPromotionContactSofteningKeepFrozen";
+            return decision;
+        }
+
+        /*
+         * A pull or force-grab starts from a ray-selected object point. Once
+         * the object reaches the hand, that old point is not a local seat
+         * authority: a normal-trusted mesh point under the palm pocket is the
+         * stronger evidence even when it is far across a large object from
+         * the original ray hit, and it does not wait for the seated support
+         * patch. The reacquire is evaluated against the frozen target pose,
+         * so a missing patch is a geometric verdict no later frame changes;
+         * holding the flight seat for it kept pulled objects on the far-ray
+         * point for the whole hold. Organic close grabs keep the support gate
+         * and the bounded local-delta rule below.
+         */
+        if (input.programmaticArrival &&
+            input.reachedTouchRange &&
+            input.candidateNormalTrusted) {
+            decision.promotePivot = true;
+            decision.completeSeatedRelation = true;
+            decision.enrichSupport = false;
+            decision.pivotBlend = 1.0f;
+            decision.reason = "seatedProgrammaticArrivalPromotion";
             return decision;
         }
 
@@ -581,54 +623,13 @@ namespace rock::grab_motion_controller
     template <class Vector>
     inline float vectorDot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline float vectorLengthSquared(const Vector& value)
     {
-        return vectorDot(value, value);
-    }
-
-    template <class Vector>
-    inline Vector scaleWeakPivotTwistAngularVelocity(const Vector& angularVelocity, const Vector& pivotToCenterOfMass, bool enabled, float twistScale)
-    {
-        if (!enabled) {
-            return angularVelocity;
-        }
-
-        const float axisLengthSquared = vectorLengthSquared(pivotToCenterOfMass);
-        if (!std::isfinite(axisLengthSquared) || axisLengthSquared <= 1.0e-6f) {
-            return angularVelocity;
-        }
-
-        const float scale = std::clamp(std::isfinite(twistScale) ? twistScale : 1.0f, 0.0f, 1.0f);
-        if (scale >= 0.999f) {
-            return angularVelocity;
-        }
-
-        const float invAxisLength = 1.0f / std::sqrt(axisLengthSquared);
-        const Vector axis{
-            pivotToCenterOfMass.x * invAxisLength,
-            pivotToCenterOfMass.y * invAxisLength,
-            pivotToCenterOfMass.z * invAxisLength,
-        };
-        const float twistMagnitude = vectorDot(angularVelocity, axis);
-        const Vector twist{
-            axis.x * twistMagnitude,
-            axis.y * twistMagnitude,
-            axis.z * twistMagnitude,
-        };
-        const Vector swing{
-            angularVelocity.x - twist.x,
-            angularVelocity.y - twist.y,
-            angularVelocity.z - twist.z,
-        };
-        return Vector{
-            swing.x + twist.x * scale,
-            swing.y + twist.y * scale,
-            swing.z + twist.z * scale,
-        };
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>
@@ -706,7 +707,7 @@ namespace rock::grab_motion_controller
         const float baseForce = (std::max)(0.0f, finiteOr(input.baseMaxForce, 0.0f));
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
-        out.physicsHz = computePhysicsHz(input.physicsDeltaSeconds, input.physicsRateReferenceHz);
+        out.physicsHz = computePhysicsHz(input.physicsDeltaSeconds);
         out.physicsRateForceScale = computePhysicsRateForceScale(
             input.physicsRateForceScalingEnabled,
             input.physicsDeltaSeconds,
@@ -726,11 +727,4 @@ namespace rock::grab_motion_controller
         return out;
     }
 
-    inline MotorOutput solveMotorTargets(const MotorInput& input)
-    {
-        return solveMotorTargetsWithAuthority(input, HeldAuthorityState{
-            .softenForContact = input.heldBodyColliding,
-            .reason = input.heldBodyColliding ? "contact-softened-authority" : "full-authority",
-        });
-    }
 }

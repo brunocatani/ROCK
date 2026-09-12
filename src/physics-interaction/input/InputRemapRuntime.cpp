@@ -1,14 +1,19 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "RPSUIInputApi.h"
 
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
+#include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
+#include "physics-interaction/input/NativeGrenadeThrowRuntime.h"
+#include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
+#include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
 #include "api/ROCKProviderApiInternal.h"
-#include "api/FRIKApi.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -19,6 +24,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/Bethesda/UI.h"
 
+#include <F4SE/F4SE.h>
 #include <REL/Relocation.h>
 #include "rock_support/VRControllers.h"
 #include <windows.h>
@@ -30,6 +36,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <intrin.h>
 #include <optional>
 #include <string_view>
@@ -53,6 +60,12 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventFunctionOffset = 0x0FC8AE0;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventVTableSlotOffset = 0x2D8A9F0;
+        // JumpHandler::ShouldHandleEvent receives the semantic Jump ButtonEvent
+        // produced by FO4VR's configured locomotion input, including the VR
+        // analog-up gesture. The hook observes it and always chains unchanged.
+        // FO4VR 1.2.72 raw vtable/function verification: 2026-08-30.
+        constexpr std::uintptr_t kJumpHandlerShouldHandleEventFunctionOffset = 0x0FCDC70;
+        constexpr std::uintptr_t kJumpHandlerShouldHandleEventVTableSlotOffset = 0x2D8A7F0;
         /*
          * MenuOpenHandler is the MenuControls handler that owns the semantic
          * "Pause" event. FO4VR maps OpenVR button 1 (Quest 2 Y on the
@@ -64,6 +77,20 @@ namespace rock::input_remap_runtime
          */
         constexpr std::uintptr_t kMenuOpenHandlerHandleEventFunctionOffset = 0x1326760;
         constexpr std::uintptr_t kMenuOpenHandlerHandleEventVTableSlotOffset = 0x2DCC850;
+        /*
+         * MenuOpenHandler calls this helper only after its semantic Pause,
+         * player/menu, and primary-wand VATS eligibility gates. The helper's
+         * button-down path starts V.A.N.S. at Bethesda's hold threshold; its
+         * release path opens ordinary VATS. There is one executable caller.
+         * Verified 2026-07-27 in FO4VR 1.2.72 at callsite RVA 0x1326990 and
+         * helper RVA 0xBEB280. Reverified 2026-08-29 from raw disassembly:
+         * the held comparison reads fVANSButtonHeldThreshold at RVA 0x3756388
+         * (0.25 seconds in the authoritative executable), while the release
+         * path has no upper-duration check.
+         */
+        constexpr std::uintptr_t kNativeVatsVansDecisionFunctionOffset = 0x0BEB280;
+        constexpr std::uintptr_t kNativeVatsVansDecisionCallSiteOffset = 0x1326990;
+        constexpr std::uintptr_t kNativeVansHoldThresholdSettingOffset = 0x3756388;
         constexpr std::uintptr_t kMenuControlsSingletonOffset = 0x5A3B888;
         constexpr std::ptrdiff_t kMenuControlsPipboyHandlerOffset = 0x68;
         constexpr std::uintptr_t kPipboyHandlerVTableOffset = 0x2DCC778;
@@ -95,9 +122,8 @@ namespace rock::input_remap_runtime
          * 2026-07-04 from raw disassembly after live traces showed the
          * PipboyHandler hook suppressing opens while the light still fired -
          * the light-on-hold path inside PipboyHandler is flat-game only.
-         * The function checks neither event name nor device, so the hook
-         * applies the shared pipboy suppression policy (secondary-wand
-         * trigger + engaged hand) before chaining.
+         * The hook now only enforces provider input leases. Holding an
+         * object or supporting a weapon leaves the native flashlight alone.
          */
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventFunctionOffset = 0x0FC9170;
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventVTableSlotOffset = 0x2D8A2A0;
@@ -141,11 +167,6 @@ namespace rock::input_remap_runtime
         constexpr std::ptrdiff_t kNativeSecondaryWandDeviceIdOffset = 0x8D0;
         constexpr int kNativeReloadActionId = 0x6C;
         constexpr std::uint32_t kNativeActionPriorityQueue = 2;
-        constexpr std::uintptr_t kMeleeThrowFallbackDrawPressPatchSite = 0x0FC8C88;
-        constexpr std::uintptr_t kMeleeThrowFallbackDrawReleasePatchSite = 0x0FC8E7E;
-        constexpr std::uint8_t kConditionalShortJumpGreaterEqual = 0x7D;
-        constexpr std::uint8_t kUnconditionalShortJump = 0xEB;
-        constexpr std::uint8_t kMeleeThrowFallbackBranchDisplacement = 0x0D;
         constexpr std::string_view kNativeEventActivate{ "Activate" };
         constexpr std::string_view kNativeEventWandAccept{ "WandAccept" };
         constexpr std::string_view kNativeEventWandGrip{ "WandGrip" };
@@ -153,6 +174,7 @@ namespace rock::input_remap_runtime
         constexpr std::string_view kNativeEventWandThumbClick{ "WandThumbClick" };
         constexpr std::string_view kNativeEventPipboy{ "Pipboy" };
         constexpr std::string_view kNativeEventPause{ "Pause" };
+        constexpr std::string_view kNativeEventJump{ "Jump" };
 
         using GetControllerState_t = bool (*)(vr::IVRSystem*, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t);
         using GetControllerStateWithPose_t =
@@ -165,6 +187,10 @@ namespace rock::input_remap_runtime
         // Verified PipboyHandler slot-11 signature: (this, event) only; no cursor/unk tail like the PlayerControls handlers.
         using PipboyInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         using MenuOpenInputEventHandler_t = void (*)(void*, RE::InputEvent*);
+        using NativeVatsVansDecision_t = void (*)(RE::ButtonEvent*);
+        using NativeJumpShouldHandleEvent_t = bool (*)(
+            void*,
+            const RE::InputEvent*);
 
         struct ControllerTracker
         {
@@ -177,28 +203,53 @@ namespace rock::input_remap_runtime
             // fire remap which presents it on the other wand's state.
             std::atomic<float> triggerAxisX{ 0.0f };
             std::atomic<float> triggerAxisY{ 0.0f };
+            // Publish the pair atomically: UI readers may run between controller polls.
+            std::atomic<std::uint64_t> thumbstickAxes{ 0 };
             std::atomic<std::uint64_t> sampleSequence{ 0 };
             std::atomic<std::uint64_t> sampleTickMilliseconds{ 0 };
             std::atomic<bool> valid{ false };
         };
 
         std::atomic<std::uint64_t> s_nextControllerSampleSequence{ 1 };
+        std::atomic<std::uint64_t> s_nextLogicalJumpSequence{ 1 };
 
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
+        std::atomic<bool> s_realMeleeWeaponEquipped{ false };
         std::array<std::atomic<bool>, 2> s_handHeldWeapon{};
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
         std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
+        std::atomic<bool> s_equippedWeaponShoulderSheathActive{ false };
         std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
-        manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         // MenuControls dispatches ButtonEvents serially on the frame/input
-        // thread; this gesture state is never read from worker callbacks.
+        // thread; these gesture states are never read from worker callbacks.
+        manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
+        vats_grenade_gesture_policy::RuntimeState s_vatsGrenadeGestureState{};
+        // Native input publishes one edge; the interaction frame owns inventory.
+        std::atomic<bool> s_pendingGrenadeQuickDrawHoldRequest{ false };
+        std::atomic<bool> s_grenadeQuickDrawReleaseToRearm{ true };
+        using PipboyRoute = pipboy_pause_gesture_policy::PipboyRoute;
+        PipboyRoute s_pipboyGestureRoute{ PipboyRoute::Unavailable };
+        // Frame/config thread only. Engine settings are registered for the
+        // process lifetime; keep their identity and read their live values.
+        RE::Setting* s_projectedPipboySetting = nullptr;
+        RE::Setting* s_hmdPipboySetting = nullptr;
+        bool s_frikPipboyBindingReady = false;
+        float s_frikPipboyHoldSeconds = 0.0f;
+        bool s_lastFrikPipboyOpen = false;
+        native_vats_input_suppression_policy::RuntimeState s_nativeVatsInputSuppressionState{};
         std::atomic<bool> s_manualScopeActivationRequested{ false };
+        std::atomic<bool> s_logicalJumpValid{ false };
+        std::atomic<bool> s_logicalJumpHeld{ false };
+        std::atomic<bool> s_logicalJumpReleaseToRearm{ false };
+        std::atomic<std::uint64_t> s_logicalJumpSampleSequence{ 0 };
+        std::atomic<std::uint64_t> s_logicalJumpPressSequence{ 0 };
+        std::atomic<std::uint64_t> s_logicalJumpSampleTickMilliseconds{ 0 };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
         std::atomic<bool> s_activateEventHookInstalled{ false };
@@ -207,18 +258,20 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_pipboyEventHookInstalled{ false };
         std::atomic<bool> s_pipboyLightEventHookInstalled{ false };
         std::atomic<bool> s_menuOpenEventHookInstalled{ false };
-        std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
+        std::atomic<bool> s_nativeVatsVansDecisionHookInstalled{ false };
+        std::atomic<bool> s_logicalJumpHookInstalled{ false };
+        std::atomic<bool> s_nativeVatsVansDecisionHookInstallFailed{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
         std::atomic<bool> s_pipboyMenuOpen{ false };
-        std::atomic<std::uint32_t> s_pipboyMenuGeneration{ 1 };
-        // High 32 bits = Pip-Boy menu generation, low 32 bits =
-        // GetTickCount64() milliseconds. Zero means no pending evidence.
-        std::array<std::atomic<std::uint64_t>, 2> s_pipboyTriggerTransitions{};
         std::atomic<bool> s_missingVRSystemLogged{ false };
         std::atomic<bool> s_missingUILogged{ false };
         std::array<std::atomic<bool>, 2> s_providerOpenVrGameInputSuppressed{};
         void** s_vrSystemVTable = nullptr;
+        // Published once at game-loaded hook installation; the DLL/API table
+        // lives for the process. Polling threads read only this atomic pointer.
+        std::atomic<const rpsui::sdk::InputApiV1*> s_uiInputApi{ nullptr };
+
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
         TriggerHapticPulse_t s_originalTriggerHapticPulse = nullptr;
@@ -229,6 +282,8 @@ namespace rock::input_remap_runtime
         PipboyInputEventHandler_t s_originalPipboyEventHandler = nullptr;
         NativeInputEventHandler_t s_originalPipboyLightEventHandler = nullptr;
         MenuOpenInputEventHandler_t s_originalMenuOpenEventHandler = nullptr;
+        NativeVatsVansDecision_t s_originalNativeVatsVansDecision = nullptr;
+        NativeJumpShouldHandleEvent_t s_originalJumpShouldHandleEvent = nullptr;
 
         void blockManualScopeInputUntilRelease()
         {
@@ -240,6 +295,31 @@ namespace rock::input_remap_runtime
         {
             manual_scope_input_policy::reset(s_manualScopeInputState);
             s_manualScopeActivationRequested.store(false, std::memory_order_release);
+        }
+
+        [[nodiscard]] float readNativeVansHoldThresholdSeconds()
+        {
+            static REL::Relocation<float*> nativeThreshold{
+                REL::Offset(kNativeVansHoldThresholdSettingOffset)
+            };
+            static std::atomic<bool> invalidThresholdLogged{ false };
+
+            const float rawThreshold = nativeThreshold.address() != 0 ?
+                *nativeThreshold :
+                native_vats_input_suppression_policy::kDefaultHoldSeconds;
+            const float sanitizedThreshold =
+                native_vats_input_suppression_policy::sanitizedHoldSeconds(
+                    rawThreshold);
+            if ((!std::isfinite(rawThreshold) ||
+                    rawThreshold < native_vats_input_suppression_policy::kMinimumHoldSeconds ||
+                    rawThreshold > native_vats_input_suppression_policy::kMaximumHoldSeconds) &&
+                !invalidThresholdLogged.exchange(true, std::memory_order_acq_rel)) {
+                ROCK_LOG_WARN(Input,
+                    "Invalid native fVANSButtonHeldThreshold={}; using {:.3f} seconds",
+                    rawThreshold,
+                    sanitizedThreshold);
+            }
+            return sanitizedThreshold;
         }
 
         /*
@@ -318,27 +398,7 @@ namespace rock::input_remap_runtime
 
         void publishPipboyMenuOpen(const bool open)
         {
-            const bool wasOpen = s_pipboyMenuOpen.exchange(open, std::memory_order_acq_rel);
-            if (open && !wasOpen) {
-                s_pipboyMenuGeneration.fetch_add(1, std::memory_order_acq_rel);
-            }
-            if (open != wasOpen) {
-                for (auto& token : s_pipboyTriggerTransitions) {
-                    token.store(0, std::memory_order_release);
-                }
-            }
-        }
-
-        void publishPipboyTriggerTransition(const input_remap_policy::Hand hand)
-        {
-            if (!s_pipboyMenuOpen.load(std::memory_order_acquire)) {
-                return;
-            }
-            const std::uint32_t generation = s_pipboyMenuGeneration.load(std::memory_order_acquire);
-            const std::uint32_t tick = static_cast<std::uint32_t>(GetTickCount64());
-            const std::uint64_t packed = (static_cast<std::uint64_t>(generation) << 32u) | tick;
-            const std::size_t index = hand == input_remap_policy::Hand::Left ? 0u : 1u;
-            s_pipboyTriggerTransitions[index].store(packed, std::memory_order_release);
+            s_pipboyMenuOpen.store(open, std::memory_order_release);
         }
 
         [[nodiscard]] std::optional<std::size_t> findGameStoppingMenuIndex(const RE::BSFixedString& menuName)
@@ -368,10 +428,25 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool isCompatibilityConfigInputActive()
         {
-            const auto* frikApi = frik::api::FRIKApi::inst;
-            return frikApi &&
-                   ((frikApi->isConfigOpen && frikApi->isConfigOpen()) ||
-                       (frikApi->isWristPipboyOpen && frikApi->isWristPipboyOpen()));
+            return frik_visual_authority::isCompatibilityConfigBlocking();
+        }
+
+        [[nodiscard]] PipboyRoute currentPipboyRoute()
+        {
+            return pipboy_pause_gesture_policy::selectPipboyRoute(
+                s_projectedPipboySetting && s_hmdPipboySetting,
+                s_projectedPipboySetting && s_projectedPipboySetting->GetBinary(),
+                s_hmdPipboySetting && s_hmdPipboySetting->GetBinary(),
+                f4vr::isInPowerArmor(), s_frikPipboyBindingReady);
+        }
+
+        [[nodiscard]] const char* pipboyRouteName(PipboyRoute route)
+        {
+            switch (route) {
+            case PipboyRoute::Native: return "native";
+            case PipboyRoute::FrikWrist: return "FRIK-wrist";
+            default: return "unavailable";
+            }
         }
 
         void refreshTrackedMenuState(const RE::UI& ui)
@@ -456,31 +531,55 @@ namespace rock::input_remap_runtime
             return hand == input_remap_policy::Hand::Left ? 0u : 1u;
         }
 
+        [[nodiscard]] bool isInputBlockingMenuActive();
+
+        [[nodiscard]] std::uint64_t uiCapturedButtons(bool isLeft) noexcept
+        {
+            const auto* api = s_uiInputApi.load(std::memory_order_acquire);
+            if (!api || isInputBlockingMenuActive()) return 0;
+            return api->capturedButtons(isLeft ? 0u : 1u,
+                s_controllers[0].rawPressed.load(std::memory_order_acquire),
+                s_controllers[1].rawPressed.load(std::memory_order_acquire));
+        }
+
         [[nodiscard]] bool isProviderOpenVrGameInputSuppressed(input_remap_policy::Hand hand)
         {
-            return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire);
+            if (isInputBlockingMenuActive()) return false;
+            const auto physicalHand = hand == input_remap_policy::Hand::Left ?
+                provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+            return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire) ||
+                provider::hasHandInputSuppressionFlagV1(provider::currentHandInputSuppressionFlagsV1(physicalHand),
+                    provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
         }
 
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressed()
         {
-            return s_providerOpenVrGameInputSuppressed[0].load(std::memory_order_acquire) ||
-                   s_providerOpenVrGameInputSuppressed[1].load(std::memory_order_acquire);
+            return input_remap_policy::providerSuppressionApplies(isInputBlockingMenuActive(),
+                s_providerOpenVrGameInputSuppressed[0].load(std::memory_order_acquire) ||
+                s_providerOpenVrGameInputSuppressed[1].load(std::memory_order_acquire));
+        }
+
+        [[nodiscard]] std::uint32_t currentProviderHandInputSuppressionFlagsAtDispatch()
+        {
+            return provider::currentHandInputSuppressionFlagsV1(
+                       provider::RockProviderHand::Right) |
+                   provider::currentHandInputSuppressionFlagsV1(
+                       provider::RockProviderHand::Left);
         }
 
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressedAtDispatch()
         {
+            // Native menus own input immediately, including before the next
+            // provider frame has revoked UI consumers' outstanding leases.
+            if (isInputBlockingMenuActive()) return false;
             if (isAnyProviderOpenVrGameInputSuppressed()) {
                 return true;
             }
 
-            const auto handSuppresses = [](const provider::RockProviderHand hand) {
-                return provider::hasHandInputSuppressionFlagV1(
-                    provider::currentHandInputSuppressionFlagsV1(hand),
-                    provider::RockProviderHandInputSuppressionFlagV1::
-                        SuppressOpenVrGameInput);
-            };
-            return handSuppresses(provider::RockProviderHand::Right) ||
-                   handSuppresses(provider::RockProviderHand::Left);
+            return provider::hasHandInputSuppressionFlagV1(
+                currentProviderHandInputSuppressionFlagsAtDispatch(),
+                provider::RockProviderHandInputSuppressionFlagV1::
+                    SuppressOpenVrGameInput);
         }
 
         [[nodiscard]] bool isCallerModule(const void* address, const wchar_t* moduleName)
@@ -526,6 +625,11 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldBypassProviderOpenVrGameInputSuppression(const void* callerAddress)
         {
+            // Only the UI's explicit physical sample bypasses remapping. A
+            // game poll chained through the same DLL still receives ROCK input.
+            const auto* ui = s_uiInputApi.load(std::memory_order_acquire);
+            if (ui && ui->rawInputReadActive()) return true;
+
             /*
              * The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
              * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
@@ -555,8 +659,6 @@ namespace rock::input_remap_runtime
             }
         }
 
-        [[nodiscard]] bool isInputBlockingMenuActive();
-
         /*
          * Left-hand fire: while the LEFT hand occupies the equipped weapon's
          * firing grip, the game must fire from the LEFT physical trigger. The
@@ -570,7 +672,6 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldRemapLeftHandFireTriggerForGame()
         {
             return s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
-                g_rockConfig.rockInputRemapEnabled &&
                 s_gameplayInputAllowed.load(std::memory_order_acquire) &&
                 !isInputBlockingMenuActive();
         }
@@ -597,7 +698,10 @@ namespace rock::input_remap_runtime
 
             if (hand == input_remap_policy::Hand::Right) {
                 const auto& leftTracker = s_controllers[controllerIndex(input_remap_policy::Hand::Left)];
-                const bool leftValid = leftTracker.valid.load(std::memory_order_acquire);
+                // A UI-owned physical trigger must not reappear on the other
+                // wand through ROCK's left-hand firing remap.
+                const bool leftValid = leftTracker.valid.load(std::memory_order_acquire) &&
+                    (uiCapturedButtons(true) & triggerButtonMask) == 0;
                 const std::uint64_t leftPressed = leftValid ? leftTracker.rawPressed.load(std::memory_order_acquire) : 0;
                 const std::uint64_t leftTouched = leftValid ? leftTracker.rawTouched.load(std::memory_order_acquire) : 0;
                 state->ulButtonPressed = (state->ulButtonPressed & ~triggerButtonMask) | (leftPressed & triggerButtonMask);
@@ -615,13 +719,7 @@ namespace rock::input_remap_runtime
         [[nodiscard]] input_remap_policy::Settings makeSettings()
         {
             return input_remap_policy::Settings{
-                .enabled = g_rockConfig.rockInputRemapEnabled,
-                .grabButtonId = g_rockConfig.rockGrabButtonID,
-                .suppressRightGrabGameInput = g_rockConfig.rockSuppressRightGrabGameInput,
-                .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
-                .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
-                .suppressNativeMeleeThrowGameInput = g_rockConfig.rockSuppressNativeMeleeThrowGameInput,
-                .suppressPipboyGameInputWhileHolding = g_rockConfig.rockSuppressPipboyGameInputWhileHolding,
+                .grabButtonId = input_remap_policy::kGrabButtonId,
             };
         }
 
@@ -725,6 +823,10 @@ namespace rock::input_remap_runtime
             auto& tracker = s_controllers[controllerIndex(hand)];
             const std::uint64_t rawPressed = state->ulButtonPressed;
             const std::uint64_t rawTouched = state->ulButtonTouched;
+            std::uint64_t axes{};
+            static_assert(sizeof(state->rAxis[0]) == sizeof(axes));
+            std::memcpy(&axes, &state->rAxis[0], sizeof(axes));
+            tracker.thumbstickAxes.store(axes, std::memory_order_release);
             constexpr std::size_t triggerAxisIndex =
                 static_cast<std::size_t>(input_remap_policy::kOpenVrSteamVrTriggerButtonId - input_remap_policy::kOpenVrAxisButtonBase);
             tracker.triggerAxisX.store(state->rAxis[triggerAxisIndex].x, std::memory_order_release);
@@ -746,13 +848,23 @@ namespace rock::input_remap_runtime
             if (hadPrevious) {
                 tracker.pressedEdges.fetch_or(rawTransition.pressedEdges, std::memory_order_acq_rel);
                 tracker.releasedEdges.fetch_or(rawTransition.releasedEdges, std::memory_order_acq_rel);
-                const auto triggerMask = input_remap_policy::buttonMask(input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-                if (((rawTransition.pressedEdges | rawTransition.releasedEdges) & triggerMask) != 0) {
-                    publishPipboyTriggerTransition(hand);
-                }
             }
 
             const bool inputBlockingMenuActive = isInputBlockingMenuActive();
+            if (hand == input_remap_policy::Hand::Left) {
+                constexpr auto yMask = input_remap_policy::buttonMask(vr::k_EButton_ApplicationMenu);
+                if ((rawTransition.pressedEdges & yMask) != 0) {
+                    ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                        "Pip-Boy Y raw press: gameplay={} menuInput={} triggerHeld={}",
+                        s_gameplayInputAllowed.load(std::memory_order_acquire), inputBlockingMenuActive,
+                        (rawPressed & input_remap_policy::buttonMask(vr::k_EButton_SteamVR_Trigger)) != 0);
+                }
+                if ((rawTransition.releasedEdges & yMask) != 0) {
+                    ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                        "Pip-Boy Y raw release: gameplay={} menuInput={}",
+                        s_gameplayInputAllowed.load(std::memory_order_acquire), inputBlockingMenuActive);
+                }
+            }
             if (inputBlockingMenuActive) {
                 tracker.rearmPressedMask.fetch_or(rawPressed, std::memory_order_acq_rel);
                 /*
@@ -923,6 +1035,50 @@ namespace rock::input_remap_runtime
             return name.length() == expected.length() && _strnicmp(name.data(), expected.data(), expected.length()) == 0;
         }
 
+        void observeLogicalJumpEvent(const RE::InputEvent* event)
+        {
+            if (!eventNameMatches(event, kNativeEventJump)) {
+                return;
+            }
+            const auto* button = event->As<RE::ButtonEvent>();
+            if (!button) {
+                return;
+            }
+
+            const auto sequence = s_nextLogicalJumpSequence.fetch_add(
+                1,
+                std::memory_order_acq_rel);
+            const bool held = button->QPressed();
+            s_logicalJumpHeld.store(held, std::memory_order_release);
+            s_logicalJumpSampleTickMilliseconds.store(
+                GetTickCount64(),
+                std::memory_order_release);
+            s_logicalJumpSampleSequence.store(
+                sequence,
+                std::memory_order_release);
+            if (button->QJustPressed()) {
+                s_logicalJumpPressSequence.store(
+                    sequence,
+                    std::memory_order_release);
+            }
+            if (!held) {
+                s_logicalJumpReleaseToRearm.store(
+                    false,
+                    std::memory_order_release);
+            }
+            s_logicalJumpValid.store(true, std::memory_order_release);
+        }
+
+        bool hookedJumpShouldHandleEvent(
+            void* handler,
+            const RE::InputEvent* event)
+        {
+            observeLogicalJumpEvent(event);
+            return s_originalJumpShouldHandleEvent ?
+                s_originalJumpShouldHandleEvent(handler, event) :
+                false;
+        }
+
         enum class NativeWandIdentity : std::uint8_t
         {
             Unknown,
@@ -972,7 +1128,7 @@ namespace rock::input_remap_runtime
         [[nodiscard]] input_remap_policy::NativeActionSuppressionInput makeNativeActionSuppressionInput(bool suppressionEnabled, bool eventMatched)
         {
             return input_remap_policy::NativeActionSuppressionInput{
-                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .remapEnabled = true,
                 .suppressionEnabled = suppressionEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
@@ -981,6 +1137,9 @@ namespace rock::input_remap_runtime
                 .primaryHandEvent = false,
                 .equippedWeaponFiringGripInputActive = s_equippedWeaponFiringGripInputActive.load(std::memory_order_acquire),
                 .equippedWeaponPrimaryDetached = s_equippedWeaponPrimaryDetached.load(std::memory_order_acquire),
+                .equippedWeaponShoulderSheathActive = s_equippedWeaponShoulderSheathActive.load(std::memory_order_acquire),
+                .realMeleeWeaponEquipped = s_realMeleeWeaponEquipped.load(std::memory_order_acquire),
+                .nativeMeleeSuppressionActive = isNativeMeleeSuppressionActive(),
                 .eventMatched = eventMatched,
             };
         }
@@ -1009,65 +1168,41 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldSuppressNativeGripReadyAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeGripReadyAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightGrabGameInput, eventNameMatches(event, kNativeEventWandGrip)));
+                makeNativeActionSuppressionInput(true, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeGripReloadAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeGripReloadAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightGrabGameInput, event, eventNameMatches(event, kNativeEventWandGrip)));
+                makeNativeActionSuppressionInput(true, event, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeFavoritesAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightFavoritesGameInput, eventNameMatches(event, kNativeEventWandThumbClick)));
+                makeNativeActionSuppressionInput(true,
+                    eventNameMatches(event, kNativeEventWandThumbClick)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event)
         {
+            // Conditional chord leases are evaluated against the raw sample
+            // before the consumer's next frame callback can publish ownership.
+            if (eventNameMatches(event, kNativeEventWandTrigger) &&
+                isProviderOpenVrGameInputSuppressed(isSecondaryWandInputEvent(event) ?
+                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right)) return true;
             return input_remap_policy::shouldSuppressNativeTriggerAction(
                 makeNativeActionSuppressionInput(
-                    g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
+                    true,
                     event,
                     eventNameMatches(event, kNativeEventWandTrigger)));
-        }
-
-        /*
-         * The Pip-Boy trigger rides ROCK's physical-left secondary wand, so
-         * the suppression gate is the left hand's engagement state. Verified
-         * in the slot-11 processor: its open path only
-         * accepts events whose controller id matches the secondary wand slot
-         * at player+0x8D0 (primary sits at the already-verified +0x8CC).
-         */
-        [[nodiscard]] bool isPipboyHandEngaged()
-        {
-            constexpr auto index = 0u;
-            // All three publications describe the same ownership boundary but
-            // are refreshed by different transition paths. Treat any durable
-            // witness as engaged so a just-committed left grab cannot expose a
-            // one-frame Pip-Boy-open window before the aggregate flag catches
-            // up.
-            return s_handInteractionEngaged[index].load(std::memory_order_acquire) ||
-                   s_handHeldWeapon[index].load(std::memory_order_acquire) ||
-                   s_heldObjectFormId[index].load(std::memory_order_acquire) != 0u;
-        }
-
-        [[nodiscard]] bool shouldSuppressNativePipboyActionEvent(const RE::InputEvent* event)
-        {
-            // VR wand triggers arrive as "WandTrigger"; "Pipboy" covers flat/gamepad direct bindings.
-            const bool eventMatched = eventNameMatches(event, kNativeEventWandTrigger) || eventNameMatches(event, kNativeEventPipboy);
-            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, event, eventMatched);
-            input.pipboyHandEngaged = isPipboyHandEngaged();
-            return input_remap_policy::shouldSuppressNativePipboyAction(input);
         }
 
         [[nodiscard]] bool shouldSuppressLegacyPipboyTriggerOpenEvent(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressLegacyPipboyTriggerOpen(input_remap_policy::LegacyPipboyTriggerOpenInput{
-                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
-                .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                .menuInputActive = isInputBlockingMenuActive(),
+                .remapEnabled = true,
+                .pipboyMenuOpen = s_pipboyMenuOpen.load(std::memory_order_acquire),
                 .eventMatched = eventNameMatches(event, kNativeEventWandTrigger),
                 .secondaryWandEvent = isSecondaryWandInputEvent(event),
             });
@@ -1077,7 +1212,7 @@ namespace rock::input_remap_runtime
         {
             // FO4VR's verified MeleeThrow handler accepts its grenade/throw action from WandGrip.
             return input_remap_policy::shouldSuppressNativeMeleeThrowAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeMeleeThrowGameInput, eventNameMatches(event, kNativeEventWandGrip)));
+                makeNativeActionSuppressionInput(true, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
         [[nodiscard]] bool shouldRouteFiringHandActivateReload(const RE::InputEvent* event)
@@ -1095,7 +1230,7 @@ namespace rock::input_remap_runtime
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
             const bool firingHandIsPrimaryHand = firingHandIsLeft == primaryHandIsLeft;
             const bool route = input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
-                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .remapEnabled = true,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
@@ -1119,12 +1254,12 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldDeferFiringHandActivateForManualScope(const RE::InputEvent* event)
         {
+            if (!g_rockConfig.rockEnableImmersiveScopes) return false;
             const bool eventMatched = isActivateReloadEvent(event);
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
             constexpr bool primaryHandIsLeft = false;
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
             return input_remap_policy::shouldDeferFiringHandActivateForManualScope(input_remap_policy::ManualScopeActivateInput{
-                .manualScopeEnabled = !g_rockConfig.rockAutoActivateScope,
                 .rawInputCaptureAvailable = s_hooksInstalled.load(std::memory_order_acquire),
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
@@ -1233,10 +1368,18 @@ namespace rock::input_remap_runtime
             return handleValue;
         }
 
-        [[nodiscard]] bool isTakeEquipTargetEligible(bool primaryHandEvent)
+        enum class ActivateTarget : std::uint8_t
+        {
+            Unavailable,
+            TakeEquip,
+            NativeActivation,
+        };
+
+        [[nodiscard]] ActivateTarget classifyActivateTarget(bool primaryHandEvent)
         {
             const auto globalOffset = primaryHandEvent ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset;
             std::uint32_t handleValue = readWandPickRefHandle(globalOffset);
+            const bool usedOtherWand = handleValue == 0;
             if (handleValue == 0) {
                 /*
                  * The native dispatcher at 0xFC07E0 falls back to the other wand's caster when
@@ -1253,7 +1396,7 @@ namespace rock::input_remap_runtime
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Take/Equip classification stopped at stage=no-handle (offset=0x{:X} value=0)",
                     globalOffset);
-                return false;
+                return ActivateTarget::Unavailable;
             }
 
             RE::ObjectRefHandle handle{};
@@ -1267,7 +1410,7 @@ namespace rock::input_remap_runtime
                     "Take/Equip classification stopped at stage=handle-resolve (offset=0x{:X} handleValue=0x{:X})",
                     globalOffset,
                     handleValue);
-                return false;
+                return ActivateTarget::Unavailable;
             }
 
             /*
@@ -1286,7 +1429,7 @@ namespace rock::input_remap_runtime
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Take/Equip suppression classification: pick-ref formID=0x{:X} matches ROCK's own held object in this hand",
                     refFormId);
-                return true;
+                return ActivateTarget::TakeEquip;
             }
 
             const auto* baseForm = ref->GetObjectReference();
@@ -1298,10 +1441,10 @@ namespace rock::input_remap_runtime
                     handleValue,
                     refFormId,
                     heldFormId);
-                return false;
+                return ActivateTarget::Unavailable;
             }
 
-            const bool eligible = far_selection_blacklist_policy::listContainsText(g_rockConfig.rockSuppressTakeEquipFormTypes, formTypeChars);
+            const bool eligible = far_selection_blacklist_policy::listContainsText(input_remap_policy::kNativeTakeEquipFormTypes, formTypeChars);
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "Take/Equip suppression classification: handleValue=0x{:X} refFormID=0x{:X} heldFormID=0x{:X} formType='{}' eligible={}",
@@ -1310,10 +1453,13 @@ namespace rock::input_remap_runtime
                 heldFormId,
                 formTypeChars,
                 eligible ? "yes" : "no");
-            return eligible;
+            // The existing opposite-wand fallback protects against taking an
+            // owned object. It cannot grant use priority for this wand.
+            return eligible ? ActivateTarget::TakeEquip :
+                (usedOtherWand ? ActivateTarget::Unavailable : ActivateTarget::NativeActivation);
         }
 
-        [[nodiscard]] bool shouldSuppressNativeTakeEquipActionEvent(const RE::InputEvent* event)
+        [[nodiscard]] bool shouldSuppressNativeTakeEquipActionEvent(const RE::InputEvent* event, ActivateTarget target)
         {
             const bool eventMatched = isActivateReloadEvent(event);
             if (!eventMatched) {
@@ -1322,9 +1468,9 @@ namespace rock::input_remap_runtime
 
             const bool primaryHandEvent = isPrimaryWandInputEvent(event);
             const bool handEngaged = isTakeEquipHandEngaged(primaryHandEvent);
-            const bool targetEligible = handEngaged && isTakeEquipTargetEligible(primaryHandEvent);
+            const bool targetEligible = target == ActivateTarget::TakeEquip;
 
-            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding, event, eventMatched);
+            auto input = makeNativeActionSuppressionInput(true, event, eventMatched);
             input.takeEquipHandEngaged = handEngaged;
             input.takeEquipTargetEligible = targetEligible;
             const bool suppress = input_remap_policy::shouldSuppressNativeTakeEquipAction(input);
@@ -1334,12 +1480,11 @@ namespace rock::input_remap_runtime
             // suppression. Rate-limited like every other native-action trace in this file.
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Take/Equip gate: primaryHandEvent={} physicalHand={} handEngaged={} targetEligible={} suppressionEnabled={} gameplay={} menuInput={} -> {}",
+                "Take/Equip gate: primaryHandEvent={} physicalHand={} handEngaged={} targetEligible={} gameplay={} menuInput={} -> {}",
                 primaryHandEvent ? "yes" : "no",
                 primaryHandEvent ? "right" : "left",
                 handEngaged ? "yes" : "no",
                 targetEligible ? "yes" : "no",
-                g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding ? "yes" : "no",
                 input.gameplayInputAllowed ? "yes" : "no",
                 input.menuInputActive ? "yes" : "no",
                 suppress ? "suppress" : "native");
@@ -1434,7 +1579,27 @@ namespace rock::input_remap_runtime
                 return;
             }
 
-            if (shouldDeferFiringHandActivateForManualScope(inputEvent)) {
+            const bool gameplayActivation = isActivateReloadEvent(inputEvent) &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive();
+            const bool primaryHandEvent = isPrimaryWandInputEvent(inputEvent);
+            const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
+            const auto target = gameplayActivation && (weaponDrawn || isTakeEquipHandEngaged(primaryHandEvent)) ?
+                classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
+            bool nativeActivation = target == ActivateTarget::NativeActivation;
+            if (g_rockConfig.rockEnableImmersiveScopes && gameplayActivation && primaryHandEvent && weaponDrawn &&
+                !s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
+                s_hooksInstalled.load(std::memory_order_acquire)) {
+                const auto* button = inputEvent->As<RE::ButtonEvent>();
+                if (button && button->QJustPressed()) {
+                    manual_scope_input_policy::beginPrimaryActivateGesture(s_manualScopeInputState, nativeActivation);
+                }
+                // Keep the first consumer's decision even if the wand target
+                // changes between native dispatch and the raw frame update.
+                nativeActivation = s_manualScopeInputState.primaryPressUsesNative &&
+                    s_manualScopeInputState.state != manual_scope_input_policy::State::BlockedUntilRelease;
+            }
+
+            if (!nativeActivation && shouldDeferFiringHandActivateForManualScope(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -1449,7 +1614,7 @@ namespace rock::input_remap_runtime
                     "Recorded a pending saved-grab-offset request from an Activate/WandAccept press");
             }
 
-            if (shouldRouteFiringHandActivateReload(inputEvent)) {
+            if (!nativeActivation && shouldRouteFiringHandActivateReload(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 if (dispatchNativeReloadAction()) {
                     ROCK_LOG_SAMPLE_DEBUG(Input,
@@ -1460,7 +1625,7 @@ namespace rock::input_remap_runtime
                 return;
             }
 
-            if (shouldSuppressNativeTakeEquipActionEvent(inputEvent)) {
+            if (shouldSuppressNativeTakeEquipActionEvent(inputEvent, target)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -1487,7 +1652,7 @@ namespace rock::input_remap_runtime
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native WandThumbClick Favorites event while ROCK owns right-stick weapon toggle");
+                    "Suppressed native WandThumbClick Favorites event");
                 return;
             }
 
@@ -1523,39 +1688,15 @@ namespace rock::input_remap_runtime
         {
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
             const bool legacyTriggerSuppressed = shouldSuppressLegacyPipboyTriggerOpenEvent(inputEvent);
-            const bool interactionSuppressed = shouldSuppressNativePipboyActionEvent(inputEvent);
-            const bool suppressed = providerSuppressed || legacyTriggerSuppressed || interactionSuppressed;
+            const bool suppressed = providerSuppressed || legacyTriggerSuppressed;
 
             if (inputEvent) {
                 const auto& userEvent = inputEvent->QUserEvent();
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Pipboy handler event '{}': movedTrigger={} engaged={} gameplay={} menuInput={} providerLease={} -> {}",
+                    "Pipboy handler event '{}': movedTrigger={} gameplay={} menuInput={} providerLease={} -> {}",
                     userEvent.c_str() ? userEvent.c_str() : "",
                     legacyTriggerSuppressed ? "yes" : "no",
-                    isPipboyHandEngaged() ? "yes" : "no",
-                    s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
-                    isInputBlockingMenuActive() ? "yes" : "no",
-                    providerSuppressed ? "yes" : "no",
-                    suppressed ? "suppressed" : "native");
-            }
-
-            return suppressed;
-        }
-
-        [[nodiscard]] bool decideAndTracePipboyLightSuppression(const RE::InputEvent* inputEvent)
-        {
-            const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
-            const bool interactionSuppressed = shouldSuppressNativePipboyActionEvent(inputEvent);
-            const bool suppressed = providerSuppressed || interactionSuppressed;
-
-            if (inputEvent) {
-                const auto& userEvent = inputEvent->QUserEvent();
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "PipboyLight handler event '{}': engaged={} gameplay={} menuInput={} providerLease={} -> {}",
-                    userEvent.c_str() ? userEvent.c_str() : "",
-                    isPipboyHandEngaged() ? "yes" : "no",
                     s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
                     isInputBlockingMenuActive() ? "yes" : "no",
                     providerSuppressed ? "yes" : "no",
@@ -1618,15 +1759,21 @@ namespace rock::input_remap_runtime
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             s_originalPipboyEventHandler(pipboyHandler, &event);
 
+            const auto pressHandled = event.handled;
             event.value = 0.0f;
             event.heldDownSecs = (std::max)(originalHeldDownSecs, 0.001f);
             event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
             s_originalPipboyEventHandler(pipboyHandler, &event);
 
+            const auto releaseHandled = event.handled;
             event.strUserEvent = originalUserEvent;
             event.value = originalValue;
             event.heldDownSecs = originalHeldDownSecs;
             event.handled = originalHandled;
+            ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                "Pip-Boy Y native submission: pressHandled={} releaseHandled={} menuOpen={}; menu event confirms opening",
+                pressHandled.underlying(), releaseHandled.underlying(),
+                s_pipboyMenuOpen.load(std::memory_order_acquire));
             return true;
         }
 
@@ -1660,10 +1807,134 @@ namespace rock::input_remap_runtime
             return true;
         }
 
+        void hookedNativeVatsVansDecision(RE::ButtonEvent* button)
+        {
+            if (!button) {
+                if (s_originalNativeVatsVansDecision) {
+                    s_originalNativeVatsVansDecision(button);
+                }
+                return;
+            }
+
+            const std::uint32_t flags =
+                currentProviderHandInputSuppressionFlagsAtDispatch();
+            const bool suppressAll =
+                isAnyProviderOpenVrGameInputSuppressed() ||
+                provider::hasHandInputSuppressionFlagV1(
+                    flags,
+                    provider::RockProviderHandInputSuppressionFlagV1::
+                        SuppressOpenVrGameInput);
+            const float holdSeconds =
+                readNativeVansHoldThresholdSeconds();
+            const auto decision =
+                native_vats_input_suppression_policy::update(
+                    s_nativeVatsInputSuppressionState,
+                    native_vats_input_suppression_policy::Input{
+                        .buttonDown = button->QPressed(),
+                        .justPressed = button->QJustPressed(),
+                        .released =
+                            !button->QPressed() &&
+                            button->QHeldDownSecs() >= 0.0f,
+                        .heldSeconds = button->QHeldDownSecs(),
+                        .holdSeconds = holdSeconds,
+                        .suppressVats =
+                            g_rockConfig.rockSuppressNativeVats ||
+                            provider::hasHandInputSuppressionFlagV1(
+                                flags,
+                                provider::
+                                    RockProviderHandInputSuppressionFlagV1::
+                                        SuppressNativeVats),
+                        .suppressVans = true,
+                        .reserveHoldGesture = true,
+                        .suppressAll = suppressAll,
+                    });
+
+            if (!button->QPressed()) {
+                const auto raw = peekRawButtonState(false, 1);
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "B/VATS release: nativeSeconds={:.3f} threshold={:.3f} rawAvailable={} rawHeld={} flags={:#x} immersive={} nativeThrow={} forward={} reason={}",
+                    button->QHeldDownSecs(), holdSeconds, raw.available, raw.held, flags,
+                    g_rockConfig.rockImmersiveGrenades, native_grenade_throw_runtime::active(),
+                    decision.forwardNative, decision.reason);
+            }
+
+            if (decision.forwardNative) {
+                if (s_originalNativeVatsVansDecision) {
+                    s_originalNativeVatsVansDecision(button);
+                }
+                return;
+            }
+
+            ROCK_LOG_SAMPLE_DEBUG(Input,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Suppressed native VATS input phase: reason={} heldSeconds={:.3f}",
+                decision.reason,
+                button->QHeldDownSecs());
+        }
+
+        [[nodiscard]] bool grenadeQuickDrawAllowed()
+        {
+            const auto flags = currentProviderHandInputSuppressionFlagsAtDispatch();
+            return s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+                !isInputBlockingMenuActive() &&
+                !provider::hasHandInputSuppressionFlagV1(flags,
+                    provider::RockProviderHandInputSuppressionFlagV1::SuppressGrenadeQuickDraw) &&
+                !isAnyProviderOpenVrGameInputSuppressedAtDispatch();
+        }
+
+        void observePrimaryVatsGrenadeGesture(RE::ButtonEvent& button)
+        {
+            const auto raw = peekRawButtonState(false, 1);
+            const auto previous = s_vatsGrenadeGestureState.state;
+            const auto decision = vats_grenade_gesture_policy::update(
+                s_vatsGrenadeGestureState,
+                vats_grenade_gesture_policy::Input{
+                    .eligible = grenadeQuickDrawAllowed() &&
+                        raw.available &&
+                        !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire) &&
+                        (button.QPressed() || !raw.held),
+                    .pressed = button.QJustPressed(),
+                    .held = button.QPressed(),
+                    .released = !button.QPressed() && button.QHeldDownSecs() >= 0.0f,
+                    .heldSeconds = button.QHeldDownSecs(),
+                    .holdSeconds = g_rockConfig.rockImmersiveGrenades ? readNativeVansHoldThresholdSeconds() :
+                        (std::max)(readNativeVansHoldThresholdSeconds(), native_grenade_throw_runtime::holdSeconds()),
+                    .immersiveGrenades = g_rockConfig.rockImmersiveGrenades,
+                });
+            if (decision.cancelNativeThrow) native_grenade_throw_runtime::cancel();
+            if (decision.requestNativeThrow) static_cast<void>(native_grenade_throw_runtime::begin(button));
+            if (decision.releaseNativeThrow) native_grenade_throw_runtime::release(button);
+            if (decision.requestGrenade) {
+                s_pendingGrenadeQuickDrawHoldRequest.store(true, std::memory_order_release);
+            }
+            if (previous != decision.state || decision.requestGrenade || decision.requestNativeThrow) {
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "B grenade gesture: reason={} seconds={:.3f} immersive={} draw={} nativeBegin={} nativeRelease={} rawAvailable={} rawHeld={} rearm={}",
+                    decision.reason, button.QHeldDownSecs(), g_rockConfig.rockImmersiveGrenades,
+                    decision.requestGrenade, decision.requestNativeThrow, decision.releaseNativeThrow,
+                    raw.available, raw.held, s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire));
+            }
+        }
+
         void hookedMenuOpenEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
             auto* button = inputEvent ? inputEvent->As<RE::ButtonEvent>() : nullptr;
-            if (!button || !eventNameMatches(inputEvent, kNativeEventPause) || !isSecondaryWandInputEvent(inputEvent)) {
+            if (!button || !eventNameMatches(inputEvent, kNativeEventPause)) {
+                if (s_originalMenuOpenEventHandler) {
+                    s_originalMenuOpenEventHandler(handler, inputEvent);
+                }
+                return;
+            }
+
+            const auto wandIdentity = resolveNativeWandIdentity(inputEvent);
+            if (wandIdentity == NativeWandIdentity::Primary) {
+                observePrimaryVatsGrenadeGesture(*button);
+                if (s_originalMenuOpenEventHandler) {
+                    s_originalMenuOpenEventHandler(handler, inputEvent);
+                }
+                return;
+            }
+            if (wandIdentity != NativeWandIdentity::Secondary) {
                 if (s_originalMenuOpenEventHandler) {
                     s_originalMenuOpenEventHandler(handler, inputEvent);
                 }
@@ -1673,10 +1944,15 @@ namespace rock::input_remap_runtime
             const bool gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
             const bool menuInputActive = isInputBlockingMenuActive();
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressedAtDispatch();
+            const auto route = currentPipboyRoute();
+            if (button->QJustPressed()) {
+                s_pipboyGestureRoute = route;
+            }
+            const auto previousState = s_pipboyPauseGestureState.state;
             const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
                 pipboy_pause_gesture_policy::Input{
-                    .enabled = g_rockConfig.rockInputRemapEnabled,
-                    .eligible = gameplayInputAllowed && !menuInputActive,
+                    .enabled = true,
+                    .eligible = gameplayInputAllowed && !menuInputActive && route == s_pipboyGestureRoute,
                     .pressed = button->QJustPressed(),
                     .held = button->QPressed(),
                     .released = !button->QPressed(),
@@ -1684,6 +1960,21 @@ namespace rock::input_remap_runtime
                     .heldSeconds = button->QHeldDownSecs(),
                     .holdSeconds = g_rockConfig.rockPipboyPauseHoldSeconds,
                 });
+
+            if (button->QJustPressed() && previousState != pipboy_pause_gesture_policy::State::Idle) {
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "Pip-Boy Y fresh press after missing release: previousState={} reason={}",
+                    static_cast<unsigned>(previousState), decision.reason);
+            }
+            // Raw press has its own trace. Keep this callsite for releases so
+            // sampling cannot hide the decision for an ordinary sub-100ms tap.
+            if (!button->QPressed()) {
+                ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                    "Pip-Boy Y decision: reason={} state={}->{} route={} gameplay={} menuInput={} providerLease={} heldSeconds={:.3f}",
+                    decision.reason, static_cast<unsigned>(previousState), static_cast<unsigned>(decision.state),
+                    pipboyRouteName(route), gameplayInputAllowed, menuInputActive, providerSuppressed,
+                    button->QHeldDownSecs());
+            }
 
             if (!decision.consume) {
                 if (s_originalMenuOpenEventHandler) {
@@ -1693,11 +1984,19 @@ namespace rock::input_remap_runtime
             }
 
             if (decision.dispatchPipboy) {
-                const bool routed = dispatchNativePipboyTap(*button);
-                ROCK_LOG_DEBUG(Input,
-                    "Pause-button short press routed to Pip-Boy result={} heldSeconds={:.3f}",
-                    routed ? "dispatched" : "unavailable",
-                    button->QHeldDownSecs());
+                if (route == PipboyRoute::Native) {
+                    (void)dispatchNativePipboyTap(*button);
+                } else if (route == PipboyRoute::FrikWrist) {
+                    // FRIK polls physical Y itself through its session binding.
+                    // It owns screen visibility, gaze checks, and its open state.
+                    // A second native trigger submission would bypass that owner.
+                    ROCK_LOG_SAMPLE_DEBUG(Input, 100,
+                        "Pip-Boy Y wrist tap: FRIK binding owns opening; heldSeconds={:.3f}",
+                        button->QHeldDownSecs());
+                } else {
+                    ROCK_LOG_SAMPLE_WARN(Input, 1000,
+                        "Pip-Boy Y tap rejected: presentation settings or FRIK binding unavailable");
+                }
             } else if (decision.dispatchPause) {
                 const bool routed = dispatchNativePauseHold(handler, *button);
                 ROCK_LOG_DEBUG(Input,
@@ -1727,7 +2026,7 @@ namespace rock::input_remap_runtime
 
         void hookedPipboyLightEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
-            if (decideAndTracePipboyLightSuppression(inputEvent)) {
+            if (isAnyProviderOpenVrGameInputSuppressed()) {
                 markInputEventStopped(inputEvent);
                 return;
             }
@@ -1795,6 +2094,17 @@ namespace rock::input_remap_runtime
                 "ReadyWeaponHandler::HandleEvent suppression");
         }
 
+        bool installLogicalJumpObservationHook()
+        {
+            return installNativeActionVTableHook(
+                kJumpHandlerShouldHandleEventVTableSlotOffset,
+                kJumpHandlerShouldHandleEventFunctionOffset,
+                &hookedJumpShouldHandleEvent,
+                s_originalJumpShouldHandleEvent,
+                s_logicalJumpHookInstalled,
+                "JumpHandler::ShouldHandleEvent observation");
+        }
+
         bool installActivateEventReloadHook()
         {
             return installNativeActionVTableHook(kActivateHandlerHandleEventVTableSlotOffset,
@@ -1838,7 +2148,7 @@ namespace rock::input_remap_runtime
                 &hookedPipboyLightEventHandler,
                 s_originalPipboyLightEventHandler,
                 s_pipboyLightEventHookInstalled,
-                "PipboyLightHandler::HandleEvent suppression");
+                "PipboyLightHandler::HandleEvent provider input lease");
             const bool menuOpenHookReady = installNativeActionVTableHook(kMenuOpenHandlerHandleEventVTableSlotOffset,
                 kMenuOpenHandlerHandleEventFunctionOffset,
                 &hookedMenuOpenEventHandler,
@@ -1848,102 +2158,87 @@ namespace rock::input_remap_runtime
             return openHookReady && lightHookReady && menuOpenHookReady;
         }
 
-        bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
+        bool installNativeVatsVansInputSuppressionHook()
         {
-            REL::Relocation<std::uintptr_t> site{ REL::Offset(siteOffset) };
-            auto* bytes = reinterpret_cast<std::uint8_t*>(site.address());
-            if (!bytes) {
-                ROCK_LOG_ERROR(Input, "{} patch failed: site is null", label);
-                return false;
-            }
-
-            if (bytes[1] != kMeleeThrowFallbackBranchDisplacement) {
-                ROCK_LOG_ERROR(Input,
-                    "{} patch validation failed at 0x{:X}: expected branch displacement 0x{:02X}, found 0x{:02X}",
-                    label,
-                    site.address(),
-                    kMeleeThrowFallbackBranchDisplacement,
-                    bytes[1]);
-                return false;
-            }
-
-            const auto desiredOpcode = suppress ? kUnconditionalShortJump : kConditionalShortJumpGreaterEqual;
-            const auto expectedCurrentOpcode = suppress ? kConditionalShortJumpGreaterEqual : kUnconditionalShortJump;
-            if (bytes[0] == desiredOpcode) {
+            if (s_nativeVatsVansDecisionHookInstalled.load(
+                    std::memory_order_acquire)) {
                 return true;
             }
-            if (bytes[0] != expectedCurrentOpcode) {
+            if (s_nativeVatsVansDecisionHookInstallFailed.load(
+                    std::memory_order_acquire)) {
+                return false;
+            }
+
+            REL::Relocation<std::uintptr_t> callSite{
+                REL::Offset(kNativeVatsVansDecisionCallSiteOffset)
+            };
+            const auto callSiteAddress = callSite.address();
+            const auto* callBytes =
+                reinterpret_cast<const std::uint8_t*>(callSiteAddress);
+            if (!callBytes || callBytes[0] != 0xE8) {
                 ROCK_LOG_ERROR(Input,
-                    "{} patch validation failed at 0x{:X}: expected opcode 0x{:02X} or 0x{:02X}, found 0x{:02X}",
-                    label,
-                    site.address(),
-                    desiredOpcode,
-                    expectedCurrentOpcode,
-                    bytes[0]);
+                    "Native VATS/V.A.N.S. suppression hook validation failed at 0x{:X}: expected CALL rel32",
+                    callSiteAddress);
+                s_nativeVatsVansDecisionHookInstallFailed.store(
+                    true,
+                    std::memory_order_release);
                 return false;
             }
 
-            DWORD oldProtect = 0;
-            if (!VirtualProtect(bytes, sizeof(std::uint8_t), kPageExecuteReadWrite, &oldProtect)) {
-                ROCK_LOG_ERROR(Input, "{} patch failed at 0x{:X}: VirtualProtect failed", label, site.address());
+            const auto relativeTarget =
+                *reinterpret_cast<const std::int32_t*>(callBytes + 1);
+            const auto decodedTarget =
+                callSiteAddress + 5u + relativeTarget;
+            const auto expectedTarget =
+                REL::Offset(kNativeVatsVansDecisionFunctionOffset).address();
+            if (decodedTarget != expectedTarget) {
+                ROCK_LOG_ERROR(Input,
+                    "Native VATS/V.A.N.S. suppression hook validation failed at 0x{:X}: target 0x{:X}, expected 0x{:X}",
+                    callSiteAddress,
+                    decodedTarget,
+                    expectedTarget);
+                s_nativeVatsVansDecisionHookInstallFailed.store(
+                    true,
+                    std::memory_order_release);
                 return false;
             }
 
-            bytes[0] = desiredOpcode;
-            FlushInstructionCache(GetCurrentProcess(), bytes, sizeof(std::uint8_t));
-            VirtualProtect(bytes, sizeof(std::uint8_t), oldProtect, &oldProtect);
+            auto& trampoline = F4SE::GetTrampoline();
+            const auto original = trampoline.write_call<5>(
+                callSiteAddress,
+                &hookedNativeVatsVansDecision);
+            s_originalNativeVatsVansDecision =
+                reinterpret_cast<NativeVatsVansDecision_t>(original);
+            const bool installed =
+                s_originalNativeVatsVansDecision != nullptr;
+            s_nativeVatsVansDecisionHookInstalled.store(
+                installed,
+                std::memory_order_release);
+            if (!installed) {
+                ROCK_LOG_ERROR(Input,
+                    "Native VATS/V.A.N.S. suppression hook install returned a null original target");
+                s_nativeVatsVansDecisionHookInstallFailed.store(
+                    true,
+                    std::memory_order_release);
+                return false;
+            }
 
-            ROCK_LOG_INFO(Input, "{} MeleeThrow fallback draw branch at 0x{:X}", suppress ? "Patched" : "Restored", site.address());
+            ROCK_LOG_INFO(Input,
+                "Installed native VATS/V.A.N.S. suppression hook at 0x{:X}; original=0x{:X}",
+                callSiteAddress,
+                original);
             return true;
         }
 
-        bool updateMeleeThrowFallbackPatches(bool suppress)
+        bool updateNativeActionSuppressionHooks()
         {
-            const bool firstPatchOk = writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawPressPatchSite,
-                suppress,
-                "MeleeThrowHandler fallback draw press");
-            const bool secondPatchOk = writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawReleasePatchSite,
-                suppress,
-                "MeleeThrowHandler fallback draw release");
-
-            if (suppress && !(firstPatchOk && secondPatchOk)) {
-                (void)writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawPressPatchSite,
-                    false,
-                    "MeleeThrowHandler fallback draw press rollback");
-                (void)writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawReleasePatchSite,
-                    false,
-                    "MeleeThrowHandler fallback draw release rollback");
-                s_meleeThrowFallbackPatchesApplied.store(false, std::memory_order_release);
-                return false;
-            }
-
-            if (firstPatchOk && secondPatchOk) {
-                s_meleeThrowFallbackPatchesApplied.store(suppress, std::memory_order_release);
-            }
-            return firstPatchOk && secondPatchOk;
-        }
-
-        bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings, const bool manualScopeEnabled)
-        {
-            bool ready = true;
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightGrabGameInput)) {
-                ready = installReadyWeaponEventSuppressionHook() && ready;
-            }
-            if (input_remap_policy::shouldInstallActivateEventHook(settings.enabled, manualScopeEnabled)) {
-                ready = installActivateEventReloadHook() && ready;
-            }
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightFavoritesGameInput)) {
-                ready = installFavoritesEventSuppressionHook() && ready;
-            }
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressNativeMeleeThrowGameInput)) {
-                ready = installMeleeThrowEventSuppressionHook() && ready;
-            }
-            if (input_remap_policy::shouldInstallPipboyPauseArbitrationHooks(settings.enabled)) {
-                ready = installPipboyPauseArbitrationHooks() && ready;
-            }
-
-            const bool suppressTriggerFallbacks = input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightTriggerGameInput);
-            ready = updateMeleeThrowFallbackPatches(suppressTriggerFallbacks) && ready;
+            bool ready = installNativeVatsVansInputSuppressionHook();
+            ready = installLogicalJumpObservationHook() && ready;
+            ready = installReadyWeaponEventSuppressionHook() && ready;
+            ready = installActivateEventReloadHook() && ready;
+            ready = installFavoritesEventSuppressionHook() && ready;
+            ready = installMeleeThrowEventSuppressionHook() && ready;
+            ready = installPipboyPauseArbitrationHooks() && ready;
             return ready;
         }
 
@@ -1975,6 +2270,14 @@ namespace rock::input_remap_runtime
             result.availabilityReason = RawButtonAvailabilityReason::Available;
             const auto rawPressed = tracker.rawPressed.load(std::memory_order_acquire);
             const bool rawHeld = (rawPressed & mask) != 0;
+
+            if ((uiCapturedButtons(isLeft) & mask) != 0) {
+                if (rawHeld) tracker.rearmPressedMask.fetch_or(mask, std::memory_order_acq_rel);
+                clearButtonEdges(tracker, mask);
+                result.available = false;
+                result.availabilityReason = RawButtonAvailabilityReason::ReleaseToRearm;
+                return result;
+            }
 
             if (isInputBlockingMenuActive()) {
                 if (rawHeld) {
@@ -2013,17 +2316,26 @@ namespace rock::input_remap_runtime
 
     }
 
+    std::uint32_t uiInputSuppressionFlags(bool isLeft) noexcept
+    {
+        if (uiCapturedButtons(isLeft) == 0) return 0;
+        using Flag = provider::RockProviderHandInputSuppressionFlagV1;
+        return static_cast<std::uint32_t>(Flag::SuppressConfigModeChord) |
+            static_cast<std::uint32_t>(Flag::SuppressOpenVrGameInput) |
+            static_cast<std::uint32_t>(Flag::SuppressNativeVats) |
+            static_cast<std::uint32_t>(Flag::SuppressNativeVans);
+    }
+
     bool installInputRemapHooks()
     {
+        const auto* ui = rpsui::sdk::RequestInputApiV1();
+        if (ui && ui->rawInputReadActive && ui->capturedButtons &&
+            s_uiInputApi.exchange(ui, std::memory_order_acq_rel) != ui) {
+            ROCK_LOG_INFO(Input, "Independent UI input cooperation connected; UI owns tracking and capture");
+        }
         ensureMenuInputGateRegistered();
 
-        const auto settings = makeSettings();
-        const bool manualScopeEnabled = !g_rockConfig.rockAutoActivateScope;
-        const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks(settings, manualScopeEnabled);
-
-        if (!input_remap_policy::shouldInstallRawControllerHooks(settings.enabled, manualScopeEnabled)) {
-            return nativeActionSuppressionReady;
-        }
+        const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks();
 
         if (s_hooksInstalled.load(std::memory_order_acquire)) {
             return nativeActionSuppressionReady;
@@ -2075,11 +2387,64 @@ namespace rock::input_remap_runtime
         return s_hooksInstalled.load(std::memory_order_acquire);
     }
 
+    void configurePipboyInput()
+    {
+        // Initialization and explicit config reload only. FRIK owns this
+        // session override until process exit and reapplies it on its reloads.
+        // Never edit FRIK.ini or publish native trigger input for wrist mode.
+        auto* frikApi = frik_visual_authority::api();
+        const float holdSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(g_rockConfig.rockPipboyPauseHoldSeconds);
+        if (s_frikPipboyBindingReady && s_frikPipboyHoldSeconds == holdSeconds) {
+            return;
+        }
+        s_frikPipboyBindingReady = false;
+        auto* projected = f4vr::getIniSetting("bAlwaysUseProjectedPipboy:VR");
+        auto* hmd = f4vr::getIniSetting("bAttachPipboyToHMD:VR");
+        if (!projected || !hmd || projected->GetType() != RE::Setting::SETTING_TYPE::kBinary ||
+            hmd->GetType() != RE::Setting::SETTING_TYPE::kBinary || !frikApi || !frikApi->setConfigValueOverride) {
+            ROCK_LOG_ERROR(Input, "Cannot configure Pip-Boy Y opening: native settings or FRIK config API unavailable");
+            return;
+        }
+        s_projectedPipboySetting = projected;
+        s_hmdPipboySetting = hmd;
+        try {
+            // FRIK's Tap is fixed at 0.3s; Release accepts an explicit maximum
+            // duration. Match ROCK's threshold so Y-hold cannot also open it.
+            const auto binding = std::format("left release menu {:.9g}", holdSeconds);
+            if (!frikApi->setConfigValueOverride("ROCK", "Fallout4VRBody", "sPipboyOpenButton", binding.c_str())) {
+                ROCK_LOG_ERROR(Input, "FRIK rejected the Pip-Boy Y opening binding");
+                return;
+            }
+            s_frikPipboyHoldSeconds = holdSeconds;
+            s_frikPipboyBindingReady = true;
+            ROCK_LOG_INFO(Input, "Pip-Boy Y opening configured: FRIK wrist binding='{}'; projected/HMD/power-armor use native handler", binding);
+        } catch (const std::exception& error) {
+            ROCK_LOG_ERROR(Input, "Cannot configure FRIK Pip-Boy Y opening: {}", error.what());
+        }
+    }
+
     void setGameplayInputAllowed(bool allowed)
     {
         s_gameplayInputAllowed.store(allowed, std::memory_order_release);
+        // The frame callback runs after FRIK, so this witnesses the owner's
+        // actual state transition rather than claiming an input call opened it.
+        const auto* frikApi = frik_visual_authority::api();
+        const bool wristOpen = frikApi && frikApi->isWristPipboyOpen();
+        if (wristOpen != s_lastFrikPipboyOpen) {
+            s_lastFrikPipboyOpen = wristOpen;
+            ROCK_LOG_DEBUG(Input, "Pip-Boy FRIK wrist state: {} route={}",
+                wristOpen ? "opened" : "closed", pipboyRouteName(currentPipboyRoute()));
+        }
         if (!allowed) {
+            native_grenade_throw_runtime::cancel();
+            if (s_logicalJumpHeld.load(std::memory_order_acquire)) {
+                s_logicalJumpReleaseToRearm.store(
+                    true,
+                    std::memory_order_release);
+            }
             blockManualScopeInputUntilRelease();
+            s_pendingGrenadeQuickDrawHoldRequest.store(false, std::memory_order_release);
+            s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
         }
     }
 
@@ -2088,6 +2453,20 @@ namespace rock::input_remap_runtime
         s_weaponDrawn.store(weaponDrawn, std::memory_order_release);
         if (!weaponDrawn) {
             blockManualScopeInputUntilRelease();
+        }
+    }
+
+    void setRealMeleeWeaponEquipped(bool equipped)
+    {
+        const bool previous = s_realMeleeWeaponEquipped.exchange(equipped, std::memory_order_acq_rel);
+        if (previous != equipped) {
+            // NATIVE-MELEE-TRACE: this flag selects the native input bypass for
+            // real melee weapons; a melee weapon that never turns it on keeps
+            // ROCK's trigger/grip suppression active and starves native melee.
+            ROCK_LOG_INFO(Input,
+                "NATIVE-MELEE-TRACE realMeleeWeaponEquipped {} -> {}",
+                previous ? "yes" : "no",
+                equipped ? "yes" : "no");
         }
     }
 
@@ -2116,6 +2495,11 @@ namespace rock::input_remap_runtime
         s_equippedWeaponPrimaryDetached.store(detached, std::memory_order_release);
     }
 
+    void setEquippedWeaponShoulderSheathActive(bool active)
+    {
+        s_equippedWeaponShoulderSheathActive.store(active, std::memory_order_release);
+    }
+
     void setEquippedWeaponLeftHandFiringActive(bool active)
     {
         const bool previous = s_equippedWeaponLeftHandFiringActive.exchange(active, std::memory_order_acq_rel);
@@ -2123,6 +2507,12 @@ namespace rock::input_remap_runtime
             blockManualScopeInputUntilRelease();
             ROCK_LOG_INFO(Input, "Left-hand fire trigger remap {}", active ? "ENGAGED" : "released");
         }
+    }
+
+    bool isProviderOpenVrGameInputSuppressedForHand(bool isLeft)
+    {
+        return isProviderOpenVrGameInputSuppressed(
+            isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
     }
 
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed)
@@ -2142,12 +2532,14 @@ namespace rock::input_remap_runtime
     void updateFiringHandReloadInput(const float deltaSeconds)
     {
         /*
-         * Consume both physical accept buttons every frame. Automatic mode
-         * preserves the existing primary-event/secondary-raw reload split.
-         * Manual mode owns either physical firing-hand gesture end to end:
+         * Consume both physical accept buttons every frame. Native use owns
+         * a primary-wand press that starts on a non-pickup target. Otherwise
+         * manual scope owns either physical firing-hand gesture end to end:
          * release before the threshold dispatches reload, while crossing it
-         * holds native scope activation until release. Draining both edges in
-         * every mode prevents a config or firing-hand change from replaying a
+         * holds native scope activation until release. Disabled immersive
+         * scopes leave primary reload with native events and
+         * dispatches left-firing reload on press. Draining edges in every
+         * mode prevents a config or firing-hand change from replaying a
          * stale press.
          *
          * The accumulator's menu rearm guarantees a menu-accept press (A/X
@@ -2164,94 +2556,71 @@ namespace rock::input_remap_runtime
             blockManualScopeInputUntilRelease();
             return;
         }
-        constexpr bool secondaryHandIsLeft = true;
         const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
+        const bool gameplayAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
+        const bool menuActive = isInputBlockingMenuActive();
+        const bool weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire);
+        const bool nativeActivationTarget = gameplayAllowed && !menuActive && weaponDrawn &&
+            !firingHandIsLeft && rightAcceptState.pressed &&
+            s_manualScopeInputState.state == manual_scope_input_policy::State::Idle &&
+            classifyActivateTarget(true) == ActivateTarget::NativeActivation;
 
-        if (!g_rockConfig.rockAutoActivateScope) {
-            const auto toManualButtonState = [](const RawButtonState& state) {
-                return manual_scope_input_policy::ButtonState{
-                    .available = state.available,
-                    .held = state.held,
-                    .pressed = state.pressed,
-                    .released = state.released,
-                };
+        const auto toManualButtonState = [](const RawButtonState& state) {
+            return manual_scope_input_policy::ButtonState{
+                .available = state.available,
+                .held = state.held,
+                .pressed = state.pressed,
+                .released = state.released,
             };
-            const auto previousState = s_manualScopeInputState.state;
-            const auto decision = manual_scope_input_policy::update(s_manualScopeInputState,
-                manual_scope_input_policy::Input{
-                    .manualModeEnabled = true,
-                    .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                    .menuInputActive = isInputBlockingMenuActive(),
-                    .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                    .firingHandIsLeft = firingHandIsLeft,
-                    .leftButton = toManualButtonState(leftAcceptState),
-                    .rightButton = toManualButtonState(rightAcceptState),
-                    .deltaSeconds = deltaSeconds,
-                    .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
-                });
-            s_manualScopeActivationRequested.store(decision.scopeRequested, std::memory_order_release);
+        };
+        const auto previousState = s_manualScopeInputState.state;
+        const auto decision = manual_scope_input_policy::update(s_manualScopeInputState,
+            manual_scope_input_policy::Input{
+                .gameplayInputAllowed = gameplayAllowed,
+                .menuInputActive = menuActive,
+                .weaponDrawn = weaponDrawn,
+                .firingHandIsLeft = firingHandIsLeft,
+                .nativeActivationTarget = nativeActivationTarget,
+                .immersiveScopesEnabled = g_rockConfig.rockEnableImmersiveScopes,
+                .leftButton = toManualButtonState(leftAcceptState),
+                .rightButton = toManualButtonState(rightAcceptState),
+                .deltaSeconds = deltaSeconds,
+                .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
+            });
+        s_manualScopeActivationRequested.store(decision.scopeRequested, std::memory_order_release);
 
-            if (decision.state != previousState || decision.dispatchReload) {
-                ROCK_LOG_DEBUG(Input,
-                    "Manual scope input: hand={} state={}->{} scope={} reload={} reason={}",
-                    firingHandIsLeft ? "left-X" : "right-A",
-                    static_cast<std::uint32_t>(previousState),
-                    static_cast<std::uint32_t>(decision.state),
-                    decision.scopeRequested ? "held" : "off",
-                    decision.dispatchReload ? "dispatch" : "no",
-                    decision.reason);
-            }
-
-            if (decision.dispatchReload && dispatchNativeReloadAction()) {
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Dispatched manual-scope short release to equipped weapon reload hand={}",
-                    firingHandIsLeft ? "left-X" : "right-A");
-            }
-            return;
+        if (decision.state != previousState || decision.dispatchReload) {
+            ROCK_LOG_DEBUG(Input,
+                "Manual scope input: hand={} state={}->{} scope={} reload={} reason={}",
+                firingHandIsLeft ? "left-X" : "right-A",
+                static_cast<std::uint32_t>(previousState),
+                static_cast<std::uint32_t>(decision.state),
+                decision.scopeRequested ? "held" : "off",
+                decision.dispatchReload ? "dispatch" : "no",
+                decision.reason);
         }
 
-        resetManualScopeInput();
-        const auto& acceptState = secondaryHandIsLeft ? leftAcceptState : rightAcceptState;
-        if (!acceptState.available || !acceptState.pressed) {
-            return;
-        }
-
-        const bool firingHandIsSecondaryHand = firingHandIsLeft == secondaryHandIsLeft;
-        const bool dispatch = input_remap_policy::shouldDispatchSecondaryHandReloadPress(input_remap_policy::SecondaryHandReloadInput{
-            .remapEnabled = g_rockConfig.rockInputRemapEnabled,
-            .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-            .menuInputActive = isInputBlockingMenuActive(),
-            .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-            .firingHandIsSecondaryHand = firingHandIsSecondaryHand,
-            .acceptButtonPressedEdge = acceptState.pressed,
-        });
-
-        ROCK_LOG_SAMPLE_DEBUG(Input,
-            g_rockConfig.rockLogSampleMilliseconds,
-            "Reload press gate: hand={} firing={} weaponDrawn={} -> {}",
-            secondaryHandIsLeft ? "left-X" : "right-A",
-            firingHandIsLeft ? "left" : "right",
-            s_weaponDrawn.load(std::memory_order_acquire) ? "yes" : "no",
-            dispatch ? "dispatch" : "drop");
-
-        if (dispatch && dispatchNativeReloadAction()) {
+        if (decision.dispatchReload && dispatchNativeReloadAction()) {
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Dispatched secondary-hand accept press to equipped weapon reload hand={}",
-                secondaryHandIsLeft ? "left-X" : "right-A");
+                "Dispatched manual-scope short release to equipped weapon reload hand={}",
+                firingHandIsLeft ? "left-X" : "right-A");
         }
     }
 
     bool isManualScopeActivationRequested()
     {
-        return !g_rockConfig.rockAutoActivateScope &&
-               s_manualScopeActivationRequested.load(std::memory_order_acquire);
+        return g_rockConfig.rockEnableImmersiveScopes && s_manualScopeActivationRequested.load(std::memory_order_acquire);
     }
 
     bool isMenuInputActive()
     {
         return isInputBlockingMenuActive();
+    }
+
+    bool hasNativeActivationTarget(bool primaryHand)
+    {
+        return classifyActivateTarget(primaryHand) == ActivateTarget::NativeActivation;
     }
 
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)
@@ -2261,14 +2630,8 @@ namespace rock::input_remap_runtime
 
     bool isNativePipboyInputSuppressionActive()
     {
-        // Mirrors hookedPipboyEventHandler for a matched "Pipboy" event so API consumers see the live hook decision.
-        if (isAnyProviderOpenVrGameInputSuppressed()) {
-            return true;
-        }
-
-        auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, true);
-        input.pipboyHandEngaged = isPipboyHandEngaged();
-        return input_remap_policy::shouldSuppressNativePipboyAction(input);
+        // Only a provider lease claims native flashlight input; hand engagement does not.
+        return isAnyProviderOpenVrGameInputSuppressed();
     }
 
     bool isPipboyMenuOpen()
@@ -2276,33 +2639,56 @@ namespace rock::input_remap_runtime
         return s_pipboyMenuOpen.load(std::memory_order_acquire);
     }
 
-    PipboyEquipTriggerResolution consumePipboyEquipTriggerResolution()
+    LogicalJumpState readLogicalJumpState()
     {
-        constexpr std::uint32_t kTransitionMaximumAgeMilliseconds = 500;
-        const auto unpack = [](const std::uint64_t packed) {
-            return pipboy_equip_policy::TransitionToken{
-                .menuGeneration = static_cast<std::uint32_t>(packed >> 32u),
-                .tickMilliseconds = static_cast<std::uint32_t>(packed),
-                .present = packed != 0,
-            };
-        };
+        LogicalJumpState state{};
+        if (!s_logicalJumpHookInstalled.load(std::memory_order_acquire) ||
+            !s_logicalJumpValid.load(std::memory_order_acquire)) {
+            return state;
+        }
 
-        // Consume both tokens even when held-state resolves the hand so no
-        // transition can leak into the next Pip-Boy selection.
-        const auto leftTransition = unpack(s_pipboyTriggerTransitions[0].exchange(0, std::memory_order_acq_rel));
-        const auto rightTransition = unpack(s_pipboyTriggerTransitions[1].exchange(0, std::memory_order_acq_rel));
-        const auto resolution = pipboy_equip_policy::resolveTriggerHand(
-            isRawButtonPhysicallyHeld(true, input_remap_policy::kOpenVrSteamVrTriggerButtonId),
-            isRawButtonPhysicallyHeld(false, input_remap_policy::kOpenVrSteamVrTriggerButtonId),
-            leftTransition,
-            rightTransition,
-            s_pipboyMenuGeneration.load(std::memory_order_acquire),
-            static_cast<std::uint32_t>(GetTickCount64()),
-            kTransitionMaximumAgeMilliseconds);
-        return PipboyEquipTriggerResolution{
-            .hand = resolution.hand,
-            .source = resolution.source,
-        };
+        state.sampleSequence = s_logicalJumpSampleSequence.load(
+            std::memory_order_acquire);
+        state.pressSequence = s_logicalJumpPressSequence.load(
+            std::memory_order_acquire);
+        const auto sampleTick = s_logicalJumpSampleTickMilliseconds.load(
+            std::memory_order_acquire);
+        const auto now = GetTickCount64();
+        state.sampleAgeMilliseconds = static_cast<std::uint32_t>(
+            (std::min<std::uint64_t>)(
+                now >= sampleTick ? now - sampleTick : 0,
+                UINT32_MAX));
+        const bool held = s_logicalJumpHeld.load(std::memory_order_acquire);
+
+        if (!s_gameplayInputAllowed.load(std::memory_order_acquire) ||
+            isInputBlockingMenuActive()) {
+            if (held) {
+                s_logicalJumpReleaseToRearm.store(
+                    true,
+                    std::memory_order_release);
+            }
+            state.availabilityReason =
+                RawButtonAvailabilityReason::BlockingMenu;
+            return state;
+        }
+
+        if (s_logicalJumpReleaseToRearm.load(
+                std::memory_order_acquire)) {
+            if (!held) {
+                s_logicalJumpReleaseToRearm.store(
+                    false,
+                    std::memory_order_release);
+            } else {
+                state.availabilityReason =
+                    RawButtonAvailabilityReason::ReleaseToRearm;
+                return state;
+            }
+        }
+
+        state.available = true;
+        state.held = held;
+        state.availabilityReason = RawButtonAvailabilityReason::Available;
+        return state;
     }
 
     bool consumePendingSavedGrabOffsetRequest(bool isLeft)
@@ -2310,9 +2696,63 @@ namespace rock::input_remap_runtime
         return s_pendingSavedGrabOffsetRequest[isLeft ? 0u : 1u].exchange(false, std::memory_order_acq_rel);
     }
 
+    bool consumeGrenadeQuickDrawHoldRequest()
+    {
+        const bool requested = s_pendingGrenadeQuickDrawHoldRequest.exchange(false, std::memory_order_acq_rel);
+        // Sample pre-remap physical input even while the wheel blanks native B.
+        // Losing its claim during a held gesture must never synthesize a draw.
+        const auto button = consumeRawButtonState(false, 1);
+        const bool allowed = grenadeQuickDrawAllowed();
+        if (native_grenade_throw_runtime::active() &&
+            (!allowed || !button.available || !button.held || g_rockConfig.rockImmersiveGrenades)) {
+            native_grenade_throw_runtime::cancel();
+        }
+        if (!allowed || !button.available) {
+            s_grenadeQuickDrawReleaseToRearm.store(true, std::memory_order_release);
+        } else if (!button.held) {
+            s_grenadeQuickDrawReleaseToRearm.store(false, std::memory_order_release);
+        }
+        return requested && allowed && g_rockConfig.rockImmersiveGrenades &&
+            !s_grenadeQuickDrawReleaseToRearm.load(std::memory_order_acquire);
+    }
+
+    PhysicalTraceSnapshot readPhysicalTraceSnapshot(bool isLeft) noexcept
+    {
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        const auto sampleTick = tracker.sampleTickMilliseconds.load(std::memory_order_acquire);
+        const auto now = GetTickCount64();
+        return {
+            .valid = tracker.valid.load(std::memory_order_acquire),
+            .sequence = tracker.sampleSequence.load(std::memory_order_acquire),
+            .ageMilliseconds = now >= sampleTick ? now - sampleTick : 0,
+            .pressed = tracker.rawPressed.load(std::memory_order_acquire),
+            .pendingPressed = tracker.pressedEdges.load(std::memory_order_acquire),
+            .pendingReleased = tracker.releasedEdges.load(std::memory_order_acquire),
+            .rearm = tracker.rearmPressedMask.load(std::memory_order_acquire),
+            .trigger = tracker.triggerAxisX.load(std::memory_order_acquire),
+        };
+    }
+
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)
     {
         return readRawButtonState(isLeft, buttonId, false);
+    }
+
+    bool peekRawThumbstick(bool isLeft, float& x, float& y)
+    {
+        x = y = 0.0f;
+        const auto raw = peekRawButtonState(isLeft, 32);
+        if (!raw.available || raw.availabilityReason != RawButtonAvailabilityReason::Available ||
+            raw.sampleAgeMilliseconds > 100) {
+            return false;
+        }
+        const auto bits = s_controllers[isLeft ? 0u : 1u].thumbstickAxes.load(std::memory_order_acquire);
+        vr::VRControllerAxis_t axes{};
+        std::memcpy(&axes, &bits, sizeof(axes));
+        if (!std::isfinite(axes.x) || !std::isfinite(axes.y)) return false;
+        x = std::clamp(axes.x, -1.0f, 1.0f);
+        y = std::clamp(axes.y, -1.0f, 1.0f);
+        return true;
     }
 
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId)
@@ -2330,6 +2770,27 @@ namespace rock::input_remap_runtime
         const auto& tracker = s_controllers[isLeft ? 0u : 1u];
         return tracker.valid.load(std::memory_order_acquire) &&
                (tracker.rawPressed.load(std::memory_order_acquire) & mask) != 0;
+    }
+
+    bool isTriggerGripChordHeld(bool isLeft)
+    {
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        return input_remap_policy::triggerGripChordHeld(
+            tracker.valid.load(std::memory_order_acquire) &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive(),
+            tracker.rawPressed.load(std::memory_order_acquire),
+            tracker.rearmPressedMask.load(std::memory_order_acquire));
+    }
+
+    bool areRawButtonsHeld(bool isLeft, std::uint64_t mask)
+    {
+        if (!mask) return true;
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        return input_remap_policy::buttonChordHeld(
+            tracker.valid.load(std::memory_order_acquire) &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) && !isInputBlockingMenuActive(),
+            tracker.rawPressed.load(std::memory_order_acquire),
+            tracker.rearmPressedMask.load(std::memory_order_acquire), mask);
     }
 
 }

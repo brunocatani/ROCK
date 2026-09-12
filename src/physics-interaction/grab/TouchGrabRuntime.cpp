@@ -1,13 +1,22 @@
 #include "physics-interaction/grab/TouchGrabRuntime.h"
 
+#include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
+#include "physics-interaction/grab/MeshGrab.h"
+#include "physics-interaction/grab/SurfaceMeshGrabPolicy.h"
+#include "physics-interaction/grab/TouchGrabJoinPolicy.h"
 #include "physics-interaction/grab/TouchGrabMath.h"
+#include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/ReferenceInteraction.h"
+#include "physics-interaction/native/PhysicsShapeCast.h"
 
 #include "RE/Bethesda/bhkCharacterController.h"
 #include "RE/Havok/hknpBody.h"
@@ -70,6 +79,186 @@ namespace rock
                    std::isfinite(point.z);
         }
 
+        bool referenceAllowedByTarget(const provider::RockProviderTouchGrabTargetV1& target,
+            RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t layer)
+        {
+            using Flag = provider::RockProviderTouchGrabTargetFlagV1;
+            if (!provider::hasTouchGrabTargetFlagV1(target.flags, Flag::ExcludePowerArmor)) return true;
+            auto* ref = reference_interaction::resolveBody(world, bodyId);
+            // Reference-less terrain remains eligible. ANIMSTATIC can be a PA
+            // frame, so an unresolved identity on that layer cannot pass this filter.
+            if (!ref) return layer != collision_layer_policy::FO4_LAYER_ANIMSTATIC;
+            bool known = false;
+            if (reference_interaction::isPowerArmorFurniture(ref, &known) || !known) return false;
+            if (ref->As<RE::Actor>()) {
+                provider::RockProviderPowerArmorTargetV1 armor{};
+                if (!reference_interaction::describePowerArmor(ref, armor)) return false;
+                const auto classified = static_cast<std::uint32_t>(provider::RockProviderTargetDetailFlagV1::PowerArmorClassification);
+                const auto actor = static_cast<std::uint32_t>(provider::RockProviderTargetDetailFlagV1::PowerArmorActor);
+                return (armor.flags & classified) != 0 && (armor.flags & actor) == 0;
+            }
+            return true;
+        }
+
+        struct SurfaceMeshAcquisition
+        {
+            std::uint32_t triangleIndex = 0xFFFF'FFFFu;
+            char partName[64]{};
+            DynamicHandCollisionRuntime::SurfaceLatchPresentation
+                presentation{};
+            surface_mesh_grab_policy::Failure failure{
+                surface_mesh_grab_policy::Failure::None
+            };
+            BoundedSurfaceMeshExtraction extraction{};
+            std::uint32_t sourceTriangleCount = 0;
+        };
+
+        [[nodiscard]] bool tryAcquireSurfaceMeshPresentation(
+            const bool isLeft,
+            const std::uint32_t targetBodyId,
+            const RE::NiPoint3& collisionPointWorld,
+            const bool hasCollisionNormal,
+            const RE::NiPoint3& collisionNormalWorld,
+            RE::hknpWorld* world,
+            DynamicHandCollisionRuntime& dynamicHandCollision,
+            SurfaceMeshAcquisition& outAcquisition)
+        {
+            outAcquisition = {};
+            if (!g_rockConfig.rockSurfaceMeshGrabEnabled) {
+                outAcquisition.failure =
+                    surface_mesh_grab_policy::Failure::Disabled;
+                return false;
+            }
+            if (!world || !finitePoint(collisionPointWorld)) {
+                outAcquisition.failure = surface_mesh_grab_policy::Failure::
+                    ContactPointUnavailable;
+                return false;
+            }
+
+            RE::NiTransform handWorld{};
+            if (!dynamicHandCollision.getLastPresentedHandWorld(
+                    isLeft,
+                    handWorld)) {
+                outAcquisition.failure = surface_mesh_grab_policy::Failure::
+                    ContactPointUnavailable;
+                return false;
+            }
+            RE::NiTransform targetWorld{};
+            if (!havok_runtime::tryResolveLiveBodyWorldTransform(
+                    world,
+                    RE::hknpBodyId{ targetBodyId },
+                    targetWorld)) {
+                outAcquisition.failure = surface_mesh_grab_policy::Failure::
+                    TargetTransformUnavailable;
+                return false;
+            }
+
+            auto* ownerNode = havok_runtime::getOwnerNodeFromBody(
+                world,
+                RE::hknpBodyId{ targetBodyId });
+            if (!ownerNode) {
+                outAcquisition.failure = surface_mesh_grab_policy::Failure::
+                    OwnerNodeUnavailable;
+                return false;
+            }
+
+            std::vector<TriangleData> worldTriangles;
+            std::vector<GrabSurfaceTriangleData> surfaceTriangles;
+            const auto maximumTriangles = static_cast<std::uint32_t>(
+                (std::max)(
+                    256,
+                    g_rockConfig.
+                        rockSurfaceMeshGrabMaxTriangles));
+            constexpr std::uint32_t kMaximumShapes = 256;
+            outAcquisition.extraction = extractBoundedSurfaceTriangles(
+                ownerNode,
+                worldTriangles,
+                surfaceTriangles,
+                (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth),
+                kMaximumShapes,
+                maximumTriangles,
+                true);
+            RE::TESObjectREFR* expandedReference = nullptr;
+            if (surfaceTriangles.empty() && !outAcquisition.extraction.shapeBudgetExceeded &&
+                !outAcquisition.extraction.triangleBudgetExceeded) {
+                auto* ref = reference_interaction::resolveBody(world, targetBodyId);
+                auto* root = ref ? ref->Get3D() : nullptr;
+                // PA/fridge collision helpers can have no render descendants.
+                // Search only their resolved reference root, with the same budget.
+                if (root && root != ownerNode && reference_interaction::resolveNode(root) == ref) {
+                    worldTriangles.clear(); surfaceTriangles.clear();
+                    outAcquisition.extraction = extractBoundedSurfaceTriangles(root,
+                        worldTriangles, surfaceTriangles,
+                        (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth),
+                        kMaximumShapes, maximumTriangles, true);
+                    expandedReference = ref;
+                }
+            }
+            outAcquisition.sourceTriangleCount =
+                static_cast<std::uint32_t>(worldTriangles.size());
+            if (outAcquisition.extraction.shapeBudgetExceeded ||
+                outAcquisition.extraction.triangleBudgetExceeded) {
+                outAcquisition.failure = surface_mesh_grab_policy::Failure::
+                    ExtractionBudgetExceeded;
+                return false;
+            }
+            if (worldTriangles.empty() || surfaceTriangles.empty()) {
+                outAcquisition.failure =
+                    surface_mesh_grab_policy::Failure::ExtractionEmpty;
+                return false;
+            }
+
+            GrabSurfaceHit meshHit{};
+            constexpr float kAbsoluteProjectionLimitGameUnits = 128.0f;
+            if (!findClosestGrabSurfaceHitToPointPositionOnly(
+                    surfaceTriangles,
+                    collisionPointWorld,
+                    hasCollisionNormal ?
+                        collisionNormalWorld :
+                        RE::NiPoint3{},
+                    kAbsoluteProjectionLimitGameUnits,
+                    meshHit) ||
+                !meshHit.valid || !meshHit.hasTriangle ||
+                (expandedReference && reference_interaction::resolveNode(meshHit.sourceShape) != expandedReference)) {
+                outAcquisition.failure =
+                    surface_mesh_grab_policy::Failure::ProjectionMiss;
+                return false;
+            }
+
+            const auto projection =
+                surface_mesh_grab_policy::projectHandToMesh(
+                    surface_mesh_grab_policy::ProjectionInput{
+                        .handWorld = handWorld,
+                        .collisionPointWorld = collisionPointWorld,
+                        .collisionNormalWorld = collisionNormalWorld,
+                        .meshPointWorld = meshHit.position,
+                        .meshNormalWorld = meshHit.normal,
+                        .maximumProjectionDistanceGameUnits =
+                            g_rockConfig.
+                                rockSurfaceMeshGrabMaxProjectionDistanceGameUnits,
+                        .hasCollisionNormal = hasCollisionNormal,
+                        .hasMeshNormal = true,
+                    });
+            if (!projection.valid) {
+                outAcquisition.failure =
+                    surface_mesh_grab_policy::Failure::ProjectionTooFar;
+                return false;
+            }
+
+            auto& presentation = outAcquisition.presentation;
+            presentation.handWorld = projection.correctedHandWorld;
+            presentation.meshAnchorWorld = projection.meshPointWorld;
+            presentation.meshNormalWorld = projection.meshNormalWorld;
+            presentation.shellToMeshDistanceGameUnits =
+                projection.shellToMeshDistanceGameUnits;
+            presentation.valid = true;
+            outAcquisition.triangleIndex = meshHit.sourceTriangleIndex;
+            if (meshHit.sourceShape && meshHit.sourceShape->name.c_str()) {
+                strncpy_s(outAcquisition.partName, meshHit.sourceShape->name.c_str(), _TRUNCATE);
+            }
+            return true;
+        }
+
         [[nodiscard]] provider::TouchGrabMotionClassV1 classifyMotion(
             const havok_runtime::BodySnapshot& snapshot)
         {
@@ -88,6 +277,38 @@ namespace rock
             default:
                 return provider::TouchGrabMotionClassV1::Other;
             }
+        }
+
+        [[nodiscard]] provider::RockProviderTouchGrabTargetV1
+        makeGlobalSurfaceTarget(
+            const std::uint32_t bodyId,
+            const std::uint32_t worldGeneration,
+            const std::uint32_t skeletonGeneration,
+            const std::uint32_t providerGeneration)
+        {
+            using Flag = provider::RockProviderTouchGrabTargetFlagV1;
+            provider::RockProviderTouchGrabTargetV1 target{};
+            target.targetId =
+                global_surface_grab_policy::targetIdForBody(bodyId);
+            target.targetGeneration =
+                global_surface_grab_policy::kTargetGeneration;
+            target.kind =
+                provider::RockProviderTouchGrabKindV1::FixedAnchor;
+            target.flags =
+                static_cast<std::uint32_t>(Flag::AllowRightHand) |
+                static_cast<std::uint32_t>(Flag::AllowLeftHand) |
+                static_cast<std::uint32_t>(Flag::AllowTwoHands) |
+                static_cast<std::uint32_t>(Flag::MatchAnyBody) |
+                static_cast<std::uint32_t>(Flag::MatchStaticMotion) |
+                static_cast<std::uint32_t>(Flag::MatchKeyframedMotion) |
+                static_cast<std::uint32_t>(Flag::MatchDynamicMotion);
+            target.allowedLayerMask =
+                global_surface_grab_policy::allowedLayerMask();
+            target.leaseFrames = 1;
+            target.worldGeneration = worldGeneration;
+            target.skeletonGeneration = skeletonGeneration;
+            target.providerGeneration = providerGeneration;
+            return target;
         }
 
         [[nodiscard]] bool sameRuntimeContract(
@@ -364,9 +585,136 @@ namespace rock
         _physicsCallbackGate = gate;
     }
 
+    TouchGrabRuntime::PowerArmorCandidate TouchGrabRuntime::findPowerArmorCandidate(
+        RE::hknpWorld* world, const RE::NiPoint3& handPosition,
+        const std::uint32_t frameFormId, const provider::RockProviderPowerArmorPointV1 requestedPoint,
+        const float radius, PowerArmorProbeDiagnostics* diagnostics) const
+    {
+        PowerArmorProbeDiagnostics ignored{};
+        auto& probe = diagnostics ? *diagnostics : ignored;
+        probe = {};
+        PowerArmorCandidate best{};
+        if (!world || !finitePoint(handPosition) || !std::isfinite(radius) || radius <= 0 || radius > 32) return best;
+        probe.stage = 1;
+        physics_query_resources::AllHitsCollector ownedHits;
+        auto& hits = ownedHits.get();
+        // Selection caches native sphere shapes by exact radius. Quantize this
+        // broadphase-only radius so arbitrary consumer distances cannot grow it.
+        const float broadphaseRadius = std::ceil(radius) + 16.0f;
+        if (!physics_shape_cast::castSelectionSphere(world,
+            {.startGame = {handPosition.x, handPosition.y, handPosition.z - 0.5f},
+             .directionGame = {0, 0, 1}, .distanceGame = 1.0f,
+             .radiusGame = broadphaseRadius}, hits)) return best;
+        float bestDistanceSquared = radius * radius;
+        probe.stage = 2;
+        std::array<std::uint32_t, 64> seen{};
+        std::size_t seenCount = 0, armorCount = 0;
+        const int count = (std::min)(hits.hits._size, 64);
+        probe.hits = static_cast<std::uint32_t>((std::max)(0, hits.hits._size));
+        for (int i = 0; i < count; ++i) {
+            const auto bodyId = hits.hits._data[i].hitBodyInfo.m_bodyId.value;
+            auto* ref = reference_interaction::resolveBody(world, bodyId);
+            if (!ref || (frameFormId && ref->GetFormID() != frameFormId)) continue;
+            const auto id = ref->GetFormID();
+            if (std::find(seen.begin(), seen.begin() + seenCount, id) != seen.begin() + seenCount) continue;
+            if (seenCount == seen.size()) break;
+            seen[seenCount++] = id;
+            ++probe.references;
+            if (!reference_interaction::isPowerArmorFurniture(ref)) continue;
+            if (armorCount++ == 8) break;
+            ++probe.armorReferences;
+            probe.stage = (std::max)(probe.stage, 3u);
+            for (const auto point : {provider::RockProviderPowerArmorPointV1::LeftArmorHand,
+                                    provider::RockProviderPowerArmorPointV1::RightArmorHand}) {
+                if (requestedPoint != provider::RockProviderPowerArmorPointV1::None && point != requestedPoint) continue;
+                RE::NiTransform pose{};
+                if (!reference_interaction::pointTransform(ref, point, pose)) continue;
+                ++probe.bones;
+                probe.stage = (std::max)(probe.stage, 4u);
+                const auto delta = pose.translate - handPosition;
+                const float distance = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+                const float distanceGame = std::sqrt(distance);
+                if (probe.nearestDistanceGame < 0 || distanceGame < probe.nearestDistanceGame) probe.nearestDistanceGame = distanceGame;
+                if (distance > bestDistanceSquared) continue;
+                bestDistanceSquared = distance;
+                best = {true, id, ref->GetHandle().native_handle(), bodyId, point, pose.translate};
+                probe.stage = 5;
+            }
+        }
+        return best;
+    }
+
+    bool TouchGrabRuntime::tryAcquirePowerArmor(const bool isLeft, const PowerArmorCandidate& candidate,
+        RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
+        const std::uint32_t worldGeneration, const std::uint32_t skeletonGeneration,
+        const std::uint32_t providerGeneration, const std::uint32_t collisionGeneration,
+        const std::uint64_t commandOwnerToken)
+    {
+        if (!candidate.valid || !_dynamicHandCollision) return false;
+        auto* ref = reference_interaction::resolveBody(world, candidate.bodyId);
+        if (!ref || ref->GetFormID() != candidate.referenceFormId ||
+            ref->GetHandle().native_handle() != candidate.referenceNativeHandle) return false;
+        hand_semantic_contact_state::SemanticContactRecord contact{};
+        contact.valid = true; contact.isLeft = isLeft;
+        contact.role = hand_collider_semantics::HandColliderRole::PalmAnchor;
+        contact.handBodyId = _dynamicHandCollision->proxyBodyIdForDebug(isLeft, 0).value;
+        contact.otherBodyId = candidate.bodyId;
+        contact.hasContactPointGame = true;
+        contact.contactPointGame = {candidate.positionGame.x, candidate.positionGame.y, candidate.positionGame.z};
+        if (!tryAcquire(isLeft, contact, bhkWorld, world, worldGeneration, skeletonGeneration,
+            providerGeneration, collisionGeneration, TargetClass::Wildcard, ContactSource::DynamicSurface, false, candidate.point)) return false;
+        if (auto* active = findTargetForHand(isLeft)) {
+            for (auto& hand : active->hands) if (hand.active && hand.isLeft == isLeft) hand.commandOwnerToken = commandOwnerToken;
+        }
+        ROCK_LOG_INFO(Hand, "PA point acquired: hand={} frame={:08X} handle={:08X} point={} body={} owner={:016X}",
+            isLeft ? "left" : "right", candidate.referenceFormId, candidate.referenceNativeHandle,
+            static_cast<std::uint32_t>(candidate.point), candidate.bodyId, commandOwnerToken);
+        return true;
+    }
+
     bool TouchGrabRuntime::isHandActive(const bool isLeft) const noexcept
     {
         return findTargetForHand(isLeft) != nullptr;
+    }
+
+    bool TouchGrabRuntime::getHandReport(
+        const bool isLeft,
+        HandReport& outReport) const noexcept
+    {
+        outReport = {};
+        const auto* active = findTargetForHand(isLeft);
+        if (!active) {
+            return false;
+        }
+        outReport.globalSurface = active->globalSurface;
+        outReport.kind = active->target.kind;
+        outReport.bodyId = active->bodyId;
+        outReport.referenceFormId =
+            active->target.referenceFormId;
+        outReport.referenceNativeHandle =
+            active->target.referenceNativeHandle;
+        if (active->globalSurface) {
+            // Optional reference metadata must describe the current body owner.
+            auto* ref = reference_interaction::resolveBody(_activeHknpWorld, active->bodyId);
+            outReport.referenceFormId = ref ? ref->GetFormID() : 0;
+            outReport.referenceNativeHandle = ref ? ref->GetHandle().native_handle() : 0;
+        }
+        for (const auto& hand : active->hands) {
+            if (!hand.active || hand.isLeft != isLeft) {
+                continue;
+            }
+            outReport.hasSurfaceAnchor = hand.hasContactPoint;
+            outReport.commandOwned = hand.commandOwnerToken != 0;
+            outReport.surfaceAnchorGame = hand.contactPointGame;
+            outReport.surfaceGripMode = hand.surfaceGripMode;
+            outReport.hasNormal = hand.hasContactNormal;
+            outReport.normalGame = hand.contactNormalGame;
+            outReport.powerArmorPoint = hand.powerArmorPoint;
+            outReport.sourceTriangleIndex = hand.sourceTriangleIndex;
+            std::copy(std::begin(hand.meshPartName), std::end(hand.meshPartName), std::begin(outReport.meshPartName));
+            break;
+        }
+        return true;
     }
 
     TouchGrabRuntime::ActiveTarget* TouchGrabRuntime::findTarget(
@@ -425,6 +773,7 @@ namespace rock
         ActiveTarget& active) noexcept
     {
         active.active = false;
+        active.globalSurface = false;
         active.ownerToken = 0;
         active.scopeToken = 0;
         active.target = {};
@@ -452,8 +801,17 @@ namespace rock
         const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration,
         const std::uint32_t collisionGeneration,
-        const TargetClass targetClass)
+        const TargetClass targetClass,
+        const ContactSource contactSource,
+        const bool closeObjectCandidate,
+        const provider::RockProviderPowerArmorPointV1 powerArmorPoint)
     {
+        _lastAttemptReport = {
+            .failure = AttemptFailure::InvalidInput,
+            .targetClass = targetClass,
+            .contactSource = contactSource,
+            .bodyId = contact.otherBodyId,
+        };
         if (!bhkWorld || !hknpWorld || !contact.valid ||
             contact.isLeft != isLeft ||
             contact.handBodyId == kInvalidId ||
@@ -466,10 +824,16 @@ namespace rock
         const auto snapshot =
             havok_runtime::snapshotBody(hknpWorld, bodyId);
         const auto motionClass = classifyMotion(snapshot);
-        if (!snapshot.valid ||
-            motionClass == provider::TouchGrabMotionClassV1::Other) {
+        _lastAttemptReport.failure = AttemptFailure::SnapshotUnavailable;
+        _lastAttemptReport.motionClass = motionClass;
+        if (!snapshot.valid || !snapshot.body) {
             return false;
         }
+        _lastAttemptReport.collisionLayer =
+            snapshot.collisionFilterInfo & 0x7Fu;
+        _lastAttemptReport.motionIndex = snapshot.motionIndex;
+        _lastAttemptReport.motionPropertiesId =
+            snapshot.body->motionPropertiesId;
 
         ActiveTarget* targetOnBody = nullptr;
         for (auto& candidate : _targets) {
@@ -491,7 +855,8 @@ namespace rock
             provider::RockProviderHand::Right;
         const std::uint32_t layer =
             snapshot.collisionFilterInfo & 0x7Fu;
-        if (!provider::resolveTouchGrabTargetV1(
+        bool providerMatched =
+            provider::resolveTouchGrabTargetV1(
                 bodyId.value,
                 layer,
                 eligibilityMotionClass,
@@ -499,15 +864,90 @@ namespace rock
                 worldGeneration,
                 skeletonGeneration,
                 providerGeneration,
-                match)) {
-            return false;
+                match);
+        const bool authoredPowerArmor = powerArmorPoint != provider::RockProviderPowerArmorPointV1::None;
+        if (providerMatched &&
+            (!referenceAllowedByTarget(match.target, hknpWorld, bodyId.value, layer) ||
+             (authoredPowerArmor && provider::hasTouchGrabTargetFlagV1(match.target.flags,
+                 provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly)))) {
+            providerMatched = false;
+            match = {};
+        }
+        if (authoredPowerArmor && providerMatched) return false;
+        if (!providerMatched) {
+            if (!authoredPowerArmor && !global_surface_grab_policy::shouldUseFallback(
+                    global_surface_grab_policy::FallbackContext{
+                        .enabled = _globalSurfaceGrabEnabled,
+                        .providerMatched = providerMatched,
+                        .wildcardPass =
+                            targetClass == TargetClass::Fallback,
+                        .dynamicSurfaceContact =
+                            contactSource == ContactSource::DynamicSurface,
+                        .collisionLayer = layer,
+                    })) {
+                _lastAttemptReport.failure =
+                    AttemptFailure::TargetUnavailable;
+                return false;
+            }
+            match.matched = true;
+            match.wildcard = true;
+            match.ownerToken =
+                global_surface_grab_policy::kOwnerToken;
+            match.scopeToken =
+                global_surface_grab_policy::kScopeToken;
+            match.target = makeGlobalSurfaceTarget(
+                bodyId.value,
+                worldGeneration,
+                skeletonGeneration,
+                providerGeneration);
+            if (auto* ref = reference_interaction::resolveBody(hknpWorld, bodyId.value)) {
+                match.target.referenceFormId = ref->GetFormID();
+                match.target.referenceNativeHandle = ref->GetHandle().native_handle();
+            }
+            if (targetOnBody && targetOnBody->globalSurface) {
+                match.ownerToken = targetOnBody->ownerToken;
+                match.scopeToken = targetOnBody->scopeToken;
+                match.target = targetOnBody->target;
+            }
         }
         if (match.yieldRequested) {
+            _lastAttemptReport.failure = AttemptFailure::YieldRequested;
             return false;
         }
-        const bool wildcardRequested =
-            targetClass == TargetClass::Wildcard;
+        const bool fixedAnchor =
+            match.target.kind ==
+            provider::RockProviderTouchGrabKindV1::FixedAnchor;
+        if (motionClass == provider::TouchGrabMotionClassV1::Other &&
+            !global_surface_grab_policy::canFollowUnclassifiedMotion(
+                !providerMatched,
+                fixedAnchor)) {
+            _lastAttemptReport.failure = AttemptFailure::MotionUnsupported;
+            return false;
+        }
+        if ((contactSource == ContactSource::DynamicSurface) != fixedAnchor) {
+            _lastAttemptReport.failure =
+                AttemptFailure::ContactKindMismatch;
+            return false;
+        }
+        const bool wildcardRequested = targetClass != TargetClass::Explicit;
         if (match.wildcard != wildcardRequested) {
+            _lastAttemptReport.failure =
+                AttemptFailure::TargetClassMismatch;
+            return false;
+        }
+        if (providerMatched && match.wildcard &&
+            (provider::hasTouchGrabTargetFlagV1(match.target.flags, provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly) !=
+             (targetClass == TargetClass::Fallback))) {
+            _lastAttemptReport.failure = AttemptFailure::TargetClassMismatch;
+            return false;
+        }
+
+        // Apply close-object priority after resolving either source so provider
+        // wildcard surfaces (including climbing) cannot bypass the fallback rule.
+        if (global_surface_grab_policy::shouldYieldToCloseObject(
+                match.wildcard,
+                closeObjectCandidate)) {
+            _lastAttemptReport.failure = AttemptFailure::CloseObjectPriority;
             return false;
         }
 
@@ -523,6 +963,7 @@ namespace rock
                 worldGeneration != _worldGeneration ||
                 skeletonGeneration != _skeletonGeneration ||
                 providerGeneration != _providerGeneration)) {
+            _lastAttemptReport.failure = AttemptFailure::WorldMismatch;
             return false;
         }
 
@@ -531,8 +972,38 @@ namespace rock
             match.scopeToken,
             match.target.targetId,
             match.target.targetGeneration);
+        bool joinedCompatibleTarget = false;
         if (targetOnBody && active != targetOnBody) {
-            return false;
+            provider::TouchGrabTargetMatchV1 activeRegistration{};
+            const bool activeRegistrationCurrent =
+                !targetOnBody->globalSurface &&
+                provider::currentTouchGrabTargetV1(
+                    targetOnBody->ownerToken,
+                    targetOnBody->scopeToken,
+                    targetOnBody->target.targetId,
+                    targetOnBody->target.targetGeneration,
+                    worldGeneration,
+                    skeletonGeneration,
+                    providerGeneration,
+                    activeRegistration) &&
+                !activeRegistration.yieldRequested &&
+                sameRuntimeContract(
+                    targetOnBody->target,
+                    activeRegistration.target);
+            if (!activeRegistrationCurrent ||
+                !touch_grab_join_policy::canJoinSameBody(
+                    targetOnBody->ownerToken,
+                    targetOnBody->scopeToken,
+                    targetOnBody->target,
+                    match.ownerToken,
+                    match.scopeToken,
+                    match.target)) {
+                _lastAttemptReport.failure =
+                    AttemptFailure::TargetConflict;
+                return false;
+            }
+            active = targetOnBody;
+            joinedCompatibleTarget = true;
         }
         if (active) {
             if (active->bodyId != bodyId.value ||
@@ -544,6 +1015,7 @@ namespace rock
                     match.target.flags,
                     provider::RockProviderTouchGrabTargetFlagV1::
                         AllowTwoHands)) {
+                _lastAttemptReport.failure = AttemptFailure::TargetConflict;
                 return false;
             }
             auto structuralMutation = _physicsCallbackGate ?
@@ -553,8 +1025,23 @@ namespace rock
                     *active,
                     isLeft,
                     contact,
-                    hknpWorld)) {
+                    hknpWorld,
+                    contactSource, powerArmorPoint)) {
+                _lastAttemptReport.failure =
+                    AttemptFailure::HandAttachmentFailed;
                 return false;
+            }
+            if (joinedCompatibleTarget) {
+                ROCK_LOG_INFO(
+                    Hand,
+                    "Touch grab joined compatible target: hand={} owner={:016X} scope={:016X} activeTarget={} requestedTarget={} generation={} body={}",
+                    isLeft ? "left" : "right",
+                    active->ownerToken,
+                    active->scopeToken,
+                    active->target.targetId,
+                    match.target.targetId,
+                    active->target.targetGeneration,
+                    active->bodyId);
             }
             publishState(
                 *active,
@@ -567,10 +1054,12 @@ namespace rock
 
         active = firstFreeTarget();
         if (!active) {
+            _lastAttemptReport.failure = AttemptFailure::CapacityFull;
             return false;
         }
         resetTarget(*active);
         active->active = true;
+        active->globalSurface = !providerMatched;
         active->ownerToken = match.ownerToken;
         active->scopeToken = match.scopeToken;
         active->target = match.target;
@@ -612,13 +1101,16 @@ namespace rock
                     TargetInvalid,
                 collisionGeneration,
                 true);
+            _lastAttemptReport.failure =
+                AttemptFailure::MechanismCreationFailed;
             return false;
         }
         if (!attachHand(
                 *active,
                 isLeft,
                 contact,
-                hknpWorld)) {
+                hknpWorld,
+                contactSource, powerArmorPoint)) {
             releaseTarget(
                 *active,
                 bhkWorld,
@@ -627,6 +1119,8 @@ namespace rock
                     TargetInvalid,
                 collisionGeneration,
                 true);
+            _lastAttemptReport.failure =
+                AttemptFailure::HandAttachmentFailed;
             return false;
         }
 
@@ -783,7 +1277,9 @@ namespace rock
         ActiveTarget& active,
         const bool isLeft,
         const hand_semantic_contact_state::SemanticContactRecord& contact,
-        RE::hknpWorld* world)
+        RE::hknpWorld* world,
+        const ContactSource contactSource,
+        const provider::RockProviderPowerArmorPointV1 powerArmorPoint)
     {
         HandAttachment* attachment = nullptr;
         std::size_t activeHands = 0;
@@ -807,7 +1303,7 @@ namespace rock
         }
 
         RE::NiPoint3 contactPoint{};
-        const bool hasContactPoint =
+        bool hasContactPoint =
             contact.hasContactPointGame &&
             finitePoint(RE::NiPoint3{
                 contact.contactPointGame.x,
@@ -821,10 +1317,121 @@ namespace rock
                 contact.contactPointGame.z
             };
         }
+        RE::NiPoint3 contactNormal{};
+        bool hasContactNormal =
+            contact.hasContactNormalGame &&
+            finitePoint(RE::NiPoint3{
+                contact.contactNormalGame.x,
+                contact.contactNormalGame.y,
+                contact.contactNormalGame.z
+            });
+        if (hasContactNormal) {
+            contactNormal = {
+                contact.contactNormalGame.x,
+                contact.contactNormalGame.y,
+                contact.contactNormalGame.z
+            };
+        }
 
         std::uint32_t constraintId = kInvalidConstraintId;
-        if (active.target.kind !=
+        bool surfaceLatch = false;
+        float shellToMeshDistanceGameUnits = 0.0f;
+        SurfaceMeshAcquisition meshAcquisition{};
+        auto surfaceGripMode =
+            provider::RockProviderSurfaceGripModeV1::CollisionAnchor;
+        if (active.target.kind ==
             provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+            if (contactSource != ContactSource::DynamicSurface ||
+                !_dynamicHandCollision) {
+                return false;
+            }
+            bool meshPresentationAvailable = false;
+            if (powerArmorPoint != provider::RockProviderPowerArmorPointV1::None) {
+                provider::RockProviderReferenceQueryV1 query{};
+                query.referenceFormId = active.target.referenceFormId;
+                query.referenceNativeHandle = active.target.referenceNativeHandle;
+                auto* ref = reference_interaction::resolveQuery(query);
+                RE::NiTransform nodeWorld{}, handWorld{};
+                if (!reference_interaction::isPowerArmorFurniture(ref) ||
+                    !reference_interaction::pointTransform(ref, powerArmorPoint, nodeWorld) ||
+                    !_dynamicHandCollision->getLastPresentedHandWorld(isLeft, handWorld)) return false;
+                auto& presentation = meshAcquisition.presentation;
+                presentation.handWorld = handWorld;
+                presentation.handWorld.translate = nodeWorld.translate;
+                presentation.meshAnchorWorld = nodeWorld.translate;
+                presentation.meshNormalWorld = {};
+                presentation.animatedReferenceFormId = query.referenceFormId;
+                presentation.animatedReferenceNativeHandle = query.referenceNativeHandle;
+                presentation.animatedPoint = powerArmorPoint;
+                presentation.valid = true;
+                meshPresentationAvailable = true;
+            } else if (g_rockConfig.rockSurfaceMeshGrabEnabled) {
+                if (hasContactPoint) {
+                    meshPresentationAvailable =
+                        tryAcquireSurfaceMeshPresentation(
+                            isLeft,
+                            active.bodyId,
+                            contactPoint,
+                            hasContactNormal,
+                            contactNormal,
+                            world,
+                            *_dynamicHandCollision,
+                            meshAcquisition);
+                } else {
+                    meshAcquisition.failure =
+                        surface_mesh_grab_policy::Failure::
+                            ContactPointUnavailable;
+                }
+                _lastAttemptReport.surfaceMeshFailure =
+                    static_cast<std::uint8_t>(meshAcquisition.failure);
+                surfaceGripMode =
+                    provider::RockProviderSurfaceGripModeV1::
+                        CollisionFallback;
+            }
+            DynamicHandCollisionRuntime::SurfaceLatchFailure latchFailure{};
+            const dynamic_hand_surface_contact_state::ContactSource
+                latchSource{
+                    .valid = contact.valid,
+                    .isLeft = contact.isLeft,
+                    .slot = contact.role ==
+                                hand_collider_semantics::
+                                    HandColliderRole::PalmAnchor ?
+                        0u :
+                        static_cast<std::size_t>(contact.finger) + 1u,
+                    .role = contact.role,
+                    .finger = contact.finger,
+                    .segment = contact.segment,
+                    .bodyId = contact.handBodyId,
+                };
+            if (!_dynamicHandCollision->beginSurfaceLatch(
+                    latchSource,
+                    active.bodyId,
+                    world,
+                    meshPresentationAvailable ?
+                        &meshAcquisition.presentation :
+                        nullptr,
+                    &latchFailure)) {
+                _lastAttemptReport.surfaceLatchFailure =
+                    static_cast<std::uint8_t>(latchFailure);
+                return false;
+            }
+            surfaceLatch = true;
+            if (meshPresentationAvailable &&
+                _dynamicHandCollision->
+                    isSurfaceLatchMeshAuthoritative(isLeft)) {
+                surfaceGripMode =
+                    provider::RockProviderSurfaceGripModeV1::MeshAnchor;
+                contactPoint =
+                    meshAcquisition.presentation.meshAnchorWorld;
+                contactNormal =
+                    meshAcquisition.presentation.meshNormalWorld;
+                hasContactPoint = true;
+                hasContactNormal = true;
+                shellToMeshDistanceGameUnits =
+                    meshAcquisition.presentation.
+                        shellToMeshDistanceGameUnits;
+            }
+        } else {
             RE::NiTransform handBodyWorld{};
             RE::NiTransform targetBodyWorld{};
             if (!havok_runtime::tryResolveLiveBodyWorldTransform(
@@ -856,22 +1463,51 @@ namespace rock
         attachment->isLeft = isLeft;
         attachment->handBodyId = contact.handBodyId;
         attachment->constraintId = constraintId;
+        attachment->surfaceLatch = surfaceLatch;
         attachment->hasContactPoint = hasContactPoint;
         attachment->contactPointGame = contactPoint;
-        attachment->hasContactNormal =
-            contact.hasContactNormalGame &&
-            finitePoint(RE::NiPoint3{
-                contact.contactNormalGame.x,
-                contact.contactNormalGame.y,
-                contact.contactNormalGame.z
-            });
-        if (attachment->hasContactNormal) {
-            attachment->contactNormalGame = {
-                contact.contactNormalGame.x,
-                contact.contactNormalGame.y,
-                contact.contactNormalGame.z
-            };
+        attachment->hasContactNormal = hasContactNormal;
+        attachment->contactNormalGame = contactNormal;
+        attachment->surfaceGripMode = surfaceGripMode;
+        attachment->shellToMeshDistanceGameUnits =
+            shellToMeshDistanceGameUnits;
+        attachment->powerArmorPoint = powerArmorPoint;
+        attachment->sourceTriangleIndex = meshAcquisition.triangleIndex;
+        std::copy(std::begin(meshAcquisition.partName), std::end(meshAcquisition.partName), std::begin(attachment->meshPartName));
+        if (powerArmorPoint != provider::RockProviderPowerArmorPointV1::None) {
+            attachment->hasContactNormal = false;
+            attachment->surfaceGripMode = provider::RockProviderSurfaceGripModeV1::AnimatedArmorBone;
         }
+        RE::NiTransform targetWorld{};
+        if ((hasContactPoint || hasContactNormal) &&
+            havok_runtime::tryResolveLiveBodyWorldTransform(
+                world,
+                RE::hknpBodyId{ active.bodyId },
+                targetWorld)) {
+            attachment->contactRelativeToTarget = true;
+            if (hasContactPoint) {
+                attachment->contactPointInTargetBody =
+                    transform_math::worldPointToLocal(
+                        targetWorld,
+                        contactPoint);
+            }
+            if (hasContactNormal) {
+                attachment->contactNormalInTargetBody =
+                    transform_math::worldVectorToLocal(
+                        targetWorld,
+                        contactNormal);
+            }
+        }
+        ROCK_LOG_INFO(
+            Hand,
+            "Touch grab hand attached: hand={} body={} surfaceMode={} meshFailure={} anchor={} gap={:.2f}gu triangles={}",
+            isLeft ? "left" : "right",
+            active.bodyId,
+            static_cast<std::uint32_t>(surfaceGripMode),
+            _lastAttemptReport.surfaceMeshFailure,
+            hasContactPoint ? "yes" : "no",
+            shellToMeshDistanceGameUnits,
+            meshAcquisition.sourceTriangleCount);
         return true;
     }
 
@@ -914,62 +1550,98 @@ namespace rock
             return;
         }
 
+        // Successful PA commands own only their attached hand. Unregistering a
+        // consumer releases that attachment without releasing a manual peer.
+        for (const bool isLeft : {false, true}) {
+            const auto* target = findTargetForHand(isLeft);
+            if (!target) continue;
+            for (const auto& hand : target->hands) {
+                if (hand.active && hand.isLeft == isLeft &&
+                    ((hand.commandOwnerToken != 0 && !provider::isPowerArmorGrabOwnerRegisteredV1(hand.commandOwnerToken)) ||
+                     (hand.powerArmorPoint != provider::RockProviderPowerArmorPointV1::None &&
+                      (!_dynamicHandCollision || !_dynamicHandCollision->isSurfaceLatchActive(isLeft))))) {
+                    releaseHand(isLeft, bhkWorld, hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::OwnerYield, collisionGeneration);
+                    break;
+                }
+            }
+        }
         for (auto& active : _targets) {
             if (!active.active) {
                 continue;
             }
-            provider::TouchGrabTargetMatchV1 current{};
-            if (!provider::currentTouchGrabTargetV1(
-                    active.ownerToken,
-                    active.scopeToken,
-                    active.target.targetId,
-                    active.target.targetGeneration,
-                    worldGeneration,
-                    skeletonGeneration,
-                    providerGeneration,
-                    current)) {
-                auto structuralMutation = _physicsCallbackGate ?
-                    _physicsCallbackGate->pauseForMutation() :
-                    PhysicsCallbackQuiescenceGate::MutationLease{};
-                releaseTarget(
-                    active,
-                    bhkWorld,
-                    hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
-                        TargetRemoved,
-                    collisionGeneration,
-                    true);
-                continue;
-            }
-            if (current.yieldRequested) {
-                auto structuralMutation = _physicsCallbackGate ?
-                    _physicsCallbackGate->pauseForMutation() :
-                    PhysicsCallbackQuiescenceGate::MutationLease{};
-                releaseTarget(
-                    active,
-                    bhkWorld,
-                    hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
-                        OwnerYield,
-                    collisionGeneration,
-                    true);
-                continue;
-            }
-            if (!sameRuntimeContract(
-                    active.target,
-                    current.target)) {
-                auto structuralMutation = _physicsCallbackGate ?
-                    _physicsCallbackGate->pauseForMutation() :
-                    PhysicsCallbackQuiescenceGate::MutationLease{};
-                releaseTarget(
-                    active,
-                    bhkWorld,
-                    hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
-                        TargetInvalid,
-                    collisionGeneration,
-                    true);
-                continue;
+            if (active.globalSurface) {
+                const bool hasPowerArmorGrip = std::any_of(active.hands.begin(), active.hands.end(), [](const HandAttachment& hand) {
+                    return hand.active && hand.powerArmorPoint != provider::RockProviderPowerArmorPointV1::None;
+                });
+                if (!_globalSurfaceGrabEnabled && !hasPowerArmorGrip) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetRemoved,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
+            } else {
+                provider::TouchGrabTargetMatchV1 current{};
+                if (!provider::currentTouchGrabTargetV1(
+                        active.ownerToken,
+                        active.scopeToken,
+                        active.target.targetId,
+                        active.target.targetGeneration,
+                        worldGeneration,
+                        skeletonGeneration,
+                        providerGeneration,
+                        current)) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetRemoved,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
+                if (current.yieldRequested) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            OwnerYield,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
+                if (!sameRuntimeContract(
+                        active.target,
+                        current.target)) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetInvalid,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
             }
 
             const auto bodySnapshot = havok_runtime::snapshotBody(
@@ -998,6 +1670,91 @@ namespace rock
                     collisionGeneration,
                     bodySnapshot.valid);
                 continue;
+            }
+
+            if (!referenceAllowedByTarget(active.target, hknpWorld, active.bodyId,
+                    bodySnapshot.collisionFilterInfo & 0x7Fu)) {
+                auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation() :
+                    PhysicsCallbackQuiescenceGate::MutationLease{};
+                releaseTarget(active, bhkWorld, hknpWorld,
+                    provider::RockProviderTouchGrabReleaseReasonV1::TargetInvalid, collisionGeneration, true);
+                continue;
+            }
+            if (!active.globalSurface && provider::hasTouchGrabTargetFlagV1(active.target.flags,
+                    provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly)) {
+                for (const bool isLeft : {false, true}) {
+                    if (!active.active || findTargetForHand(isLeft) != &active) continue;
+                    provider::TouchGrabTargetMatchV1 preferred{};
+                    if (provider::resolveTouchGrabTargetV1(active.bodyId, bodySnapshot.collisionFilterInfo & 0x7Fu,
+                            active.originalMotionClass, isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right,
+                            worldGeneration, skeletonGeneration, providerGeneration, preferred) &&
+                        !provider::hasTouchGrabTargetFlagV1(preferred.target.flags, provider::RockProviderTouchGrabTargetFlagV1::FallbackOnly)) {
+                        releaseHand(isLeft, bhkWorld, hknpWorld,
+                            provider::RockProviderTouchGrabReleaseReasonV1::OwnerYield, collisionGeneration);
+                    }
+                }
+                if (!active.active) continue;
+            }
+
+            RE::NiTransform liveTargetWorld{};
+            if (havok_runtime::tryResolveLiveBodyWorldTransform(
+                    hknpWorld,
+                    RE::hknpBodyId{ active.bodyId },
+                    liveTargetWorld)) {
+                for (auto& hand : active.hands) {
+                    if (!hand.active || !hand.contactRelativeToTarget) {
+                        continue;
+                    }
+                    if (hand.powerArmorPoint != provider::RockProviderPowerArmorPointV1::None) {
+                        provider::RockProviderReferenceQueryV1 query{};
+                        query.referenceFormId = active.target.referenceFormId;
+                        query.referenceNativeHandle = active.target.referenceNativeHandle;
+                        RE::NiTransform pose{};
+                        auto* ref = reference_interaction::resolveQuery(query);
+                        if (reference_interaction::pointTransform(ref, hand.powerArmorPoint, pose)) hand.contactPointGame = pose.translate;
+                        else if (_dynamicHandCollision) _dynamicHandCollision->endSurfaceLatch(hand.isLeft);
+                        continue;
+                    }
+                    if (hand.hasContactPoint) {
+                        hand.contactPointGame =
+                            transform_math::localPointToWorld(
+                                liveTargetWorld,
+                                hand.contactPointInTargetBody);
+                    }
+                    if (hand.hasContactNormal) {
+                        hand.contactNormalGame =
+                            transform_math::localVectorToWorld(
+                                liveTargetWorld,
+                                hand.contactNormalInTargetBody);
+                    }
+                }
+            }
+
+            if (active.target.kind ==
+                    provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+                const bool latchMissing = std::any_of(
+                    active.hands.begin(),
+                    active.hands.end(),
+                    [&](const HandAttachment& hand) {
+                        return hand.active && hand.surfaceLatch &&
+                               (!_dynamicHandCollision ||
+                                   !_dynamicHandCollision->isSurfaceLatchActive(
+                                       hand.isLeft));
+                    });
+                if (latchMissing) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetInvalid,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
             }
 
             const float coordinate =
@@ -1145,6 +1902,21 @@ namespace rock
             if (!hand.active) {
                 continue;
             }
+            state.surfaceGripMode = hand.surfaceGripMode;
+            if (hand.surfaceGripMode ==
+                provider::RockProviderSurfaceGripModeV1::MeshAnchor) {
+                state.flags |= static_cast<std::uint32_t>(
+                    provider::RockProviderTouchGrabStateFlagV1::
+                        MeshSurfaceAnchor);
+            } else if (hand.surfaceGripMode ==
+                       provider::RockProviderSurfaceGripModeV1::
+                           CollisionFallback) {
+                state.flags |= static_cast<std::uint32_t>(
+                    provider::RockProviderTouchGrabStateFlagV1::
+                        MeshCollisionFallback);
+            }
+            // Fixed anchors use an authored climbing pose, so they do not
+            // advertise MeshFingerPose even when the anchor is mesh-derived.
             if (hand.hasContactPoint) {
                 state.contactPointGame = {
                     hand.contactPointGame.x,
@@ -1167,10 +1939,12 @@ namespace rock
             }
             break;
         }
-        provider::publishTouchGrabStateV1(
-            active.ownerToken,
-            active.scopeToken,
-            state);
+        if (!active.globalSurface) {
+            provider::publishTouchGrabStateV1(
+                active.ownerToken,
+                active.scopeToken,
+                state);
+        }
     }
 
     void TouchGrabRuntime::releaseHand(
@@ -1202,6 +1976,9 @@ namespace rock
             destroyConstraint(
                 hknpWorld,
                 hand.constraintId);
+            if (hand.surfaceLatch && _dynamicHandCollision) {
+                _dynamicHandCollision->endSurfaceLatch(isLeft);
+            }
             hand = {};
             break;
         }
@@ -1294,6 +2071,9 @@ namespace rock
         }
         for (auto& hand : active.hands) {
             destroyConstraint(world, hand.constraintId);
+            if (hand.surfaceLatch && _dynamicHandCollision) {
+                _dynamicHandCollision->endSurfaceLatch(hand.isLeft);
+            }
             hand = {};
         }
         destroyConstraint(
@@ -1340,7 +2120,8 @@ namespace rock
 
         provider::RockProviderTouchGrabPhaseV1 phase =
             provider::RockProviderTouchGrabPhaseV1::Invalidated;
-        if (reason ==
+        if (!active.globalSurface &&
+            reason ==
             provider::RockProviderTouchGrabReleaseReasonV1::
                 OwnerYield) {
             phase =
@@ -1367,7 +2148,8 @@ namespace rock
             reason,
             0.0f,
             collisionGeneration);
-        if (reason ==
+        if (!active.globalSurface &&
+            reason ==
             provider::RockProviderTouchGrabReleaseReasonV1::
                 OwnerYield) {
             provider::acknowledgeTouchGrabYieldV1(
@@ -1410,6 +2192,9 @@ namespace rock
                 continue;
             }
             for (auto& hand : active.hands) {
+                if (hand.surfaceLatch && _dynamicHandCollision) {
+                    _dynamicHandCollision->endSurfaceLatch(hand.isLeft);
+                }
                 hand = {};
             }
             active.mechanismConstraintId =

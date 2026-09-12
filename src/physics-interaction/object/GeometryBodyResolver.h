@@ -3,8 +3,8 @@
 /*
  * Geometry body resolution is separated from mesh extraction so ROCK keeps the
  * contact geometry and chosen rigid body coherent before creating the held
- * relationship. Several evidence sources can nominate the body: authored grab
- * nodes, visual triangle owners, selected hknp body, and nearest fallback. This
+ * relationship. Visual triangle owners, the selected hknp body, and the nearest
+ * accepted fallback can nominate the body. This
  * policy fixes the priority order without depending on unverified shape-key or
  * skinned-weight decoding; dynamic skinned ownership remains an explicit
  * fallback reason until its runtime layout is verified.
@@ -19,7 +19,6 @@ namespace rock::geometry_body_resolver
     enum class GeometryBodyResolutionSource : std::uint8_t
     {
         None,
-        AuthoredNode,
         TriangleOwner,
         SelectedBody,
         NearestAccepted,
@@ -27,11 +26,9 @@ namespace rock::geometry_body_resolver
 
     struct GeometryBodyResolutionInput
     {
-        std::uint32_t authoredBodyId = kInvalidBodyId;
         std::uint32_t triangleOwnerBodyId = kInvalidBodyId;
         std::uint32_t selectedBodyId = kInvalidBodyId;
         std::uint32_t nearestBodyId = kInvalidBodyId;
-        bool authoredUsable = false;
         bool triangleOwnerUsable = false;
         bool selectedUsable = true;
         bool nearestUsable = true;
@@ -48,9 +45,6 @@ namespace rock::geometry_body_resolver
 
     inline GeometryBodyResolution resolveGeometryBody(const GeometryBodyResolutionInput& input)
     {
-        if (input.authoredUsable && validBody(input.authoredBodyId)) {
-            return GeometryBodyResolution{ .bodyId = input.authoredBodyId, .source = GeometryBodyResolutionSource::AuthoredNode, .reason = "authoredNode" };
-        }
         if (input.triangleOwnerUsable && validBody(input.triangleOwnerBodyId)) {
             return GeometryBodyResolution{ .bodyId = input.triangleOwnerBodyId, .source = GeometryBodyResolutionSource::TriangleOwner, .reason = "triangleOwner" };
         }

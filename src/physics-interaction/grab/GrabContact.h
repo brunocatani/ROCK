@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Grab contact policy is grouped here because contact source, evidence, patch, surface, opposition, and multi-finger contact math are one contact interpretation pipeline.
  */
@@ -30,20 +32,13 @@ namespace rock::grab_contact_source_policy
         const char* reason = "compatContactSources";
     };
 
-    inline GrabContactSourcePolicy evaluateGrabContactSourcePolicy(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact, bool hasAuthoredGrabNode)
+    inline GrabContactSourcePolicy evaluateGrabContactSourcePolicy(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact)
     {
         GrabContactSourcePolicy policy{};
         policy.allowCollisionGrabPoint = !meshContactOnly;
         policy.allowContactPatchPivot = true;
-        policy.requireContactPatchMeshSnap = meshContactOnly && !hasAuthoredGrabNode;
-        policy.requireMeshSurface = meshContactOnly && requireMeshContact && !hasAuthoredGrabNode;
-
-        if (hasAuthoredGrabNode) {
-            policy.requireContactPatchMeshSnap = false;
-            policy.failWithoutMesh = false;
-            policy.reason = "authoredGrabNode";
-            return policy;
-        }
+        policy.requireContactPatchMeshSnap = meshContactOnly;
+        policy.requireMeshSurface = meshContactOnly && requireMeshContact;
 
         if (!meshContactOnly) {
             policy.failWithoutMesh = false;
@@ -70,9 +65,9 @@ namespace rock::grab_contact_source_policy
         return !policy.requireContactPatchMeshSnap || meshSnapped;
     }
 
-    inline bool shouldRejectMeshOwnerMismatch(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact, bool hasAuthoredGrabNode, bool ownerMatchesResolvedBody)
+    inline bool shouldRejectMeshOwnerMismatch(bool meshContactOnly, bool requireMeshContact, bool hasMeshContact, bool ownerMatchesResolvedBody)
     {
-        return meshContactOnly && requireMeshContact && hasMeshContact && !hasAuthoredGrabNode && !ownerMatchesResolvedBody;
+        return meshContactOnly && requireMeshContact && hasMeshContact && !ownerMatchesResolvedBody;
     }
 }
 
@@ -547,19 +542,19 @@ namespace rock::grab_contact_patch_math
     template <class Vector>
     inline float dot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline Vector cross(const Vector& lhs, const Vector& rhs)
     {
-        return Vector{ lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x };
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>
@@ -571,7 +566,7 @@ namespace rock::grab_contact_patch_math
     template <class Vector>
     inline bool finiteVector(const Vector& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     template <class Vector>
@@ -1594,7 +1589,9 @@ namespace rock::grab_multi_finger_contact_math
         bool enabled = true;
         std::uint32_t targetBodyId = kInvalidBodyId;
         int minimumFingerGroups = 3;
-        std::uint32_t maxContactAgeFrames = 5;
+        // Elapsed patch freshness (historical 5-frame window at the 90 Hz
+        // tuning baseline), rate-independent in seconds.
+        float maxContactAgeSeconds = 5.0f / 90.0f;
         float minimumSpreadGameUnits = 1.0f;
     };
 
@@ -1611,7 +1608,8 @@ namespace rock::grab_multi_finger_contact_math
         Vector objectPointWorld{};
         Vector normalWorld{};
         float quality = 0.0f;
-        std::uint32_t framesSinceContact = 0xFFFF'FFFFu;
+        // Elapsed contact age; large sentinel means never seen.
+        float secondsSinceContact = 1.0e9f;
     };
 
     template <class Vector>
@@ -1667,13 +1665,13 @@ namespace rock::grab_multi_finger_contact_math
     template <class Vector>
     inline float dot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>
@@ -1735,8 +1733,8 @@ namespace rock::grab_multi_finger_contact_math
         if (!current.valid) {
             return true;
         }
-        if (candidate.framesSinceContact != current.framesSinceContact) {
-            return candidate.framesSinceContact < current.framesSinceContact;
+        if (candidate.secondsSinceContact != current.secondsSinceContact) {
+            return candidate.secondsSinceContact < current.secondsSinceContact;
         }
         const int candidatePriority = segmentPriority(candidate.segment, candidate.role);
         const int currentPriority = segmentPriority(current.segment, current.role);
@@ -1774,7 +1772,7 @@ namespace rock::grab_multi_finger_contact_math
         bool sawUsableBody = false;
         std::uint32_t acceptedBodyId = options.targetBodyId;
         for (const auto& patch : patches) {
-            if (!patch.valid || patch.handBodyId == kInvalidBodyId || patch.framesSinceContact > options.maxContactAgeFrames) {
+            if (!patch.valid || patch.handBodyId == kInvalidBodyId || patch.secondsSinceContact > options.maxContactAgeSeconds) {
                 continue;
             }
             const int index = fingerIndex(patch.finger);

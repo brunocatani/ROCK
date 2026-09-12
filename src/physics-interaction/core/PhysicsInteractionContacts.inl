@@ -7,31 +7,15 @@
 
         auto* bhk = frame.bhkWorld;
         auto* hknp = frame.hknpWorld;
-        auto rightContactBody = _lastContactBodyRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto rightSourceBody = _lastContactSourceRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        if (rightContactBody != 0xFFFFFFFF) {
-            resolveAndLogContact("Right", bhk, hknp, RE::hknpBodyId{ rightContactBody });
-            if (rightSourceBody == 0xFFFFFFFF) {
-                rightSourceBody = _rightHand.getCollisionBodyId().value;
-            }
-            applyDynamicPushAssist("Right", bhk, hknp, rightSourceBody, rightContactBody, false, &_rightHand);
-        }
-
-        auto leftContactBody = _lastContactBodyLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto leftSourceBody = _lastContactSourceLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        if (leftContactBody != 0xFFFFFFFF) {
-            resolveAndLogContact("Left", bhk, hknp, RE::hknpBodyId{ leftContactBody });
-            if (leftSourceBody == 0xFFFFFFFF) {
-                leftSourceBody = _leftHand.getCollisionBodyId().value;
-            }
-            applyDynamicPushAssist("Left", bhk, hknp, leftSourceBody, leftContactBody, false, &_leftHand);
-        }
-
-        auto weaponContactBody = _lastContactBodyWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        auto weaponSourceBody = _lastContactSourceWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
-        if (weaponContactBody != 0xFFFFFFFF && weaponSourceBody != 0xFFFFFFFF) {
-            applyDynamicPushAssist("Weapon", bhk, hknp, weaponSourceBody, weaponContactBody, true);
-        }
+        auto consumePush = [&](push_assist::ContactChannel& channel, const char* name, Hand* hand, bool weapon) {
+            push_assist::Contact contact{};
+            if (!channel.consume(contact) || contact.world != reinterpret_cast<std::uintptr_t>(hknp)) return;
+            if (hand) resolveAndLogContact(name, bhk, hknp, RE::hknpBodyId{contact.target});
+            applyDynamicPushAssist(name, bhk, hknp, contact.source, contact.target, weapon, hand, contact);
+        };
+        consumePush(_contacts.rightPush, "Right", &_rightHand, false);
+        consumePush(_contacts.leftPush, "Left", &_leftHand, false);
+        consumePush(_contacts.weaponPush, "Weapon", nullptr, true);
 
         auto readBodyMass = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
@@ -86,8 +70,8 @@
                 readBodySpeedGameUnits(hknp, heldBody));
         };
 
-        processHeldImpact(_rightHand, false, _lastHeldImpactPairRight);
-        processHeldImpact(_leftHand, true, _lastHeldImpactPairLeft);
+        processHeldImpact(_rightHand, false, _contacts.lastHeldImpactPairRight);
+        processHeldImpact(_leftHand, true, _contacts.lastHeldImpactPairLeft);
     }
     void PhysicsInteraction::applyDynamicPushAssist(const char* sourceName,
         RE::bhkWorld* bhk,
@@ -95,7 +79,8 @@
         std::uint32_t sourceBodyId,
             std::uint32_t targetBodyId,
         bool sourceIsWeapon,
-        const Hand* sourceHand)
+        const Hand* sourceHand,
+        const push_assist::Contact& contact)
     {
         if (!bhk || !hknp || sourceBodyId == 0xFFFFFFFF || targetBodyId == 0xFFFFFFFF ||
             sourceBodyId == object_physics_body_set::INVALID_BODY_ID || targetBodyId == object_physics_body_set::INVALID_BODY_ID || sourceBodyId == targetBodyId) {
@@ -129,6 +114,35 @@
                 "{} dynamic push skipped: target body {} belongs to an in-flight force-grab transaction",
                 sourceName,
                 targetBodyId);
+            return;
+        }
+
+        const auto target = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{targetBodyId});
+        const auto* base = targetRef->GetObjectReference();
+        const bool bodyContact = target.valid && ((base && base->Is(RE::ENUM_FORM_ID::kNPC_)) ||
+            grab_target::isDetachedGoreLayer(target.collisionFilterInfo & 0x7F));
+        if (bodyContact) {
+            if (!contact.hasPoint || !target.body ||
+                physics_body_classifier::motionTypeFromBodyFlags(target.body->flags) != physics_body_classifier::BodyMotionType::Dynamic) return;
+            const auto* sourceMotion = havok_runtime::getBodyMotion(hknp, RE::hknpBodyId{sourceBodyId});
+            if (!sourceMotion) return;
+            const std::uint64_t key = (std::uint64_t(sourceBodyId) << 32) | targetBodyId;
+            const auto cooldown = _contacts.dynamicPushCooldownUntil.find(key);
+            const float remaining = cooldown == _contacts.dynamicPushCooldownUntil.end() ? 0.0f :
+                (std::max)(0.0f, cooldown->second - _contacts.dynamicPushElapsedSeconds);
+            const auto push = push_assist::computePushImpulse(push_assist::PushAssistInput<RE::NiPoint3>{
+                .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
+                .sourceVelocity = {sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z},
+                .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
+                .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
+                .layerMultiplier = 1.0f, .cooldownRemainingSeconds = remaining});
+            if (!push.apply) return;
+            const bool applied = push_assist::applyPointImpulse(hknp, targetBodyId, contact.owner, push.impulse,
+                RE::NiPoint3{contact.point[0], contact.point[1], contact.point[2]});
+            if (applied) _contacts.dynamicPushCooldownUntil[key] = _contacts.dynamicPushElapsedSeconds +
+                (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
+            ROCK_LOG_SAMPLE_INFO(Hand, 2000, "{} body point push: source={} target={} owner=0x{:X} applied={} pointHk=({:.3f},{:.3f},{:.3f})",
+                sourceName, sourceBodyId, targetBodyId, contact.owner, applied, contact.point[0], contact.point[1], contact.point[2]);
             return;
         }
 
@@ -198,8 +212,8 @@
         const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
         const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
         float cooldownRemaining = 0.0f;
-        if (const auto it = _dynamicPushCooldownUntil.find(cooldownKey); it != _dynamicPushCooldownUntil.end() && it->second > _dynamicPushElapsedSeconds) {
-            cooldownRemaining = it->second - _dynamicPushElapsedSeconds;
+        if (const auto it = _contacts.dynamicPushCooldownUntil.find(cooldownKey); it != _contacts.dynamicPushCooldownUntil.end() && it->second > _contacts.dynamicPushElapsedSeconds) {
+            cooldownRemaining = it->second - _contacts.dynamicPushElapsedSeconds;
         }
 
         const push_assist::PushAssistInput<RE::NiPoint3> pushInput{
@@ -238,8 +252,8 @@
         }
 
         if (appliedCount > 0) {
-            _dynamicPushCooldownUntil[cooldownKey] =
-                _dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
+            _contacts.dynamicPushCooldownUntil[cooldownKey] =
+                _contacts.dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
             auto* baseObj = targetRef->GetObjectReference();
             auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
             const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
@@ -291,123 +305,171 @@
     void PhysicsInteraction::subscribeContactEvents(RE::hknpWorld* world)
     {
         if (!world) {
-            ROCK_LOG_ERROR(Init, "Contact event subscription skipped because world is null");
+            ROCK_LOG_ERROR(Init, "Physics event subscriptions skipped because world is null");
             return;
         }
 
-        void* signal = world->GetEventSignal(RE::hknpEventType::kContact);
-        if (!signal) {
-            ROCK_LOG_ERROR(Init, "Failed to get contact event signal");
-            return;
-        }
+        /*
+         * FO4VR raw producers identify event key 2 as
+         * hknpManifoldProcessedEvent and key 3 as hknpContactImpulseEvent.
+         * Both use the same signal/delegate ABI and participant IDs at
+         * event+0x08/+0x0C. Keep distinct bridges because their payloads and
+         * admission semantics are intentionally different.
+         */
+        constexpr auto kManifoldProcessedEventType = static_cast<RE::hknpEventType::Enum>(2);
 
-        auto* currentWorld = s_contactEventBridge.world.load(std::memory_order_acquire);
-        auto* currentSignal = s_contactEventBridge.signal.load(std::memory_order_acquire);
-        const auto currentSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
-            .world = reinterpret_cast<std::uintptr_t>(currentWorld),
-            .signal = reinterpret_cast<std::uintptr_t>(currentSignal),
-            .active = currentWorld != nullptr && currentSignal != nullptr,
-        };
-        const auto plan = contact_signal_subscription_policy::planSubscription(
-            currentSnapshot,
-            reinterpret_cast<std::uintptr_t>(world),
-            reinterpret_cast<std::uintptr_t>(signal),
-            s_contactEventBridge.hasRetainedNativeSlot(world, signal));
-
-        if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::IgnoreNullSignal) {
-            ROCK_LOG_ERROR(Init, "Contact event subscription skipped because world or signal is null");
-            return;
-        }
-
-        if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::AlreadySubscribed) {
-            _contactEventSignal.store(signal, std::memory_order_release);
-            _contactEventWorld.store(world, std::memory_order_release);
-            s_contactEventBridge.signal.store(signal, std::memory_order_release);
-            s_contactEventBridge.world.store(world, std::memory_order_release);
-            s_contactEventBridge.instance.store(this, std::memory_order_release);
-            const auto epoch = s_contactEventBridge.subscriptionEpoch.load(std::memory_order_acquire);
-            if (!s_contactEventBridge.rememberRetainedNativeSlot(world, signal, epoch)) {
-                ROCK_LOG_WARN(Init, "Contact event retained-slot table full while reusing bridge slot; future duplicate suppression may be degraded");
+        auto subscribeBridge = [&](const RE::hknpEventType::Enum eventType,
+                                   ContactEventSubscriptionBridge& bridge,
+                                   std::atomic<RE::hknpWorld*>& localWorld,
+                                   std::atomic<void*>& localSignal,
+                                   const char* eventName) {
+            void* signal = world->GetEventSignal(eventType);
+            if (!signal) {
+                ROCK_LOG_ERROR(Init, "Failed to get {} event signal", eventName);
+                return;
             }
-            ROCK_LOG_DEBUG(Init, "Contact event signal already subscribed for current world; reusing native bridge slot");
-            return;
-        }
 
-        if (plan.replaceExistingRuntimeStateWithoutUnsubscribe) {
+            auto* currentWorld = bridge.world.load(std::memory_order_acquire);
+            auto* currentSignal = bridge.signal.load(std::memory_order_acquire);
+            const auto currentSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
+                .world = reinterpret_cast<std::uintptr_t>(currentWorld),
+                .signal = reinterpret_cast<std::uintptr_t>(currentSignal),
+                .active = currentWorld != nullptr && currentSignal != nullptr,
+            };
+            const auto plan = contact_signal_subscription_policy::planSubscription(
+                currentSnapshot,
+                reinterpret_cast<std::uintptr_t>(world),
+                reinterpret_cast<std::uintptr_t>(signal),
+                bridge.hasRetainedNativeSlot(world, signal));
+
+            if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::IgnoreNullSignal) {
+                ROCK_LOG_ERROR(Init, "{} event subscription skipped because world or signal is null", eventName);
+                return;
+            }
+
+            localSignal.store(signal, std::memory_order_release);
+            localWorld.store(world, std::memory_order_release);
+            bridge.signal.store(signal, std::memory_order_release);
+            bridge.world.store(world, std::memory_order_release);
+            bridge.instance.store(this, std::memory_order_release);
+
+            if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::AlreadySubscribed) {
+                const auto epoch = bridge.subscriptionEpoch.load(std::memory_order_acquire);
+                if (!bridge.rememberRetainedNativeSlot(world, signal, epoch)) {
+                    ROCK_LOG_WARN(
+                        Init,
+                        "{} event retained-slot table full while reusing bridge slot; future duplicate suppression may be degraded",
+                        eventName);
+                }
+                ROCK_LOG_DEBUG(Init, "{} event signal already subscribed for current world; reusing native bridge slot", eventName);
+                return;
+            }
+
+            if (plan.replaceExistingRuntimeStateWithoutUnsubscribe) {
+                ROCK_LOG_INFO(
+                    Init,
+                    "Replacing {} event bridge state without native unsubscribe (action={})",
+                    eventName,
+                    static_cast<std::uint32_t>(plan.action));
+            }
+
+            ContactEventCallbackInfo cbInfo{};
+            cbInfo.fn = reinterpret_cast<void*>(&PhysicsInteraction::onContactCallback);
+            cbInfo.ctx = 0;
+
+            typedef void subscribe_ext_t(void* signal, void* userData, void* callbackInfo);
+            static REL::Relocation<subscribe_ext_t> subscribeExt{ REL::Offset(offsets::kFunc_SubscribeContactEvent) };
+            subscribeExt(signal, static_cast<void*>(&bridge), &cbInfo);
+
+            const auto epoch = bridge.subscriptionEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+            if (!bridge.rememberRetainedNativeSlot(world, signal, epoch)) {
+                ROCK_LOG_WARN(
+                    Init,
+                    "{} event retained-slot table full after native subscription; future duplicate suppression may be degraded",
+                    eventName);
+            }
             ROCK_LOG_INFO(
                 Init,
-                "Replacing contact event bridge state without native unsubscribe (action={})",
+                "Subscribed {} event bridge slot (epoch={}, action={})",
+                eventName,
+                epoch,
                 static_cast<std::uint32_t>(plan.action));
-        }
+        };
 
-        ContactEventCallbackInfo cbInfo{};
-        cbInfo.fn = reinterpret_cast<void*>(&PhysicsInteraction::onContactCallback);
-        cbInfo.ctx = 0;
-
-        typedef void subscribe_ext_t(void* signal, void* userData, void* callbackInfo);
-        static REL::Relocation<subscribe_ext_t> subscribeExt{ REL::Offset(offsets::kFunc_SubscribeContactEvent) };
-        subscribeExt(signal, static_cast<void*>(&s_contactEventBridge), &cbInfo);
-
-        _contactEventSignal.store(signal, std::memory_order_release);
-        _contactEventWorld.store(world, std::memory_order_release);
-        s_contactEventBridge.signal.store(signal, std::memory_order_release);
-        s_contactEventBridge.world.store(world, std::memory_order_release);
-        s_contactEventBridge.instance.store(this, std::memory_order_release);
-        const auto epoch = s_contactEventBridge.subscriptionEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
-        if (!s_contactEventBridge.rememberRetainedNativeSlot(world, signal, epoch)) {
-            ROCK_LOG_WARN(Init, "Contact event retained-slot table full after native subscription; future duplicate suppression may be degraded");
-        }
-        ROCK_LOG_INFO(
-            Init,
-            "Subscribed contact event bridge slot (epoch={}, action={})",
-            epoch,
-            static_cast<std::uint32_t>(plan.action));
+        subscribeBridge(
+            RE::hknpEventType::kContact,
+            s_contactEventBridge,
+            _contacts.eventWorld,
+            _contacts.eventSignal,
+            "contact-impulse");
+        subscribeBridge(
+            kManifoldProcessedEventType,
+            s_manifoldProcessedEventBridge,
+            _contacts.manifoldEventWorld,
+            _contacts.manifoldEventSignal,
+            "manifold-processed");
     }
 
     void PhysicsInteraction::unsubscribeContactEvents(RE::hknpWorld* liveWorld)
     {
-        auto* localWorld = _contactEventWorld.exchange(nullptr, std::memory_order_acq_rel);
-        void* localSignal = _contactEventSignal.exchange(nullptr, std::memory_order_acq_rel);
+        auto deactivateBridge = [&](ContactEventSubscriptionBridge& bridge,
+                                    std::atomic<RE::hknpWorld*>& localWorldAtomic,
+                                    std::atomic<void*>& localSignalAtomic,
+                                    const char* eventName) {
+            auto* localWorld = localWorldAtomic.exchange(nullptr, std::memory_order_acq_rel);
+            void* localSignal = localSignalAtomic.exchange(nullptr, std::memory_order_acq_rel);
 
-        auto* expectedInstance = this;
-        const bool deactivatedCurrentInstance = s_contactEventBridge.instance.compare_exchange_strong(
-            expectedInstance,
-            nullptr,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire);
+            auto* expectedInstance = this;
+            const bool deactivatedCurrentInstance = bridge.instance.compare_exchange_strong(
+                expectedInstance,
+                nullptr,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire);
 
-        auto* bridgeWorld = s_contactEventBridge.world.load(std::memory_order_acquire);
-        void* bridgeSignal = s_contactEventBridge.signal.load(std::memory_order_acquire);
-        const auto bridgeSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
-            .world = reinterpret_cast<std::uintptr_t>(bridgeWorld),
-            .signal = reinterpret_cast<std::uintptr_t>(bridgeSignal),
-            .active = bridgeWorld != nullptr && bridgeSignal != nullptr,
-        };
+            auto* bridgeWorld = bridge.world.load(std::memory_order_acquire);
+            void* bridgeSignal = bridge.signal.load(std::memory_order_acquire);
+            const auto bridgeSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
+                .world = reinterpret_cast<std::uintptr_t>(bridgeWorld),
+                .signal = reinterpret_cast<std::uintptr_t>(bridgeSignal),
+                .active = bridgeWorld != nullptr && bridgeSignal != nullptr,
+            };
 
-        if (!contact_signal_subscription_policy::isActiveSubscription(bridgeSnapshot)) {
-            return;
-        }
+            if (!contact_signal_subscription_policy::isActiveSubscription(bridgeSnapshot)) {
+                return;
+            }
 
-        const bool retainNativeSlot = contact_signal_subscription_policy::shouldRetainNativeSlotAfterDeactivation(
-            bridgeSnapshot);
-        if (retainNativeSlot) {
+            if (contact_signal_subscription_policy::shouldRetainNativeSlotAfterDeactivation(bridgeSnapshot)) {
+                ROCK_LOG_INFO(
+                    Init,
+                    "Deactivated {} event bridge; native slots retained for hknpWorld cleanup (instanceCleared={}, world={}, signal={}, liveWorld={})",
+                    eventName,
+                    deactivatedCurrentInstance ? "yes" : "no",
+                    static_cast<const void*>(bridgeWorld),
+                    bridgeSignal,
+                    static_cast<const void*>(liveWorld));
+                return;
+            }
+
             ROCK_LOG_INFO(
                 Init,
-                "Deactivated contact event bridge; native slots retained for hknpWorld cleanup (instanceCleared={}, world={}, signal={}, liveWorld={})",
+                "Deactivated {} event bridge with no active native slot (instanceCleared={}, localWorld={}, localSignal={}, liveWorld={})",
+                eventName,
                 deactivatedCurrentInstance ? "yes" : "no",
-                static_cast<const void*>(bridgeWorld),
-                bridgeSignal,
+                static_cast<const void*>(localWorld),
+                localSignal,
                 static_cast<const void*>(liveWorld));
-            return;
-        }
+        };
 
-        ROCK_LOG_INFO(
-            Init,
-            "Deactivated contact event bridge with no active native slot (instanceCleared={}, localWorld={}, localSignal={}, liveWorld={})",
-            deactivatedCurrentInstance ? "yes" : "no",
-            static_cast<const void*>(localWorld),
-            localSignal,
-            static_cast<const void*>(liveWorld));
+        deactivateBridge(
+            s_contactEventBridge,
+            _contacts.eventWorld,
+            _contacts.eventSignal,
+            "contact-impulse");
+        deactivateBridge(
+            s_manifoldProcessedEventBridge,
+            _contacts.manifoldEventWorld,
+            _contacts.manifoldEventSignal,
+            "manifold-processed");
     }
 
     void PhysicsInteraction::onContactCallback(void* userData, void** worldPtrHolder, void* contactEventData)
@@ -429,13 +491,15 @@
     {
         if (!s_hooksEnabled.load(std::memory_order_acquire))
             return;
-        if (userData != static_cast<void*>(&s_contactEventBridge)) {
+        const bool contactImpulseRoute = userData == static_cast<void*>(&s_contactEventBridge);
+        const bool manifoldProcessedRoute = userData == static_cast<void*>(&s_manifoldProcessedEventBridge);
+        if (!contactImpulseRoute && !manifoldProcessedRoute) {
             return;
         }
 
         auto* bridge = static_cast<ContactEventSubscriptionBridge*>(userData);
         auto* self = bridge->instance.load(std::memory_order_acquire);
-        if (self && self->_initialized.load(std::memory_order_acquire)) {
+        if (self && self->_lifecycle.initialized.load(std::memory_order_acquire)) {
             auto* subscribedWorld = bridge->world.load(std::memory_order_acquire);
             auto* subscribedSignal = bridge->signal.load(std::memory_order_acquire);
             const auto snapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
@@ -454,7 +518,12 @@
                 return;
             }
 
-            self->handleContactEvent(reinterpret_cast<RE::hknpWorld*>(acceptance.effectiveWorld), contactEventData);
+            auto* world = reinterpret_cast<RE::hknpWorld*>(acceptance.effectiveWorld);
+            if (manifoldProcessedRoute) {
+                self->handleManifoldProcessedEvent(world, contactEventData);
+            } else {
+                self->handleContactEvent(world, contactEventData);
+            }
         }
     }
 
@@ -468,6 +537,188 @@
                 sehLogCounter);
         }
         s_hooksEnabled.store(false, std::memory_order_release);
+    }
+
+    void PhysicsInteraction::handleManifoldProcessedEvent(RE::hknpWorld* world, void* eventData)
+    {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeContactCallback);
+
+        if (!world || !eventData) {
+            return;
+        }
+
+        /*
+         * FO4VR 0x1418028B0 and 0x141802A40 independently construct this
+         * exact 0xB0-byte key-2 record. Only the common header and participant
+         * IDs are needed here; the solved pose remains owned by ROCK's
+         * post-solve body sample rather than the pre-solve manifold payload.
+         */
+        constexpr std::uint16_t kExpectedRecordSize = 0xB0;
+        constexpr std::uint16_t kManifoldProcessedEventKey = 2;
+        auto* data = static_cast<const std::uint8_t*>(eventData);
+        const auto recordSize = *reinterpret_cast<const std::uint16_t*>(data + 0x00);
+        const auto eventKey = *reinterpret_cast<const std::uint16_t*>(data + 0x04);
+        if (recordSize != kExpectedRecordSize || eventKey != kManifoldProcessedEventKey) {
+            return;
+        }
+
+        const auto bodyIdA = *reinterpret_cast<const std::uint32_t*>(data + 0x08);
+        const auto bodyIdB = *reinterpret_cast<const std::uint32_t*>(data + 0x0C);
+        const auto shapeKeyA =
+            *reinterpret_cast<const std::uint32_t*>(data + 0x10);
+        const auto shapeKeyB =
+            *reinterpret_cast<const std::uint32_t*>(data + 0x14);
+        const auto manifoldPointCount =
+            *reinterpret_cast<const std::int32_t*>(data + 0x30);
+        if (!contact_pipeline_policy::isValidBodyId(bodyIdA) ||
+            !contact_pipeline_policy::isValidBodyId(bodyIdB) ||
+            bodyIdA == bodyIdB) {
+            return;
+        }
+        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
+            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
+            return;
+        }
+
+        DynamicHandCollisionRuntime::DynamicBodyContactSource
+            dynamicBodySourceA{};
+        DynamicHandCollisionRuntime::DynamicBodyContactSource
+            dynamicBodySourceB{};
+        const bool bodyAIsDynamicHand =
+            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
+                bodyIdA,
+                shapeKeyA,
+                dynamicBodySourceA);
+        const bool bodyBIsDynamicHand =
+            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
+                bodyIdB,
+                shapeKeyB,
+                dynamicBodySourceB);
+        const bool bodyAIsDynamicWeapon =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsDynamicWeapon =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        const bool solvedChildContact =
+            manifoldPointCount > 0 && manifoldPointCount <= 4;
+        if (solvedChildContact && bodyAIsDynamicHand) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceA,
+                bodyIdB,
+                bodyBIsDynamicHand &&
+                    dynamicBodySourceA.isLeft !=
+                        dynamicBodySourceB.isLeft,
+                bodyBIsDynamicWeapon);
+        }
+        if (solvedChildContact && bodyBIsDynamicHand) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceB,
+                bodyIdA,
+                bodyAIsDynamicHand &&
+                    dynamicBodySourceA.isLeft !=
+                        dynamicBodySourceB.isLeft,
+                bodyAIsDynamicWeapon);
+        }
+
+        /*
+         * Palm/fingertip twins opt into this recurring key-2 path because the
+         * solver does not reliably emit key-3 impulse records for persistent
+         * static-world contacts. The dedicated classifier excludes forearms.
+         */
+        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceA{};
+        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceB{};
+        const bool bodyAIsDynamicHandSurfaceSource =
+            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
+                bodyIdA,
+                shapeKeyA,
+                dynamicHandSourceA);
+        const bool bodyBIsDynamicHandSurfaceSource =
+            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
+                bodyIdB,
+                shapeKeyB,
+                dynamicHandSourceB);
+        if (solvedChildContact &&
+            bodyAIsDynamicHandSurfaceSource !=
+            bodyBIsDynamicHandSurfaceSource) {
+            const auto& source = bodyAIsDynamicHandSurfaceSource ?
+                dynamicHandSourceA :
+                dynamicHandSourceB;
+            const auto otherBodyId = bodyAIsDynamicHandSurfaceSource ?
+                bodyIdB :
+                bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const auto otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            hand_semantic_contact_state::SemanticContactVector pointGame{};
+            hand_semantic_contact_state::SemanticContactVector normalGame{};
+            const float scale = havokToGameScale();
+            const auto* normalHavok =
+                reinterpret_cast<const float*>(data + 0x40);
+            normalGame = {
+                normalHavok[0],
+                normalHavok[1],
+                normalHavok[2],
+            };
+            for (std::int32_t pointIndex = 0;
+                 pointIndex < manifoldPointCount;
+                 ++pointIndex) {
+                const auto* pointHavok = reinterpret_cast<const float*>(
+                    data + 0x70 + pointIndex * 0x10);
+                pointGame.x += pointHavok[0] * scale;
+                pointGame.y += pointHavok[1] * scale;
+                pointGame.z += pointHavok[2] * scale;
+            }
+            const float inversePointCount =
+                1.0f / static_cast<float>(manifoldPointCount);
+            pointGame.x *= inversePointCount;
+            pointGame.y *= inversePointCount;
+            pointGame.z *= inversePointCount;
+            _dynamicHandCollision.recordSurfaceManifoldProcessedCallback(
+                source,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer,
+                &pointGame,
+                &normalGame);
+        }
+
+        const bool bodyAIsWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (bodyAIsWeaponProxy != bodyBIsWeaponProxy) {
+            const auto proxyBodyId = bodyAIsWeaponProxy ? bodyIdA : bodyIdB;
+            const auto otherBodyId = bodyAIsWeaponProxy ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const auto otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            RE::NiPoint3 supportPointGame{};
+            if (solvedChildContact) {
+                // The same recurring manifold positions used by surface hands
+                // above qualify weapon support while a contact is at rest.
+                const float pointScale = havokToGameScale() / static_cast<float>(manifoldPointCount);
+                for (std::int32_t index = 0; index < manifoldPointCount; ++index) {
+                    const auto* point = reinterpret_cast<const float*>(data + 0x70 + index * 0x10);
+                    supportPointGame.x += point[0] * pointScale;
+                    supportPointGame.y += point[1] * pointScale;
+                    supportPointGame.z += point[2] * pointScale;
+                }
+            }
+            _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
+                world,
+                proxyBodyId,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer,
+                solvedChildContact ? &supportPointGame : nullptr);
+        }
     }
 
     void PhysicsInteraction::handleContactEvent(RE::hknpWorld* world, void* contactEventData)
@@ -501,6 +752,51 @@
             return hasRawContactPoint;
         };
 
+        /*
+         * Dynamic-hand compound child identity exists only in the verified
+         * key-2 shape keys. Key-3 impulse records carry the shared body ID but
+         * cannot identify a semantic child, so they must not publish hand
+         * contact or surface-grab evidence.
+         */
+
+        /*
+         * The dynamic weapon proxy is intentionally absent from the normal
+         * generated-body contact registry: it is solver/visual feedback, not
+         * hand, gameplay, or provider contact evidence. Capture only a real
+         * proxy-vs-obstacle callback before the ordinary registry prefilter can
+         * discard this pair. Obstacles are static world surfaces or bodies that
+         * the car runtime has explicitly moved onto a dedicated car-only row.
+         */
+        const bool bodyAIsDynamicWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsDynamicWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
+            const std::uint32_t proxyBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
+            const std::uint32_t otherBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const std::uint32_t otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            const bool rawContactPointValid =
+                otherLayerRead &&
+                collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
+                ensureRawContactPoint();
+            _dynamicWeaponCollision.recordObstacleContactCallback(
+                world,
+                proxyBodyId,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer,
+                bodyAIsDynamicWeaponProxy,
+                rawContactPointValid ? &rawContactPoint : nullptr);
+        }
+
         const auto rightId = _rightHand.getCollisionBodyId().value;
         const auto leftId = _leftHand.getCollisionBodyId().value;
 
@@ -529,8 +825,8 @@
 
         Classification bodyAClassification{};
         Classification bodyBClassification{};
-        const bool bodyAClassified = _generatedBodyContactRegistry.tryClassify(bodyIdA, bodyAClassification);
-        const bool bodyBClassified = _generatedBodyContactRegistry.tryClassify(bodyIdB, bodyBClassification);
+        const bool bodyAClassified = _contacts.generatedBodyRegistry.tryClassify(bodyIdA, bodyAClassification);
+        const bool bodyBClassified = _contacts.generatedBodyRegistry.tryClassify(bodyIdB, bodyBClassification);
         (void)bodyAClassified;
         (void)bodyBClassified;
 
@@ -634,7 +930,7 @@
             if (isInvalidGrabBodyId(bodyId)) {
                 return false;
             }
-            for (const auto& watchedBodyId : _armedLooseGrenadeImpactBodyIds) {
+            for (const auto& watchedBodyId : _forceGrab.grenadeImpactBodyIds) {
                 if (watchedBodyId.load(std::memory_order_acquire) == bodyId) {
                     return true;
                 }
@@ -653,7 +949,7 @@
                     return false;
                 }
 
-                _pendingLooseGrenadeImpactPair.store(packHeldImpactPair(watchedBodyId, otherBodyId), std::memory_order_release);
+                _forceGrab.pendingGrenadeImpactPair.store(packHeldImpactPair(watchedBodyId, otherBodyId), std::memory_order_release);
                 return true;
             };
 
@@ -866,9 +1162,9 @@
             contact.sourceHand = sourceHand;
             contact.quality = ::rock::provider::RockProviderExternalContactQuality::BodyPairOnly;
             contact.frameIndex =
-                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
             contact.collisionGeneration =
-                _collisionGenerationAtomic.load(std::memory_order_acquire);
+                _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
             if (fillSourceVelocity(sourceBodyId, sourceKind, handMetadata, contact)) {
                 contact.flags |= static_cast<std::uint32_t>(
                     ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid);
@@ -907,7 +1203,7 @@
             if (transitionSuppressed) {
                 contact.flags |= static_cast<std::uint32_t>(
                     ::rock::provider::RockProviderExternalContactFlagV1::TransitionSuppressed);
-            } else if ((_lifecycleFlagsAtomic.load(std::memory_order_acquire) &
+            } else if ((_lifecycle.flagsAtomic.load(std::memory_order_acquire) &
                             static_cast<std::uint32_t>(
                                 ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed)) != 0) {
                 contact.flags |= static_cast<std::uint32_t>(
@@ -916,9 +1212,9 @@
 
             ::rock::provider::recordExternalContact(
                 contact,
-                _worldGenerationAtomic.load(std::memory_order_acquire),
-                _skeletonGenerationAtomic.load(std::memory_order_acquire),
-                _providerGenerationAtomic.load(std::memory_order_acquire));
+                _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.skeletonGenerationAtomic.load(std::memory_order_acquire),
+                _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire));
         };
 
         auto recordBodyContactEvidence = [&]() {
@@ -932,7 +1228,8 @@
             }
 
             body_contact_runtime::BodyContactRecord record{};
-            record.frame = _handContactActivity.currentFrame();
+            record.frame = _contacts.handActivity.currentFrame();
+            record.elapsedSeconds = _contacts.handActivity.currentElapsedSeconds();
             record.bodyId = contactRoute.sourceBodyId;
             record.targetBodyId = contactRoute.targetBodyId;
             record.bodyLayer = contactRoute.source.layer;
@@ -960,7 +1257,7 @@
                 record.hasContactPointGame = true;
             }
 
-            _bodyContactRuntime.record(record);
+            _contacts.bodyRuntime.record(record);
         };
 
         auto notifyHeldExternalContact = [&](Hand& hand,
@@ -1025,8 +1322,8 @@
             impactPair.store(packHeldImpactPair(heldId, other), std::memory_order_release);
         };
 
-        notifyHeldExternalContact(_rightHand, _lastHeldImpactPairRight, bodyAIsRightHeld, bodyBIsRightHeld);
-        notifyHeldExternalContact(_leftHand, _lastHeldImpactPairLeft, bodyAIsLeftHeld, bodyBIsLeftHeld);
+        notifyHeldExternalContact(_rightHand, _contacts.lastHeldImpactPairRight, bodyAIsRightHeld, bodyBIsRightHeld);
+        notifyHeldExternalContact(_leftHand, _contacts.lastHeldImpactPairLeft, bodyAIsLeftHeld, bodyBIsLeftHeld);
 
         recordBodyContactEvidence();
 
@@ -1039,11 +1336,11 @@
          */
         const bool rightBodyPairSuppressed =
             (bodyAIsRight || bodyBIsRight) &&
-            (_rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire) ||
+            (_suppression.rightDominantSuppressed.load(std::memory_order_acquire) ||
                 _rightHand.hasContactEvidenceSuppressedAtomic());
         const bool leftBodyPairSuppressed =
             (bodyAIsLeft || bodyBIsLeft) &&
-            (_leftWeaponSupportCollisionSuppressed.load(std::memory_order_acquire) ||
+            (_suppression.leftWeaponSupportSuppressed.load(std::memory_order_acquire) ||
                 _leftHand.hasContactEvidenceSuppressedAtomic());
         if (rightBodyPairSuppressed || leftBodyPairSuppressed) {
             ROCK_LOG_SAMPLE_DEBUG(Hand,
@@ -1088,21 +1385,30 @@
             publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, contactRoute.providerSourceKind, contactRoute.providerSourceHand, routeHandMetadata);
         }
 
+        auto publishPushContact = [&](push_assist::ContactChannel& channel, std::uint32_t source) {
+            push_assist::Contact contact{};
+            contact.source = source;
+            contact.target = contactRoute.targetBodyId;
+            contact.world = reinterpret_cast<std::uintptr_t>(world);
+            contact.owner = reinterpret_cast<std::uintptr_t>(havok_runtime::getCollisionObjectFromBody(world, RE::hknpBodyId{contact.target}));
+            contact.hasPoint = ensureRawContactPoint();
+            if (contact.hasPoint) std::copy_n(rawContactPoint.contactPointHavok, 3, contact.point.begin());
+            channel.publish(contact);
+        };
         if (contactRoute.driveWeaponDynamicPush) {
-            _lastContactSourceWeapon.store(contactRoute.sourceBodyId, std::memory_order_release);
-            _lastContactBodyWeapon.store(contactRoute.targetBodyId, std::memory_order_release);
+            publishPushContact(_contacts.weaponPush, contactRoute.sourceBodyId);
         }
 
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
-            auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
-            auto& reloadRole = isLeft ? _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
-            auto& supportRole = isLeft ? _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
-            auto& socketRole = isLeft ? _leftWeaponContactSocketRole : _rightWeaponContactSocketRole;
-            auto& actionRole = isLeft ? _leftWeaponContactActionRole : _rightWeaponContactActionRole;
-            auto& gripPose = isLeft ? _leftWeaponContactGripPose : _rightWeaponContactGripPose;
-            auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
-            auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
-            auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
+            auto& partKind = isLeft ? _weaponContact.left.partKind : _weaponContact.right.partKind;
+            auto& reloadRole = isLeft ? _weaponContact.left.reloadRole : _weaponContact.right.reloadRole;
+            auto& supportRole = isLeft ? _weaponContact.left.supportRole : _weaponContact.right.supportRole;
+            auto& socketRole = isLeft ? _weaponContact.left.socketRole : _weaponContact.right.socketRole;
+            auto& actionRole = isLeft ? _weaponContact.left.actionRole : _weaponContact.right.actionRole;
+            auto& gripPose = isLeft ? _weaponContact.left.gripPose : _weaponContact.right.gripPose;
+            auto& sequence = isLeft ? _weaponContact.left.sequence : _weaponContact.right.sequence;
+            auto& missedFrames = isLeft ? _weaponContact.left.missedFrames : _weaponContact.right.missedFrames;
+            auto& bodyIdAtomic = isLeft ? _weaponContact.left.bodyId : _weaponContact.right.bodyId;
 
             partKind.store(static_cast<std::uint32_t>(weaponContact.partKind), std::memory_order_release);
             reloadRole.store(static_cast<std::uint32_t>(weaponContact.reloadRole), std::memory_order_release);
@@ -1134,7 +1440,7 @@
             return;
         }
 
-        const auto contactActivity = _handContactActivity.registerHandContact(handSource->isLeft, handSource->metadata.bodyId, contactRoute.targetBodyId);
+        const auto contactActivity = _contacts.handActivity.registerHandContact(handSource->isLeft, handSource->metadata.bodyId, contactRoute.targetBodyId);
         if (contactActivity.newlyActive && g_rockConfig.rockDebugVerboseLogging) {
             ROCK_LOG_DEBUG(Hand,
                 "ContactActivity: {} {} body={} target={} frame={} inserted={} evictedStale={}",
@@ -1180,18 +1486,16 @@
         if (handSource->isLeft) {
             _leftHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
-                _lastContactSourceLeft.store(handSource->metadata.bodyId, std::memory_order_release);
-                _lastContactBodyLeft.store(contactRoute.targetBodyId, std::memory_order_release);
+                publishPushContact(_contacts.leftPush, handSource->metadata.bodyId);
             }
         } else {
             _rightHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
-                _lastContactSourceRight.store(handSource->metadata.bodyId, std::memory_order_release);
-                _lastContactBodyRight.store(contactRoute.targetBodyId, std::memory_order_release);
+                publishPushContact(_contacts.rightPush, handSource->metadata.bodyId);
             }
         }
 
-        int logCount = _contactLogCounter.fetch_add(1, std::memory_order_relaxed);
+        int logCount = _diagnostics.contactLogCounter.fetch_add(1, std::memory_order_relaxed);
         if (logCount % 30 == 0) {
             ROCK_LOG_DEBUG(Hand,
                 "Contact: {} {} body={} hit body {} route={}",

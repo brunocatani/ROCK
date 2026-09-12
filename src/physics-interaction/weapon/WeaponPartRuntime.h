@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <string_view>
 
 #include "physics-interaction/weapon/WeaponTypes.h"
@@ -192,8 +193,7 @@ namespace rock::weapon_part_runtime
         return candidate.ownerToken < currentBest->ownerToken;
     }
 
-    template <std::size_t Capacity>
-    inline Resolution resolveTarget(const std::array<Target, Capacity>& targets, const Contact& contact)
+    inline Resolution resolveTarget(std::span<const Target> targets, const Contact& contact)
     {
         Resolution result{};
         const Target* best = nullptr;

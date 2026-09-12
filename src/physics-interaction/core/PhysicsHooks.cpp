@@ -13,6 +13,9 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
+#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/NativePlayerCollisionFilter.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RockConfig.h"
 
@@ -23,8 +26,10 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string_view>
@@ -50,23 +55,56 @@ namespace rock
 
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
         constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
-        /*
-         * Native melee suppression can be queried from animation-event hooks, so
-         * its physical-swing bridge needs a tiny shared clock. This is advanced
-         * by ROCK update frames instead of wall milliseconds: debugger stalls,
-         * menus, loading, and frame hitches must not expire a gameplay lease
-         * behind the simulation.
-         */
-        static std::atomic<std::uint64_t> g_nativeMeleeFrameClock{ 1 };
-        static std::array<std::atomic<std::uint64_t>, 2> g_nativeMeleePhysicalSwingExpiresAtFrame{};
+        static std::atomic<std::uint64_t> g_nativeRuntimeSettingFrameClock{ 1 };
+        struct ProxyContactTrace
+        {
+            std::atomic<std::uint64_t> playerCallbacks{ 0 }, identityFailures{ 0 }, invalidBuffers{ 0 };
+            std::atomic<std::uint64_t> removed{ 0 }, movableStatics{ 0 }, looseWeapons{ 0 }, held{ 0 };
+            std::atomic<std::uint64_t> supportKept{ 0 }, attacksKept{ 0 }, unknownKept{ 0 };
+            std::atomic<unsigned> failedProofStage{ 0 }; // 1 listener, 2 controller, 3 reciprocal proxy
+        };
+        static ProxyContactTrace g_proxyContactTrace;
+
+        // Physics callbacks publish counts only. The existing main-thread clock
+        // reports actual filtering and identity failures at most once per 5 s.
+        void reportProxyContactTrace()
+        {
+            static std::uint64_t nextReportMs = 0;
+            static bool identityReported = false;
+            const auto now = GetTickCount64();
+            if (now < nextReportMs) {
+                return;
+            }
+            nextReportMs = now + 5000;
+            const auto callbacks = g_proxyContactTrace.playerCallbacks.exchange(0);
+            const auto failures = g_proxyContactTrace.identityFailures.exchange(0);
+            const auto invalid = g_proxyContactTrace.invalidBuffers.exchange(0);
+            const auto removed = g_proxyContactTrace.removed.exchange(0);
+            const auto mstt = g_proxyContactTrace.movableStatics.exchange(0);
+            const auto looseWeapons = g_proxyContactTrace.looseWeapons.exchange(0);
+            const auto held = g_proxyContactTrace.held.exchange(0);
+            const auto support = g_proxyContactTrace.supportKept.exchange(0);
+            const auto attacks = g_proxyContactTrace.attacksKept.exchange(0);
+            const auto unknown = g_proxyContactTrace.unknownKept.exchange(0);
+            if (callbacks && !identityReported) {
+                identityReported = true;
+                ROCK_LOG_INFO(CC, "Player controller contact filter active: listener + 16 identity, vtables and reciprocal proxy verified");
+            }
+            if (removed || failures || invalid) {
+                ROCK_LOG_INFO(CC,
+                    "Player controller contact filter: callbacks={} removed={} msttRemoved={} looseWeaponsRemoved={} heldRemoved={} supportKept={} attacksKept={} unknownKept={} invalidBuffers={} identityFailures={} failedProofStage={}",
+                    callbacks, removed, mstt, looseWeapons, held, support, attacks, unknown, invalid, failures,
+                    g_proxyContactTrace.failedProofStage.load());
+            }
+            if (failures) {
+                ROCK_LOG_WARN(CC, "Player controller listener identity rejected: count={} deepestStage={} (1=listener,2=controller,3=proxy); native contacts preserved",
+                    failures, g_proxyContactTrace.failedProofStage.load());
+            }
+        }
         static std::atomic<bool> g_nativeMeleeSuppressionHooksInstalled{ false };
-        constexpr std::uint64_t kNativeMeleePhysicalSwingLeaseFrames = 24;
+        static std::atomic<bool> g_nativeMeleeSuppressionActive{ false };
         constexpr std::uint64_t kNativeMeleeRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::uint64_t kNativeGrabHapticRuntimeSettingCheckIntervalFrames = 90;
-        constexpr char kNativeMeleeVelocityCheckSetting[] = "bMeleeVelocityCheck:VRInput";
-        constexpr char kNativeMeleeLinearVelocityThresholdSetting[] = "fMeleeLinearVelocityThreshold:VRInput";
-        constexpr char kNativeMeleeAngularVelocityThresholdSetting[] = "fMeleeAngularVelocityThreshold:VRInput";
-        constexpr float kNativeMeleeSuppressedVelocityThreshold = 1.0e9f;
         constexpr std::array<std::uint8_t, 14> kVrMeleeImpactExpectedPrefix{
             0x48, 0x8B, 0xC4,
             0x4C, 0x89, 0x40, 0x18,
@@ -88,6 +126,7 @@ namespace rock
             bool missingLogged = false;
             bool typeMismatchLogged = false;
             bool confirmedLogged = false;
+            bool applied = false;
             std::atomic<std::uint32_t> reapplyCount{ 0 };
         };
 
@@ -99,6 +138,7 @@ namespace rock
             bool missingLogged = false;
             bool typeMismatchLogged = false;
             bool confirmedLogged = false;
+            bool applied = false;
             std::atomic<std::uint32_t> reapplyCount{ 0 };
         };
 
@@ -127,6 +167,9 @@ namespace rock
         };
 
         static std::atomic<std::uint64_t> g_nativeMeleeRuntimeSettingNextCheckFrame{ 0 };
+        // Runtime-setting ownership is mutated only by initialization and the
+        // main-frame update. Hook callbacks read config, never this lease state.
+        static bool g_nativeMeleeRuntimeSuppressionRequested = false;
         static NativeBinaryRuntimeSettingState g_nativeMeleeVelocityCheckState;
         static NativeFloatRuntimeSettingState g_nativeMeleeLinearThresholdState;
         static NativeFloatRuntimeSettingState g_nativeMeleeAngularThresholdState;
@@ -368,12 +411,6 @@ namespace rock
             return matchesCommonLib || matchesNative;
         }
 
-        bool shouldSuppressNativeVrMeleeVelocity()
-        {
-            return g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire) && g_rockConfig.rockEnabled && g_rockConfig.rockNativeMeleeSuppressionEnabled &&
-                   g_rockConfig.rockNativeMeleeFullSuppression;
-        }
-
         native_melee_suppression::NativeMeleeInputEvent classifyNativeMeleeInputEvent(const RE::InputEvent* event)
         {
             if (!event) {
@@ -415,17 +452,15 @@ namespace rock
         native_melee_suppression::NativeMeleeInputGatePolicyInput makeNativeMeleeInputGatePolicyInput(
             native_melee_suppression::NativeMeleeInputEvent event)
         {
-            return native_melee_suppression::NativeMeleeInputGatePolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
-                .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
-                .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
+            return native_melee_suppression::NativeMeleeInputGatePolicyInput{
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
                 .inputEvent = event };
         }
 
         native_melee_suppression::NativeMeleeImpactPolicyInput makeNativeMeleeImpactPolicyInput(const RE::Actor* actor)
         {
-            return native_melee_suppression::NativeMeleeImpactPolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
-                .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
-                .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
+            return native_melee_suppression::NativeMeleeImpactPolicyInput{
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
                 .actorIsPlayer = isPlayerActor(actor) };
         }
 
@@ -467,8 +502,12 @@ namespace rock
             const bool currentValue = setting->GetBinary();
             if (currentValue != desiredValue) {
                 setting->SetBinary(desiredValue);
+                if (setting->GetBinary() != desiredValue) {
+                    ROCK_LOG_ERROR(Combat, "Failed to apply FO4VR native VR melee {} setting '{}'", label, settingName);
+                    return false;
+                }
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || g_rockConfig.rockNativeMeleeDebugLogging || reapplyCount % 30 == 0) {
+                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Combat,
                         "Set FO4VR native VR melee {} setting '{}' to {} (original={} reapplyCount={})",
                         label,
@@ -478,7 +517,6 @@ namespace rock
                         reapplyCount);
                 }
                 state.confirmedLogged = true;
-                return true;
             }
 
             if (!state.confirmedLogged) {
@@ -486,6 +524,7 @@ namespace rock
                 state.confirmedLogged = true;
             }
 
+            state.applied = true;
             return true;
         }
 
@@ -513,8 +552,13 @@ namespace rock
             const float currentValue = setting->GetFloat();
             if (!std::isfinite(currentValue) || currentValue < desiredMinimum) {
                 setting->SetFloat(desiredMinimum);
+                const float appliedValue = setting->GetFloat();
+                if (!std::isfinite(appliedValue) || appliedValue < desiredMinimum) {
+                    ROCK_LOG_ERROR(Combat, "Failed to apply FO4VR native VR melee {} setting '{}'", label, settingName);
+                    return false;
+                }
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (reapplyCount == 1 || g_rockConfig.rockNativeMeleeDebugLogging || reapplyCount % 30 == 0) {
+                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Combat,
                         "Raised FO4VR native VR melee {} setting '{}' to {:.1f} (original={:.3f} reapplyCount={})",
                         label,
@@ -524,7 +568,6 @@ namespace rock
                         reapplyCount);
                 }
                 state.confirmedLogged = true;
-                return true;
             }
 
             if (!state.confirmedLogged) {
@@ -532,7 +575,108 @@ namespace rock
                 state.confirmedLogged = true;
             }
 
+            state.applied = true;
             return true;
+        }
+
+        template <class State>
+        void releaseNativeMeleeRuntimeSettingOwnership(State& state)
+        {
+            state.originalCaptured = false;
+            state.applied = false;
+            state.confirmedLogged = false;
+            state.reapplyCount.store(0, std::memory_order_relaxed);
+        }
+
+        bool restoreNativeMeleeBinarySetting(
+            NativeBinaryRuntimeSettingState& state, const char* settingName, bool appliedValue, const char* label)
+        {
+            if (!state.originalCaptured || !state.applied) {
+                return true;
+            }
+
+            auto* setting = resolveNativeMeleeRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-binary setting '{}' while restoring", settingName);
+                }
+                return false;
+            }
+
+            const bool currentValue = setting->GetBinary();
+            if (currentValue == appliedValue) {
+                if (currentValue != state.originalValue) {
+                    setting->SetBinary(state.originalValue);
+                    if (setting->GetBinary() != state.originalValue) {
+                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label, settingName);
+                        return false;
+                    }
+                }
+                ROCK_LOG_INFO(Combat,
+                    "Restored FO4VR native VR melee {} setting '{}' to {}",
+                    label,
+                    settingName,
+                    state.originalValue ? "true" : "false");
+            } else {
+                ROCK_LOG_INFO(Combat,
+                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed outside ROCK",
+                    label,
+                    settingName);
+            }
+
+            releaseNativeMeleeRuntimeSettingOwnership(state);
+            return true;
+        }
+
+        bool restoreNativeMeleeFloatSetting(
+            NativeFloatRuntimeSettingState& state, const char* settingName, float appliedValue, const char* label)
+        {
+            if (!state.originalCaptured || !state.applied) {
+                return true;
+            }
+
+            auto* setting = resolveNativeMeleeRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-float setting '{}' while restoring", settingName);
+                }
+                return false;
+            }
+
+            const float currentValue = setting->GetFloat();
+            if (currentValue == appliedValue) {
+                if (!native_melee_suppression::sameRuntimeFloatBits(currentValue, state.originalValue)) {
+                    setting->SetFloat(state.originalValue);
+                    if (!native_melee_suppression::sameRuntimeFloatBits(setting->GetFloat(), state.originalValue)) {
+                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label, settingName);
+                        return false;
+                    }
+                }
+                ROCK_LOG_INFO(Combat, "Restored FO4VR native VR melee {} setting '{}' to {:.3f}", label, settingName, state.originalValue);
+            } else {
+                ROCK_LOG_INFO(Combat,
+                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed outside ROCK",
+                    label,
+                    settingName);
+            }
+
+            releaseNativeMeleeRuntimeSettingOwnership(state);
+            return true;
+        }
+
+        [[nodiscard]] bool nativeMeleeRuntimeSuppressionApplied()
+        {
+            return g_nativeMeleeVelocityCheckState.applied || g_nativeMeleeLinearThresholdState.applied || g_nativeMeleeAngularThresholdState.applied;
         }
 
         RE::Setting* resolveNativeGrabHapticRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName, bool& missingLogged)
@@ -709,50 +853,11 @@ namespace rock
             return g_nativeGrabHapticRolloverState.applied || g_nativeGrabHapticHoverIntensityState.applied || g_nativeGrabHapticHoverDurationState.applied;
         }
 
-        bool isLeftSideString(const RE::BSFixedString* side)
+        native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(const RE::Actor* actor)
         {
-            if (!side) {
-                return false;
-            }
-
-            const char* text = side->c_str();
-            if (!text) {
-                return false;
-            }
-
-            return std::string_view(text) == "Left";
-        }
-
-        bool isAnyNativeMeleePhysicalSwingActive()
-        {
-            const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-            return native_melee_suppression::isPhysicalSwingLeaseActive(currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[0].load(std::memory_order_acquire)) ||
-                   native_melee_suppression::isPhysicalSwingLeaseActive(currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[1].load(std::memory_order_acquire));
-        }
-
-        bool isNativeMeleePhysicalSwingActiveForSide(const RE::BSFixedString* side)
-        {
-            if (!side) {
-                return isAnyNativeMeleePhysicalSwingActive();
-            }
-
-            const bool isLeft = isLeftSideString(side);
-            const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-            return native_melee_suppression::isPhysicalSwingLeaseActive(
-                currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[isLeft ? 1 : 0].load(std::memory_order_acquire));
-        }
-
-        native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(
-            const native_melee_suppression::NativeMeleeEvent event, const RE::Actor* actor, const RE::BSFixedString* side)
-        {
-            return native_melee_suppression::NativeMeleePolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
-                .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
-                .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
-                .suppressWeaponSwing = g_rockConfig.rockNativeMeleeSuppressWeaponSwing,
-                .suppressHitFrame = g_rockConfig.rockNativeMeleeSuppressHitFrame,
-                .actorIsPlayer = isPlayerActor(actor),
-                .physicalSwingActive = event == native_melee_suppression::NativeMeleeEvent::HitFrame ? isNativeMeleePhysicalSwingActiveForSide(side)
-                                                                                                     : isAnyNativeMeleePhysicalSwingActive() };
+            return native_melee_suppression::NativeMeleePolicyInput{
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
+                .actorIsPlayer = isPlayerActor(actor) };
         }
 
         bool applyNativeMeleeDecision(const native_melee_suppression::NativeMeleeEvent event,
@@ -762,19 +867,17 @@ namespace rock
             using native_melee_suppression::NativeMeleeEvent;
             using native_melee_suppression::NativeMeleeSuppressionAction;
 
-            if (g_rockConfig.rockNativeMeleeDebugLogging || decision.action != NativeMeleeSuppressionAction::CallNative) {
+            if (decision.action != NativeMeleeSuppressionAction::CallNative) {
                 static std::atomic<std::uint32_t> weaponLogCounter{ 0 };
                 static std::atomic<std::uint32_t> hitFrameLogCounter{ 0 };
                 auto& counter = event == NativeMeleeEvent::WeaponSwing ? weaponLogCounter : hitFrameLogCounter;
                 const auto count = counter.fetch_add(1, std::memory_order_relaxed) + 1;
 
-                if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
-                    ROCK_LOG_DEBUG(Combat, "Native melee {} decision={} reason={} player={} physicalSwing={} count={}",
+                if (count == 1 || count % 180 == 0) {
+                    ROCK_LOG_DEBUG(Combat, "Native melee {} decision={} reason={} player={} count={}",
                         event == NativeMeleeEvent::WeaponSwing ? "WeaponSwing" : "HitFrame",
-                        decision.action == NativeMeleeSuppressionAction::CallNative      ? "native"
-                            : decision.action == NativeMeleeSuppressionAction::ReturnHandled ? "handled"
-                                                                                              : "unhandled",
-                        decision.reason, input.actorIsPlayer ? "yes" : "no", input.physicalSwingActive ? "yes" : "no", count);
+                        decision.action == NativeMeleeSuppressionAction::CallNative ? "native" : "handled",
+                        decision.reason, input.actorIsPlayer ? "yes" : "no", count);
                 }
             }
 
@@ -783,8 +886,6 @@ namespace rock
                 return true;
             case native_melee_suppression::NativeMeleeSuppressionAction::ReturnHandled:
                 return true;
-            case native_melee_suppression::NativeMeleeSuppressionAction::ReturnUnhandled:
-                return false;
             }
 
             return true;
@@ -795,16 +896,15 @@ namespace rock
         {
             using native_melee_suppression::NativeMeleeImpactAction;
 
-            if (g_rockConfig.rockNativeMeleeDebugLogging || decision.action != NativeMeleeImpactAction::CallNative) {
+            if (decision.action != NativeMeleeImpactAction::CallNative) {
                 static std::atomic<std::uint32_t> impactLogCounter{ 0 };
                 const auto count = impactLogCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
+                if (count == 1 || count % 180 == 0) {
                     ROCK_LOG_DEBUG(Combat,
-                        "Native melee VRMeleeImpact decision={} reason={} player={} full={} count={}",
+                        "Native melee VRMeleeImpact decision={} reason={} player={} count={}",
                         decision.action == NativeMeleeImpactAction::CallNative ? "native" : "suppressed",
                         decision.reason,
                         input.actorIsPlayer ? "yes" : "no",
-                        input.fullSuppression ? "yes" : "no",
                         count);
                 }
             }
@@ -812,24 +912,320 @@ namespace rock
             return decision.action == NativeMeleeImpactAction::Suppress;
         }
 
+        /*
+         * NATIVE-MELEE-TRACE: native melee damage is reported broken while
+         * suppression is disabled and every hook forwards to native. Each
+         * pass-through boundary below logs a bounded trace so one in-game
+         * session shows the deepest stage the native chain reaches:
+         * AttackBlock input gate -> WeaponSwingHandler -> HitFrameHandler ->
+         * PlayerCharacter::WeaponSwingCallBack -> VRMeleeImpact contact.
+         * Diagnostic instrumentation; remove with the root-cause fix.
+         */
+        [[nodiscard]] bool shouldEmitNativeMeleeTrace(std::atomic<std::uint32_t>& counter, std::uint32_t& outCount, std::uint32_t burst = 20, std::uint32_t period = 60)
+        {
+            outCount = counter.fetch_add(1, std::memory_order_relaxed) + 1;
+            return outCount <= burst || outCount % period == 0;
+        }
+
+        /*
+         * NATIVE-MELEE-TRACE partner decode. Layout verified against the raw
+         * disassembly of the FO4VR VRMeleeImpact callback (RVA 0xEFF000):
+         *   contactEvent + 0x00 : hknpWorld*
+         *   contactEvent + 0x20 : int, our body's index in the event pair
+         *   collisionEvent+ 0x08 : int[2], the pair's body ids
+         *   collisionEvent+ 0x11 : byte, event flag (native returns when == 1)
+         *   player       + 0x908 : float, native melee cooldown gate
+         * Every read is guarded and fails closed. Aggregates a per-layer
+         * histogram of the partner body so one session shows whether an
+         * NPC-layer partner ever reaches the native callback.
+         */
+        /*
+         * Returns true when the event's partner body sits on a ROCK-owned
+         * collision layer. The caller must then drop the event instead of
+         * forwarding it to the native VRMeleeImpact callback: the native code
+         * accepts any ref-less non-static body as a "hit the world" melee
+         * target, performs the hit, and arms the ~0.7s melee cooldown, so one
+         * ROCK self-contact at swing start silently eats the real NPC hit
+         * (verified in-game 2026-08-27: cooldown armed by a
+         * ROCK_DynamicWeaponCompound partner on 95% of events).
+         */
+        bool traceVrMeleeImpactPartner(RE::Actor* actor, void* contactEvent, void* collisionEvent, bool actorIsPlayer)
+        {
+            static std::array<std::atomic<std::uint32_t>, 128> s_layerCounts{};
+            static std::atomic<std::uint32_t> s_totalCount{ 0 };
+            static std::atomic<std::uint32_t> s_flaggedCount{ 0 };
+            static std::atomic<std::uint32_t> s_cooldownActiveCount{ 0 };
+            static std::atomic<std::uint32_t> s_decodeFailedCount{ 0 };
+            static std::atomic<std::uint32_t> s_rockPartnerCount{ 0 };
+            static std::atomic<std::int64_t> s_lastSummaryMs{ 0 };
+            static std::atomic<std::uint32_t> s_detailCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathPlayerCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathNpcCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathReflessCount{ 0 };
+            static std::atomic<std::uint32_t> s_actorPathDetailCount{ 0 };
+
+            const auto total = s_totalCount.fetch_add(1, std::memory_order_relaxed) + 1;
+
+            std::uint8_t eventFlag = 0;
+            if (collisionEvent && native_memory::tryReadField(collisionEvent, 0x11, eventFlag) && eventFlag == 1) {
+                s_flaggedCount.fetch_add(1, std::memory_order_relaxed);
+            }
+            float cooldown = 0.0f;
+            if (actorIsPlayer && actor && native_memory::tryReadField(actor, 0x908, cooldown) && cooldown > 0.0f) {
+                s_cooldownActiveCount.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            std::uint32_t ourIndex = 0xFFFF'FFFFu;
+            std::uint32_t bodyIds[2] = { 0x7FFF'FFFFu, 0x7FFF'FFFFu };
+            std::uint32_t otherFilterInfo = 0;
+            bool decoded = false;
+            RE::hknpWorld* world = nullptr;
+            if (contactEvent && collisionEvent &&
+                native_memory::tryReadField(contactEvent, 0x0, world) && world &&
+                native_memory::tryReadField(contactEvent, 0x20, ourIndex) && ourIndex <= 1 &&
+                native_memory::tryReadField(collisionEvent, 0x08, bodyIds[0]) &&
+                native_memory::tryReadField(collisionEvent, 0x0C, bodyIds[1])) {
+                const auto otherId = bodyIds[1u - ourIndex];
+                if (body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ otherId }, otherFilterInfo)) {
+                    s_layerCounts[otherFilterInfo & 0x7F].fetch_add(1, std::memory_order_relaxed);
+                    decoded = true;
+                }
+            }
+            if (!decoded) {
+                s_decodeFailedCount.fetch_add(1, std::memory_order_relaxed);
+            }
+            const bool rockPartner =
+                decoded &&
+                collision_layer_policy::isRockOwnedMatrixLayer(otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            if (rockPartner) {
+                s_rockPartnerCount.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            /*
+             * NATIVE-MELEE-TRACE partner identity for the actor-path layers
+             * (charcontroller 30, biped 8, deadbip 32, bipedNoCC 33). These are
+             * the layers a landed NPC hit must arrive on, and they are rare in
+             * the event stream, so per-event ref resolution here is bounded.
+             * The identity split answers the open question directly: does the
+             * NPC's controller ever reach this callback, or only the player's?
+             */
+            const std::uint32_t partnerLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            const bool actorPathPartner = decoded &&
+                (partnerLayer == collision_layer_policy::FO4_LAYER_CHARCONTROLLER ||
+                    partnerLayer == collision_layer_policy::FO4_LAYER_BIPED ||
+                    partnerLayer == collision_layer_policy::FO4_LAYER_DEADBIP ||
+                    partnerLayer == collision_layer_policy::FO4_LAYER_BIPED_NO_CC);
+            if (actorPathPartner) {
+                auto* player = RE::PlayerCharacter::GetSingleton();
+                auto* cell = player ? player->GetParentCell() : nullptr;
+                auto* bhkWorld = cell ? cell->GetbhkWorld() : nullptr;
+                const auto otherId = bodyIds[1u - ourIndex];
+                RE::TESObjectREFR* partnerRef =
+                    bhkWorld ? resolveBodyToRef(bhkWorld, world, RE::hknpBodyId{ otherId }) : nullptr;
+                const bool partnerIsPlayer = partnerRef && partnerRef == player;
+                if (partnerIsPlayer) {
+                    s_actorPathPlayerCount.fetch_add(1, std::memory_order_relaxed);
+                } else if (partnerRef) {
+                    s_actorPathNpcCount.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    s_actorPathReflessCount.fetch_add(1, std::memory_order_relaxed);
+                }
+                if (!partnerIsPlayer) {
+                    std::uint32_t actorDetailCount = 0;
+                    if (shouldEmitNativeMeleeTrace(s_actorPathDetailCount, actorDetailCount, 30, 50)) {
+                        /*
+                         * Mirror of the native resolution walk (raw disassembly
+                         * of RVA 0xEFF000, 2026-08-27): partner hknpBody =
+                         * *(world+0x20) + id*0x90; body+0x88 is a
+                         * bhkNPCollisionObject*, its sceneObject at +0x10 feeds
+                         * TESObjectREFR::FindReferenceFor3D. Also reads the
+                         * player cooldown MODE byte (+0x948) and the common
+                         * post-dispatch value (+0x90C): in table mode a native
+                         * dispatch never touches +0x908, so +0x90C is the only
+                         * reliable "native dispatched a hit" witness.
+                         */
+                        std::uintptr_t bodyArray = 0;
+                        std::uint32_t bodyFlags = 0;
+                        std::uint32_t bodyKey = 0;
+                        void* collisionObject = nullptr;
+                        void* sceneObject = nullptr;
+                        RE::TESObjectREFR* nativeRef = nullptr;
+                        if (native_memory::tryReadField(world, 0x20, bodyArray) && bodyArray != 0) {
+                            auto* bodyPtr = reinterpret_cast<void*>(bodyArray + static_cast<std::uintptr_t>(otherId) * 0x90);
+                            native_memory::tryReadField(bodyPtr, 0x40, bodyFlags);
+                            native_memory::tryReadField(bodyPtr, 0x60, bodyKey);
+                            if (native_memory::tryReadField(bodyPtr, 0x88, collisionObject) && collisionObject &&
+                                native_memory::tryReadField(collisionObject, 0x10, sceneObject) && sceneObject) {
+                                nativeRef = RE::TESObjectREFR::FindReferenceFor3D(static_cast<RE::NiAVObject*>(sceneObject));
+                            }
+                        }
+                        std::uint8_t cooldownMode = 0;
+                        float commonCooldown = 0.0f;
+                        if (actorIsPlayer && actor) {
+                            native_memory::tryReadField(actor, 0x948, cooldownMode);
+                            native_memory::tryReadField(actor, 0x90C, commonCooldown);
+                        }
+                        /*
+                         * Direct reject-gate values from the raw disassembly of
+                         * 0xEFF000 (Ghidra 2026-08-27): teammate bit 26 of
+                         * target+0x2D0; the opaque attacker conjunction
+                         * (+0x9E8==1 && +0xA90!=0); hostility; base weapon
+                         * type (velocity gate applies only to non-hostile +
+                         * type>6); primary wand tracked speed at +0x28
+                         * (threshold 300.0) and angular at +0x2C.
+                         */
+                        std::uint32_t targetNiFlags = 0;
+                        std::uint32_t targetFormFlags = 0;
+                        RE::Actor* targetActor = nullptr;
+                        bool hostile = false;
+                        if (nativeRef) {
+                            native_memory::tryReadField(nativeRef, 0x2D0, targetNiFlags);
+                            native_memory::tryReadField(nativeRef, 0x10, targetFormFlags);
+                            if (nativeRef->formType == RE::ENUM_FORM_ID::kACHR) {
+                                targetActor = static_cast<RE::Actor*>(nativeRef);
+                            }
+                            if (actor && targetActor) {
+                                hostile = actor->GetHostileToActor(targetActor);
+                            }
+                        }
+                        std::uint32_t attacker9E8 = 0;
+                        std::uint32_t attackerA90 = 0;
+                        if (actor) {
+                            native_memory::tryReadField(actor, 0x9E8, attacker9E8);
+                            native_memory::tryReadField(actor, 0xA90, attackerA90);
+                        }
+                        int weaponType = -1;
+                        if (auto* equippedItem = f4vr::getEquippedWeaponItem()) {
+                            if (auto* weaponForm = equippedItem->item.object; weaponForm && weaponForm->formType == RE::ENUM_FORM_ID::kWEAP) {
+                                weaponType = static_cast<int>(static_cast<const RE::TESObjectWEAP*>(weaponForm)->weaponData.type.get());
+                            }
+                        }
+                        float wandLinear = -1.0f;
+                        float wandAngular = -1.0f;
+                        static const REL::Relocation<void**> s_primaryWandController{ REL::Offset(0x5AC8EB0) };
+                        if (void* wand = *s_primaryWandController) {
+                            native_memory::tryReadField(wand, 0x28, wandLinear);
+                            native_memory::tryReadField(wand, 0x2C, wandAngular);
+                        }
+                        ROCK_LOG_INFO(Combat,
+                            "NATIVE-MELEE-TRACE actor-path partner: layer={} bodyId={} flags=0x{:X} npObj={} scene={} nativeRef=0x{:08X} teammate={} niFlags=0x{:08X} formFlags=0x{:08X} hostile={} atk9E8={} atkA90={} weapType={} wandLin={:.1f} wandAng={:.2f} cdMode={} cdCommon={:.3f} flag11={} cd908={:.3f} total={}",
+                            partnerLayer,
+                            otherId,
+                            bodyFlags,
+                            collisionObject ? "ok" : "null",
+                            sceneObject ? "ok" : "null",
+                            nativeRef ? nativeRef->GetFormID() : 0u,
+                            (targetNiFlags >> 26) & 1u,
+                            targetNiFlags,
+                            targetFormFlags,
+                            hostile ? "yes" : "no",
+                            attacker9E8,
+                            attackerA90,
+                            weaponType,
+                            wandLinear,
+                            wandAngular,
+                            cooldownMode,
+                            commonCooldown,
+                            eventFlag,
+                            cooldown,
+                            total);
+                    }
+                }
+            }
+
+            std::uint32_t detailCount = 0;
+            if (shouldEmitNativeMeleeTrace(s_detailCount, detailCount, 20, 500)) {
+                ROCK_LOG_INFO(Combat,
+                    "NATIVE-MELEE-TRACE VRMeleeImpact event: player={} ourIndex={} bodies=[{},{}] otherFilter=0x{:08X} flag11={} cooldown={:.3f} total={}",
+                    actorIsPlayer ? "yes" : "no",
+                    ourIndex,
+                    bodyIds[0],
+                    bodyIds[1],
+                    otherFilterInfo,
+                    eventFlag,
+                    cooldown,
+                    total);
+            }
+
+            const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                                   .count();
+            auto lastMs = s_lastSummaryMs.load(std::memory_order_acquire);
+            if (nowMs - lastMs >= 2000 &&
+                s_lastSummaryMs.compare_exchange_strong(lastMs, nowMs, std::memory_order_acq_rel)) {
+                char histogram[224];
+                std::size_t written = 0;
+                histogram[0] = '\0';
+                for (std::uint32_t layer = 0; layer < s_layerCounts.size(); ++layer) {
+                    const auto count = s_layerCounts[layer].load(std::memory_order_relaxed);
+                    if (count == 0) {
+                        continue;
+                    }
+                    const auto result = std::snprintf(
+                        histogram + written, sizeof(histogram) - written, "L%u:%u ", layer, count);
+                    if (result <= 0 || written + static_cast<std::size_t>(result) >= sizeof(histogram)) {
+                        break;
+                    }
+                    written += static_cast<std::size_t>(result);
+                }
+                ROCK_LOG_INFO(Combat,
+                    "NATIVE-MELEE-TRACE VRMeleeImpact summary: total={} flag11={} cooldownActive={} decodeFailed={} rockPartnerDropped={} actorPath[player={} npc={} refless={}] partnerLayers=[{}]",
+                    total,
+                    s_flaggedCount.load(std::memory_order_relaxed),
+                    s_cooldownActiveCount.load(std::memory_order_relaxed),
+                    s_decodeFailedCount.load(std::memory_order_relaxed),
+                    s_rockPartnerCount.load(std::memory_order_relaxed),
+                    s_actorPathPlayerCount.load(std::memory_order_relaxed),
+                    s_actorPathNpcCount.load(std::memory_order_relaxed),
+                    s_actorPathReflessCount.load(std::memory_order_relaxed),
+                    histogram);
+            }
+
+            return rockPartner;
+        }
+
         bool hookedWeaponSwingHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
         {
-            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::WeaponSwing, actor, side);
+            const auto input = makeNativeMeleePolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
 
             const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
             const bool decisionResult = applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input, decision);
-            return shouldCallNative ? (g_originalWeaponSwingHandler ? g_originalWeaponSwingHandler(handler, actor, side) : false) : decisionResult;
+            if (!shouldCallNative) {
+                return decisionResult;
+            }
+
+            const bool nativeResult = g_originalWeaponSwingHandler ? g_originalWeaponSwingHandler(handler, actor, side) : false;
+            if (input.actorIsPlayer && !input.suppressionActive) {
+                static std::atomic<std::uint32_t> traceCounter{ 0 };
+                std::uint32_t count = 0;
+                if (shouldEmitNativeMeleeTrace(traceCounter, count)) {
+                    ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE WeaponSwingHandler native result={} count={}", nativeResult ? "true" : "false", count);
+                }
+            }
+            return nativeResult;
         }
 
         bool hookedHitFrameHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
         {
-            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::HitFrame, actor, side);
+            const auto input = makeNativeMeleePolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::HitFrame, input);
 
             const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
             const bool decisionResult = applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::HitFrame, input, decision);
-            return shouldCallNative ? (g_originalHitFrameHandler ? g_originalHitFrameHandler(handler, actor, side) : false) : decisionResult;
+            if (!shouldCallNative) {
+                return decisionResult;
+            }
+
+            const bool nativeResult = g_originalHitFrameHandler ? g_originalHitFrameHandler(handler, actor, side) : false;
+            if (input.actorIsPlayer && !input.suppressionActive) {
+                static std::atomic<std::uint32_t> traceCounter{ 0 };
+                std::uint32_t count = 0;
+                if (shouldEmitNativeMeleeTrace(traceCounter, count)) {
+                    ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE HitFrameHandler native result={} count={}", nativeResult ? "true" : "false", count);
+                }
+            }
+            return nativeResult;
         }
 
         void hookedPlayerWeaponSwingCallback(RE::Actor* actor, std::uint32_t equipIndex)
@@ -841,13 +1237,21 @@ namespace rock
              * weapon-swing side effects, so full native suppression must stop it
              * at this player-only boundary without changing NPC swing behavior.
              */
-            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::WeaponSwing, actor, nullptr);
+            const auto input = makeNativeMeleePolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
             const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
 
             if (!shouldCallNative) {
                 applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input, decision);
                 return;
+            }
+
+            if (input.actorIsPlayer && !input.suppressionActive) {
+                static std::atomic<std::uint32_t> traceCounter{ 0 };
+                std::uint32_t count = 0;
+                if (shouldEmitNativeMeleeTrace(traceCounter, count)) {
+                    ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE PlayerWeaponSwingCallback equipIndex={} count={}", equipIndex, count);
+                }
             }
 
             if (g_originalPlayerWeaponSwingCallback) {
@@ -861,10 +1265,9 @@ namespace rock
              * FO4VR registers this callback while attaching native VR melee
              * collision to the first-person weapon nodes. It owns the native
              * contact-to-hit path, including target filtering, action dispatch,
-             * impulse direction, and melee cooldown writes. Full ROCK native
-             * suppression skips the player callback here so SCISSORS can own the
-             * replacement point-collision damage path without a duplicate native
-             * impact firing from the same swing.
+             * impulse direction, and melee cooldown writes. When complete ROCK
+             * suppression is active, skip the player callback here so no native
+             * impact or damage side effect survives the master switch.
              */
             const auto input = makeNativeMeleeImpactPolicyInput(actor);
             const auto decision = native_melee_suppression::evaluateNativeMeleeImpactSuppression(input);
@@ -876,6 +1279,17 @@ namespace rock
                     static_cast<void*>(actor),
                     contactEvent,
                     collisionEvent);
+                return;
+            }
+
+            /*
+             * Drop events whose partner is a ROCK-owned body before native
+             * sees them. The native melee event stream ignores the collision
+             * filter, so this hook is the only boundary that can keep ROCK's
+             * co-located colliders from consuming the melee hit and arming
+             * the cooldown. Undecodable events pass through unchanged.
+             */
+            if (traceVrMeleeImpactPartner(actor, contactEvent, collisionEvent, input.actorIsPlayer)) {
                 return;
             }
 
@@ -905,10 +1319,10 @@ namespace rock
             const auto policyInput = makeNativeMeleeInputGatePolicyInput(inputEvent);
             const auto decision = native_melee_suppression::evaluateNativeMeleeInputGate(policyInput);
 
-            if (g_rockConfig.rockNativeMeleeDebugLogging || decision.action != native_melee_suppression::NativeMeleeInputGateAction::CallNative) {
+            if (decision.action != native_melee_suppression::NativeMeleeInputGateAction::CallNative) {
                 static std::atomic<std::uint32_t> inputGateLogCounter{ 0 };
                 const auto count = inputGateLogCounter.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
+                if (count == 1 || count % 180 == 0) {
                     ROCK_LOG_DEBUG(Combat,
                         "Native melee AttackBlock input gate event={} decision={} reason={} count={}",
                         nativeMeleeInputEventName(inputEvent),
@@ -922,7 +1336,24 @@ namespace rock
                 return false;
             }
 
-            return g_originalAttackBlockShouldHandleEvent ? g_originalAttackBlockShouldHandleEvent(handler, event) : false;
+            const bool nativeResult = g_originalAttackBlockShouldHandleEvent ? g_originalAttackBlockShouldHandleEvent(handler, event) : false;
+            if (inputEvent == native_melee_suppression::NativeMeleeInputEvent::RightStick && !policyInput.suppressionActive) {
+                static std::atomic<std::uint32_t> acceptedCounter{ 0 };
+                static std::atomic<std::uint32_t> seenCounter{ 0 };
+                const auto seen = seenCounter.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (nativeResult) {
+                    std::uint32_t accepted = 0;
+                    if (shouldEmitNativeMeleeTrace(acceptedCounter, accepted)) {
+                        ROCK_LOG_INFO(Combat, "NATIVE-MELEE-TRACE AttackBlock RightStick accepted by native: accepted={} seen={}", accepted, seen);
+                    }
+                } else if (seen == 1 || seen % 300 == 0) {
+                    ROCK_LOG_INFO(Combat,
+                        "NATIVE-MELEE-TRACE AttackBlock RightStick pass-through: accepted={} seen={}",
+                        acceptedCounter.load(std::memory_order_relaxed),
+                        seen);
+                }
+            }
+            return nativeResult;
         }
 
         template <class HandlerT>
@@ -1002,6 +1433,43 @@ namespace rock
             original = nullptr;
             return true;
         }
+
+        /*
+         * NATIVE-MELEE-TRACE: with suppression disabled ROCK never reads the
+         * native VR melee velocity-gate settings, so a hostile runtime value
+         * (for example a leftover or third-party 1e9 threshold) is invisible.
+         * Dump the live values once per session while suppression is off.
+         */
+        void logNativeMeleeRuntimeGateSettingsOnce()
+        {
+            static std::atomic<bool> logged{ false };
+            if (logged.load(std::memory_order_acquire)) {
+                return;
+            }
+
+            auto* velocityCheck = RE::GetINISetting(native_melee_suppression::kVelocityCheckSetting);
+            auto* linearThreshold = RE::GetINISetting(native_melee_suppression::kLinearVelocityThresholdSetting);
+            auto* angularThreshold = RE::GetINISetting(native_melee_suppression::kAngularVelocityThresholdSetting);
+            if (!velocityCheck && !linearThreshold && !angularThreshold) {
+                return;
+            }
+            logged.store(true, std::memory_order_release);
+
+            const char* velocityCheckText = "unresolved";
+            if (velocityCheck) {
+                velocityCheckText = velocityCheck->GetType() == RE::Setting::SETTING_TYPE::kBinary ?
+                    (velocityCheck->GetBinary() ? "true" : "false") :
+                    "wrong-type";
+            }
+            ROCK_LOG_INFO(Combat,
+                "NATIVE-MELEE-TRACE runtime gate settings while suppression disabled: {}={} {}={} {}={}",
+                native_melee_suppression::kVelocityCheckSetting,
+                velocityCheckText,
+                native_melee_suppression::kLinearVelocityThresholdSetting,
+                linearThreshold && linearThreshold->GetType() == RE::Setting::SETTING_TYPE::kFloat ? linearThreshold->GetFloat() : -1.0f,
+                native_melee_suppression::kAngularVelocityThresholdSetting,
+                angularThreshold && angularThreshold->GetType() == RE::Setting::SETTING_TYPE::kFloat ? angularThreshold->GetFloat() : -1.0f);
+        }
     }
 
     bool validateNativeMeleeSuppressionHookTargets()
@@ -1021,29 +1489,15 @@ namespace rock
         return swingValid && hitFrameValid && attackBlockValid && playerSwingCallbackValid && vrMeleeImpactValid;
     }
 
-    void setNativeMeleePhysicalSwingActive(bool isLeft, bool active)
+    void advanceNativeRuntimeSettingFrameClock()
     {
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-        const auto expiresAtFrame = active ? (currentFrame + kNativeMeleePhysicalSwingLeaseFrames) : 0;
-        g_nativeMeleePhysicalSwingExpiresAtFrame[isLeft ? 1 : 0].store(expiresAtFrame, std::memory_order_release);
+        g_nativeRuntimeSettingFrameClock.fetch_add(1, std::memory_order_acq_rel);
+        reportProxyContactTrace();
     }
 
-    bool isNativeMeleePhysicalSwingActive(bool isLeft)
+    bool isNativeMeleeSuppressionActive()
     {
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-        return native_melee_suppression::isPhysicalSwingLeaseActive(
-            currentFrame, g_nativeMeleePhysicalSwingExpiresAtFrame[isLeft ? 1 : 0].load(std::memory_order_acquire));
-    }
-
-    void advanceNativeMeleeFrameClock()
-    {
-        g_nativeMeleeFrameClock.fetch_add(1, std::memory_order_acq_rel);
-    }
-
-    void clearNativeMeleePhysicalSwingLeases()
-    {
-        g_nativeMeleePhysicalSwingExpiresAtFrame[0].store(0, std::memory_order_release);
-        g_nativeMeleePhysicalSwingExpiresAtFrame[1].store(0, std::memory_order_release);
+        return g_nativeMeleeSuppressionActive.load(std::memory_order_acquire);
     }
 
     void enforceNativeMeleeRuntimeSuppression(bool forceCheck)
@@ -1056,22 +1510,53 @@ namespace rock
          * bypasses the gate on some builds and causes cooldown-paced false melee
          * swings.
          */
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-        if (!shouldSuppressNativeVrMeleeVelocity()) {
+        const native_melee_suppression::NativeMeleeRuntimeSettingPolicyInput input{
+            .hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire),
+            .suppressionEnabled = !g_rockConfig.rockEnableVanillaMelee,
+        };
+        const bool shouldSuppress = native_melee_suppression::shouldSuppressNativeMeleeRuntimeSettings(input);
+        const bool shouldRestore = native_melee_suppression::shouldRestoreNativeMeleeRuntimeSettings(nativeMeleeRuntimeSuppressionApplied(), input);
+        const bool requestChanged = g_nativeMeleeRuntimeSuppressionRequested != shouldSuppress;
+        g_nativeMeleeRuntimeSuppressionRequested = shouldSuppress;
+        g_nativeMeleeSuppressionActive.store(shouldSuppress, std::memory_order_release);
+        if (!shouldSuppress && !shouldRestore) {
+            if (input.hooksInstalled) {
+                logNativeMeleeRuntimeGateSettingsOnce();
+            }
             return;
         }
 
+        const auto currentFrame = g_nativeRuntimeSettingFrameClock.load(std::memory_order_acquire);
         const auto nextCheckFrame = g_nativeMeleeRuntimeSettingNextCheckFrame.load(std::memory_order_acquire);
-        if (!forceCheck && currentFrame < nextCheckFrame) {
+        if (!forceCheck && !requestChanged && currentFrame < nextCheckFrame) {
             return;
         }
         g_nativeMeleeRuntimeSettingNextCheckFrame.store(currentFrame + kNativeMeleeRuntimeSettingCheckIntervalFrames, std::memory_order_release);
 
-        enforceNativeMeleeBinarySetting(g_nativeMeleeVelocityCheckState, kNativeMeleeVelocityCheckSetting, true, "velocity gate");
-        enforceNativeMeleeFloatMinimumSetting(
-            g_nativeMeleeLinearThresholdState, kNativeMeleeLinearVelocityThresholdSetting, kNativeMeleeSuppressedVelocityThreshold, "linear threshold");
-        enforceNativeMeleeFloatMinimumSetting(
-            g_nativeMeleeAngularThresholdState, kNativeMeleeAngularVelocityThresholdSetting, kNativeMeleeSuppressedVelocityThreshold, "angular threshold");
+        if (shouldSuppress) {
+            enforceNativeMeleeBinarySetting(
+                g_nativeMeleeVelocityCheckState, native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
+            enforceNativeMeleeFloatMinimumSetting(g_nativeMeleeLinearThresholdState,
+                native_melee_suppression::kLinearVelocityThresholdSetting,
+                native_melee_suppression::kSuppressedVelocityThreshold,
+                "linear threshold");
+            enforceNativeMeleeFloatMinimumSetting(g_nativeMeleeAngularThresholdState,
+                native_melee_suppression::kAngularVelocityThresholdSetting,
+                native_melee_suppression::kSuppressedVelocityThreshold,
+                "angular threshold");
+            return;
+        }
+
+        restoreNativeMeleeBinarySetting(
+            g_nativeMeleeVelocityCheckState, native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
+        restoreNativeMeleeFloatSetting(g_nativeMeleeLinearThresholdState,
+            native_melee_suppression::kLinearVelocityThresholdSetting,
+            native_melee_suppression::kSuppressedVelocityThreshold,
+            "linear threshold");
+        restoreNativeMeleeFloatSetting(g_nativeMeleeAngularThresholdState,
+            native_melee_suppression::kAngularVelocityThresholdSetting,
+            native_melee_suppression::kSuppressedVelocityThreshold,
+            "angular threshold");
     }
 
     void enforceNativeGrabHapticRuntimeSuppression(bool forceCheck)
@@ -1083,8 +1568,8 @@ namespace rock
          * through its feedback pipeline instead of through native rollover UI.
          */
         const native_grab_haptic_suppression::RuntimeInput input{
-            .rockEnabled = g_rockConfig.rockEnabled,
-            .suppressionEnabled = g_rockConfig.rockSuppressNativeGrabHoverHaptics,
+            .rockEnabled = true,
+            .suppressionEnabled = native_grab_haptic_suppression::kSuppressionEnabled,
         };
         const bool shouldSuppress = native_grab_haptic_suppression::shouldSuppressNativeGrabHoverHaptics(input);
         const bool shouldRestore = native_grab_haptic_suppression::shouldRestoreNativeGrabHoverHaptics(nativeGrabHapticSuppressionApplied(), input);
@@ -1092,7 +1577,7 @@ namespace rock
             return;
         }
 
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
+        const auto currentFrame = g_nativeRuntimeSettingFrameClock.load(std::memory_order_acquire);
         const auto nextCheckFrame = g_nativeGrabHapticRuntimeSettingNextCheckFrame.load(std::memory_order_acquire);
         if (!forceCheck && currentFrame < nextCheckFrame) {
             return;
@@ -1266,10 +1751,30 @@ namespace rock
         return cell ? cell->GetbhkWorld() : nullptr;
     }
 
-    bool isMovableStaticPlayerContactTarget(RE::bhkWorld* bhkWorld, RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t layer)
+    struct PlayerContactTargetIdentity
     {
-        if (!bhkWorld || !world || !collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer)) {
-            return false;
+        bool isMovableStatic = false;
+        bool isCar = false;
+        bool isLooseWeapon = false;
+    };
+
+    PlayerContactTargetIdentity resolvePlayerContactTargetIdentity(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* world,
+        RE::hknpBodyId bodyId,
+        std::uint32_t layer)
+    {
+        if (layer == collision_layer_policy::FO4_LAYER_WEAPON) {
+            return PlayerContactTargetIdentity{
+                .isLooseWeapon = native_player_collision::isLooseWeaponBody(
+                    havok_runtime::snapshotBody(world, bodyId)),
+            };
+        }
+        const bool requiresFormIdentity =
+            collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
+            collision_layer_policy::isDynamicWorldCarLayer(layer);
+        if (!bhkWorld || !world || !requiresFormIdentity) {
+            return {};
         }
 
         /*
@@ -1281,7 +1786,13 @@ namespace rock
          */
         auto* ref = resolveBodyToRef(bhkWorld, world, bodyId);
         auto* baseForm = ref ? ref->GetObjectReference() : nullptr;
-        return baseForm && baseForm->Is(RE::ENUM_FORM_ID::kMSTT);
+        if (!baseForm || !baseForm->Is(RE::ENUM_FORM_ID::kMSTT)) {
+            return {};
+        }
+        return PlayerContactTargetIdentity{
+            .isMovableStatic = true,
+            .isCar = fo4vr::isExplodableCar(baseForm),
+        };
     }
 
     collision_layer_policy::PlayerCharacterControllerContactPolicyDecision evaluatePlayerControllerTargetBody(
@@ -1300,14 +1811,43 @@ namespace rock
         }
 
         const std::uint32_t layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+        const auto targetIdentity = resolvePlayerContactTargetIdentity(bhkWorld, world, bodyId, layer);
         return collision_layer_policy::evaluatePlayerCharacterControllerContact(
             collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
                 .filterEnabled = true,
                 .playerController = true,
                 .targetLayerKnown = true,
                 .targetLayer = layer,
-                .targetIsMovableStatic = isMovableStaticPlayerContactTarget(bhkWorld, world, bodyId, layer),
+                .targetIsMovableStatic = targetIdentity.isMovableStatic,
+                .targetIsCar = targetIdentity.isCar,
+                .targetIsLooseWeapon = targetIdentity.isLooseWeapon,
             });
+    }
+
+    bool isPlayerProxyListener(void* listener, void* proxy, void* playerController)
+    {
+        if (!native_player_collision::proxyListenerMatchesPlayer(
+                reinterpret_cast<std::uintptr_t>(listener), reinterpret_cast<std::uintptr_t>(playerController))) {
+            return false;
+        }
+        // Keep the callback's listener pointer unchanged when chaining native.
+        // The adjusted interface is used only for player identity and checked
+        // against both vtables and the callback's live hknpCharacterProxy.
+        std::uintptr_t listenerVtable = 0, controllerVtable = 0;
+        void* ownedProxy = nullptr;
+        const bool listenerValid = native_memory::tryReadField(listener, 0, listenerVtable) &&
+            listenerVtable == REL::Offset(0x2E892B8).address();
+        const bool controllerValid = listenerValid && native_memory::tryReadField(playerController, 0, controllerVtable) &&
+            controllerVtable == REL::Offset(0x2E89328).address();
+        const bool proxyValid = controllerValid && native_memory::tryReadField(playerController, 0x470, ownedProxy) &&
+            ownedProxy == proxy && proxy;
+        if (!proxyValid) {
+            g_proxyContactTrace.failedProofStage.store(!listenerValid ? 1 : !controllerValid ? 2 : 3, std::memory_order_relaxed);
+            g_proxyContactTrace.identityFailures.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
+        g_proxyContactTrace.playerCallbacks.fetch_add(1, std::memory_order_relaxed);
+        return true;
     }
 
     void hookedHandleBumpedCharacter(void* controller, void* bumpedCC, void* contactInfo)
@@ -1498,6 +2038,7 @@ namespace rock
             }
 
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
+            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return rollbackOk;
         };
 
@@ -1517,6 +2058,7 @@ namespace rock
         if (!validateNativeMeleeSuppressionHookTargets()) {
             ROCK_LOG_ERROR(Init, "Native melee suppression hook validation failed; install deferred");
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
+            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
@@ -1561,38 +2103,39 @@ namespace rock
                 vrMeleeImpactInstalled ? "yes" : "no");
             rollbackNativeMeleeSuppressionHooks();
             g_nativeMeleeSuppressionHooksInstalled.store(false, std::memory_order_release);
+            g_nativeMeleeSuppressionActive.store(false, std::memory_order_release);
             return false;
         }
 
         g_nativeMeleeSuppressionHooksInstalled.store(true, std::memory_order_release);
-        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} playerSwingCallback={} vrMeleeImpact={} enabled={} full={} suppressSwing={} suppressHitFrame={}",
+        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} playerSwingCallback={} vrMeleeImpact={} requested={}",
             weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no", attackBlockInstalled ? "yes" : "no",
-            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressionEnabled ? "yes" : "no",
-            g_rockConfig.rockNativeMeleeFullSuppression ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressWeaponSwing ? "yes" : "no",
-            g_rockConfig.rockNativeMeleeSuppressHitFrame ? "yes" : "no");
+            playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no",
+            g_rockConfig.rockEnableVanillaMelee ? "no" : "yes");
         return weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
     }
 
     using ProcessConstraints_t = void (*)(void*, void*, void*, void*);
     static ProcessConstraints_t g_originalProcessConstraints = nullptr;
 
-    void hookedProcessConstraintsCallback(void* controller, void* charProxy, void* manifold, void* simplexInput)
+    void hookedProcessConstraintsCallback(void* listener, void* charProxy, void* manifold, void* simplexInput)
     {
         bool originalAttempted = false;
         if (!PhysicsInteraction::s_hooksEnabled.load(std::memory_order_acquire)) {
             if (g_originalProcessConstraints) {
                 originalAttempted = true;
-                g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
             }
             return;
         }
 
         __try {
             const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
-            const bool playerController = playerControllerFilterEnabled && isPlayerCharacterController(controller);
+            void* playerControllerPointer = resolvePlayerCharacterController();
+            const bool playerController = isPlayerProxyListener(listener, charProxy, playerControllerPointer);
             RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
             RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
-            const bool playerControllerFilterActive = playerController && playerHknpWorld;
+            const bool playerControllerFilterActive = playerControllerFilterEnabled && playerController && playerHknpWorld;
 
             auto* pi = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
             const bool piReady = pi && pi->isInitialized();
@@ -1604,30 +2147,23 @@ namespace rock
                 .holdingHeldObject = rightHolding || leftHolding,
                 .diagnosticsEnabled = diagnosticsEnabled,
             });
-            const bool heldFilterActive = piReady && contactPolicy.mayFilterBeforeOriginal;
+            const bool heldFilterActive = playerController && piReady && contactPolicy.mayFilterBeforeOriginal;
 
             if (!heldFilterActive && !playerControllerFilterActive) {
                 if (g_originalProcessConstraints) {
                     originalAttempted = true;
-                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                    g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
                 }
                 return;
             }
 
             const auto contactBuffers = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
             if (!contactBuffers.valid) {
-                if (playerControllerFilterActive && std::string_view(contactBuffers.reason) == "missingManifoldEntries") {
-                    const auto clearResult = held_grab_cc_policy::clearGeneratedConstraintOnlyContacts(contactBuffers);
-                    if (clearResult.valid) {
-                        ROCK_LOG_SAMPLE_DEBUG(CC,
-                            g_rockConfig.rockLogSampleMilliseconds,
-                            "Cleared {} player character-controller constraint-only contacts before original listener reason={} heldFilter={} playerObjectFilter={}",
-                            clearResult.removedPairCount,
-                            clearResult.reason,
-                            heldFilterActive ? "on" : "off",
-                            playerControllerFilterActive ? "on" : "off");
-                    }
+                if (std::string_view(contactBuffers.reason) != "emptyContactBuffers") {
+                    g_proxyContactTrace.invalidBuffers.fetch_add(1, std::memory_order_relaxed);
                 }
+                // Without body identities no targeted decision is possible.
+                // Keep native support and attack constraints intact.
                 if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,
@@ -1640,7 +2176,7 @@ namespace rock
                 }
                 if (g_originalProcessConstraints) {
                     originalAttempted = true;
-                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                    g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
                 }
                 return;
             }
@@ -1649,7 +2185,10 @@ namespace rock
             int removedPlayerObjectPairs = 0;
             int removedPlayerNonSupportPairs = 0;
             int removedPlayerMovableStaticPairs = 0;
+            int removedLooseWeaponPairs = 0;
+            int preservedAttackPairs = 0;
             int preservedPlayerSupportPairs = 0;
+            int preservedPlayerCarPairs = 0;
             int preservedUnknownTargetPairs = 0;
             const auto filterResult = held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
                 if (heldFilterActive) {
@@ -1672,13 +2211,19 @@ namespace rock
                         ++removedPlayerObjectPairs;
                         if (std::string_view(decision.reason) == "movableStaticSupportLayer") {
                             ++removedPlayerMovableStaticPairs;
+                        } else if (std::string_view(decision.reason) == "looseWeapon") {
+                            ++removedLooseWeaponPairs;
                         } else {
                             ++removedPlayerNonSupportPairs;
                         }
                         return true;
                     }
-                    if (std::string_view(decision.reason) == "supportLayer") {
+                    if (std::string_view(decision.reason) == "nativeAttack") {
+                        ++preservedAttackPairs;
+                    } else if (std::string_view(decision.reason) == "supportLayer") {
                         ++preservedPlayerSupportPairs;
+                    } else if (std::string_view(decision.reason) == "carCollision") {
+                        ++preservedPlayerCarPairs;
                     } else if (std::string_view(decision.reason) == "unknownTargetLayer") {
                         ++preservedUnknownTargetPairs;
                     }
@@ -1686,11 +2231,20 @@ namespace rock
                 return false;
             });
 
+            if (filterResult.valid) {
+                g_proxyContactTrace.removed.fetch_add(filterResult.removedPairCount, std::memory_order_relaxed);
+                g_proxyContactTrace.movableStatics.fetch_add(removedPlayerMovableStaticPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.looseWeapons.fetch_add(removedLooseWeaponPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.held.fetch_add(removedHeldPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.supportKept.fetch_add(preservedPlayerSupportPairs + preservedPlayerCarPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.attacksKept.fetch_add(preservedAttackPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.unknownKept.fetch_add(preservedUnknownTargetPairs, std::memory_order_relaxed);
+            }
             if (diagnosticsEnabled && filterResult.valid) {
                 if (filterResult.removedPairCount > 0) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerMovableStaticRemoved={} playerSupportPreserved={} playerUnknownPreserved={}",
+                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerMovableStaticRemoved={} playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
                         filterResult.removedPairCount,
                         filterResult.keptPairCount,
                         filterResult.originalPairCount,
@@ -1699,21 +2253,23 @@ namespace rock
                         removedPlayerNonSupportPairs,
                         removedPlayerMovableStaticPairs,
                         preservedPlayerSupportPairs,
+                        preservedPlayerCarPairs,
                         preservedUnknownTargetPairs);
                 } else if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Character-controller pre-filter kept native contacts originalPairs={} reason={} playerSupportPreserved={} playerUnknownPreserved={}",
+                        "Character-controller pre-filter kept native contacts originalPairs={} reason={} playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
                         filterResult.originalPairCount,
                         filterResult.reason,
                         preservedPlayerSupportPairs,
+                        preservedPlayerCarPairs,
                         preservedUnknownTargetPairs);
                 }
             }
 
             if (g_originalProcessConstraints) {
                 originalAttempted = true;
-                g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             static int sehCount = 0;
@@ -1723,7 +2279,7 @@ namespace rock
             if (!originalAttempted && g_originalProcessConstraints) {
                 __try {
                     originalAttempted = true;
-                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                    g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
                 }
             }

@@ -78,24 +78,8 @@ int main()
     ok &= expectBody("weighted dead actor uses bone owner", weightedDeadActor.bodyId, 202u);
     ok &= expectSource("weighted dead actor source", weightedDeadActor.source, ResolutionSource::WeightedSkinOwner);
     ok &= expectTrue("weighted dead actor records skin use", weightedDeadActor.usedSkinInfluences);
-    ok &= expectTrue("dead actor relaxes strict authority", weightedDeadActor.relaxedMechanicalAuthority);
+    ok &= expectTrue("verified dead actor owner allows relaxed pocket support", weightedDeadActor.relaxedMechanicalAuthority);
     ok &= expectReason("weighted dead actor reason", weightedDeadActor.reason, "weightedSkinOwner");
-
-    const auto authoredWins = resolvePrimaryBody(ResolutionInput{
-        .targetKind = Kind::DeadActorBody,
-        .authoredBodyId = 404u,
-        .surfaceOwnerBodyId = 202u,
-        .selectedBodyId = 101u,
-        .nearestBodyId = 303u,
-        .authoredUsable = true,
-        .surfaceOwnerUsable = true,
-        .selectedUsable = true,
-        .nearestUsable = true,
-        .surfaceIsSkinned = true,
-        .hasSkinInfluences = true,
-    });
-    ok &= expectBody("authored node wins over skin owner", authoredWins.bodyId, 404u);
-    ok &= expectSource("authored node source", authoredWins.source, ResolutionSource::AuthoredNode);
 
     const auto positionOnlySkinned = resolvePrimaryBody(ResolutionInput{
         .targetKind = Kind::DeadActorBody,
@@ -134,5 +118,14 @@ int main()
     ok &= expectBody("nearest fallback body", nearestFallback.bodyId, 303u);
     ok &= expectSource("nearest fallback source", nearestFallback.source, ResolutionSource::NearestAccepted);
 
+    const auto ownerlessCorpse = resolvePrimaryBody(ResolutionInput{
+        .targetKind = Kind::DeadActorBody,
+        .selectedBodyId = 101u,
+        .nearestBodyId = 303u,
+        .selectedUsable = true,
+        .nearestUsable = true,
+        .surfaceIsSkinned = true,
+    });
+    ok &= expectBody("corpse cannot substitute selected or nearest body for surface owner", ownerlessCorpse.bodyId, kInvalidBodyId);
     return ok ? 0 : 1;
 }

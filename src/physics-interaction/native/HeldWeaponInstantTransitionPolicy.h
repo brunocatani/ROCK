@@ -78,7 +78,7 @@ namespace rock::held_weapon_instant_transition_policy
         return count;
     }
 
-    [[nodiscard]] inline constexpr bool isValidCompletionTrace(const ActionTrace& trace) noexcept
+    [[nodiscard]] inline constexpr bool isValidEquipActionTrace(const ActionTrace& trace) noexcept
     {
         if (trace.playerMismatch || trace.unexpectedCaller || trace.nestedScope ||
             trace.overflow || trace.count == 0 ||
@@ -97,11 +97,5 @@ namespace rock::held_weapon_instant_transition_policy
             }
         }
         return true;
-    }
-
-    [[nodiscard]] inline constexpr bool isStableWeaponState(
-        const std::uint32_t nativeWeaponState) noexcept
-    {
-        return nativeWeaponState == 0 || nativeWeaponState == 3;
     }
 }

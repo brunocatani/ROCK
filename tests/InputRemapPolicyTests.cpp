@@ -1,12 +1,16 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
+#include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
+#include "physics-interaction/input/VatsGrenadeGesturePolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
+#include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 
 #include <cstdio>
 
 namespace
 {
     namespace manual = rock::manual_scope_input_policy;
+    namespace nativeVats = rock::native_vats_input_suppression_policy;
     namespace pipboyGesture = rock::pipboy_pause_gesture_policy;
 
     bool expectTrue(const char* label, bool value)
@@ -48,18 +52,125 @@ namespace
         std::printf("%s expected state %u, got %u\n", label, static_cast<unsigned>(expected), static_cast<unsigned>(actual));
         return false;
     }
+
+
 }
 
-int main()
+static bool testInputRouting()
 {
     using namespace rock::input_remap_policy;
-
     bool ok = true;
+    ok &= expectTrue("consumer owns gameplay input", providerSuppressionApplies(false, true));
+    ok &= expectFalse("native menu bypasses stale consumer lease", providerSuppressionApplies(true, true));
+    ok &= expectFalse("no lease cannot suppress gameplay", providerSuppressionApplies(false, false));
+    ok &= expectFalse("native menu without lease remains native", providerSuppressionApplies(true, false));
+
+    const auto gripMask = buttonMask(kGrabButtonId), triggerMask = buttonMask(33);
+    const auto customChord = buttonMask(7) | buttonMask(32);
+    ok &= expectTrue("custom chord qualifies", buttonChordHeld(true, customChord, 0, customChord));
+    ok &= expectTrue("single-button binding qualifies", buttonChordHeld(true, buttonMask(7), 0, buttonMask(7)));
+    ok &= expectFalse("partial custom chord remains native", buttonChordHeld(true, buttonMask(7), 0, customChord));
+    ok &= expectFalse("context-held member cannot qualify", buttonChordHeld(true, customChord, buttonMask(32), customChord));
+    ok &= expectFalse("unavailable custom chord remains native", buttonChordHeld(false, customChord, 0, customChord));
+    ok &= expectFalse("empty binding cannot reserve input", buttonChordHeld(true, customChord, 0, 0));
+    ok &= expectFalse("trigger alone remains native with a chord reservation", triggerGripChordHeld(true, triggerMask, 0));
+    ok &= expectFalse("grab alone remains native with a chord reservation", triggerGripChordHeld(true, gripMask, 0));
+    ok &= expectFalse("B cannot activate the trigger/grab reservation", triggerGripChordHeld(true, buttonMask(1), 0));
+    ok &= expectTrue("complete chord is recognized on its first raw sample", triggerGripChordHeld(true, triggerMask | gripMask, 0));
+    ok &= expectFalse("unavailable input cannot capture a chord", triggerGripChordHeld(false, triggerMask | gripMask, 0));
+    ok &= expectFalse("a grab held through a menu cannot capture a chord", triggerGripChordHeld(true, triggerMask | gripMask, gripMask));
+    ok &= expectFalse("a trigger held through a menu cannot capture a chord", triggerGripChordHeld(true, triggerMask | gripMask, triggerMask));
+    auto blockedGrab = suppressGrabInput({.grabHeld=true,.grabPressed=true}, true, true, false);
+    ok &= expectFalse("wheel chord cannot acquire with an empty hand", blockedGrab.grabHeld || blockedGrab.grabPressed);
+    blockedGrab = suppressGrabInput({.grabHeld=true,.grabPressed=true}, true, true, true);
+    ok &= expectTrue("wheel chord retains the existing weapon grip", blockedGrab.grabHeld);
+    ok &= expectFalse("wheel chord cannot toggle-detach the weapon", blockedGrab.grabPressed);
+    blockedGrab = suppressGrabInput({.grabReleased=true}, true, true, true);
+    ok &= expectTrue("wheel release retains existing grip during input drain", blockedGrab.grabHeld);
+    ok &= expectFalse("wheel release cannot release the weapon", blockedGrab.grabReleased);
+
+    namespace grenade = rock::vats_grenade_gesture_policy;
+    grenade::RuntimeState grenadeState{};
+    grenade::Input grenadeInput{ .pressed = true, .held = true };
+    ok &= expectFalse("grenade mode leaves B press pending", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 0.1f };
+    ok &= expectFalse("grenade mode leaves short B tap native", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.25f };
+    ok &= expectTrue("grenade mode draws at hold threshold", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput.heldSeconds = 2.0f;
+    ok &= expectFalse("continued B hold cannot draw a second grenade", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 2.0f };
+    ok &= expectFalse("release after draw cannot repeat it", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .released = true, .heldSeconds = 0.3f };
+    ok &= expectTrue("late release observes a missed threshold exactly once", grenade::update(grenadeState, grenadeInput).requestGrenade);
+
+    // A wheel claim, native menu or provider loss cancels a pending gesture.
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .eligible = false, .held = true, .heldSeconds = 0.1f };
+    ok &= expectFalse("wheel readiness cancels pending grenade mode", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .held = true, .heldSeconds = 0.5f };
+    ok &= expectFalse("claim expiry cannot reuse held B", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 0.6f };
+    ok &= expectFalse("claim expiry cannot draw on old release", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .pressed = true, .held = true };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.25f };
+    ok &= expectTrue("fresh B hold draws after claim release", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenade::reset(grenadeState);
+    grenadeInput = { .held = true, .heldSeconds = 1.0f };
+    ok &= expectFalse("B already held on load cannot draw", grenade::update(grenadeState, grenadeInput).requestGrenade);
+    grenadeInput = { .eligible = false, .pressed = true, .held = true, .heldSeconds = 0.4f };
+    ok &= expectFalse("disabled grenade mode cannot draw even on a late press", grenade::update(grenadeState, grenadeInput).requestGrenade);
+
+    grenade::reset(grenadeState);
+    grenadeInput = { .pressed = true, .held = true, .immersiveGrenades = false };
+    ok &= expectFalse("vanilla fallback waits for the hold", grenade::update(grenadeState, grenadeInput).requestNativeThrow);
+    grenadeInput = { .released = true, .heldSeconds = 0.1f, .immersiveGrenades = false };
+    auto nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectFalse("vanilla short tap cannot prime", nativeThrow.requestNativeThrow);
+    ok &= expectFalse("vanilla short tap cannot throw", nativeThrow.releaseNativeThrow);
+    grenadeInput = { .pressed = true, .held = true, .immersiveGrenades = false };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.3f, .holdSeconds = 0.3f, .immersiveGrenades = false };
+    nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectTrue("vanilla hold primes the native throw", nativeThrow.requestNativeThrow);
+    ok &= expectFalse("vanilla hold does not also draw a loose grenade", nativeThrow.requestGrenade);
+    ok &= expectFalse("continued vanilla hold cannot reprime", grenade::update(grenadeState, grenadeInput).requestNativeThrow);
+    grenadeInput = { .released = true, .heldSeconds = 0.5f, .immersiveGrenades = false };
+    ok &= expectTrue("vanilla physical release launches once", grenade::update(grenadeState, grenadeInput).releaseNativeThrow);
+    ok &= expectFalse("repeated vanilla release cannot launch", grenade::update(grenadeState, grenadeInput).releaseNativeThrow);
+
+    grenadeInput = { .pressed = true, .held = true, .heldSeconds = 0.4f, .immersiveGrenades = false };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .eligible = false, .held = true, .immersiveGrenades = false };
+    nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectTrue("PALM takeover cancels a primed native throw", nativeThrow.cancelNativeThrow);
+    ok &= expectFalse("PALM takeover cannot launch", nativeThrow.releaseNativeThrow);
+    grenadeInput = { .held = true, .heldSeconds = 0.8f, .immersiveGrenades = false };
+    ok &= expectFalse("PALM loss during a hold cannot prime fallback", grenade::update(grenadeState, grenadeInput).requestNativeThrow);
+    grenadeInput = { .released = true, .heldSeconds = 0.9f, .immersiveGrenades = false };
+    ok &= expectFalse("cancelled native gesture cannot throw on release", grenade::update(grenadeState, grenadeInput).releaseNativeThrow);
+
+    grenadeInput = { .pressed = true, .held = true, .heldSeconds = 0.4f, .immersiveGrenades = false };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .held = true, .heldSeconds = 0.5f };
+    nativeThrow = grenade::update(grenadeState, grenadeInput);
+    ok &= expectTrue("hot reload cancels a primed native throw", nativeThrow.cancelNativeThrow);
+    ok &= expectFalse("hot reload cannot draw during an old native hold", nativeThrow.requestGrenade);
+    grenadeInput = { .released = true, .heldSeconds = 0.6f };
+    (void)grenade::update(grenadeState, grenadeInput);
+    grenadeInput = { .pressed = true, .held = true, .heldSeconds = 0.4f };
+    ok &= expectTrue("fresh hold uses immersive mode after reload", grenade::update(grenadeState, grenadeInput).requestGrenade);
 
     Settings settings{};
-    settings.enabled = true;
 
-    ok &= expectTrue("normal grab button id is accepted", isAllowedGrabButtonId(2));
+    ok &= expectTrue("fixed grab button is OpenVR grip", kGrabButtonId == 2);
+    ok &= expectTrue("fixed grab button id is accepted", isAllowedGrabButtonId(kGrabButtonId));
     ok &= expectFalse("SteamVR trigger button id is reserved and rejected for grab", isAllowedGrabButtonId(kOpenVrSteamVrTriggerButtonId));
 
     settings.grabButtonId = kOpenVrSteamVrTriggerButtonId;
@@ -73,7 +184,7 @@ int main()
                                             },
         settings);
     ok &= expectFalse("SteamVR trigger does not act as ROCK grab input", triggerGrabDecision.grabPressed);
-    settings.grabButtonId = 2;
+    settings.grabButtonId = kGrabButtonId;
 
     NativeActionSuppressionInput base{
         .remapEnabled = true,
@@ -111,10 +222,45 @@ int main()
     auto favorites = base;
     favorites.weaponDrawn = true;
     ok &= expectTrue("WandThumbClick suppresses native favorites even with weapon drawn", shouldSuppressNativeFavoritesAction(favorites));
+    auto mandatoryFavorites = favorites;
+    mandatoryFavorites.remapEnabled = false;
+    mandatoryFavorites.suppressionEnabled = false;
+    mandatoryFavorites.gameplayInputAllowed = false;
+    mandatoryFavorites.menuInputActive = true;
+    ok &= expectTrue("native favorites suppression cannot be disabled by optional input gates", shouldSuppressNativeFavoritesAction(mandatoryFavorites));
+    mandatoryFavorites.eventMatched = false;
+    ok &= expectFalse("mandatory favorites suppression leaves unrelated events untouched", shouldSuppressNativeFavoritesAction(mandatoryFavorites));
 
     auto meleeThrow = base;
     meleeThrow.weaponDrawn = true;
-    ok &= expectTrue("WandGrip suppresses native melee throw even with weapon drawn", shouldSuppressNativeMeleeThrowAction(meleeThrow));
+    ok &= expectTrue("non-melee WandGrip suppresses native melee throw even with weapon drawn", shouldSuppressNativeMeleeThrowAction(meleeThrow));
+
+    auto nativeHolsteredMelee = base;
+    nativeHolsteredMelee.realMeleeWeaponEquipped = true;
+    ok &= expectTrue("native-mode real melee still blocks holstered grip ready handling", shouldSuppressNativeGripReadyAction(nativeHolsteredMelee));
+    ok &= expectTrue("native-mode real melee still blocks holstered trigger handling", shouldSuppressNativeTriggerAction(nativeHolsteredMelee));
+    ok &= expectTrue("native-mode real melee still blocks native grip grenade handling", shouldSuppressNativeMeleeThrowAction(nativeHolsteredMelee));
+
+    auto nativeDrawnMelee = drawnGrip;
+    nativeDrawnMelee.realMeleeWeaponEquipped = true;
+    ok &= expectFalse("native-mode real melee keeps drawn grip reload handling", shouldSuppressNativeGripReloadAction(nativeDrawnMelee));
+    ok &= expectFalse("native-mode real melee keeps drawn trigger handling", shouldSuppressNativeTriggerAction(nativeDrawnMelee));
+    ok &= expectTrue("ROCK grab always blocks native grip grenade handling", shouldSuppressNativeMeleeThrowAction(nativeDrawnMelee));
+
+    auto shoulderStashedMeleeTransition = nativeDrawnMelee;
+    shoulderStashedMeleeTransition.equippedWeaponShoulderSheathActive = true;
+    ok &= expectTrue("shoulder-stashed melee transition blocks native grip ready handling", shouldSuppressNativeGripReadyAction(shoulderStashedMeleeTransition));
+    ok &= expectTrue("shoulder-stashed melee transition blocks native trigger handling", shouldSuppressNativeTriggerAction(shoulderStashedMeleeTransition));
+    ok &= expectTrue("shoulder-stashed melee transition blocks native grip reload handling", shouldSuppressNativeGripReloadAction(shoulderStashedMeleeTransition));
+
+    auto suppressedHolsteredMelee = nativeHolsteredMelee;
+    suppressedHolsteredMelee.nativeMeleeSuppressionActive = true;
+    ok &= expectTrue("suppressed real melee claims holstered grip ready handling", shouldSuppressNativeGripReadyAction(suppressedHolsteredMelee));
+
+    auto suppressedDrawnMelee = nativeDrawnMelee;
+    suppressedDrawnMelee.nativeMeleeSuppressionActive = true;
+    ok &= expectTrue("suppressed real melee claims drawn grip reload handling", shouldSuppressNativeGripReloadAction(suppressedDrawnMelee));
+    ok &= expectTrue("suppressed real melee claims melee throw handling", shouldSuppressNativeMeleeThrowAction(suppressedDrawnMelee));
 
     auto menuFavorites = favorites;
     menuFavorites.menuInputActive = true;
@@ -128,34 +274,9 @@ int main()
     unmatched.eventMatched = false;
     ok &= expectFalse("unmatched native event is not suppressed", shouldSuppressNativeTriggerAction(unmatched));
 
-    auto pipboyIdleHand = base;
-    ok &= expectFalse("matched Pipboy event with a free pipboy hand keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyIdleHand));
-    auto pipboyHolding = base;
-    pipboyHolding.pipboyHandEngaged = true;
-    ok &= expectTrue("engaged pipboy hand (hold or weapon grip) suppresses native pipboy open/light", shouldSuppressNativePipboyAction(pipboyHolding));
-    auto pipboyHoldingDrawn = pipboyHolding;
-    pipboyHoldingDrawn.weaponDrawn = true;
-    ok &= expectTrue("weapon drawn does not gate pipboy suppression while holding", shouldSuppressNativePipboyAction(pipboyHoldingDrawn));
-    auto pipboyMenu = pipboyHolding;
-    pipboyMenu.menuInputActive = true;
-    ok &= expectFalse("menu input keeps native pipboy handling so the trigger can close an open Pip-Boy", shouldSuppressNativePipboyAction(pipboyMenu));
-    auto pipboyDisabled = pipboyHolding;
-    pipboyDisabled.suppressionEnabled = false;
-    ok &= expectFalse("disabled pipboy suppression setting keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyDisabled));
-    auto pipboyNoGameplay = pipboyHolding;
-    pipboyNoGameplay.gameplayInputAllowed = false;
-    ok &= expectFalse("blocked gameplay input keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyNoGameplay));
-    auto pipboyUnmatched = pipboyHolding;
-    pipboyUnmatched.eventMatched = false;
-    ok &= expectFalse("non-Pipboy event is never suppressed by the pipboy gate", shouldSuppressNativePipboyAction(pipboyUnmatched));
-    auto pipboyPrimaryHand = pipboyHolding;
-    pipboyPrimaryHand.primaryHandEvent = true;
-    ok &= expectFalse("primary-wand trigger event bypasses the pipboy gate so attack handling survives", shouldSuppressNativePipboyAction(pipboyPrimaryHand));
-
     LegacyPipboyTriggerOpenInput legacyPipboyTrigger{
         .remapEnabled = true,
-        .gameplayInputAllowed = true,
-        .menuInputActive = false,
+        .pipboyMenuOpen = false,
         .eventMatched = true,
         .secondaryWandEvent = true,
     };
@@ -164,11 +285,20 @@ int main()
     legacyPrimaryTrigger.secondaryWandEvent = false;
     ok &= expectFalse("primary trigger remains available to native attack handling", shouldSuppressLegacyPipboyTriggerOpen(legacyPrimaryTrigger));
     auto legacyMenuTrigger = legacyPipboyTrigger;
-    legacyMenuTrigger.menuInputActive = true;
-    ok &= expectFalse("open-menu trigger behavior remains native", shouldSuppressLegacyPipboyTriggerOpen(legacyMenuTrigger));
+    legacyMenuTrigger.pipboyMenuOpen = true;
+    ok &= expectFalse("an already-open Pip-Boy retains native trigger controls", shouldSuppressLegacyPipboyTriggerOpen(legacyMenuTrigger));
+    legacyMenuTrigger.pipboyMenuOpen = false;
+    ok &= expectTrue("closing the Pip-Boy immediately removes trigger opening again", shouldSuppressLegacyPipboyTriggerOpen(legacyMenuTrigger));
     auto legacyDirectPipboy = legacyPipboyTrigger;
     legacyDirectPipboy.eventMatched = false;
     ok &= expectFalse("direct keyboard or gamepad Pipboy binding is not the moved VR trigger", shouldSuppressLegacyPipboyTriggerOpen(legacyDirectPipboy));
+
+    for (const char* formType : { "WEAP", "ARMO", "AMMO", "MISC", "INGR", "ALCH", "BOOK", "KEYM", "SLGM" }) {
+        ok &= expectTrue(formType, rock::far_selection_blacklist_policy::listContainsText(kNativeTakeEquipFormTypes, formType));
+    }
+    for (const char* formType : { "DOOR", "NPC_", "CONT", "TERM", "", "WEA" }) {
+        ok &= expectFalse(formType, rock::far_selection_blacklist_policy::listContainsText(kNativeTakeEquipFormTypes, formType));
+    }
 
     auto takeEquipIdleHand = base;
     takeEquipIdleHand.takeEquipTargetEligible = true;
@@ -186,9 +316,9 @@ int main()
     auto takeEquipMenu = takeEquipHoldingEligible;
     takeEquipMenu.menuInputActive = true;
     ok &= expectFalse("menu input keeps native activate handling for take/equip", shouldSuppressNativeTakeEquipAction(takeEquipMenu));
-    auto takeEquipDisabled = takeEquipHoldingEligible;
-    takeEquipDisabled.suppressionEnabled = false;
-    ok &= expectFalse("disabled take/equip suppression setting keeps native activate handling", shouldSuppressNativeTakeEquipAction(takeEquipDisabled));
+    auto takeEquipMandatory = takeEquipHoldingEligible;
+    takeEquipMandatory.suppressionEnabled = false;
+    ok &= expectTrue("take/equip protection cannot be disabled", shouldSuppressNativeTakeEquipAction(takeEquipMandatory));
     auto takeEquipNoGameplay = takeEquipHoldingEligible;
     takeEquipNoGameplay.gameplayInputAllowed = false;
     ok &= expectFalse("blocked gameplay input keeps native activate handling for take/equip", shouldSuppressNativeTakeEquipAction(takeEquipNoGameplay));
@@ -227,7 +357,6 @@ int main()
     ok &= expectFalse("unmatched activate event does not route reload", shouldRouteFiringHandActivateReload(unmatchedActivateReload));
 
     ManualScopeActivateInput manualActivate{
-        .manualScopeEnabled = true,
         .rawInputCaptureAvailable = true,
         .gameplayInputAllowed = true,
         .menuInputActive = false,
@@ -238,10 +367,6 @@ int main()
     };
     ok &= expectTrue("manual scope claims the complete primary firing-hand activate event",
         shouldDeferFiringHandActivateForManualScope(manualActivate));
-    auto automaticActivate = manualActivate;
-    automaticActivate.manualScopeEnabled = false;
-    ok &= expectFalse("automatic scope leaves primary activate on the existing reload route",
-        shouldDeferFiringHandActivateForManualScope(automaticActivate));
     auto missingRawCapture = manualActivate;
     missingRawCapture.rawInputCaptureAvailable = false;
     ok &= expectFalse("manual scope does not swallow reload when raw capture is unavailable",
@@ -250,28 +375,6 @@ int main()
     supportHandActivate.firingHandIsPrimaryHand = false;
     ok &= expectFalse("manual scope does not claim the support hand activate event",
         shouldDeferFiringHandActivateForManualScope(supportHandActivate));
-
-    SecondaryHandReloadInput secondaryReload{
-        .remapEnabled = true,
-        .gameplayInputAllowed = true,
-        .menuInputActive = false,
-        .weaponDrawn = true,
-        .firingHandIsSecondaryHand = true,
-        .acceptButtonPressedEdge = true,
-    };
-    ok &= expectTrue("left X routes reload while the left hand owns the firing grip", shouldDispatchSecondaryHandReloadPress(secondaryReload));
-    auto leftXWhileRightFiring = secondaryReload;
-    leftXWhileRightFiring.firingHandIsSecondaryHand = false;
-    ok &= expectFalse("left X cannot reload while the right hand owns the firing grip", shouldDispatchSecondaryHandReloadPress(leftXWhileRightFiring));
-    auto secondaryReloadNoEdge = secondaryReload;
-    secondaryReloadNoEdge.acceptButtonPressedEdge = false;
-    ok &= expectFalse("held left X does not repeat reload without a fresh press edge", shouldDispatchSecondaryHandReloadPress(secondaryReloadNoEdge));
-    auto secondaryReloadHolstered = secondaryReload;
-    secondaryReloadHolstered.weaponDrawn = false;
-    ok &= expectFalse("holstered weapon blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadHolstered));
-    auto secondaryReloadMenu = secondaryReload;
-    secondaryReloadMenu.menuInputActive = true;
-    ok &= expectFalse("menu input blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadMenu));
 
     EquippedWeaponFiringGripInputGate firingGripGate{
         .featureAvailable = true,
@@ -331,17 +434,236 @@ int main()
     outsideGripZoneEquipInput.gripZoneEquipSettled = false;
     ok &= expectFalse("palm outside grip zone does not equip held weapon", shouldRequestHeldWeaponEquip(outsideGripZoneEquipInput));
 
-    ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
-    ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
     ok &= expectTrue("enabled remap installs mandatory Pip-Boy/Pause arbitration hooks", shouldInstallPipboyPauseArbitrationHooks(true));
     ok &= expectFalse("disabled remap leaves native Pip-Boy and Pause handlers untouched", shouldInstallPipboyPauseArbitrationHooks(false));
-    ok &= expectTrue("manual scope installs the activate event hook independently of general remapping",
-        shouldInstallActivateEventHook(false, true));
-    ok &= expectTrue("manual scope installs raw controller capture independently of general remapping",
-        shouldInstallRawControllerHooks(false, true));
-    ok &= expectFalse("disabled remap and automatic scope need no raw controller hook",
-        shouldInstallRawControllerHooks(false, false));
+    return ok;
+}
 
+static bool testNativeVats()
+{
+    using namespace rock::input_remap_policy;
+    bool ok = true;
+    nativeVats::RuntimeState nativeVatsState{};
+    auto nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .buttonDown = true });
+    ok &= expectTrue(
+        "unsuppressed VATS-button down reaches native V.A.N.S.",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectTrue(
+        "unsuppressed VATS-button release reaches ordinary VATS",
+        nativeVatsDecision.forwardNative);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVans = true,
+        });
+    ok &= expectFalse(
+        "V.A.N.S.-only suppression consumes button-down samples",
+        nativeVatsDecision.forwardNative);
+    ok &= expectTrue(
+        "V.A.N.S.-only suppression reports the held action",
+        nativeVatsDecision.vansSuppressed);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .buttonDown = true });
+    ok &= expectFalse(
+        "expired V.A.N.S. lease stays latched through the gesture",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectTrue(
+        "V.A.N.S.-only suppression preserves release-to-VATS",
+        nativeVatsDecision.forwardNative);
+    ok &= expectFalse(
+        "V.A.N.S. release rearms its hold latch",
+        nativeVatsState.suppressVansWhileDown);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .justPressed = true,
+            .heldSeconds = 0.0f,
+            .suppressVans = true,
+            .reserveHoldGesture = true,
+        });
+    ok &= expectFalse(
+        "ROCK grenade gesture consumes native V.A.N.S. down phase",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .heldSeconds = nativeVats::kDefaultHoldSeconds,
+        });
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .released = true,
+            .heldSeconds = 0.40f,
+        });
+    ok &= expectFalse(
+        "ROCK grenade hold consumes eventual VATS release",
+        nativeVatsDecision.forwardNative);
+    ok &= expectTrue(
+        "ROCK grenade hold reports duration-owned release suppression",
+        nativeVatsDecision.holdReleaseSuppressed);
+
+    nativeVats::reset(nativeVatsState);
+    (void)nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .justPressed = true,
+            .heldSeconds = 0.0f,
+            .suppressVans = true,
+            .reserveHoldGesture = true,
+        });
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .released = true,
+            .heldSeconds = 0.10f,
+        });
+    ok &= expectTrue(
+        "ROCK short tap preserves release-to-VATS",
+        nativeVatsDecision.forwardNative);
+    ok &= expectFalse(
+        "ROCK short tap is not classified as held release",
+        nativeVatsDecision.holdReleaseSuppressed);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .released = true,
+            .heldSeconds = 0.40f,
+            .reserveHoldGesture = true,
+        });
+    ok &= expectFalse(
+        "long release suppresses VATS even when down sample was hidden",
+        nativeVatsDecision.forwardNative);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVats = true,
+        });
+    ok &= expectTrue(
+        "VATS-only suppression preserves the native V.A.N.S. hold path",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .buttonDown = true });
+    ok &= expectTrue(
+        "expired VATS lease keeps forwarding V.A.N.S. while release remains armed",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectFalse(
+        "VATS-only suppression consumes the ordinary release action",
+        nativeVatsDecision.forwardNative);
+    ok &= expectTrue(
+        "VATS-only suppression reports the release action",
+        nativeVatsDecision.vatsSuppressed);
+    ok &= expectFalse(
+        "suppressed VATS release rearms its release latch",
+        nativeVatsState.suppressVatsOnRelease);
+
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .released = true,
+            .suppressVans = true,
+        });
+    ok &= expectTrue(
+        "V.A.N.S. suppression acquired on release cannot block ordinary VATS",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .released = true,
+            .suppressVats = true,
+        });
+    ok &= expectFalse(
+        "VATS suppression acquired on release blocks that release",
+        nativeVatsDecision.forwardNative);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVats = true,
+            .suppressVans = true,
+        });
+    ok &= expectFalse(
+        "combined VATS and V.A.N.S. suppression consumes held samples",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectFalse(
+        "combined suppression consumes the later release after both leases expire",
+        nativeVatsDecision.forwardNative);
+
+    nativeVats::reset(nativeVatsState);
+    (void)nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVats = true,
+            .suppressVans = true,
+        });
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .justPressed = true,
+        });
+    ok &= expectTrue(
+        "a newly observed press discards stale suppression from a lost release",
+        nativeVatsDecision.forwardNative);
+    ok &= expectFalse(
+        "new-press rearming clears the stale VATS release latch",
+        nativeVatsState.suppressVatsOnRelease);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressAll = true,
+        });
+    ok &= expectFalse(
+        "broad OpenVR game-input suppression consumes V.A.N.S. hold samples",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectFalse(
+        "broad OpenVR game-input suppression latches through VATS release",
+        nativeVatsDecision.forwardNative);
+
+    return ok;
+}
+
+static bool testPipboyGestures()
+{
+    using namespace rock::input_remap_policy;
+    bool ok = true;
     pipboyGesture::RuntimeState pipboyGestureState{};
     ok &= expectTrue("Pip-Boy/Pause hold duration clamps low values",
         pipboyGesture::sanitizedHoldSeconds(0.01f) == pipboyGesture::kMinimumHoldSeconds);
@@ -460,9 +782,49 @@ int main()
     pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
     ok &= expectPipboyGestureState("blocked gesture rearms only on release", pipboyGestureDecision.state, pipboyGesture::State::Idle);
 
+    using PipboyRoute = pipboyGesture::PipboyRoute;
+    ok &= expectTrue("wrist presentation routes through FRIK", pipboyGesture::selectPipboyRoute(true, false, false, false, true) == PipboyRoute::FrikWrist);
+    ok &= expectTrue("projected presentation routes through native handler", pipboyGesture::selectPipboyRoute(true, true, false, false, true) == PipboyRoute::Native);
+    ok &= expectTrue("HMD presentation routes through native handler", pipboyGesture::selectPipboyRoute(true, false, true, false, true) == PipboyRoute::Native);
+    ok &= expectTrue("power armor uses native handler even with wrist preference", pipboyGesture::selectPipboyRoute(true, false, false, true, true) == PipboyRoute::Native);
+    ok &= expectTrue("missing presentation settings cannot fall back to native trigger", pipboyGesture::selectPipboyRoute(false, false, false, false, true) == PipboyRoute::Unavailable);
+    ok &= expectTrue("missing FRIK binding cannot bypass wrist screen owner", pipboyGesture::selectPipboyRoute(true, false, false, false, false) == PipboyRoute::Unavailable);
+    ok &= expectTrue("native presentation does not require wrist binding", pipboyGesture::selectPipboyRoute(true, true, false, false, false) == PipboyRoute::Native);
+
+    // Simulate the native menu consuming the previous gesture's release.
+    // The next real down edge must work on its first tap, without a trigger.
+    for (const auto staleState : { pipboyGesture::State::Pending, pipboyGesture::State::PauseCommitted, pipboyGesture::State::BlockedUntilRelease }) {
+        pipboyGestureState.state = staleState;
+        auto recovered = pipboyGesture::update(pipboyGestureState,
+            pipboyGesture::Input{ .pressed = true, .held = true });
+        ok &= expectPipboyGestureState("fresh Y press replaces gesture whose release was consumed", recovered.state, pipboyGesture::State::Pending);
+        ok &= expectFalse("recovery cannot dispatch either menu on press", recovered.dispatchPipboy || recovered.dispatchPause);
+        recovered = pipboyGesture::update(pipboyGestureState,
+            pipboyGesture::Input{ .released = true, .heldSeconds = 0.1f });
+        ok &= expectTrue("first fresh Y tap opens after a lost release", recovered.dispatchPipboy);
+        ok &= expectFalse("first fresh Y tap after lost release does not open Pause", recovered.dispatchPause);
+    }
+    pipboyGestureState.state = pipboyGesture::State::BlockedUntilRelease;
+    auto stillBlocked = pipboyGesture::update(pipboyGestureState,
+        pipboyGesture::Input{ .held = true, .heldSeconds = 0.1f });
+    ok &= expectPipboyGestureState("holding Y across a menu does not count as a fresh press", stillBlocked.state, pipboyGesture::State::BlockedUntilRelease);
+    stillBlocked = pipboyGesture::update(pipboyGestureState,
+        pipboyGesture::Input{ .released = true, .heldSeconds = 0.2f });
+    ok &= expectFalse("held-through-menu release cannot open either menu", stillBlocked.dispatchPipboy || stillBlocked.dispatchPause);
+    pipboyGestureState.state = pipboyGesture::State::PauseCommitted;
+    stillBlocked = pipboyGesture::update(pipboyGestureState,
+        pipboyGesture::Input{ .eligible = false, .pressed = true, .held = true });
+    ok &= expectPipboyGestureState("fresh press cannot bypass a currently blocking menu", stillBlocked.state, pipboyGesture::State::BlockedUntilRelease);
+
+    return ok;
+}
+
+static bool testManualScope()
+{
+    using namespace rock::input_remap_policy;
+    bool ok = true;
     manual::RuntimeState manualState{};
     manual::Input manualInput{
-        .manualModeEnabled = true,
         .gameplayInputAllowed = true,
         .menuInputActive = false,
         .weaponDrawn = true,
@@ -550,9 +912,145 @@ int main()
     manualDecision = manual::update(manualState, manualInput);
     ok &= expectFalse("menu-cancelled gesture cannot replay as reload", manualDecision.dispatchReload);
 
-    manualInput.manualModeEnabled = false;
+    manual::reset(manualState);
+    manualInput.nativeActivationTarget = true;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
     manualDecision = manual::update(manualState, manualInput);
-    ok &= expectManualScopeState("automatic mode clears all manual gesture state", manualDecision.state, manual::State::Idle);
+    ok &= expectManualScopeState("raw press on a use target belongs to native activation", manualDecision.state, manual::State::NativeActivation);
+    ok &= expectFalse("use target press cannot reload or scope", manualDecision.dispatchReload || manualDecision.scopeRequested);
+    manualInput.nativeActivationTarget = false;
+    manualInput.rightButton.pressed = false;
+    manualInput.deltaSeconds = 1.0f;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("looking away retains native activation ownership through a long hold", manualDecision.state, manual::State::NativeActivation);
+    ok &= expectFalse("native activation hold cannot become scope", manualDecision.scopeRequested);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("native activation release rearms the gesture", manualDecision.state, manual::State::Idle);
+    ok &= expectFalse("native activation release cannot reload", manualDecision.dispatchReload);
 
+    manual::reset(manualState);
+    manual::beginPrimaryActivateGesture(manualState, true);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("native event before raw polling retains its use decision", manualDecision.state, manual::State::NativeActivation);
+    ok &= expectFalse("native event followed by raw press cannot reload or scope", manualDecision.dispatchReload || manualDecision.scopeRequested);
+    manualInput.menuInputActive = true;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("a menu opened by native activation cancels the held gesture", manualDecision.state, manual::State::BlockedUntilRelease);
+    manualInput.menuInputActive = false;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("closing a use menu cannot reload on release", manualDecision.dispatchReload);
+
+    manualInput.nativeActivationTarget = true;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .pressed = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("a complete native use tap between polls cannot reload or scope", manualDecision.dispatchReload || manualDecision.scopeRequested);
+    manualInput.nativeActivationTarget = false;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("the next press without a use target starts weapon input", manualDecision.state, manual::State::Pending);
+    manual::beginPrimaryActivateGesture(manualState, true);
+    manualInput.nativeActivationTarget = true;
+    manualInput.rightButton.pressed = false;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("aiming at a use target cannot steal an existing scope gesture", manualDecision.scopeRequested);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .released = true };
+    (void)manual::update(manualState, manualInput);
+
+    manual::beginPrimaryActivateGesture(manualState, false);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .pressed = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("native event weapon decision survives a use target appearing before raw polling", manualDecision.dispatchReload);
+
+    manual::reset(manualState);
+    manualInput.nativeActivationTarget = true;
+    manualDecision = manual::update(manualState, manualInput);
+    manual::beginPrimaryActivateGesture(manualState, false);
+    ok &= expectTrue("raw use tap retains native routing when the native press arrives after release", manualState.primaryPressUsesNative);
+    ok &= expectManualScopeState("late native press cannot restart the completed use tap", manualState.state, manual::State::Idle);
+    ok &= expectFalse("raw use tap dispatches no weapon action", manualDecision.dispatchReload || manualDecision.scopeRequested);
+
+    manual::reset(manualState);
+    manualInput.nativeActivationTarget = false;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("raw weapon tap reloads when no use target is present", manualDecision.dispatchReload);
+    manual::beginPrimaryActivateGesture(manualState, true);
+    ok &= expectFalse("a late native press cannot also activate a newly acquired use target", manualState.primaryPressUsesNative);
+    ok &= expectManualScopeState("late native press cannot restart a completed reload tap", manualState.state, manual::State::Idle);
+    manualInput.rightButton = manual::ButtonState{ .available = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("the frame after a late native press cannot repeat reload", manualDecision.dispatchReload);
+
+    manualInput.nativeActivationTarget = true;
+    manualInput.firingHandIsLeft = true;
+    manualInput.leftButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualInput.rightButton = manual::ButtonState{ .available = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("right-wand use target leaves left firing-hand input available", manualDecision.state, manual::State::Pending);
+
+    return ok;
+}
+
+static bool testVanillaScopeMode()
+{
+    bool ok = true;
+    manual::RuntimeState state{};
+    manual::Input input{
+        .gameplayInputAllowed = true,
+        .weaponDrawn = true,
+        .immersiveScopesEnabled = false,
+        .leftButton = {.available = true},
+        .rightButton = {.available = true},
+    };
+    (void)manual::update(state, input); // Adopt the mode with both buttons up.
+    input.rightButton = {.available = true, .held = true, .pressed = true};
+    auto result = manual::update(state, input);
+    ok &= expectFalse("vanilla primary press leaves reload to native events", result.dispatchReload || result.scopeRequested);
+    input.rightButton.pressed = false;
+    input.deltaSeconds = 2.0f;
+    result = manual::update(state, input);
+    ok &= expectFalse("vanilla primary hold cannot activate a scope", result.dispatchReload || result.scopeRequested);
+    input.rightButton = {.available = true, .released = true};
+    result = manual::update(state, input);
+    ok &= expectFalse("vanilla primary release cannot duplicate native reload", result.dispatchReload || result.scopeRequested);
+
+    input.rightButton = {.available = true};
+    input.firingHandIsLeft = true;
+    input.leftButton = {.available = true, .held = true, .pressed = true};
+    result = manual::update(state, input);
+    ok &= expectTrue("vanilla scopes preserve left-firing reload on press", result.dispatchReload);
+    input.leftButton.pressed = false;
+    result = manual::update(state, input);
+    ok &= expectFalse("vanilla left hold cannot scope or repeat reload", result.dispatchReload || result.scopeRequested);
+    input.immersiveScopesEnabled = true;
+    result = manual::update(state, input);
+    ok &= expectManualScopeState("enabling during a hold requires release", result.state, manual::State::BlockedUntilRelease);
+    ok &= expectFalse("enabling cannot replay the vanilla hold", result.scopeRequested || result.dispatchReload);
+    input.leftButton = {.available = true};
+    (void)manual::update(state, input);
+    input.leftButton = {.available = true, .held = true, .pressed = true};
+    (void)manual::update(state, input);
+    input.leftButton.pressed = false;
+    result = manual::update(state, input);
+    ok &= expectTrue("a fresh immersive hold activates normally", result.scopeRequested);
+    input.immersiveScopesEnabled = false;
+    result = manual::update(state, input);
+    ok &= expectFalse("disabling cancels an active immersive hold", result.scopeRequested || result.dispatchReload);
+    input.leftButton = {.available = true, .released = true};
+    result = manual::update(state, input);
+    ok &= expectFalse("release after disabling cannot reload", result.scopeRequested || result.dispatchReload);
+    return ok;
+}
+
+int main()
+{
+    bool ok = true;
+    ok &= testInputRouting();
+    ok &= testNativeVats();
+    ok &= testPipboyGestures();
+    ok &= testManualScope();
+    ok &= testVanillaScopeMode();
     return ok ? 0 : 1;
 }

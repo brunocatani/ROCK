@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
@@ -18,10 +19,37 @@ namespace rock
         Keyframed = 2
     };
 
+    enum class BethesdaGeneratedBodyQuality : std::uint8_t
+    {
+        Default = 0,
+        ForcedLinearCollisionLookAhead = 1,
+    };
+
+    struct BethesdaPhysicsBodyCreationOptions
+    {
+        float collisionLookAheadDistanceHavok = 0.0f;
+        BethesdaGeneratedBodyQuality bodyQuality = BethesdaGeneratedBodyQuality::Default;
+    };
+
+    /*
+     * FO4VR 1.2.72 hknpBody initialization at 0x1415616F0 copies body-cinfo
+     * +0x1C to the runtime body's collision-look-ahead field (+0x3C) and
+     * cinfo +0x50 to its body-quality byte (+0x7E). The native quality-library
+     * initializer at 0x1417F2160 gives profile 1 both REQUEST (0x800) and
+     * FORCE (0x1000) linear collision look-ahead. A 0.10 Havok-unit horizon
+     * covers the observed 15-unit/s generated-motion cap across a 1/270 s
+     * solve with margin, without expanding unrelated generated bodies.
+     */
+    inline constexpr BethesdaPhysicsBodyCreationOptions kTrackedDynamicBodyCreationOptions{
+        0.10f,
+        BethesdaGeneratedBodyQuality::ForcedLinearCollisionLookAhead,
+    };
+
     struct RetiredBethesdaPhysicsBodyPayload
     {
         void* collisionObject = nullptr;
         void* niNode = nullptr;
+        RE::hknpWorld* retiredHknpWorld = nullptr;
         std::uint32_t bodyId = 0x7FFF'FFFF;
 
         [[nodiscard]] bool occupied() const { return collisionObject != nullptr || niNode != nullptr; }
@@ -39,28 +67,37 @@ namespace rock
         BethesdaPhysicsBody& operator=(BethesdaPhysicsBody&&) = delete;
 
         bool create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape, std::uint32_t filterInfo, RE::hknpMaterialId materialId, BethesdaMotionType motionType,
-            const char* name = "ROCK_Body");
+            const char* name = "ROCK_Body", const BethesdaPhysicsBodyCreationOptions& options = {});
 
         void destroy(void* bhkWorld);
 
         bool retireFromWorld(void* bhkWorld, RetiredBethesdaPhysicsBodyPayload& outPayload);
 
-        // Removes the body from the world now but defers freeing the underlying
-        // bhkNPCollisionObject by a physics-step grace window (see .cpp). A
-        // keyframed collider stays reachable from the hknp broadphase until the
-        // next physics step rebuilds it, so freeing it in the same call — as
-        // destroy() does — lets a native broadphase reader (foot-IK raycast,
-        // navmesh obstacle manager) dereference freed memory and crash. Use this
-        // for every teardown that happens while the world is still live; keep
-        // destroy() only for world-loss/shutdown where no further step will run.
+        // Removes the body from the world now, keeps the complete native wrapper
+        // alive across a physics-step grace window, then converts it to a small
+        // process-lifetime tombstone. FO4VR retains uncounted collision-object
+        // pointers beyond broadphase removal, so the object address itself must
+        // remain valid even after its node and physics system can be released.
+        // Use this for every teardown that happens while the world is still live;
+        // keep destroy() only for world-loss/shutdown where no further step runs.
         void retireDeferred(void* bhkWorld);
 
-        // Drains the shared deferred-retirement queue. Must be called from the
-        // physics-step (post-solve) phase, once per completed step, so the grace
-        // window is measured in real broadphase rebuilds.
-        static void serviceRetiredDeferredPayloads(std::uint32_t completedPhysicsSteps = 1);
+        // Advances the shared deferred-retirement queue only for the exact world
+        // that removed each body. Must run in the physics post-solve phase so the
+        // grace window is measured in completed broadphase rebuilds.
+        static void serviceRetiredDeferredPayloads(RE::hknpWorld* currentWorld, std::uint32_t completedPhysicsSteps = 1);
 
-        static void releaseRetiredPayload(RetiredBethesdaPhysicsBodyPayload& payload);
+        // Strips a world-removed payload to an inert collision-object tombstone
+        // and transfers that address to the fixed process-lifetime quarantine.
+        // Returns false without modifying payload when the quarantine is full.
+        static bool quarantineRetiredPayload(RetiredBethesdaPhysicsBodyPayload& payload);
+
+        // Queue exhaustion cannot authorize a native free. Transfer ownership to
+        // an intentional process-lifetime hold and fail closed for future creates.
+        static void retainRetiredPayloadForProcessLifetime(
+            RetiredBethesdaPhysicsBodyPayload& payload,
+            const char* owner,
+            std::size_t capacity);
 
         void reset();
 

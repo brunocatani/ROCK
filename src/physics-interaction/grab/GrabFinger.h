@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "physics-interaction/grab/GeneratedGrabFingerCalibration.h"
+#include "physics-interaction/VectorMath.h"
 
 namespace rock::grab_finger_pose_math
 {
@@ -124,13 +125,13 @@ namespace rock::grab_finger_pose_math
     template <class Vector>
     inline Vector cross(const Vector& a, const Vector& b)
     {
-        return Vector{ a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
+        return vector_math::cross(a, b);
     }
 
     template <class Vector>
     inline float dot(const Vector& a, const Vector& b)
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     template <class Vector>
@@ -142,7 +143,7 @@ namespace rock::grab_finger_pose_math
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>
@@ -1330,7 +1331,15 @@ namespace rock::grab_finger_pose_math
             return result;
         }
 
-        const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : (1.0f / 90.0f);
+        const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : 0.0f;
+        if (dt <= 0.0f) {
+            // Unmeasurable frame: hold the current pose instead of advancing
+            // by fabricated time.
+            for (std::size_t i = 0; i < result.size(); ++i) {
+                result[i] = clampOpenValue(current[i]);
+            }
+            return result;
+        }
         const float step = speed * dt;
         for (std::size_t i = 0; i < result.size(); ++i) {
             const float from = clampOpenValue(current[i]);
@@ -1485,6 +1494,8 @@ namespace rock::grab_finger_pose_runtime
         bool valid = false;
     };
 
+    inline constexpr std::uint8_t kCompleteFingerContactMask = 0x1Fu;
+
     struct SolvedGrabFingerPose
     {
         std::array<float, 5> values{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
@@ -1511,6 +1522,7 @@ namespace rock::grab_finger_pose_runtime
          */
         std::array<float, 5> contactArcRotationRadians{};
         std::array<std::uint8_t, 5> contactArcRotationValid{};
+        std::uint8_t contactValidMask = 0;
         int hitCount = 0;
         int candidateTriangleCount = 0;
         int poseTargetCount = 0;
@@ -1537,6 +1549,225 @@ namespace rock::grab_finger_pose_runtime
         grab_finger_pose_math::FingerCurlValue thumbAlternateCurve{};
         grab_finger_pose_math::FingerCurlValue thumbSidePadCurve{};
     };
+
+    [[nodiscard]] inline bool hasCompleteFingerContactEvidence(
+        const SolvedGrabFingerPose& pose)
+    {
+        return pose.solved &&
+               pose.contactValidMask == kCompleteFingerContactMask;
+    }
+
+    enum class OppositionPocketKind : std::uint8_t
+    {
+        None = 0,
+        ThumbIndex = 1,
+        ThumbPinky = 2,
+    };
+
+    struct OppositionPocketEvidence
+    {
+        RE::NiPoint3 surfacePointWorld{};
+        float fingerGapGameUnits = 0.0f;
+        float gripToSurfaceDistanceGameUnits =
+            (std::numeric_limits<float>::infinity)();
+        std::uint8_t endpointMask = 0;
+        std::uint8_t directEndpointMask = 0;
+        std::size_t opposedFingerIndex = 0;
+        OppositionPocketKind kind = OppositionPocketKind::None;
+        bool valid = false;
+    };
+
+    [[nodiscard]] inline const char* oppositionPocketKindName(
+        OppositionPocketKind kind)
+    {
+        switch (kind) {
+        case OppositionPocketKind::ThumbIndex:
+            return "thumb-index";
+        case OppositionPocketKind::ThumbPinky:
+            return "thumb-pinky";
+        case OppositionPocketKind::None:
+        default:
+            return "none";
+        }
+    }
+
+    /*
+     * Weapon parts are not eligible for the regular whole-object pinch-size
+     * test: a small slide or control often belongs to a much larger weapon.
+     * This local witness instead requires the selected weapon surface to cross
+     * the live pad-to-pad segment near the captured grip point, plus at least
+     * one direct endpoint contact from the calibrated sweep. It can therefore
+     * authorize one coherent opposition pose without treating an arbitrary
+     * four-of-five contact mask as complete evidence.
+     */
+    [[nodiscard]] inline OppositionPocketEvidence
+        findLocalOppositionPocketEvidence(
+            const std::vector<TriangleData>& worldTriangles,
+            const root_flattened_finger_skeleton_runtime::Snapshot& snapshot,
+            const RE::NiPoint3& gripPointWorld,
+            std::uint8_t directContactMask,
+            float minFingerGapGameUnits,
+            float maxFingerGapGameUnits,
+            float maxGripToSurfaceDistanceGameUnits,
+            float segmentProbeRadiusGameUnits = 0.5f)
+    {
+        OppositionPocketEvidence best{};
+        const auto finitePoint = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) &&
+                   std::isfinite(point.y) &&
+                   std::isfinite(point.z);
+        };
+        if (!snapshot.valid || worldTriangles.empty() ||
+            !finitePoint(gripPointWorld)) {
+            return best;
+        }
+
+        const float minGap = (std::max)(
+            0.0f,
+            std::isfinite(minFingerGapGameUnits) ?
+                minFingerGapGameUnits :
+                1.0f);
+        const float maxGap = (std::max)(
+            minGap,
+            std::isfinite(maxFingerGapGameUnits) ?
+                maxFingerGapGameUnits :
+                12.0f);
+        const float maxGripDistance = (std::max)(
+            0.0f,
+            std::isfinite(maxGripToSurfaceDistanceGameUnits) ?
+                maxGripToSurfaceDistanceGameUnits :
+                8.0f);
+        const float probeRadius = std::clamp(
+            std::isfinite(segmentProbeRadiusGameUnits) ?
+                segmentProbeRadiusGameUnits :
+                0.5f,
+            0.0f,
+            2.0f);
+
+        const auto evaluatePair = [&](
+                                      const std::size_t opposedFinger,
+                                      const OppositionPocketKind kind) {
+            OppositionPocketEvidence candidate{};
+            if (opposedFinger >= snapshot.fingers.size() ||
+                !snapshot.fingers[0].valid ||
+                !snapshot.fingers[opposedFinger].valid) {
+                return candidate;
+            }
+            const std::uint8_t endpointMask =
+                static_cast<std::uint8_t>(
+                    (1u << 0u) | (1u << opposedFinger));
+            const std::uint8_t directEndpointMask =
+                static_cast<std::uint8_t>(
+                    directContactMask & endpointMask);
+            if (directEndpointMask == 0) {
+                return candidate;
+            }
+
+            const RE::NiPoint3 thumbPad =
+                snapshot.fingers[0].points[2];
+            const RE::NiPoint3 opposedPad =
+                snapshot.fingers[opposedFinger].points[2];
+            if (!finitePoint(thumbPad) ||
+                !finitePoint(opposedPad)) {
+                return candidate;
+            }
+            const RE::NiPoint3 segment = opposedPad - thumbPad;
+            const float gapSquared =
+                grab_finger_pose_math::lengthSquared(segment);
+            if (!std::isfinite(gapSquared) ||
+                gapSquared <= 0.000001f) {
+                return candidate;
+            }
+            const float gap = std::sqrt(gapSquared);
+            if (gap < minGap || gap > maxGap) {
+                return candidate;
+            }
+            const RE::NiPoint3 direction = segment * (1.0f / gap);
+
+            float bestGripDistance =
+                (std::numeric_limits<float>::infinity)();
+            RE::NiPoint3 bestSurfacePoint{};
+            for (const auto& triangle : worldTriangles) {
+                const grab_finger_pose_math::Triangle<RE::NiPoint3>
+                    mathTriangle{
+                        triangle.v0,
+                        triangle.v1,
+                        triangle.v2,
+                    };
+                float travel = 0.0f;
+                RE::NiPoint3 surfacePoint{};
+                if (grab_finger_pose_math::rayTriangleIntersection(
+                        thumbPad,
+                        direction,
+                        mathTriangle,
+                        gap,
+                        travel)) {
+                    surfacePoint = thumbPad + direction * travel;
+                } else if (probeRadius > 0.0f &&
+                           grab_finger_pose_math::
+                               probeCapsuleTriangleIntersection(
+                                   thumbPad,
+                                   direction,
+                                   mathTriangle,
+                                   gap,
+                                   probeRadius,
+                                   travel,
+                                   &surfacePoint)) {
+                    // The bounded capsule admits near-tangent mesh contact,
+                    // while the grip-distance gate below keeps it local.
+                } else {
+                    continue;
+                }
+
+                const float gripDistanceSquared =
+                    grab_finger_pose_math::lengthSquared(
+                        grab_finger_pose_math::sub(
+                            gripPointWorld,
+                            surfacePoint));
+                if (!std::isfinite(gripDistanceSquared)) {
+                    continue;
+                }
+                const float gripDistance =
+                    std::sqrt(gripDistanceSquared);
+                if (gripDistance <= maxGripDistance &&
+                    gripDistance < bestGripDistance) {
+                    bestGripDistance = gripDistance;
+                    bestSurfacePoint = surfacePoint;
+                }
+            }
+
+            if (!std::isfinite(bestGripDistance)) {
+                return candidate;
+            }
+            candidate.surfacePointWorld = bestSurfacePoint;
+            candidate.fingerGapGameUnits = gap;
+            candidate.gripToSurfaceDistanceGameUnits =
+                bestGripDistance;
+            candidate.endpointMask = endpointMask;
+            candidate.directEndpointMask = directEndpointMask;
+            candidate.opposedFingerIndex = opposedFinger;
+            candidate.kind = kind;
+            candidate.valid = true;
+            return candidate;
+        };
+
+        const auto thumbIndex = evaluatePair(
+            1,
+            OppositionPocketKind::ThumbIndex);
+        const auto thumbPinky = evaluatePair(
+            4,
+            OppositionPocketKind::ThumbPinky);
+        if (thumbIndex.valid) {
+            best = thumbIndex;
+        }
+        if (thumbPinky.valid &&
+            (!best.valid ||
+                thumbPinky.gripToSurfaceDistanceGameUnits <
+                    best.gripToSurfaceDistanceGameUnits)) {
+            best = thumbPinky;
+        }
+        return best;
+    }
 
     /*
      * The arc zero reference reconstructed from the COMMANDED hand model:
@@ -1723,17 +1954,17 @@ namespace rock::grab_finger_pose_runtime
 
     inline RE::NiPoint3 crossPoint(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
-        return RE::NiPoint3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+        return vector_math::cross(a, b);
     }
 
     inline float dotPoint(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     inline RE::NiPoint3 normalizedOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
     {
-        const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
+        const float lengthSquared = vector_math::lengthSquared(value);
         if (lengthSquared <= 0.000001f) {
             return normalizeDirection(fallback);
         }
@@ -1765,7 +1996,7 @@ namespace rock::grab_finger_pose_runtime
 
     inline bool isFinitePoint(const RE::NiPoint3& point)
     {
-        return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     [[nodiscard]] inline FingerSweepDebugState classifyFingerSweepDebugState(const grab_finger_pose_math::FingerCurlValue& solved, float minValue)
@@ -3052,6 +3283,13 @@ namespace rock::grab_finger_pose_runtime
             }
             if (solved.hit) {
                 result.hitCount++;
+                if (solved.hitKind ==
+                        grab_finger_pose_math::FingerCurlValue::
+                            HitKind::FrontValid &&
+                    !solved.outOfReach) {
+                    result.contactValidMask |=
+                        static_cast<std::uint8_t>(1u << finger);
+                }
             }
         }
 
@@ -3163,10 +3401,17 @@ namespace rock::grab_finger_local_transform_math
     [[nodiscard]] inline float surfaceAimSegmentCorrectionWeight(std::size_t fingerIndex, std::size_t segment)
     {
         static constexpr float kThumbWeights[3]{ 0.08f, 0.18f, 0.30f };
+        static constexpr float kSurfaceFingerWeights[3]{ 0.05f, 0.12f, 0.20f };
         if (segment >= 3) {
             return 0.0f;
         }
-        return fingerIndex == 0 ? kThumbWeights[segment] : 0.0f;
+        if (fingerIndex == 0) {
+            return kThumbWeights[segment];
+        }
+        if (fingerIndex >= 2 && fingerIndex < 5) {
+            return kSurfaceFingerWeights[segment];
+        }
+        return 0.0f;
     }
 
     [[nodiscard]] inline float boundedSurfaceAimCorrectionRadians(
@@ -3201,7 +3446,13 @@ namespace rock::grab_finger_local_transform_math
         bool alternateThumbPlaneCorrection,
         bool thumbSurfaceFollowAllowed = true)
     {
-        return fingerIndex == 0 && thumbSurfaceFollowAllowed && !alternateThumbPlaneCorrection;
+        if (alternateThumbPlaneCorrection) {
+            return false;
+        }
+        if (fingerIndex == 0) {
+            return thumbSurfaceFollowAllowed;
+        }
+        return fingerIndex >= 2 && fingerIndex < 5;
     }
 
     [[nodiscard]] inline bool shouldApplyAlternateThumbLocalCorrection(bool usedAlternateThumbCurve, bool usedAlternateThumbSurfaceHit)
@@ -3221,17 +3472,13 @@ namespace rock::grab_finger_local_transform_math
     template <class Vector>
     [[nodiscard]] inline float vectorDot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     [[nodiscard]] inline Vector vectorCross(const Vector& lhs, const Vector& rhs)
     {
-        return Vector{
-            lhs.y * rhs.z - lhs.z * rhs.y,
-            lhs.z * rhs.x - lhs.x * rhs.z,
-            lhs.x * rhs.y - lhs.y * rhs.x,
-        };
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vector>
@@ -3345,6 +3592,113 @@ namespace rock::grab_finger_local_transform_math
                std::isfinite(transform.scale);
     }
 
+    inline constexpr float kMaxPublishedFingerLocalTranslationGameUnits = 64.0f;
+    inline constexpr float kMinPublishedFingerLocalScale = 0.01f;
+    inline constexpr float kMaxPublishedFingerLocalScale = 4.0f;
+    inline constexpr float kPublishedFingerRotationNormTolerance = 0.1f;
+    inline constexpr float kPublishedFingerRotationDotTolerance = 0.1f;
+    inline constexpr float kPublishedFingerRotationDeterminantTolerance = 0.2f;
+
+    enum class FingerLocalTransformSafetyFailure : std::uint8_t
+    {
+        None,
+        NonFinite,
+        TranslationMagnitude,
+        ScaleMagnitude,
+        RotationNorm,
+        RotationOrthogonality,
+        RotationDeterminant,
+    };
+
+    [[nodiscard]] inline const char* fingerLocalTransformSafetyFailureName(FingerLocalTransformSafetyFailure failure)
+    {
+        switch (failure) {
+        case FingerLocalTransformSafetyFailure::None:
+            return "none";
+        case FingerLocalTransformSafetyFailure::NonFinite:
+            return "non-finite";
+        case FingerLocalTransformSafetyFailure::TranslationMagnitude:
+            return "translation-magnitude";
+        case FingerLocalTransformSafetyFailure::ScaleMagnitude:
+            return "scale-magnitude";
+        case FingerLocalTransformSafetyFailure::RotationNorm:
+            return "rotation-norm";
+        case FingerLocalTransformSafetyFailure::RotationOrthogonality:
+            return "rotation-orthogonality";
+        case FingerLocalTransformSafetyFailure::RotationDeterminant:
+            return "rotation-determinant";
+        }
+        return "unknown";
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline float storedRotationRowDot(const Transform& transform, std::size_t left, std::size_t right)
+    {
+        float result = 0.0f;
+        for (std::size_t column = 0; column < 3; ++column) {
+            result += transform.rotate.entry[left][column] * transform.rotate.entry[right][column];
+        }
+        return result;
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline float storedRotationDeterminant(const Transform& transform)
+    {
+        const auto& r = transform.rotate.entry;
+        return r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) -
+               r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) +
+               r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline FingerLocalTransformSafetyFailure inspectStoredRotationBasis(const Transform& transform)
+    {
+        for (std::size_t row = 0; row < 3; ++row) {
+            for (std::size_t column = 0; column < 3; ++column) {
+                if (!std::isfinite(transform.rotate.entry[row][column])) {
+                    return FingerLocalTransformSafetyFailure::NonFinite;
+                }
+            }
+            if (std::abs(storedRotationRowDot(transform, row, row) - 1.0f) > kPublishedFingerRotationNormTolerance) {
+                return FingerLocalTransformSafetyFailure::RotationNorm;
+            }
+        }
+
+        if (std::abs(storedRotationRowDot(transform, 0, 1)) > kPublishedFingerRotationDotTolerance ||
+            std::abs(storedRotationRowDot(transform, 0, 2)) > kPublishedFingerRotationDotTolerance ||
+            std::abs(storedRotationRowDot(transform, 1, 2)) > kPublishedFingerRotationDotTolerance) {
+            return FingerLocalTransformSafetyFailure::RotationOrthogonality;
+        }
+
+        const float determinant = storedRotationDeterminant(transform);
+        if (!std::isfinite(determinant) || std::abs(determinant - 1.0f) > kPublishedFingerRotationDeterminantTolerance) {
+            return FingerLocalTransformSafetyFailure::RotationDeterminant;
+        }
+        return FingerLocalTransformSafetyFailure::None;
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline FingerLocalTransformSafetyFailure inspectFingerLocalTransformForPublication(const Transform& transform)
+    {
+        if (!sceneTransformHasUsableBasis(transform)) {
+            return FingerLocalTransformSafetyFailure::NonFinite;
+        }
+        if (transform.scale < kMinPublishedFingerLocalScale || transform.scale > kMaxPublishedFingerLocalScale) {
+            return FingerLocalTransformSafetyFailure::ScaleMagnitude;
+        }
+
+        const float translationLengthSquared =
+            transform.translate.x * transform.translate.x +
+            transform.translate.y * transform.translate.y +
+            transform.translate.z * transform.translate.z;
+        constexpr float kMaxTranslationSquared =
+            kMaxPublishedFingerLocalTranslationGameUnits * kMaxPublishedFingerLocalTranslationGameUnits;
+        if (!std::isfinite(translationLengthSquared) || translationLengthSquared > kMaxTranslationSquared) {
+            return FingerLocalTransformSafetyFailure::TranslationMagnitude;
+        }
+        return inspectStoredRotationBasis(transform);
+    }
+
     [[nodiscard]] inline float exponentialSmoothingAlpha(float speed, float deltaTime)
     {
         if (!std::isfinite(speed) || speed <= 0.0f || !std::isfinite(deltaTime) || deltaTime <= 0.0f) {
@@ -3442,23 +3796,108 @@ namespace rock::grab_finger_local_transform_runtime
         return grab_finger_local_transform_math::sceneTransformHasUsableBasis(transform);
     }
 
+    inline constexpr std::size_t kInvalidFingerLocalTransformIndex = 15;
+
+    inline void logRejectedFingerTransform(
+        bool isLeft,
+        std::size_t index,
+        const char* stage,
+        const RE::NiTransform& transform,
+        grab_finger_local_transform_math::FingerLocalTransformSafetyFailure failure)
+    {
+        const std::size_t finger = index / 3;
+        const std::size_t segment = index % 3;
+        const char* boneName = index < kInvalidFingerLocalTransformIndex ?
+            root_flattened_finger_skeleton_runtime::fingerBoneName(isLeft, finger, segment) :
+            nullptr;
+        const float translationLengthSquared =
+            transform.translate.x * transform.translate.x +
+            transform.translate.y * transform.translate.y +
+            transform.translate.z * transform.translate.z;
+        const float translationLength =
+            std::isfinite(translationLengthSquared) && translationLengthSquared >= 0.0f ?
+            std::sqrt(translationLengthSquared) :
+            translationLengthSquared;
+
+        ROCK_LOG_SAMPLE_WARN(Hand,
+            1000,
+            "Dynamic grab finger transform rejected hand={} stage={} bone={} index={} detail={} scale={:.6f} translation={:.3f} rowNormSq=({:.4f},{:.4f},{:.4f}) rowDot=({:.4f},{:.4f},{:.4f}) determinant={:.4f}",
+            isLeft ? "left" : "right",
+            stage ? stage : "unknown",
+            boneName ? boneName : "unknown",
+            index,
+            grab_finger_local_transform_math::fingerLocalTransformSafetyFailureName(failure),
+            transform.scale,
+            translationLength,
+            grab_finger_local_transform_math::storedRotationRowDot(transform, 0, 0),
+            grab_finger_local_transform_math::storedRotationRowDot(transform, 1, 1),
+            grab_finger_local_transform_math::storedRotationRowDot(transform, 2, 2),
+            grab_finger_local_transform_math::storedRotationRowDot(transform, 0, 1),
+            grab_finger_local_transform_math::storedRotationRowDot(transform, 0, 2),
+            grab_finger_local_transform_math::storedRotationRowDot(transform, 1, 2),
+            grab_finger_local_transform_math::storedRotationDeterminant(transform));
+    }
+
+    inline void setTransformFailure(
+        const char** outFailureReason,
+        std::size_t* outFailureIndex,
+        const char* reason,
+        std::size_t index)
+    {
+        if (outFailureReason) {
+            *outFailureReason = reason;
+        }
+        if (outFailureIndex) {
+            *outFailureIndex = index;
+        }
+    }
+
+    [[nodiscard]] inline bool fingerLocalTransformOverrideIsSafeForPublication(
+        const frik_visual_authority::FingerLocalTransformOverride& transforms,
+        std::size_t* outFailureIndex = nullptr,
+        grab_finger_local_transform_math::FingerLocalTransformSafetyFailure* outFailure = nullptr)
+    {
+        if (outFailureIndex) {
+            *outFailureIndex = kInvalidFingerLocalTransformIndex;
+        }
+        if (outFailure) {
+            *outFailure = grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None;
+        }
+        if (grab_finger_local_transform_math::sanitizeFingerLocalTransformMask(transforms.enabledMask) !=
+            grab_finger_local_transform_math::kFullFingerLocalTransformMask) {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < std::size(transforms.localTransforms); ++index) {
+            const auto failure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(
+                transforms.localTransforms[index]);
+            if (failure == grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
+                continue;
+            }
+            if (outFailureIndex) {
+                *outFailureIndex = index;
+            }
+            if (outFailure) {
+                *outFailure = failure;
+            }
+            return false;
+        }
+        return true;
+    }
+
     [[nodiscard]] inline float dot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     [[nodiscard]] inline RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
     {
-        return RE::NiPoint3{
-            lhs.y * rhs.z - lhs.z * rhs.y,
-            lhs.z * rhs.x - lhs.x * rhs.z,
-            lhs.x * rhs.y - lhs.y * rhs.x,
-        };
+        return vector_math::cross(lhs, rhs);
     }
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     [[nodiscard]] inline RE::NiPoint3 normalizeOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
@@ -3536,13 +3975,16 @@ namespace rock::grab_finger_local_transform_runtime
     }
 
     [[nodiscard]] inline bool applyAlternateThumbPlaneCorrection(
+        bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
         const std::array<LiveFingerTransform, 15>& liveNodes,
         float maxCorrectionRadians,
         float strength,
         bool surfaceSafetyEnabled,
         float surfaceSafetyMarginGameUnits,
-        frik_visual_authority::FingerLocalTransformOverride& transforms)
+        frik_visual_authority::FingerLocalTransformOverride& transforms,
+        const char** outFailureReason = nullptr,
+        std::size_t* outFailureIndex = nullptr)
     {
         const float configuredStrength = grab_finger_local_transform_math::sanitizeUnitStrength(
             strength, grab_finger_local_transform_math::kDefaultThumbAlternateCurveStrength);
@@ -3610,8 +4052,11 @@ namespace rock::grab_finger_local_transform_runtime
             const RE::NiMatrix3 targetWorldRotation = applyWorldRotationToStoredBasis(rotationDelta, node.world.rotate);
             RE::NiTransform localTransform = transforms.localTransforms[segment];
             localTransform.rotate = transform_math::multiplyStoredRotations(targetWorldRotation, transform_math::transposeRotation(node.parentWorld.rotate));
-            if (!isFiniteTransform(localTransform)) {
-                continue;
+            const auto safetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(localTransform);
+            if (safetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
+                logRejectedFingerTransform(isLeft, segment, "alternate-thumb-correction", localTransform, safetyFailure);
+                setTransformFailure(outFailureReason, outFailureIndex, "corrected-thumb-transform", segment);
+                return false;
             }
 
             transforms.localTransforms[segment] = localTransform;
@@ -3651,14 +4096,16 @@ namespace rock::grab_finger_local_transform_runtime
         return nullptr;
     }
 
-    [[nodiscard]] inline bool resolveLiveFingerTransforms(bool isLeft, std::array<LiveFingerTransform, 15>& outNodes)
+    [[nodiscard]] inline bool resolveFingerTransforms(
+        const DirectSkeletonBoneSnapshot& snapshot,
+        bool isLeft,
+        std::array<LiveFingerTransform, 15>& outNodes,
+        const char** outFailureReason = nullptr,
+        std::size_t* outFailureIndex = nullptr)
     {
         outNodes = {};
-
-        DirectSkeletonBoneSnapshot snapshot{};
-        if (!rootFlattenedFingerReader().capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                snapshot)) {
+        if (!snapshot.valid) {
+            setTransformFailure(outFailureReason, outFailureIndex, "live-snapshot-invalid", kInvalidFingerLocalTransformIndex);
             return false;
         }
 
@@ -3668,7 +4115,34 @@ namespace rock::grab_finger_local_transform_runtime
                 const char* boneName = root_flattened_finger_skeleton_runtime::fingerBoneName(isLeft, finger, segment);
                 const auto* node = boneName ? findSnapshotBone(snapshot, boneName) : nullptr;
                 const auto* parent = node ? findSnapshotBoneByTreeIndex(snapshot, node->parentTreeIndex) : nullptr;
-                if (!node || !parent || !isFiniteTransform(node->world) || !isFiniteTransform(parent->world)) {
+                if (!node || !parent) {
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        1000,
+                        "Dynamic grab finger transform rejected hand={} stage=live-node-resolution bone={} index={} node={} parent={}",
+                        isLeft ? "left" : "right",
+                        boneName ? boneName : "unknown",
+                        index,
+                        node ? "present" : "missing",
+                        parent ? "present" : "missing");
+                    setTransformFailure(outFailureReason, outFailureIndex, "live-finger-node-missing", index);
+                    return false;
+                }
+
+                const auto nodeFailure = !isFiniteTransform(node->world) ?
+                    grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::NonFinite :
+                    grab_finger_local_transform_math::inspectStoredRotationBasis(node->world);
+                if (nodeFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
+                    logRejectedFingerTransform(isLeft, index, "live-node", node->world, nodeFailure);
+                    setTransformFailure(outFailureReason, outFailureIndex, "live-finger-node-transform", index);
+                    return false;
+                }
+
+                const auto parentFailure = !isFiniteTransform(parent->world) ?
+                    grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::NonFinite :
+                    grab_finger_local_transform_math::inspectStoredRotationBasis(parent->world);
+                if (parentFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
+                    logRejectedFingerTransform(isLeft, index, "live-parent", parent->world, parentFailure);
+                    setTransformFailure(outFailureReason, outFailureIndex, "live-finger-parent-transform", index);
                     return false;
                 }
                 outNodes[index] = LiveFingerTransform{
@@ -3681,23 +4155,55 @@ namespace rock::grab_finger_local_transform_runtime
         return true;
     }
 
+    [[nodiscard]] inline bool resolveLiveFingerTransforms(
+        bool isLeft,
+        std::array<LiveFingerTransform, 15>& outNodes,
+        const char** outFailureReason = nullptr,
+        std::size_t* outFailureIndex = nullptr)
+    {
+        DirectSkeletonBoneSnapshot snapshot{};
+        if (!rootFlattenedFingerReader().capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                SkeletonBoneCaptureSpace::Controller,
+                snapshot)) {
+            outNodes = {};
+            setTransformFailure(outFailureReason, outFailureIndex, "live-snapshot-capture", kInvalidFingerLocalTransformIndex);
+            return false;
+        }
+        return resolveFingerTransforms(snapshot, isLeft, outNodes, outFailureReason, outFailureIndex);
+    }
+
     [[nodiscard]] inline bool buildSurfaceCorrectedLocalTransforms(
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
         const frik_visual_authority::FingerLocalTransformOverride& baseline,
         Options options,
         frik_visual_authority::FingerLocalTransformOverride& outTransforms,
-        const char** outFailureReason = nullptr)
+        const char** outFailureReason = nullptr,
+        const DirectSkeletonBoneSnapshot* capturedFingerSnapshot = nullptr,
+        std::size_t* outFailureIndex = nullptr)
     {
         if (outFailureReason) {
             *outFailureReason = "none";
         }
+        if (outFailureIndex) {
+            *outFailureIndex = kInvalidFingerLocalTransformIndex;
+        }
         outTransforms = baseline;
         outTransforms.enabledMask = grab_finger_local_transform_math::sanitizeFingerLocalTransformMask(baseline.enabledMask);
         if (outTransforms.enabledMask != grab_finger_local_transform_math::kFullFingerLocalTransformMask) {
-            if (outFailureReason) {
-                *outFailureReason = "baseline-mask";
+            setTransformFailure(outFailureReason, outFailureIndex, "baseline-mask", kInvalidFingerLocalTransformIndex);
+            return false;
+        }
+
+        std::size_t unsafeBaselineIndex = kInvalidFingerLocalTransformIndex;
+        grab_finger_local_transform_math::FingerLocalTransformSafetyFailure unsafeBaselineFailure{};
+        if (!fingerLocalTransformOverrideIsSafeForPublication(baseline, &unsafeBaselineIndex, &unsafeBaselineFailure)) {
+            if (unsafeBaselineIndex < std::size(baseline.localTransforms)) {
+                logRejectedFingerTransform(isLeft, unsafeBaselineIndex, "baseline", baseline.localTransforms[unsafeBaselineIndex], unsafeBaselineFailure);
             }
+            setTransformFailure(outFailureReason, outFailureIndex, "baseline-finger-transform", unsafeBaselineIndex);
             return false;
         }
 
@@ -3730,10 +4236,22 @@ namespace rock::grab_finger_local_transform_runtime
 
         std::array<LiveFingerTransform, 15> liveNodes{};
         const bool needsLiveNodes = wantsSurfaceCorrection || wantsAlternateThumbPlaneCorrection;
-        if (needsLiveNodes && !resolveLiveFingerTransforms(isLeft, liveNodes)) {
-            if (outFailureReason) {
-                *outFailureReason = "live-root-finger-transforms";
-            }
+        bool liveNodesResolved = true;
+        if (needsLiveNodes) {
+            liveNodesResolved = capturedFingerSnapshot && capturedFingerSnapshot->valid ?
+                resolveFingerTransforms(
+                    *capturedFingerSnapshot,
+                    isLeft,
+                    liveNodes,
+                    outFailureReason,
+                    outFailureIndex) :
+                resolveLiveFingerTransforms(
+                    isLeft,
+                    liveNodes,
+                    outFailureReason,
+                    outFailureIndex);
+        }
+        if (!liveNodesResolved) {
             return false;
         }
 
@@ -3796,8 +4314,11 @@ namespace rock::grab_finger_local_transform_runtime
                 const RE::NiMatrix3 targetWorldRotation = applyWorldRotationToStoredBasis(rotationDelta, node.world.rotate);
                 RE::NiTransform localTransform = baseline.localTransforms[index];
                 localTransform.rotate = transform_math::multiplyStoredRotations(targetWorldRotation, transform_math::transposeRotation(node.parentWorld.rotate));
-                if (!isFiniteTransform(localTransform)) {
-                    continue;
+                const auto safetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(localTransform);
+                if (safetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
+                    logRejectedFingerTransform(isLeft, index, "surface-correction", localTransform, safetyFailure);
+                    setTransformFailure(outFailureReason, outFailureIndex, "corrected-finger-transform", index);
+                    return false;
                 }
 
                 outTransforms.localTransforms[index] = localTransform;
@@ -3805,19 +4326,36 @@ namespace rock::grab_finger_local_transform_runtime
             }
         }
 
+        const char* alternateFailureReason = nullptr;
+        std::size_t alternateFailureIndex = kInvalidFingerLocalTransformIndex;
         const bool appliedAlternateThumbCurve = wantsAlternateThumbPlaneCorrection && applyAlternateThumbPlaneCorrection(
+            isLeft,
             fingerPose,
             liveNodes,
             maxCorrectionRadians,
             options.thumbAlternateCurveStrength,
             options.thumbSurfaceSafetyEnabled,
             options.thumbSurfaceSafetyMarginGameUnits,
-            outTransforms);
+            outTransforms,
+            &alternateFailureReason,
+            &alternateFailureIndex);
 
         if (wantsAlternateThumbPlaneCorrection && !appliedAlternateThumbCurve) {
-            if (outFailureReason) {
-                *outFailureReason = "alternate-thumb-plane";
+            setTransformFailure(
+                outFailureReason,
+                outFailureIndex,
+                alternateFailureReason ? alternateFailureReason : "alternate-thumb-plane",
+                alternateFailureIndex);
+            return false;
+        }
+
+        std::size_t unsafeOutputIndex = kInvalidFingerLocalTransformIndex;
+        grab_finger_local_transform_math::FingerLocalTransformSafetyFailure unsafeOutputFailure{};
+        if (!fingerLocalTransformOverrideIsSafeForPublication(outTransforms, &unsafeOutputIndex, &unsafeOutputFailure)) {
+            if (unsafeOutputIndex < std::size(outTransforms.localTransforms)) {
+                logRejectedFingerTransform(isLeft, unsafeOutputIndex, "final-output", outTransforms.localTransforms[unsafeOutputIndex], unsafeOutputFailure);
             }
+            setTransformFailure(outFailureReason, outFailureIndex, "output-finger-transform", unsafeOutputIndex);
             return false;
         }
 
@@ -3825,27 +4363,32 @@ namespace rock::grab_finger_local_transform_runtime
             !appliedAlternateThumbCurve &&
             (wantsSurfaceCorrection || wantsAlternateThumbPlaneCorrection) &&
             outFailureReason) {
-            *outFailureReason = "no-surface-correction";
+            *outFailureReason = "surface-correction-not-needed";
         }
         return anyCorrected ||
             appliedAlternateThumbCurve ||
-            (!wantsSurfaceCorrection && !wantsAlternateThumbPlaneCorrection);
+            !wantsAlternateThumbPlaneCorrection;
     }
 
     [[nodiscard]] inline frik_visual_authority::FingerLocalTransformOverride smoothLocalTransforms(
         const frik_visual_authority::FingerLocalTransformOverride& target,
         State& state,
         float smoothingSpeed,
-        float deltaTime)
+        float deltaTime,
+        bool isLeft)
     {
         frik_visual_authority::FingerLocalTransformOverride smoothed = target;
         const std::uint16_t targetMask = grab_finger_local_transform_math::sanitizeFingerLocalTransformMask(target.enabledMask);
-        if (!state.hasCurrentTransforms || state.currentMask != targetMask) {
+        smoothed.enabledMask = targetMask;
+        const auto resetStateToTarget = [&]() {
             for (std::size_t i = 0; i < state.currentTransforms.size(); ++i) {
                 state.currentTransforms[i] = target.localTransforms[i];
             }
             state.currentMask = targetMask;
             state.hasCurrentTransforms = true;
+        };
+        if (!state.hasCurrentTransforms || state.currentMask != targetMask) {
+            resetStateToTarget();
             return smoothed;
         }
 
@@ -3853,6 +4396,13 @@ namespace rock::grab_finger_local_transform_runtime
         for (std::size_t i = 0; i < state.currentTransforms.size(); ++i) {
             if ((targetMask & (1U << i)) == 0) {
                 continue;
+            }
+
+            const auto currentSafetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(state.currentTransforms[i]);
+            if (currentSafetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
+                logRejectedFingerTransform(isLeft, i, "smoothing-state", state.currentTransforms[i], currentSafetyFailure);
+                resetStateToTarget();
+                return smoothed;
             }
 
             RE::NiTransform next = target.localTransforms[i];
@@ -3865,6 +4415,13 @@ namespace rock::grab_finger_local_transform_runtime
             const auto targetRotation = hand_visual_lerp_math::matrixToQuaternion(target.localTransforms[i].rotate);
             next.rotate = hand_visual_lerp_math::quaternionToMatrix<RE::NiMatrix3>(
                 hand_visual_lerp_math::slerp(currentRotation, targetRotation, alpha));
+
+            const auto nextSafetyFailure = grab_finger_local_transform_math::inspectFingerLocalTransformForPublication(next);
+            if (nextSafetyFailure != grab_finger_local_transform_math::FingerLocalTransformSafetyFailure::None) {
+                logRejectedFingerTransform(isLeft, i, "smoothed-output", next, nextSafetyFailure);
+                resetStateToTarget();
+                return smoothed;
+            }
 
             state.currentTransforms[i] = next;
             smoothed.localTransforms[i] = next;
@@ -3881,7 +4438,7 @@ namespace rock::grab_finger_local_transform_runtime
         }
 
         frik_visual_authority::FingerLocalTransformOverride clearData{};
-        (void)frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, hand, &clearData, priority);
+        (void)frik_visual_authority::setHandPoseCustomLocalTransforms(tag, hand, &clearData, priority);
         state = {};
     }
 
@@ -3903,7 +4460,7 @@ namespace rock::grab_finger_local_transform_runtime
                 fingerPose.solved,
                 true,
                 api && api->getHandPoseLocalTransformsForPose != nullptr,
-                api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
+                api && api->setHandPoseCustomLocalTransforms != nullptr);
         if (!canPublish) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
@@ -3916,14 +4473,37 @@ namespace rock::grab_finger_local_transform_runtime
         }
 
         frik_visual_authority::FingerLocalTransformOverride corrected{};
-        if (!buildSurfaceCorrectedLocalTransforms(isLeft, fingerPose, baseline, options, corrected)) {
+        const char* failureReason = "unknown";
+        std::size_t failureIndex = kInvalidFingerLocalTransformIndex;
+        if (!buildSurfaceCorrectedLocalTransforms(
+                isLeft,
+                fingerPose,
+                baseline,
+                options,
+                corrected,
+                &failureReason,
+                nullptr,
+                &failureIndex)) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
         }
 
         const Options sanitizedOptions = sanitizeOptions(options);
-        const auto smoothed = smoothLocalTransforms(corrected, state, sanitizedOptions.smoothingSpeed, deltaTime);
-        (void)frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, hand, &smoothed, priority);
+        const auto smoothed = smoothLocalTransforms(corrected, state, sanitizedOptions.smoothingSpeed, deltaTime, isLeft);
+        std::size_t unsafeIndex = kInvalidFingerLocalTransformIndex;
+        grab_finger_local_transform_math::FingerLocalTransformSafetyFailure unsafeFailure{};
+        if (!fingerLocalTransformOverrideIsSafeForPublication(smoothed, &unsafeIndex, &unsafeFailure)) {
+            if (unsafeIndex < std::size(smoothed.localTransforms)) {
+                logRejectedFingerTransform(isLeft, unsafeIndex, "publication-boundary", smoothed.localTransforms[unsafeIndex], unsafeFailure);
+            }
+            clearLocalTransformOverride(tag, hand, priority, state);
+            return false;
+        }
+
+        if (!frik_visual_authority::setHandPoseCustomLocalTransforms(tag, hand, &smoothed, priority)) {
+            clearLocalTransformOverride(tag, hand, priority, state);
+            return false;
+        }
         return true;
     }
 }
@@ -3931,12 +4511,11 @@ namespace rock::grab_finger_local_transform_runtime
 // ---- GrabFingerFrozenMeshRuntime.h ----
 
 /*
- * Regular object grabs and equipped-weapon part grips must not assemble their
- * own subtly different argument lists around the calibrated solver. This
- * shared one-shot boundary owns the authored-open anchor, bounded local BVH,
- * thumb/index surface policy, pad refinement, and object-local surface capture.
- * Callers remain responsible only for presenting the mesh in the final frozen
- * hand/object relation and for caching/publishing the returned pose.
+ * The indexed frozen-mesh base owns the common authored-open anchor, bounded
+ * local BVH, and calibrated sweep solve. Regular loose grabs layer their
+ * thumb/index and pad-probe presentation policy on top. Equipped weapons use
+ * the base directly because their multi-part surfaces and weapon-specific
+ * opposition contract are not equivalent to a freely held object.
  */
 namespace rock::grab_finger_pose_runtime
 {
@@ -4018,7 +4597,7 @@ namespace rock::grab_finger_pose_runtime
     }
 
     template <class TriangleContainer>
-    inline FrozenMeshFingerPoseSolveResult solveFrozenMeshFingerPose(
+    inline FrozenMeshFingerPoseSolveResult solveFrozenMeshFingerPoseBase(
         const TriangleContainer& boundedLocalTriangles,
         const RE::NiTransform& frozenMeshWorldTransform,
         const RE::NiTransform& handWorldTransform,
@@ -4027,13 +4606,26 @@ namespace rock::grab_finger_pose_runtime
         const GrabFingerPoseTargetSet& poseTargets,
         FingerPoseTriangleSpatialIndex& spatialIndex,
         std::vector<TriangleData>& worldTriangleScratch,
-        const FrozenMeshFingerPoseSolveOptions& options)
+        const FrozenMeshFingerPoseSolveOptions& options,
+        const root_flattened_finger_skeleton_runtime::Snapshot*
+            capturedFingerSnapshot = nullptr)
     {
         FrozenMeshFingerPoseSolveResult result{};
         rebuildBoundedWorldTriangles(boundedLocalTriangles, frozenMeshWorldTransform, worldTriangleScratch);
         result.spatialIndexBuilt = spatialIndex.buildFromLocalTriangles(boundedLocalTriangles);
 
-        result.liveFingerSnapshotValid = root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, result.liveFingerSnapshot);
+        if (capturedFingerSnapshot) {
+            if (capturedFingerSnapshot->valid) {
+                result.liveFingerSnapshot = *capturedFingerSnapshot;
+                result.liveFingerSnapshotValid = true;
+            }
+        } else {
+            result.liveFingerSnapshotValid =
+                root_flattened_finger_skeleton_runtime::
+                    resolveLiveFingerSkeletonSnapshot(
+                        isLeft,
+                        result.liveFingerSnapshot);
+        }
         const auto* liveFingerSnapshotPtr = result.liveFingerSnapshotValid ? &result.liveFingerSnapshot : nullptr;
 
         std::array<RE::NiPoint3, 5> commandedOpenDirectionsWorld{};
@@ -4061,6 +4653,34 @@ namespace rock::grab_finger_pose_runtime
             options.captureSweepDebug ? &result.sweepDebug : nullptr,
             FingerPoseMeshRelation::AlreadyAtCommandedSeat);
 
+        return result;
+    }
+
+    template <class TriangleContainer>
+    inline FrozenMeshFingerPoseSolveResult solveFrozenMeshFingerPose(
+        const TriangleContainer& boundedLocalTriangles,
+        const RE::NiTransform& frozenMeshWorldTransform,
+        const RE::NiTransform& handWorldTransform,
+        bool isLeft,
+        const RE::NiPoint3& grabAnchorWorld,
+        const GrabFingerPoseTargetSet& poseTargets,
+        FingerPoseTriangleSpatialIndex& spatialIndex,
+        std::vector<TriangleData>& worldTriangleScratch,
+        const FrozenMeshFingerPoseSolveOptions& options,
+        const root_flattened_finger_skeleton_runtime::Snapshot*
+            capturedFingerSnapshot = nullptr)
+    {
+        auto result = solveFrozenMeshFingerPoseBase(
+            boundedLocalTriangles,
+            frozenMeshWorldTransform,
+            handWorldTransform,
+            isLeft,
+            grabAnchorWorld,
+            poseTargets,
+            spatialIndex,
+            worldTriangleScratch,
+            options,
+            capturedFingerSnapshot);
         useThumbIndexCurveOnlyPose(result.pose);
         if (result.liveFingerSnapshotValid) {
             (void)refineGrabFingerPoseWithPadProbes(

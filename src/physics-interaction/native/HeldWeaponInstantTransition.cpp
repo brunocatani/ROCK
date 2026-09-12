@@ -3,9 +3,8 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/NativeMemory.h"
-#include "rock_support/Fo4VrRuntime.h"
+#include "physics-interaction/native/WeaponActionTrace.h"
 
-#include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 
 #include <REL/Relocation.h>
@@ -21,14 +20,12 @@ namespace rock::held_weapon_instant_transition
     namespace
     {
         using DrawWeaponMagicHands = void (*)(RE::PlayerCharacter*, bool);
-        using CompleteWeaponDraw = void (*)(RE::Actor*);
 
         constexpr std::uintptr_t kPlayerDrawWeaponEntry = 0x0F78D10;
         constexpr std::uintptr_t kEquipManagerDrawCallsite = 0x0E107A1;
         constexpr std::uintptr_t kEquipManagerDrawReturn = 0x0E107A7;
         constexpr std::uintptr_t kEquipManagerSheatheCallsite = 0x0E10988;
         constexpr std::uintptr_t kEquipManagerSheatheReturn = 0x0E1098E;
-        constexpr std::uintptr_t kCompleteWeaponDraw = 0x0DBE590;
         constexpr std::uintptr_t kDrawWeaponVtableOffset = 0x648;
 
         constexpr std::array<std::uint8_t, 14> kExpectedPlayerDrawEntry{
@@ -41,31 +38,17 @@ namespace rock::held_weapon_instant_transition
         constexpr std::array<std::uint8_t, 6> kExpectedEquipManagerVirtualCall{
             0xFF, 0x90, 0x48, 0x06, 0x00, 0x00,
         };
-        constexpr std::array<std::uint8_t, 16> kExpectedCompleteWeaponDrawEntry{
-            0x40, 0x53, 0x48, 0x83, 0xEC, 0x30, 0x48, 0x8B,
-            0xD9, 0x48, 0x8B, 0x89, 0x00, 0x03, 0x00, 0x00,
-        };
 
         struct TransactionScope
         {
             RE::PlayerCharacter* player{ nullptr };
-            RequestReason reason{ RequestReason::SameHandTrigger };
             held_weapon_instant_transition_policy::ActionTrace trace{};
-        };
-
-        struct CompletionPermitState
-        {
-            std::uint64_t id{ 0 };
-            RE::PlayerCharacter* player{ nullptr };
-            RequestReason reason{ RequestReason::SameHandTrigger };
         };
 
         DrawWeaponMagicHands s_originalDrawWeaponMagicHands = nullptr;
         std::atomic<bool> s_installed{ false };
         std::atomic<DWORD> s_ownerThreadId{ 0 };
         thread_local TransactionScope* t_activeScope = nullptr;
-        thread_local CompletionPermitState t_completionPermit{};
-        thread_local std::uint64_t t_nextCompletionPermit{ 1 };
 
         __declspec(noinline) void onDrawWeaponMagicHands(
             RE::PlayerCharacter* player,
@@ -103,24 +86,6 @@ namespace rock::held_weapon_instant_transition
                    actual == expected;
         }
 
-        [[nodiscard]] bool equippedIdentityMatches(
-            RE::PlayerCharacter* player,
-            const EquippedIdentity& expected) noexcept
-        {
-            if (!player || expected.formID == 0) {
-                return false;
-            }
-
-            auto* equipped = f4vr::getEquippedItem();
-            auto* object = equipped ? equipped->item.object : nullptr;
-            auto* instanceData = equipped ? equipped->item.instanceData.get() : nullptr;
-            return object &&
-                   object->formType == RE::ENUM_FORM_ID::kWEAP &&
-                   object->formID == expected.formID &&
-                   reinterpret_cast<std::uintptr_t>(instanceData) == expected.instanceData &&
-                   equipped->equipIndex.index == expected.equipIndex;
-        }
-
         class ScopeLease
         {
         public:
@@ -138,27 +103,6 @@ namespace rock::held_weapon_instant_transition
             ScopeLease& operator=(const ScopeLease&) = delete;
         };
 
-        [[nodiscard]] std::uint64_t issueCompletionPermit(
-            RE::PlayerCharacter* player,
-            const RequestReason reason) noexcept
-        {
-            auto permit = t_nextCompletionPermit++;
-            if (permit == 0) {
-                permit = t_nextCompletionPermit++;
-            }
-            t_completionPermit = CompletionPermitState{
-                .id = permit,
-                .player = player,
-                .reason = reason,
-            };
-            return permit;
-        }
-
-        void invalidateCompletionPermit() noexcept
-        {
-            t_completionPermit = {};
-        }
-
         __declspec(noinline) void onDrawWeaponMagicHands(
             RE::PlayerCharacter* player,
             const bool draw)
@@ -172,6 +116,11 @@ namespace rock::held_weapon_instant_transition
                 returnAddress,
                 REL::Offset(kEquipManagerDrawReturn).address(),
                 REL::Offset(kEquipManagerSheatheReturn).address());
+
+            weapon_action_trace::recordDraw(player, draw,
+                decision == held_weapon_instant_transition_policy::HookDecision::SuppressDraw ||
+                    decision == held_weapon_instant_transition_policy::HookDecision::SuppressSheathe,
+                returnAddress);
 
             switch (decision) {
             case held_weapon_instant_transition_policy::HookDecision::SuppressDraw:
@@ -222,12 +171,6 @@ namespace rock::held_weapon_instant_transition
                 "Held weapon instant transition unavailable: EquipManager sheathe callsite changed");
             return false;
         }
-        if (!bytesMatch(kCompleteWeaponDraw, kExpectedCompleteWeaponDrawEntry)) {
-            ROCK_LOG_ERROR(Init,
-                "Held weapon instant transition unavailable: native draw completion entry changed");
-            return false;
-        }
-
         void* original = reinterpret_cast<void*>(s_originalDrawWeaponMagicHands);
         const bool installed = entry_trampoline_hook::install(
             "PlayerCharacter::DrawWeaponMagicHands held weapon transaction",
@@ -290,9 +233,6 @@ namespace rock::held_weapon_instant_transition
         if (!bytesMatch(kEquipManagerSheatheCallsite, kExpectedEquipManagerVirtualCall)) {
             return { .reason = ReadinessReason::SheatheCallsiteChanged };
         }
-        if (!bytesMatch(kCompleteWeaponDraw, kExpectedCompleteWeaponDrawEntry)) {
-            return { .reason = ReadinessReason::CompletionEntryChanged };
-        }
         return {
             .ready = true,
             .reason = ReadinessReason::Ready,
@@ -304,7 +244,6 @@ namespace rock::held_weapon_instant_transition
     {
         ImmediateEquipResult result{};
         result.reason = input.reason;
-        invalidateCompletionPermit();
         if (!input.manager || !input.player || !input.object || !input.equipSlot) {
             result.code = ImmediateEquipCode::MissingInput;
             return result;
@@ -325,7 +264,6 @@ namespace rock::held_weapon_instant_transition
 
         TransactionScope scope{
             .player = input.player,
-            .reason = input.reason,
         };
         result.attempted = true;
         {
@@ -348,82 +286,13 @@ namespace rock::held_weapon_instant_transition
             result.code = ImmediateEquipCode::ManagerRejected;
             return result;
         }
-        if (!held_weapon_instant_transition_policy::isValidCompletionTrace(
+        if (!held_weapon_instant_transition_policy::isValidEquipActionTrace(
                 result.actionTrace)) {
             result.code = ImmediateEquipCode::InvalidActionTrace;
             return result;
         }
 
-        result.completionPermit = issueCompletionPermit(input.player, input.reason);
         result.code = ImmediateEquipCode::Accepted;
-        return result;
-    }
-
-    void discardCompletionPermit(const ImmediateEquipResult& equip) noexcept
-    {
-        if (equip.completionPermit != 0 &&
-            t_completionPermit.id == equip.completionPermit) {
-            invalidateCompletionPermit();
-        }
-    }
-
-    CompletionResult completeDrawForExactCurrent(
-        const ImmediateEquipResult& equip,
-        const EquippedIdentity& expected) noexcept
-    {
-        CompletionResult result{};
-        auto* player = f4vr::getPlayer();
-        if (!player) {
-            invalidateCompletionPermit();
-            result.code = CompletionCode::MissingPlayer;
-            return result;
-        }
-
-        const auto readiness = readinessFor(player);
-        result.readinessReason = readiness.reason;
-        if (!readiness.ready) {
-            invalidateCompletionPermit();
-            result.code = CompletionCode::CapabilityUnavailable;
-            return result;
-        }
-
-        const bool authorized = equip.success() &&
-            t_completionPermit.id != 0 &&
-            t_completionPermit.id == equip.completionPermit &&
-            t_completionPermit.player == player &&
-            t_completionPermit.reason == equip.reason;
-        invalidateCompletionPermit();
-        if (!authorized) {
-            result.code = CompletionCode::UnauthorizedTransaction;
-            return result;
-        }
-        if (!equippedIdentityMatches(player, expected)) {
-            result.code = CompletionCode::IdentityChangedBeforeCompletion;
-            return result;
-        }
-
-        result.stateBefore = static_cast<std::uint32_t>(player->weaponState);
-        result.stateAfter = result.stateBefore;
-        if (!held_weapon_instant_transition_policy::isStableWeaponState(
-                result.stateBefore)) {
-            result.code = CompletionCode::InvalidWeaponState;
-            return result;
-        }
-
-        const auto completeDraw = reinterpret_cast<CompleteWeaponDraw>(
-            REL::Offset(kCompleteWeaponDraw).address());
-        completeDraw(player);
-        result.stateAfter = static_cast<std::uint32_t>(player->weaponState);
-
-        if (!equippedIdentityMatches(player, expected)) {
-            result.code = CompletionCode::IdentityChangedAfterCompletion;
-            return result;
-        }
-        if (result.stateAfter != 3) {
-            result.code = CompletionCode::NativeCompletionFailed;
-            return result;
-        }
-        result.code = CompletionCode::Completed;
         return result;
     }
 
@@ -462,8 +331,6 @@ namespace rock::held_weapon_instant_transition
             return "draw-callsite-changed";
         case ReadinessReason::SheatheCallsiteChanged:
             return "sheathe-callsite-changed";
-        case ReadinessReason::CompletionEntryChanged:
-            return "completion-entry-changed";
         default:
             return "unknown";
         }
@@ -489,27 +356,4 @@ namespace rock::held_weapon_instant_transition
         }
     }
 
-    const char* completionCodeName(const CompletionCode code) noexcept
-    {
-        switch (code) {
-        case CompletionCode::Completed:
-            return "completed";
-        case CompletionCode::CapabilityUnavailable:
-            return "capability-unavailable";
-        case CompletionCode::UnauthorizedTransaction:
-            return "unauthorized-transaction";
-        case CompletionCode::MissingPlayer:
-            return "missing-player";
-        case CompletionCode::IdentityChangedBeforeCompletion:
-            return "identity-changed-before-completion";
-        case CompletionCode::IdentityChangedAfterCompletion:
-            return "identity-changed-after-completion";
-        case CompletionCode::InvalidWeaponState:
-            return "invalid-weapon-state";
-        case CompletionCode::NativeCompletionFailed:
-            return "native-completion-failed";
-        default:
-            return "not-attempted";
-        }
-    }
 }

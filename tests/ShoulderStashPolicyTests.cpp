@@ -81,24 +81,25 @@ int main()
         exceedsShoulderStashSpeedLimit(140.0f, 140.0f));
     ok &= expectFalse("zero stash speed ceiling disables speed rejection",
         exceedsShoulderStashSpeedLimit(1000.0f, 0.0f));
-    ok &= expectTrue("confirmed fast open release arms equipped stash lease",
-        shouldArmEquippedWeaponFastReleaseCommitLease(true, true, false, true));
-    ok &= expectFalse("fast held motion cannot arm equipped stash lease",
-        shouldArmEquippedWeaponFastReleaseCommitLease(true, true, true, true));
-    ok &= expectFalse("unconfirmed fast entry cannot arm equipped stash lease",
-        shouldArmEquippedWeaponFastReleaseCommitLease(false, true, false, true));
-    ok &= expectFalse("leaving the confirmed volume cannot arm equipped stash lease",
-        shouldArmEquippedWeaponFastReleaseCommitLease(true, true, false, false));
-    ok &= expectTrue("matching open-frame equipped stash lease is usable",
-        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 1, false, true));
-    ok &= expectFalse("regripping invalidates equipped stash lease",
-        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 1, true, true));
-    ok &= expectFalse("leaving the back volume invalidates equipped stash lease",
-        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 1, false, false));
-    ok &= expectFalse("equipped stash lease rejects a replacement weapon instance",
-        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xBBu, 1, false, true));
-    ok &= expectFalse("equipped stash lease expires after its bounded open-frame window",
-        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 0, false, true));
+    const auto relativeProbeBefore = probePointRelativeToHmdTranslation(
+        RE::NiPoint3{ 10.0f, 20.0f, 30.0f },
+        RE::NiPoint3{ 2.0f, 4.0f, 6.0f });
+    const auto relativeProbeAfterCommonTranslation =
+        probePointRelativeToHmdTranslation(
+            RE::NiPoint3{ 15.0f, 17.0f, 32.0f },
+            RE::NiPoint3{ 7.0f, 1.0f, 8.0f });
+    ok &= expectNear("common locomotion preserves HMD-relative probe X",
+        relativeProbeAfterCommonTranslation.x,
+        relativeProbeBefore.x,
+        0.001f);
+    ok &= expectNear("common locomotion preserves HMD-relative probe Y",
+        relativeProbeAfterCommonTranslation.y,
+        relativeProbeBefore.y,
+        0.001f);
+    ok &= expectNear("common locomotion preserves HMD-relative probe Z",
+        relativeProbeAfterCommonTranslation.z,
+        relativeProbeBefore.z,
+        0.001f);
 
     ok &= expectTrue("HMD primary to collider backup preserves dwell on same zone",
         shoulderStashDwellIdentityMatches(

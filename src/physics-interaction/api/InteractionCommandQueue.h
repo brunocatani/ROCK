@@ -10,6 +10,8 @@ namespace rock::provider
         std::uint64_t commandId{ 0 };
         RockProviderInteractionCommandKindV1 kind{ RockProviderInteractionCommandKindV1::Unknown };
         RockProviderForceGrabRequestV1 forceGrab{};
+        RockProviderPowerArmorPointV1 powerArmorPoint{};
+        std::uint32_t powerArmorReferenceNativeHandle = 0;
         RockProviderForceReleaseRequestV1 forceRelease{};
         RockProviderThrownDropRequestV1 thrownDrop{};
     };

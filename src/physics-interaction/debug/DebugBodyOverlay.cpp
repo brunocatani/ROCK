@@ -21,7 +21,9 @@
 #include <wrl/client.h>
 
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
+#include "physics-interaction/native/HeldScenePresentation.h"
 #include "physics-interaction/debug/DebugOverlayGpuTimer.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
@@ -29,15 +31,18 @@
 #include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
 #include "physics-interaction/debug/DebugOverlayShapePipeline.h"
 #include "physics-interaction/debug/DebugOverlayShaders.h"
+#include "physics-interaction/debug/DebugWorldTextGeometry.h"
 #include "physics-interaction/debug/DebugOverlaySnapshotPool.h"
 #include "physics-interaction/debug/DebugOverlayStats.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSGraphics.h"
+#include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
 
@@ -52,19 +57,7 @@ namespace rock::debug
 {
     namespace
     {
-        constexpr std::uintptr_t kBodyArrayOffset = 0x20;
-        constexpr std::uintptr_t kHighWaterMarkOffset = 0x70;
-        constexpr std::uintptr_t kMotionArrayOffset = 0xE0;
-        constexpr std::uintptr_t kBodyStride = 0x90;
-        constexpr std::uintptr_t kMotionStride = 0x80;
-        constexpr std::uintptr_t kBodyFlagsOffset = 0x40;
-        constexpr std::uintptr_t kBodyFilterOffset = 0x44;
-        constexpr std::uintptr_t kBodyShapeOffset = 0x48;
-        constexpr std::uintptr_t kBodyMotionIndexOffset = 0x68;
-        constexpr std::uintptr_t kBodyIdOffset = 0x6C;
         constexpr std::uintptr_t kBodyMotionPropertiesOffset = 0x72;
-        constexpr std::uintptr_t kMotionPositionOffset = 0x00;
-        constexpr std::uintptr_t kMotionOrientationOffset = 0x10;
         // Concrete scaled/compound layouts are absent from CommonLibF4VR.
         // These FO4VR offsets were independently verified in the constructors,
         // alloc/copy helpers, key-mask code, and shape consumers recorded in
@@ -82,13 +75,16 @@ namespace rock::debug
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
         constexpr std::uint32_t kFreeMotionIndex = 0x7FFF'FFFF;
         constexpr std::uint32_t kMaxBodyIndex = body_frame::kMaxReadableBodyIndex;
-        constexpr std::uint32_t kMaxMotionIndex = 4096;
         constexpr float kRawAxisLength = 8.0f;
         constexpr float kColliderAxisLength = 12.0f;
         constexpr float kBodyAxisLength = 16.0f;
         constexpr float kTargetAxisLength = 20.0f;
-        constexpr std::size_t kBodyInstanceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
-        static_assert(kBodyInstanceCapacity == debug_overlay_runtime::kMaxBodyInstances);
+        constexpr std::size_t kBodySourceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
+        // CurrentTarget, PreStep, PostSolve, PredictedPresentation shells.
+        constexpr std::size_t kBodyDiagnosticPhaseCount = 4;
+        constexpr std::size_t kBodyInstanceCapacity = kBodySourceCapacity * kBodyDiagnosticPhaseCount;
+        static_assert(kBodySourceCapacity == debug_overlay_runtime::kMaxBodyInstances);
+        static_assert(GripZoneIndicatorOverlayFrame::kCapacity <= kBodyInstanceCapacity);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr UINT kMaxShaderClassInstances = 256;
@@ -171,24 +167,116 @@ namespace rock::debug
             std::uintptr_t shapeAddress{ 0 };
             ShapeKey key{};
             float detailUniformScale{ 1.0f };
+            int shapeType{ -1 };
+        };
+
+        enum class BodyRenderPhase : std::uint8_t
+        {
+            RoleColor,
+            CurrentTarget,
+            PreStep,
+            PostSolve,
+            // Post-solve pose extrapolated by the remainder bhkWorld::Update
+            // publishes at exit: the pose the engine's vfunction44 scene
+            // writer gives the render node this frame.
+            PredictedPresentation
         };
 
         struct PublishedBodyEntry
         {
             ShapeKey shapeKey{};
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
+            DirectX::XMMATRIX physicsWorldMatrix = DirectX::XMMatrixIdentity();
+            DirectX::XMMATRIX currentTargetWorldMatrix = DirectX::XMMatrixIdentity();
+            DirectX::XMMATRIX childLocalMatrix =
+                DirectX::XMMatrixIdentity();
             DirectX::XMFLOAT3 worldAabbMin{};
             DirectX::XMFLOAT3 worldAabbMax{};
             BodyOverlayRole role{ BodyOverlayRole::Target };
             std::uint32_t bodyId{ kInvalidBodyId };
             float detailUniformScale{ 1.0f };
             bool hasValidWorldAabb{ false };
+            bool hasChildLocalMatrix{ false };
+            bool hasCurrentTarget{ false };
+            bool hasHeldPresentation{ false };
+        };
+
+        struct PhysicsPhaseCaptureRequestEntry
+        {
+            DirectX::XMFLOAT4X4 preStepWorldMatrix{};
+            DirectX::XMFLOAT4X4 currentTargetWorldMatrix{};
+            RE::hknpBodyId bodyId{ kInvalidBodyId };
+            BodyOverlayRole role{ BodyOverlayRole::Target };
+            bool useBodyArrayTransform{ false };
+            bool preStepValid{ false };
+            bool hasCurrentTarget{ false };
+        };
+
+        struct PhysicsPhaseCaptureRequest
+        {
+            std::array<PhysicsPhaseCaptureRequestEntry, kBodySourceCapacity> entries{};
+            std::uintptr_t worldIdentity{ 0 };
+            std::uint64_t gameFrameIndex{ 0 };
+            std::uint32_t count{ 0 };
+        };
+
+        struct CompletedBodyPhaseEntry
+        {
+            DirectX::XMFLOAT4X4 currentTargetWorldMatrix{};
+            DirectX::XMFLOAT4X4 preStepWorldMatrix{};
+            DirectX::XMFLOAT4X4 postSolveWorldMatrix{};
+            DirectX::XMFLOAT4X4 predictedPresentationWorldMatrix{};
+            RE::hknpBodyId bodyId{ kInvalidBodyId };
+            BodyOverlayRole role{ BodyOverlayRole::Target };
+            float predictedOffsetGameUnits{ 0.0f };
+            bool hasCurrentTarget{ false };
+            bool preStepValid{ false };
+            bool postSolveValid{ false };
+            bool predictedPresentationValid{ false };
+        };
+
+        struct CompletedBodyPhaseFrame
+        {
+            std::array<CompletedBodyPhaseEntry, kBodySourceCapacity> entries{};
+            std::uintptr_t worldIdentity{ 0 };
+            std::uint64_t gameFrameIndex{ 0 };
+            std::uint64_t solveSequence{ 0 };
+            std::uint32_t substepIndex{ 0 };
+            std::uint32_t substepCount{ 0 };
+            std::uint32_t count{ 0 };
+            std::uint32_t validCount{ 0 };
+            float presentationRemainderSeconds{ 0.0f };
+            bool presentationRemainderValid{ false };
+        };
+
+        class AtomicFlagLease
+        {
+        public:
+            explicit AtomicFlagLease(std::atomic_flag& flag) noexcept :
+                _flag(flag.test_and_set(std::memory_order_acquire) ? nullptr : &flag)
+            {}
+
+            ~AtomicFlagLease()
+            {
+                if (_flag) {
+                    _flag->clear(std::memory_order_release);
+                }
+            }
+
+            AtomicFlagLease(const AtomicFlagLease&) = delete;
+            AtomicFlagLease& operator=(const AtomicFlagLease&) = delete;
+
+            [[nodiscard]] explicit operator bool() const noexcept { return _flag != nullptr; }
+
+        private:
+            std::atomic_flag* _flag{ nullptr };
         };
 
         struct PublishedAxisEntry
         {
             AxisOverlayEntry entry{};
             DirectX::XMMATRIX bodyWorldMatrix = DirectX::XMMatrixIdentity();
+            bool hasHeldPresentation{ false };
         };
 
         struct PublishedOverlayFrame
@@ -202,6 +290,7 @@ namespace rock::debug
             std::vector<CapturedShapeIdentity> capturedShapeIdentities;
             OverlayRenderSettings settings{};
             std::uintptr_t worldIdentity{ 0 };
+            std::uint64_t gameFrameIndex{ 0 };
             std::uint32_t bodyExtractFailures{ 0 };
             std::uint32_t shapeCaptures{ 0 };
             std::uint32_t shapeCaptureDeferrals{ 0 };
@@ -212,6 +301,7 @@ namespace rock::debug
             bool drawSkeleton{ false };
             bool drawColoredLines{ false };
             bool drawText{ false };
+            bool phaseDiagnosticsEnabled{ false };
         };
 
         enum class BodyOverlayFrameSource : std::uint8_t
@@ -284,6 +374,7 @@ namespace rock::debug
             Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencil;
             Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
             GpuShape aabbProxy;
+            GpuShape gripZoneIndicatorSphere;
             std::unique_ptr<RenderScratch> scratch;
             debug_overlay_gpu_timer::TimestampQueryRing gpuTimer;
 
@@ -292,7 +383,10 @@ namespace rock::debug
                 return device && bodyVertexShader && stereoColorVertexShader && screenTextVertexShader && pixelShader && bodyInputLayout && coloredInputLayout &&
                        cameraCB && bodyInstanceVB && axisLineVB && textVB && scratch &&
                        wireRasterizer && solidRasterizer && depthStencil && blendState &&
-                       aabbProxy.vertexBuffer && aabbProxy.indexBuffer && aabbProxy.indexCount > 0;
+                       aabbProxy.vertexBuffer && aabbProxy.indexBuffer && aabbProxy.indexCount > 0 &&
+                       gripZoneIndicatorSphere.vertexBuffer &&
+                       gripZoneIndicatorSphere.indexBuffer &&
+                       gripZoneIndicatorSphere.indexCount > 0;
             }
         };
 
@@ -324,13 +418,52 @@ namespace rock::debug
         constexpr std::size_t kPublishedFramePoolCapacity = 4;
         static debug_overlay_snapshot::SnapshotPool<PublishedOverlayFrame, kPublishedFramePoolCapacity> s_framePool{};
         static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_publishedFrame{};
+        static debug_overlay_snapshot::SnapshotPool<
+            GripZoneIndicatorOverlayFrame,
+            kPublishedFramePoolCapacity>
+            s_gripZoneIndicatorFramePool{};
+        static std::atomic<std::shared_ptr<const GripZoneIndicatorOverlayFrame>>
+            s_publishedGripZoneIndicatorFrame{};
         static std::atomic<bool> s_enabled{ false };
+        static std::atomic<bool> s_standardFrameEnabled{ false };
+        static std::atomic<bool> s_gripZoneIndicatorFrameEnabled{ false };
+        // Advanced before each marker publication. The submit hook rejects an
+        // older snapshot instead of rendering the previous weapon pose.
+        static std::atomic<std::uint64_t>
+            s_latestGripZoneIndicatorGameFrameIndex{ 0 };
         static std::atomic<bool> s_initialized{ false };
         static std::atomic<bool> s_submitHookInstalled{ false };
         static bool s_installAttemptedWithoutDevice = false;
         static std::uintptr_t s_previousWorld = 0;
         static std::uint64_t s_previousShapeDecodeSettingsKey = 0;
         static std::uint32_t s_overlayStatsLogCounter = 0;
+        static std::atomic_flag s_physicsPhaseCaptureGate = ATOMIC_FLAG_INIT;
+        static std::atomic<bool> s_physicsPhaseCaptureEnabled{ false };
+        static PhysicsPhaseCaptureRequest s_physicsPhaseCaptureRequest{};
+        static CompletedBodyPhaseFrame s_completedBodyPhaseFrame{};
+
+        /*
+         * Post-solve phase-capture diagnostics. The capture chain crosses
+         * three threads (game publish, physics capture, render consume) and
+         * previously failed silently; these counters attribute a missing
+         * cyan/orange shell to the exact gate that refused. Read on the HUD
+         * and in a rate-limited game-thread log line.
+         */
+        struct PhaseCaptureDiagnostics
+        {
+            std::atomic<std::uint32_t> storedFrames{ 0 };
+            std::atomic<std::uint32_t> invalidInputs{ 0 };
+            std::atomic<std::uint32_t> gateMisses{ 0 };
+            std::atomic<std::uint32_t> notStaged{ 0 };
+            std::atomic<std::uint32_t> worldMismatches{ 0 };
+            std::atomic<std::uint32_t> frameMismatches{ 0 };
+            std::atomic<std::uint32_t> extractFailures{ 0 };
+            std::atomic<std::uint32_t> consumeHits{ 0 };
+            std::atomic<std::uint32_t> consumeMisses{ 0 };
+            std::atomic<std::uint64_t> lastRequestFrame{ 0 };
+            std::atomic<std::uint64_t> lastCaptureFrame{ 0 };
+        };
+        static PhaseCaptureDiagnostics s_phaseCaptureDiagnostics{};
 
         static D3DResources s_d3d{};
         static std::atomic_flag s_renderPassActive = ATOMIC_FLAG_INIT;
@@ -340,8 +473,10 @@ namespace rock::debug
         static std::atomic<bool> s_bodyInstanceUploadFailureReported{ false };
         static std::atomic<bool> s_lineUploadFailureReported{ false };
         static std::atomic<bool> s_textUploadFailureReported{ false };
+        static std::atomic<bool> s_gripZoneIndicatorUploadFailureReported{ false };
         static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
+        static std::atomic<bool> s_gripZoneIndicatorSnapshotPoolExhaustionReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
         static std::atomic<bool> s_gpuTimerInitFailureReported{ false };
         static CachedRenderTargetView s_submittedTextureRtv{};
@@ -350,6 +485,15 @@ namespace rock::debug
         {
             static debug_overlay_shape::ShapePipeline pipeline;
             return pipeline;
+        }
+
+        void refreshOverlayEnabled() noexcept
+        {
+            s_enabled.store(
+                s_standardFrameEnabled.load(std::memory_order_acquire) ||
+                    s_gripZoneIndicatorFrameEnabled.load(
+                        std::memory_order_acquire),
+                std::memory_order_release);
         }
 
         using VRSubmit_t = vr::EVRCompositorError(__thiscall*)(vr::IVRCompositor*, vr::EVREye, const vr::Texture_t*, const vr::VRTextureBounds_t*, vr::EVRSubmitFlags);
@@ -585,6 +729,75 @@ namespace rock::debug
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
+        bool isFiniteTransform(const RE::NiTransform& transform)
+        {
+            if (!std::isfinite(transform.translate.x) ||
+                !std::isfinite(transform.translate.y) ||
+                !std::isfinite(transform.translate.z) ||
+                !std::isfinite(transform.scale) ||
+                transform.scale <= 0.0f) {
+                return false;
+            }
+            for (std::uint32_t row = 0; row < 3; ++row) {
+                for (std::uint32_t column = 0; column < 3; ++column) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        DirectX::XMMATRIX niTransformToWorldMatrix(const RE::NiTransform& transform)
+        {
+            // Generated-body writes cross the NiTransform -> hkTransform
+            // boundary through niRotToHkTransformRotation. Render the current
+            // target through the same conversion so TARGET and BODY use one
+            // physical-axis convention in the row-major instancing shader.
+            const RE::NiMatrix3 physicsRotation =
+                niRotToHkTransformRotation(transform.rotate);
+            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(
+                physicsRotation.entry[0][0], physicsRotation.entry[0][1], physicsRotation.entry[0][2], 0.0f,
+                physicsRotation.entry[1][0], physicsRotation.entry[1][1], physicsRotation.entry[1][2], 0.0f,
+                physicsRotation.entry[2][0], physicsRotation.entry[2][1], physicsRotation.entry[2][2], 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f);
+            const DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(
+                transform.translate.x,
+                transform.translate.y,
+                transform.translate.z);
+            return DirectX::XMMatrixMultiply(rotation, translation);
+        }
+
+        DirectX::XMMATRIX niStoredBodyAxesToWorldMatrix(const RE::NiTransform& transform)
+        {
+            /*
+             * Grab BODY targets use the same stored-axis contract as hknp BODY
+             * readback: each NiMatrix row is one physical local axis. Do not
+             * transpose these targets through the generated-collider write
+             * convention. bodyToWorldMatrix copies the corresponding native
+             * BODY axis blocks into these same D3D matrix rows.
+             */
+            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(
+                transform.rotate.entry[0][0], transform.rotate.entry[0][1], transform.rotate.entry[0][2], 0.0f,
+                transform.rotate.entry[1][0], transform.rotate.entry[1][1], transform.rotate.entry[1][2], 0.0f,
+                transform.rotate.entry[2][0], transform.rotate.entry[2][1], transform.rotate.entry[2][2], 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f);
+            const DirectX::XMMATRIX translation = DirectX::XMMatrixTranslation(
+                transform.translate.x,
+                transform.translate.y,
+                transform.translate.z);
+            return DirectX::XMMatrixMultiply(rotation, translation);
+        }
+
+        DirectX::XMMATRIX currentTargetToWorldMatrix(
+            BodyOverlayRole role,
+            const RE::NiTransform& transform)
+        {
+            return role == BodyOverlayRole::Target ?
+                niStoredBodyAxesToWorldMatrix(transform) :
+                niTransformToWorldMatrix(transform);
+        }
+
         DirectX::XMMATRIX worldAabbMatrix(const PublishedBodyEntry& body)
         {
             const float extentX = body.worldAabbMax.x - body.worldAabbMin.x;
@@ -619,51 +832,201 @@ namespace rock::debug
 
         bool extractBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, BodyOverlayFrameSource frameSource, BodyRenderInfo& out)
         {
-            if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
+            const auto* body = havok_runtime::getBody(world, bodyId);
+            if (!body || !body->shape) {
                 return false;
             }
 
-            auto worldAddress = reinterpret_cast<std::uintptr_t>(world);
-            auto bodyArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kBodyArrayOffset);
-            auto motionArray = *reinterpret_cast<std::uintptr_t*>(worldAddress + kMotionArrayOffset);
-            auto highWaterMark = *reinterpret_cast<std::uint32_t*>(worldAddress + kHighWaterMarkOffset);
-            if (!bodyArray || !motionArray || bodyId.value > highWaterMark || highWaterMark > kMaxBodyIndex) {
-                return false;
-            }
-
-            const auto bodyAddress = bodyArray + static_cast<std::uintptr_t>(bodyId.value) * kBodyStride;
-            const auto motionIndex = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyMotionIndexOffset);
-            if (motionIndex == kFreeMotionIndex) {
-                return false;
-            }
-
-            const auto shapeAddress = *reinterpret_cast<std::uintptr_t*>(bodyAddress + kBodyShapeOffset);
-            if (!shapeAddress) {
-                return false;
-            }
-
+            const auto bodyAddress = reinterpret_cast<std::uintptr_t>(body);
             out.bodyAddress = bodyAddress;
-            out.shapeAddress = shapeAddress;
-            out.bodyId = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyIdOffset);
-            out.motionIndex = motionIndex;
-            out.flags = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFlagsOffset);
-            out.filterInfo = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFilterOffset);
+            out.shapeAddress = reinterpret_cast<std::uintptr_t>(body->shape);
+            out.bodyId = bodyId.value;
+            out.motionIndex = body->motionIndex;
+            out.flags = body->flags;
+            out.filterInfo = body->collisionFilterInfo;
             out.motionPropertiesId = *reinterpret_cast<std::uint16_t*>(bodyAddress + kBodyMotionPropertiesOffset);
 
-            if (frameSource == BodyOverlayFrameSource::BodyArrayTransform) {
+            if (frameSource == BodyOverlayFrameSource::BodyArrayTransform || body->motionIndex == 0) {
                 const auto* transform = reinterpret_cast<const float*>(bodyAddress);
                 out.worldMatrix = bodyToWorldMatrix(transform);
-            } else if (motionIndex > 0 && motionIndex < kMaxMotionIndex) {
-                const auto motionAddress = motionArray + static_cast<std::uintptr_t>(motionIndex) * kMotionStride;
-                const auto* position = reinterpret_cast<const float*>(motionAddress + kMotionPositionOffset);
-                const auto* orientation = reinterpret_cast<const float*>(motionAddress + kMotionOrientationOffset);
-                out.worldMatrix = motionToWorldMatrix(position, orientation);
             } else {
-                const auto* transform = reinterpret_cast<const float*>(bodyAddress);
-                out.worldMatrix = bodyToWorldMatrix(transform);
+                const auto* motion = havok_runtime::getMotion(world, body->motionIndex);
+                if (!motion) {
+                    return false;
+                }
+                out.worldMatrix = motionToWorldMatrix(&motion->position.x, &motion->orientation.x);
             }
 
             return true;
+        }
+
+        // Reads the body's motion-record world-space linear velocity (Havok
+        // units/s). Same guarded walk as extractBody; fails closed on any
+        // missing array, freed motion, or non-finite component.
+        bool tryReadMotionLinearVelocityHavok(
+            RE::hknpWorld* world,
+            RE::hknpBodyId bodyId,
+            float outVelocity[3]) noexcept
+        {
+            const auto* motion = havok_runtime::getBodyMotion(world, bodyId);
+            if (!motion) {
+                return false;
+            }
+
+            const auto& velocity = motion->linearVelocity;
+            if (!std::isfinite(velocity.x) || !std::isfinite(velocity.y) || !std::isfinite(velocity.z)) {
+                return false;
+            }
+
+            outVelocity[0] = velocity.x;
+            outVelocity[1] = velocity.y;
+            outVelocity[2] = velocity.z;
+            return true;
+        }
+
+        void stagePhysicsPhaseCapture(const PublishedOverlayFrame& frame) noexcept
+        {
+            s_physicsPhaseCaptureEnabled.store(
+                false,
+                std::memory_order_release);
+            AtomicFlagLease lease(s_physicsPhaseCaptureGate);
+            if (!lease) {
+                return;
+            }
+
+            s_physicsPhaseCaptureRequest = {};
+            if (!frame.worldIdentity || frame.gameFrameIndex == 0 ||
+                (!frame.drawRockBodies && !frame.drawTargetBodies && !frame.drawAxes)) {
+                s_physicsPhaseCaptureEnabled.store(
+                    false,
+                    std::memory_order_release);
+                s_completedBodyPhaseFrame = {};
+                return;
+            }
+
+            if (s_completedBodyPhaseFrame.worldIdentity != 0 &&
+                s_completedBodyPhaseFrame.worldIdentity != frame.worldIdentity) {
+                s_completedBodyPhaseFrame = {};
+            }
+
+            s_physicsPhaseCaptureRequest.worldIdentity = frame.worldIdentity;
+            s_physicsPhaseCaptureRequest.gameFrameIndex = frame.gameFrameIndex;
+            for (const auto& source : frame.bodies) {
+                if (source.bodyId == kInvalidBodyId) {
+                    continue;
+                }
+
+                bool alreadyStaged = false;
+                for (std::uint32_t index = 0;
+                     index < s_physicsPhaseCaptureRequest.count;
+                     ++index) {
+                    const auto& staged = s_physicsPhaseCaptureRequest.entries[index];
+                    if (staged.bodyId.value == source.bodyId &&
+                        staged.role == source.role) {
+                        alreadyStaged = true;
+                        break;
+                    }
+                }
+                if (alreadyStaged) {
+                    continue;
+                }
+
+                if (s_physicsPhaseCaptureRequest.count >=
+                    s_physicsPhaseCaptureRequest.entries.size()) {
+                    break;
+                }
+
+                auto& destination = s_physicsPhaseCaptureRequest.entries[
+                    s_physicsPhaseCaptureRequest.count++];
+                destination.bodyId = RE::hknpBodyId{ source.bodyId };
+                destination.role = source.role;
+                destination.useBodyArrayTransform =
+                    source.role == BodyOverlayRole::Target;
+                DirectX::XMStoreFloat4x4(
+                    &destination.preStepWorldMatrix,
+                    source.physicsWorldMatrix);
+                destination.preStepValid = true;
+                if (source.hasCurrentTarget) {
+                    DirectX::XMStoreFloat4x4(
+                        &destination.currentTargetWorldMatrix,
+                        source.currentTargetWorldMatrix);
+                    destination.hasCurrentTarget = true;
+                }
+            }
+            // Body axes can be enabled without collider shells. Capture their
+            // physical frame too, sharing a request when the shell is present.
+            for (const auto& axis : frame.axes) {
+                if (axis.entry.source != AxisOverlaySource::Body || axis.entry.bodyId.value == kInvalidBodyId) continue;
+                const auto role = axis.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target :
+                    axis.entry.role == AxisOverlayRole::LeftHandBody ? BodyOverlayRole::LeftHand : BodyOverlayRole::RightHand;
+                bool alreadyStaged = false;
+                for (std::uint32_t index = 0; index < s_physicsPhaseCaptureRequest.count; ++index) {
+                    const auto& entry = s_physicsPhaseCaptureRequest.entries[index];
+                    alreadyStaged |= entry.bodyId.value == axis.entry.bodyId.value && entry.role == role;
+                }
+                if (alreadyStaged) continue;
+                if (s_physicsPhaseCaptureRequest.count >= s_physicsPhaseCaptureRequest.entries.size()) break;
+                auto& request = s_physicsPhaseCaptureRequest.entries[s_physicsPhaseCaptureRequest.count++];
+                request.bodyId = axis.entry.bodyId;
+                request.role = role;
+                request.useBodyArrayTransform = role == BodyOverlayRole::Target;
+            }
+            s_physicsPhaseCaptureEnabled.store(
+                s_physicsPhaseCaptureRequest.count != 0,
+                std::memory_order_release);
+        }
+
+        void clearPhysicsPhaseCapture() noexcept
+        {
+            s_physicsPhaseCaptureEnabled.store(
+                false,
+                std::memory_order_release);
+            AtomicFlagLease lease(s_physicsPhaseCaptureGate);
+            if (!lease) {
+                return;
+            }
+            s_physicsPhaseCaptureRequest = {};
+            s_completedBodyPhaseFrame = {};
+        }
+
+        bool tryCopyCompletedBodyPhaseFrame(
+            const PublishedOverlayFrame& published,
+            CompletedBodyPhaseFrame& outFrame) noexcept
+        {
+            constexpr std::uint64_t kMaxCompletedPhaseAgeFrames = 3;
+            AtomicFlagLease lease(s_physicsPhaseCaptureGate);
+            if (!lease ||
+                s_completedBodyPhaseFrame.worldIdentity != published.worldIdentity ||
+                s_completedBodyPhaseFrame.gameFrameIndex > published.gameFrameIndex ||
+                published.gameFrameIndex - s_completedBodyPhaseFrame.gameFrameIndex >
+                    kMaxCompletedPhaseAgeFrames ||
+                s_completedBodyPhaseFrame.count == 0) {
+                s_phaseCaptureDiagnostics.consumeMisses.fetch_add(
+                    1, std::memory_order_relaxed);
+                return false;
+            }
+
+            s_phaseCaptureDiagnostics.consumeHits.fetch_add(
+                1, std::memory_order_relaxed);
+            outFrame = s_completedBodyPhaseFrame;
+            return true;
+        }
+
+        const CompletedBodyPhaseEntry* findCompletedBodyPhaseEntry(
+            const CompletedBodyPhaseFrame& frame,
+            std::uint32_t bodyId, BodyOverlayRole role)
+        {
+            for (std::uint32_t index = 0;
+                 index < frame.count && index < frame.entries.size();
+                 ++index) {
+                const auto& candidate = frame.entries[index];
+                if (candidate.postSolveValid &&
+                    candidate.bodyId.value == bodyId &&
+                    candidate.role == role) {
+                    return &candidate;
+                }
+            }
+            return nullptr;
         }
 
         bool captureBodyWorldAabb(
@@ -927,6 +1290,117 @@ namespace rock::debug
             return recipe.valid;
         }
 
+        struct CapturedCompoundChild
+        {
+            std::uintptr_t shapeAddress{ 0 };
+            std::array<float, 16> transform{};
+            std::array<float, 3> scale{};
+        };
+
+        inline constexpr std::size_t kMaxExpandedCompoundChildren = 64;
+
+        std::int32_t captureCompoundChildSlotsUnsafe(
+            const std::uintptr_t shapeAddress,
+            const OverlayRenderSettings& settings,
+            std::array<CapturedCompoundChild,
+                kMaxExpandedCompoundChildren>& outChildren)
+        {
+            try {
+                const auto slotArray =
+                    *reinterpret_cast<const std::uintptr_t*>(
+                        shapeAddress + kCompoundSlotArrayOffset);
+                const auto slotCount =
+                    *reinterpret_cast<const std::int32_t*>(
+                        shapeAddress + kCompoundSlotCountOffset);
+                if (!slotArray || slotCount <= 0 ||
+                    static_cast<std::uint32_t>(slotCount) >
+                        settings.limits.maxCompoundChildren ||
+                    static_cast<std::size_t>(slotCount) >
+                        outChildren.size()) {
+                    return -1;
+                }
+
+                std::int32_t captured = 0;
+                for (std::int32_t index = 0;
+                     index < slotCount;
+                     ++index) {
+                    const auto slotOffset =
+                        static_cast<std::uintptr_t>(index) *
+                        kCompoundSlotStride;
+                    if (slotArray >
+                        (std::numeric_limits<std::uintptr_t>::max)() -
+                            slotOffset) {
+                        return -1;
+                    }
+                    const auto slot = slotArray + slotOffset;
+                    if (*reinterpret_cast<const std::uint8_t*>(
+                            slot + kCompoundSlotActiveOffset) != 0) {
+                        continue;
+                    }
+
+                    const auto childShapeAddress =
+                        *reinterpret_cast<const std::uintptr_t*>(
+                            slot + kCompoundSlotShapeOffset);
+                    const auto* transform =
+                        reinterpret_cast<const float*>(
+                            slot + kCompoundSlotTransformOffset);
+                    const auto* childScale =
+                        reinterpret_cast<const float*>(
+                            slot + kCompoundSlotScaleOffset);
+                    if (!childShapeAddress ||
+                        !finiteShapeTransform(transform) ||
+                        !finiteShapeVector3(childScale)) {
+                        return -1;
+                    }
+
+                    auto& child = outChildren[
+                        static_cast<std::size_t>(captured++)];
+                    child.shapeAddress = childShapeAddress;
+                    std::copy_n(
+                        transform,
+                        child.transform.size(),
+                        child.transform.begin());
+                    std::copy_n(
+                        childScale,
+                        child.scale.size(),
+                        child.scale.begin());
+                }
+                return captured;
+            } catch (...) {
+                return -1;
+            }
+        }
+
+        std::int32_t captureCompoundChildSlotsSeh(
+            const std::uintptr_t shapeAddress,
+            const OverlayRenderSettings* settings,
+            std::array<CapturedCompoundChild,
+                kMaxExpandedCompoundChildren>* outChildren)
+        {
+            if (!settings || !outChildren) {
+                return -1;
+            }
+            __try {
+                return captureCompoundChildSlotsUnsafe(
+                    shapeAddress,
+                    *settings,
+                    *outChildren);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return -1;
+            }
+        }
+
+        DirectX::XMMATRIX compoundChildLocalMatrix(
+            const CapturedCompoundChild& child)
+        {
+            return DirectX::XMMatrixMultiply(
+                DirectX::XMMatrixScaling(
+                    child.scale[0],
+                    child.scale[1],
+                    child.scale[2]),
+                bodyToWorldMatrix(child.transform.data()));
+        }
+
         bool isRockBodyRole(BodyOverlayRole role)
         {
             return role == BodyOverlayRole::RightHand || role == BodyOverlayRole::LeftHand ||
@@ -934,6 +1408,8 @@ namespace rock::debug
                    role == BodyOverlayRole::BodyTorsoSegment || role == BodyOverlayRole::BodyArmSegment ||
                    role == BodyOverlayRole::BodyLegSegment || role == BodyOverlayRole::BodyFootSegment ||
                    role == BodyOverlayRole::Weapon ||
+                   role == BodyOverlayRole::DynamicWeaponProxy ||
+                   role == BodyOverlayRole::FocusedWeaponPart ||
                    role == BodyOverlayRole::RightGrabAuthorityProxy ||
                    role == BodyOverlayRole::LeftGrabAuthorityProxy ||
                    role == BodyOverlayRole::RightGrabPivotSourceCollider ||
@@ -983,6 +1459,7 @@ namespace rock::debug
             frame.capturedShapeIdentities.clear();
             frame.settings = {};
             frame.worldIdentity = 0;
+            frame.gameFrameIndex = 0;
             frame.bodyExtractFailures = 0;
             frame.shapeCaptures = 0;
             frame.shapeCaptureDeferrals = 0;
@@ -993,6 +1470,7 @@ namespace rock::debug
             frame.drawSkeleton = false;
             frame.drawColoredLines = false;
             frame.drawText = false;
+            frame.phaseDiagnosticsEnabled = false;
         }
 
         CapturedShapeIdentity captureShapeIdentityForFrame(PublishedOverlayFrame& frame, std::uintptr_t shapeAddress)
@@ -1012,7 +1490,12 @@ namespace rock::debug
                 detailUniformScale = convexRadius * havokToGameScale();
             }
 
-            const CapturedShapeIdentity captured{ shapeAddress, key, detailUniformScale };
+            const CapturedShapeIdentity captured{
+                shapeAddress,
+                key,
+                detailUniformScale,
+                shapeType,
+            };
             frame.capturedShapeIdentities.push_back(captured);
             return captured;
         }
@@ -1061,6 +1544,7 @@ namespace rock::debug
             resetPublishedFrame(destination);
             destination.settings = captureOverlayRenderSettings();
             destination.worldIdentity = reinterpret_cast<std::uintptr_t>(source.world);
+            destination.gameFrameIndex = source.gameFrameIndex;
             if (!destination.worldIdentity) {
                 return false;
             }
@@ -1087,6 +1571,10 @@ namespace rock::debug
             destination.drawSkeleton = source.drawSkeleton;
             destination.drawColoredLines = source.drawColoredLines;
             destination.drawText = source.drawText;
+            destination.phaseDiagnosticsEnabled =
+                source.drawColliderPhaseDiagnostics &&
+                source.gameFrameIndex != 0 &&
+                (source.drawRockBodies || source.drawTargetBodies);
 
             const auto bodyCount = (std::min)(source.count, static_cast<std::uint32_t>(source.entries.size()));
             destination.bodies.reserve(source.entries.size());
@@ -1104,12 +1592,96 @@ namespace rock::debug
                     continue;
                 }
 
-                PublishedBodyEntry published{};
+                // Held-object presentation advances the complete solved pose.
+                // Use that same immutable frame for the ordinary collider shell,
+                // while phase diagnostics retain the unmodified physics sample.
+                RE::NiTransform presentedBody{};
+                const bool hasPresentation = held_scene_presentation::tryGetPresentedBodyWorld(
+                    source.world, entry.bodyId.value, source.gameFrameIndex, presentedBody);
+                const auto displayedWorldMatrix = hasPresentation ?
+                    niStoredBodyAxesToWorldMatrix(presentedBody) : body.worldMatrix;
+
                 const auto shapeIdentity = captureShapeIdentityForFrame(destination, body.shapeAddress);
+                if (rockRole &&
+                    (shapeIdentity.shapeType == 7 ||
+                        shapeIdentity.shapeType == 8)) {
+                    std::array<CapturedCompoundChild,
+                        kMaxExpandedCompoundChildren> children{};
+                    const auto childCount = captureCompoundChildSlotsSeh(
+                        body.shapeAddress,
+                        &destination.settings,
+                        &children);
+                    if (childCount > 0) {
+                        DirectX::XMFLOAT3 aabbMin{};
+                        DirectX::XMFLOAT3 aabbMax{};
+                        const bool aabbValid = captureBodyWorldAabb(
+                            source.world,
+                            entry.bodyId,
+                            aabbMin,
+                            aabbMax);
+                        for (std::int32_t childIndex = 0;
+                             childIndex < childCount;
+                             ++childIndex) {
+                            const auto& child = children[
+                                static_cast<std::size_t>(childIndex)];
+                            const auto childIdentity =
+                                captureShapeIdentityForFrame(
+                                    destination,
+                                    child.shapeAddress);
+                            PublishedBodyEntry published{};
+                            published.shapeKey = childIdentity.key;
+                            published.worldMatrix = displayedWorldMatrix;
+                            published.physicsWorldMatrix = body.worldMatrix;
+                            published.hasHeldPresentation = hasPresentation;
+                            if (entry.hasCurrentTarget && isFiniteTransform(entry.currentTarget)) {
+                                published.currentTargetWorldMatrix =
+                                    currentTargetToWorldMatrix(
+                                        entry.role,
+                                        entry.currentTarget);
+                                published.hasCurrentTarget = true;
+                            }
+                            published.childLocalMatrix =
+                                compoundChildLocalMatrix(child);
+                            published.hasChildLocalMatrix = true;
+                            published.role = entry.role;
+                            // Keep the array-index id, not the +0x6C
+                            // self-reported id: the post-solve phase capture
+                            // feeds this value back into extractBody, whose
+                            // index guard rejects the serial bits.
+                            published.bodyId = entry.bodyId.value;
+                            published.detailUniformScale =
+                                childIdentity.detailUniformScale;
+                            published.hasValidWorldAabb = aabbValid;
+                            published.worldAabbMin = aabbMin;
+                            published.worldAabbMax = aabbMax;
+                            requestShapeBuildForFrame(
+                                destination,
+                                published.shapeKey,
+                                child.shapeAddress);
+                            destination.bodies.push_back(
+                                std::move(published));
+                        }
+                        continue;
+                    }
+                }
+
+                PublishedBodyEntry published{};
                 published.shapeKey = shapeIdentity.key;
-                published.worldMatrix = body.worldMatrix;
+                published.worldMatrix = displayedWorldMatrix;
+                published.physicsWorldMatrix = body.worldMatrix;
+                published.hasHeldPresentation = hasPresentation;
+                if (entry.hasCurrentTarget && isFiniteTransform(entry.currentTarget)) {
+                    published.currentTargetWorldMatrix =
+                        currentTargetToWorldMatrix(
+                            entry.role,
+                            entry.currentTarget);
+                    published.hasCurrentTarget = true;
+                }
                 published.role = entry.role;
-                published.bodyId = body.bodyId;
+                // Keep the array-index id, not the +0x6C self-reported id:
+                // the post-solve phase capture feeds this value back into
+                // extractBody, whose index guard rejects the serial bits.
+                published.bodyId = entry.bodyId.value;
                 published.detailUniformScale = shapeIdentity.detailUniformScale;
                 published.hasValidWorldAabb =
                     captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
@@ -1130,6 +1702,12 @@ namespace rock::debug
                             continue;
                         }
                         published.bodyWorldMatrix = body.worldMatrix;
+                        RE::NiTransform presentedBody{};
+                        if (held_scene_presentation::tryGetPresentedBodyWorld(source.world,
+                                published.entry.bodyId.value, source.gameFrameIndex, presentedBody)) {
+                            published.bodyWorldMatrix = niStoredBodyAxesToWorldMatrix(presentedBody);
+                            published.hasHeldPresentation = true;
+                        }
                     }
                     destination.axes.push_back(std::move(published));
                 }
@@ -1658,6 +2236,23 @@ namespace rock::debug
                 return false;
             }
 
+            debug_overlay_shape::ShapeRecipe gripIndicatorRecipe{};
+            gripIndicatorRecipe.kind =
+                debug_overlay_shape::ShapeRecipe::Kind::Sphere;
+            gripIndicatorRecipe.settings.havokToGameScale = 1.0f;
+            gripIndicatorRecipe.convexRadius = 1.0f;
+            gripIndicatorRecipe.canonicalUnitSphere = true;
+            gripIndicatorRecipe.valid = true;
+            const auto gripIndicatorShape =
+                debug_overlay_shape::buildMeshFromRecipe(
+                    gripIndicatorRecipe);
+            if (!createStaticGpuShape(
+                    device,
+                    gripIndicatorShape.mesh,
+                    resources.gripZoneIndicatorSphere)) {
+                return false;
+            }
+
             if (!resources.ready()) {
                 return false;
             }
@@ -1827,8 +2422,41 @@ namespace rock::debug
             return true;
         }
 
-        void bodyColor(BodyOverlayRole role, debug_overlay_policy::ShapeDecodeMode decodeMode, float color[4])
+        void bodyColor(
+            BodyOverlayRole role,
+            BodyRenderPhase phase,
+            debug_overlay_policy::ShapeDecodeMode decodeMode,
+            float color[4])
         {
+            switch (phase) {
+            case BodyRenderPhase::CurrentTarget:
+                color[0] = 1.0f;
+                color[1] = 0.88f;
+                color[2] = 0.05f;
+                color[3] = 0.58f;
+                return;
+            case BodyRenderPhase::PreStep:
+                color[0] = 1.0f;
+                color[1] = 0.08f;
+                color[2] = 0.58f;
+                color[3] = 0.34f;
+                return;
+            case BodyRenderPhase::PostSolve:
+                color[0] = 0.05f;
+                color[1] = 1.0f;
+                color[2] = 0.72f;
+                color[3] = 0.96f;
+                return;
+            case BodyRenderPhase::PredictedPresentation:
+                color[0] = 1.0f;
+                color[1] = 0.32f;
+                color[2] = 0.02f;
+                color[3] = 0.92f;
+                return;
+            case BodyRenderPhase::RoleColor:
+                break;
+            }
+
             color[0] = 1.0f;
             color[1] = 1.0f;
             color[2] = 1.0f;
@@ -1884,6 +2512,18 @@ namespace rock::debug
                 color[0] = 0.35f;
                 color[1] = 1.0f;
                 color[2] = 0.25f;
+                break;
+            case BodyOverlayRole::DynamicWeaponProxy:
+                color[0] = 1.0f;
+                color[1] = 0.24f;
+                color[2] = 0.08f;
+                color[3] = 0.92f;
+                break;
+            case BodyOverlayRole::FocusedWeaponPart:
+                color[0] = 1.0f;
+                color[1] = 0.72f;
+                color[2] = 0.05f;
+                color[3] = 0.95f;
                 break;
             case BodyOverlayRole::RightGrabAuthorityProxy:
                 color[0] = 0.05f;
@@ -1966,6 +2606,9 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabAuthorityProxyTarget:
             case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
                 return 13.0f;
+            case AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget:
+            case AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
+                return 9.0f;
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 15.0f;
@@ -1994,9 +2637,6 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
             case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
                 return 16.0f;
-            case AxisOverlayRole::RightCustomCalibrationOffset:
-            case AxisOverlayRole::LeftCustomCalibrationOffset:
-                return kColliderAxisLength;
             case AxisOverlayRole::TargetBody:
                 return kTargetAxisLength;
             }
@@ -2034,6 +2674,9 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabAuthorityProxyTarget:
             case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
                 return 0.88f;
+            case AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget:
+            case AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
+                return 0.98f;
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 0.72f;
@@ -2064,9 +2707,6 @@ namespace rock::debug
             case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
             case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
                 return 0.98f;
-            case AxisOverlayRole::RightCustomCalibrationOffset:
-            case AxisOverlayRole::LeftCustomCalibrationOffset:
-                return 0.92f;
             default:
                 return 1.0f;
             }
@@ -2295,16 +2935,25 @@ namespace rock::debug
                 color[3] = 0.96f;
                 break;
             case MarkerOverlayRole::RightGrabAuthorityProxyTarget:
-                color[0] = 0.10f;
-                color[1] = 0.95f;
-                color[2] = 1.0f;
-                color[3] = 0.98f;
-                break;
             case MarkerOverlayRole::LeftGrabAuthorityProxyTarget:
                 color[0] = 1.0f;
-                color[1] = 0.20f;
-                color[2] = 0.95f;
+                color[1] = 0.88f;
+                color[2] = 0.05f;
                 color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::RightGrabAuthorityProxyAppliedTarget:
+            case MarkerOverlayRole::LeftGrabAuthorityProxyAppliedTarget:
+                color[0] = 1.0f;
+                color[1] = 0.42f;
+                color[2] = 0.02f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabAuthorityProxyClockDelta:
+            case MarkerOverlayRole::LeftGrabAuthorityProxyClockDelta:
+                color[0] = 1.0f;
+                color[1] = 1.0f;
+                color[2] = 1.0f;
+                color[3] = 0.96f;
                 break;
             case MarkerOverlayRole::RightGrabAuthorityProxyOffset:
             case MarkerOverlayRole::LeftGrabAuthorityProxyOffset:
@@ -2506,6 +3155,18 @@ namespace rock::debug
                 color[2] = 0.04f;
                 color[3] = 1.0f;
                 break;
+            case MarkerOverlayRole::NativeScopeShotSight:
+                color[0] = 0.1f; color[1] = 1.0f; color[2] = 0.2f; color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeShotMuzzle:
+                color[0] = 0.05f; color[1] = 0.9f; color[2] = 1.0f; color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeShotAim:
+                color[0] = 1.0f; color[1] = 0.9f; color[2] = 0.05f; color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeShotLaunch:
+                color[0] = 1.0f; color[1] = 0.1f; color[2] = 0.9f; color[3] = 1.0f;
+                break;
             case MarkerOverlayRole::NativeScopeRockTarget:
                 color[0] = 0.05f;
                 color[1] = 1.0f;
@@ -2586,6 +3247,37 @@ namespace rock::debug
                 color[0] = 1.0f;
                 color[1] = 0.06f;
                 color[2] = 0.03f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationSupportSideAxis:
+                color[0] = 0.05f;
+                color[1] = 0.9f;
+                color[2] = 1.0f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationDownAxis:
+                color[0] = 1.0f;
+                color[1] = 0.15f;
+                color[2] = 0.85f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationReferenceAxis:
+                color[0] = 0.68f;
+                color[1] = 0.68f;
+                color[2] = 0.72f;
+                color[3] = 0.9f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationAllowedRegion:
+            case MarkerOverlayRole::AuthoredGripActivationPass:
+                color[0] = 0.25f;
+                color[1] = 1.0f;
+                color[2] = 0.12f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationFail:
+                color[0] = 1.0f;
+                color[1] = 0.12f;
+                color[2] = 0.05f;
                 color[3] = 0.98f;
                 break;
             case MarkerOverlayRole::RightRootFlattenedFingerSkeleton:
@@ -2865,7 +3557,8 @@ namespace rock::debug
             }
         }
 
-        void collectAxisOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
+        void collectAxisOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame,
+            const CompletedBodyPhaseFrame* completedFrame)
         {
             if (!frame.drawAxes || frame.axes.empty()) {
                 return;
@@ -2873,10 +3566,40 @@ namespace rock::debug
 
             for (const auto& published : frame.axes) {
                 if (published.entry.source == AxisOverlaySource::Body) {
-                    collectBodyAxisEntry(batch, published);
+                    auto displayed = published;
+                    if (!published.hasHeldPresentation && completedFrame && completedFrame->gameFrameIndex == frame.gameFrameIndex) {
+                        const auto role = published.entry.role == AxisOverlayRole::TargetBody ? BodyOverlayRole::Target :
+                            published.entry.role == AxisOverlayRole::LeftHandBody ? BodyOverlayRole::LeftHand : BodyOverlayRole::RightHand;
+                        if (const auto* completed = findCompletedBodyPhaseEntry(*completedFrame, published.entry.bodyId.value, role)) {
+                            displayed.bodyWorldMatrix = DirectX::XMLoadFloat4x4(&completed->postSolveWorldMatrix);
+                        }
+                    }
+                    collectBodyAxisEntry(batch, displayed);
                 } else {
                     collectTransformAxisEntry(batch, published.entry);
                 }
+            }
+        }
+
+        float bodyDiagnosticPhaseScale(BodyRenderPhase phase)
+        {
+            /*
+             * Coincident wireframes are otherwise visually indistinguishable
+             * even when all three instances reach the GPU. Keep every phase
+             * origin and rotation exact while nesting only the diagnostic
+             * shells around that origin.
+             */
+            switch (phase) {
+            case BodyRenderPhase::PredictedPresentation:
+                return 1.045f;
+            case BodyRenderPhase::CurrentTarget:
+                return 1.030f;
+            case BodyRenderPhase::PreStep:
+                return 1.015f;
+            case BodyRenderPhase::PostSolve:
+            case BodyRenderPhase::RoleColor:
+            default:
+                return 1.0f;
             }
         }
 
@@ -3066,6 +3789,31 @@ namespace rock::debug
             return true;
         }
 
+        void appendWorldTextGlyphs(std::vector<ColoredVertex>& vertices, const TextOverlayEntry& entry,
+            std::uint32_t maxVertices, std::uint32_t& rejectedVertices)
+        {
+            if (!debug_world_text_geometry::validBasis(entry.worldAnchor, entry.worldRight, entry.worldDown, entry.size)) {
+                rejectedVertices += 6;
+                return;
+            }
+            for (std::size_t i = 0; i < sizeof(entry.text) && entry.text[i] != '\0'; ++i) {
+                const auto rows = glyphRows(entry.text[i]);
+                for (std::size_t row = 0; row < rows.size(); ++row) {
+                    for (unsigned column = 0; column < 5; ++column) {
+                        if ((rows[row] & (1u << (4u - column))) == 0) continue;
+                        if (vertices.size() + 6 > maxVertices) { rejectedVertices += 6; return; }
+                        const auto quad = debug_world_text_geometry::pixelCorners(entry.worldAnchor, entry.worldRight, entry.worldDown,
+                            entry.x + (static_cast<float>(i) * 6 + column) * entry.size,
+                            entry.y + static_cast<float>(row) * entry.size, entry.size);
+                        for (const unsigned corner : { 0u, 1u, 2u, 0u, 2u, 3u }) {
+                            const auto& p = quad[corner];
+                            vertices.push_back({ p.x, p.y, p.z, { entry.color[0], entry.color[1], entry.color[2], entry.color[3] } });
+                        }
+                    }
+                }
+            }
+        }
+
         float textPixelWidth(const TextOverlayEntry& entry)
         {
             std::size_t length = 0;
@@ -3202,10 +3950,21 @@ namespace rock::debug
             const DirectX::XMMATRIX& eye1,
             const DirectX::XMFLOAT4& adjust0,
             const DirectX::XMFLOAT4& adjust1,
+            const CompletedBodyPhaseFrame* completedPhaseFrame,
             OverlayRuntimeStats& stats)
         {
-            if (!frame.drawText || frame.text.empty() || !s_d3d.textVB || !s_d3d.screenTextVertexShader || !s_d3d.coloredInputLayout || !s_d3d.scratch ||
+            if (!s_d3d.textVB || !s_d3d.screenTextVertexShader || !s_d3d.coloredInputLayout || !s_d3d.scratch ||
                 textureWidth <= 0.0f || textureHeight <= 0.0f) {
+                return;
+            }
+
+            /*
+             * The phase-diagnostic lines must render even when no published
+             * text entries exist; the earlier combined gate silently hid
+             * them whenever every other text toggle was off.
+             */
+            const bool drawPublishedText = frame.drawText && !frame.text.empty();
+            if (!drawPublishedText && !frame.phaseDiagnosticsEnabled) {
                 return;
             }
 
@@ -3215,17 +3974,214 @@ namespace rock::debug
             vertices.clear();
             std::uint32_t rejectedVertices = 0;
             const auto maxVertices = frame.settings.limits.maxTextVertices;
-            for (const auto& entry : frame.text) {
-                const std::uint32_t rejectedBefore = rejectedVertices;
-                if (entry.worldAnchored) {
-                    appendWorldAnchoredTextGlyphs(
-                        vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
-                } else {
-                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+            // World glyphs occupy one prefix of the existing bounded buffer.
+            // The stereo shader projects the same vertices once for each eye.
+            if (drawPublishedText && s_d3d.stereoColorVertexShader) {
+                for (const auto& entry : frame.text) {
+                    if (entry.worldSpaceGlyphs) appendWorldTextGlyphs(vertices, entry, maxVertices, rejectedVertices);
+                }
+            }
+            const auto worldVertexCount = static_cast<UINT>(vertices.size());
+            if (drawPublishedText) {
+                for (const auto& entry : frame.text) {
+                    if (entry.worldSpaceGlyphs) continue;
+                    const std::uint32_t rejectedBefore = rejectedVertices;
+                    if (entry.worldAnchored) {
+                        appendWorldAnchoredTextGlyphs(
+                            vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
+                    } else {
+                        appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                        if (duplicatePerEye) {
+                            appendTextGlyphs(
+                                vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                        }
+                    }
+                    if (rejectedVertices != rejectedBefore) {
+                        ++stats.textVertexTruncations;
+                    }
+                }
+            }
+
+            if (frame.phaseDiagnosticsEnabled) {
+                /*
+                 * Anchor the diagnostic block in the world above the tracked
+                 * body (the Target/held body when present). Fixed-pixel text
+                 * on the submitted eye textures lands in the stereo periphery
+                 * and cannot fuse in the headset; world-anchored text
+                 * projects per eye with real depth. Screen-space placement
+                 * remains only as a fallback when no body is published.
+                 */
+                RE::NiPoint3 diagnosticAnchor{};
+                bool diagnosticAnchorValid = false;
+                for (const auto& body : frame.bodies) {
+                    const bool preferred = body.role == BodyOverlayRole::Target;
+                    if (!diagnosticAnchorValid || preferred) {
+                        diagnosticAnchor = RE::NiPoint3(
+                            DirectX::XMVectorGetX(body.worldMatrix.r[3]),
+                            DirectX::XMVectorGetY(body.worldMatrix.r[3]),
+                            DirectX::XMVectorGetZ(body.worldMatrix.r[3]) +
+                                10.0f);
+                        diagnosticAnchorValid = true;
+                        if (preferred) {
+                            break;
+                        }
+                    }
+                }
+
+                const auto appendDiagnosticLine = [&](
+                                                      TextOverlayEntry& line,
+                                                      const float screenY,
+                                                      const float anchorOffsetY) {
+                    if (diagnosticAnchorValid) {
+                        line.worldAnchored = true;
+                        line.worldAnchor = diagnosticAnchor;
+                        line.x = 16.0f;
+                        line.y = anchorOffsetY;
+                        appendWorldAnchoredTextGlyphs(
+                            vertices,
+                            line,
+                            eye0,
+                            eye1,
+                            adjust0,
+                            adjust1,
+                            textureWidth,
+                            textureHeight,
+                            duplicatePerEye,
+                            maxVertices,
+                            rejectedVertices);
+                        return;
+                    }
+                    line.worldAnchored = false;
+                    line.x = 18.0f;
+                    line.y = screenY;
+                    appendTextGlyphs(
+                        vertices,
+                        line,
+                        line.x,
+                        line.y,
+                        eyeWidth - 8.0f,
+                        textureWidth,
+                        textureHeight,
+                        maxVertices,
+                        rejectedVertices);
                     if (duplicatePerEye) {
                         appendTextGlyphs(
-                            vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
+                            vertices,
+                            line,
+                            line.x + eyeWidth,
+                            line.y,
+                            textureWidth - 8.0f,
+                            textureWidth,
+                            textureHeight,
+                            maxVertices,
+                            rejectedVertices);
                     }
+                };
+
+                TextOverlayEntry status{};
+                status.size = 2.0f;
+                status.color[0] = completedPhaseFrame ? 0.05f : 1.0f;
+                status.color[1] = completedPhaseFrame ? 1.0f : 0.45f;
+                status.color[2] = completedPhaseFrame ? 0.72f : 0.10f;
+                status.color[3] = 0.96f;
+                if (completedPhaseFrame) {
+                    std::snprintf(
+                        status.text,
+                        sizeof(status.text),
+                        "COMPLETED source=%llu display=%llu age=%llu solve=%llu substep=%u/%u bodies=%u/%u",
+                        static_cast<unsigned long long>(
+                            completedPhaseFrame->gameFrameIndex),
+                        static_cast<unsigned long long>(frame.gameFrameIndex),
+                        static_cast<unsigned long long>(
+                            frame.gameFrameIndex - completedPhaseFrame->gameFrameIndex),
+                        static_cast<unsigned long long>(
+                            completedPhaseFrame->solveSequence),
+                        completedPhaseFrame->substepIndex + 1,
+                        completedPhaseFrame->substepCount,
+                        completedPhaseFrame->validCount,
+                        completedPhaseFrame->count);
+                } else {
+                    std::snprintf(
+                        status.text,
+                        sizeof(status.text),
+                        "PHASE WAIT display=%llu completed snapshot unavailable",
+                        static_cast<unsigned long long>(frame.gameFrameIndex));
+                }
+
+                const std::uint32_t rejectedBefore = rejectedVertices;
+                appendDiagnosticLine(status, 74.0f, -64.0f);
+
+                if (completedPhaseFrame) {
+                    TextOverlayEntry present{};
+                    present.size = 2.0f;
+                    if (completedPhaseFrame->presentationRemainderValid) {
+                        float maxOffsetGameUnits = 0.0f;
+                        std::uint32_t predictedBodies = 0;
+                        for (std::uint32_t index = 0;
+                             index < completedPhaseFrame->count &&
+                             index < completedPhaseFrame->entries.size();
+                             ++index) {
+                            const auto& entry =
+                                completedPhaseFrame->entries[index];
+                            if (!entry.predictedPresentationValid) {
+                                continue;
+                            }
+                            ++predictedBodies;
+                            maxOffsetGameUnits = (std::max)(
+                                maxOffsetGameUnits,
+                                entry.predictedOffsetGameUnits);
+                        }
+                        present.color[0] = 1.0f;
+                        present.color[1] = 0.32f;
+                        present.color[2] = 0.02f;
+                        present.color[3] = 0.92f;
+                        std::snprintf(
+                            present.text,
+                            sizeof(present.text),
+                            "PRESENT rem=%+.2fms predicted=%u maxoff=%.2fgu",
+                            completedPhaseFrame->presentationRemainderSeconds *
+                                1000.0f,
+                            predictedBodies,
+                            maxOffsetGameUnits);
+                    } else {
+                        present.color[0] = 1.0f;
+                        present.color[1] = 0.45f;
+                        present.color[2] = 0.10f;
+                        present.color[3] = 0.96f;
+                        std::snprintf(
+                            present.text,
+                            sizeof(present.text),
+                            "PRESENT remainder unavailable (fallback timing)");
+                    }
+                    appendDiagnosticLine(present, 94.0f, -42.0f);
+                }
+
+                {
+                    // Which capture gate refused: st stored, in invalid
+                    // inputs, gt lease misses, s0 request empty, wm world
+                    // mismatch, fm frame mismatch, xf extract failures,
+                    // ok/ms render consume hits/misses.
+                    const auto& diag = s_phaseCaptureDiagnostics;
+                    TextOverlayEntry capture{};
+                    capture.size = 2.0f;
+                    capture.color[0] = 0.85f;
+                    capture.color[1] = 0.85f;
+                    capture.color[2] = 0.85f;
+                    capture.color[3] = 0.92f;
+                    std::snprintf(
+                        capture.text,
+                        sizeof(capture.text),
+                        "CAP st=%u in=%u gt=%u s0=%u wm=%u fm=%u xf=%u ok=%u ms=%u",
+                        diag.storedFrames.load(std::memory_order_relaxed),
+                        diag.invalidInputs.load(std::memory_order_relaxed),
+                        diag.gateMisses.load(std::memory_order_relaxed),
+                        diag.notStaged.load(std::memory_order_relaxed),
+                        diag.worldMismatches.load(std::memory_order_relaxed),
+                        diag.frameMismatches.load(std::memory_order_relaxed),
+                        diag.extractFailures.load(std::memory_order_relaxed),
+                        diag.consumeHits.load(std::memory_order_relaxed),
+                        diag.consumeMisses.load(std::memory_order_relaxed));
+                    appendDiagnosticLine(capture, 114.0f, -20.0f);
                 }
                 if (rejectedVertices != rejectedBefore) {
                     ++stats.textVertexTruncations;
@@ -3258,12 +4214,117 @@ namespace rock::debug
             ID3D11Buffer* vertexBuffer = s_d3d.textVB.Get();
             context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
             context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-            context->Draw(static_cast<UINT>(vertices.size()), 0);
+            if (worldVertexCount > 0) {
+                context->VSSetShader(s_d3d.stereoColorVertexShader.Get(), nullptr, 0);
+                context->DrawInstanced(worldVertexCount, 2, 0, 0);
+                ++stats.textDrawCalls;
+            }
+            const auto screenVertexCount = static_cast<UINT>(vertices.size()) - worldVertexCount;
+            if (screenVertexCount > 0) {
+                context->VSSetShader(s_d3d.screenTextVertexShader.Get(), nullptr, 0);
+                context->Draw(screenVertexCount, worldVertexCount);
+                ++stats.textDrawCalls;
+            }
             stats.textVertices += static_cast<std::uint32_t>(vertices.size());
-            ++stats.textDrawCalls;
         }
 
-        void drawBodyBatch(ID3D11DeviceContext* context, const PublishedOverlayFrame& frame, OverlayRuntimeStats& stats)
+        void drawGripZoneIndicatorBatch(
+            ID3D11DeviceContext* context,
+            const GripZoneIndicatorOverlayFrame& frame)
+        {
+            const std::uint32_t count = (std::min)(
+                frame.count,
+                static_cast<std::uint32_t>(frame.positions.size()));
+            if (!context || count == 0 ||
+                !std::isfinite(frame.diameterGameUnits) ||
+                frame.diameterGameUnits <= 0.0f ||
+                !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout ||
+                !s_d3d.bodyVertexShader || !s_d3d.pixelShader ||
+                !s_d3d.solidRasterizer ||
+                !s_d3d.gripZoneIndicatorSphere.vertexBuffer ||
+                !s_d3d.gripZoneIndicatorSphere.indexBuffer ||
+                s_d3d.gripZoneIndicatorSphere.indexCount == 0) {
+                return;
+            }
+
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context->Map(
+                    s_d3d.bodyInstanceVB.Get(),
+                    0,
+                    D3D11_MAP_WRITE_DISCARD,
+                    0,
+                    &mapped)) ||
+                !mapped.pData) {
+                if (!s_gripZoneIndicatorUploadFailureReported.exchange(
+                        true,
+                        std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(
+                        Hand,
+                        "Debug overlay: grip-zone indicator instance-buffer map failed; marker batch skipped");
+                }
+                return;
+            }
+
+            const float radius = frame.diameterGameUnits * 0.5f;
+            auto* instances = static_cast<BodyInstanceData*>(mapped.pData);
+            for (std::uint32_t index = 0; index < count; ++index) {
+                const auto& position = frame.positions[index];
+                const auto model =
+                    DirectX::XMMatrixScaling(radius, radius, radius) *
+                    DirectX::XMMatrixTranslation(
+                        position.x,
+                        position.y,
+                        position.z);
+                DirectX::XMStoreFloat4x4(&instances[index].model, model);
+                instances[index].color[0] = 1.0f;
+                instances[index].color[1] = 1.0f;
+                instances[index].color[2] = 1.0f;
+                instances[index].color[3] = 1.0f;
+            }
+            context->Unmap(s_d3d.bodyInstanceVB.Get(), 0);
+            s_gripZoneIndicatorUploadFailureReported.store(
+                false,
+                std::memory_order_relaxed);
+
+            context->IASetInputLayout(s_d3d.bodyInputLayout.Get());
+            context->VSSetShader(s_d3d.bodyVertexShader.Get(), nullptr, 0);
+            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
+            context->RSSetState(s_d3d.solidRasterizer.Get());
+            context->IASetPrimitiveTopology(
+                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+            ID3D11Buffer* vertexBuffers[2] = {
+                s_d3d.gripZoneIndicatorSphere.vertexBuffer.Get(),
+                s_d3d.bodyInstanceVB.Get()
+            };
+            const UINT strides[2] = {
+                sizeof(Vertex),
+                sizeof(BodyInstanceData)
+            };
+            constexpr UINT offsets[2] = { 0, 0 };
+            context->IASetVertexBuffers(
+                0,
+                2,
+                vertexBuffers,
+                strides,
+                offsets);
+            context->IASetIndexBuffer(
+                s_d3d.gripZoneIndicatorSphere.indexBuffer.Get(),
+                DXGI_FORMAT_R16_UINT,
+                0);
+            context->DrawIndexedInstanced(
+                s_d3d.gripZoneIndicatorSphere.indexCount,
+                count * 2,
+                0,
+                0,
+                0);
+        }
+
+        void drawBodyBatch(
+            ID3D11DeviceContext* context,
+            const PublishedOverlayFrame& frame,
+            const CompletedBodyPhaseFrame* completedPhaseFrame,
+            OverlayRuntimeStats& stats)
         {
             if (!context || !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout || !s_d3d.bodyVertexShader || !s_d3d.scratch) {
                 return;
@@ -3271,19 +4332,25 @@ namespace rock::debug
 
             auto& draws = s_d3d.scratch->bodies;
             draws.clear();
+            const std::size_t baseEntryLimit = frame.settings.limits.maxBodyInstances;
+            const std::size_t renderInstanceLimit = (std::min)(
+                kBodyInstanceCapacity,
+                baseEntryLimit * kBodyDiagnosticPhaseCount);
+            std::size_t admittedBaseEntries = 0;
             for (const auto& entry : frame.bodies) {
                 ++stats.bodyEntries;
+                if (admittedBaseEntries >= baseEntryLimit) {
+                    ++stats.bodyInstanceRejects;
+                    continue;
+                }
+                ++admittedBaseEntries;
+
                 const auto cached = shapePipeline().lookup(entry.shapeKey);
-                std::shared_ptr<const GpuShape> shapeOwner;
                 const GpuShape* gpuShape = nullptr;
-                DirectX::XMMATRIX model = entry.worldMatrix;
+                bool shapeReady = false;
                 if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
-                    shapeOwner = cached.shape;
-                    gpuShape = shapeOwner.get();
-                    if (entry.detailUniformScale != 1.0f) {
-                        model = DirectX::XMMatrixScaling(
-                            entry.detailUniformScale, entry.detailUniformScale, entry.detailUniformScale) * model;
-                    }
+                    gpuShape = cached.shape.get();
+                    shapeReady = true;
                     ++stats.shapeCacheHits;
                     if (gpuShape->decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
                         ++stats.shapeProxyFallbacks;
@@ -3297,7 +4364,6 @@ namespace rock::debug
                         continue;
                     }
                     gpuShape = &s_d3d.aabbProxy;
-                    model = worldAabbMatrix(entry);
                     ++stats.shapeProxyFallbacks;
                     if (cached.state == debug_overlay_shape::CacheState::Unsupported) {
                         ++stats.unsupportedShapeProxies;
@@ -3308,17 +4374,126 @@ namespace rock::debug
                 if (!gpuShape || !gpuShape->vertexBuffer || !gpuShape->indexBuffer || gpuShape->indexCount == 0) {
                     continue;
                 }
-                if (draws.size() >= frame.settings.limits.maxBodyInstances) {
-                    ++stats.bodyInstanceRejects;
+
+                const auto appendPhase = [&](
+                                             DirectX::XMMATRIX model,
+                                             const BodyRenderPhase phase,
+                                             const bool allowWorldAabbFallback) {
+                    if (!shapeReady && !allowWorldAabbFallback) {
+                        return;
+                    }
+                    if (draws.size() >= renderInstanceLimit) {
+                        ++stats.bodyInstanceRejects;
+                        return;
+                    }
+
+                    if (shapeReady) {
+                        if (entry.hasChildLocalMatrix) {
+                            model = DirectX::XMMatrixMultiply(
+                                entry.childLocalMatrix,
+                                model);
+                        }
+                        if (entry.detailUniformScale != 1.0f) {
+                            model = DirectX::XMMatrixScaling(
+                                        entry.detailUniformScale,
+                                        entry.detailUniformScale,
+                                        entry.detailUniformScale) *
+                                model;
+                        }
+                    } else {
+                        // The cached world AABB belongs to the physics sample.
+                        // Carry its proxy by the same pose delta as the detailed
+                        // shape, including while that shape is still building.
+                        DirectX::XMVECTOR determinant{};
+                        const auto inversePhysics = DirectX::XMMatrixInverse(&determinant, entry.physicsWorldMatrix);
+                        const float determinantValue = DirectX::XMVectorGetX(determinant);
+                        if (!std::isfinite(determinantValue) || std::abs(determinantValue) < 0.000001f) return;
+                        model = worldAabbMatrix(entry) * inversePhysics * model;
+                    }
+
+                    const float phaseScale =
+                        bodyDiagnosticPhaseScale(phase);
+                    if (phaseScale != 1.0f) {
+                        model = DirectX::XMMatrixScaling(
+                                    phaseScale,
+                                    phaseScale,
+                                    phaseScale) *
+                            model;
+                    }
+
+                    BodyDrawItem draw{};
+                    if (shapeReady) {
+                        draw.shapeOwner = cached.shape;
+                    }
+                    draw.shape = gpuShape;
+                    DirectX::XMStoreFloat4x4(&draw.instance.model, model);
+                    bodyColor(
+                        entry.role,
+                        phase,
+                        gpuShape->decodeMode,
+                        draw.instance.color);
+                    draws.push_back(std::move(draw));
+                };
+
+                if (!frame.phaseDiagnosticsEnabled) {
+                    auto displayedWorld = entry.worldMatrix;
+                    if (!entry.hasHeldPresentation && completedPhaseFrame && completedPhaseFrame->gameFrameIndex == frame.gameFrameIndex) {
+                        if (const auto* completed = findCompletedBodyPhaseEntry(*completedPhaseFrame, entry.bodyId, entry.role)) {
+                            displayedWorld = DirectX::XMLoadFloat4x4(&completed->postSolveWorldMatrix);
+                        }
+                    }
+                    appendPhase(
+                        displayedWorld,
+                        BodyRenderPhase::RoleColor,
+                        true);
                     continue;
                 }
 
-                BodyDrawItem draw{};
-                draw.shapeOwner = std::move(shapeOwner);
-                draw.shape = gpuShape;
-                DirectX::XMStoreFloat4x4(&draw.instance.model, model);
-                bodyColor(entry.role, gpuShape->decodeMode, draw.instance.color);
-                draws.push_back(std::move(draw));
+                if (completedPhaseFrame) {
+                    if (const auto* completed =
+                            findCompletedBodyPhaseEntry(
+                                *completedPhaseFrame,
+                                entry.bodyId, entry.role)) {
+                        if (completed->hasCurrentTarget) {
+                            appendPhase(
+                                DirectX::XMLoadFloat4x4(
+                                    &completed->currentTargetWorldMatrix),
+                                BodyRenderPhase::CurrentTarget,
+                                false);
+                        }
+                        if (completed->preStepValid) {
+                            appendPhase(
+                                DirectX::XMLoadFloat4x4(
+                                    &completed->preStepWorldMatrix),
+                                BodyRenderPhase::PreStep,
+                                true);
+                        }
+                        appendPhase(
+                            DirectX::XMLoadFloat4x4(
+                                &completed->postSolveWorldMatrix),
+                            BodyRenderPhase::PostSolve,
+                            false);
+                        if (completed->predictedPresentationValid) {
+                            appendPhase(
+                                DirectX::XMLoadFloat4x4(
+                                    &completed->predictedPresentationWorldMatrix),
+                                BodyRenderPhase::PredictedPresentation,
+                                false);
+                        }
+                        continue;
+                    }
+                }
+
+                if (entry.hasCurrentTarget) {
+                    appendPhase(
+                        entry.currentTargetWorldMatrix,
+                        BodyRenderPhase::CurrentTarget,
+                        false);
+                }
+                appendPhase(
+                    entry.physicsWorldMatrix,
+                    BodyRenderPhase::PreStep,
+                    true);
             }
             if (draws.empty()) {
                 return;
@@ -3372,17 +4547,48 @@ namespace rock::debug
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayRender);
 
             const auto frame = s_publishedFrame.load(std::memory_order_acquire);
-            if (!frame) {
+            const auto gripZoneIndicatorFrame =
+                s_publishedGripZoneIndicatorFrame.load(
+                    std::memory_order_acquire);
+            const auto latestGripZoneIndicatorGameFrame =
+                s_latestGripZoneIndicatorGameFrameIndex.load(
+                    std::memory_order_acquire);
+            const bool hasGripZoneIndicatorsToDraw =
+                gripZoneIndicatorFrame &&
+                grip_zone_indicator_policy::isCurrentRenderFrame(
+                    gripZoneIndicatorFrame->gameFrameIndex,
+                    latestGripZoneIndicatorGameFrame) &&
+                gripZoneIndicatorFrame->count > 0;
+            if (!frame && !hasGripZoneIndicatorsToDraw) {
                 return;
             }
 
-            const bool hasBodiesToDraw = (frame->drawRockBodies || frame->drawTargetBodies) && !frame->bodies.empty();
-            const bool hasAxesToDraw = frame->drawAxes && !frame->axes.empty();
-            const bool hasMarkersToDraw = frame->drawMarkers && !frame->markers.empty();
-            const bool hasSkeletonToDraw = frame->drawSkeleton && !frame->skeleton.empty();
-            const bool hasColoredLinesToDraw = frame->drawColoredLines && !frame->coloredLines.empty();
-            const bool hasTextToDraw = frame->drawText && !frame->text.empty();
-            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw && !hasSkeletonToDraw && !hasColoredLinesToDraw && !hasTextToDraw) || !frame->worldIdentity) {
+            CompletedBodyPhaseFrame completedPhaseFrame{};
+            const bool hasCompletedPhaseFrame =
+                frame &&
+                tryCopyCompletedBodyPhaseFrame(
+                    *frame,
+                    completedPhaseFrame);
+
+            const bool hasBodiesToDraw = frame &&
+                (frame->drawRockBodies || frame->drawTargetBodies) &&
+                !frame->bodies.empty();
+            const bool hasAxesToDraw =
+                frame && frame->drawAxes && !frame->axes.empty();
+            const bool hasMarkersToDraw =
+                frame && frame->drawMarkers && !frame->markers.empty();
+            const bool hasSkeletonToDraw =
+                frame && frame->drawSkeleton && !frame->skeleton.empty();
+            const bool hasColoredLinesToDraw = frame &&
+                frame->drawColoredLines && !frame->coloredLines.empty();
+            const bool hasTextToDraw =
+                frame && frame->drawText && !frame->text.empty();
+            const bool hasStandardOverlayToDraw =
+                hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw ||
+                hasSkeletonToDraw || hasColoredLinesToDraw || hasTextToDraw;
+            if ((!hasStandardOverlayToDraw &&
+                    !hasGripZoneIndicatorsToDraw) ||
+                (hasStandardOverlayToDraw && !frame->worldIdentity)) {
                 return;
             }
 
@@ -3398,14 +4604,19 @@ namespace rock::debug
             submittedTexture->GetDesc(&textureDesc);
 
             OverlayRuntimeStats stats{};
-            stats.bodyExtractFailures = frame->bodyExtractFailures;
-            stats.shapeCaptures = frame->shapeCaptures;
-            stats.shapeCaptureDeferrals = frame->shapeCaptureDeferrals;
-            const auto uploadResult = shapePipeline().processCompletedUploads(
-                device, frame->settings.limits.maxShapeUploadsPerFrame, frame->settings.pipelineLimits);
-            stats.shapeUploadsProcessed = uploadResult.processed;
-            stats.shapeUploadsCompleted = uploadResult.uploaded;
-            stats.shapeUploadFailures = uploadResult.failed;
+            if (frame) {
+                stats.bodyExtractFailures = frame->bodyExtractFailures;
+                stats.shapeCaptures = frame->shapeCaptures;
+                stats.shapeCaptureDeferrals = frame->shapeCaptureDeferrals;
+                const auto uploadResult =
+                    shapePipeline().processCompletedUploads(
+                        device,
+                        frame->settings.limits.maxShapeUploadsPerFrame,
+                        frame->settings.pipelineLimits);
+                stats.shapeUploadsProcessed = uploadResult.processed;
+                stats.shapeUploadsCompleted = uploadResult.uploaded;
+                stats.shapeUploadFailures = uploadResult.failed;
+            }
             ID3D11RenderTargetView* rtv = getSubmittedTextureRtv(device, submittedTexture, textureDesc, stats);
             if (!rtv) {
                 return;
@@ -3427,23 +4638,52 @@ namespace rock::debug
             {
                 [[maybe_unused]] auto gpuTimerScope = s_d3d.gpuTimer.begin(context);
                 if (hasBodiesToDraw) {
-                    drawBodyBatch(context, *frame, stats);
+                    drawBodyBatch(
+                        context,
+                        *frame,
+                        hasCompletedPhaseFrame ?
+                            &completedPhaseFrame :
+                            nullptr,
+                        stats);
                 }
 
-                auto& lineBatch = s_d3d.scratch->lines;
-                lineBatch.beginFrame(frame->settings.limits.maxLineVertices);
-                // Owner-published diagnostics are already hard-bounded by the
-                // provider API. Admit them first so an enabled addon view is
-                // not silently starved by unrelated high-cardinality probes.
-                collectColoredLineOverlays(lineBatch, *frame);
-                collectAxisOverlays(lineBatch, *frame);
-                collectMarkerOverlays(lineBatch, *frame);
-                collectSkeletonOverlays(lineBatch, *frame);
-                drawLineBatch(context, lineBatch, stats);
-                drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), *frame, eye0, eye1, adjust0, adjust1, stats);
+                if (hasGripZoneIndicatorsToDraw) {
+                    drawGripZoneIndicatorBatch(
+                        context,
+                        *gripZoneIndicatorFrame);
+                }
+
+                if (frame) {
+                    auto& lineBatch = s_d3d.scratch->lines;
+                    lineBatch.beginFrame(
+                        frame->settings.limits.maxLineVertices);
+                    // Owner-published diagnostics are already hard-bounded by
+                    // the provider API. Admit them first so an enabled addon
+                    // view is not silently starved by unrelated
+                    // high-cardinality probes.
+                    collectColoredLineOverlays(lineBatch, *frame);
+                    collectAxisOverlays(lineBatch, *frame, hasCompletedPhaseFrame ? &completedPhaseFrame : nullptr);
+                    collectMarkerOverlays(lineBatch, *frame);
+                    collectSkeletonOverlays(lineBatch, *frame);
+                    drawLineBatch(context, lineBatch, stats);
+                    drawTextOverlays(
+                        context,
+                        static_cast<float>(textureDesc.Width),
+                        static_cast<float>(textureDesc.Height),
+                        *frame,
+                        eye0,
+                        eye1,
+                        adjust0,
+                        adjust1,
+                        hasCompletedPhaseFrame ?
+                            &completedPhaseFrame :
+                            nullptr,
+                        stats);
+                }
             }
 
-            if (frame->settings.verboseLogging && ++s_overlayStatsLogCounter >= 90) {
+            if (frame && frame->settings.verboseLogging &&
+                ++s_overlayStatsLogCounter >= 90) {
                 s_overlayStatsLogCounter = 0;
                 const auto pipelineStats = shapePipeline().stats();
                 const auto gpuStats = s_d3d.gpuTimer.stats();
@@ -3524,6 +4764,32 @@ namespace rock::debug
                     admissionStats.noPublicationSkips,
                     admissionStats.duplicateSkips,
                     admissionStats.serialRaceSkips);
+                ROCK_LOG_DEBUG(Hand,
+                    "Debug overlay phase: completed={} source={} display={} age={} solve={} substep={}/{} bodies={}/{}",
+                    hasCompletedPhaseFrame ? "yes" : "no",
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.gameFrameIndex :
+                        0,
+                    frame->gameFrameIndex,
+                    hasCompletedPhaseFrame ?
+                        frame->gameFrameIndex -
+                            completedPhaseFrame.gameFrameIndex :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.solveSequence :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.substepIndex + 1 :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.substepCount :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.validCount :
+                        0,
+                    hasCompletedPhaseFrame ?
+                        completedPhaseFrame.count :
+                        0);
             }
         }
 
@@ -3654,26 +4920,327 @@ namespace rock::debug
 
     void PublishFrame(const BodyOverlayFrame& frame)
     {
+        s_latestGripZoneIndicatorGameFrameIndex.store(
+            frame.gameFrameIndex,
+            std::memory_order_release);
+        const auto previousGripZoneIndicatorFrame =
+            s_publishedGripZoneIndicatorFrame.load(
+                std::memory_order_acquire);
+        if (previousGripZoneIndicatorFrame &&
+            previousGripZoneIndicatorFrame->gameFrameIndex !=
+                frame.gameFrameIndex) {
+            s_publishedGripZoneIndicatorFrame.store(
+                {},
+                std::memory_order_release);
+            s_gripZoneIndicatorFrameEnabled.store(
+                false,
+                std::memory_order_release);
+        }
+
         auto next = s_framePool.acquire();
         if (!next) {
             if (!s_snapshotPoolExhaustionReported.exchange(true, std::memory_order_relaxed)) {
                 ROCK_LOG_WARN(Hand, "Debug body overlay: immutable snapshot pool exhausted; retaining the last safe publication");
             }
+            refreshOverlayEnabled();
+            (void)s_frameAdmission.publish();
             return;
         }
 
         const bool enabled = buildPublishedFrame(frame, *next);
+        if (enabled && (!next->bodies.empty() || !next->axes.empty())) {
+            stagePhysicsPhaseCapture(*next);
+
+            // Publish-thread-only counter; ~7 s cadence at 90 Hz. Leaves
+            // log evidence of which phase-capture gate refused, so a
+            // missing cyan/orange shell is attributable from the session
+            // log without HUD relay.
+            static std::uint32_t s_phaseDiagPublishCounter = 0;
+            if (++s_phaseDiagPublishCounter >= 600) {
+                s_phaseDiagPublishCounter = 0;
+                const auto& diag = s_phaseCaptureDiagnostics;
+                ROCK_LOG_INFO(
+                    Hand,
+                    "PHASE_CAPTURE store={} invalid={} gate={} notStaged={} worldMis={} frameMis={} extractFail={} consume={}/{} reqFrame={} capFrame={}",
+                    diag.storedFrames.load(std::memory_order_relaxed),
+                    diag.invalidInputs.load(std::memory_order_relaxed),
+                    diag.gateMisses.load(std::memory_order_relaxed),
+                    diag.notStaged.load(std::memory_order_relaxed),
+                    diag.worldMismatches.load(std::memory_order_relaxed),
+                    diag.frameMismatches.load(std::memory_order_relaxed),
+                    diag.extractFailures.load(std::memory_order_relaxed),
+                    diag.consumeHits.load(std::memory_order_relaxed),
+                    diag.consumeMisses.load(std::memory_order_relaxed),
+                    diag.lastRequestFrame.load(std::memory_order_relaxed),
+                    diag.lastCaptureFrame.load(std::memory_order_relaxed));
+            }
+        } else {
+            clearPhysicsPhaseCapture();
+        }
         std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
         s_publishedFrame.store(std::move(immutable), std::memory_order_release);
         s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
-        s_enabled.store(enabled, std::memory_order_release);
+        s_standardFrameEnabled.store(enabled, std::memory_order_release);
+        refreshOverlayEnabled();
         (void)s_frameAdmission.publish();
+    }
+
+    void PublishGripZoneIndicators(
+        const GripZoneIndicatorOverlayFrame& frame)
+    {
+        s_latestGripZoneIndicatorGameFrameIndex.store(
+            frame.gameFrameIndex,
+            std::memory_order_release);
+
+        const std::uint32_t sourceCount = (std::min)(
+            frame.count,
+            static_cast<std::uint32_t>(frame.positions.size()));
+        if (frame.gameFrameIndex == 0 || sourceCount == 0 ||
+            !std::isfinite(frame.diameterGameUnits) ||
+            frame.diameterGameUnits <
+                grip_zone_indicator_policy::kMinimumDiameterGameUnits ||
+            frame.diameterGameUnits >
+                grip_zone_indicator_policy::kMaximumDiameterGameUnits) {
+            ClearGripZoneIndicators();
+            return;
+        }
+
+        auto next = s_gripZoneIndicatorFramePool.acquire();
+        if (!next) {
+            s_publishedGripZoneIndicatorFrame.store(
+                {},
+                std::memory_order_release);
+            s_gripZoneIndicatorFrameEnabled.store(
+                false,
+                std::memory_order_release);
+            refreshOverlayEnabled();
+            (void)s_frameAdmission.publish();
+            if (!s_gripZoneIndicatorSnapshotPoolExhaustionReported.exchange(
+                    true,
+                    std::memory_order_relaxed)) {
+                ROCK_LOG_WARN(
+                    Hand,
+                    "Debug overlay: grip-zone indicator snapshot pool exhausted; current marker frame skipped");
+            }
+            return;
+        }
+
+        *next = {};
+        next->gameFrameIndex = frame.gameFrameIndex;
+        next->diameterGameUnits = frame.diameterGameUnits;
+        for (std::uint32_t index = 0; index < sourceCount; ++index) {
+            const auto& position = frame.positions[index];
+            if (!std::isfinite(position.x) ||
+                !std::isfinite(position.y) ||
+                !std::isfinite(position.z)) {
+                continue;
+            }
+            next->positions[next->count++] = position;
+        }
+
+        if (next->count == 0) {
+            ClearGripZoneIndicators();
+            return;
+        }
+
+        std::shared_ptr<const GripZoneIndicatorOverlayFrame> immutable =
+            std::move(next);
+        s_publishedGripZoneIndicatorFrame.store(
+            std::move(immutable),
+            std::memory_order_release);
+        s_gripZoneIndicatorSnapshotPoolExhaustionReported.store(
+            false,
+            std::memory_order_relaxed);
+        s_gripZoneIndicatorFrameEnabled.store(
+            true,
+            std::memory_order_release);
+        refreshOverlayEnabled();
+        (void)s_frameAdmission.publish();
+    }
+
+    void ClearGripZoneIndicators()
+    {
+        const bool wasEnabled =
+            s_gripZoneIndicatorFrameEnabled.exchange(
+                false,
+                std::memory_order_acq_rel);
+        const auto previous = s_publishedGripZoneIndicatorFrame.exchange(
+            {},
+            std::memory_order_acq_rel);
+        refreshOverlayEnabled();
+        if (wasEnabled || previous) {
+            (void)s_frameAdmission.publish();
+        }
+    }
+
+    void CapturePostSolveBodyPhases(
+        RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing,
+        const std::uint64_t gameFrameIndex,
+        const std::uint64_t solveSequence) noexcept
+    {
+        if (!s_physicsPhaseCaptureEnabled.load(
+                std::memory_order_acquire)) {
+            return;
+        }
+        if (!world || gameFrameIndex == 0 || solveSequence == 0 ||
+            !timing.valid) {
+            s_phaseCaptureDiagnostics.invalidInputs.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+
+        const std::uint32_t substepCount = (std::max)(timing.substepCount, 1u);
+        const bool finalSubstep =
+            timing.substepIndex + 1 >= substepCount ||
+            timing.substepProgress >= 0.999f;
+        if (!finalSubstep) {
+            return;
+        }
+
+        /*
+         * Reproduce the remainder bhkWorld::Update publishes at exit
+         * (liveRemainder += accumulated - substepCount x substepDelta; FO4VR
+         * 1.2.72, ADD at 0x141DF74BD). This callback runs before that ADD,
+         * so the live global cannot be read directly here. vfunction44 hands
+         * every dynamic body's render node to the scene writer 0x141E06B00
+         * as predict(motion, thatRemainder) (0x141E09ADE..0x141E09B56), so
+         * the PredictedPresentation shell below is the pose the engine will
+         * render this frame, while PostSolve stays the true solver pose.
+         * Position-only extrapolation: the discriminating signal is the
+         * velocity x remainder translation, not the quaternion integration.
+         */
+        float presentationRemainderSeconds = 0.0f;
+        bool presentationRemainderValid = false;
+        if (!timing.usedFallback) {
+            const float remainder =
+                timing.remainderDeltaSeconds +
+                (timing.accumulatedDeltaSeconds - timing.simulatedDeltaSeconds);
+            if (std::isfinite(remainder) && std::fabs(remainder) <= 0.25f) {
+                presentationRemainderSeconds = remainder;
+                presentationRemainderValid = true;
+            }
+        }
+
+        AtomicFlagLease lease(s_physicsPhaseCaptureGate);
+        if (!lease) {
+            s_phaseCaptureDiagnostics.gateMisses.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+        s_phaseCaptureDiagnostics.lastRequestFrame.store(
+            s_physicsPhaseCaptureRequest.gameFrameIndex,
+            std::memory_order_relaxed);
+        s_phaseCaptureDiagnostics.lastCaptureFrame.store(
+            gameFrameIndex, std::memory_order_relaxed);
+        if (s_physicsPhaseCaptureRequest.count == 0) {
+            s_phaseCaptureDiagnostics.notStaged.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+        if (s_physicsPhaseCaptureRequest.worldIdentity !=
+            reinterpret_cast<std::uintptr_t>(world)) {
+            s_phaseCaptureDiagnostics.worldMismatches.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+        if (s_physicsPhaseCaptureRequest.gameFrameIndex != gameFrameIndex) {
+            s_phaseCaptureDiagnostics.frameMismatches.fetch_add(
+                1, std::memory_order_relaxed);
+            return;
+        }
+
+        CompletedBodyPhaseFrame captured{};
+        captured.worldIdentity = reinterpret_cast<std::uintptr_t>(world);
+        captured.gameFrameIndex = gameFrameIndex;
+        captured.solveSequence = solveSequence;
+        captured.substepIndex = timing.substepIndex;
+        captured.substepCount = substepCount;
+        captured.presentationRemainderSeconds = presentationRemainderSeconds;
+        captured.presentationRemainderValid = presentationRemainderValid;
+        for (std::uint32_t index = 0;
+             index < s_physicsPhaseCaptureRequest.count &&
+             index < s_physicsPhaseCaptureRequest.entries.size();
+             ++index) {
+            const auto& request = s_physicsPhaseCaptureRequest.entries[index];
+            auto& destination = captured.entries[captured.count++];
+            destination.bodyId = request.bodyId;
+            destination.role = request.role;
+            destination.currentTargetWorldMatrix =
+                request.currentTargetWorldMatrix;
+            destination.preStepWorldMatrix =
+                request.preStepWorldMatrix;
+            destination.hasCurrentTarget = request.hasCurrentTarget;
+            destination.preStepValid = request.preStepValid;
+
+            BodyRenderInfo body{};
+            if (!extractBody(
+                    world,
+                    request.bodyId,
+                    request.useBodyArrayTransform ?
+                        BodyOverlayFrameSource::BodyArrayTransform :
+                        BodyOverlayFrameSource::LiveMotionWhenAvailable,
+                    body)) {
+                s_phaseCaptureDiagnostics.extractFailures.fetch_add(
+                    1, std::memory_order_relaxed);
+                continue;
+            }
+
+            DirectX::XMStoreFloat4x4(
+                &destination.postSolveWorldMatrix,
+                body.worldMatrix);
+            destination.postSolveValid = true;
+            ++captured.validCount;
+
+            if (!presentationRemainderValid) {
+                continue;
+            }
+            float velocityHavok[3]{};
+            if (!tryReadMotionLinearVelocityHavok(
+                    world,
+                    request.bodyId,
+                    velocityHavok)) {
+                continue;
+            }
+            const float offsetScale =
+                presentationRemainderSeconds * havokToGameScale();
+            const float dx = velocityHavok[0] * offsetScale;
+            const float dy = velocityHavok[1] * offsetScale;
+            const float dz = velocityHavok[2] * offsetScale;
+            if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) {
+                continue;
+            }
+
+            destination.predictedPresentationWorldMatrix =
+                destination.postSolveWorldMatrix;
+            destination.predictedPresentationWorldMatrix._41 += dx;
+            destination.predictedPresentationWorldMatrix._42 += dy;
+            destination.predictedPresentationWorldMatrix._43 += dz;
+            destination.predictedOffsetGameUnits =
+                std::sqrt(dx * dx + dy * dy + dz * dz);
+            destination.predictedPresentationValid = true;
+        }
+
+        s_completedBodyPhaseFrame = captured;
+        s_phaseCaptureDiagnostics.storedFrames.fetch_add(
+            1, std::memory_order_relaxed);
     }
 
     void ClearFrame()
     {
+        clearPhysicsPhaseCapture();
         s_publishedFrame.store({}, std::memory_order_release);
-        s_enabled.store(false, std::memory_order_release);
+        s_publishedGripZoneIndicatorFrame.store(
+            {},
+            std::memory_order_release);
+        s_standardFrameEnabled.store(false, std::memory_order_release);
+        s_gripZoneIndicatorFrameEnabled.store(
+            false,
+            std::memory_order_release);
+        s_latestGripZoneIndicatorGameFrameIndex.store(
+            0,
+            std::memory_order_release);
+        refreshOverlayEnabled();
         (void)s_frameAdmission.publish();
     }
 

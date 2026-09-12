@@ -10,12 +10,6 @@
 
 namespace rock
 {
-    enum class PendingForceGrabCommitOrigin : std::uint8_t
-    {
-        LooseGrenadeMenuEquip = 0,
-        ProviderForceGrabCommand = 1,
-    };
-
     enum class PendingForceGrabCommitPhase : std::uint8_t
     {
         WaitingForReference = 0,
@@ -24,8 +18,7 @@ namespace rock
     };
 
     /*
-     * Shared deferred state for the force-grab API (loose-grenade menu
-     * auto-equip and the Provider SDK's force-grab command): both spawn or
+     * Deferred state for provider world grabs and inventory transfers: both
      * target an object and must attach it to the hand, but freezing the
      * grab-authority relation on the same tick reads whatever hand transform
      * happens to exist that instant. This carries the request across the
@@ -39,11 +32,13 @@ namespace rock
     {
         bool active{ false };
         bool isLeft{ false };
-        PendingForceGrabCommitOrigin origin{ PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip };
         PendingForceGrabCommitPhase phase{ PendingForceGrabCommitPhase::WaitingForSettle };
 
         RE::ObjectRefHandle targetHandle{};
-        bool targetIsLooseGrenade{ false };
+        bool targetIsLooseThrowable{ false };
+        bool inventoryTransfer{ false };
+        // Internal B-hold draws share transfer/rollback, without an API owner.
+        bool grenadeQuickDraw{ false };
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
         bool hasSourcePointOverride{ false };
@@ -51,10 +46,6 @@ namespace rock
         float elapsedSettleSeconds{ 0.0f };
         float elapsedTotalSeconds{ 0.0f };
         float maxTotalSeconds{ 1.5f };
-
-        // LooseGrenadeMenuEquip bookkeeping.
-        std::uint64_t grenadeRequestId{ 0 };
-        loose_grenade_runtime::GrenadeRuntimeData grenadeRuntime{};
 
         // ProviderForceGrabCommand bookkeeping: pre-filled with request identity;
         // only .state/.failure/.targetBodyId are mutated when the commit resolves.

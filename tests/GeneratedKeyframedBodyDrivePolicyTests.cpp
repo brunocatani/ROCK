@@ -149,5 +149,33 @@ int main()
         ok &= expectNear("non-positive caps rotation unchanged", rotationDistanceRadians(limited.target.rotate, requested.rotate), 0.0f, 0.001f);
     }
 
+    // Fail-closed timing: an unmeasured drive delta commands zero motion
+    // instead of a velocity computed against a fabricated rate.
+    {
+        RE::NiTransform from = identityTransform();
+        RE::NiTransform requested = identityTransform();
+        requested.translate = RE::NiPoint3{ 10.0f, 0.0f, 0.0f };
+
+        const auto limited = limitGeneratedDriveTarget(from, requested, 0.0f, gameToHavokScale, 2.0f, kPi);
+
+        ok &= expectTrue("unmeasured dt reports linear clamp", limited.limit.linearLimitExceeded);
+        ok &= expectTrue("unmeasured dt reports angular clamp", limited.limit.angularLimitExceeded);
+        ok &= expectNear("unmeasured dt commands zero motion", limited.limit.alpha, 0.0f, 0.0f);
+        ok &= expectNear("unmeasured dt holds the body", pointDistance(limited.target.translate, from.translate), 0.0f, 0.001f);
+    }
+
+    // Fail-closed source interval: no measured source delta means no sampled
+    // velocity.
+    {
+        RE::NiPoint3 velocity{};
+        const bool computed = tryComputeSampledLinearVelocityHavok(
+            RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+            RE::NiPoint3{ 1.0f, 0.0f, 0.0f },
+            0.0f,
+            gameToHavokScale,
+            velocity);
+        ok &= expectFalse("unmeasured source delta yields no velocity sample", computed);
+    }
+
     return ok ? 0 : 1;
 }

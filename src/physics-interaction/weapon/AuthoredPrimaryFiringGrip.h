@@ -21,6 +21,9 @@ namespace rock
         const RE::TESObjectWEAP* weapon{ nullptr };
         std::uint64_t weaponOwnershipKey{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t weaponInstanceContentKey{ 0 };
+        std::uint64_t weaponKeywordFlags{ 0 };
+        bool weaponInstanceContentKnown{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };
@@ -31,6 +34,7 @@ namespace rock
         bool nativeReloadAuthorityActive{ false };
         bool conflictingWeaponTransformAuthorityActive{ false };
         bool weaponVisualReturnActive{ false };
+        bool equippedWeaponTransitionActive{ false };
         bool primaryHandHoldingObject{ false };
         bool rockFiringHandIsLeft{ false };
         bool inPowerArmor{ false };
@@ -39,9 +43,11 @@ namespace rock
     // ROCK derives one generation-bound, modeler-authored primary grip and
     // inverts it onto hFRIK's live primary hand. The paired support relation
     // is captured while Bethesda's native right-primary topology is intact,
-    // then republished as an ephemeral proximity candidate while ROCK's
-    // physical left hand owns the weapon. Only acquisition can latch it, so
-    // unrestricted dynamic grabs remain intact.
+    // then republished as a frame-scoped candidate. A fully validated stable
+    // snapshot bridges transient firing-animation capture gaps only while all
+    // weapon/canonical identity witnesses match. Only acquisition can latch
+    // it; the downstream support-grab policy then chooses authored, a matched
+    // provider target, qualified dynamic fallback, or rejection.
     class AuthoredPrimaryFiringGripRuntime
     {
     public:
@@ -54,17 +60,36 @@ namespace rock
         struct StableAuthoredSupportGripSnapshot
         {
             // Non-owning identity witness only; never dereferenced. The value
-            // transforms remain usable across ROCK's physical-left reparent
-            // only while every weapon/canonical identity key still matches.
+            // transforms remain usable across transient native graph gaps and
+            // ROCK's physical-left reparent only while every weapon/canonical
+            // identity key still matches.
             RE::NiNode* weaponNodeIdentity{ nullptr };
             RE::NiTransform handWeaponLocal{};
             std::array<RE::NiTransform, 15> fingerLocalTransforms{};
             std::uint16_t fingerLocalTransformMask{ 0 };
             std::uint64_t weaponOwnershipKey{ 0 };
             std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t weaponInstanceContentKey{ 0 };
             std::uint64_t primaryGripCaptureSequence{ 0 };
             std::uint64_t supportCaptureSequence{ 0 };
+            // Value witness of the authored canonical this relation was
+            // captured against; sequences alone are not identity because the
+            // same authored pose is republished under new sequences when its
+            // source changes.
+            RE::NiTransform canonicalHandWeaponLocal{};
+            bool inPowerArmor{ false };
+            bool weaponInstanceContentKnown{ false };
             bool valid{ false };
+        };
+
+        // Convergence witness over consecutive live support captures. The
+        // anchor is the first value of the current run; a capture that
+        // leaves the value epsilon restarts the run. Only a converged run
+        // may enter the stable snapshot or the authored library.
+        struct LiveSupportCaptureWitness
+        {
+            RE::NiTransform anchorHandWeaponLocal{};
+            std::uint32_t agreeingFrames{ 0 };
         };
 
         void endSession(const char* reason);
@@ -78,6 +103,7 @@ namespace rock
         std::uint64_t _captureSequenceFloor{ 0 };
         std::uint64_t _supportCaptureSequenceFloor{ 0 };
         StableAuthoredSupportGripSnapshot _stableAuthoredSupportGrip{};
+        LiveSupportCaptureWitness _liveSupportWitness{};
         authored_weapon_grip_library::FiringFingerPose _mirroredLeftFingerPose{};
         std::uint64_t _mirroredFingerPoseCaptureSequence{ 0 };
         bool _active{ false };
@@ -86,6 +112,7 @@ namespace rock
         bool _applyFailureLogged{ false };
         bool _canonicalPublishFailureLogged{ false };
         bool _libraryPublishFailureLogged{ false };
+        bool _positionOnlyHoldPublishFailureLogged{ false };
         bool _customFrikOffsetOverrideActive{ false };
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };

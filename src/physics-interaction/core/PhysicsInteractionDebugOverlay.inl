@@ -130,7 +130,7 @@
             rotationState.valid = objectOk && handBodyOk;
 
             ROCK_LOG_DEBUG(Hand,
-                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f} jag={:.4f}",
+                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f}",
                 hand.handName(),
                 probeMicroseconds,
                 sample.flushSequence,
@@ -162,8 +162,7 @@
                 rotStepWand,
                 rotStepTarget,
                 rotStepObject,
-                rotStepHandBody,
-                sample.jagCorrectionGameUnits);
+                rotStepHandBody);
 
             ROCK_LOG_DEBUG(Hand,
                 "{} RENDER_READ: t={}us flushSeq={} nodeOk={} node=({:.3f},{:.3f},{:.3f}) nodeSrc={} body=({:.3f},{:.3f},{:.3f}) d={:.3f} rotNode={:.3f} rotNB={:.3f}",
@@ -182,31 +181,154 @@
                 rotStepRenderNode,
                 rotRenderNodeVsBody);
 
-            /*
-             * Anchor decision data. The jag correction needs the room anchor
-             * the CAMERA follows; the first session's controller anchor
-             * delivered only 6-15% of the measured artifact, consistent with
-             * its delta and v_room*dt sharing the physics clock and cancelling.
-             * Both candidates are logged every frame beside the camera (already
-             * in OVERLAY_POINT above), so differencing them offline names the
-             * anchor whose per-frame step actually tracks the camera's
-             * staircase -- regardless of which one drove the correction.
-             */
+            GrabPresentationNodeDebugSnapshot presentationNodes{};
+            if (hand.getGrabPresentationNodeDebugSnapshot(
+                    presentationNodes)) {
+                const auto nodeName = [](const GrabPresentationNodeDebugPose& pose) {
+                    if (!pose.node) {
+                        return "none";
+                    }
+                    const char* name = pose.node->name.c_str();
+                    return name && *name ? name : "(unnamed)";
+                };
+                const auto previousRotationGap = [](const GrabPresentationNodeDebugPose& pose) {
+                    return pose.valid ?
+                        grab_authority_source_clock::rotationDeltaDegrees(
+                            pose.world.rotate,
+                            pose.previousWorld.rotate) :
+                        -1.0f;
+                };
+
+                const auto& owner = presentationNodes.collisionOwner;
+                const auto& root = presentationNodes.referenceRoot;
+                const auto& geometry = presentationNodes.visibleGeometry;
+                const auto& geometryParent =
+                    presentationNodes.visibleGeometryParent;
+                ROCK_LOG_DEBUG(Hand,
+                    "{} MESH_PHASE: t={}us flushSeq={} trace={} ownerOk={} owner={:p} '{}' ownerParent={:p} ownerW=({:.3f},{:.3f},{:.3f}) ownerPrev=({:.3f},{:.3f},{:.3f}) ownerPrevRot={:.3f} rootOk={} root={:p} '{}' rootParent={:p} rootW=({:.3f},{:.3f},{:.3f}) rootPrev=({:.3f},{:.3f},{:.3f}) rootPrevRot={:.3f} meshOk={} mesh={:p} '{}' meshParent={:p} meshL=({:.3f},{:.3f},{:.3f}) meshW=({:.3f},{:.3f},{:.3f}) meshPrev=({:.3f},{:.3f},{:.3f}) meshPrevRot={:.3f} meshParentOk={} meshParentW=({:.3f},{:.3f},{:.3f}) meshParentPrev=({:.3f},{:.3f},{:.3f}) meshParentPrevRot={:.3f} same(owner/root/mesh/meshParent)={}/{}/{}/{}",
+                    hand.handName(),
+                    probeMicroseconds,
+                    sample.flushSequence,
+                    presentationNodes.traceId,
+                    owner.valid ? "y" : "n",
+                    static_cast<const void*>(owner.node),
+                    nodeName(owner),
+                    static_cast<const void*>(owner.parent),
+                    owner.world.translate.x,
+                    owner.world.translate.y,
+                    owner.world.translate.z,
+                    owner.previousWorld.translate.x,
+                    owner.previousWorld.translate.y,
+                    owner.previousWorld.translate.z,
+                    previousRotationGap(owner),
+                    root.valid ? "y" : "n",
+                    static_cast<const void*>(root.node),
+                    nodeName(root),
+                    static_cast<const void*>(root.parent),
+                    root.world.translate.x,
+                    root.world.translate.y,
+                    root.world.translate.z,
+                    root.previousWorld.translate.x,
+                    root.previousWorld.translate.y,
+                    root.previousWorld.translate.z,
+                    previousRotationGap(root),
+                    geometry.valid ? "y" : "n",
+                    static_cast<const void*>(geometry.node),
+                    nodeName(geometry),
+                    static_cast<const void*>(geometry.parent),
+                    geometry.local.translate.x,
+                    geometry.local.translate.y,
+                    geometry.local.translate.z,
+                    geometry.world.translate.x,
+                    geometry.world.translate.y,
+                    geometry.world.translate.z,
+                    geometry.previousWorld.translate.x,
+                    geometry.previousWorld.translate.y,
+                    geometry.previousWorld.translate.z,
+                    previousRotationGap(geometry),
+                    geometryParent.valid ? "y" : "n",
+                    geometryParent.world.translate.x,
+                    geometryParent.world.translate.y,
+                    geometryParent.world.translate.z,
+                    geometryParent.previousWorld.translate.x,
+                    geometryParent.previousWorld.translate.y,
+                    geometryParent.previousWorld.translate.z,
+                    previousRotationGap(geometryParent),
+                    owner.node && owner.node == root.node ? "y" : "n",
+                    owner.node && owner.node == geometry.node ? "y" : "n",
+                    root.node && root.node == geometry.node ? "y" : "n",
+                    owner.node && owner.node == geometryParent.node ? "y" : "n");
+
+            }
+
+            const auto readBodyVelocityGameUnits = [&](RE::hknpBodyId bodyId, RE::NiPoint3& outVelocity) {
+                outVelocity = {};
+                auto* motion = havok_runtime::getBodyMotion(hknp, bodyId);
+                if (!motion) {
+                    return false;
+                }
+                const float havokToGame = physics_scale::havokToGame();
+                if (!std::isfinite(havokToGame) || havokToGame <= 0.0f) {
+                    return false;
+                }
+                outVelocity = RE::NiPoint3{
+                    motion->linearVelocity.x * havokToGame,
+                    motion->linearVelocity.y * havokToGame,
+                    motion->linearVelocity.z * havokToGame,
+                };
+                return std::isfinite(outVelocity.x) &&
+                       std::isfinite(outVelocity.y) &&
+                       std::isfinite(outVelocity.z);
+            };
+
+            RE::NiPoint3 controllerVelocityGameUnits{};
+            RE::NiPoint3 objectVelocityGameUnits{};
+            RE::NiPoint3 proxyVelocityGameUnits{};
+            const bool controllerVelocityOk =
+                character_controller_runtime::
+                    tryGetPlayerLocomotionVelocityRawGameUnits(
+                        controllerVelocityGameUnits);
+            const bool objectVelocityOk = readBodyVelocityGameUnits(
+                sample.objectBodyId,
+                objectVelocityGameUnits);
+            const bool proxyVelocityOk = readBodyVelocityGameUnits(
+                sample.proxyBodyId,
+                proxyVelocityGameUnits);
+            const auto& runtime = runtime_state::currentFrame();
+
             ROCK_LOG_DEBUG(Hand,
-                "{} JAG_ANCHOR: t={}us flushSeq={} active={} actorOk={} actor=({:.4f},{:.4f},{:.4f}) ccOk={} cc=({:.4f},{:.4f},{:.4f}) corr={:.4f}",
+                "{} LOCOMOTION_PHASE: t={}us gameSeq={} gameDt={:.6f} flushSeq={} playerSpaceOk={} playerSpaceSrc={} roomDelta=({:.4f},{:.4f},{:.4f}) controllerOk={} controllerVel=({:.3f},{:.3f},{:.3f}) objectVelOk={} objectVel=({:.3f},{:.3f},{:.3f}) proxyVelOk={} proxyVel=({:.3f},{:.3f},{:.3f}) objectTargetGap={:.3f} proxyTargetGap={:.3f}",
                 hand.handName(),
                 probeMicroseconds,
+                runtime.timing.sequence,
+                runtime.deltaSeconds,
                 sample.flushSequence,
-                g_rockConfig.rockGrabLocomotionJagAnchor == 1 ? "controller" : "actor",
-                sample.jagActorAnchorValid ? "y" : "n",
-                sample.jagActorAnchorGameUnits.x,
-                sample.jagActorAnchorGameUnits.y,
-                sample.jagActorAnchorGameUnits.z,
-                sample.jagControllerAnchorValid ? "y" : "n",
-                sample.jagControllerAnchorGameUnits.x,
-                sample.jagControllerAnchorGameUnits.y,
-                sample.jagControllerAnchorGameUnits.z,
-                sample.jagCorrectionGameUnits);
+                runtime.playerSpace.valid ? "y" : "n",
+                runtime.playerSpace.source,
+                runtime.playerSpace.deltaGameUnits.x,
+                runtime.playerSpace.deltaGameUnits.y,
+                runtime.playerSpace.deltaGameUnits.z,
+                controllerVelocityOk ? "y" : "n",
+                controllerVelocityGameUnits.x,
+                controllerVelocityGameUnits.y,
+                controllerVelocityGameUnits.z,
+                objectVelocityOk ? "y" : "n",
+                objectVelocityGameUnits.x,
+                objectVelocityGameUnits.y,
+                objectVelocityGameUnits.z,
+                proxyVelocityOk ? "y" : "n",
+                proxyVelocityGameUnits.x,
+                proxyVelocityGameUnits.y,
+                proxyVelocityGameUnits.z,
+                objectOk ? origin_diagnostics::distance(
+                               objectWorld.translate,
+                               sample.appliedProxyTargetWorld.translate) :
+                           -1.0f,
+                proxyOk ? origin_diagnostics::distance(
+                              proxyWorld.translate,
+                              sample.appliedProxyTargetWorld.translate) :
+                          -1.0f);
+
         };
 
         if (probeRight) {
@@ -215,11 +337,29 @@
         if (probeLeft) {
             logHand(_leftHand, context.left.rawHandWorld);
         }
+
     }
 
     void PhysicsInteraction::publishDebugBodyOverlay(const PhysicsFrameContext& context)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
+
+        provider_collider_visualization::Snapshot colliderFocus{};
+        if (provider_collider_visualization::copySnapshot(colliderFocus)) {
+            debug::Install();
+            debug::BodyOverlayFrame focusedFrame{};
+            focusedFrame.world = context.hknpWorld;
+            focusedFrame.gameFrameIndex =
+                _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
+            focusedFrame.drawRockBodies = true;
+            focusedFrame.entries[0] = debug::BodyOverlayEntry{
+                RE::hknpBodyId{ colliderFocus.bodyId },
+                debug::BodyOverlayRole::FocusedWeaponPart
+            };
+            focusedFrame.count = 1;
+            debug::PublishFrame(focusedFrame);
+            return;
+        }
 
         logGrabOverlayPointProbe(context);
 
@@ -235,42 +375,178 @@
         }
         const bool drawProviderOverlay = providerOverlay &&
             (providerOverlay->lineCount > 0 || providerOverlay->textCount > 0);
-        const bool drawRockColliderBodies = g_rockConfig.rockDebugShowColliders;
-        const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
-        const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
-        const bool drawFingerSweptArc = g_rockConfig.rockDebugShowGrabFingerSweptArc;
-        const bool drawFingerSweptArcText = drawFingerSweptArc && g_rockConfig.rockDebugShowGrabFingerSweptArcText;
-        const bool drawFingerSweptArcLiveSkeleton = drawFingerSweptArc && g_rockConfig.rockDebugShowGrabFingerSweptArcLiveSkeleton;
-        const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
-        const bool drawGrabPockets = g_rockConfig.rockDebugDrawGrabPockets;
-        const bool drawRootFlattenedFingerSkeleton = g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers;
         const auto skeletonBoneMode = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneMode(g_rockConfig.rockDebugSkeletonBoneMode);
         const auto skeletonBoneSource = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneSource(g_rockConfig.rockDebugSkeletonBoneSource);
-        const bool drawSkeletonBones =
-            g_rockConfig.rockDebugShowSkeletonBoneVisualizer && skeletonBoneMode != skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
-        const bool drawGrabPocketNormal = g_rockConfig.rockDebugShowGrabPocketNormal;
-        const bool drawGrabContactPatch = g_rockConfig.rockDebugDrawGrabContactPatch;
-        const bool drawGrabForceTorque = g_rockConfig.rockDebugDrawGrabForceTorque;
-        const bool drawGrabForceTorqueText = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabForceTorqueText;
-        const bool drawGrabPivotSourceCollider = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceCollider;
-        const bool drawGrabPivotSourceEvidence = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceEvidence;
-        const bool drawGrabSupportFrame = g_rockConfig.rockDebugDrawGrabSupportFrame;
-        const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
-        const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
-        const bool drawDynamicHandColliders = g_rockConfig.rockDebugDrawDynamicHandColliders;
-        const bool drawGrabTransformTelemetry = g_rockConfig.rockDebugGrabTransformTelemetry;
-        const bool drawGrabTransformTelemetryAxes = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryAxes;
-        const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
+        const auto visualization = debug_visualization_policy::resolve({
+            .colliderMaster = g_rockConfig.rockDebugShowColliders,
+            .targetColliders = g_rockConfig.rockDebugShowTargetColliders,
+            .colliderPhaseDiagnostics =
+                g_rockConfig.rockDebugDrawColliderPhaseDiagnostics,
+            .handColliders = g_rockConfig.rockDebugDrawHandColliders,
+            .handBoneColliders = g_rockConfig.rockDebugDrawHandBoneColliders,
+            .bodyBoneColliders = g_rockConfig.rockDebugDrawBodyBoneColliders,
+            .dynamicHandColliders =
+                g_rockConfig.rockDebugDrawDynamicHandColliders,
+            .weaponColliders = g_rockConfig.rockDebugDrawWeaponColliders,
+            .grabbedWeaponPartCollider =
+                g_rockConfig.rockDebugDrawGrabbedWeaponPartCollider,
+            .dynamicWeaponColliders =
+                g_rockConfig.rockDebugDrawDynamicWeaponColliders,
+            .handAxes = g_rockConfig.rockDebugShowHandAxes,
+            .grabPivots = g_rockConfig.rockDebugShowGrabPivots,
+            .fingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes,
+            .fingerSweptArc = g_rockConfig.rockDebugShowGrabFingerSweptArc,
+            .fingerSweptArcText =
+                g_rockConfig.rockDebugShowGrabFingerSweptArcText,
+            .fingerSweptArcLiveSkeleton =
+                g_rockConfig.rockDebugShowGrabFingerSweptArcLiveSkeleton,
+            .palmVectors = g_rockConfig.rockDebugShowPalmVectors,
+            .grabPockets = g_rockConfig.rockDebugDrawGrabPockets,
+            .rootFlattenedFingerSkeleton =
+                g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers,
+            .skeletonBones =
+                g_rockConfig.rockDebugShowSkeletonBoneVisualizer &&
+                skeletonBoneMode !=
+                    skeleton_bone_debug_math::DebugSkeletonBoneMode::Off,
+            .skeletonBoneAxes = g_rockConfig.rockDebugDrawSkeletonBoneAxes,
+            .skeletonBoneLogging = g_rockConfig.rockDebugLogSkeletonBones,
+            .skeletonBoneTruncationLogging =
+                g_rockConfig.rockDebugLogSkeletonBoneTruncation,
+            .grabPocketNormal = g_rockConfig.rockDebugShowGrabPocketNormal,
+            .grabContactPatch = g_rockConfig.rockDebugDrawGrabContactPatch,
+            .grabForceTorque = g_rockConfig.rockDebugDrawGrabForceTorque,
+            .grabForceTorqueText =
+                g_rockConfig.rockDebugDrawGrabForceTorqueText,
+            .grabPivotSourceCollider =
+                g_rockConfig.rockDebugDrawGrabPivotSourceCollider,
+            .grabPivotSourceEvidence =
+                g_rockConfig.rockDebugDrawGrabPivotSourceEvidence,
+            .grabSupportFrame = g_rockConfig.rockDebugDrawGrabSupportFrame,
+            .handBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts,
+            .grabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy,
+            .grabTransformTelemetry =
+                g_rockConfig.rockDebugGrabTransformTelemetry,
+            .grabTransformTelemetryAxes =
+                g_rockConfig.rockDebugGrabTransformTelemetryAxes,
+            .grabTransformTelemetryText =
+                g_rockConfig.rockDebugGrabTransformTelemetryText,
+            .videoSyncMarker = g_rockConfig.rockDebugVideoSyncMarker,
+            .weaponAuthority = g_rockConfig.rockDebugDrawWeaponAuthority,
+            .looseWeaponGripZones =
+                g_rockConfig.rockDebugDrawLooseWeaponGripZones,
+            .authoredGripActivationZones =
+                g_rockConfig.rockDebugDrawAuthoredGripActivationZones,
+            .nativeScopeActivation =
+                g_rockConfig.rockEnableImmersiveScopes && g_rockConfig.rockDebugDrawNativeScopeActivation,
+            .worldOriginDiagnostics =
+                g_rockConfig.rockDebugWorldObjectOriginDiagnostics,
+        });
+
+        const bool drawTargetColliders = visualization.targetColliders;
+        const bool drawColliderPhaseDiagnostics =
+            visualization.colliderPhaseDiagnostics;
+        const bool drawHandColliders = visualization.handColliders;
+        const bool drawHandBoneColliders = visualization.handBoneColliders;
+        const bool drawBodyBoneColliders = visualization.bodyBoneColliders;
+        const bool drawDynamicHandColliders =
+            visualization.dynamicHandColliders;
+        const bool drawWeaponColliders = visualization.weaponColliders;
+        const bool drawGrabbedWeaponPartCollider =
+            visualization.grabbedWeaponPartCollider;
+        const bool drawDynamicWeaponColliders =
+            visualization.dynamicWeaponColliders;
+        const bool drawGrabAuthorityProxyCollider =
+            visualization.grabAuthorityProxyCollider;
+        const bool drawHandAxes = visualization.handAxes;
+        const bool drawGrabPivots = visualization.grabPivots;
+        const bool drawFingerProbes = visualization.fingerProbes;
+        const bool drawFingerSweptArc = visualization.fingerSweptArc;
+        const bool drawFingerSweptArcText =
+            visualization.fingerSweptArcText;
+        const bool drawFingerSweptArcLiveSkeleton =
+            visualization.fingerSweptArcLiveSkeleton;
+        const bool drawPalmVectors = visualization.palmVectors;
+        const bool drawGrabPockets = visualization.grabPockets;
+        const bool drawRootFlattenedFingerSkeleton =
+            visualization.rootFlattenedFingerSkeleton;
+        const bool drawSkeletonBones = visualization.skeletonBones;
+        const bool drawGrabPocketNormal = visualization.grabPocketNormal;
+        const bool drawGrabContactPatch = visualization.grabContactPatch;
+        const bool drawGrabForceTorque = visualization.grabForceTorque;
+        const bool drawGrabForceTorqueText =
+            visualization.grabForceTorqueText;
+        const bool drawGrabPivotSourceCollider =
+            visualization.grabPivotSourceCollider;
+        const bool drawGrabPivotSourceEvidence =
+            visualization.grabPivotSourceEvidence;
+        const bool drawGrabSupportFrame = visualization.grabSupportFrame;
+        const bool drawHandBoneContacts = visualization.handBoneContacts;
+        const bool drawGrabAuthorityProxy = visualization.grabAuthorityProxy;
+        const bool drawGrabTransformTelemetry =
+            visualization.grabTransformTelemetry;
+        const bool drawGrabTransformTelemetryAxes =
+            visualization.grabTransformTelemetryAxes;
+        const bool drawGrabTransformTelemetryText =
+            visualization.grabTransformTelemetryText;
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
-        const bool drawVideoSyncMarker = g_rockConfig.rockDebugVideoSyncMarker;
-        const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
-        // Authored support-grip diagnostics remain available through the
-        // existing weapon-authority debug controls without coupling normal
-        // production behavior to a debug-overlay writer.
-        const bool drawAuthoredSupportGripDebug = drawWeaponAuthorityDebug;
-        const bool drawNativeScopeActivation = g_rockConfig.rockDebugDrawNativeScopeActivation;
-        const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
-        const bool drawCustomCalibrationOffset = g_rockConfig.rockDebugCustomCalibrationOffset;
+        const bool drawVideoSyncMarker = visualization.videoSyncMarker;
+        const bool drawWeaponAuthorityDebug =
+            _twoHandedGrip.isGripping() && visualization.weaponAuthority;
+        const bool drawLooseWeaponGripZones =
+            visualization.looseWeaponGripZones;
+        const bool drawAuthoredGripActivationZones =
+            visualization.authoredGripActivationZones;
+        const bool drawAuthoredSupportGripDebug =
+            drawAuthoredGripActivationZones;
+        const bool drawNativeScopeActivation =
+            visualization.nativeScopeActivation;
+        const bool drawNativeScopeShots = g_rockConfig.rockEnableImmersiveScopes && g_rockConfig.rockDebugNativeScopeShotAlignment;
+        const bool drawWorldOriginDiagnostics =
+            visualization.worldOriginDiagnostics;
+
+        std::array<std::uint32_t, 2> grabbedWeaponPartColliderBodyIds{
+            INVALID_BODY_ID,
+            INVALID_BODY_ID,
+        };
+        std::uint32_t grabbedWeaponPartColliderCount = 0;
+        const auto isGrabbedWeaponPartColliderBody =
+            [&](const std::uint32_t bodyId) {
+                for (std::uint32_t index = 0;
+                     index < grabbedWeaponPartColliderCount;
+                     ++index) {
+                    if (grabbedWeaponPartColliderBodyIds[index] == bodyId) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+        if (drawGrabbedWeaponPartCollider) {
+            for (const bool isLeft : { false, true }) {
+                HandGripReport report{};
+                _twoHandedGrip.getHandGripReport(isLeft, report);
+                if (!report.active ||
+                    report.bodyId == INVALID_BODY_ID ||
+                    !isProviderWeaponBodyCurrentV1(
+                        report.weaponGenerationKey,
+                        report.bodyId) ||
+                    isGrabbedWeaponPartColliderBody(report.bodyId) ||
+                    grabbedWeaponPartColliderCount >=
+                        grabbedWeaponPartColliderBodyIds.size()) {
+                    continue;
+                }
+
+                grabbedWeaponPartColliderBodyIds[
+                    grabbedWeaponPartColliderCount++] = report.bodyId;
+            }
+        }
+        const bool hasGrabbedWeaponPartCollider =
+            grabbedWeaponPartColliderCount > 0;
+        const bool drawAnyRockColliderBodies =
+            drawHandColliders || drawHandBoneColliders ||
+            drawBodyBoneColliders || drawDynamicHandColliders ||
+            drawWeaponColliders || hasGrabbedWeaponPartCollider ||
+            drawDynamicWeaponColliders ||
+            drawGrabAuthorityProxyCollider || drawGrabPivotSourceCollider;
         if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
             ROCK_LOG_INFO(Hand,
                 "World object origin diagnostics enabled: intervalFrames={} warnThresholdGameUnits={:.2f} visualSourceOrder=bodyOwnerNode>hitNode>visualNode>referenceRoot",
@@ -280,11 +556,11 @@
         } else if (!drawWorldOriginDiagnostics) {
             s_worldOriginDiagnosticsEnabledLogged = false;
         }
-        if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
+        if (!drawAnyRockColliderBodies && !drawTargetColliders && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
-            !drawWeaponAuthorityDebug && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset &&
-            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawVideoSyncMarker) {
+            !drawWeaponAuthorityDebug && !drawLooseWeaponGripZones && !drawNativeScopeActivation && !drawNativeScopeShots && !drawGrabSupportFrame && !drawWorldOriginDiagnostics &&
+            !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
         }
@@ -293,20 +569,22 @@
 
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
-        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider || drawDynamicHandColliders;
-        frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
-        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
-            drawCustomCalibrationOffset || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug;
+        frame.gameFrameIndex =
+            _frame.palmClockGameFrameIndex.load(std::memory_order_acquire);
+        frame.drawRockBodies = drawAnyRockColliderBodies;
+        frame.drawTargetBodies = drawTargetColliders;
+        frame.drawColliderPhaseDiagnostics = drawColliderPhaseDiagnostics;
+        frame.drawAxes = drawHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque || drawNativeScopeActivation ||
+            drawWeaponAuthorityDebug || drawAuthoredSupportGripDebug;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
             drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
-            drawWeaponAuthorityDebug || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
+            drawWeaponAuthorityDebug || drawLooseWeaponGripZones || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
             drawAuthoredSupportGripDebug;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
-            drawDynamicHandColliders || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug || drawVideoSyncMarker ||
+            drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
+            drawAuthoredSupportGripDebug || drawVideoSyncMarker || drawGrabAuthorityProxy ||
             (providerOverlay && providerOverlay->textCount > 0);
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
@@ -330,22 +608,43 @@
                 (source.flags & static_cast<std::uint32_t>(
                     provider::RockProviderDebugOverlayTextFlagV1::WorldAnchored)) != 0;
         }
+        if (drawNativeScopeShots) native_scope_shot_diagnostics::appendOverlay(frame);
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
 
-        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
-            if (bodyId.value == INVALID_BODY_ID || frame.count >= frame.entries.size()) {
+        auto addBodyWithTarget = [&](RE::hknpBodyId bodyId,
+                                     debug::BodyOverlayRole role,
+                                     const RE::NiTransform* currentTarget) {
+            if (bodyId.value == INVALID_BODY_ID) {
                 return;
             }
 
             for (std::uint32_t i = 0; i < frame.count; i++) {
                 if (frame.entries[i].bodyId.value == bodyId.value && frame.entries[i].role == role) {
+                    if (drawColliderPhaseDiagnostics && currentTarget) {
+                        frame.entries[i].currentTarget = *currentTarget;
+                        frame.entries[i].hasCurrentTarget = true;
+                    }
                     return;
                 }
             }
 
-            frame.entries[frame.count++] = debug::BodyOverlayEntry{ bodyId, role };
+            if (frame.count >= frame.entries.size()) {
+                return;
+            }
+
+            auto& entry = frame.entries[frame.count++];
+            entry.bodyId = bodyId;
+            entry.role = role;
+            if (drawColliderPhaseDiagnostics && currentTarget) {
+                entry.currentTarget = *currentTarget;
+                entry.hasCurrentTarget = true;
+            }
+        };
+
+        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
+            addBodyWithTarget(bodyId, role, nullptr);
         };
 
         auto addAxisTransformWithBasis = [&](const RE::NiTransform& transform,
@@ -452,6 +751,17 @@
             entry.worldAnchored = false;
             std::snprintf(entry.text, sizeof(entry.text), "%s", text);
         };
+
+        if (frame.drawRockBodies || frame.drawTargetBodies) {
+            const float phaseLegendColor[4]{ 1.0f, 1.0f, 1.0f, 0.96f };
+            char phaseLegend[128]{};
+            std::snprintf(
+                phaseLegend,
+                sizeof(phaseLegend),
+                "COLLIDER PHASE frame=%llu  TARGET=YELLOW(103%%)  PRE=MAGENTA(101.5%%)  POST=CYAN(100%%)",
+                static_cast<unsigned long long>(frame.gameFrameIndex));
+            addScreenTextLine(18.0f, 60.0f, phaseLegendColor, phaseLegend);
+        }
 
         auto tryResolveBodyPosition = [&](std::uint32_t bodyId, RE::NiPoint3& outPosition) {
             if (!hknp || bodyId == INVALID_CONTACT_BODY_ID || bodyId == INVALID_BODY_ID) {
@@ -1006,25 +1316,17 @@
                 panelY += 14.0f;
             }
 
-            if (activationSnapshot.evaluationSequence == 0) {
-                addScreenTextLine(panelX, panelY, panelColor, "cone: no valid resolved-anchor evaluation observed");
+            if (activationSnapshot.publicationSequence == 0) {
+                addScreenTextLine(panelX, panelY, panelColor, "scope input: no button/renderer sample observed");
                 panelY += 14.0f;
             } else {
-                std::snprintf(panelLine, sizeof(panelLine), "cone seq=%llu state=%s native=%s ROCK=%s anchor=%s generation=%016llX",
-                    static_cast<unsigned long long>(activationSnapshot.evaluationSequence), activationSnapshot.nativeScopeAlreadyActive ? "exit" : "enter",
-                    activationSnapshot.nativeGeometryDecision ? "inside" : "outside", activationSnapshot.rockGeometryDecision ? "inside" : "outside",
+                std::snprintf(panelLine, sizeof(panelLine), "scope input seq=%llu button=%s renderer=%s/%s anchor=%s generation=%016llX",
+                    static_cast<unsigned long long>(activationSnapshot.publicationSequence),
+                    activationSnapshot.manualInputRequested ? "held" : "released",
+                    activationSnapshot.rendererStateValid ? "valid" : "invalid",
+                    activationSnapshot.rendererActive ? "active" : "inactive",
                     scopeAnchorSourceName(activationSnapshot.anchorSource),
                     static_cast<unsigned long long>(activationSnapshot.weaponGenerationKey));
-                addScreenTextLine(panelX, panelY, panelColor, panelLine);
-                panelY += 14.0f;
-
-                const auto& sample = activationSnapshot.sample;
-                const auto& thresholds = activationSnapshot.thresholds;
-                const float hmdLimit = activationSnapshot.nativeScopeAlreadyActive ? thresholds.hmdExitDegrees : thresholds.hmdEnterDegrees;
-                const float weaponLimit = (activationSnapshot.nativeScopeAlreadyActive ? thresholds.weaponExitDegrees : thresholds.weaponEnterDegrees) * sample.weaponAngleWidening;
-                const float distanceLimit = activationSnapshot.nativeScopeAlreadyActive ? thresholds.distanceExitGameUnits : thresholds.distanceEnterGameUnits;
-                std::snprintf(panelLine, sizeof(panelLine), "sample: HMD=%.2f/%.2f deg weapon=%.2f/%.2f deg distance=%.2f/%.2f gu widen=%.3f", sample.hmdAngleDegrees, hmdLimit,
-                    sample.weaponAngleDegrees, weaponLimit, sample.distanceGameUnits, distanceLimit, sample.weaponAngleWidening);
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
             }
@@ -1063,31 +1365,17 @@
         if (frame.drawAxes) {
             if (!rightDisabled) {
                 const RE::NiTransform& rawHand = context.right.rawHandWorld;
-                if (g_rockConfig.rockDebugShowHandAxes) {
+                if (drawHandAxes) {
                     addAxisTransform(rawHand, debug::AxisOverlayRole::RightHandRaw, rawHand.translate, false);
                     addAxisBody(_rightHand.getCollisionBodyId(), debug::AxisOverlayRole::RightHandBody, rawHand.translate, true);
-                }
-                if (drawCustomCalibrationOffset && _handBoneCache.isReady()) {
-                    custom_oga::Frame customOGA{};
-                    const RE::NiTransform handBoneWorld = _handBoneCache.getWorldTransform(false);
-                    if (custom_oga::resolveLive(false, handBoneWorld, rawHand, customOGA) && customOGA.valid) {
-                        addAxisTransform(customOGA.world, debug::AxisOverlayRole::RightCustomCalibrationOffset, customOGA.world.translate, false);
-                    }
                 }
             }
 
             if (!leftDisabled) {
                 const RE::NiTransform& rawHand = context.left.rawHandWorld;
-                if (g_rockConfig.rockDebugShowHandAxes) {
+                if (drawHandAxes) {
                     addAxisTransform(rawHand, debug::AxisOverlayRole::LeftHandRaw, rawHand.translate, false);
                     addAxisBody(_leftHand.getCollisionBodyId(), debug::AxisOverlayRole::LeftHandBody, rawHand.translate, true);
-                }
-                if (drawCustomCalibrationOffset && _handBoneCache.isReady()) {
-                    custom_oga::Frame customOGA{};
-                    const RE::NiTransform handBoneWorld = _handBoneCache.getWorldTransform(true);
-                    if (custom_oga::resolveLive(true, handBoneWorld, rawHand, customOGA) && customOGA.valid) {
-                        addAxisTransform(customOGA.world, debug::AxisOverlayRole::LeftCustomCalibrationOffset, customOGA.world.translate, false);
-                    }
                 }
             }
         }
@@ -1102,8 +1390,8 @@
                 const RE::NiPoint3 grabAnchor = handInput.grabAnchorWorld;
                 const RE::NiPoint3 closeSelectionDirection = handInput.closeSelectionDirectionWorld;
                 const RE::NiPoint3 farSelectionDirection = handInput.farSelectionDirectionWorld;
-                const float palmNormalLength = (std::max)(5.0f, g_rockConfig.rockNearDetectionRange);
-                const float pointingLength = (std::min)(90.0f, (std::max)(20.0f, g_rockConfig.rockFarDetectionRange));
+                const float palmNormalLength = (std::max)(5.0f, selection_query_policy::kNearDetectionRangeGameUnits);
+                const float pointingLength = (std::min)(90.0f, (std::max)(20.0f, selection_query_policy::kFarDetectionRangeGameUnits));
 
                 addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabAnchor : debug::MarkerOverlayRole::RightGrabAnchor, grabAnchor, 2.0f);
                 addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftPalmNormal : debug::MarkerOverlayRole::RightPalmNormal, grabAnchor,
@@ -1148,6 +1436,15 @@
                     addMarkerLine(palmRadiusRole,
                         palmPocket.pocketCenterWorld - palmPocket.crossPalmWorld * palmPocket.pocketRadiusGameUnits,
                         palmPocket.pocketCenterWorld + palmPocket.crossPalmWorld * palmPocket.pocketRadiusGameUnits);
+                    constexpr float livePocketLabelColor[4]{ 1.0f, 0.08f, 0.58f, 0.96f };
+                    RE::NiPoint3 pocketLabel = palmPocket.pocketCenterWorld;
+                    pocketLabel.z += 3.0f;
+                    addTextLineSized(
+                        pocketLabel,
+                        1.35f,
+                        livePocketLabelColor,
+                        "POCKET %s LIVE-PALM/PRE",
+                        isLeft ? "L" : "R");
                 }
 
                 if (!handInput.hasPinchPocketWorld) {
@@ -1161,7 +1458,7 @@
                 const RE::NiPoint3 pinchDetection =
                     grab_pinch_pocket_policy::normalizeOrFallback(pinchAxis * axisBlend + handInput.pinchDirectionWorld * (1.0f - axisBlend), pinchAxis);
                 const float directionLength =
-                    (std::max)(g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits, g_rockConfig.rockNearCastDistanceGameUnits);
+                    (std::max)(g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits, selection_query_policy::kNearCastDistanceGameUnits);
 
                 addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftPinchPocketCenter : debug::MarkerOverlayRole::RightPinchPocketCenter, handInput.pinchPocketWorld, 2.2f);
                 addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftPinchPocketAxis : debug::MarkerOverlayRole::RightPinchPocketAxis, handInput.thumbPadWorld, handInput.indexPadWorld);
@@ -1177,7 +1474,7 @@
 
         if (drawSkeletonBones) {
             DirectSkeletonBoneSnapshot snapshot{};
-            if (s_directSkeletonBoneReader.capture(skeletonBoneMode, skeletonBoneSource, snapshot)) {
+            if (s_directSkeletonBoneReader.capture(skeletonBoneMode, skeletonBoneSource, SkeletonBoneCaptureSpace::Rendered, snapshot)) {
                 const std::size_t drawCap =
                     static_cast<std::size_t>(skeleton_bone_debug_math::sanitizeMaxSkeletonBonesDrawn(g_rockConfig.rockDebugMaxSkeletonBonesDrawn));
                 const std::size_t axisCap =
@@ -1191,7 +1488,7 @@
                     }
 
                     const bool drawAxis =
-                        g_rockConfig.rockDebugDrawSkeletonBoneAxes &&
+                        visualization.skeletonBoneAxes &&
                         skeleton_bone_debug_math::shouldDrawSkeletonAxis(g_rockConfig.rockDebugSkeletonAxisBoneFilter, snapshot.bones[i].name, axesDrawn, axisCap);
                     if (drawAxis) {
                         ++axesDrawn;
@@ -1199,7 +1496,8 @@
                     addSkeletonBone(snapshot, i, drawAxis);
                 }
 
-                if (skippedBones > 0 && g_rockConfig.rockDebugLogSkeletonBoneTruncation) {
+                if (skippedBones > 0 &&
+                    visualization.skeletonBoneTruncationLogging) {
                     ROCK_LOG_WARN(Hand,
                         "Direct skeleton overlay truncated: source={} mode={} total={} drawn={} skipped={} drawCap={} overlayBudget={}",
                         skeleton_bone_debug_math::snapshotSourceName(snapshot.source),
@@ -1211,7 +1509,7 @@
                         frame.skeletonEntries.size());
                 }
 
-                if (g_rockConfig.rockDebugLogSkeletonBones) {
+                if (visualization.skeletonBoneLogging) {
                     const int interval = (std::max)(1, g_rockConfig.rockDebugSkeletonBoneLogIntervalFrames);
                     if (++s_directSkeletonBoneLogCounter >= static_cast<std::uint32_t>(interval)) {
                         s_directSkeletonBoneLogCounter = 0;
@@ -1222,8 +1520,20 @@
                         float rightHandScale = 0.0f;
                         float leftHandScale = 0.0f;
                         if (frik_visual_authority::isAvailable()) {
-                            rightHandScale = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Right).scale;
-                            leftHandScale = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Left).scale;
+                            RE::NiTransform rightHandWorld{};
+                            RE::NiTransform leftHandWorld{};
+                            if (frik_visual_authority::
+                                    tryGetHandWorldTransform(
+                                        frik_visual_authority::Hand::Right,
+                                        rightHandWorld)) {
+                                rightHandScale = rightHandWorld.scale;
+                            }
+                            if (frik_visual_authority::
+                                    tryGetHandWorldTransform(
+                                        frik_visual_authority::Hand::Left,
+                                        leftHandWorld)) {
+                                leftHandScale = leftHandWorld.scale;
+                            }
                         }
 
                         ROCK_LOG_DEBUG(Hand,
@@ -1307,7 +1617,7 @@
             addRootFlattenedFingerSkeletonDebug(true);
         }
 
-        if (drawGrabPivots || drawGrabContactPatch) {
+        if (drawGrabPivots) {
             auto addGrabPivotDebug = [&](const Hand& hand) {
                 if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
                     return;
@@ -1329,7 +1639,7 @@
             addGrabPivotDebug(_leftHand);
         }
 
-        if (drawGrabPocketNormal || drawGrabContactPatch) {
+        if (drawGrabPocketNormal) {
             auto addGrabPocketNormalDebug = [&](const Hand& hand) {
                 if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
                     return;
@@ -1435,6 +1745,9 @@
                 const float labelSolverColor[4]{ 1.0f, 0.36f, 0.18f, 0.96f };
                 const RE::NiPoint3 labelLift{ 0.0f, 0.0f, 3.2f };
                 auto addTriadLabel = [&](const RE::NiTransform& transform, const float color[4], const char* label) {
+                    if (!drawGrabForceTorqueText) {
+                        return;
+                    }
                     addTextLineSized(transform.translate + labelLift, 1.85f, color, "%s", label);
                 };
 
@@ -2001,9 +2314,10 @@
                     labelAnchor,
                     2.1f,
                     kSeatColor,
-                    "AUTHORED SUPPORT SEAT %s%s d=%.2f r=%.2f %s",
+                    "AUTHORED SUPPORT SEAT %s topology=%s d=%.2f r=%.2f %s",
                     snapshot.supportHandIsLeft ? "LEFT" : "RIGHT",
-                    snapshot.mirroredForRightSupport ? " MIRRORED" : "",
+                    authored_weapon_grip_activation_policy::handTopologyName(
+                        snapshot.handTopology),
                     snapshot.weaponRelativeDistanceGameUnits,
                     snapshot.touchRadiusGameUnits,
                     snapshot.insideTouchRadius ? "INSIDE" : "OUTSIDE");
@@ -2024,6 +2338,517 @@
                     snapshot.liveTouchProbeWeaponLocal.y,
                     snapshot.liveTouchProbeWeaponLocal.z,
                     snapshot.frameAgreementErrorGameUnits);
+
+                if (drawAuthoredGripActivationZones) {
+                    const float drawRadiusGameUnits = (std::min)(
+                        snapshot.radialCapGameUnits,
+                        12.0f);
+                    const auto activationBoundary =
+                        authored_weapon_grip_activation_policy::
+                            resolveActivationBoundaryDimensions(
+                                drawRadiusGameUnits);
+                    if (snapshot.canonicalAxesValid &&
+                        activationBoundary.valid) {
+                        const auto axisEnd = [&](const RE::NiPoint3& axis) {
+                            return RE::NiPoint3{
+                                snapshot.authoredPalmSeatWorld.x +
+                                    axis.x * drawRadiusGameUnits,
+                                snapshot.authoredPalmSeatWorld.y +
+                                    axis.y * drawRadiusGameUnits,
+                                snapshot.authoredPalmSeatWorld.z +
+                                    axis.z * drawRadiusGameUnits,
+                            };
+                        };
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.supportSideAxisWorld));
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationDownAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.downAxisWorld));
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationReferenceAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.referenceAxisWorld));
+
+                        const auto drawWireCone = [&](
+                            const RE::NiPoint3& axis,
+                            const RE::NiPoint3& tangentA,
+                            const RE::NiPoint3& tangentB) {
+                            constexpr std::size_t SegmentCount = 12;
+                            std::array<RE::NiPoint3, SegmentCount> rim{};
+                            for (std::size_t segment = 0;
+                                 segment < SegmentCount;
+                                 ++segment) {
+                                const float angle =
+                                    static_cast<float>(segment) *
+                                    2.0f * std::numbers::pi_v<float> /
+                                    static_cast<float>(SegmentCount);
+                                const float radialA =
+                                    std::cos(angle) *
+                                    activationBoundary.rimRadiusGameUnits;
+                                const float radialB =
+                                    std::sin(angle) *
+                                    activationBoundary.rimRadiusGameUnits;
+                                rim[segment] = RE::NiPoint3{
+                                    snapshot.authoredPalmSeatWorld.x +
+                                        axis.x *
+                                            activationBoundary.axialGameUnits +
+                                        tangentA.x * radialA +
+                                        tangentB.x * radialB,
+                                    snapshot.authoredPalmSeatWorld.y +
+                                        axis.y *
+                                            activationBoundary.axialGameUnits +
+                                        tangentA.y * radialA +
+                                        tangentB.y * radialB,
+                                    snapshot.authoredPalmSeatWorld.z +
+                                        axis.z *
+                                            activationBoundary.axialGameUnits +
+                                        tangentA.z * radialA +
+                                        tangentB.z * radialB,
+                                };
+                            }
+                            for (std::size_t segment = 0;
+                                 segment < SegmentCount;
+                                 ++segment) {
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                    rim[segment],
+                                    rim[(segment + 1) % SegmentCount]);
+                                if ((segment % (SegmentCount / 4)) == 0) {
+                                    addMarkerLine(
+                                        debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                        snapshot.authoredPalmSeatWorld,
+                                        rim[segment]);
+                                }
+                            }
+                        };
+
+                        const auto drawWireSweptActivationRegion = [&]() {
+                            const auto canonicalPoint = [&](
+                                const float supportSideOffset,
+                                const float downOffset,
+                                const float referenceOffset) {
+                                return RE::NiPoint3{
+                                    snapshot.authoredPalmSeatWorld.x +
+                                        snapshot.supportSideAxisWorld.x *
+                                            supportSideOffset +
+                                        snapshot.downAxisWorld.x * downOffset +
+                                        snapshot.referenceAxisWorld.x *
+                                            referenceOffset,
+                                    snapshot.authoredPalmSeatWorld.y +
+                                        snapshot.supportSideAxisWorld.y *
+                                            supportSideOffset +
+                                        snapshot.downAxisWorld.y * downOffset +
+                                        snapshot.referenceAxisWorld.y *
+                                            referenceOffset,
+                                    snapshot.authoredPalmSeatWorld.z +
+                                        snapshot.supportSideAxisWorld.z *
+                                            supportSideOffset +
+                                        snapshot.downAxisWorld.z * downOffset +
+                                        snapshot.referenceAxisWorld.z *
+                                            referenceOffset,
+                                };
+                            };
+                            const auto addAllowedLine = [&](
+                                const RE::NiPoint3& from,
+                                const RE::NiPoint3& to) {
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::
+                                        AuthoredGripActivationAllowedRegion,
+                                    from,
+                                    to);
+                            };
+
+                            constexpr std::size_t ArcSegmentCount = 12;
+                            RE::NiPoint3 previousPositive{};
+                            RE::NiPoint3 previousNegative{};
+                            RE::NiPoint3 previousCenter{};
+                            for (std::size_t segment = 0;
+                                 segment <= ArcSegmentCount;
+                                 ++segment) {
+                                const float angle =
+                                    static_cast<float>(segment) *
+                                    (0.5f * std::numbers::pi_v<float>) /
+                                    static_cast<float>(ArcSegmentCount);
+                                const float supportSideScale = std::cos(angle);
+                                const float downScale = std::sin(angle);
+                                const auto center = canonicalPoint(
+                                    supportSideScale * drawRadiusGameUnits,
+                                    downScale * drawRadiusGameUnits,
+                                    0.0f);
+                                const auto positive = canonicalPoint(
+                                    supportSideScale *
+                                        activationBoundary.axialGameUnits,
+                                    downScale *
+                                        activationBoundary.axialGameUnits,
+                                    activationBoundary.rimRadiusGameUnits);
+                                const auto negative = canonicalPoint(
+                                    supportSideScale *
+                                        activationBoundary.axialGameUnits,
+                                    downScale *
+                                        activationBoundary.axialGameUnits,
+                                    -activationBoundary.rimRadiusGameUnits);
+                                if (segment > 0) {
+                                    addAllowedLine(previousPositive, positive);
+                                    addAllowedLine(previousNegative, negative);
+                                    addAllowedLine(previousCenter, center);
+                                }
+                                if ((segment % (ArcSegmentCount / 4)) == 0) {
+                                    addAllowedLine(
+                                        snapshot.authoredPalmSeatWorld,
+                                        positive);
+                                    addAllowedLine(
+                                        snapshot.authoredPalmSeatWorld,
+                                        negative);
+                                }
+                                previousPositive = positive;
+                                previousNegative = negative;
+                                previousCenter = center;
+                            }
+
+                            const auto drawEndpointCap =
+                                [&](const bool supportSideEndpoint) {
+                                constexpr std::size_t SegmentCount = 12;
+                                RE::NiPoint3 previous{};
+                                for (std::size_t segment = 0;
+                                     segment <= SegmentCount;
+                                     ++segment) {
+                                    const float angle =
+                                        0.5f * std::numbers::pi_v<float> +
+                                        static_cast<float>(segment) *
+                                            std::numbers::pi_v<float> /
+                                            static_cast<float>(SegmentCount);
+                                    const float tangentOffset =
+                                        std::cos(angle) *
+                                        activationBoundary.rimRadiusGameUnits;
+                                    const auto point = canonicalPoint(
+                                        supportSideEndpoint ?
+                                            activationBoundary.axialGameUnits :
+                                            tangentOffset,
+                                        supportSideEndpoint ?
+                                            tangentOffset :
+                                            activationBoundary.axialGameUnits,
+                                        std::sin(angle) *
+                                            activationBoundary.rimRadiusGameUnits);
+                                    if (segment > 0) {
+                                        addAllowedLine(previous, point);
+                                    }
+                                    if (segment == SegmentCount / 2) {
+                                        addAllowedLine(
+                                            snapshot.authoredPalmSeatWorld,
+                                            point);
+                                    }
+                                    previous = point;
+                                }
+                            };
+                            drawEndpointCap(true);
+                            drawEndpointCap(false);
+                        };
+                        if (snapshot.weaponFamily ==
+                                authored_weapon_grip_activation_policy::
+                                    WeaponFamily::OneHandGun) {
+                            drawWireCone(
+                                snapshot.supportSideAxisWorld,
+                                snapshot.downAxisWorld,
+                                snapshot.referenceAxisWorld);
+                        }
+                        if (snapshot.weaponFamily ==
+                            authored_weapon_grip_activation_policy::
+                                WeaponFamily::TwoHandGun) {
+                            drawWireSweptActivationRegion();
+                        }
+                    }
+
+                    const auto liveVectorRole =
+                        snapshot.activationSpatialPass ?
+                        debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                        debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                    addMarkerLine(
+                        liveVectorRole,
+                        snapshot.authoredPalmSeatWorld,
+                        snapshot.liveTouchProbeWorld);
+
+                    for (std::size_t landmarkIndex = 0;
+                         landmarkIndex <
+                            AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount;
+                         ++landmarkIndex) {
+                        const bool witnessValid =
+                            (snapshot.poseSurfaceWitnessMask &
+                                static_cast<std::uint8_t>(1u << landmarkIndex)) != 0;
+                        const auto witnessRole = witnessValid ?
+                            debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                            debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                        addMarkerPoint(
+                            witnessRole,
+                            snapshot.poseLandmarksWorld[landmarkIndex],
+                            landmarkIndex == 0 ? 2.4f : 1.7f);
+                        if (witnessValid) {
+                            addMarkerLine(
+                                witnessRole,
+                                snapshot.poseLandmarksWorld[landmarkIndex],
+                                snapshot.poseSurfaceWitnessWorld[landmarkIndex]);
+                        }
+                    }
+
+                    constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
+                    constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
+                    const bool authoredActivationPass =
+                        snapshot.activationSpatialPass;
+                    const float* verdictColor =
+                        authoredActivationPass ?
+                        kPassColor : kFailColor;
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -6.4f },
+                        1.75f,
+                        verdictColor,
+                        "AUTHORED ACTIVATION family=%s slot=%08X (%s) base=%08X",
+                        authored_weapon_grip_activation_policy::weaponFamilyName(
+                            snapshot.weaponFamily),
+                        snapshot.effectiveEquipSlotFormID,
+                        snapshot.effectiveEquipSlotUsesInstanceData ?
+                            "INSTANCE" : "BASE",
+                        snapshot.baseEquipSlotFormID);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -8.4f },
+                        1.65f,
+                        verdictColor,
+                        "d=%.2f cap=%.2f sideDot=%.3f downDot=%.3f arcDot=%.3f region=%s spatial=%s",
+                        snapshot.weaponRelativeDistanceGameUnits,
+                        snapshot.radialCapGameUnits,
+                        snapshot.supportSideDot,
+                        snapshot.downDot,
+                        snapshot.sweptArcDot,
+                        authored_weapon_grip_activation_policy::activationRegionName(
+                            snapshot.selectedRegion),
+                        snapshot.activationSpatialPass ? "PASS" : "FAIL");
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "gates axes=%d class=%d radial=%d direction=%d topology=%d stable=%d",
+                        snapshot.canonicalAxesValid ? 1 : 0,
+                        snapshot.classifierSupported ? 1 : 0,
+                        snapshot.radialPass ? 1 : 0,
+                        snapshot.directionPass ? 1 : 0,
+                        snapshot.topologyPass ? 1 : 0,
+                        snapshot.directionUsedLastStableSample ? 1 : 0);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -12.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "collision diagnostic witnesses=%u/6 mask=%02X evidence=%s authored=%s current=%s",
+                        static_cast<unsigned>(snapshot.poseSurfaceWitnessCount),
+                        static_cast<unsigned>(snapshot.poseSurfaceWitnessMask),
+                        snapshot.poseEvidencePass ? "PASS" : "FAIL",
+                        authoredActivationPass ? "AUTHORED" : "DYNAMIC/NONE",
+                        snapshot.currentSupportGripActive ?
+                            (snapshot.currentAuthoredSupportGripActive ?
+                                "AUTHORED" : "DYNAMIC") :
+                            "IDLE");
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -14.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "authoredOnly capability=%s reason=%s ready=%.3fs selection=%s/%s",
+                        authored_support_grab_policy::capabilityName(
+                            snapshot.authoredCapability),
+                        authored_support_grab_policy::capabilityReasonName(
+                            snapshot.authoredCapabilityReason),
+                        snapshot.authoredCapabilityReadySeconds,
+                        authored_support_grab_policy::selectionName(
+                            snapshot.lastSelection),
+                        authored_support_grab_policy::selectionReasonName(
+                            snapshot.lastSelectionReason));
+                }
+            }
+        }
+
+        if (drawAuthoredGripActivationZones) {
+            FiringGripReattachZoneDebugSnapshot snapshot{};
+            if (_twoHandedGrip.getFiringGripReattachZoneDebugSnapshot(snapshot)) {
+                namespace reattach_zone = firing_grip_reattach_zone_policy;
+                // YELLOW cross: the captured firing grip point where both
+                // reattach cylinders start. BLUE crosses: each evaluated palm.
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                    snapshot.gripWorld,
+                    3.0f);
+
+                const float drawReachGameUnits = (std::min)(
+                    snapshot.reachGameUnits,
+                    12.0f);
+                const float drawRadiusGameUnits =
+                    snapshot.cylinderRadiusGameUnits;
+                const auto tryBuildCylinderBasis = [](
+                    const RE::NiPoint3& axis,
+                    RE::NiPoint3& outUnitAxis,
+                    RE::NiPoint3& outTangentA,
+                    RE::NiPoint3& outTangentB) {
+                    const auto normalize = [](
+                        const RE::NiPoint3& value,
+                        RE::NiPoint3& outUnit) {
+                        const float lengthSquared =
+                            value.x * value.x +
+                            value.y * value.y +
+                            value.z * value.z;
+                        if (!std::isfinite(lengthSquared) ||
+                            lengthSquared <= 0.000001f) {
+                            return false;
+                        }
+                        const float inverseLength =
+                            1.0f / std::sqrt(lengthSquared);
+                        outUnit = RE::NiPoint3{
+                            value.x * inverseLength,
+                            value.y * inverseLength,
+                            value.z * inverseLength,
+                        };
+                        return true;
+                    };
+                    const auto cross = [](
+                        const RE::NiPoint3& a,
+                        const RE::NiPoint3& b) {
+                        return RE::NiPoint3{
+                            a.y * b.z - a.z * b.y,
+                            a.z * b.x - a.x * b.z,
+                            a.x * b.y - a.y * b.x,
+                        };
+                    };
+                    if (!normalize(axis, outUnitAxis)) {
+                        return false;
+                    }
+                    const RE::NiPoint3 reference =
+                        std::abs(outUnitAxis.z) < 0.9f ?
+                        RE::NiPoint3{ 0.0f, 0.0f, 1.0f } :
+                        RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+                    if (!normalize(cross(reference, outUnitAxis), outTangentA)) {
+                        return false;
+                    }
+                    return normalize(cross(outUnitAxis, outTangentA), outTangentB);
+                };
+                RE::NiPoint3 unitAxis{};
+                RE::NiPoint3 tangentA{};
+                RE::NiPoint3 tangentB{};
+                if (drawReachGameUnits > 0.0f &&
+                    std::isfinite(drawRadiusGameUnits) &&
+                    drawRadiusGameUnits > 0.0f &&
+                    tryBuildCylinderBasis(
+                        snapshot.weaponLeftAxisWorld,
+                        unitAxis,
+                        tangentA,
+                        tangentB)) {
+                    const auto cylinderPoint = [&](
+                        const float axial,
+                        const float radialA,
+                        const float radialB) {
+                        return RE::NiPoint3{
+                            snapshot.gripWorld.x + unitAxis.x * axial +
+                                tangentA.x * radialA + tangentB.x * radialB,
+                            snapshot.gripWorld.y + unitAxis.y * axial +
+                                tangentA.y * radialA + tangentB.y * radialB,
+                            snapshot.gripWorld.z + unitAxis.z * axial +
+                                tangentA.z * radialA + tangentB.z * radialB,
+                        };
+                    };
+                    constexpr std::size_t SegmentCount = 12;
+                    const auto drawRing = [&](const float axial) {
+                        RE::NiPoint3 previous =
+                            cylinderPoint(axial, drawRadiusGameUnits, 0.0f);
+                        for (std::size_t segment = 1;
+                             segment <= SegmentCount;
+                             ++segment) {
+                            const float angle =
+                                static_cast<float>(segment) *
+                                2.0f * std::numbers::pi_v<float> /
+                                static_cast<float>(SegmentCount);
+                            const RE::NiPoint3 point = cylinderPoint(
+                                axial,
+                                std::cos(angle) * drawRadiusGameUnits,
+                                std::sin(angle) * drawRadiusGameUnits);
+                            addMarkerLine(
+                                debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                previous,
+                                point);
+                            previous = point;
+                        }
+                    };
+                    // One cylinder per side of the weapon, starting on the
+                    // grip point: axis line, far ring, and four spokes.
+                    const auto drawWireCylinder = [&](const float axisSign) {
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationSupportSideAxis,
+                            snapshot.gripWorld,
+                            cylinderPoint(axisSign * drawReachGameUnits, 0.0f, 0.0f));
+                        drawRing(axisSign * drawReachGameUnits);
+                        for (std::size_t spoke = 0; spoke < 4; ++spoke) {
+                            const float angle =
+                                static_cast<float>(spoke) *
+                                0.5f * std::numbers::pi_v<float>;
+                            const float radialA =
+                                std::cos(angle) * drawRadiusGameUnits;
+                            const float radialB =
+                                std::sin(angle) * drawRadiusGameUnits;
+                            addMarkerLine(
+                                debug::MarkerOverlayRole::AuthoredGripActivationAllowedRegion,
+                                cylinderPoint(0.0f, radialA, radialB),
+                                cylinderPoint(
+                                    axisSign * drawReachGameUnits,
+                                    radialA,
+                                    radialB));
+                        }
+                    };
+                    drawRing(0.0f);
+                    drawWireCylinder(1.0f);
+                    drawWireCylinder(-1.0f);
+                }
+
+                constexpr float kSeatColor[4]{ 1.0f, 0.78f, 0.05f, 0.98f };
+                constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
+                constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
+                // Stack upward from the grip so the readout clears the
+                // authored support seat labels below it.
+                const RE::NiPoint3 labelAnchor =
+                    snapshot.gripWorld + RE::NiPoint3{ 0.0f, 0.0f, 6.0f };
+                addTextLineSized(
+                    labelAnchor,
+                    2.1f,
+                    kSeatColor,
+                    "FIRING REATTACH ZONE reach=%.2f radius=%.2f x2",
+                    snapshot.reachGameUnits,
+                    snapshot.cylinderRadiusGameUnits);
+                float labelOffset = 2.2f;
+                for (std::size_t handIndex = 0;
+                     handIndex < snapshot.hands.size();
+                     ++handIndex) {
+                    const auto& hand = snapshot.hands[handIndex];
+                    if (!hand.evaluated) {
+                        continue;
+                    }
+                    const auto verdictRole = hand.inside ?
+                        debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                        debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                    addMarkerPoint(
+                        debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
+                        hand.palmWorld,
+                        2.5f);
+                    addMarkerLine(verdictRole, snapshot.gripWorld, hand.palmWorld);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, labelOffset },
+                        1.65f,
+                        hand.inside ? kPassColor : kFailColor,
+                        "%s palm along=%.2f perp=%.2f d=%.2f side=%s reach=%d radius=%d grab=%s %s",
+                        handIndex == 0 ? "LEFT" : "RIGHT",
+                        hand.alongAxisGameUnits,
+                        hand.perpendicularDistanceGameUnits,
+                        hand.radialDistanceGameUnits,
+                        reattach_zone::sideName(hand.side),
+                        hand.reachPass ? 1 : 0,
+                        hand.radiusPass ? 1 : 0,
+                        hand.gripHeld ? "HELD" : "OPEN",
+                        hand.inside ? "INSIDE" : "OUTSIDE");
+                    labelOffset += 2.0f;
+                }
             }
         }
 
@@ -2037,15 +2862,30 @@
                 addMarkerPoint(debug::MarkerOverlayRole::LeftWeaponSupportGrip, snapshot.leftGripWorld, 3.0f);
 
                 if (frik_visual_authority::isAvailable()) {
-                    const RE::NiTransform appliedRight = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Right);
-                    const RE::NiTransform appliedLeft = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Left);
-                    addAxisTransform(appliedRight, debug::AxisOverlayRole::RightFrikAppliedHand, snapshot.rightRequestedHandWorld.translate, true);
-                    addAxisTransform(appliedLeft, debug::AxisOverlayRole::LeftFrikAppliedHand, snapshot.leftRequestedHandWorld.translate, true);
-                    addMarkerLine(debug::MarkerOverlayRole::RightWeaponAuthorityMismatch, snapshot.rightRequestedHandWorld.translate, appliedRight.translate);
-                    addMarkerLine(debug::MarkerOverlayRole::LeftWeaponAuthorityMismatch, snapshot.leftRequestedHandWorld.translate, appliedLeft.translate);
+                    RE::NiTransform appliedRight{};
+                    RE::NiTransform appliedLeft{};
+                    const bool rightAppliedValid =
+                        frik_visual_authority::
+                            tryGetHandWorldTransform(
+                                frik_visual_authority::Hand::Right,
+                                appliedRight);
+                    const bool leftAppliedValid =
+                        frik_visual_authority::
+                            tryGetHandWorldTransform(
+                                frik_visual_authority::Hand::Left,
+                                appliedLeft);
+                    if (rightAppliedValid) {
+                        addAxisTransform(appliedRight, debug::AxisOverlayRole::RightFrikAppliedHand, snapshot.rightRequestedHandWorld.translate, true);
+                        addMarkerLine(debug::MarkerOverlayRole::RightWeaponAuthorityMismatch, snapshot.rightRequestedHandWorld.translate, appliedRight.translate);
+                    }
+                    if (leftAppliedValid) {
+                        addAxisTransform(appliedLeft, debug::AxisOverlayRole::LeftFrikAppliedHand, snapshot.leftRequestedHandWorld.translate, true);
+                        addMarkerLine(debug::MarkerOverlayRole::LeftWeaponAuthorityMismatch, snapshot.leftRequestedHandWorld.translate, appliedLeft.translate);
+                    }
 
                     static std::uint32_t authorityMismatchLogCounter = 0;
-                    if (++authorityMismatchLogCounter >= 120) {
+                    if (rightAppliedValid && leftAppliedValid &&
+                        ++authorityMismatchLogCounter >= 120) {
                         authorityMismatchLogCounter = 0;
                         ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip authority mismatch: right={:.2f}gu left={:.2f}gu",
                             pointDistance(snapshot.rightRequestedHandWorld.translate, appliedRight.translate),
@@ -2055,7 +2895,7 @@
             }
         }
 
-        if (drawGrabPivots) {
+        if (drawLooseWeaponGripZones) {
             /*
              * Loose-weapon grip zone: the FRIK-offset-projected firing grip on
              * a loosely held weapon, plus the palm-to-grip line the equip gate
@@ -2186,7 +3026,7 @@
             };
 
             auto publishGrabTelemetry = [&](Hand& hand, bool isLeft) {
-                auto& telemetryState = _grabTransformTelemetryStates[isLeft ? 1 : 0];
+                auto& telemetryState = _diagnostics.grabTransformTelemetryStates[isLeft ? 1 : 0];
                 if (!hand.isHolding()) {
                     telemetryState.active = false;
                     telemetryState.frame = 0;
@@ -2197,7 +3037,7 @@
 
                 if (!telemetryState.active) {
                     telemetryState.active = true;
-                    telemetryState.session = _grabTransformTelemetryNextSession++;
+                    telemetryState.session = _diagnostics.grabTransformTelemetryNextSession++;
                     telemetryState.frame = 0;
                     telemetryState.logFrameCounter = 0;
                     telemetryState.hasPreviousAngularDeltaSample = false;
@@ -2767,107 +3607,211 @@
             publishGrabTelemetry(_rightHand, false);
             publishGrabTelemetry(_leftHand, true);
         } else {
-            for (auto& state : _grabTransformTelemetryStates) {
+            for (auto& state : _diagnostics.grabTransformTelemetryStates) {
                 state.active = false;
                 state.frame = 0;
                 state.logFrameCounter = 0;
             }
         }
 
-        if (frame.drawRockBodies) {
-            if (drawGrabAuthorityProxy) {
-                auto addGrabAuthorityAxisReference = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
-                    if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
-                        return;
-                    }
+        if (drawGrabAuthorityProxy) {
+            auto addGrabAuthorityAxisReference = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
 
-                    const bool isLeft = hand.isLeft();
-                    if (!g_rockConfig.rockDebugShowHandAxes) {
-                        addAxisTransform(rawHandWorld, isLeft ? debug::AxisOverlayRole::LeftHandRaw : debug::AxisOverlayRole::RightHandRaw, rawHandWorld.translate, false);
-                    }
+                const bool isLeft = hand.isLeft();
+                RE::NiTransform palmAnchorTarget{};
+                if (hand.tryGetPalmAnchorTarget(palmAnchorTarget)) {
+                    addStoredColumnAxisTransform(
+                        palmAnchorTarget,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
+                        rawHandWorld.translate,
+                        true);
+                }
+            };
 
-                    RE::NiTransform palmAnchorTarget{};
-                    if (hand.tryGetPalmAnchorTarget(palmAnchorTarget)) {
-                        addStoredColumnAxisTransform(
-                            palmAnchorTarget,
-                            isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
-                            rawHandWorld.translate,
-                            true);
-                    }
-                };
+            auto addGrabAuthorityProxyClock = [&](Hand& hand, const RE::NiTransform& rawHandWorld) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
 
-                auto addGrabAuthorityProxyTarget = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
-                    if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
-                        return;
-                    }
+                GrabAuthorityProxyClockDebugSnapshot snapshot{};
+                if (!hand.tryGetGrabAuthorityProxyClockDebugSnapshot(hknp, snapshot)) {
+                    return;
+                }
 
-                    GrabAuthorityProxyDebugSnapshot snapshot{};
-                    if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, rawHandWorld, snapshot)) {
-                        return;
-                    }
+                const bool isLeft = hand.isLeft();
+                const RE::NiTransform* currentTarget =
+                    drawColliderPhaseDiagnostics ?
+                    (snapshot.hasQueuedTarget ?
+                            &snapshot.queuedProxyTargetWorld :
+                            (snapshot.hasAppliedTarget ?
+                                    &snapshot.appliedProxyTargetWorld :
+                                    nullptr)) :
+                    nullptr;
+                if (drawGrabAuthorityProxyCollider) {
+                    addBodyWithTarget(
+                        snapshot.proxyBodyId,
+                        isLeft ?
+                            debug::BodyOverlayRole::LeftGrabAuthorityProxy :
+                            debug::BodyOverlayRole::RightGrabAuthorityProxy,
+                        currentTarget);
+                }
 
-                    const bool isLeft = hand.isLeft();
-                    addAxisTransform(snapshot.proxyTargetWorld,
-                        isLeft ? debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget : debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
-                        snapshot.palmAuthorityBaseWorld.translate,
+                RE::NiTransform currentPalmTarget{};
+                const bool hasCurrentPalmTarget = hand.tryGetPalmAnchorTarget(currentPalmTarget);
+                const RE::NiTransform currentPalmAuthority = hasCurrentPalmTarget ?
+                    hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(currentPalmTarget) :
+                    rawHandWorld;
+
+                if (snapshot.hasQueuedTarget) {
+                    addAxisTransform(
+                        snapshot.queuedProxyTargetWorld,
+                        isLeft ?
+                            debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget :
+                            debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
+                        currentPalmAuthority.translate,
                         true);
                     addMarkerPoint(
-                        isLeft ? debug::MarkerOverlayRole::LeftGrabAuthorityProxyTarget : debug::MarkerOverlayRole::RightGrabAuthorityProxyTarget,
-                        snapshot.proxyTargetWorld.translate,
-                        3.4f);
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyTarget :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyTarget,
+                        snapshot.queuedProxyTargetWorld.translate,
+                        4.0f);
                     addMarkerLine(
-                        isLeft ? debug::MarkerOverlayRole::LeftGrabAuthorityProxyOffset : debug::MarkerOverlayRole::RightGrabAuthorityProxyOffset,
-                        snapshot.palmAuthorityBaseWorld.translate,
-                        snapshot.proxyTargetWorld.translate);
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyOffset :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyOffset,
+                        currentPalmAuthority.translate,
+                        snapshot.queuedProxyTargetWorld.translate);
+                }
+                if (snapshot.hasAppliedTarget) {
+                    addAxisTransform(
+                        snapshot.appliedProxyTargetWorld,
+                        isLeft ?
+                            debug::AxisOverlayRole::LeftGrabAuthorityProxyAppliedTarget :
+                            debug::AxisOverlayRole::RightGrabAuthorityProxyAppliedTarget,
+                        snapshot.appliedRawHandWorld.translate,
+                        true);
+                    addMarkerPoint(
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyAppliedTarget :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyAppliedTarget,
+                        snapshot.appliedProxyTargetWorld.translate,
+                        3.0f);
+                }
+                if (snapshot.hasQueuedTarget && snapshot.hasAppliedTarget) {
+                    addMarkerLine(
+                        isLeft ?
+                            debug::MarkerOverlayRole::LeftGrabAuthorityProxyClockDelta :
+                            debug::MarkerOverlayRole::RightGrabAuthorityProxyClockDelta,
+                        snapshot.appliedProxyTargetWorld.translate,
+                        snapshot.queuedProxyTargetWorld.translate);
+                }
 
+                RE::NiTransform liveProxyWorld{};
+                const bool liveProxyOk = tryResolveLiveBodyWorldTransform(
+                    hknp,
+                    snapshot.proxyBodyId,
+                    liveProxyWorld);
+                const float queuedToApplied =
+                    snapshot.hasQueuedTarget && snapshot.hasAppliedTarget ?
+                    origin_diagnostics::distance(
+                        snapshot.queuedProxyTargetWorld.translate,
+                        snapshot.appliedProxyTargetWorld.translate) :
+                    -1.0f;
+                const float appliedToPre =
+                    snapshot.hasAppliedTarget && liveProxyOk ?
+                    origin_diagnostics::distance(
+                        snapshot.appliedProxyTargetWorld.translate,
+                        liveProxyWorld.translate) :
+                    -1.0f;
+                constexpr float clockTextColor[4]{ 1.0f, 0.92f, 0.10f, 0.98f };
+                const RE::NiPoint3 clockLabel = snapshot.hasQueuedTarget ?
+                    snapshot.queuedProxyTargetWorld.translate :
+                    snapshot.appliedProxyTargetWorld.translate;
+                addTextLineSized(
+                    clockLabel + RE::NiPoint3{ 0.0f, 0.0f, 6.0f },
+                    1.45f,
+                    clockTextColor,
+                    "PROXY CLOCK %s Q=%llu F=%llu Q-A=%.2f A-PRE=%.2f",
+                    isLeft ? "L" : "R",
+                    static_cast<unsigned long long>(snapshot.queuedSequence),
+                    static_cast<unsigned long long>(snapshot.flushSequence),
+                    queuedToApplied,
+                    appliedToPre);
+
+            };
+
+            addGrabAuthorityAxisReference(_rightHand, context.right.rawHandWorld);
+            addGrabAuthorityAxisReference(_leftHand, context.left.rawHandWorld);
+
+            addGrabAuthorityProxyClock(_rightHand, context.right.rawHandWorld);
+            addGrabAuthorityProxyClock(_leftHand, context.left.rawHandWorld);
+
+            const float proxyClockLegendColor[4]{ 1.0f, 1.0f, 1.0f, 0.98f };
+            addScreenTextLine(
+                18.0f,
+                76.0f,
+                proxyClockLegendColor,
+                "GRAB PROXY CLOCK  QUEUED=YELLOW  APPLIED=ORANGE  PRE=MAGENTA  POST=CYAN");
+        }
+
+        if (frame.drawRockBodies) {
+            if (drawHandColliders) {
+                const auto addPalmBody = [&](const Hand& hand, debug::BodyOverlayRole role) {
+                    const auto bodyId = hand.getCollisionBodyId();
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        drawColliderPhaseDiagnostics &&
+                        hand.tryGetHandColliderTargetForDebug(
+                            bodyId.value,
+                            currentTarget);
+                    addBodyWithTarget(
+                        bodyId,
+                        role,
+                        hasCurrentTarget ? &currentTarget : nullptr);
                 };
-
-                addGrabAuthorityAxisReference(_rightHand, context.right.rawHandWorld);
-                addGrabAuthorityAxisReference(_leftHand, context.left.rawHandWorld);
-
-                const RE::hknpBodyId rightPalm = _rightHand.getCollisionBodyId();
-                const RE::hknpBodyId leftPalm = _leftHand.getCollisionBodyId();
-                if (rightPalm.value != INVALID_BODY_ID) {
-                    addBody(rightPalm, debug::BodyOverlayRole::RightHand);
-                    addAxisBody(rightPalm, debug::AxisOverlayRole::RightGrabPalmAuthorityFrame, context.right.rawHandWorld.translate, true);
-                }
-                if (leftPalm.value != INVALID_BODY_ID) {
-                    addBody(leftPalm, debug::BodyOverlayRole::LeftHand);
-                    addAxisBody(leftPalm, debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame, context.left.rawHandWorld.translate, true);
-                }
-
-                const RE::hknpBodyId rightProxy = _rightHand.getGrabAuthorityProxyBodyId();
-                const RE::hknpBodyId leftProxy = _leftHand.getGrabAuthorityProxyBodyId();
-                if (rightProxy.value != INVALID_BODY_ID) {
-                    addBody(rightProxy, debug::BodyOverlayRole::RightGrabAuthorityProxy);
-                    addAxisBody(rightProxy, debug::AxisOverlayRole::RightGrabProxyReadback, context.right.rawHandWorld.translate, true);
-                }
-                if (leftProxy.value != INVALID_BODY_ID) {
-                    addBody(leftProxy, debug::BodyOverlayRole::LeftGrabAuthorityProxy);
-                    addAxisBody(leftProxy, debug::AxisOverlayRole::LeftGrabProxyReadback, context.left.rawHandWorld.translate, true);
-                }
-
-                addGrabAuthorityProxyTarget(_rightHand, context.right.rawHandWorld);
-                addGrabAuthorityProxyTarget(_leftHand, context.left.rawHandWorld);
-            }
-
-            if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandColliders) &&
-                !g_rockConfig.rockDebugDrawHandBoneColliders) {
-                addBody(_rightHand.getCollisionBodyId(), debug::BodyOverlayRole::RightHand);
-                addBody(_leftHand.getCollisionBodyId(), debug::BodyOverlayRole::LeftHand);
+                addPalmBody(_rightHand, debug::BodyOverlayRole::RightHand);
+                addPalmBody(_leftHand, debug::BodyOverlayRole::LeftHand);
             }
 
             /*
              * The dynamic hand/forearm twins are not part of any collider set,
-             * so the overlay enumerates them explicitly behind their OWN flag:
-             * bDebugDrawDynamicHandColliders shows just this arm-authority set without the
-             * full keyframed collider soup. Watching a twin stop while the raw
-             * hand axes keep moving is the primary in-game validation view.
+             * so the overlay enumerates them explicitly behind the collider
+             * master and their dedicated child switch. This view shows only
+             * the arm-authority set, not the keyframed collider set.
              */
             if (drawDynamicHandColliders) {
                 for (std::size_t twinIndex = 0; twinIndex < DynamicHandCollisionRuntime::kBodiesPerHand; ++twinIndex) {
-                    addBody(_dynamicHandCollision.proxyBodyIdForDebug(false, twinIndex), debug::BodyOverlayRole::RightHand);
-                    addBody(_dynamicHandCollision.proxyBodyIdForDebug(true, twinIndex), debug::BodyOverlayRole::LeftHand);
+                    RE::NiTransform rightTarget{};
+                    const bool hasRightTarget =
+                        drawColliderPhaseDiagnostics &&
+                        _dynamicHandCollision.tryGetBodyTargetForDebug(
+                            false,
+                            twinIndex,
+                            rightTarget);
+                    addBodyWithTarget(
+                        _dynamicHandCollision.proxyBodyIdForDebug(
+                            false,
+                            twinIndex),
+                        debug::BodyOverlayRole::RightHand,
+                        hasRightTarget ? &rightTarget : nullptr);
+
+                    RE::NiTransform leftTarget{};
+                    const bool hasLeftTarget =
+                        drawColliderPhaseDiagnostics &&
+                        _dynamicHandCollision.tryGetBodyTargetForDebug(
+                            true,
+                            twinIndex,
+                            leftTarget);
+                    addBodyWithTarget(
+                        _dynamicHandCollision.proxyBodyIdForDebug(
+                            true,
+                            twinIndex),
+                        debug::BodyOverlayRole::LeftHand,
+                        hasLeftTarget ? &leftTarget : nullptr);
                 }
 
                 dynamic_hand_collision_telemetry::Snapshot telemetry{};
@@ -2902,6 +3846,15 @@
                             static_cast<unsigned int>(handSample.entryContactMask),
                             handSample.contactEntryApproachSpeedGameUnitsPerSecond,
                             handSample.teleportRecoverySecondsRemaining);
+                        labelAnchor.z -= 2.5f;
+                        addTextLineSized(labelAnchor,
+                            1.55f,
+                            handColor,
+                            "SURF I/M/E/P=%llu/%llu/%llu/%llu",
+                            static_cast<unsigned long long>(telemetry.surfaceImpulsePairSequence),
+                            static_cast<unsigned long long>(telemetry.surfaceProcessedPairSequence),
+                            static_cast<unsigned long long>(telemetry.surfaceEligiblePairSequence),
+                            static_cast<unsigned long long>(telemetry.surfaceContactPublishSequence));
 
                         const auto requestedRole = handSample.isLeft ?
                             debug::MarkerOverlayRole::LeftDynamicHandRequestedDeviation :
@@ -2930,7 +3883,91 @@
                 }
             }
 
-            if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandBoneColliders)) {
+            if (drawDynamicWeaponColliders) {
+                RE::NiTransform currentTarget{};
+                const bool hasCurrentTarget =
+                    drawColliderPhaseDiagnostics &&
+                    _dynamicWeaponCollision.tryGetContactBodyTargetForDebug(
+                        currentTarget);
+                addBodyWithTarget(
+                    _dynamicWeaponCollision.proxyBodyIdForDebug(),
+                    debug::BodyOverlayRole::DynamicWeaponProxy,
+                    hasCurrentTarget ? &currentTarget : nullptr);
+
+                DynamicWeaponCollisionRuntime::DebugSnapshot snapshot{};
+                constexpr float proxyColor[4]{ 1.0f, 0.24f, 0.08f, 0.96f };
+                if (_dynamicWeaponCollision.getDebugSnapshot(snapshot)) {
+                    char panelLine[256]{};
+                    std::snprintf(
+                        panelLine,
+                        sizeof(panelLine),
+                        "DWC ACTIVE body=%u authority=%u constraint=%u contact=%s pivot=%.1fgu yield=%.1fdeg",
+                        snapshot.bodyId,
+                        snapshot.authorityBodyId,
+                        snapshot.constraintId,
+                        snapshot.contactActive ? "YES" : "NO",
+                        snapshot.translationCorrectionGameUnits,
+                        snapshot.rotationCorrectionDegrees);
+                    addScreenTextLine(20.0f, 90.0f, proxyColor, panelLine);
+                    RE::NiPoint3 labelAnchor =
+                        snapshot.requestedWeaponWorld.translate;
+                    labelAnchor.z += 8.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        2.0f,
+                        proxyColor,
+                        "DWC COMPOUND contactBody=%u authorityBody=%u constraint=%u children=%u points=%llu contact=%s",
+                        snapshot.bodyId,
+                        snapshot.authorityBodyId,
+                        snapshot.constraintId,
+                        snapshot.compoundChildCount,
+                        static_cast<unsigned long long>(snapshot.compoundPointCount),
+                        snapshot.contactActive ? "YES" : "NO");
+                    labelAnchor.z -= 3.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        1.7f,
+                        proxyColor,
+                        "gripPivot=%.2fgu yield=%.2fdeg layer=%u grace=%u visual=%s solve=%llu",
+                        snapshot.translationCorrectionGameUnits,
+                        snapshot.rotationCorrectionDegrees,
+                        snapshot.otherLayer,
+                        snapshot.contactGraceSolves,
+                        snapshot.visualCorrectionActive ? "ACTIVE" : "IDLE",
+                        static_cast<unsigned long long>(
+                            snapshot.solveSequence));
+                    labelAnchor.z -= 3.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        1.45f,
+                        proxyColor,
+                        "callbacks pair/obstacle/raw/manifold/admit=%llu/%llu/%llu/%llu/%llu",
+                        static_cast<unsigned long long>(snapshot.proxyPairCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.obstacleCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.rawPointCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.processedManifoldCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.admittedContactSequence));
+                    labelAnchor.z -= 3.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        1.45f,
+                        proxyColor,
+                        "snapshot read/valid/id/contact/tele=%s/%s/%s/%s/%s",
+                        snapshot.physicsSnapshotReadable ? "Y" : "N",
+                        snapshot.physicsSnapshotValid ? "Y" : "N",
+                        snapshot.physicsSnapshotIdentityCurrent ? "Y" : "N",
+                        snapshot.physicsSnapshotContactActive ? "Y" : "N",
+                        snapshot.physicsSnapshotTeleported ? "Y" : "N");
+                } else {
+                    addScreenTextLine(
+                        20.0f,
+                        90.0f,
+                        proxyColor,
+                        "DWC COMPOUND INACTIVE (enable dynamic collision + equip drawn weapon)");
+                }
+            }
+
+            if (drawHandBoneColliders) {
                 const std::uint32_t cap = static_cast<std::uint32_t>((std::clamp)(g_rockConfig.rockDebugMaxHandBoneBodiesDrawn, 0, 48));
                 std::uint32_t drawn = 0;
                 auto addHandBoneBodies = [&](const Hand& hand, debug::BodyOverlayRole anchorRole, debug::BodyOverlayRole segmentRole) {
@@ -2940,14 +3977,25 @@
                         if (bodyId == INVALID_BODY_ID) {
                             continue;
                         }
-                        addBody(RE::hknpBodyId{ bodyId }, i == 0 ? anchorRole : segmentRole);
+                        RE::NiTransform currentTarget{};
+                        const bool hasCurrentTarget =
+                            drawColliderPhaseDiagnostics &&
+                            hand.tryGetHandColliderTargetForDebug(
+                                bodyId,
+                                currentTarget);
+                        addBodyWithTarget(
+                            RE::hknpBodyId{ bodyId },
+                            i == 0 ? anchorRole : segmentRole,
+                            hasCurrentTarget ? &currentTarget : nullptr);
                         ++drawn;
                     }
                 };
 
                 addHandBoneBodies(_rightHand, debug::BodyOverlayRole::RightHand, debug::BodyOverlayRole::RightHandSegment);
                 addHandBoneBodies(_leftHand, debug::BodyOverlayRole::LeftHand, debug::BodyOverlayRole::LeftHandSegment);
+            }
 
+            if (drawBodyBoneColliders) {
                 auto bodyOverlayRoleFor = [](skeleton_bone_debug_math::BoneColliderRole role) {
                     using skeleton_bone_debug_math::BoneColliderRole;
                     switch (role) {
@@ -2978,17 +4026,59 @@
                     BodyBoneColliderMetadata metadata{};
                     const auto role =
                         _bodyBoneColliders.tryGetBodyMetadataAtomic(bodyId, metadata) ? bodyOverlayRoleFor(metadata.role) : debug::BodyOverlayRole::BodyTorsoSegment;
-                    addBody(RE::hknpBodyId{ bodyId }, role);
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        drawColliderPhaseDiagnostics &&
+                        _bodyBoneColliders.tryGetBodyTargetForDebug(
+                            bodyId,
+                            currentTarget);
+                    addBodyWithTarget(
+                        RE::hknpBodyId{ bodyId },
+                        role,
+                        hasCurrentTarget ? &currentTarget : nullptr);
                     ++bodyDrawn;
                 }
             }
 
-            const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
-            for (std::uint32_t i = 0; i < weaponSnapshot.count; i++) {
-                const bool drawNormalWeaponBody =
-                    debug_overlay_policy::shouldDrawWeaponBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawWeaponColliders, i, g_rockConfig.rockDebugMaxWeaponBodiesDrawn);
-                if (drawNormalWeaponBody) {
-                    addBody(RE::hknpBodyId{ weaponSnapshot.bodyIds[i] }, debug::BodyOverlayRole::Weapon);
+            for (std::uint32_t index = 0;
+                 index < grabbedWeaponPartColliderCount;
+                 ++index) {
+                const std::uint32_t bodyId =
+                    grabbedWeaponPartColliderBodyIds[index];
+                RE::NiTransform currentTarget{};
+                const bool hasCurrentTarget =
+                    drawColliderPhaseDiagnostics &&
+                    _weaponCollision.tryGetBodyTargetForDebug(
+                        bodyId,
+                        currentTarget);
+                addBodyWithTarget(
+                    RE::hknpBodyId{ bodyId },
+                    debug::BodyOverlayRole::FocusedWeaponPart,
+                    hasCurrentTarget ? &currentTarget : nullptr);
+            }
+
+            if (drawWeaponColliders) {
+                const auto weaponSnapshot =
+                    _weaponCollision.getWeaponBodySnapshotAtomic();
+                const auto maximumWeaponBodies = static_cast<std::uint32_t>(
+                    (std::max)(0, g_rockConfig.rockDebugMaxWeaponBodiesDrawn));
+                for (std::uint32_t i = 0;
+                     i < weaponSnapshot.count && i < maximumWeaponBodies;
+                     ++i) {
+                    if (isGrabbedWeaponPartColliderBody(
+                            weaponSnapshot.bodyIds[i])) {
+                        continue;
+                    }
+                    RE::NiTransform currentTarget{};
+                    const bool hasCurrentTarget =
+                        drawColliderPhaseDiagnostics &&
+                        _weaponCollision.tryGetBodyTargetForDebug(
+                            weaponSnapshot.bodyIds[i],
+                            currentTarget);
+                    addBodyWithTarget(
+                        RE::hknpBodyId{ weaponSnapshot.bodyIds[i] },
+                        debug::BodyOverlayRole::Weapon,
+                        hasCurrentTarget ? &currentTarget : nullptr);
                 }
             }
         }
@@ -2999,8 +4089,19 @@
                 if (hand.isHolding()) {
                     const auto& savedState = hand.getSavedObjectState();
                     if (frame.drawTargetBodies) {
-                        addBody(savedState.bodyId, debug::BodyOverlayRole::Target);
-                        addAxisBody(savedState.bodyId, debug::AxisOverlayRole::TargetBody, handInput.rawHandWorld.translate, true);
+                        GrabForceTorqueDebugSnapshot targetSnapshot{};
+                        const bool hasCurrentTarget =
+                            drawColliderPhaseDiagnostics &&
+                            hand.getGrabForceTorqueDebugSnapshot(
+                                hknp,
+                                handInput.rawHandWorld,
+                                targetSnapshot);
+                        addBodyWithTarget(
+                            savedState.bodyId,
+                            debug::BodyOverlayRole::Target,
+                            hasCurrentTarget ?
+                                &targetSnapshot.desiredBodyWorld :
+                                nullptr);
                     }
                     addWorldOriginDiagnostic(hand, true, savedState.bodyId, savedState.refr, nullptr, nullptr);
                     return;
@@ -3009,7 +4110,6 @@
                     const auto& selection = hand.getSelection();
                     if (frame.drawTargetBodies) {
                         addBody(selection.bodyId, debug::BodyOverlayRole::Target);
-                        addAxisBody(selection.bodyId, debug::AxisOverlayRole::TargetBody, handInput.rawHandWorld.translate, true);
                     }
                     addWorldOriginDiagnostic(hand, false, selection.bodyId, selection.refr, selection.hitNode, selection.visualNode);
                 }

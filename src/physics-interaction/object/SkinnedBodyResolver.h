@@ -12,7 +12,6 @@ namespace rock::skinned_body_resolver
     enum class ResolutionSource : std::uint8_t
     {
         None,
-        AuthoredNode,
         WeightedSkinOwner,
         TriangleOwner,
         SelectedBody,
@@ -22,11 +21,9 @@ namespace rock::skinned_body_resolver
     struct ResolutionInput
     {
         grab_target::Kind targetKind = grab_target::Kind::LooseObject;
-        std::uint32_t authoredBodyId = kInvalidBodyId;
         std::uint32_t surfaceOwnerBodyId = kInvalidBodyId;
         std::uint32_t selectedBodyId = kInvalidBodyId;
         std::uint32_t nearestBodyId = kInvalidBodyId;
-        bool authoredUsable = false;
         bool surfaceOwnerUsable = false;
         bool selectedUsable = false;
         bool nearestUsable = false;
@@ -46,8 +43,6 @@ namespace rock::skinned_body_resolver
     [[nodiscard]] inline const char* sourceName(ResolutionSource source) noexcept
     {
         switch (source) {
-        case ResolutionSource::AuthoredNode:
-            return "authoredNode";
         case ResolutionSource::WeightedSkinOwner:
             return "weightedSkinOwner";
         case ResolutionSource::TriangleOwner:
@@ -66,10 +61,10 @@ namespace rock::skinned_body_resolver
 
     [[nodiscard]] inline Resolution resolvePrimaryBody(const ResolutionInput& input) noexcept
     {
-        if (input.authoredUsable && validBody(input.authoredBodyId)) {
-            return Resolution{ .bodyId = input.authoredBodyId, .source = ResolutionSource::AuthoredNode, .reason = "authoredNode" };
+        if (grab_target::isRagdoll(input.targetKind) &&
+            (!input.surfaceOwnerUsable || !validBody(input.surfaceOwnerBodyId))) {
+            return Resolution{ .reason = "ragdoll-surface-owner-unresolved" };
         }
-
         if (input.surfaceIsSkinned && input.hasSkinInfluences && input.surfaceOwnerUsable && validBody(input.surfaceOwnerBodyId)) {
             return Resolution{
                 .bodyId = input.surfaceOwnerBodyId,

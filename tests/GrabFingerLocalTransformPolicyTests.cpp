@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <vector>
 
@@ -116,6 +117,77 @@ namespace
     }
 }
 
+static bool testPublicationSafety()
+{
+    using namespace rock::grab_finger_local_transform_math;
+    bool ok = true;
+    TestTransform hiddenScaleTransform{};
+    hiddenScaleTransform.rotate.entry[0][0] = 1.0f;
+    hiddenScaleTransform.rotate.entry[1][1] = 1.0f;
+    hiddenScaleTransform.rotate.entry[2][2] = 1.0f;
+    hiddenScaleTransform.scale = 0.00001f;
+    ok &= expectBool("hidden FRIK node scale still has usable rotation",
+        sceneTransformHasUsableBasis(hiddenScaleTransform), true);
+
+    TestTransform safePublishedFingerTransform = hiddenScaleTransform;
+    safePublishedFingerTransform.scale = 1.0f;
+    ok &= expectBool("rigid local finger transform is safe to publish",
+        inspectFingerLocalTransformForPublication(safePublishedFingerTransform) == FingerLocalTransformSafetyFailure::None, true);
+
+    TestTransform hiddenPublishedFingerTransform = safePublishedFingerTransform;
+    hiddenPublishedFingerTransform.scale = 0.00001f;
+    ok &= expectBool("near-zero local finger scale is rejected before publication",
+        inspectFingerLocalTransformForPublication(hiddenPublishedFingerTransform) == FingerLocalTransformSafetyFailure::ScaleMagnitude, true);
+
+    TestTransform giantPublishedFingerTransform = safePublishedFingerTransform;
+    giantPublishedFingerTransform.scale = 1000.0f;
+    ok &= expectBool("giant local finger scale is rejected before publication",
+        inspectFingerLocalTransformForPublication(giantPublishedFingerTransform) == FingerLocalTransformSafetyFailure::ScaleMagnitude, true);
+
+    TestTransform distantPublishedFingerTransform = safePublishedFingerTransform;
+    distantPublishedFingerTransform.translate.x = kMaxPublishedFingerLocalTranslationGameUnits + 1.0f;
+    ok &= expectBool("world-sized local finger translation is rejected before publication",
+        inspectFingerLocalTransformForPublication(distantPublishedFingerTransform) == FingerLocalTransformSafetyFailure::TranslationMagnitude, true);
+
+    TestTransform shearedPublishedFingerTransform = safePublishedFingerTransform;
+    shearedPublishedFingerTransform.rotate.entry[0][1] = 0.5f;
+    ok &= expectBool("sheared local finger basis is rejected before publication",
+        inspectFingerLocalTransformForPublication(shearedPublishedFingerTransform) == FingerLocalTransformSafetyFailure::RotationNorm, true);
+
+    TestTransform reflectedPublishedFingerTransform = safePublishedFingerTransform;
+    reflectedPublishedFingerTransform.rotate.entry[2][2] = -1.0f;
+    ok &= expectBool("reflected local finger basis is rejected before publication",
+        inspectFingerLocalTransformForPublication(reflectedPublishedFingerTransform) == FingerLocalTransformSafetyFailure::RotationDeterminant, true);
+
+    {
+        rock::frik_visual_authority::FingerLocalTransformOverride target{};
+        target.enabledMask = kFullFingerLocalTransformMask;
+        for (auto& local : target.localTransforms) {
+            local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        }
+
+        rock::grab_finger_local_transform_runtime::State poisonedState{};
+        poisonedState.currentMask = kFullFingerLocalTransformMask;
+        poisonedState.hasCurrentTransforms = true;
+        for (std::size_t index = 0; index < poisonedState.currentTransforms.size(); ++index) {
+            poisonedState.currentTransforms[index] = target.localTransforms[index];
+        }
+        poisonedState.currentTransforms[0].rotate.entry[0][0] = 1000.0f;
+        const auto recovered = rock::grab_finger_local_transform_runtime::smoothLocalTransforms(
+            target,
+            poisonedState,
+            14.0f,
+            1.0f / 90.0f,
+            false);
+        ok &= expectBool("poisoned dynamic-grab smoothing state resets to the safe target",
+            rock::grab_finger_local_transform_runtime::fingerLocalTransformOverrideIsSafeForPublication(recovered), true);
+        ok &= expectBool("poisoned dynamic-grab smoothing state remains recovered",
+            inspectFingerLocalTransformForPublication(poisonedState.currentTransforms[0]) == FingerLocalTransformSafetyFailure::None, true);
+    }
+
+    return ok;
+}
+
 int main()
 {
     bool ok = true;
@@ -146,26 +218,30 @@ int main()
         correctionStrengthForFinger(0, 0.25f, 0.8f), 0.8f);
     ok &= expectFloat("finger correction uses surface aim strength",
         correctionStrengthForFinger(3, 0.25f, 0.8f), 0.25f);
-    ok &= expectFloat("non-thumb proximal surface target correction is disabled",
-        surfaceAimSegmentCorrectionWeight(2, 0), 0.0f);
-    ok &= expectFloat("non-thumb distal surface target correction is disabled",
-        surfaceAimSegmentCorrectionWeight(2, 2), 0.0f);
+    ok &= expectFloat("middle proximal surface target correction is bounded",
+        surfaceAimSegmentCorrectionWeight(2, 0), 0.05f);
+    ok &= expectFloat("middle distal surface target correction is bounded",
+        surfaceAimSegmentCorrectionWeight(2, 2), 0.20f);
     ok &= expectFloat("thumb surface target correction keeps proximal limit",
         surfaceAimSegmentCorrectionWeight(0, 0), 0.08f);
     ok &= expectFloat("thumb surface aim correction hard-caps at five degrees",
         boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 0, 2), kMaxSurfaceAimCorrectionRadians);
-    ok &= expectFloat("non-thumb surface aim correction skips disabled distal segment",
-        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 2), 0.0f);
-    ok &= expectFloat("bounded surface aim correction skips disabled proximal segment",
-        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 0), 0.0f);
+    ok &= expectFloat("middle distal surface aim correction keeps global cap",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 2), kMaxSurfaceAimCorrectionRadians);
+    ok &= expectFloat("middle proximal surface aim correction keeps segment bound",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 0), 0.025f);
     ok &= expectBool("alternate thumb skips shared surface aim",
         shouldApplySurfaceAimCorrection(0, true), false);
     ok &= expectBool("primary thumb keeps shared surface aim",
         shouldApplySurfaceAimCorrection(0, false), true);
     ok &= expectBool("curve-only thumb skips shared surface aim",
         shouldApplySurfaceAimCorrection(0, false, false), false);
-    ok &= expectBool("non-thumb red target local correction is disabled",
+    ok &= expectBool("alternate-plane transaction skips middle surface aim",
         shouldApplySurfaceAimCorrection(2, true, false), false);
+    ok &= expectBool("middle surface target local correction is enabled",
+        shouldApplySurfaceAimCorrection(2, false, false), true);
+    ok &= expectBool("index remains curve-only",
+        shouldApplySurfaceAimCorrection(1, false, true), false);
     ok &= expectBool("alternate thumb local correction needs a surface hit",
         shouldApplyAlternateThumbLocalCorrection(true, false), false);
     ok &= expectBool("alternate thumb local correction accepts real surface hit",
@@ -221,13 +297,7 @@ int main()
         snappedOverOpenJoints[4],
         rock::grab_finger_pose_math::kMaxOverOpenValue);
 
-    TestTransform hiddenScaleTransform{};
-    hiddenScaleTransform.rotate.entry[0][0] = 1.0f;
-    hiddenScaleTransform.rotate.entry[1][1] = 1.0f;
-    hiddenScaleTransform.rotate.entry[2][2] = 1.0f;
-    hiddenScaleTransform.scale = 0.00001f;
-    ok &= expectBool("hidden FRIK node scale still has usable rotation",
-        sceneTransformHasUsableBasis(hiddenScaleTransform), true);
+    ok &= testPublicationSafety();
 
     const TestVector openDirection{ 1.0f, 0.0f, 0.0f };
     const TestVector alternateNormal{ 0.0f, 0.0f, 1.0f };
@@ -341,6 +411,83 @@ int main()
         chain.valid = true;
     }
 
+    const std::vector<rock::TriangleData> oppositionMesh{
+        rock::TriangleData{
+            RE::NiPoint3{ 0.0f, -2.0f, -2.0f },
+            RE::NiPoint3{ 0.0f, 2.0f, -2.0f },
+            RE::NiPoint3{ 0.0f, 0.0f, 2.0f },
+        },
+    };
+    auto thumbIndexPocketSnapshot = liveFingerSnapshot;
+    thumbIndexPocketSnapshot.fingers[0].points[2] =
+        RE::NiPoint3{ -3.0f, 0.0f, 0.0f };
+    thumbIndexPocketSnapshot.fingers[1].points[2] =
+        RE::NiPoint3{ 3.0f, 0.0f, 0.0f };
+    const auto thumbIndexPocket = findLocalOppositionPocketEvidence(
+        oppositionMesh,
+        thumbIndexPocketSnapshot,
+        RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+        0x01,
+        1.0f,
+        12.0f,
+        4.0f);
+    ok &= expectBool(
+        "local thumb-index pocket accepts a crossed nearby weapon surface",
+        thumbIndexPocket.valid &&
+            thumbIndexPocket.kind == OppositionPocketKind::ThumbIndex,
+        true);
+    ok &= expectBool(
+        "local opposition pocket records only direct endpoint evidence",
+        thumbIndexPocket.directEndpointMask == 0x01 &&
+            thumbIndexPocket.endpointMask == 0x03,
+        true);
+    ok &= expectBool(
+        "local opposition pocket rejects a crossed surface without direct endpoint evidence",
+        findLocalOppositionPocketEvidence(
+            oppositionMesh,
+            thumbIndexPocketSnapshot,
+            RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+            0x00,
+            1.0f,
+            12.0f,
+            4.0f)
+            .valid,
+        false);
+    ok &= expectBool(
+        "local opposition pocket rejects a surface outside the captured grip neighborhood",
+        findLocalOppositionPocketEvidence(
+            oppositionMesh,
+            thumbIndexPocketSnapshot,
+            RE::NiPoint3{ 0.0f, 20.0f, 0.0f },
+            0x01,
+            1.0f,
+            12.0f,
+            4.0f)
+            .valid,
+        false);
+
+    auto thumbPinkyPocketSnapshot = liveFingerSnapshot;
+    thumbPinkyPocketSnapshot.fingers[0].points[2] =
+        RE::NiPoint3{ -5.0f, 0.0f, 0.0f };
+    thumbPinkyPocketSnapshot.fingers[1].points[2] =
+        RE::NiPoint3{ -5.0f, 5.0f, 0.0f };
+    thumbPinkyPocketSnapshot.fingers[4].points[2] =
+        RE::NiPoint3{ 5.0f, 0.0f, 0.0f };
+    const auto thumbPinkyPocket = findLocalOppositionPocketEvidence(
+        oppositionMesh,
+        thumbPinkyPocketSnapshot,
+        RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+        0x10,
+        1.0f,
+        24.0f,
+        4.0f);
+    ok &= expectBool(
+        "local thumb-pinky pocket accepts a crossed nearby weapon surface",
+        thumbPinkyPocket.valid &&
+            thumbPinkyPocket.kind == OppositionPocketKind::ThumbPinky &&
+            thumbPinkyPocket.opposedFingerIndex == 4,
+        true);
+
     RE::NiPoint3 padCenter{};
     ok &= expectBool("pad center uses distal chain point",
         computeFingerPadCenter(liveFingerSnapshot.fingers[1], padCenter),
@@ -447,6 +594,16 @@ int main()
         thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[1] == 0, true);
     ok &= expectBool("curve-only thumb-index preserves other object-local aim state",
         thumbIndexCurveOnly.hasObjectLocalSurfaceAim, true);
+
+    SolvedGrabFingerPose completeEvidence{};
+    completeEvidence.solved = true;
+    completeEvidence.contactValidMask = kCompleteFingerContactMask;
+    ok &= expectBool("all five contact lanes complete the mesh hand transaction",
+        hasCompleteFingerContactEvidence(completeEvidence), true);
+    completeEvidence.contactValidMask &=
+        static_cast<std::uint8_t>(~(1u << 3));
+    ok &= expectBool("one missing contact lane invalidates the mesh hand transaction",
+        hasCompleteFingerContactEvidence(completeEvidence), false);
 
     rock::root_flattened_finger_skeleton_runtime::Snapshot padProbeSnapshot = liveFingerSnapshot;
     for (auto& chain : padProbeSnapshot.fingers) {

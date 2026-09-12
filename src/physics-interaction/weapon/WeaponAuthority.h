@@ -157,6 +157,33 @@ namespace rock::weapon_visual_authority_math
     {
         return transform_math::composeTransforms(weaponWorld, weaponLocalFrame);
     }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform makePresentationWorldDelta(
+        const Transform& oldWeaponWorld,
+        const Transform& newWeaponWorld)
+    {
+        /*
+         * Native animation and OMOD controllers have already evaluated the
+         * descendant's presentation world. Preserve that exact weapon-relative
+         * frame while ROCK moves the weapon root; descendant locals remain
+         * native/controller-owned and are deliberately not consulted here.
+         */
+        return transform_math::composeTransforms(
+            newWeaponWorld,
+            transform_math::invertTransform(oldWeaponWorld));
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform applyPresentationWorldDelta(
+        const Transform& presentationWorldDelta,
+        const Transform& presentationWorld)
+    {
+        return transform_math::composeTransforms(
+            presentationWorldDelta,
+            presentationWorld);
+    }
+
 }
 
 // ---- NativeScopeRotationMath.h ----
@@ -302,191 +329,7 @@ namespace rock::native_scope_camera_follow_math
     {
         return transform_math::composeTransforms(weaponWorld, scopeFrameWeaponLocal);
     }
-}
 
-// ---- NativeScopeActivationGeometry.h ----
-
-namespace rock::native_scope_activation_geometry
-{
-    struct ConeThresholds
-    {
-        float hmdEnterDegrees{ 25.0f };
-        float hmdExitDegrees{ 35.0f };
-        float weaponEnterDegrees{ 7.0f };
-        float weaponExitDegrees{ 15.0f };
-        float distanceEnterGameUnits{ 38.0f };
-        float distanceExitGameUnits{ 40.0f };
-        float weaponAngleWideningFactor{ 60.0f };
-        float weaponAngleExponent{ 2.0f };
-    };
-
-    struct ConeSample
-    {
-        bool valid{ false };
-        float distanceGameUnits{ 0.0f };
-        float hmdAngleDegrees{ 0.0f };
-        float weaponAngleDegrees{ 0.0f };
-        float weaponAngleWidening{ 1.0f };
-    };
-
-    [[nodiscard]] inline bool finitePositive(const float value)
-    {
-        return std::isfinite(value) && value > 0.0f;
-    }
-
-    [[nodiscard]] inline bool validThresholds(const ConeThresholds& thresholds)
-    {
-        return finitePositive(thresholds.hmdEnterDegrees) &&
-               finitePositive(thresholds.hmdExitDegrees) &&
-               thresholds.hmdExitDegrees >= thresholds.hmdEnterDegrees &&
-               finitePositive(thresholds.weaponEnterDegrees) &&
-               finitePositive(thresholds.weaponExitDegrees) &&
-               thresholds.weaponExitDegrees >= thresholds.weaponEnterDegrees &&
-               finitePositive(thresholds.distanceEnterGameUnits) &&
-               finitePositive(thresholds.distanceExitGameUnits) &&
-               thresholds.distanceExitGameUnits >= thresholds.distanceEnterGameUnits &&
-               finitePositive(thresholds.weaponAngleWideningFactor) &&
-               finitePositive(thresholds.weaponAngleExponent);
-    }
-
-    template <class Point>
-    [[nodiscard]] inline float lengthSquared(const Point& value)
-    {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
-    }
-
-    template <class Point>
-    [[nodiscard]] inline bool normalize(const Point& value, Point& out)
-    {
-        const float squared = lengthSquared(value);
-        if (!std::isfinite(squared) || squared <= 0.000001f) {
-            out = {};
-            return false;
-        }
-        const float inverseLength = 1.0f / std::sqrt(squared);
-        out = Point{ value.x * inverseLength, value.y * inverseLength, value.z * inverseLength };
-        return std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z);
-    }
-
-    template <class Point>
-    [[nodiscard]] inline float angleDegrees(const Point& firstUnit, const Point& secondUnit)
-    {
-        constexpr float kRadiansToDegrees = 57.295779513082320876f;
-        const float dot = std::clamp(
-            firstUnit.x * secondUnit.x + firstUnit.y * secondUnit.y + firstUnit.z * secondUnit.z,
-            -1.0f,
-            1.0f);
-        return std::acos(dot) * kRadiansToDegrees;
-    }
-
-    /*
-     * FO4VR's verified native gate samples HMD and weapon +Y bases. ROCK keeps
-     * the same units, comparisons, widening formula, and HMD offset, but uses
-     * the assembled sight's ocular point and the final visible weapon frame.
-     */
-    template <class Transform, class Point>
-    [[nodiscard]] inline ConeSample sample(
-        const Transform& weaponWorld,
-        const Point& sightAnchorWeaponLocal,
-        const Transform& hmdWorld,
-        const Point& hmdSampleOffsetLocal,
-        const ConeThresholds& thresholds)
-    {
-        ConeSample result{};
-        if (!validThresholds(thresholds)) {
-            return result;
-        }
-
-        const Point sightWorld = transform_math::localPointToWorld(weaponWorld, sightAnchorWeaponLocal);
-        const Point hmdSampleWorld = transform_math::localPointToWorld(hmdWorld, hmdSampleOffsetLocal);
-        const Point delta{
-            sightWorld.x - hmdSampleWorld.x,
-            sightWorld.y - hmdSampleWorld.y,
-            sightWorld.z - hmdSampleWorld.z,
-        };
-        Point direction{};
-        if (!normalize(delta, direction)) {
-            return result;
-        }
-
-        const float distance = std::sqrt(lengthSquared(delta));
-        Point hmdForward{
-            hmdWorld.rotate.entry[1][0],
-            hmdWorld.rotate.entry[1][1],
-            hmdWorld.rotate.entry[1][2],
-        };
-        Point weaponForward{
-            weaponWorld.rotate.entry[1][0],
-            weaponWorld.rotate.entry[1][1],
-            weaponWorld.rotate.entry[1][2],
-        };
-        if (!finitePositive(distance) || !normalize(hmdForward, hmdForward) || !normalize(weaponForward, weaponForward)) {
-            return result;
-        }
-
-        const float wideningBase = thresholds.weaponAngleWideningFactor / distance;
-        const float widening = std::pow(wideningBase, thresholds.weaponAngleExponent);
-        if (!finitePositive(widening)) {
-            return result;
-        }
-
-        result.distanceGameUnits = distance;
-        result.hmdAngleDegrees = angleDegrees(direction, hmdForward);
-        result.weaponAngleDegrees = angleDegrees(direction, weaponForward);
-        result.weaponAngleWidening = widening;
-        result.valid = std::isfinite(result.hmdAngleDegrees) && std::isfinite(result.weaponAngleDegrees);
-        return result;
-    }
-
-    [[nodiscard]] inline bool isInsideCone(
-        const ConeSample& sample,
-        const bool nativeScopeAlreadyActive,
-        const ConeThresholds& thresholds)
-    {
-        if (!sample.valid || !validThresholds(thresholds)) {
-            return false;
-        }
-        const float hmdLimit = nativeScopeAlreadyActive ? thresholds.hmdExitDegrees : thresholds.hmdEnterDegrees;
-        const float weaponLimit =
-            (nativeScopeAlreadyActive ? thresholds.weaponExitDegrees : thresholds.weaponEnterDegrees) * sample.weaponAngleWidening;
-        const float distanceLimit = nativeScopeAlreadyActive ? thresholds.distanceExitGameUnits : thresholds.distanceEnterGameUnits;
-        return sample.hmdAngleDegrees < hmdLimit &&
-               sample.weaponAngleDegrees < weaponLimit &&
-               sample.distanceGameUnits < distanceLimit;
-    }
-
-    struct ExitDebounceResult
-    {
-        bool decision{ false };
-        std::uint32_t consecutiveOutsideFrames{ 0 };
-    };
-
-    /*
-     * Entry remains immediate and uses the native enter cone unchanged. Once a
-     * scope is active, require a short run of valid outside samples before
-     * closing it so a single presentation/update-order sample cannot flash the
-     * overlay off. Returning inside at any point cancels the pending exit.
-     */
-    [[nodiscard]] inline ExitDebounceResult stabilizeExitDecision(
-        const bool insideCone,
-        const bool nativeScopeAlreadyActive,
-        const std::uint32_t previousOutsideFrames,
-        const std::uint32_t requiredOutsideFrames)
-    {
-        if (insideCone) {
-            return ExitDebounceResult{ .decision = true, .consecutiveOutsideFrames = 0 };
-        }
-        if (!nativeScopeAlreadyActive) {
-            return {};
-        }
-
-        const std::uint32_t required = (std::max)(requiredOutsideFrames, 1u);
-        const std::uint32_t outsideFrames = previousOutsideFrames < required ? previousOutsideFrames + 1 : required;
-        return ExitDebounceResult{
-            .decision = outsideFrames < required,
-            .consecutiveOutsideFrames = outsideFrames,
-        };
-    }
 }
 
 // ---- NativeScopeOverlayFollowMath.h ----
@@ -565,6 +408,140 @@ namespace rock::native_scope_overlay_follow_math
     }
 }
 
+// ---- LeftFiringPositionOnlyMath.h ----
+
+namespace rock::left_firing_position_only_math
+{
+    template <class Transform>
+    [[nodiscard]] inline Transform orientationOnly(const Transform& source)
+    {
+        Transform result = source;
+        result.translate = {};
+        result.scale = 1.0f;
+        return result;
+    }
+
+    /*
+     * Weapon geometry uses +Y as muzzle-forward and +X as its lateral axis.
+     * Conjugating the right weapon-in-wand orientation by the X reflection
+     * mirrors the lateral component while retaining a proper rotation. The
+     * authored hand relation is deliberately absent: wrist correction is a
+     * presentation input and must never become weapon aim authority.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform mirrorRightWeaponInWandOrientation(
+        const Transform& rightWeaponInWand)
+    {
+        Transform lateralMirror =
+            transform_math::makeIdentityTransform<Transform>();
+        lateralMirror.rotate.entry[0][0] = -1.0f;
+        return orientationOnly(transform_math::composeTransforms(
+            lateralMirror,
+            transform_math::composeTransforms(
+                orientationOnly(rightWeaponInWand),
+                lateralMirror)));
+    }
+
+    /*
+     * Reapply hFRIK's real hand damping without asking hFRIK to smooth an
+     * external hand target. The reference hand-in-carrier orientation is
+     * frozen when ROCK takes left-firing authority. On later frames the raw
+     * wand extrapolates that reference while the physical hand follows
+     * hFRIK's damped offset node. Their world-rotation delta is therefore the
+     * exact damping correction already selected by hFRIK. Applying it to the
+     * carrier lets the weapon and authored hand consume one shared filter.
+     * Translation remains owned by the position-only grip solve below.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveDampedAimCarrierWorld(
+        const Transform& rawCarrierWorld,
+        const Transform& referenceHandInCarrierOrientation,
+        const Transform& dampedPhysicalHandWorld)
+    {
+        const Transform rawHandWorldOrientation =
+            transform_math::composeTransforms(
+                orientationOnly(rawCarrierWorld),
+                orientationOnly(referenceHandInCarrierOrientation));
+        const Transform dampingWorldRotation =
+            transform_math::composeTransforms(
+                orientationOnly(dampedPhysicalHandWorld),
+                transform_math::invertTransform(
+                    rawHandWorldOrientation));
+        const Transform dampedCarrierOrientation =
+            transform_math::composeTransforms(
+                orientationOnly(dampingWorldRotation),
+                orientationOnly(rawCarrierWorld));
+
+        Transform result = rawCarrierWorld;
+        result.rotate = dampedCarrierOrientation.rotate;
+        return result;
+    }
+
+    /*
+     * Build the left weapon from the mirrored native orientation, then move
+     * only its translation until the same weapon-local firing point reaches
+     * the physical left-hand target. Scale remains owned by the live weapon.
+     */
+    template <class Transform, class Point>
+    [[nodiscard]] inline Transform resolveWeaponWorldPositionOnly(
+        const Transform& leftWandWorld,
+        const Transform& leftWeaponInWandOrientation,
+        const Transform& liveWeaponWorld,
+        const Point& firingGripWeaponLocal,
+        const Point& physicalGripTargetWorld)
+    {
+        Transform solvedWeaponWorld = transform_math::composeTransforms(
+            leftWandWorld,
+            orientationOnly(leftWeaponInWandOrientation));
+        solvedWeaponWorld.translate = liveWeaponWorld.translate;
+        solvedWeaponWorld.scale = liveWeaponWorld.scale;
+
+        const Point currentGripWorld = transform_math::localPointToWorld(
+            solvedWeaponWorld,
+            firingGripWeaponLocal);
+        solvedWeaponWorld.translate.x +=
+            physicalGripTargetWorld.x - currentGripWorld.x;
+        solvedWeaponWorld.translate.y +=
+            physicalGripTargetWorld.y - currentGripWorld.y;
+        solvedWeaponWorld.translate.z +=
+            physicalGripTargetWorld.z - currentGripWorld.z;
+        return solvedWeaponWorld;
+    }
+
+    /*
+     * Support release on a left-fired weapon. The two-hand solve aimed the
+     * weapon at the support hand, so the wand aim can sit tens of degrees
+     * away when that hand lets go. The right carry eases the difference out
+     * through its parent-local weapon return; the left carry has no native
+     * parent, so it eases in the physical firing-hand frame: the last
+     * rendered two-hand pose rides the hand while it blends into the
+     * wand-aimed position-only pose. Both locals share the firing hand, so
+     * the grip never leaves the controller during the blend.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform weaponWorldToPhysicalHandLocal(
+        const Transform& physicalHandWorld,
+        const Transform& weaponWorld)
+    {
+        return transform_math::composeTransforms(
+            transform_math::invertTransform(physicalHandWorld),
+            weaponWorld);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform physicalHandLocalToWeaponWorld(
+        const Transform& physicalHandWorld,
+        const Transform& weaponHandLocal,
+        const float liveWeaponScale)
+    {
+        Transform weaponWorld = transform_math::composeTransforms(
+            physicalHandWorld,
+            weaponHandLocal);
+        weaponWorld.scale = liveWeaponScale;
+        return weaponWorld;
+    }
+}
+
 // ---- ScopeSafeHandFrameMath.h ----
 
 namespace rock::scope_safe_hand_frame_math
@@ -603,18 +580,34 @@ namespace rock::scope_safe_hand_frame_math
 
     /*
      * ScopeMenu visibility is presentation state, not weapon-solver
-     * ownership. Once a manual grip has crossed into the driver-reconstructed
-     * hand basis, retain that basis for the rest of the grip session. Letting
-     * a transient ScopeMenu close select the restored root for one frame moves
-     * the weapon/sight, which can immediately reopen the menu and create a
-     * self-sustaining root/driver oscillation.
+     * ownership. While the scope button remains requested, retain the driver
+     * basis across a transient ScopeMenu close so a presentation pulse cannot
+     * create a root/driver oscillation. A real button release is different:
+     * hFRIK has restored its visible root, and a still-active manual grip must
+     * not keep a stale hidden-scope driver authoritative for the exit frame.
      */
     [[nodiscard]] inline constexpr bool retainDriverFrameAuthority(
         bool scopeMenuOpen,
+        bool manualScopeActivationRequested,
         bool manualOwnershipActive,
         bool driverFrameAuthorityWasActive)
     {
-        return scopeMenuOpen || (manualOwnershipActive && driverFrameAuthorityWasActive);
+        return scopeMenuOpen ||
+               (manualScopeActivationRequested && manualOwnershipActive && driverFrameAuthorityWasActive);
+    }
+
+    [[nodiscard]] inline constexpr bool shouldStartRootRebase(
+        bool manualScopeActivationRequested,
+        bool driverFrameAuthorityStoppedThisFrame,
+        bool reconstructedHandValid,
+        bool recentScopedHandAvailable)
+    {
+        // The scoped frame is hidden, so it is useful continuity only while
+        // the user still requests the scope. On a real button release the
+        // restored visible root is authoritative immediately; blending from
+        // the hidden frame can stretch both arms and the weapon through space.
+        return manualScopeActivationRequested && driverFrameAuthorityStoppedThisFrame &&
+               (reconstructedHandValid || recentScopedHandAvailable);
     }
 
     [[nodiscard]] inline constexpr ResolutionMode resolveMode(
@@ -634,6 +627,36 @@ namespace rock::scope_safe_hand_frame_math
         return hasLastHandWorld && consecutiveDriverMissFrames < maxDriverMissGraceFrames ?
                    ResolutionMode::LastKnown :
                    ResolutionMode::Unavailable;
+    }
+
+    [[nodiscard]] inline constexpr ResolutionMode resolveCollisionIsolatedMode(
+        bool collisionPresentationWasLive,
+        bool scopeDriverFrameAuthorityActive,
+        bool rootHandValid,
+        bool reconstructedHandValid,
+        bool hasLastHandWorld,
+        std::uint32_t consecutiveDriverMissFrames,
+        std::uint32_t maxDriverMissGraceFrames)
+    {
+        /*
+         * ROCK runs after FRIK's skeleton pass. If the previous render interval
+         * retained collision hand authority, the current root already contains
+         * that presentation result even after its tag is cleared. Reconstruct
+         * from the unaffected physical driver or fail closed; root and history
+         * would both feed collision output back into the next drive target.
+         */
+        if (collisionPresentationWasLive) {
+            return reconstructedHandValid ?
+                       ResolutionMode::DriverReconstructed :
+                       ResolutionMode::Unavailable;
+        }
+        return resolveMode(
+            scopeDriverFrameAuthorityActive,
+            rootHandValid,
+            reconstructedHandValid,
+            hasLastHandWorld,
+            consecutiveDriverMissFrames,
+            maxDriverMissGraceFrames);
     }
 
     [[nodiscard]] inline constexpr bool shouldPublishLockedHandVisualAuthority(bool scopeMenuOpen)
@@ -1145,13 +1168,22 @@ namespace rock::weapon_generation_identity_policy
         std::uint32_t objectIndexDataCount{ 0 };
         std::uint32_t activeModCount{ 0 };
         std::uint32_t disabledModCount{ 0 };
+        // BGSEquipType behavior identity. The effective value is read through
+        // TESObjectWEAP's equip-slot virtual using the currently equipped
+        // instance data; baseEquipSlotFormID remains diagnostic provenance.
+        std::uint32_t effectiveEquipSlotFormID{ 0 };
+        std::uint32_t baseEquipSlotFormID{ 0 };
         std::uintptr_t equippedDataAddress{ 0 };
         std::uintptr_t equippedObjectAddress{ 0 };
         std::string_view displayName{};
+        float weightGame{ 0.0f };
         bool hasEquippedWeapon{ false };
+        bool effectiveEquipSlotUsesInstanceData{ false };
         WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
         WeaponClassificationSource classificationSource{ WeaponClassificationSource::None };
         std::uint64_t keywordFlags{ 0 };
+        bool usedEffectiveInstanceKeywordData{ false };
+        bool classificationResolved{ false };
     };
 
     inline std::uint64_t makeEquippedWeaponIdentityKey(const EquippedWeaponGenerationIdentity& identity)
@@ -1215,11 +1247,4 @@ namespace rock::weapon_generation_identity_policy
         return key;
     }
 
-    inline std::uint64_t makeEquippedWeaponGenerationKey(
-        std::uint64_t visualCompositionKey,
-        const EquippedWeaponGenerationIdentity& identity)
-    {
-        (void)visualCompositionKey;
-        return makeEquippedWeaponIdentityKey(identity);
-    }
 }

@@ -12,9 +12,11 @@ namespace rock::havok_physics_timing
      * rather than FRIK's render-frame timer. Keeping the binary-backed timing
      * sample separate from input/visual frame time prevents hand, weapon, and
      * held-object constraints from scaling velocity against the wrong clock.
+     *
+     * Unmeasurable native timing stays unmeasurable: unusable inputs become
+     * zero (never a nominal rate), the sample reports usedFallback, and
+     * integrators fail closed through tryGetDriveDeltaSeconds.
      */
-    inline constexpr float kFallbackPhysicsDeltaSeconds = 1.0f / 90.0f;
-
     enum class PhysicsStepPhase : std::uint8_t
     {
         WholePreStep,
@@ -25,18 +27,43 @@ namespace rock::havok_physics_timing
 
     struct PhysicsTimingSample
     {
-        float rawDeltaSeconds = kFallbackPhysicsDeltaSeconds;
-        float substepDeltaSeconds = kFallbackPhysicsDeltaSeconds;
+        float rawDeltaSeconds = 0.0f;
+        float substepDeltaSeconds = 0.0f;
         float remainderDeltaSeconds = 0.0f;
-        float accumulatedDeltaSeconds = kFallbackPhysicsDeltaSeconds;
-        float simulatedDeltaSeconds = kFallbackPhysicsDeltaSeconds;
+        float accumulatedDeltaSeconds = 0.0f;
+        float simulatedDeltaSeconds = 0.0f;
         float substepProgress = 0.0f;
         std::uint32_t substepCount = 1;
         std::uint32_t substepIndex = 0;
         PhysicsStepPhase phase = PhysicsStepPhase::WholePreStep;
+        /*
+         * Identity and cumulative-clock fields stamped by the step coordinator.
+         * stepSequence identifies the owning bhkWorld update; solveSequence
+         * counts completed substep solves (a post-solve sample includes its own
+         * completed solve). elapsedSimulatedSeconds accumulates measured
+         * substep time only — fabricated fallback deltas never advance it.
+         * All three are monotonic across world resets so stored physics
+         * timestamps keep ordering through world loss and recreation.
+         */
+        std::uint64_t stepSequence = 0;
+        std::uint64_t solveSequence = 0;
+        double elapsedSimulatedSeconds = 0.0;
         bool valid = false;
+        /*
+         * usedFallback is the raw-validity contract: true whenever any native
+         * timing input was unusable and a sanitized substitute is present in
+         * this sample. Behavior that integrates or retains state must treat a
+         * fallback sample as unmeasured and fail closed.
+         */
         bool usedFallback = true;
     };
+
+    // A completed substep advances the cumulative simulated clock only when
+    // its delta was actually measured from native timing.
+    [[nodiscard]] inline bool shouldAccumulateSimulatedTime(const PhysicsTimingSample& sample)
+    {
+        return sample.valid && !sample.usedFallback;
+    }
 
     inline bool isUsableDelta(float value)
     {
@@ -51,7 +78,7 @@ namespace rock::havok_physics_timing
         std::uint32_t substepCount)
     {
         PhysicsTimingSample sample{};
-        sample.rawDeltaSeconds = isUsableDelta(rawDeltaSeconds) ? rawDeltaSeconds : kFallbackPhysicsDeltaSeconds;
+        sample.rawDeltaSeconds = isUsableDelta(rawDeltaSeconds) ? rawDeltaSeconds : 0.0f;
         sample.substepDeltaSeconds = isUsableDelta(substepDeltaSeconds) ? substepDeltaSeconds : sample.rawDeltaSeconds;
         sample.remainderDeltaSeconds = std::isfinite(remainderDeltaSeconds) ? remainderDeltaSeconds : 0.0f;
         sample.accumulatedDeltaSeconds = isUsableDelta(accumulatedDeltaSeconds) ? accumulatedDeltaSeconds : sample.rawDeltaSeconds;
@@ -93,24 +120,36 @@ namespace rock::havok_physics_timing
 
     PhysicsTimingSample sampleCurrentTiming();
 
-    inline float driveDeltaSeconds(const PhysicsTimingSample& timing)
+    /*
+     * Selects the delta that scales drive velocities for this callback and
+     * fails closed when the sample carries no measured native time.
+     *
+     * FO4VR exposes both a whole-world pre-step callback and a per-substep
+     * pre-collide callback. Native mouse-spring grabs keep the whole-frame
+     * boundary because that path is smooth. Generated keyframed colliders
+     * use SubstepPreCollide samples so Bethesda's keyframe velocity is
+     * scaled to the same hknp substep that will immediately consume it.
+     *
+     * Returns false (out = 0) for fallback or unusable samples; callers must
+     * skip integration for that callback instead of fabricating motion.
+     */
+    [[nodiscard]] inline bool tryGetDriveDeltaSeconds(const PhysicsTimingSample& timing, float& outDeltaSeconds)
     {
-        /*
-         * FO4VR exposes both a whole-world pre-step callback and a per-substep
-         * pre-collide callback. Native mouse-spring grabs keep the whole-frame
-         * boundary because that path is smooth. Generated keyframed colliders
-         * use SubstepPreCollide samples so Bethesda's keyframe velocity is
-         * scaled to the same hknp substep that will immediately consume it.
-         */
+        outDeltaSeconds = 0.0f;
+        if (timing.usedFallback) {
+            return false;
+        }
         if ((timing.phase == PhysicsStepPhase::SubstepPreCollide ||
                 timing.phase == PhysicsStepPhase::BetweenCollideAndSolve ||
                 timing.phase == PhysicsStepPhase::SubstepPostSolve) &&
             isUsableDelta(timing.substepDeltaSeconds)) {
-            return timing.substepDeltaSeconds;
+            outDeltaSeconds = timing.substepDeltaSeconds;
+            return true;
         }
         if (timing.valid && isUsableDelta(timing.rawDeltaSeconds)) {
-            return timing.rawDeltaSeconds;
+            outDeltaSeconds = timing.rawDeltaSeconds;
+            return true;
         }
-        return kFallbackPhysicsDeltaSeconds;
+        return false;
     }
 }

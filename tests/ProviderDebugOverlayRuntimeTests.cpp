@@ -1,9 +1,6 @@
 #include "api/ProviderDebugOverlayRuntime.h"
 
 #include <array>
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <cassert>
 #include <cstring>
 

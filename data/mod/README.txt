@@ -16,15 +16,23 @@ Install ROCK.dll and ROCK.pdb into:
 
 Data\F4SE\Plugins
 
-This release ships the production ROCK.ini under:
+ROCK stores its runtime configuration under:
 
-ROCK_Config\ROCK.ini
+%USERPROFILE%\Documents\My Games\Fallout4VR\Mods_Config\ROCK
 
-Place ROCK.ini at:
+ROCK.ini contains consumer settings. When absent, ROCK creates it with all
+consumer defaults compiled into the plugin. Existing files are loaded unchanged.
 
-%USERPROFILE%\Documents\My Games\Fallout4VR\ROCK_Config\ROCK.ini
+ROCK_Developer.ini is optional. Developer defaults remain in code and are shown
+in the wheel menu even without this file. Changing a developer setting creates
+or updates only its override. Existing supplied developer entries are preserved
+on load. Restoring a default removes that key; an empty developer file is removed.
+Either file supports hot reload.
+The wheel menu uses ROCK's configuration interface to display and save settings.
 
-Create the ROCK_Config folder if it does not already exist.
+The source references data/config/ROCK_example.ini and
+data/config/ROCK_Developer_example.ini list every supported option and default
+in their respective group. They are human references, never runtime templates.
 
 Features
 --------

@@ -1,9 +1,6 @@
 #include "physics-interaction/object/ExternalBodyRegistry.h"
 
 #include <array>
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <cassert>
 #include <cstdint>
 #include <limits>

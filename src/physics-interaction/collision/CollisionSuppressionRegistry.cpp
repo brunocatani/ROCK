@@ -27,12 +27,12 @@ namespace rock::collision_suppression_registry
                 return "WeaponDominantHand";
             case CollisionSuppressionOwner::WeaponSupportHand:
                 return "WeaponSupportHand";
-            case CollisionSuppressionOwner::NativePlayerBody:
-                return "NativePlayerBody";
             case CollisionSuppressionOwner::HeldLooseWeaponBody:
                 return "HeldLooseWeaponBody";
             case CollisionSuppressionOwner::EquippedWeaponDropHand:
                 return "EquippedWeaponDropHand";
+            case CollisionSuppressionOwner::NativeGrenadeThrow:
+                return "NativeGrenadeThrow";
             }
             return "Unknown";
         }
@@ -147,6 +147,10 @@ namespace rock::collision_suppression_registry
             result.filterBefore = currentFilter;
             result.filterAfter = refreshedFilter;
             result.filterChanged = refreshedFilter != currentFilter;
+            result.leaseIdentityValid = true;
+            result.leaseMotionIndex = snapshot.motionIndex;
+            result.leaseCollisionObject = snapshot.collisionObject;
+            result.leaseOwnerNode = snapshot.ownerNode;
             return result;
         }
 
@@ -184,6 +188,10 @@ namespace rock::collision_suppression_registry
         result.filterChanged = disabledFilter != currentFilter;
         result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
         result.activeLeaseCount = leaseCount(entry->ownerMask);
+        result.leaseIdentityValid = true;
+        result.leaseMotionIndex = snapshot.motionIndex;
+        result.leaseCollisionObject = snapshot.collisionObject;
+        result.leaseOwnerNode = snapshot.ownerNode;
 
         if (result.firstLeaseForBody || result.filterChanged) {
             ROCK_LOG_DEBUG(Hand,
@@ -197,6 +205,93 @@ namespace rock::collision_suppression_registry
                 result.activeLeaseCount);
         }
 
+        return result;
+    }
+
+    RuntimeSuppressionResult CollisionSuppressionRegistry::refresh(
+        RE::hknpWorld* world,
+        std::uint32_t bodyId,
+        CollisionSuppressionOwner owner,
+        const char* context)
+    {
+        RuntimeSuppressionResult result{};
+        result.bodyId = bodyId;
+        if (!world || bodyId == kInvalidBodyId) {
+            result.readFailed = true;
+            return result;
+        }
+
+        auto* entry = find(world, bodyId);
+        if (!entry || (entry->ownerMask & ownerBit(owner)) == 0) {
+            return result;
+        }
+
+        const auto snapshot = havok_runtime::snapshotBody(world, RE::hknpBodyId{ bodyId });
+        if (!snapshot.valid) {
+            result.readFailed = true;
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                1000,
+                "Collision suppression refresh deferred: owner={} bodyId={} context={} cannot snapshot body; lease preserved",
+                ownerName(owner),
+                bodyId,
+                context ? context : "");
+            return result;
+        }
+
+        if (!bodyIdentityMatches(*entry, snapshot.motionIndex, snapshot.collisionObject, snapshot.ownerNode)) {
+            const auto oldMotionIndex = entry->motionIndex;
+            auto* oldOwnerNode = entry->ownerNode;
+            auto* oldCollisionObject = entry->collisionObject;
+            const auto originalOwnerMask = entry->ownerMask;
+            result.valid = true;
+            result.staleLeaseDiscarded = true;
+            result.bodyFullyReleased = true;
+            result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
+            result.activeLeaseCount = 0;
+            ROCK_LOG_WARN(Hand,
+                "Collision suppression stale lease discarded before refresh: owner={} bodyId={} context={} ownerMask=0x{:08X} oldMotion={} newMotion={} oldOwner={} newOwner={} oldCollision={} newCollision={}",
+                ownerName(owner),
+                bodyId,
+                context ? context : "",
+                originalOwnerMask,
+                oldMotionIndex,
+                snapshot.motionIndex,
+                static_cast<const void*>(oldOwnerNode),
+                static_cast<const void*>(snapshot.ownerNode),
+                static_cast<const void*>(oldCollisionObject),
+                static_cast<const void*>(snapshot.collisionObject));
+            erase(world, bodyId);
+            return result;
+        }
+
+        std::uint32_t currentFilter = 0;
+        if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
+            result.readFailed = true;
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                1000,
+                "Collision suppression refresh deferred: owner={} bodyId={} context={} cannot read filter; lease preserved",
+                ownerName(owner),
+                bodyId,
+                context ? context : "");
+            return result;
+        }
+
+        const std::uint32_t refreshedFilter = currentFilter | kSuppressionNoCollideBit;
+        if (refreshedFilter != currentFilter) {
+            body_collision::setFilterInfo(world, RE::hknpBodyId{ bodyId }, refreshedFilter);
+        }
+
+        result.valid = true;
+        result.ownerAlreadyHeld = true;
+        result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
+        result.activeLeaseCount = leaseCount(entry->ownerMask);
+        result.filterBefore = currentFilter;
+        result.filterAfter = refreshedFilter;
+        result.filterChanged = refreshedFilter != currentFilter;
+        result.leaseIdentityValid = true;
+        result.leaseMotionIndex = snapshot.motionIndex;
+        result.leaseCollisionObject = snapshot.collisionObject;
+        result.leaseOwnerNode = snapshot.ownerNode;
         return result;
     }
 

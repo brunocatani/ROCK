@@ -62,10 +62,13 @@ namespace rock
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
+        // Main-thread debug publication only. Returns the exact pending target
+        // that the next generated-body physics callback will consume.
+        bool tryGetBodyTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const;
 
         /*
-         * Stage A dynamic-twin publication (main thread only): the exact palm
-         * anchor and fingertip role frames this set drives its keyframed bodies
+         * Dynamic-twin publication (main thread only): the exact palm anchor
+         * and all 15 finger role frames this set drives its keyframed bodies
          * with, refreshed every update. buildDynamicTwinShape builds the same
          * hull the keyframed twin uses for those dimensions.
          */
@@ -79,17 +82,17 @@ namespace rock
             float length = 0.0f;
             float radius = 0.0f;
             float convexRadius = 0.0f;
+            // Bounds of the palm hull actually created, including dimension overrides.
+            RE::NiPoint3 palmHalfExtents{};
         };
         using PublishedSegmentFrames =
             std::array<PublishedSegmentFrame, hand_collider_semantics::kHandSegmentColliderBodyCountPerHand>;
 
         /*
-         * Every driven segment collider frame from the last update, not only
-         * the palm and fingertips the dynamic twins mirror. Consumers that
-         * reason about the hand as a VOLUME - an object may not end up inside
-         * ANY segment, not just the two published for twinning - need the
-         * whole set. Main-thread publication, same contract as
-         * dynamicTwinTargets().
+         * Every driven segment collider frame from the last update. Consumers
+         * that reason about the hand as a VOLUME - an object may not end up
+         * inside ANY segment - need the whole set. Main-thread publication,
+         * same contract as dynamicTwinTargets().
          */
         const PublishedSegmentFrames& segmentColliderFrames() const { return _segmentFrames; }
         RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const;
@@ -104,6 +107,7 @@ namespace rock
             const RE::hknpShape* shape = nullptr;
             hand_collider_semantics::HandColliderRole role = hand_collider_semantics::HandColliderRole::PalmFace;
             bool ownsShapeRef = false;
+            RE::NiPoint3 palmHalfExtents{};
             GeneratedKeyframedBodyDriveState driveState{};
             std::uint32_t publicationIndex = kInvalidPublicationIndex;
         };
@@ -135,7 +139,8 @@ namespace rock
             const RE::NiTransform& rollAuthorityWorld,
             BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
-        RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
+        RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role,
+            RE::NiPoint3* outPalmHalfExtents = nullptr) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
         void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState, std::uint32_t publicationIndex);
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 #include <cmath>
 #include <cstdint>
 
@@ -48,9 +50,7 @@ namespace rock::native_scope_sight_anchor_policy
     template <class Point>
     [[nodiscard]] inline bool isFinitePoint(const Point& point) noexcept
     {
-        return std::isfinite(point.x) &&
-               std::isfinite(point.y) &&
-               std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     /*

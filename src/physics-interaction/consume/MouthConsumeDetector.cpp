@@ -1,4 +1,5 @@
 #include "physics-interaction/consume/MouthConsumeDetector.h"
+#include "physics-interaction/VectorMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,21 +29,17 @@ namespace rock::mouth_consume
 
         [[nodiscard]] float dot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) noexcept
         {
-            return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+            return vector_math::dot(lhs, rhs);
         }
 
         [[nodiscard]] RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) noexcept
         {
-            return RE::NiPoint3{
-                lhs.y * rhs.z - lhs.z * rhs.y,
-                lhs.z * rhs.x - lhs.x * rhs.z,
-                lhs.x * rhs.y - lhs.y * rhs.x,
-            };
+            return vector_math::cross(lhs, rhs);
         }
 
         [[nodiscard]] float lengthSquared(const RE::NiPoint3& value) noexcept
         {
-            return dot(value, value);
+            return vector_math::lengthSquared(value);
         }
 
         [[nodiscard]] float length(const RE::NiPoint3& value) noexcept
@@ -97,7 +94,7 @@ namespace rock::mouth_consume
 
     bool finitePoint(const RE::NiPoint3& value) noexcept
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     RE::NiPoint3 computeMouthCenter(

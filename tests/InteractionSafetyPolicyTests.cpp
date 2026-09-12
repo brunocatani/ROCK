@@ -1,12 +1,22 @@
 #include "physics-interaction/api/InteractionCommandPolicy.h"
 #include "physics-interaction/core/ForceGrabPolicy.h"
+#include "physics-interaction/grenade/LooseThrowablePolicy.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 
 #include <cstdio>
+#include <limits>
 
 namespace
 {
+    enum class TestWeaponType : std::uint8_t
+    {
+        Gun = 9,
+        Grenade = 10,
+        Mine = 11,
+    };
+
     bool expectTrue(const char* label, bool value)
     {
         if (value) {
@@ -84,6 +94,44 @@ int main()
     ok &= expectTrue("future left firing hand occupied", equippedWeaponOccupiesHand(true, true, false, true, false));
     ok &= expectFalse("future right offhand remains free", equippedWeaponOccupiesHand(false, true, false, true, false));
 
+    using rock::loose_throwable_policy::DetonationMode;
+    using rock::loose_throwable_policy::classifyDetonationMode;
+    using rock::loose_throwable_policy::isSupportedWeaponType;
+    using rock::loose_throwable_policy::isWithinProximity;
+    using rock::loose_throwable_policy::preservesReferenceAfterDetonation;
+    ok &= expectTrue("grenade is a supported throwable", isSupportedWeaponType(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine));
+    ok &= expectTrue("mine is a supported throwable", isSupportedWeaponType(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine));
+    ok &= expectFalse("gun is not a supported throwable", isSupportedWeaponType(TestWeaponType::Gun, TestWeaponType::Grenade, TestWeaponType::Mine));
+    ok &= expectEqual("generic grenade keeps timed fuse", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::TimedFuse);
+    ok &= expectEqual("Molotov uses impact", classifyDetonationMode(TestWeaponType::Grenade, TestWeaponType::Grenade, TestWeaponType::Mine, true, true, 0.0f), DetonationMode::Impact);
+    ok &= expectEqual("placed mine uses proximity", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 100.0f), DetonationMode::Proximity);
+    ok &= expectEqual("projectile-style mine uses impact", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, 0.0f), DetonationMode::Impact);
+    ok &= expectEqual("mine with invalid proximity fails closed", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, true, (std::numeric_limits<float>::quiet_NaN)()), DetonationMode::Unsupported);
+    ok &= expectEqual("throwable without explosion fails closed", classifyDetonationMode(TestWeaponType::Mine, TestWeaponType::Grenade, TestWeaponType::Mine, false, false, 0.0f), DetonationMode::Unsupported);
+    ok &= expectTrue("pickup impact throwable remains recoverable", preservesReferenceAfterDetonation(DetonationMode::Impact, rock::loose_throwable_policy::kProjectileCanBePickedUp, false));
+    ok &= expectFalse("authored placed-object recovery consumes source prop", preservesReferenceAfterDetonation(DetonationMode::Impact, rock::loose_throwable_policy::kProjectileCanBePickedUp, true));
+    ok &= expectFalse("explosive impact throwable is consumed", preservesReferenceAfterDetonation(DetonationMode::Impact, 0, false));
+    ok &= expectTrue("actor inside mine radius triggers", isWithinProximity(100.0f, 60.0f, 60.0f, 0.0f));
+    ok &= expectFalse("actor outside mine radius does not trigger", isWithinProximity(100.0f, 80.0f, 80.0f, 0.0f));
+
+    using rock::physics_body_classifier::BodyClassificationInput;
+    using rock::physics_body_classifier::BodyMotionType;
+    using rock::physics_body_classifier::InteractionMode;
+    using rock::physics_body_classifier::classifyBody;
+    BodyClassificationInput projectileLayerThrowable{
+        .bodyId = 1,
+        .motionId = 1,
+        .layer = rock::collision_layer_policy::FO4_LAYER_PROJECTILE,
+        .motionType = BodyMotionType::Dynamic,
+        .targetKind = rock::grab_target::Kind::LooseObject,
+    };
+    ok &= expectFalse("organic projectile-layer object remains blocked", classifyBody(projectileLayerThrowable, InteractionMode::ActiveGrab).accepted);
+    projectileLayerThrowable.allowProjectileLayerForExactTarget = true;
+    ok &= expectTrue("exact quick-draw projectile-layer body is admitted", classifyBody(projectileLayerThrowable, InteractionMode::ActiveGrab).accepted);
+    ok &= expectFalse("projectile-layer passive push remains blocked", classifyBody(projectileLayerThrowable, InteractionMode::PassivePush).accepted);
+    projectileLayerThrowable.targetKind = rock::grab_target::Kind::ActorEquipment;
+    ok &= expectFalse("projectile exception cannot escape loose-object target", classifyBody(projectileLayerThrowable, InteractionMode::ActiveGrab).accepted);
+
     using rock::bare_fist_guard_policy::Witness;
     using rock::bare_fist_guard_policy::shouldHolster;
     ok &= expectTrue("drawn bare fists are holstered", shouldHolster(Witness{
@@ -116,8 +164,10 @@ int main()
     using rock::held_weapon_equip_state_policy::EquipReadiness;
     using rock::held_weapon_equip_state_policy::classifyForEquip;
     using rock::held_weapon_equip_state_policy::isValidNativeWeaponState;
+    using rock::held_weapon_equip_state_policy::isShoulderStashedPresentationState;
     using rock::held_weapon_equip_state_policy::shouldRearmTrigger;
     using rock::held_weapon_equip_state_policy::shouldSubmitDrawFollowup;
+    using rock::held_weapon_equip_state_policy::shouldSubmitSheatheFollowup;
     ok &= expectEqual("sheathed state permits equip", classifyForEquip(0), EquipReadiness::Stable);
     ok &= expectEqual("drawn state permits replacement equip", classifyForEquip(3), EquipReadiness::Stable);
     ok &= expectEqual("want-draw state defers equip", classifyForEquip(1), EquipReadiness::Transitioning);
@@ -135,12 +185,36 @@ int main()
     ok &= expectTrue("want-sheathe native weapon accepts draw reversal", shouldSubmitDrawFollowup(4));
     ok &= expectTrue("sheathing native weapon accepts draw reversal", shouldSubmitDrawFollowup(5));
     ok &= expectFalse("unknown native weapon state rejects draw recovery", shouldSubmitDrawFollowup(6));
+    ok &= expectFalse("sheathed native weapon rejects duplicate sheathe", shouldSubmitSheatheFollowup(0));
+    ok &= expectTrue("want-draw native weapon accepts sheathe reversal", shouldSubmitSheatheFollowup(1));
+    ok &= expectTrue("drawing native weapon accepts sheathe reversal", shouldSubmitSheatheFollowup(2));
+    ok &= expectTrue("drawn native weapon accepts sheathe", shouldSubmitSheatheFollowup(3));
+    ok &= expectTrue("want-sheathe native weapon accepts final sheathe", shouldSubmitSheatheFollowup(4));
+    ok &= expectFalse("sheathing native weapon rejects duplicate sheathe", shouldSubmitSheatheFollowup(5));
+    ok &= expectFalse("unknown native weapon state rejects sheathe", shouldSubmitSheatheFollowup(6));
+    ok &= expectTrue("sheathed presentation is shoulder retrievable", isShoulderStashedPresentationState(0));
+    ok &= expectFalse("want-draw presentation is not shoulder retrievable", isShoulderStashedPresentationState(1));
+    ok &= expectFalse("drawing presentation is not shoulder retrievable", isShoulderStashedPresentationState(2));
+    ok &= expectFalse("drawn presentation is not shoulder retrievable", isShoulderStashedPresentationState(3));
+    ok &= expectTrue("want-sheathe presentation is shoulder retrievable", isShoulderStashedPresentationState(4));
+    ok &= expectTrue("sheathing presentation is shoulder retrievable", isShoulderStashedPresentationState(5));
+    ok &= expectFalse("unknown presentation is not shoulder retrievable", isShoulderStashedPresentationState(6));
     ok &= expectTrue("last known native weapon state is valid", isValidNativeWeaponState(5));
     ok &= expectFalse("state outside the FO4VR weapon enum is invalid", isValidNativeWeaponState(6));
 
     ForceGrabReservations reservations;
-    ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(RockProviderHand::None, 11, 100));
+    ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(static_cast<RockProviderHand>(99), 11, 100));
+    ok &= expectFalse("auto hand rejects missing owner", reservations.reserve(RockProviderHand::None, 0, 100));
+    ok &= expectTrue("auto hand reserves both hands", reservations.reserve(RockProviderHand::None, 11, 100));
+    ok &= expectTrue("auto hand reserves right", reservations.isReserved(RockProviderHand::Right));
+    ok &= expectTrue("auto hand reserves left", reservations.isReserved(RockProviderHand::Left));
+    ok &= expectFalse("auto hand blocks overtaking request", reservations.reserve(RockProviderHand::Left, 22, 201));
+    reservations.release(22, 100);
+    ok &= expectTrue("different owner cannot release auto hand", reservations.matches(11, 100));
+    reservations.release(11, 100);
+    ok &= expectFalse("auto hand completion releases both", reservations.isReserved(RockProviderHand::None));
     ok &= expectTrue("first right API force grab reserves", reservations.reserve(RockProviderHand::Right, 11, 101));
+    ok &= expectFalse("auto hand cannot overtake reserved right", reservations.reserve(RockProviderHand::None, 22, 200));
     ok &= expectFalse("duplicate right API force grab is rejected", reservations.reserve(RockProviderHand::Right, 11, 102));
     ok &= expectTrue("independent left API force grab is allowed", reservations.reserve(RockProviderHand::Left, 22, 201));
     ok &= expectTrue("dequeue does not implicitly release right", reservations.isReserved(RockProviderHand::Right));

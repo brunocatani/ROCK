@@ -79,6 +79,22 @@ namespace rock::performance_profiler
             switch (scope) {
             case Scope::FrameUpdate:
                 return "frame";
+            case Scope::RuntimePreparation:
+                return "runtimePreparation";
+            case Scope::WeaponEquipTransition:
+                return "weaponEquipTransition";
+            case Scope::AuthoredPrimaryGrip:
+                return "authoredPrimaryGrip";
+            case Scope::InteractionUpdate:
+                return "interactionUpdate";
+            case Scope::EquippedWeaponInteraction:
+                return "equippedWeaponInteraction";
+            case Scope::InteractionFinalize:
+                return "interactionFinalize";
+            case Scope::HandPresentation:
+                return "handPresentation";
+            case Scope::ProviderPublication:
+                return "providerPublication";
             case Scope::HandColliderUpdate:
                 return "handColliders";
             case Scope::BodyColliderUpdate:
@@ -95,6 +111,16 @@ namespace rock::performance_profiler
                 return "weaponColliderBuild";
             case Scope::WeaponColliderCreate:
                 return "weaponColliderCreate";
+            case Scope::WeaponGapDecomposition:
+                return "weaponGapDecomposition";
+            case Scope::WeaponMeshExtraction:
+                return "weaponMeshExtraction";
+            case Scope::WeaponPointFitting:
+                return "weaponPointFitting";
+            case Scope::WeaponGapColliderBuild:
+                return "weaponGapColliderBuild";
+            case Scope::WeaponGapColliderCreate:
+                return "weaponGapColliderCreate";
             case Scope::TwoHandedGripStart:
                 return "twoHandedGripStart";
             case Scope::EquippedWeaponFingerPoseCapture:
@@ -131,6 +157,10 @@ namespace rock::performance_profiler
                 return "grabAuthorityFlush";
             case Scope::GrabAuthorityAfterSolveDiagnostics:
                 return "grabAuthorityAfterSolveDiagnostics";
+            case Scope::GrabNearbyDampingRestore:
+                return "grabNearbyDampingRestore";
+            case Scope::GrabNearbyDampingRestoreBodySearch:
+                return "grabNearbyDampingRestoreBodySearch";
             case Scope::Count:
                 break;
             }
@@ -154,8 +184,6 @@ namespace rock::performance_profiler
                 return "weaponRebuildVisualSourceUnavailableRetained";
             case Counter::WeaponRebuildVisualSourceUnavailableRetainExpired:
                 return "weaponRebuildVisualSourceUnavailableRetainExpired";
-            case Counter::WeaponRebuildReasonSettingsChanged:
-                return "weaponRebuildReasonSettingsChanged";
             case Counter::WeaponRebuildReasonDriveRequested:
                 return "weaponRebuildReasonDriveRequested";
             case Counter::WeaponRebuildReasonKeyChanged:
@@ -176,6 +204,8 @@ namespace rock::performance_profiler
                 return "grabAcquisitionCacheMiss";
             case Counter::GrabAcquisitionCacheInvalidated:
                 return "grabAcquisitionCacheInvalidated";
+            case Counter::GrabNearbyDampingRestoreFailed:
+                return "grabNearbyDampingRestoreFailed";
             case Counter::Count:
                 break;
             }
@@ -195,6 +225,12 @@ namespace rock::performance_profiler
                 return "weaponBuildTransientReloadSources";
             case ValueMetric::WeaponBuildBodyCount:
                 return "weaponBuildBodyCount";
+            case ValueMetric::WeaponBuildGapMode:
+                return "weaponBuildGapMode";
+            case ValueMetric::WeaponBuildConvexes:
+                return "weaponBuildConvexes";
+            case ValueMetric::WeaponBuildPoints:
+                return "weaponBuildPoints";
             case ValueMetric::GrabAcquisitionVisitedNodes:
                 return "grabAcquisitionVisitedNodes";
             case ValueMetric::GrabAcquisitionCollisionObjects:

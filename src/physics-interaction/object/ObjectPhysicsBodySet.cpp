@@ -171,6 +171,25 @@ namespace rock::object_physics_body_set
             record.resolvedRef = context.rootRef;
             record.seeded = seeded;
 
+            const auto* base = context.rootRef ? context.rootRef->GetObjectReference() : nullptr;
+            const bool bodyTarget = grab_target::isRagdoll(options.targetKind) ||
+                (base && base->Is(RE::ENUM_FORM_ID::kNPC_)) || grab_target::isDetachedGoreLayer(record.collisionLayer);
+            if (bodyTarget) {
+                // A shared physics system is discovery, not ownership. Its first
+                // encountered wrapper must never own every enumerated limb.
+                auto* owner = havok_runtime::getCollisionObjectFromBody(hknpWorld, bodyId);
+                RE::hknpWorld* ownerWorld = nullptr;
+                RE::hknpBodyId ownerId{INVALID_BODY_ID};
+                if (!owner || !havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerId) ||
+                    ownerWorld != hknpWorld || ownerId.value != rawBodyId) {
+                    ++out.diagnostics.scanFailures;
+                    return true;
+                }
+                record.collisionObject = owner;
+                record.owningNode = havok_runtime::getOwnerNodeFromCollisionObject(owner);
+                if (!record.owningNode) { ++out.diagnostics.scanFailures; return true; }
+            }
+
             const auto* bodyFloats = reinterpret_cast<const float*>(body);
             record.positionGame.x = bodyFloats[12] * havokToGameScale();
             record.positionGame.y = bodyFloats[13] * havokToGameScale();
@@ -214,6 +233,7 @@ namespace rock::object_physics_body_set
             input.isRockWeaponSourceBody = rawBodyId == options.sourceWeaponBodyId || rawBodyId == options.sourceBodyId;
             input.isHeldBySameHand = containsBodyId(options.heldBySameHand, rawBodyId);
             input.isPlayerBody = record.resolvedRef == RE::PlayerCharacter::GetSingleton();
+            input.allowProjectileLayerForExactTarget = options.allowProjectileLayerForExactTarget;
 
             const auto classification = physics_body_classifier::classifyBody(input, options.mode);
             record.accepted = classification.accepted;
@@ -558,6 +578,22 @@ namespace rock::object_physics_body_set
         return it != records.end() ? &*it : nullptr;
     }
 
+    const ObjectPhysicsBodyRecord* ObjectPhysicsBodySet::findAcceptedRagdollOwner(RE::NiAVObject* bone) const
+    {
+        for (int depth = 0; bone && depth < 64; ++depth, bone = bone->parent) {
+            if (!bone->collisionObject) continue;
+            RE::hknpWorld* world = nullptr;
+            RE::hknpBodyId id{INVALID_BODY_ID};
+            if (!havok_runtime::tryResolveCollisionObjectBody(bone->collisionObject.get(), world, id)) return nullptr;
+            const auto* record = findRecord(id.value);
+            if (record && record->accepted && record->owningNode == bone && record->collisionObject == bone->collisionObject.get()) return record;
+            // A collision-bearing ancestor is the ownership boundary, including
+            // fixed/disabled bodies. Do not jump past it to a different limb.
+            return nullptr;
+        }
+        return nullptr;
+    }
+
     const ObjectPhysicsBodyRecord* ObjectPhysicsBodySet::findAcceptedRecordByOwnerNode(RE::NiAVObject* ownerNode) const
     {
         if (!ownerNode) {
@@ -846,6 +882,10 @@ namespace rock::object_physics_body_set
         if (options.seedBodyId != INVALID_BODY_ID) {
             ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref, options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
             appendBodyRecord(seedContext, options.seedBodyId, true);
+            if (grab_target::isRagdoll(options.targetKind) && options.seedHitNode) {
+                // Detached systems may no longer be under the actor's current 3D.
+                scanNode(bhkWorld, hknpWorld, ref, options.seedHitNode, 0, options, result, seenBodyIds);
+            }
         }
 
         if (options.allowWeaponRefExpansion || !isWeaponReference(ref)) {

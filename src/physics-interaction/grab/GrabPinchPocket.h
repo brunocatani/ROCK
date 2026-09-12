@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "physics-interaction/VectorMath.h"
 
 #include <algorithm>
 #include <array>
@@ -10,7 +11,7 @@
 
 namespace rock::grab_pinch_pocket_policy
 {
-    inline constexpr float kDefaultCompactMaxExtentGameUnits = 8.0f;
+    inline constexpr float kDefaultCompactMaxExtentGameUnits = 10.0f;
     inline constexpr float kDefaultThinRodMaxLengthGameUnits = 18.0f;
     inline constexpr float kDefaultThinRodMaxCrossSectionGameUnits = 4.0f;
     inline constexpr float kDefaultMaxPocketDistanceGameUnits = 8.0f;
@@ -60,7 +61,6 @@ namespace rock::grab_pinch_pocket_policy
         MeshExtentMetrics mesh{};
         bool closeGrab = false;
         bool handPocketOnlyGrab = false;
-        bool authoredGrabNode = false;
         bool looseWeaponGrab = false;
         bool ownerMatchesResolvedBody = false;
         bool hasFingerSnapshot = false;
@@ -103,10 +103,7 @@ namespace rock::grab_pinch_pocket_policy
         config.thumbIndexMaxOpenValue = std::clamp(finiteOr(config.thumbIndexMaxOpenValue, kDefaultThumbIndexMaxOpenValue), 0.0f, 1.0f);
         config.otherFingerCurlValue = std::clamp(finiteOr(config.otherFingerCurlValue, kDefaultOtherFingerCurlValue), 0.0f, 1.0f);
         config.surfaceInsetGameUnits = std::clamp(finiteOr(config.surfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f);
-        const float directionLenSq =
-            config.detectionDirectionHandspace.x * config.detectionDirectionHandspace.x +
-            config.detectionDirectionHandspace.y * config.detectionDirectionHandspace.y +
-            config.detectionDirectionHandspace.z * config.detectionDirectionHandspace.z;
+        const float directionLenSq = vector_math::lengthSquared(config.detectionDirectionHandspace);
         if (!std::isfinite(directionLenSq) || directionLenSq <= 0.000001f) {
             config.detectionDirectionHandspace = RE::NiPoint3{
                 kDefaultDetectionDirectionHandspaceX,
@@ -127,12 +124,12 @@ namespace rock::grab_pinch_pocket_policy
 
     [[nodiscard]] inline bool isFinitePoint(const RE::NiPoint3& point)
     {
-        return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        return vector_math::hasFiniteComponents(point);
     }
 
     [[nodiscard]] inline float lengthSquared(const RE::NiPoint3& value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     [[nodiscard]] inline float distance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
@@ -314,33 +311,60 @@ namespace rock::grab_pinch_pocket_policy
         return (std::max)(thinHalfWidth, std::clamp(finiteOr(configuredSurfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f));
     }
 
-    [[nodiscard]] inline StablePinchFingerPose buildStablePinchFingerPose(Config rawConfig, float minFingerValue)
+    [[nodiscard]] inline StablePinchFingerPose buildStableOppositionFingerPose(
+        Config rawConfig,
+        float minFingerValue,
+        std::size_t opposedFingerIndex)
     {
         const Config config = sanitizeConfig(rawConfig);
         const float minValue = std::clamp(finiteOr(minFingerValue, 0.2f), 0.0f, 1.0f);
         const float pinchValue = std::clamp(config.thumbIndexMaxOpenValue, minValue, 1.0f);
         const float otherValue = std::clamp(config.otherFingerCurlValue, 0.0f, 1.0f);
+        const std::size_t opposedFinger =
+            std::clamp(opposedFingerIndex,
+                static_cast<std::size_t>(1),
+                static_cast<std::size_t>(4));
 
         StablePinchFingerPose pose{};
-        pose.values = { pinchValue, pinchValue, otherValue, otherValue, otherValue };
+        pose.values = { otherValue, otherValue, otherValue, otherValue, otherValue };
+        pose.values[0] = pinchValue;
+        pose.values[opposedFinger] = pinchValue;
 
         const float pinchClosed = 1.0f - pinchValue;
         pose.jointValues[0] = std::clamp(pinchValue + pinchClosed * 0.30f, minValue, 1.0f);
         pose.jointValues[1] = std::clamp(pinchValue + pinchClosed * 0.12f, minValue, 1.0f);
         pose.jointValues[2] = std::clamp(pinchValue, minValue, 1.0f);
 
-        pose.jointValues[3] = std::clamp(pinchValue + pinchClosed * 0.20f, minValue, 1.0f);
-        pose.jointValues[4] = std::clamp(pinchValue, minValue, 1.0f);
-        pose.jointValues[5] = std::clamp(pinchValue - pinchClosed * 0.08f, minValue, 1.0f);
-
         const float otherClosed = 1.0f - otherValue;
-        for (std::size_t finger = 2; finger < pose.values.size(); ++finger) {
+        for (std::size_t finger = 1; finger < pose.values.size(); ++finger) {
             const std::size_t base = finger * 3;
             pose.jointValues[base + 0] = std::clamp(otherValue + otherClosed * 0.25f, 0.0f, 1.0f);
             pose.jointValues[base + 1] = std::clamp(otherValue, 0.0f, 1.0f);
             pose.jointValues[base + 2] = std::clamp(otherValue - otherClosed * 0.15f, 0.0f, 1.0f);
         }
 
+        const std::size_t opposedBase = opposedFinger * 3;
+        pose.jointValues[opposedBase + 0] =
+            std::clamp(
+                pinchValue + pinchClosed * 0.20f,
+                minValue,
+                1.0f);
+        pose.jointValues[opposedBase + 1] =
+            std::clamp(pinchValue, minValue, 1.0f);
+        pose.jointValues[opposedBase + 2] =
+            std::clamp(
+                pinchValue - pinchClosed * 0.08f,
+                minValue,
+                1.0f);
+
         return pose;
+    }
+
+    [[nodiscard]] inline StablePinchFingerPose buildStablePinchFingerPose(Config rawConfig, float minFingerValue)
+    {
+        return buildStableOppositionFingerPose(
+            rawConfig,
+            minFingerValue,
+            1);
     }
 }

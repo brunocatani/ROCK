@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/VectorMath.h"
+
 /*
  * Hand collider types are grouped here so semantic IDs, collider geometry, and grab pivot math remain one generated-hand-collider surface.
  */
@@ -322,25 +324,25 @@ namespace rock::hand_bone_collider_geometry_math
     template <class Vector>
     inline float dot(const Vector& lhs, const Vector& rhs)
     {
-        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        return vector_math::dot(lhs, rhs);
     }
 
     template <class Vector>
     inline Vector cross(const Vector& lhs, const Vector& rhs)
     {
-        return makeVector<Vector>(lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x * rhs.y - lhs.y * rhs.x);
+        return vector_math::cross(lhs, rhs);
     }
 
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return dot(value, value);
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>
     inline bool finiteVector(const Vector& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     inline bool finitePositive(float value)
@@ -786,7 +788,7 @@ namespace rock::hand_bone_grab_pivot_math
     template <class Vector>
     inline float lengthSquared(const Vector& value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     template <class Vector>

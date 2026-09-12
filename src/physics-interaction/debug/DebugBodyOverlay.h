@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "api/ROCKProviderApi.h"
@@ -17,6 +18,11 @@ namespace RE
     class hknpWorld;
 }
 
+namespace rock::havok_physics_timing
+{
+    struct PhysicsTimingSample;
+}
+
 namespace rock::debug
 {
     enum class BodyOverlayRole : std::uint8_t
@@ -30,6 +36,8 @@ namespace rock::debug
         BodyLegSegment,
         BodyFootSegment,
         Weapon,
+        DynamicWeaponProxy,
+        FocusedWeaponPart,
         RightGrabAuthorityProxy,
         LeftGrabAuthorityProxy,
         RightGrabPivotSourceCollider,
@@ -65,6 +73,8 @@ namespace rock::debug
         LeftGrabPalmAuthorityFrame,
         RightGrabAuthorityProxyTarget,
         LeftGrabAuthorityProxyTarget,
+        RightGrabAuthorityProxyAppliedTarget,
+        LeftGrabAuthorityProxyAppliedTarget,
         RightGrabProxyReadback,
         LeftGrabProxyReadback,
         RightGrabForceTorqueLiveBody,
@@ -84,9 +94,7 @@ namespace rock::debug
         RightGrabMotorRelationInverseBody,
         LeftGrabMotorRelationInverseBody,
         RightGrabMotorSolverEffectiveBody,
-        LeftGrabMotorSolverEffectiveBody,
-        RightCustomCalibrationOffset,
-        LeftCustomCalibrationOffset
+        LeftGrabMotorSolverEffectiveBody
     };
 
     enum class AxisOverlaySource : std::uint8_t
@@ -167,6 +175,10 @@ namespace rock::debug
         LeftGrabActivePivotBVisualLock,
         RightGrabAuthorityProxyTarget,
         LeftGrabAuthorityProxyTarget,
+        RightGrabAuthorityProxyAppliedTarget,
+        LeftGrabAuthorityProxyAppliedTarget,
+        RightGrabAuthorityProxyClockDelta,
+        LeftGrabAuthorityProxyClockDelta,
         RightGrabAuthorityProxyOffset,
         LeftGrabAuthorityProxyOffset,
         RightGrabPivotSourceTriangle,
@@ -220,6 +232,10 @@ namespace rock::debug
         NativeScopeCameraParent,
         NativeScopeSightBounds,
         NativeScopeMismatch,
+        NativeScopeShotSight,
+        NativeScopeShotMuzzle,
+        NativeScopeShotAim,
+        NativeScopeShotLaunch,
         RightWeaponPrimaryGrip,
         LeftWeaponSupportGrip,
         RightWeaponAuthorityMismatch,
@@ -246,7 +262,13 @@ namespace rock::debug
         LeftDynamicHandSolverResidual,
         AuthoredSupportGripPalmSeat,
         AuthoredSupportGripLiveSample,
-        AuthoredSupportGripError
+        AuthoredSupportGripError,
+        AuthoredGripActivationSupportSideAxis,
+        AuthoredGripActivationDownAxis,
+        AuthoredGripActivationReferenceAxis,
+        AuthoredGripActivationAllowedRegion,
+        AuthoredGripActivationPass,
+        AuthoredGripActivationFail
     };
 
     enum class SkeletonOverlayRole : std::uint8_t
@@ -265,6 +287,8 @@ namespace rock::debug
     {
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         BodyOverlayRole role{ BodyOverlayRole::Target };
+        RE::NiTransform currentTarget{};
+        bool hasCurrentTarget{ false };
     };
 
     struct AxisOverlayEntry
@@ -310,6 +334,10 @@ namespace rock::debug
         float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
         RE::NiPoint3 worldAnchor{};
         bool worldAnchored{ false };
+        // World-space bitmap glyphs use size/x/y in game units. Both eyes
+        // project the same quad vertices through the stereo geometry shader.
+        RE::NiPoint3 worldRight{}, worldDown{};
+        bool worldSpaceGlyphs{ false };
     };
 
     struct ColoredLineOverlayEntry
@@ -319,9 +347,20 @@ namespace rock::debug
         float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
     };
 
+    struct GripZoneIndicatorOverlayFrame
+    {
+        static constexpr std::size_t kCapacity = MAX_WEAPON_COLLISION_BODIES + 4;
+
+        std::array<RE::NiPoint3, kCapacity> positions{};
+        std::uint64_t gameFrameIndex{ 0 };
+        float diameterGameUnits{ 0.0f };
+        std::uint32_t count{ 0 };
+    };
+
     struct BodyOverlayFrame
     {
         RE::hknpWorld* world{ nullptr };
+        std::uint64_t gameFrameIndex{ 0 };
         std::array<BodyOverlayEntry,
             MAX_WEAPON_COLLISION_BODIES +
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
@@ -347,11 +386,25 @@ namespace rock::debug
         bool drawSkeleton{ false };
         bool drawColoredLines{ false };
         bool drawText{ false };
+        bool drawColliderPhaseDiagnostics{ false };
     };
 
     void Install();
     bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
+    // Final main-thread presentation snapshot, published after all animation
+    // phases and consumed directly by the next OpenVR Submit render pass.
+    void PublishGripZoneIndicators(
+        const GripZoneIndicatorOverlayFrame& frame);
+    void ClearGripZoneIndicators();
+    // Physics-step-thread callback. Captures only bounded body matrices for the
+    // final substep. The implementation is non-blocking and does no allocation,
+    // logging, shape inspection, or rendering work.
+    void CapturePostSolveBodyPhases(
+        RE::hknpWorld* world,
+        const havok_physics_timing::PhysicsTimingSample& timing,
+        std::uint64_t gameFrameIndex,
+        std::uint64_t solveSequence) noexcept;
     void ClearFrame();
     void ClearShapeCache();
     // Stops and joins the owned CPU shape worker without uninstalling the

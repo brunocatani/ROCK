@@ -22,7 +22,7 @@ namespace rock::saved_grab_offset
 {
     namespace
     {
-        constexpr auto kSavedGrabOffsetsRelativePath = R"(\My Games\Fallout4VR\ROCK_Config\SavedGrabOffsets)";
+        constexpr auto kSavedGrabOffsetsRelativePath = R"(\My Games\Fallout4VR\Mods_Config\ROCK\SavedGrabOffsets)";
 
         std::string resolveStoreDirectory()
         {

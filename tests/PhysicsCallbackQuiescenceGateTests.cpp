@@ -30,7 +30,11 @@ int main()
         }
     });
 
-    std::this_thread::sleep_for(10ms);
+    // The pause is published before the worker waits for our active callback.
+    // Observing it proves the worker reached the blocked phase.
+    while (!gate.callbacksPaused()) {
+        std::this_thread::sleep_for(1ms);
+    }
     assert(!mutationEntered.load(std::memory_order_acquire));
     activeCallback = {};
     mutationEntered.wait(false, std::memory_order_acquire);

@@ -2,6 +2,8 @@
 
 #include "RE/NetImmerse/NiSmartPointer.h"
 
+#include <cstdint>
+
 namespace RE
 {
     class NiAVObject;
@@ -24,11 +26,12 @@ namespace rock::native_idle_grip_preharvest
     /*
      * Offer the currently equipped weapon after its stable generation exists.
      * All pointers are frame-borrowed: the implementation value-copies the
-     * variant identity and retains instance data with Bethesda's smart pointer
-     * before starting asynchronous work.
+     * variant and deterministic instance-content identities and retains
+     * instance data with Bethesda's smart pointer before asynchronous work.
      */
     void observeEquippedWeapon(
         RE::TESObjectWEAP* weapon,
         RE::NiAVObject* weaponRoot,
-        RE::TBO_InstanceData* instanceData) noexcept;
+        RE::TBO_InstanceData* instanceData,
+        std::uint64_t instanceContentKey) noexcept;
 }

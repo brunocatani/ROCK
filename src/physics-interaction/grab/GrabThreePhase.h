@@ -12,6 +12,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/VectorMath.h"
 #include "physics-interaction/hand/HandFrame.h"
 
 #include <algorithm>
@@ -50,7 +51,7 @@ namespace rock::grab_three_phase
 
     inline float lengthSquared(const RE::NiPoint3& value)
     {
-        return value.x * value.x + value.y * value.y + value.z * value.z;
+        return vector_math::lengthSquared(value);
     }
 
     inline float length(const RE::NiPoint3& value)
@@ -60,12 +61,12 @@ namespace rock::grab_three_phase
 
     inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
-        return a.x * b.x + a.y * b.y + a.z * b.z;
+        return vector_math::dot(a, b);
     }
 
     inline bool isFinite(const RE::NiPoint3& value)
     {
-        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        return vector_math::hasFiniteComponents(value);
     }
 
     inline bool isFinite(const RE::NiTransform& transform)
@@ -112,11 +113,7 @@ namespace rock::grab_three_phase
 
     inline RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
     {
-        return RE::NiPoint3{
-            lhs.y * rhs.z - lhs.z * rhs.y,
-            lhs.z * rhs.x - lhs.x * rhs.z,
-            lhs.x * rhs.y - lhs.y * rhs.x,
-        };
+        return vector_math::cross(lhs, rhs);
     }
 
     inline RE::NiPoint3 rejectFromAxis(const RE::NiPoint3& value, const RE::NiPoint3& axis)
@@ -127,6 +124,34 @@ namespace rock::grab_three_phase
     inline RE::NiPoint3 orientToward(const RE::NiPoint3& value, const RE::NiPoint3& reference)
     {
         return dot(value, reference) < 0.0f ? RE::NiPoint3{ -value.x, -value.y, -value.z } : value;
+    }
+
+    /*
+     * The mesh long axis is an unoriented line. Authored cross-palm Z reverses
+     * anatomical direction between the hands, but authored +X points toward
+     * the fingertips on both. Resolve those live axes first, then add the +X
+     * component directly. Mirroring the angle sign would instead send one
+     * hand's line toward -X.
+     */
+    inline RE::NiPoint3 buildGripPresentationAxisTowardFingertips(
+        const RE::NiPoint3& crossPalmWorld,
+        const RE::NiPoint3& fingerForwardWorld,
+        float tiltDegrees)
+    {
+        if (!std::isfinite(tiltDegrees) || tiltDegrees < 0.0f || tiltDegrees > 45.0f) {
+            return RE::NiPoint3{};
+        }
+
+        const RE::NiPoint3 crossPalm = normalizeOrZero(crossPalmWorld);
+        const RE::NiPoint3 fingerForward = normalizeOrZero(rejectFromAxis(fingerForwardWorld, crossPalm));
+        if (lengthSquared(crossPalm) <= 0.000001f || lengthSquared(fingerForward) <= 0.000001f) {
+            return RE::NiPoint3{};
+        }
+
+        constexpr float kDegreesToRadians = 0.01745329252f;
+        const float tiltRadians = tiltDegrees * kDegreesToRadians;
+        return normalizeOrZero(
+            crossPalm * std::cos(tiltRadians) + fingerForward * std::sin(tiltRadians));
     }
 
     struct GrabPocketFrame
@@ -368,9 +393,9 @@ namespace rock::grab_three_phase
         return result;
     }
 
-    struct PullCatchSeatSafetyInput
+    struct ProgrammaticArrivalSeatSafetyInput
     {
-        bool grabbedFromPullCatch = false;
+        bool programmaticArrival = false;
         bool usingPinchPocket = false;
         AcquisitionPhase capturePhase = AcquisitionPhase::Idle;
         bool pocketValid = false;
@@ -386,19 +411,20 @@ namespace rock::grab_three_phase
         RE::NiPoint3 gripNormalWorld{};
     };
 
-    struct PullCatchSeatSafetyDecision
+    struct ProgrammaticArrivalSeatSafetyDecision
     {
         bool allowImmediateTouchHeld = true;
         bool requireSettledVisualRelation = false;
         float normalDotPalm = 0.0f;
-        const char* reason = "notPullCatch";
+        const char* reason = "notProgrammaticArrival";
     };
 
-    inline PullCatchSeatSafetyDecision evaluatePullCatchSeatSafety(const PullCatchSeatSafetyInput& input)
+    inline ProgrammaticArrivalSeatSafetyDecision evaluateProgrammaticArrivalSeatSafety(
+        const ProgrammaticArrivalSeatSafetyInput& input)
     {
-        PullCatchSeatSafetyDecision decision{};
-        if (!input.grabbedFromPullCatch) {
-            decision.reason = "notPullCatch";
+        ProgrammaticArrivalSeatSafetyDecision decision{};
+        if (!input.programmaticArrival) {
+            decision.reason = "notProgrammaticArrival";
             return decision;
         }
         if (input.usingPinchPocket) {
@@ -420,14 +446,14 @@ namespace rock::grab_three_phase
             !std::isfinite(input.signedPalmDistanceGameUnits) ||
             !hasPalmNormal ||
             !hasGripNormal) {
-            decision.reason = "pullCatchSeatMissingFrame";
+            decision.reason = "arrivalSeatMissingFrame";
             return decision;
         }
 
         const float behindTolerance =
             (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
         if (input.signedPalmDistanceGameUnits < -behindTolerance) {
-            decision.reason = "pullCatchSeatBehindPalm";
+            decision.reason = "arrivalSeatBehindPalm";
             return decision;
         }
 
@@ -436,40 +462,40 @@ namespace rock::grab_three_phase
         const float pocketRadius =
             (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
         if (input.gripToPocketDistanceGameUnits > pocketRadius) {
-            decision.reason = "pullCatchSeatOutsidePocket";
+            decision.reason = "arrivalSeatOutsidePocket";
             return decision;
         }
 
         const bool inTouchRange = input.gripToPocketDistanceGameUnits <= touchDistance;
         const bool contactInsidePocket = input.stablePocketTouchContact && input.gripToPocketDistanceGameUnits <= pocketRadius;
         if (!inTouchRange && !contactInsidePocket) {
-            decision.reason = "pullCatchSeatAwaitingTouch";
+            decision.reason = "arrivalSeatAwaitingTouch";
             return decision;
         }
 
         if (input.capturePhase != AcquisitionPhase::TouchHeld) {
-            decision.reason = "pullCatchSeatAlreadyConverging";
+            decision.reason = "arrivalSeatAlreadyConverging";
             return decision;
         }
 
         if (input.pivotAuthorityPositionOnly) {
-            decision.reason = "pullCatchSeatPositionOnly";
+            decision.reason = "arrivalSeatPositionOnly";
             return decision;
         }
         if (!input.pivotAuthorityNormalTrusted) {
-            decision.reason = "pullCatchSeatNormalUntrusted";
+            decision.reason = "arrivalSeatNormalUntrusted";
             return decision;
         }
 
         constexpr float kMaxPalmFacingNormalDot = -0.10f;
         if (decision.normalDotPalm > kMaxPalmFacingNormalDot) {
-            decision.reason = "pullCatchSeatNormalWrongSide";
+            decision.reason = "arrivalSeatNormalWrongSide";
             return decision;
         }
 
         decision.allowImmediateTouchHeld = true;
         decision.requireSettledVisualRelation = false;
-        decision.reason = "pullCatchSeatSafe";
+        decision.reason = "arrivalSeatSafe";
         return decision;
     }
 
@@ -495,8 +521,10 @@ namespace rock::grab_three_phase
         float maxTimeSeconds = 0.0f;
         float touchDistanceGameUnits = 4.0f;
         float pocketRadiusGameUnits = 9.0f;
-        int stableInsidePocketFrames = 0;
-        int requiredStableInsidePocketFrames = 3;
+        // Elapsed stable dwell inside the pocket (historical 3-frame tuning
+        // at the 90 Hz baseline), rate-independent in seconds.
+        float stableInsidePocketSeconds = 0.0f;
+        float requiredStableInsidePocketSeconds = 3.0f / 90.0f;
         float maxSeparatingSpeedGameUnitsPerSecond = 40.0f;
     };
 
@@ -506,7 +534,7 @@ namespace rock::grab_three_phase
         bool insidePocket = false;
         bool stableThisFrame = false;
         bool timedOutInsidePocket = false;
-        int nextStableInsidePocketFrames = 0;
+        float nextStableInsidePocketSeconds = 0.0f;
         float separatingSpeedGameUnitsPerSecond = 0.0f;
         const char* timeoutBlockReason = "none";
     };
@@ -536,10 +564,15 @@ namespace rock::grab_three_phase
                 !std::isfinite(input.previousGripErrorGameUnits) ||
                 decision.separatingSpeedGameUnitsPerSecond <= maxSeparatingSpeed);
 
-        decision.nextStableInsidePocketFrames =
-            decision.stableThisFrame ? (std::max)(0, input.stableInsidePocketFrames) + 1 : 0;
+        // Measured elapsed dwell only: an unmeasurable frame holds the dwell.
+        const float measuredDelta =
+            std::isfinite(input.deltaSeconds) && input.deltaSeconds > 0.0f ? input.deltaSeconds : 0.0f;
+        decision.nextStableInsidePocketSeconds =
+            decision.stableThisFrame ?
+                (std::max)(0.0f, input.stableInsidePocketSeconds) + measuredDelta :
+                0.0f;
 
-        const int requiredStableFrames = (std::max)(1, input.requiredStableInsidePocketFrames);
+        const float requiredStableSeconds = (std::max)(0.0f, input.requiredStableInsidePocketSeconds);
         const bool timeoutElapsed =
             input.maxTimeSeconds > 0.0f &&
             std::isfinite(input.maxTimeSeconds) &&
@@ -548,13 +581,13 @@ namespace rock::grab_three_phase
         decision.timedOutInsidePocket =
             timeoutElapsed &&
             decision.insidePocket &&
-            decision.nextStableInsidePocketFrames >= requiredStableFrames;
+            decision.nextStableInsidePocketSeconds >= requiredStableSeconds;
 
         if (!timeoutElapsed) {
             decision.timeoutBlockReason = "waitingForTimeout";
         } else if (!decision.insidePocket) {
             decision.timeoutBlockReason = "outsidePocket";
-        } else if (decision.nextStableInsidePocketFrames < requiredStableFrames) {
+        } else if (decision.nextStableInsidePocketSeconds < requiredStableSeconds) {
             decision.timeoutBlockReason = "waitingForStablePocket";
         } else {
             decision.timeoutBlockReason = "promote";
