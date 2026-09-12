@@ -11,7 +11,7 @@ My aim with ROCK is to bring as much immersion and realism to Fallout 4 VR as po
 - Dynamic object grabbing, two-hand grabs, pull/catch flow, and held-object release behavior.
 - Realistic gunplay support that lets you grab and use different parts of the gun for fire support.
 - Physics-based hand/object interaction built for Fallout 4 VR and the current FRIK skeleton provider.
-- Configurable production `ROCK.ini` for grab, collision, weapon support, debug, and haptic tuning.
+- Separate consumer settings and optional developer overrides, with a compiled configuration catalog and hot reload.
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=tPaIzmZ9P0o&t=113s"><strong>Watch the ROCK demo video</strong></a>
@@ -23,36 +23,40 @@ My aim with ROCK is to bring as much immersion and realism to Fallout 4 VR as po
   <sub>Click the preview to watch on YouTube. Starts at 1:53.</sub>
 </p>
 
-## Release Install
+## Runtime installation and configuration
 
-ROCK v0.5 currently requires the matching hFRIK release named **FRIK Experimental**. Download and install that hFRIK release before using ROCK v0.5:
+ROCK now uses **upstream FRIK v78.2 or newer**. Install FRIK from the
+[upstream Fallout 4 VR Body project](https://github.com/rollingrock/Fallout-4-VR-Body)
+before installing ROCK. The separate hFRIK / FRIK Experimental dependency is
+retired; ROCK uses upstream FRIK's API V2 integration.
 
-TEMPORARILY REMOVED, I`M UPDATING THE MOD TO USE PROD VERSION OF FRIK, A FEW DAYS UNTIL I CAN DO SO.
-```text
-NOT WORKING AT THE MOMENT - https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental
-```
+The game target is Fallout4VR.exe 1.2.72.0 with F4SE VR. Install the ROCK mod
+package through your mod manager so `ROCK.dll` lands under `Data/F4SE/Plugins`.
 
-This hFRIK dependency is temporary. It is required only until the hFRIK modifications are merged upstream into `github.com/rollingrock/Fallout-4-VR-Body`.
-
-Install the ROCK release package into the Fallout 4 VR mod data path so `ROCK.dll` lands in:
-
-```text
-Data\F4SE\Plugins\ROCK.dll
-```
-
-The ROCK release also ships the production `ROCK.ini`. Place that file at:
+The active configuration is beneath the user's Documents known folder:
 
 ```text
-%USERPROFILE%\Documents\My Games\Fallout4VR\ROCK_Config\ROCK.ini
+My Games/Fallout4VR/Mods_Config/ROCK/ROCK.ini
+My Games/Fallout4VR/Mods_Config/ROCK/ROCK_Developer.ini
 ```
 
-Create the `ROCK_Config` folder if it does not already exist. The release archive includes the file under `ROCK_Config\ROCK.ini` so the intended destination is clear.
+ROCK creates the consumer file from compiled defaults only when missing.
+Existing files load unchanged, with missing keys using compiled defaults.
+Developer settings are optional overrides, created by non-default edits and
+removed on reset. Both files support hot reload. Example INIs are human
+references and must not be shipped, embedded or copied as runtime defaults.
+
+RobCo PALM's ROCK and Developer pages read the compiled catalog and write through
+`GetROCKConfigurationApi`. Interactive panels are hosted by the separate RPS UI
+Framework plugin. These are separate companion mods. See the
+[ROCK SDK configuration guide](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/Configuration.md)
+for the configuration API and ownership contract.
 
 ## Requirements
 
 - Fallout 4 VR
 - F4SE VR
-- FRIK Experimental release, installed separately: `https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental`
+- [Upstream FRIK](https://github.com/rollingrock/Fallout-4-VR-Body), **v78.2 or newer**, installed separately
 - CMake, Visual Studio 2022, and vcpkg for local builds
 - ArthurHub CommonLibF4VR. This is the ROCK runtime plugin's only external C++ source-project dependency; the workspace checkout at `libraries_and_tools/CommonLibF4VR` is used by default and `COMMON_LIB_F4VR_PATH` can override it.
 - The independent `RPS_SDK` repository for SDK example tests and release packaging. A sibling checkout is discovered automatically; `RPS_SDK_ROOT` can override its location.
@@ -92,12 +96,18 @@ the ROCK module under `SDK/ROCK`.
 - `../RPS_SDK/SDK/ROCK/include/ROCKProviderApi.h` is the stable provider API for integrations.
 - `../RPS_SDK/SDK/ROCK/include/ROCKApi.h` is an alias for the same v1 API table.
 - API v1 includes ROCK-issued owner tokens, capability grants, provider limits, feature bits, owner-filtered external contacts, and queued interaction commands.
+- The current V1 table has 99 function pointers (792 bytes on x64), including Power Armor classification, linked-frame and animated armor-hand queries, and specific-point grab commands. Require the PA table extent and capability grants before using these additions.
 
 Start with `../RPS_SDK/SDK/ROCK/docs/PublicApi.md` and
 `../RPS_SDK/SDK/ROCK/examples/MinimalProviderConsumer.cpp`. ROCK test builds
 compile the independent example catalog and reject any drift between its public
 headers and ROCK's runtime ABI headers. Release packaging also consumes that
 verified independent SDK tree.
+
+The [Power Armor integration guide](https://github.com/brunocatani/RPS_SDK/blob/main/SDK/ROCK/docs/FeatureGuide.md#power-armor-and-reference-details)
+and its buildable example cover validity flags, command completion, native grip
+release, and cleanup. ROCK's public provider API remains V1; upstream FRIK's API
+V2 is a separate skeleton-provider contract.
 
 ## Credits
 
