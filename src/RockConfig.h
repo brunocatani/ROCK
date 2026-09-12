@@ -167,7 +167,7 @@ namespace rock
          * bodies are solver-clipped by static world surfaces and drive the
          * rendered hand through one-way visual authority.
          */
-        bool rockNativeMeleeSuppressionEnabled = false;
+        bool rockEnableVanillaMelee = true;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;

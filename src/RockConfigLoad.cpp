@@ -655,7 +655,7 @@ namespace rock
             -180.0f,
             180.0f);
 
-        rockNativeMeleeSuppressionEnabled = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressionEnabled", rockNativeMeleeSuppressionEnabled);
+        rockEnableVanillaMelee = ini.GetBoolValue(SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
         rockNativeCharacterControllerObjectContactFilterEnabled = ini.GetBoolValue(
             SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 

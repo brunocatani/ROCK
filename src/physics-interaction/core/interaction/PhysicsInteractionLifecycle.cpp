@@ -425,7 +425,7 @@ namespace rock
         }
 
         const bool nativeMeleeSuppressionHooksInstalled = installNativeMeleeSuppressionHooks();
-        if (!nativeMeleeSuppressionHooksInstalled && g_rockConfig.rockNativeMeleeSuppressionEnabled) {
+        if (!nativeMeleeSuppressionHooksInstalled && !g_rockConfig.rockEnableVanillaMelee) {
             ROCK_LOG_CRITICAL(Init, "Native melee suppression requested but hook installation failed; ROCK will continue without melee suppression");
         } else if (nativeMeleeSuppressionHooksInstalled) {
             enforceNativeMeleeRuntimeSuppression(true);

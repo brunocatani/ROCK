@@ -1512,7 +1512,7 @@ namespace rock
          */
         const native_melee_suppression::NativeMeleeRuntimeSettingPolicyInput input{
             .hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire),
-            .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
+            .suppressionEnabled = !g_rockConfig.rockEnableVanillaMelee,
         };
         const bool shouldSuppress = native_melee_suppression::shouldSuppressNativeMeleeRuntimeSettings(input);
         const bool shouldRestore = native_melee_suppression::shouldRestoreNativeMeleeRuntimeSettings(nativeMeleeRuntimeSuppressionApplied(), input);
@@ -2111,7 +2111,7 @@ namespace rock
         ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} attackBlock={} playerSwingCallback={} vrMeleeImpact={} requested={}",
             weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no", attackBlockInstalled ? "yes" : "no",
             playerWeaponSwingCallbackInstalled ? "yes" : "no", vrMeleeImpactInstalled ? "yes" : "no",
-            g_rockConfig.rockNativeMeleeSuppressionEnabled ? "yes" : "no");
+            g_rockConfig.rockEnableVanillaMelee ? "no" : "yes");
         return weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
     }
 
