@@ -56,6 +56,46 @@ namespace rock
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
         constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
         static std::atomic<std::uint64_t> g_nativeRuntimeSettingFrameClock{ 1 };
+        struct ProxyContactTrace
+        {
+            std::atomic<std::uint64_t> directMatches{ 0 }, listenerMatches{ 0 };
+            std::atomic<std::uint64_t> verifiedSamples{ 0 }, failedProofs{ 0 }, invalidBuffers{ 0 };
+            std::atomic<std::uint64_t> sampledContacts{ 0 }, wouldSuppress{ 0 }, movableStatics{ 0 };
+            std::atomic<std::uint64_t> missingManifold{ 0 }, layers{ 0 }, nextSampleFrame{ 0 };
+            std::atomic<unsigned> failedProofStage{ 0 }; // 1 listener, 2 controller, 3 reciprocal proxy
+            std::atomic<std::uintptr_t> listener{ 0 }, playerController{ 0 }, proxy{ 0 };
+        };
+        static ProxyContactTrace g_proxyContactTrace;
+
+        // The existing main-thread runtime clock drains callback counters. No
+        // formatting, file writes, or retained engine pointers on the worker.
+        void reportProxyContactTrace()
+        {
+            static std::uint64_t nextReportMs = 0;
+            const auto now = GetTickCount64();
+            if (now < nextReportMs) {
+                return;
+            }
+            nextReportMs = now + 5000;
+            const auto direct = g_proxyContactTrace.directMatches.exchange(0);
+            const auto listener = g_proxyContactTrace.listenerMatches.exchange(0);
+            const auto verified = g_proxyContactTrace.verifiedSamples.exchange(0);
+            const auto failed = g_proxyContactTrace.failedProofs.exchange(0);
+            const auto invalid = g_proxyContactTrace.invalidBuffers.exchange(0);
+            const auto sampled = g_proxyContactTrace.sampledContacts.exchange(0);
+            const auto suppress = g_proxyContactTrace.wouldSuppress.exchange(0);
+            const auto mstt = g_proxyContactTrace.movableStatics.exchange(0);
+            const auto missing = g_proxyContactTrace.missingManifold.exchange(0);
+            const auto layers = g_proxyContactTrace.layers.exchange(0);
+            if (direct || listener || failed) {
+                ROCK_LOG_WARN(CC,
+                    "Controller contact identity trace: directPlayerMatches={} listenerPlus16Matches={} verifiedLayoutSamples={} failedLayoutProofs={} invalidBuffers={} missingManifoldEntries={} sampledContacts={} wouldSuppress={} msttWouldSuppress={} layerMask=0x{:016X} listener=0x{:X} playerController=0x{:X} proxy=0x{:X} filterEnabled={} failedProofStage={} observational=true",
+                    direct, listener, verified, failed, invalid, missing, sampled, suppress, mstt, layers,
+                    g_proxyContactTrace.listener.load(), g_proxyContactTrace.playerController.load(),
+                    g_proxyContactTrace.proxy.load(), g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
+                    g_proxyContactTrace.failedProofStage.load());
+            }
+        }
         static std::atomic<bool> g_nativeMeleeSuppressionHooksInstalled{ false };
         static std::atomic<bool> g_nativeMeleeSuppressionActive{ false };
         constexpr std::uint64_t kNativeMeleeRuntimeSettingCheckIntervalFrames = 90;
@@ -1447,6 +1487,7 @@ namespace rock
     void advanceNativeRuntimeSettingFrameClock()
     {
         g_nativeRuntimeSettingFrameClock.fetch_add(1, std::memory_order_acq_rel);
+        reportProxyContactTrace();
     }
 
     bool isNativeMeleeSuppressionActive()
@@ -1778,6 +1819,80 @@ namespace rock
             });
     }
 
+    void observeProxyContactIdentity(void* listener, void* proxy, void* manifold, void* simplexInput, void* playerController)
+    {
+        const auto listenerAddress = reinterpret_cast<std::uintptr_t>(listener);
+        const auto playerAddress = reinterpret_cast<std::uintptr_t>(playerController);
+        if (!listenerAddress || !playerAddress) {
+            return;
+        }
+        if (listenerAddress == playerAddress) {
+            g_proxyContactTrace.directMatches.fetch_add(1, std::memory_order_relaxed);
+        }
+        // Raw ctor 1E4B268/1E4B28C, dtor 1E4B3E3/1E4B4C0, and
+        // callback 1E4B83E agree: listener + 0x10 is the controller interface.
+        // This is a diagnostic comparison only; it does not change admission.
+        if (listenerAddress + 0x10 != playerAddress) {
+            return;
+        }
+        g_proxyContactTrace.listenerMatches.fetch_add(1, std::memory_order_relaxed);
+        const auto frame = g_nativeRuntimeSettingFrameClock.load(std::memory_order_relaxed);
+        auto next = g_proxyContactTrace.nextSampleFrame.load(std::memory_order_relaxed);
+        if (frame < next || !g_proxyContactTrace.nextSampleFrame.compare_exchange_strong(next, frame + 30)) {
+            return;
+        }
+        g_proxyContactTrace.listener.store(listenerAddress, std::memory_order_relaxed);
+        g_proxyContactTrace.playerController.store(playerAddress, std::memory_order_relaxed);
+        g_proxyContactTrace.proxy.store(reinterpret_cast<std::uintptr_t>(proxy), std::memory_order_relaxed);
+        std::uintptr_t listenerVtable = 0, controllerVtable = 0;
+        void* ownedProxy = nullptr;
+        const bool listenerValid = native_memory::tryReadField(listener, 0, listenerVtable) &&
+            listenerVtable == REL::Offset(0x2E892B8).address();
+        const bool controllerValid = listenerValid && native_memory::tryReadField(playerController, 0, controllerVtable) &&
+            controllerVtable == REL::Offset(0x2E89328).address();
+        const bool proxyValid = controllerValid && native_memory::tryReadField(playerController, 0x470, ownedProxy) &&
+            ownedProxy == proxy && proxy;
+        if (!proxyValid) {
+            g_proxyContactTrace.failedProofStage.store(!listenerValid ? 1 : !controllerValid ? 2 : 3, std::memory_order_relaxed);
+            g_proxyContactTrace.failedProofs.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        g_proxyContactTrace.failedProofStage.store(0, std::memory_order_relaxed);
+        g_proxyContactTrace.verifiedSamples.fetch_add(1, std::memory_order_relaxed);
+        const auto view = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
+        if (!view.valid) {
+            g_proxyContactTrace.invalidBuffers.fetch_add(1, std::memory_order_relaxed);
+            if (std::string_view(view.reason) == "missingManifoldEntries") {
+                g_proxyContactTrace.missingManifold.fetch_add(1, std::memory_order_relaxed);
+            }
+            return;
+        }
+        auto* bhk = resolvePlayerBhkWorld();
+        auto* world = bhk ? havok_runtime::getHknpWorldFromBhk(bhk) : nullptr;
+        if (!world) {
+            return;
+        }
+        std::uint64_t sampled = 0, suppressed = 0, mstt = 0, layers = 0;
+        for (int i = 0; i < (std::min)(view.pairCount, 16); ++i) {
+            std::uint32_t id = body_frame::kInvalidBodyId, filter = 0;
+            const auto* entry = view.manifoldEntries + i * held_grab_cc_policy::kGeneratedContactStride;
+            if (!native_memory::tryReadField(entry, held_grab_cc_policy::kGeneratedContactBodyIdOffset, id)) {
+                continue;
+            }
+            ++sampled;
+            if (body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ id }, filter)) {
+                layers |= collision_layer_policy::layerBitOrZero(filter & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            }
+            const auto decision = evaluatePlayerControllerTargetBody(bhk, world, id);
+            suppressed += decision.suppress ? 1 : 0;
+            mstt += std::string_view(decision.reason) == "movableStaticSupportLayer" ? 1 : 0;
+        }
+        g_proxyContactTrace.sampledContacts.fetch_add(sampled, std::memory_order_relaxed);
+        g_proxyContactTrace.wouldSuppress.fetch_add(suppressed, std::memory_order_relaxed);
+        g_proxyContactTrace.movableStatics.fetch_add(mstt, std::memory_order_relaxed);
+        g_proxyContactTrace.layers.fetch_or(layers, std::memory_order_relaxed);
+    }
+
     void hookedHandleBumpedCharacter(void* controller, void* bumpedCC, void* contactInfo)
     {
         bool originalAttempted = false;
@@ -2059,7 +2174,9 @@ namespace rock
 
         __try {
             const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
-            const bool playerController = isPlayerCharacterController(controller);
+            void* playerControllerPointer = resolvePlayerCharacterController();
+            const bool playerController = controller && playerControllerPointer && controller == playerControllerPointer;
+            observeProxyContactIdentity(controller, charProxy, manifold, simplexInput, playerControllerPointer);
             RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
             RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
             const bool playerControllerFilterActive = playerControllerFilterEnabled && playerController && playerHknpWorld;
