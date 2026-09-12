@@ -88,6 +88,20 @@ int main()
         if (!passed) { std::printf("%s\n", label); }
         return passed;
     };
+    constexpr std::uintptr_t listener = 0x100000;
+    constexpr std::uintptr_t playerController = listener + 0x10;
+    ok &= expect("proxy listener identifies its player controller interface",
+        proxyListenerMatchesPlayer(listener, playerController));
+    ok &= expect("direct controller comparison is not valid for a listener callback",
+        !proxyListenerMatchesPlayer(playerController, playerController));
+    ok &= expect("another actor's listener cannot acquire player filtering",
+        !proxyListenerMatchesPlayer(listener + 0x1000, playerController));
+    ok &= expect("incorrect listener adjustment is rejected",
+        !proxyListenerMatchesPlayer(listener, listener + 8));
+    ok &= expect("missing listener or controller cannot acquire player filtering",
+        !proxyListenerMatchesPlayer(0, 0x10) && !proxyListenerMatchesPlayer(listener, 0));
+    ok &= expect("wrapped listener address cannot match a controller",
+        !proxyListenerMatchesPlayer(UINTPTR_MAX - 7, 8));
     constexpr std::array attacks{ FO4_LAYER_WEAPON, FO4_LAYER_PROJECTILE,
         FO4_LAYER_SPELL, FO4_LAYER_CONEPROJECTILE, FO4_LAYER_SPELLEXPLOSION };
     for (auto layer : attacks) {

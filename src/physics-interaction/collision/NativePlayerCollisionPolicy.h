@@ -6,6 +6,18 @@
 
 namespace rock::native_player_collision
 {
+    // FO4VR proxy ctor 1E4B268/1E4B28C, dtor 1E4B3E3/1E4B4C0,
+    // and processConstraintsCallback 1E4B83E use this same base adjustment.
+    // The actor stores the controller interface; the callback receives the
+    // preceding listener base. A direct pointer comparison never identifies it.
+    inline constexpr std::uintptr_t kProxyListenerControllerOffset = 0x10;
+
+    inline constexpr bool proxyListenerMatchesPlayer(std::uintptr_t listener, std::uintptr_t playerController)
+    {
+        return listener != 0 && playerController > listener &&
+               playerController - listener == kProxyListenerControllerOffset;
+    }
+
     struct BodyIdentity
     {
         std::uint32_t bodyId{ 0x7FFF'FFFFu };

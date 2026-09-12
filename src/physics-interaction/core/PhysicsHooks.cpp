@@ -58,42 +58,47 @@ namespace rock
         static std::atomic<std::uint64_t> g_nativeRuntimeSettingFrameClock{ 1 };
         struct ProxyContactTrace
         {
-            std::atomic<std::uint64_t> directMatches{ 0 }, listenerMatches{ 0 };
-            std::atomic<std::uint64_t> verifiedSamples{ 0 }, failedProofs{ 0 }, invalidBuffers{ 0 };
-            std::atomic<std::uint64_t> sampledContacts{ 0 }, wouldSuppress{ 0 }, movableStatics{ 0 };
-            std::atomic<std::uint64_t> missingManifold{ 0 }, layers{ 0 }, nextSampleFrame{ 0 };
+            std::atomic<std::uint64_t> playerCallbacks{ 0 }, identityFailures{ 0 }, invalidBuffers{ 0 };
+            std::atomic<std::uint64_t> removed{ 0 }, movableStatics{ 0 }, looseWeapons{ 0 }, held{ 0 };
+            std::atomic<std::uint64_t> supportKept{ 0 }, attacksKept{ 0 }, unknownKept{ 0 };
             std::atomic<unsigned> failedProofStage{ 0 }; // 1 listener, 2 controller, 3 reciprocal proxy
-            std::atomic<std::uintptr_t> listener{ 0 }, playerController{ 0 }, proxy{ 0 };
         };
         static ProxyContactTrace g_proxyContactTrace;
 
-        // The existing main-thread runtime clock drains callback counters. No
-        // formatting, file writes, or retained engine pointers on the worker.
+        // Physics callbacks publish counts only. The existing main-thread clock
+        // reports actual filtering and identity failures at most once per 5 s.
         void reportProxyContactTrace()
         {
             static std::uint64_t nextReportMs = 0;
+            static bool identityReported = false;
             const auto now = GetTickCount64();
             if (now < nextReportMs) {
                 return;
             }
             nextReportMs = now + 5000;
-            const auto direct = g_proxyContactTrace.directMatches.exchange(0);
-            const auto listener = g_proxyContactTrace.listenerMatches.exchange(0);
-            const auto verified = g_proxyContactTrace.verifiedSamples.exchange(0);
-            const auto failed = g_proxyContactTrace.failedProofs.exchange(0);
+            const auto callbacks = g_proxyContactTrace.playerCallbacks.exchange(0);
+            const auto failures = g_proxyContactTrace.identityFailures.exchange(0);
             const auto invalid = g_proxyContactTrace.invalidBuffers.exchange(0);
-            const auto sampled = g_proxyContactTrace.sampledContacts.exchange(0);
-            const auto suppress = g_proxyContactTrace.wouldSuppress.exchange(0);
+            const auto removed = g_proxyContactTrace.removed.exchange(0);
             const auto mstt = g_proxyContactTrace.movableStatics.exchange(0);
-            const auto missing = g_proxyContactTrace.missingManifold.exchange(0);
-            const auto layers = g_proxyContactTrace.layers.exchange(0);
-            if (direct || listener || failed) {
-                ROCK_LOG_WARN(CC,
-                    "Controller contact identity trace: directPlayerMatches={} listenerPlus16Matches={} verifiedLayoutSamples={} failedLayoutProofs={} invalidBuffers={} missingManifoldEntries={} sampledContacts={} wouldSuppress={} msttWouldSuppress={} layerMask=0x{:016X} listener=0x{:X} playerController=0x{:X} proxy=0x{:X} filterEnabled={} failedProofStage={} observational=true",
-                    direct, listener, verified, failed, invalid, missing, sampled, suppress, mstt, layers,
-                    g_proxyContactTrace.listener.load(), g_proxyContactTrace.playerController.load(),
-                    g_proxyContactTrace.proxy.load(), g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
+            const auto looseWeapons = g_proxyContactTrace.looseWeapons.exchange(0);
+            const auto held = g_proxyContactTrace.held.exchange(0);
+            const auto support = g_proxyContactTrace.supportKept.exchange(0);
+            const auto attacks = g_proxyContactTrace.attacksKept.exchange(0);
+            const auto unknown = g_proxyContactTrace.unknownKept.exchange(0);
+            if (callbacks && !identityReported) {
+                identityReported = true;
+                ROCK_LOG_INFO(CC, "Player controller contact filter active: listener + 16 identity, vtables and reciprocal proxy verified");
+            }
+            if (removed || failures || invalid) {
+                ROCK_LOG_INFO(CC,
+                    "Player controller contact filter: callbacks={} removed={} msttRemoved={} looseWeaponsRemoved={} heldRemoved={} supportKept={} attacksKept={} unknownKept={} invalidBuffers={} identityFailures={} failedProofStage={}",
+                    callbacks, removed, mstt, looseWeapons, held, support, attacks, unknown, invalid, failures,
                     g_proxyContactTrace.failedProofStage.load());
+            }
+            if (failures) {
+                ROCK_LOG_WARN(CC, "Player controller listener identity rejected: count={} deepestStage={} (1=listener,2=controller,3=proxy); native contacts preserved",
+                    failures, g_proxyContactTrace.failedProofStage.load());
             }
         }
         static std::atomic<bool> g_nativeMeleeSuppressionHooksInstalled{ false };
@@ -1819,31 +1824,15 @@ namespace rock
             });
     }
 
-    void observeProxyContactIdentity(void* listener, void* proxy, void* manifold, void* simplexInput, void* playerController)
+    bool isPlayerProxyListener(void* listener, void* proxy, void* playerController)
     {
-        const auto listenerAddress = reinterpret_cast<std::uintptr_t>(listener);
-        const auto playerAddress = reinterpret_cast<std::uintptr_t>(playerController);
-        if (!listenerAddress || !playerAddress) {
-            return;
+        if (!native_player_collision::proxyListenerMatchesPlayer(
+                reinterpret_cast<std::uintptr_t>(listener), reinterpret_cast<std::uintptr_t>(playerController))) {
+            return false;
         }
-        if (listenerAddress == playerAddress) {
-            g_proxyContactTrace.directMatches.fetch_add(1, std::memory_order_relaxed);
-        }
-        // Raw ctor 1E4B268/1E4B28C, dtor 1E4B3E3/1E4B4C0, and
-        // callback 1E4B83E agree: listener + 0x10 is the controller interface.
-        // This is a diagnostic comparison only; it does not change admission.
-        if (listenerAddress + 0x10 != playerAddress) {
-            return;
-        }
-        g_proxyContactTrace.listenerMatches.fetch_add(1, std::memory_order_relaxed);
-        const auto frame = g_nativeRuntimeSettingFrameClock.load(std::memory_order_relaxed);
-        auto next = g_proxyContactTrace.nextSampleFrame.load(std::memory_order_relaxed);
-        if (frame < next || !g_proxyContactTrace.nextSampleFrame.compare_exchange_strong(next, frame + 30)) {
-            return;
-        }
-        g_proxyContactTrace.listener.store(listenerAddress, std::memory_order_relaxed);
-        g_proxyContactTrace.playerController.store(playerAddress, std::memory_order_relaxed);
-        g_proxyContactTrace.proxy.store(reinterpret_cast<std::uintptr_t>(proxy), std::memory_order_relaxed);
+        // Keep the callback's listener pointer unchanged when chaining native.
+        // The adjusted interface is used only for player identity and checked
+        // against both vtables and the callback's live hknpCharacterProxy.
         std::uintptr_t listenerVtable = 0, controllerVtable = 0;
         void* ownedProxy = nullptr;
         const bool listenerValid = native_memory::tryReadField(listener, 0, listenerVtable) &&
@@ -1854,43 +1843,11 @@ namespace rock
             ownedProxy == proxy && proxy;
         if (!proxyValid) {
             g_proxyContactTrace.failedProofStage.store(!listenerValid ? 1 : !controllerValid ? 2 : 3, std::memory_order_relaxed);
-            g_proxyContactTrace.failedProofs.fetch_add(1, std::memory_order_relaxed);
-            return;
+            g_proxyContactTrace.identityFailures.fetch_add(1, std::memory_order_relaxed);
+            return false;
         }
-        g_proxyContactTrace.failedProofStage.store(0, std::memory_order_relaxed);
-        g_proxyContactTrace.verifiedSamples.fetch_add(1, std::memory_order_relaxed);
-        const auto view = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
-        if (!view.valid) {
-            g_proxyContactTrace.invalidBuffers.fetch_add(1, std::memory_order_relaxed);
-            if (std::string_view(view.reason) == "missingManifoldEntries") {
-                g_proxyContactTrace.missingManifold.fetch_add(1, std::memory_order_relaxed);
-            }
-            return;
-        }
-        auto* bhk = resolvePlayerBhkWorld();
-        auto* world = bhk ? havok_runtime::getHknpWorldFromBhk(bhk) : nullptr;
-        if (!world) {
-            return;
-        }
-        std::uint64_t sampled = 0, suppressed = 0, mstt = 0, layers = 0;
-        for (int i = 0; i < (std::min)(view.pairCount, 16); ++i) {
-            std::uint32_t id = body_frame::kInvalidBodyId, filter = 0;
-            const auto* entry = view.manifoldEntries + i * held_grab_cc_policy::kGeneratedContactStride;
-            if (!native_memory::tryReadField(entry, held_grab_cc_policy::kGeneratedContactBodyIdOffset, id)) {
-                continue;
-            }
-            ++sampled;
-            if (body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ id }, filter)) {
-                layers |= collision_layer_policy::layerBitOrZero(filter & collision_layer_policy::FO4_LAYER_FILTER_MASK);
-            }
-            const auto decision = evaluatePlayerControllerTargetBody(bhk, world, id);
-            suppressed += decision.suppress ? 1 : 0;
-            mstt += std::string_view(decision.reason) == "movableStaticSupportLayer" ? 1 : 0;
-        }
-        g_proxyContactTrace.sampledContacts.fetch_add(sampled, std::memory_order_relaxed);
-        g_proxyContactTrace.wouldSuppress.fetch_add(suppressed, std::memory_order_relaxed);
-        g_proxyContactTrace.movableStatics.fetch_add(mstt, std::memory_order_relaxed);
-        g_proxyContactTrace.layers.fetch_or(layers, std::memory_order_relaxed);
+        g_proxyContactTrace.playerCallbacks.fetch_add(1, std::memory_order_relaxed);
+        return true;
     }
 
     void hookedHandleBumpedCharacter(void* controller, void* bumpedCC, void* contactInfo)
@@ -2161,13 +2118,13 @@ namespace rock
     using ProcessConstraints_t = void (*)(void*, void*, void*, void*);
     static ProcessConstraints_t g_originalProcessConstraints = nullptr;
 
-    void hookedProcessConstraintsCallback(void* controller, void* charProxy, void* manifold, void* simplexInput)
+    void hookedProcessConstraintsCallback(void* listener, void* charProxy, void* manifold, void* simplexInput)
     {
         bool originalAttempted = false;
         if (!PhysicsInteraction::s_hooksEnabled.load(std::memory_order_acquire)) {
             if (g_originalProcessConstraints) {
                 originalAttempted = true;
-                g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
             }
             return;
         }
@@ -2175,8 +2132,7 @@ namespace rock
         __try {
             const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             void* playerControllerPointer = resolvePlayerCharacterController();
-            const bool playerController = controller && playerControllerPointer && controller == playerControllerPointer;
-            observeProxyContactIdentity(controller, charProxy, manifold, simplexInput, playerControllerPointer);
+            const bool playerController = isPlayerProxyListener(listener, charProxy, playerControllerPointer);
             RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
             RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
             const bool playerControllerFilterActive = playerControllerFilterEnabled && playerController && playerHknpWorld;
@@ -2196,13 +2152,16 @@ namespace rock
             if (!heldFilterActive && !playerControllerFilterActive) {
                 if (g_originalProcessConstraints) {
                     originalAttempted = true;
-                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                    g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
                 }
                 return;
             }
 
             const auto contactBuffers = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
             if (!contactBuffers.valid) {
+                if (std::string_view(contactBuffers.reason) != "emptyContactBuffers") {
+                    g_proxyContactTrace.invalidBuffers.fetch_add(1, std::memory_order_relaxed);
+                }
                 // Without body identities no targeted decision is possible.
                 // Keep native support and attack constraints intact.
                 if (g_rockConfig.rockDebugVerboseLogging) {
@@ -2217,7 +2176,7 @@ namespace rock
                 }
                 if (g_originalProcessConstraints) {
                     originalAttempted = true;
-                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                    g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
                 }
                 return;
             }
@@ -2226,6 +2185,8 @@ namespace rock
             int removedPlayerObjectPairs = 0;
             int removedPlayerNonSupportPairs = 0;
             int removedPlayerMovableStaticPairs = 0;
+            int removedLooseWeaponPairs = 0;
+            int preservedAttackPairs = 0;
             int preservedPlayerSupportPairs = 0;
             int preservedPlayerCarPairs = 0;
             int preservedUnknownTargetPairs = 0;
@@ -2250,12 +2211,16 @@ namespace rock
                         ++removedPlayerObjectPairs;
                         if (std::string_view(decision.reason) == "movableStaticSupportLayer") {
                             ++removedPlayerMovableStaticPairs;
+                        } else if (std::string_view(decision.reason) == "looseWeapon") {
+                            ++removedLooseWeaponPairs;
                         } else {
                             ++removedPlayerNonSupportPairs;
                         }
                         return true;
                     }
-                    if (std::string_view(decision.reason) == "supportLayer") {
+                    if (std::string_view(decision.reason) == "nativeAttack") {
+                        ++preservedAttackPairs;
+                    } else if (std::string_view(decision.reason) == "supportLayer") {
                         ++preservedPlayerSupportPairs;
                     } else if (std::string_view(decision.reason) == "carCollision") {
                         ++preservedPlayerCarPairs;
@@ -2266,6 +2231,15 @@ namespace rock
                 return false;
             });
 
+            if (filterResult.valid) {
+                g_proxyContactTrace.removed.fetch_add(filterResult.removedPairCount, std::memory_order_relaxed);
+                g_proxyContactTrace.movableStatics.fetch_add(removedPlayerMovableStaticPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.looseWeapons.fetch_add(removedLooseWeaponPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.held.fetch_add(removedHeldPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.supportKept.fetch_add(preservedPlayerSupportPairs + preservedPlayerCarPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.attacksKept.fetch_add(preservedAttackPairs, std::memory_order_relaxed);
+                g_proxyContactTrace.unknownKept.fetch_add(preservedUnknownTargetPairs, std::memory_order_relaxed);
+            }
             if (diagnosticsEnabled && filterResult.valid) {
                 if (filterResult.removedPairCount > 0) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
@@ -2295,7 +2269,7 @@ namespace rock
 
             if (g_originalProcessConstraints) {
                 originalAttempted = true;
-                g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             static int sehCount = 0;
@@ -2305,7 +2279,7 @@ namespace rock
             if (!originalAttempted && g_originalProcessConstraints) {
                 __try {
                     originalAttempted = true;
-                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                    g_originalProcessConstraints(listener, charProxy, manifold, simplexInput);
                 } __except (EXCEPTION_EXECUTE_HANDLER) {
                 }
             }

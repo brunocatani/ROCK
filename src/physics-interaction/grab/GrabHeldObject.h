@@ -1010,8 +1010,23 @@ namespace rock::held_grab_cc_policy
 
         const int removedCount = view.pairCount - writeIndex;
         if (removedCount > 0) {
-            *view.manifoldCountPtr = writeIndex;
-            *view.constraintCountPtr = writeIndex;
+            // Only the paired prefix carries the identities classified above.
+            // Preserve any unmatched native rows; they may provide support or
+            // additional constraints and cannot be attributed to a held object.
+            const int manifoldTail = view.manifoldCount - view.pairCount;
+            const int constraintTail = view.constraintCount - view.pairCount;
+            if (manifoldTail > 0) {
+                std::memmove(view.manifoldEntries + writeIndex * kGeneratedContactStride,
+                    view.manifoldEntries + view.pairCount * kGeneratedContactStride,
+                    static_cast<std::size_t>(manifoldTail) * kGeneratedContactStride);
+            }
+            if (constraintTail > 0) {
+                std::memmove(view.constraintEntries + writeIndex * kGeneratedContactStride,
+                    view.constraintEntries + view.pairCount * kGeneratedContactStride,
+                    static_cast<std::size_t>(constraintTail) * kGeneratedContactStride);
+            }
+            *view.manifoldCountPtr = view.manifoldCount - removedCount;
+            *view.constraintCountPtr = view.constraintCount - removedCount;
         }
 
         return GeneratedContactFilterResult{

@@ -525,5 +525,40 @@ int main()
         ok &= expectTrue("native support and attack rows survive missing identities", *count == 2);
     }
 
+    // An unmatched native tail is not identified by the paired-prefix filter.
+    // Test both directions, with the removed row in the middle of the prefix.
+    for (bool manifoldHasTail : { false, true }) {
+        constexpr auto stride = held_grab_cc_policy::kGeneratedContactStride;
+        std::array<char, stride * 4> manifoldRows{}, constraintRows{};
+        for (int i = 0; i < 4; ++i) {
+            const std::uint32_t id = 100 + i;
+            const std::uint32_t tag = 200 + i;
+            std::memcpy(manifoldRows.data() + i * stride + held_grab_cc_policy::kGeneratedContactBodyIdOffset, &id, sizeof(id));
+            std::memcpy(constraintRows.data() + i * stride, &tag, sizeof(tag));
+        }
+        int manifoldCount = manifoldHasTail ? 4 : 3;
+        int constraintCount = manifoldHasTail ? 3 : 4;
+        const held_grab_cc_policy::GeneratedContactBufferView view{
+            .valid = true, .manifoldEntries = manifoldRows.data(), .constraintEntries = constraintRows.data(),
+            .manifoldCountPtr = &manifoldCount, .constraintCountPtr = &constraintCount,
+            .manifoldCount = manifoldCount, .constraintCount = constraintCount, .pairCount = 3,
+        };
+        const auto result = held_grab_cc_policy::filterGeneratedContactBuffers(view,
+            [](std::uint32_t id) { return id == 101; });
+        std::uint32_t keptBody = 0, keptConstraint = 0, tail = 0;
+        std::memcpy(&keptBody, manifoldRows.data() + stride + held_grab_cc_policy::kGeneratedContactBodyIdOffset, sizeof(keptBody));
+        std::memcpy(&keptConstraint, constraintRows.data() + stride, sizeof(keptConstraint));
+        const auto* tailRow = manifoldHasTail ?
+            manifoldRows.data() + 2 * stride + held_grab_cc_policy::kGeneratedContactBodyIdOffset :
+            constraintRows.data() + 2 * stride;
+        std::memcpy(&tail, tailRow, sizeof(tail));
+        ok &= expectTrue("identified contact removal preserves paired row alignment",
+            result.removedPairCount == 1 && keptBody == 102 && keptConstraint == 202);
+        ok &= expectTrue("only identified rows are removed from each native buffer",
+            manifoldCount == (manifoldHasTail ? 3 : 2) && constraintCount == (manifoldHasTail ? 2 : 3));
+        ok &= expectTrue("unmatched native support/constraint tail survives compaction",
+            tail == (manifoldHasTail ? 103u : 203u));
+    }
+
     return ok ? 0 : 1;
 }
