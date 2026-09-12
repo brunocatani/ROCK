@@ -14,7 +14,38 @@ namespace rock
         return true;
     }
 
-    void TwoHandedGrip::clearNativeScopeRigidFrame() { _scope.rigidFrame = {}; }
+    void TwoHandedGrip::clearNativeScopeRigidFrame(bool restoreNativeLocal)
+    {
+        const auto& frame = _scope.rigidFrame;
+        if (restoreNativeLocal && frame.hasAppliedLocal && runtime_state::isLocalSkeletonReady() &&
+            RE::PlayerCharacter::GetSingleton()) {
+            const auto* nodes = f4vr::getPlayerNodes();
+            auto* camera = nodes ? nodes->primaryWeaponScopeCamera : nullptr;
+            if (camera && camera == frame.scopeCameraIdentity && camera->parent == frame.cameraParentIdentity &&
+                areTransformsNearlyEqual(camera->local, frame.lastAppliedCameraLocal)) {
+                camera->local = frame.nativeCameraLocal;
+                if (camera->parent) f4vr::updateTransforms(camera);
+                else camera->world = camera->local;
+            }
+        }
+        _scope.rigidFrame = {};
+    }
+
+    void TwoHandedGrip::clearImmersiveScopePresentation()
+    {
+        clearNativeScopeOverlayAuthority(true);
+        clearNativeScopeRigidFrame(true);
+        _scope.anchorWeaponNode = nullptr;
+        _scope.anchorGenerationKey = 0;
+        _scope.anchorOwnershipKey = 0;
+        _scope.anchorWeaponFormID = 0;
+        _scope.anchorWeaponLocal = {};
+        _scope.anchorSource = native_scope_sight_anchor_policy::AnchorSource::None;
+        _scope.anchorValid = false;
+        _scope.fallbackRotationDegrees = {};
+        _scope.cameraDebugSnapshot = {};
+        _scope.activationDebugSnapshot = {};
+    }
 
     bool TwoHandedGrip::rebuildNativeScopeRigidFrameTarget()
     {
@@ -119,6 +150,10 @@ namespace rock
 
     void TwoHandedGrip::synchronizeNativeScopePresentationAfterFrikUpdate(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
     {
+        if (!g_rockConfig.rockEnableImmersiveScopes) {
+            clearImmersiveScopePresentation();
+            return;
+        }
         if (!weaponNode || currentWeaponGenerationKey == 0 || !_scope.anchorValid || _scope.anchorWeaponNode != weaponNode ||
             _scope.anchorGenerationKey != currentWeaponGenerationKey) {
             clearNativeScopeOverlayAuthority(true);
@@ -146,7 +181,7 @@ namespace rock
 
         const bool overlayCalibrationReady = captureNativeScopeOverlayCalibration(capture.cameraWorldBefore, currentWeaponGenerationKey);
         const RE::NiTransform targetCameraWorld = native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(weaponNode->world, _scope.rigidFrame.cameraWeaponLocal);
-        const NativeScopeCameraFollowResult result = applyNativeScopeCameraWorldTarget(capture, targetCameraWorld);
+        const NativeScopeCameraFollowResult result = applyNativeScopeCameraWorldTarget(capture, targetCameraWorld, _scope.rigidFrame);
         if (overlayCalibrationReady && result.targetValid && result.writeApplied) {
             (void)applyNativeScopeOverlayTarget(result.targetCameraWorld, currentWeaponGenerationKey);
         }
@@ -338,6 +373,12 @@ namespace rock
         std::uint32_t currentEquippedWeaponFormID,
         const WeaponCollision& weaponCollision)
     {
+        if (!g_rockConfig.rockEnableImmersiveScopes) {
+            clearImmersiveScopePresentation();
+            // Observe native activation for this weapon without a ROCK anchor.
+            _scope.anchorGenerationKey = currentWeaponGenerationKey;
+            return;
+        }
         const bool forceFiringGripFallback =
             g_rockConfig.rockNativeScopeForceFiringGripFallback;
         const RE::NiPoint3 fallbackOffsetWeaponLocal{

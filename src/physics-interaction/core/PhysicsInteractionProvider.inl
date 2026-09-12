@@ -1142,8 +1142,9 @@
         if (active &&
             activation.weaponGenerationKey == anchor.weaponGenerationKey) {
             outState.flags |= static_cast<std::uint32_t>(Flag::Active);
-            outState.activationSource =
-                ::rock::provider::RockProviderScopeActivationSourceV1::ManualInput;
+            outState.activationSource = g_rockConfig.rockEnableImmersiveScopes ?
+                ::rock::provider::RockProviderScopeActivationSourceV1::ManualInput :
+                ::rock::provider::RockProviderScopeActivationSourceV1::NativeGeometry;
         }
 
         const auto descriptors =

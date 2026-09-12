@@ -368,6 +368,11 @@ namespace rock
         std::uint64_t weaponGenerationKey{ 0 };
         RE::NiNode* weaponNodeIdentity{ nullptr };
         RE::NiNode* scopeCameraIdentity{ nullptr };
+        // Identity only; reacquire the live camera/parent before restoration.
+        RE::NiNode* cameraParentIdentity{ nullptr };
+        RE::NiTransform nativeCameraLocal{};
+        RE::NiTransform lastAppliedCameraLocal{};
+        bool hasAppliedLocal{ false };
         // Immutable native axis/scale calibration captured before ROCK writes.
         RE::NiTransform nativeCameraWeaponLocal{};
         // Resolved anchor plus any fallback-only weapon-axis correction.
@@ -1822,7 +1827,8 @@ namespace rock
             std::uint64_t equippedWeaponOwnershipKey,
             RE::NiTransform& outTargetLocal) const;
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
-        void clearNativeScopeRigidFrame();
+        void clearNativeScopeRigidFrame(bool restoreNativeLocal = false);
+        void clearImmersiveScopePresentation();
         bool rebuildNativeScopeRigidFrameTarget();
         bool captureNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);

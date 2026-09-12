@@ -52,7 +52,8 @@ namespace rock
         outWeaponGenerationKey = 0;
         outNativeOverlayIndex = 0;
         outDirectTransitionRequired = false;
-        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+        if (!g_rockConfig.rockEnableImmersiveScopes ||
+            !_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
             return false;
         }
         const auto snapshot = _weaponCollision.getNativeScopeSightAnchorSnapshot();

@@ -288,7 +288,17 @@ namespace
             return;
         }
 
+        const bool immersiveScopesWereEnabled = g_rockConfig.rockEnableImmersiveScopes;
         g_rockConfig.processPendingConfigReload();
+        native_scope_data::setEnabled(g_rockConfig.rockEnableImmersiveScopes);
+        if (immersiveScopesWereEnabled != g_rockConfig.rockEnableImmersiveScopes) {
+            if (!g_rockConfig.rockEnableImmersiveScopes && s_physicsInteraction) {
+                s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
+            }
+            ROCK_LOG_INFO(Input, "Immersive scopes {}: activation={}",
+                g_rockConfig.rockEnableImmersiveScopes ? "enabled" : "disabled",
+                g_rockConfig.rockEnableImmersiveScopes ? "button-hold" : "vanilla-cone");
+        }
         game_ini_overrides::update();
         advanceNativeRuntimeSettingFrameClock();
         enforceNativeMeleeRuntimeSuppression();
@@ -465,7 +475,7 @@ namespace
         std::uint8_t nativeScopeFlags = 0;
         const bool nativeForceDecision = rock::native_memory::tryReadField(player, rock::offsets::kPlayerCharacter_NativeScopeFlags, nativeScopeFlags) &&
             (nativeScopeFlags & rock::offsets::kPlayerCharacter_NativeScopeForceDecisionMask) != 0;
-        if (!nativeForceDecision && s_pluginLoaded && s_frikAvailable) {
+        if (g_rockConfig.rockEnableImmersiveScopes && !nativeForceDecision && s_pluginLoaded && s_frikAvailable) {
             // The native geometry callback remains installed only as the
             // verified transition boundary. ROCK deliberately discards its
             // cone result and feeds the held firing-hand button level instead.
@@ -590,7 +600,7 @@ namespace
         // this follows the button, Bethesda's ordinary aiming path can set
         // gun state 6 first; the later held transition then returns early
         // without opening ScopeMenu. The geometry decision owns the button.
-        if (!weaponIdentity || !s_pluginLoaded || !s_frikAvailable || !s_physicsInteraction) {
+        if (!g_rockConfig.rockEnableImmersiveScopes || !weaponIdentity || !s_pluginLoaded || !s_frikAvailable || !s_physicsInteraction) {
             return false;
         }
         std::uint64_t generation = 0;
@@ -627,6 +637,7 @@ namespace
             return false;
         }
 
+        native_scope_data::setEnabled(g_rockConfig.rockEnableImmersiveScopes);
         if (!native_scope_data::install(&isManualScopeEligibleForNative)) {
             return false;
         }
@@ -868,6 +879,7 @@ namespace
         // scope level after it so an unflagged scope does not wait for a native
         // cone callback that Bethesda will never issue.
         driveManualScopeTransitionFallback();
+        native_scope_data::restoreNativeHousing();
         native_scope_data::reportDiagnostics();
 
         rock::provider::dispatchAnimationPhaseCallbacksV1(

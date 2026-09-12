@@ -735,12 +735,14 @@ namespace rock
                 driverValid ? &driverWorld : nullptr);
         }
         const bool scopeAnchorMatchesAuthority =
-            _scope.anchorValid && _scope.anchorWeaponNode == weaponNode && _scope.anchorGenerationKey == effectiveGenerationKey;
+            g_rockConfig.rockEnableImmersiveScopes && _scope.anchorValid &&
+            _scope.anchorWeaponNode == weaponNode && _scope.anchorGenerationKey == effectiveGenerationKey;
 
         // Capture hFRIK's engine-specific camera axis only before changing the
         // weapon. Once captured, every hand mode resolves the same immutable
         // generation-bound weapon-local scope frame.
-        const NativeScopeCameraFollowCapture scopeCameraFollow = captureNativeScopeCameraFollow(weaponNode);
+        const NativeScopeCameraFollowCapture scopeCameraFollow = g_rockConfig.rockEnableImmersiveScopes ?
+            captureNativeScopeCameraFollow(weaponNode) : NativeScopeCameraFollowCapture{};
         if (scopeAnchorMatchesAuthority && scopeCameraFollow.valid) {
             (void)captureNativeScopeRigidFrame(weaponNode, effectiveGenerationKey, scopeCameraFollow.camera, scopeCameraFollow.cameraWorldBefore);
             (void)captureNativeScopeOverlayCalibration(scopeCameraFollow.cameraWorldBefore, effectiveGenerationKey);
@@ -769,7 +771,7 @@ namespace rock
                     native_scope_camera_follow_math::
                         resolveRigidAnchorFrameWorld(
                             weaponNode->world,
-                            _scope.rigidFrame.cameraWeaponLocal)) :
+                            _scope.rigidFrame.cameraWeaponLocal), _scope.rigidFrame) :
                 NativeScopeCameraFollowResult{};
         if (scopeCameraResult.targetValid && scopeCameraResult.writeApplied) {
             (void)applyNativeScopeOverlayTarget(scopeCameraResult.targetCameraWorld, effectiveGenerationKey);

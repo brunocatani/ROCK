@@ -135,7 +135,9 @@ namespace rock
         bool rockWeaponSupportSurfaceSeatEnabled = true;
         float rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
 
-        // The held firing-hand A/X gesture is the sole native-scope activation
+        bool rockEnableImmersiveScopes = true;
+
+        // While immersive scopes are enabled, the held firing-hand A/X gesture is the sole native-scope activation
         // path. A release before the threshold remains reload input.
         float rockManualScopeHoldSeconds = 0.30f;
 

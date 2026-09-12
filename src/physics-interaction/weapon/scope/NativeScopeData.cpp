@@ -1,6 +1,8 @@
 #include "physics-interaction/weapon/scope/NativeScopeData.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/HavokOffsets.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/scope/NativeScopeAdmissionStub.h"
@@ -35,6 +37,8 @@ namespace rock::native_scope_data
         InvokeOverlay s_invokeOverlay = nullptr;
         ScopeFieldOfView s_scopeFieldOfView = nullptr;
         bool s_installed = false;
+        std::atomic<bool> s_enabled{ false };
+        std::atomic<bool> s_housingModified{ false };
         ManualScopeQuery s_manualScopeQuery = nullptr;
         ProcessScopeMessage s_processScopeMessage = nullptr;
         std::atomic<DWORD> s_gameThread{ 0 };
@@ -48,7 +52,8 @@ namespace rock::native_scope_data
         std::atomic<std::uint32_t> s_overlayInvocationCount{ 0 };
         std::atomic<std::uint64_t> s_overlaySample{ 0 };
         // Callbacks run synchronously on their native UI/render/equip threads.
-        // Only diagnostic counters cross those threads; no engine pointers do.
+        // Only the mode, housing-dirty flag and diagnostic counters cross
+        // those threads; no engine pointers do.
         std::atomic<std::uint32_t> s_overlayFallbacks{ 0 };
         std::atomic<std::uint32_t> s_overlayFailures{ 0 };
         std::atomic<std::uint32_t> s_zoomFallbackFrames{ 0 };
@@ -61,6 +66,7 @@ namespace rock::native_scope_data
         bool nativeHasScope(std::uint32_t nativeFlag, const void* weapon, const void* instance,
             native_scope_admission::Site site) noexcept
         {
+            if (!s_enabled.load(std::memory_order_acquire)) return nativeFlag != 0;
             auto& queries = site == native_scope_admission::Site::Geometry ? s_geometryQueries : s_menuQueries;
             queries.fetch_add(1, std::memory_order_relaxed);
             if (nativeFlag != 0) {
@@ -84,6 +90,7 @@ namespace rock::native_scope_data
 
         RE::UI_MESSAGE_RESULTS processScopeMessage(RE::IMenu* menu, RE::UIMessage& message)
         {
+            if (!s_enabled.load(std::memory_order_acquire)) return s_processScopeMessage(menu, message);
             // Observation only. Bethesda owns Show, its fade callback, Hide,
             // input-layer removal and the menu object's lifetime.
             const auto type = static_cast<std::uint32_t>(*message.type);
@@ -124,6 +131,9 @@ namespace rock::native_scope_data
         bool invokeOverlay(Value::ObjectInterface* objectInterface, void* object, Value* result,
             const char* method, const Value* args, std::size_t count, bool displayObject)
         {
+            if (!s_enabled.load(std::memory_order_acquire)) {
+                return s_invokeOverlay(objectInterface, object, result, method, args, count, displayObject);
+            }
             // This is ScopeMenu's SetOverlay call, not a global Scaleform hook.
             // Use a value owned by this callback so neither the weapon's ZOOM
             // nor native caller's argument storage needs restoration.
@@ -149,6 +159,7 @@ namespace rock::native_scope_data
 
         float scopeFieldOfView(RE::TESObjectWEAP* weapon, float baseFov, RE::TESObjectWEAP::InstanceData* instance)
         {
+            if (!s_enabled.load(std::memory_order_acquire)) return s_scopeFieldOfView(weapon, baseFov, instance);
             // 0x140D835AF is exclusively the native mono-scope render pass.
             // Its RCX/R8 are held by the caller for the entire render. The
             // same instance/base ZOOM fields are read by 0x140332CB0 and
@@ -302,7 +313,7 @@ namespace rock::native_scope_data
 
     bool configureManual(void* worldScope, std::uint32_t overlay)
     {
-        if (!s_installed || !worldScope) {
+        if (!s_enabled.load(std::memory_order_acquire) || !s_installed || !worldScope) {
             return false;
         }
         std::uint8_t active = 0;
@@ -315,6 +326,7 @@ namespace rock::native_scope_data
             return false;
         }
         s_configureHousing(worldScope, policy::resolveOverlay(overlay));
+        s_housingModified.store(true, std::memory_order_release);
         // Configure hides both lens layers even when the renderer is already
         // active. A repeated state transition will not show them: Bethesda
         // returns early when its activation byte has not changed.
@@ -324,8 +336,51 @@ namespace rock::native_scope_data
         return true;
     }
 
+    void setEnabled(bool enabled)
+    {
+        s_enabled.store(enabled, std::memory_order_release);
+    }
+
+    void restoreNativeHousing()
+    {
+        if (!s_installed || s_enabled.load(std::memory_order_acquire) ||
+            !s_housingModified.load(std::memory_order_acquire)) return;
+
+        // Resolve current engine objects afresh. No equip/render callback
+        // publishes an engine pointer for the game thread to retain.
+        std::uintptr_t worldScope = 0;
+        std::uintptr_t vtable = 0;
+        std::uint8_t active = 0;
+        if (!native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(
+                REL::Offset(offsets::kData_NativeWorldScopeSingleton).address()), worldScope) ||
+            !worldScope || !native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(worldScope), vtable) ||
+            vtable != REL::Offset(offsets::kData_NativeWorldScopePrimaryVtable).address() ||
+            !native_memory::tryReadValue(reinterpret_cast<const std::uint8_t*>(REL::Offset(0x6239343).address()), active) || active > 1) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Vanilla scopes: housing restore waiting for valid native renderer state");
+            return;
+        }
+        const auto* equipped = f4vr::getEquippedWeaponItem();
+        auto* form = equipped ? equipped->item.object : nullptr;
+        auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
+        if (!weapon) return;
+        const auto* instance = static_cast<const RE::TESObjectWEAP::InstanceData*>(equipped->item.instanceData.get());
+        RE::BGSZoomData* zoom = nullptr;
+        std::uint32_t overlay = 0;
+        if ((instance && !native_memory::tryReadValue(&instance->zoomData, zoom)) ||
+            (!zoom && !native_memory::tryReadValue(&weapon->weaponData.zoomData, zoom)) ||
+            (zoom && !native_memory::tryReadValue(&zoom->zoomData.overlay, overlay))) {
+            ROCK_LOG_SAMPLE_WARN(Weapon, 2000, "Vanilla scopes: housing restore could not read the equipped weapon ZOOM");
+            return;
+        }
+        s_configureHousing(reinterpret_cast<void*>(worldScope), overlay);
+        if (active != 0) s_setScopeVisibility(reinterpret_cast<void*>(worldScope), true);
+        s_housingModified.store(false, std::memory_order_release);
+        ROCK_LOG_INFO(Weapon, "Vanilla scopes: restored native housing overlay={}", overlay);
+    }
+
     void reportDiagnostics()
     {
+        if (!s_enabled.load(std::memory_order_acquire)) return;
         const auto geometryAdmissions = s_geometryAdmissions.load(std::memory_order_relaxed);
         const auto menuAdmissions = s_menuAdmissions.load(std::memory_order_relaxed);
         const auto wrongThread = s_wrongThreadQueries.load(std::memory_order_relaxed);

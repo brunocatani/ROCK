@@ -85,6 +85,16 @@ int main(int argc, char** argv)
             require(!other.GetValue(setting.section.c_str(), setting.key.c_str(), nullptr), "example option belongs to both files");
         }
         require(store.load(true), "first-run load failed");
+        require(find(store, "bEnableImmersiveScopes").value == "true", "immersive scopes must default on");
+        for (const bool enabled : { false, true }) {
+            require(store.setValue(Group::Consumer, "NativeScopes", "bEnableImmersiveScopes", enabled ? "true" : "false"),
+                "scope mode write failed");
+            require(store.load(false), "scope mode reload failed");
+            CSimpleIniA scopeValues;
+            store.appendLoadedValues(scopeValues);
+            require(rock::RockConfig::parseValues(scopeValues).rockEnableImmersiveScopes == enabled,
+                "scope mode did not reach runtime configuration");
+        }
         require(find(store, "bImmersiveGrenades").value == "true", "immersive grenades must remain the default");
         require(store.setValue(Group::Consumer, "RealisticWeapons", "bImmersiveGrenades", "false"), "vanilla fallback selection failed");
         require(store.load(false), "vanilla fallback reload failed");

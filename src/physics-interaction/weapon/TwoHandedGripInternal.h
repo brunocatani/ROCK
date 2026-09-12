@@ -1063,16 +1063,22 @@ namespace rock
             };
         }
 
-        inline NativeScopeCameraFollowResult applyNativeScopeCameraWorldTarget(const NativeScopeCameraFollowCapture& capture, const RE::NiTransform& targetCameraWorld)
+        inline NativeScopeCameraFollowResult applyNativeScopeCameraWorldTarget(const NativeScopeCameraFollowCapture& capture, const RE::NiTransform& targetCameraWorld, NativeScopeRigidFrameState& authority)
         {
             NativeScopeCameraFollowResult result{};
-            if (!capture.valid || !capture.camera || !isFiniteTransform(targetCameraWorld)) {
+            if (!g_rockConfig.rockEnableImmersiveScopes || !capture.valid || !capture.camera ||
+                capture.camera != authority.scopeCameraIdentity || !isFiniteTransform(targetCameraWorld)) {
                 return result;
             }
             result.targetCameraWorld = targetCameraWorld;
             result.targetValid = true;
 
             auto* scopeCamera = capture.camera;
+            if (!authority.hasAppliedLocal || authority.cameraParentIdentity != scopeCamera->parent ||
+                !areTransformsNearlyEqual(scopeCamera->local, authority.lastAppliedCameraLocal)) {
+                authority.nativeCameraLocal = scopeCamera->local;
+                authority.cameraParentIdentity = scopeCamera->parent;
+            }
             if (scopeCamera->parent) {
                 const RE::NiTransform targetCameraLocal = weapon_visual_authority_math::worldTargetToParentLocal(
                     scopeCamera->parent->world,
@@ -1081,6 +1087,8 @@ namespace rock
                     return result;
                 }
                 scopeCamera->local = targetCameraLocal;
+                authority.lastAppliedCameraLocal = scopeCamera->local;
+                authority.hasAppliedLocal = true;
                 f4vr::updateTransforms(scopeCamera);
                 result.writeApplied = true;
                 const RE::NiTransform immediateCameraWorld = scopeCamera->world;
@@ -1092,6 +1100,8 @@ namespace rock
             }
 
             scopeCamera->local = targetCameraWorld;
+            authority.lastAppliedCameraLocal = scopeCamera->local;
+            authority.hasAppliedLocal = true;
             scopeCamera->world = targetCameraWorld;
             result.writeApplied = true;
             result.immediateCameraWorldAfter = scopeCamera->world;

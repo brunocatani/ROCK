@@ -430,7 +430,7 @@ namespace rock::native_scope_shot_diagnostics
     void beginFrame() noexcept
     {
         gameThread.store(GetCurrentThreadId(), std::memory_order_release);
-        const bool requested = installed && g_rockConfig.rockDebugNativeScopeShotAlignment;
+        const bool requested = installed && g_rockConfig.rockEnableImmersiveScopes && g_rockConfig.rockDebugNativeScopeShotAlignment;
         const bool previous = enabled.exchange(requested, std::memory_order_acq_rel);
         if (previous != requested) {
             epoch.fetch_add(1, std::memory_order_acq_rel);

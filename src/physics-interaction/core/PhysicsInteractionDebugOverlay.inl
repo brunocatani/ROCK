@@ -437,7 +437,7 @@
             .authoredGripActivationZones =
                 g_rockConfig.rockDebugDrawAuthoredGripActivationZones,
             .nativeScopeActivation =
-                g_rockConfig.rockDebugDrawNativeScopeActivation,
+                g_rockConfig.rockEnableImmersiveScopes && g_rockConfig.rockDebugDrawNativeScopeActivation,
             .worldOriginDiagnostics =
                 g_rockConfig.rockDebugWorldObjectOriginDiagnostics,
         });
@@ -500,7 +500,7 @@
             drawAuthoredGripActivationZones;
         const bool drawNativeScopeActivation =
             visualization.nativeScopeActivation;
-        const bool drawNativeScopeShots = g_rockConfig.rockDebugNativeScopeShotAlignment;
+        const bool drawNativeScopeShots = g_rockConfig.rockEnableImmersiveScopes && g_rockConfig.rockDebugNativeScopeShotAlignment;
         const bool drawWorldOriginDiagnostics =
             visualization.worldOriginDiagnostics;
 

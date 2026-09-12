@@ -1254,6 +1254,7 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldDeferFiringHandActivateForManualScope(const RE::InputEvent* event)
         {
+            if (!g_rockConfig.rockEnableImmersiveScopes) return false;
             const bool eventMatched = isActivateReloadEvent(event);
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
             constexpr bool primaryHandIsLeft = false;
@@ -1585,7 +1586,7 @@ namespace rock::input_remap_runtime
             const auto target = gameplayActivation && (weaponDrawn || isTakeEquipHandEngaged(primaryHandEvent)) ?
                 classifyActivateTarget(primaryHandEvent) : ActivateTarget::Unavailable;
             bool nativeActivation = target == ActivateTarget::NativeActivation;
-            if (gameplayActivation && primaryHandEvent && weaponDrawn &&
+            if (g_rockConfig.rockEnableImmersiveScopes && gameplayActivation && primaryHandEvent && weaponDrawn &&
                 !s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
                 s_hooksInstalled.load(std::memory_order_acquire)) {
                 const auto* button = inputEvent->As<RE::ButtonEvent>();
@@ -2535,8 +2536,10 @@ namespace rock::input_remap_runtime
          * a primary-wand press that starts on a non-pickup target. Otherwise
          * manual scope owns either physical firing-hand gesture end to end:
          * release before the threshold dispatches reload, while crossing it
-         * holds native scope activation until release. Draining both edges in
-         * every mode prevents a config or firing-hand change from replaying a
+         * holds native scope activation until release. Disabled immersive
+         * scopes leave primary reload with native events and
+         * dispatches left-firing reload on press. Draining edges in every
+         * mode prevents a config or firing-hand change from replaying a
          * stale press.
          *
          * The accumulator's menu rearm guarantees a menu-accept press (A/X
@@ -2578,6 +2581,7 @@ namespace rock::input_remap_runtime
                 .weaponDrawn = weaponDrawn,
                 .firingHandIsLeft = firingHandIsLeft,
                 .nativeActivationTarget = nativeActivationTarget,
+                .immersiveScopesEnabled = g_rockConfig.rockEnableImmersiveScopes,
                 .leftButton = toManualButtonState(leftAcceptState),
                 .rightButton = toManualButtonState(rightAcceptState),
                 .deltaSeconds = deltaSeconds,
@@ -2606,7 +2610,7 @@ namespace rock::input_remap_runtime
 
     bool isManualScopeActivationRequested()
     {
-        return s_manualScopeActivationRequested.load(std::memory_order_acquire);
+        return g_rockConfig.rockEnableImmersiveScopes && s_manualScopeActivationRequested.load(std::memory_order_acquire);
     }
 
     bool isMenuInputActive()

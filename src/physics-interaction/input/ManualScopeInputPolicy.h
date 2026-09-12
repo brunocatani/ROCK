@@ -31,6 +31,7 @@ namespace rock::manual_scope_input_policy
         bool primaryPressSeenByNative{ false };
         bool primaryPressSeenByRaw{ false };
         bool primaryPressUsesNative{ false };
+        bool immersiveScopesEnabled{ true };
     };
 
     struct Input
@@ -40,6 +41,7 @@ namespace rock::manual_scope_input_policy
         bool weaponDrawn{ false };
         bool firingHandIsLeft{ false };
         bool nativeActivationTarget{ false };
+        bool immersiveScopesEnabled{ true };
         ButtonState leftButton{};
         ButtonState rightButton{};
         float deltaSeconds{ 0.0f };
@@ -66,12 +68,14 @@ namespace rock::manual_scope_input_policy
 
     inline void reset(RuntimeState& state)
     {
+        const bool enabled = state.immersiveScopesEnabled;
         state = {};
+        state.immersiveScopesEnabled = enabled;
     }
 
     inline void blockUntilRelease(RuntimeState& state)
     {
-        state = {};
+        reset(state);
         state.state = State::BlockedUntilRelease;
     }
 
@@ -126,6 +130,10 @@ namespace rock::manual_scope_input_policy
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
     {
         Decision decision{};
+        if (state.immersiveScopesEnabled != input.immersiveScopesEnabled) {
+            blockUntilRelease(state);
+            state.immersiveScopesEnabled = input.immersiveScopesEnabled;
+        }
 
         const bool gameplayEligible = input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn;
         if (!gameplayEligible) {
@@ -148,6 +156,16 @@ namespace rock::manual_scope_input_policy
                 decision.state = state.state;
                 decision.reason = "waiting-for-release";
             }
+            return decision;
+        }
+
+        if (!input.immersiveScopesEnabled) {
+            // The primary wand returns to its ordinary native event route.
+            // ROCK still supplies reload for a left-hand firing grip, once
+            // on press. Neither hold nor release can request a scope.
+            decision.dispatchReload = input.firingHandIsLeft &&
+                input.leftButton.available && input.leftButton.pressed;
+            decision.reason = "vanilla-scopes";
             return decision;
         }
 

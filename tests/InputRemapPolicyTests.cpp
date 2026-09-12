@@ -993,6 +993,57 @@ static bool testManualScope()
     return ok;
 }
 
+static bool testVanillaScopeMode()
+{
+    bool ok = true;
+    manual::RuntimeState state{};
+    manual::Input input{
+        .gameplayInputAllowed = true,
+        .weaponDrawn = true,
+        .immersiveScopesEnabled = false,
+        .leftButton = {.available = true},
+        .rightButton = {.available = true},
+    };
+    (void)manual::update(state, input); // Adopt the mode with both buttons up.
+    input.rightButton = {.available = true, .held = true, .pressed = true};
+    auto result = manual::update(state, input);
+    ok &= expectFalse("vanilla primary press leaves reload to native events", result.dispatchReload || result.scopeRequested);
+    input.rightButton.pressed = false;
+    input.deltaSeconds = 2.0f;
+    result = manual::update(state, input);
+    ok &= expectFalse("vanilla primary hold cannot activate a scope", result.dispatchReload || result.scopeRequested);
+    input.rightButton = {.available = true, .released = true};
+    result = manual::update(state, input);
+    ok &= expectFalse("vanilla primary release cannot duplicate native reload", result.dispatchReload || result.scopeRequested);
+
+    input.rightButton = {.available = true};
+    input.firingHandIsLeft = true;
+    input.leftButton = {.available = true, .held = true, .pressed = true};
+    result = manual::update(state, input);
+    ok &= expectTrue("vanilla scopes preserve left-firing reload on press", result.dispatchReload);
+    input.leftButton.pressed = false;
+    result = manual::update(state, input);
+    ok &= expectFalse("vanilla left hold cannot scope or repeat reload", result.dispatchReload || result.scopeRequested);
+    input.immersiveScopesEnabled = true;
+    result = manual::update(state, input);
+    ok &= expectManualScopeState("enabling during a hold requires release", result.state, manual::State::BlockedUntilRelease);
+    ok &= expectFalse("enabling cannot replay the vanilla hold", result.scopeRequested || result.dispatchReload);
+    input.leftButton = {.available = true};
+    (void)manual::update(state, input);
+    input.leftButton = {.available = true, .held = true, .pressed = true};
+    (void)manual::update(state, input);
+    input.leftButton.pressed = false;
+    result = manual::update(state, input);
+    ok &= expectTrue("a fresh immersive hold activates normally", result.scopeRequested);
+    input.immersiveScopesEnabled = false;
+    result = manual::update(state, input);
+    ok &= expectFalse("disabling cancels an active immersive hold", result.scopeRequested || result.dispatchReload);
+    input.leftButton = {.available = true, .released = true};
+    result = manual::update(state, input);
+    ok &= expectFalse("release after disabling cannot reload", result.scopeRequested || result.dispatchReload);
+    return ok;
+}
+
 int main()
 {
     bool ok = true;
@@ -1000,5 +1051,6 @@ int main()
     ok &= testNativeVats();
     ok &= testPipboyGestures();
     ok &= testManualScope();
+    ok &= testVanillaScopeMode();
     return ok ? 0 : 1;
 }

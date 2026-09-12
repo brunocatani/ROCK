@@ -558,6 +558,8 @@ namespace rock
             35.0f,
             0.0f,
             75.0f);
+        rockEnableImmersiveScopes = ini.GetBoolValue(
+            NATIVE_SCOPES_SECTION, "bEnableImmersiveScopes", rockEnableImmersiveScopes);
         rockManualScopeHoldSeconds = readClampedFloat(ini,
             NATIVE_SCOPES_SECTION,
             "fManualScopeHoldSeconds",
