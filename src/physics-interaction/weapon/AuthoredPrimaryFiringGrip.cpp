@@ -130,6 +130,17 @@ namespace rock
 
     void AuthoredPrimaryFiringGripRuntime::endSession(const char* reason)
     {
+        const std::string_view suspensionReason{ reason ? reason : "unknown" };
+        if (_reportPoseSuspension && suspensionReason != "weapon-boundary" && _lastSuspensionReason != suspensionReason) {
+            const auto now = GetTickCount64();
+            if (_lastSuspensionLogMs == 0 || now - _lastSuspensionLogMs >= 2000) {
+                ROCK_LOG_INFO(Animation,
+                    "Authored primary pose suspended formID={:08X} weaponKey={:016X} reason={} previouslyActive={}",
+                    _weaponFormId, _weaponOwnershipKey, suspensionReason, _active);
+                _lastSuspensionReason = suspensionReason;
+                _lastSuspensionLogMs = now;
+            }
+        }
         if (!_active) {
             return;
         }
@@ -155,6 +166,10 @@ namespace rock
         endSession(reason);
         _weaponNodeIdentity = nullptr;
         _weaponOwnershipKey = 0;
+        _weaponFormId = 0;
+        _lastSuspensionReason = {};
+        _lastSuspensionLogMs = 0;
+        _reportPoseSuspension = false;
         _frikOffsetCacheRevision = 0;
         _captureSequenceFloor = 0;
         _supportCaptureSequenceFloor = 0;
@@ -181,6 +196,11 @@ namespace rock
         TwoHandedGrip& weaponAuthority)
     {
         vanilla_weapon_alignment_telemetry::recordInput(input);
+        _weaponFormId = input.weapon ? input.weapon->formID : 0;
+        _reportPoseSuspension = _weaponFormId != 0 && input.weaponDrawn && input.weaponVisible &&
+            !input.menuBlocking && !input.compatibilityBlocking && !input.nativeReloadAuthorityActive &&
+            !input.equippedWeaponTransitionActive && !input.primaryHandHoldingObject &&
+            !input.weaponVisualReturnActive && !input.rockFiringHandIsLeft;
         // The published candidate remains frame-scoped. Each eligible frame
         // must republish either a fresh capture or the identity-bound stable
         // snapshot, so every unrelated early return still falls back to the
@@ -245,6 +265,7 @@ namespace rock
             endSession("weapon-boundary");
             _weaponNodeIdentity = input.weaponNode;
             _weaponOwnershipKey = currentWeaponKey;
+            _lastSuspensionReason = {};
             _captureSequenceFloor = captureStatus.captureSequence;
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
             _liveSupportWitness = {};
@@ -1194,6 +1215,7 @@ namespace rock
         }
 
         _active = true;
+        _lastSuspensionReason = {};
         _applyFailureLogged = false;
 
         const RE::NiPoint3 publishedGripWorld =

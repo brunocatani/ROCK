@@ -938,6 +938,9 @@ namespace rock
 
         if (!_firing.authoredFingerPoseBlockEngaged) {
             if (!frik_visual_authority::blockPrimaryHandWeaponPose(AUTHORED_PRIMARY_POSE_BLOCK_TAG, true)) {
+                ROCK_LOG_SAMPLE_WARN(Animation, 2000,
+                    "Authored finger publication rejected stage=pose-block hand={} ownership={:016X} capture={}",
+                    isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence);
                 return false;
             }
             _firing.authoredFingerPoseBlockEngaged = true;
@@ -946,6 +949,9 @@ namespace rock
         const auto hand = handFromBool(isLeft);
         _firing.publishedFingerPoseIsLeft = isLeft;
         if (!frik_visual_authority::setHandPoseCustom(PRIMARY_GRIP_TAG, hand, frik_visual_authority::HandPoseData{}, GRIP_HAND_POSE_PRIORITY)) {
+            ROCK_LOG_SAMPLE_WARN(Animation, 2000,
+                "Authored finger publication rejected stage=custom-pose hand={} ownership={:016X} capture={}",
+                isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence);
             clearAuthoredPrimaryFiringGripFingerPose();
             return false;
         }
@@ -956,6 +962,9 @@ namespace rock
             overrideData.localTransforms[index] = transforms[index];
         }
         if (!frik_visual_authority::setHandPoseCustomLocalTransforms(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+            ROCK_LOG_SAMPLE_WARN(Animation, 2000,
+                "Authored finger publication rejected stage=finger-locals hand={} ownership={:016X} capture={} mask=0x{:04X}",
+                isLeft ? "left" : "right", _firing.rightCanonicalOwnershipKey, _firing.rightCanonicalCaptureSequence, mask);
             clearAuthoredPrimaryFiringGripFingerPose();
             return false;
         }

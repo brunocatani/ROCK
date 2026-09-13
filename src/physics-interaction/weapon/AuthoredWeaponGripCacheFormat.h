@@ -12,12 +12,21 @@ namespace rock::authored_weapon_grip_cache
     // preharvest. v2 records carried a live-capture mirror that could hold a
     // mid-blend pose; they are rejected and re-harvested once.
     inline constexpr std::uint32_t kFormatVersion = 3;
-    inline constexpr std::uint32_t kPoseAlgorithmVersion = 1;
+    // v2 rebuilds records whose weapon ID could be corrupted by the old
+    // unconditional light-plugin index removal, including Fallout4.esm forms.
+    inline constexpr std::uint32_t kPoseAlgorithmVersion = 2;
     inline constexpr std::size_t kFiringFingerCount = 15;
     inline constexpr std::uint32_t kRequiredPersistenceSamples = 5;
     inline constexpr std::uint16_t kCompleteFiringFingerMask = 0x7FFFu;
     inline constexpr std::size_t kMaximumCachedEntries = 2048;
     inline constexpr std::size_t kMaximumRecordBytes = 128 * 1024;
+
+    [[nodiscard]] constexpr std::uint32_t localWeaponFormId(const std::uint32_t runtimeFormId) noexcept
+    {
+        const auto index = runtimeFormId >> 24;
+        if (index == 0xFFu) return 0; // Runtime-created forms have no stable plugin identity.
+        return runtimeFormId & (index == 0xFEu ? 0x0000'0FFFu : 0x00FF'FFFFu);
+    }
 
     struct StableFormIdentity
     {

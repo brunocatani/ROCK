@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 namespace RE
 {
@@ -99,6 +100,10 @@ namespace rock
         // an equip before WeaponCollision has published the new generation.
         RE::NiNode* _weaponNodeIdentity{ nullptr };
         std::uint64_t _weaponOwnershipKey{ 0 };
+        std::uint32_t _weaponFormId{ 0 };
+        std::string_view _lastSuspensionReason{}; // Static reason literals only.
+        std::uint64_t _lastSuspensionLogMs{ 0 };
+        bool _reportPoseSuspension{ false };
         std::uint64_t _frikOffsetCacheRevision{ 0 };
         std::uint64_t _captureSequenceFloor{ 0 };
         std::uint64_t _supportCaptureSequenceFloor{ 0 };

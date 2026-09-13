@@ -52,22 +52,25 @@ int main()
     using namespace rock::authored_weapon_grip_cache;
     bool ok = true;
 
+    static_assert(localWeaponFormId(0x0014831Au) == 0x0014831Au); // Vanilla pipe bolt-action.
+    static_assert(localWeaponFormId(0x0010031Au) != localWeaponFormId(0x0014831Au));
+    static_assert(localWeaponFormId(0x010913CAu) == 0x000913CAu);
+    static_assert(localWeaponFormId(0xFD14831Au) == 0x0014831Au);
+    static_assert(localWeaponFormId(0xFE123812u) == 0x812u);
+    static_assert(localWeaponFormId(0xFF001234u) == 0);
+    static_assert(localWeaponFormId(0) == 0);
+
     const auto source = makeRecord();
     ok &= expect(validRecord(source), "valid cache record rejected");
     const std::string text = serialize(source);
     CacheRecord parsed{};
     std::string error;
-    // Fixed format-v3 bytes protect reader compatibility independently of the
-    // current writer. Updating the fixture requires a deliberate format change.
+    // Algorithm-v1 cache IDs could alias different vanilla weapons. Keep the
+    // original bytes as a regression witness: reharvest instead of restoring.
     std::ifstream fixture(std::string(ROCK_TEST_FIXTURE_DIR) + "/AuthoredGripCache.json");
     const std::string golden{ std::istreambuf_iterator<char>(fixture), {} };
     CacheRecord historical{};
-    ok &= expect(!golden.empty() && parse(golden, historical, &error), "format-v3 fixture no longer parses");
-    ok &= expect(historical.key == source.key && historical.checksum == 0x51687B0DFAABA5AFull,
-        "format-v3 identity/checksum changed");
-    ok &= expect(historical.rightHandWeaponLocal.translate == source.rightHandWeaponLocal.translate &&
-        historical.rightFiringFingerMask == kCompleteFiringFingerMask,
-        "format-v3 pose changed");
+    ok &= expect(!golden.empty() && !parse(golden, historical, &error), "old cache identity accepted without reharvesting");
     ok &= expect(parse(text, parsed, &error), "serialized cache record did not parse");
     ok &= expect(parsed.key == source.key, "cache key changed during round trip");
     ok &= expect(parsed.idleClipPath == source.idleClipPath, "clip path changed during round trip");

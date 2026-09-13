@@ -1,7 +1,8 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "RE/Bethesda/TESForms.h"
+#include "RE/Bethesda/TESFile.h"
 #include "rock_support/ResourceUtils.h"
 
 #include <Windows.h>
@@ -137,7 +138,10 @@ namespace rock::authored_weapon_grip_cache
                         ++rejected;
                         continue;
                     }
-                    loaded.emplace(record.key, CachedEntry{
+                    // emplace forwards its key by reference: moving record in
+                    // the other argument would empty the indexed plugin name.
+                    const CacheKey key = record.key;
+                    loaded.emplace(key, CachedEntry{
                         .record = std::move(record),
                         .path = file.path,
                         .accessOrdinal = static_cast<std::uint64_t>(files.size()) - ordinal,
@@ -419,14 +423,16 @@ namespace rock::authored_weapon_grip_cache
     {
         try {
             out = {};
-            const auto stable = saved_grab_offset::formRefFromRuntimeId(runtimeWeaponFormId);
-            if (stable.empty()) {
+            const auto localFormId = localWeaponFormId(runtimeWeaponFormId);
+            auto* form = localFormId ? RE::TESForm::GetFormByID(runtimeWeaponFormId) : nullptr;
+            const auto* file = form ? form->GetFile(0) : nullptr;
+            if (!file) {
                 return false;
             }
             out = CacheKey{
                 .weapon = StableFormIdentity{
-                    .plugin = stable.plugin,
-                    .localFormId = stable.localFormId,
+                    .plugin = std::string(file->GetFilename()),
+                    .localFormId = localFormId,
                 },
                 .pGripVariantKey = pGripVariantKey,
                 .instanceContentKey = instanceContentKey,

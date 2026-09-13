@@ -55,6 +55,8 @@ int main()
     static_assert(idleClipPriority("Actors/Character/_1stPerson/Animations/1HM/Idle.hkx") == IdleClipPriority::GenericIdle);
     static_assert(idleClipPriority("2HM\\Idle.HKX") == IdleClipPriority::GenericIdle);
     static_assert(idleClipPriority("Board/Idle.hkx") == IdleClipPriority::GenericIdle);
+    static_assert(idleClipPriority("2HMWide/Idle.hkx") == IdleClipPriority::GenericIdle);
+    static_assert(idleClipPriority("H2H/Idle.hkx") == IdleClipPriority::GenericIdle);
     static_assert(idleClipPriority("1HM/WPNIdleSightedWobble.hkx") == IdleClipPriority::None);
     static_assert(idleClipPriority("1HM/Idle.hkx") < idleClipPriority("Rifle/WPNIdle.hkx"));
     static_assert(idleClipPriority("Rifle/WPNIdle.hkx") < idleClipPriority("Rifle/WPNIdleReady.hkx"));
