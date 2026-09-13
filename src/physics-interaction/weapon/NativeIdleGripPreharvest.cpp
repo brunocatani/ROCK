@@ -1815,19 +1815,14 @@ namespace rock::native_idle_grip_preharvest
                 return tryGraphPathFallback(IdleGripExtractionFailure::AnimationFileListEmpty);
             }
 
-            constexpr std::array<std::string_view, 2> desiredClipStems{
-                "WPNIdleReady",
-                "WPNIdle",
-            };
-
-            for (const auto desiredStem : desiredClipStems) {
+            for (const auto desiredPriority : native_idle_grip_preharvest_policy::kIdleClipSearchOrder) {
                 for (const auto& animationFile : *animationFiles) {
                     const char* pathChars = animationFile.c_str();
                     if (!pathChars) {
                         continue;
                     }
                     const std::string_view path{ pathChars };
-                    if (!native_idle_grip_preharvest_policy::clipPathHasStem(path, desiredStem)) {
+                    if (native_idle_grip_preharvest_policy::idleClipPriority(path) != desiredPriority) {
                         continue;
                     }
                     ++diagnostics.idlePathMatchCount;

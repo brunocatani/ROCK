@@ -50,6 +50,14 @@ int main()
     static_assert(idleClipPriority("SREP/WPNIdleReady.hkx") == IdleClipPriority::IdleReady);
     static_assert(idleClipPriority("SVD\\WPNIdle.HKX") == IdleClipPriority::Idle);
     static_assert(idleClipPriority("SREP/WPNFire.hkx") == IdleClipPriority::None);
+    // The first-person melee idles were previously rejected before any fingers
+    // could be sampled. Keep exact basename matching and firearm precedence.
+    static_assert(idleClipPriority("Actors/Character/_1stPerson/Animations/1HM/Idle.hkx") == IdleClipPriority::GenericIdle);
+    static_assert(idleClipPriority("2HM\\Idle.HKX") == IdleClipPriority::GenericIdle);
+    static_assert(idleClipPriority("Board/Idle.hkx") == IdleClipPriority::GenericIdle);
+    static_assert(idleClipPriority("1HM/WPNIdleSightedWobble.hkx") == IdleClipPriority::None);
+    static_assert(idleClipPriority("1HM/Idle.hkx") < idleClipPriority("Rifle/WPNIdle.hkx"));
+    static_assert(idleClipPriority("Rifle/WPNIdle.hkx") < idleClipPriority("Rifle/WPNIdleReady.hkx"));
     static_assert(sameClipPath("Actors/Character/SREP/WPNIdleReady.hkx", "actors\\character\\srep\\wpnidleready.HKX"));
     static_assert(!sameClipPath("SREP/WPNIdleReady.hkx", "SVD/WPNIdleReady.hkx"));
 

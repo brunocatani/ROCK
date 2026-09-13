@@ -33,8 +33,15 @@ namespace rock::native_idle_grip_preharvest_policy
     enum class IdleClipPriority : std::uint8_t
     {
         None,
+        GenericIdle,
         Idle,
         IdleReady,
+    };
+
+    inline constexpr std::array kIdleClipSearchOrder{
+        IdleClipPriority::IdleReady,
+        IdleClipPriority::Idle,
+        IdleClipPriority::GenericIdle,
     };
 
     struct FirstPersonSelection
@@ -157,6 +164,12 @@ namespace rock::native_idle_grip_preharvest_policy
         }
         if (clipPathHasStem(path, "WPNIdle")) {
             return IdleClipPriority::Idle;
+        }
+        // First-person melee subgraphs use Idle.hkx (1HM, 2HM, Board).
+        // Callers search only the requested weapon's first-person subgraph;
+        // a weapon-specific WPN idle still takes precedence when present.
+        if (clipPathHasStem(path, "Idle")) {
+            return IdleClipPriority::GenericIdle;
         }
         return IdleClipPriority::None;
     }
