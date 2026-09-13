@@ -29,6 +29,7 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RockConfig.h"
+#include "Version.h"
 
 #ifdef DrawText
 #undef DrawText
@@ -509,8 +510,7 @@ namespace
 
     const char* ROCK_PROVIDER_CALL apiGetModVersion()
     {
-        static constexpr const char* version = "0.5.0";
-        return version;
+        return Version::NAME.data();
     }
 
     bool ROCK_PROVIDER_CALL apiIsProviderReady()

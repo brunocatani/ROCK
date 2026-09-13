@@ -1,5 +1,5 @@
-ROCK v0.5.0 - Release Install Notes
-==================================
+ROCK v0.8 - Release Install Notes
+================================
 
 Requirements
 ------------
