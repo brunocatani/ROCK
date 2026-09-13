@@ -1,24 +1,29 @@
-ROCK v0.5 - Release Install Notes
-=================================
+ROCK v0.5.0 - Release Install Notes
+==================================
 
-ROCK currently requires the matching hFRIK release named FRIK Experimental.
-Download and install FRIK Experimental before using ROCK v0.5.
+Requirements
+------------
 
-Download FRIK Experimental here:
-https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental
+- Fallout 4 VR 1.2.72.0 and F4SEVR.
+- Upstream FRIK v78.2 or newer, installed separately.
+- VR Address Library for F4SEVR.
 
-This hFRIK dependency is temporary. It is required only until the hFRIK
-modifications are merged upstream into:
+FRIK: https://www.nexusmods.com/fallout4/mods/53464
+VR Address Library: https://www.nexusmods.com/fallout4/mods/64879
+F4SEVR: https://f4se.silverlock.org/
 
-github.com/rollingrock/Fallout-4-VR-Body
+Install this archive through your mod manager. The plugin files belong at:
 
-Install ROCK.dll and ROCK.pdb into:
+Data\F4SE\Plugins\ROCK.dll
+Data\F4SE\Plugins\ROCK.pdb
 
-Data\F4SE\Plugins
+The SDK folder contains developer documentation, headers, and examples.
+Player instructions and compatibility notes:
+https://www.nexusmods.com/fallout4/mods/108881
 
-ROCK stores its runtime configuration under:
+ROCK stores its runtime configuration beneath your Windows Documents folder:
 
-%USERPROFILE%\Documents\My Games\Fallout4VR\Mods_Config\ROCK
+My Games\Fallout4VR\Mods_Config\ROCK
 
 ROCK.ini contains consumer settings. When absent, ROCK creates it with all
 consumer defaults compiled into the plugin. Existing files are loaded unchanged.
@@ -29,6 +34,7 @@ or updates only its override. Existing supplied developer entries are preserved
 on load. Restoring a default removes that key; an empty developer file is removed.
 Either file supports hot reload.
 The wheel menu uses ROCK's configuration interface to display and save settings.
+Runtime and example INIs are not included in this archive.
 
 The source references data/config/ROCK_example.ini and
 data/config/ROCK_Developer_example.ini list every supported option and default
