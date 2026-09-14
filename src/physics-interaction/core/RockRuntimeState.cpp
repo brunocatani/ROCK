@@ -213,7 +213,7 @@ namespace rock::runtime_state
     void updateFrame(const RuntimeFrameInput& input)
     {
         if (!s_frameMenuSample.valid) {
-            // The game-loop hook begins frame timing before any phase; this
+            // FRIK's FrameBegin phase begins frame timing before the snapshot; this
             // fail-closed path only protects an out-of-order caller from
             // silently reusing a stale frame identity.
             (void)beginFrameTiming(false);

@@ -409,8 +409,6 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kData_PlayerActorSingleton = 0x5A38518;
 
-    constexpr std::uintptr_t kHookSite_MainLoop = 0xD8405E;
-
     /*
      * FO4VR's recurring first-person node-chain alignment helper. Blind raw
      * disassembly verification on 2026-07-17 confirmed the entry at

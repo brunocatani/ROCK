@@ -214,6 +214,14 @@ namespace rock
             _recoil.equippedIdentity.equippedOwnership != 0;
     }
 
+    bool TwoHandedGrip::isOneHandRecoilEnvelopeActive() const noexcept
+    {
+        // Gated on the path itself, so a kick flag left over from a holster, a
+        // grip or a disabled setting never holds FRIK's weapon-node write block.
+        return canUseRightOneHandRecoil() &&
+            (_recoil.controlledKickActive || _recoil.rightNeedsNeutralFrame);
+    }
+
     void TwoHandedGrip::clearOneHandRecoilClaim()
     {
         if (!_recoil.rightHandClaimActive) {
@@ -264,6 +272,7 @@ namespace rock
             clearOneHandRecoilClaim();
             return;
         }
+        noteFrikRecoilWeaponNodeWrite();
         traceRecoilPresentation("one-hand-right");
         _recoil.rightNeedsNeutralFrame = _recoil.controlledKickActive;
         recordPublishedHandWorld(false, handTarget);

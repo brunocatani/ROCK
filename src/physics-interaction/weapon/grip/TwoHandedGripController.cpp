@@ -22,6 +22,11 @@ namespace rock
 
     TwoHandedGrip::~TwoHandedGrip()
     {
+        // FRIK keeps blocks, grip reports and parent requests until the
+        // skeleton is released; a ROCK-side destroy (session reset, deferred
+        // recreation) must hand them back itself.
+        resetFrikWeaponOwnership();
+        releaseFiringHandWeaponNodeOwnership(nullptr);
         clearOneHandRecoilClaim();
         if (_recoil.controllerRegistered) {
             (void)frik_visual_authority::unregisterWeaponHandRecoilController(
@@ -306,27 +311,6 @@ namespace rock
             reconcileDeferredScopeHandAuthority(weaponNode);
             return finishUpdate();
         }
-
-        /*
-         * Left-firing feed-forward pre-write: while ROCK owns the weapon node
-         * (left-firing topology), FRIK's earlier skeleton pass has already
-         * rewritten the node to its OFFHAND GLUE pose, so at this point
-         * weaponNode->world is glue space, not the real carried pose. Every
-         * world<->weapon-local conversion below (part-grip captures, mesh
-         * grab points, promotion distances, the two-hand solver base) would
-         * silently mix real-space palm/contact points with that glue frame -
-         * the round-4 corrupted captures. Publishing the canonical
-         * feed-forward pose FIRST makes the node a real-space basis for all
-         * existing math with no per-call-site special cases; the state
-         * handlers below re-publish their final solved pose as before.
-         * Right-firing reads FRIK's authored carry and is untouched.
-         * (PhysicsInteraction additionally publishes this before the frame's
-         * weapon interaction probes - see the header note.) The pre-write is
-         * a basis, not the rendered frame: it never updates the rendered
-         * weapon record that visual returns, the part-carry handoff, and the
-         * seat overlay read.
-         */
-        (void)publishLeftFiringFeedForwardWeaponPose(weaponNode);
 
         /*
          * Support-side routing follows the CURRENT firing hand: the support
@@ -828,6 +812,7 @@ namespace rock
         _scope.activationDebugSnapshot = {};
         clearNativeScopeRigidFrame();
         _scope.safeHandFrames = {};
+        resetFrikWeaponOwnership();
         resetGripFailureDiagnostics();
         _scope.driverFrameAuthorityActive = false;
         _scope.nativeRequestStateValid = false;

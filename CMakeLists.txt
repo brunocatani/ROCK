@@ -813,13 +813,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHandWorldClaimRegistryPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHandWorldClaimRegistryPolicyTests)
 
-  add_executable(ROCKDampenedDriverPredictionPolicyTests
-    "${ROOT_DIR}/tests/DampenedDriverPredictionPolicyTests.cpp"
-  )
-  target_compile_features(ROCKDampenedDriverPredictionPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDampenedDriverPredictionPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDampenedDriverPredictionPolicyTests)
-
   add_executable(ROCKTrackedHandIsolationPolicyTests
     "${ROOT_DIR}/tests/TrackedHandIsolationPolicyTests.cpp"
   )
@@ -834,12 +827,12 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKRenderedBoneTransportPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKRenderedBoneTransportPolicyTests)
 
-  add_executable(ROCKArmPresentationPolicyTests
-    "${ROOT_DIR}/tests/ArmPresentationPolicyTests.cpp"
+  add_executable(ROCKWeaponNodeWriteBlockPolicyTests
+    "${ROOT_DIR}/tests/WeaponNodeWriteBlockPolicyTests.cpp"
   )
-  target_compile_features(ROCKArmPresentationPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKArmPresentationPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKArmPresentationPolicyTests)
+  target_compile_features(ROCKWeaponNodeWriteBlockPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponNodeWriteBlockPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponNodeWriteBlockPolicyTests)
 
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKGrabInputIntentPolicyTests
@@ -907,10 +900,8 @@ if(BUILD_ROCK_TESTS)
     ROCKDynamicWeaponCollisionPolicyTests
     ROCKWeaponSurfaceSupportTests
     ROCKHandWorldClaimRegistryPolicyTests
-    ROCKDampenedDriverPredictionPolicyTests
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
-    ROCKArmPresentationPolicyTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and
   # config stub. Build those once, then reuse the PCH artifact and support library
@@ -1110,13 +1101,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlayShaderCompileTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKDebugOverlayShaderCompileTests PRIVATE d3dcompiler.lib)
   add_rock_test(ROCKDebugOverlayShaderCompileTests)
-
-  add_executable(ROCKMainLoopHookPolicyTests
-    "${ROOT_DIR}/tests/MainLoopHookPolicyTests.cpp"
-  )
-  target_compile_features(ROCKMainLoopHookPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKMainLoopHookPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKMainLoopHookPolicyTests)
 
   add_executable(ROCKWeaponTelemetryTraversalTests "${ROOT_DIR}/tests/WeaponTelemetryTraversalTests.cpp")
   target_compile_features(ROCKWeaponTelemetryTraversalTests PRIVATE cxx_std_23)

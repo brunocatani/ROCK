@@ -382,13 +382,6 @@ namespace rock
 #include "physics-interaction/core/PhysicsInteractionProvider.inl"
     bool PhysicsInteraction::validateCriticalOffsets() const
     {
-        REL::Relocation hookSite{ REL::Offset(offsets::kHookSite_MainLoop) };
-        auto* hookByte = reinterpret_cast<const std::uint8_t*>(hookSite.address());
-        if (*hookByte != 0xE8 && *hookByte != 0xE9) {
-            ROCK_LOG_ERROR(Init, "Hook site 0x{:X} is not a CALL/JMP instruction (found {:#x})", offsets::kHookSite_MainLoop, *hookByte);
-            return false;
-        }
-
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
             ROCK_LOG_SAMPLE_DEBUG(Init, g_rockConfig.rockLogSampleMilliseconds, "No bhkWorld available for offset validation (will retry)");

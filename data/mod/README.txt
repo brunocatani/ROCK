@@ -5,7 +5,7 @@ Requirements
 ------------
 
 - Fallout 4 VR 1.2.72.0 and F4SEVR.
-- Upstream FRIK v78.2 or newer, installed separately.
+- Upstream FRIK 0.79.0 or newer with FRIK API v2.3 (frame phases), installed separately.
 - VR Address Library for F4SEVR.
 
 FRIK: https://www.nexusmods.com/fallout4/mods/53464

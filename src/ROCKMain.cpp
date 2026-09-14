@@ -9,7 +9,6 @@
 #include "rock_support/GameIniOverrides.h"
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
-#include "physics-interaction/core/MainLoopHookPolicy.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -32,6 +31,7 @@
 #include "physics-interaction/native/WeaponActionTrace.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/telemetry/DynamicColliderTrace.h"
+#include "physics-interaction/timing/RockGameTiming.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
@@ -279,7 +279,12 @@ namespace
         input_remap_runtime::setEquippedWeaponShoulderSheathActive(false);
     }
 
-    void onFrameUpdate()
+    /*
+     * Per-frame housekeeping that runs with or without a FRIK skeleton
+     * (FRIK's FrameBegin phase): config reload, INI enforcement, runtime
+     * state, input gating and the physics creation gate.
+     */
+    void prepareRuntimeFrame()
     {
         performance_profiler::ScopedTimer runtimeTimer(performance_profiler::Scope::RuntimePreparation);
 
@@ -334,54 +339,50 @@ namespace
         debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         ensurePhysicsInteractionForReadySkeleton(runtime);
-        runtimeTimer.stop();
+    }
 
-        if (s_physicsInteraction) {
-            /*
-             * Native menu/equip animation work completed earlier in this game
-             * frame. Reconcile the exact equipped instance first so authored
-             * grip and collision never consume a stale hidden Weapon graph.
-             */
-            {
-                performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponEquipTransition);
-                s_physicsInteraction->updateEquippedWeaponTransition();
-            }
-            /*
-             * hFRIK has already restored its generic one-gun Weapon local.
-             * Reconstruct the Bethesda-authored primary grip before ROCK's
-             * collision/probe/grip pass so every weapon-relative subsystem
-             * sees the same corrected frame that will be rendered.
-             */
-            {
-                performance_profiler::ScopedTimer timer(performance_profiler::Scope::AuthoredPrimaryGrip);
-                s_physicsInteraction->updateAuthoredPrimaryFiringGrip();
-            }
-            {
-                performance_profiler::ScopedTimer timer(performance_profiler::Scope::InteractionUpdate);
-                s_physicsInteraction->update();
-            }
-            {
-                performance_profiler::ScopedTimer timer(performance_profiler::Scope::ProviderPublication);
-                publishPhysicsInteractionIfReady();
-            }
+    // ROCK's interaction update proper; only meaningful with a skeleton.
+    void updatePhysicsInteractionFrame()
+    {
+        if (!s_pluginLoaded || !s_frikAvailable || !s_physicsInteraction) {
+            return;
+        }
+        /*
+         * Native menu/equip animation work completed earlier in this game
+         * frame. Reconcile the exact equipped instance first so authored
+         * grip and collision never consume a stale hidden Weapon graph.
+         */
+        {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponEquipTransition);
+            s_physicsInteraction->updateEquippedWeaponTransition();
+        }
+        /*
+         * Reconstruct the Bethesda-authored primary grip before ROCK's
+         * collision/probe/grip pass so every weapon-relative subsystem sees
+         * the same corrected frame that will be rendered.
+         */
+        {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::AuthoredPrimaryGrip);
+            s_physicsInteraction->updateAuthoredPrimaryFiringGrip();
+        }
+        {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::InteractionUpdate);
+            s_physicsInteraction->update();
+        }
+        {
+            performance_profiler::ScopedTimer timer(performance_profiler::Scope::ProviderPublication);
+            publishPhysicsInteractionIfReady();
         }
     }
 
-    using GameLoopFunc = void (*)(std::uint64_t rcx);
-    GameLoopFunc s_originalGameLoopFunc = nullptr;
-
-    /*
-     * Outer main-loop hook state. FRIK hooks the same call site at
-     * kGameLoaded and displaces ROCK's load-time hook; once FRIK owns the
-     * site ROCK wraps it again so one pass runs before FRIK's frame (the
-     * hand world claim rebase). s_frikChainGameLoopFunc is FRIK's hook (or
-     * its CommonLib thunk), displaced by the outer hook.
-     */
-    GameLoopFunc s_frikChainGameLoopFunc = nullptr;
-    bool s_outerFrameHookInstalled = false;
+    // Never-zero ROCK frame sequence; zero is reserved for "no frame yet".
     std::uint64_t s_schedulerSequence = 0;
-    std::uint64_t s_schedulerSequenceAtInstall = 0;
-    main_loop_hook_policy::OuterHookAttemptState s_outerHookAttemptState{};
+
+    [[nodiscard]] std::uint64_t nextFrameSequence(const std::uint64_t current) noexcept
+    {
+        const std::uint64_t next = current + 1;
+        return next == 0 ? 1 : next;
+    }
 
     using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
     NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
@@ -662,207 +663,35 @@ namespace
         return true;
     }
 
-    void onGameFrameUpdateHook(std::uint64_t rcx);
+    // The provider tick ran or began this frame (AfterArmSolve, or FrameEnd without a skeleton).
+    bool s_providerTickedThisFrame = false;
+    // AfterArmSolve ran this frame: the later skeleton phases may read ROCK's frame state.
+    bool s_skeletonTickedThisFrame = false;
+    /*
+     * ROCK handled kSkeletonReady for FRIK's current skeleton. FRIK broadcasts
+     * it after that skeleton's first world final, so on that first frame
+     * AfterArmSolve is skipped and FrameEnd ticks without physics.
+     */
+    bool s_frikSkeletonAnnounced = false;
 
     /*
-     * Runs before FRIK's frame once the outer hook is installed: rebases every
-     * active hand world claim by its controller driver's motion, then hands
-     * the frame to FRIK, whose hook calls onGameFrameUpdateHook afterwards.
+     * One ROCK tick: the provider V1 phases around ROCK's own update. With a
+     * skeleton it runs from AfterArmSolve, after ROCK's hand readers were
+     * refreshed; when the skeleton phases did not run it runs from FrameEnd
+     * so provider consumers keep receiving frames and leases keep expiring
+     * across loading screens and skeleton rebuilds. BeforeRock, ROCK update,
+     * AfterRock, Complete and this frame's provider publication share the one
+     * game-frame timing snapshot taken at FrameBegin.
      */
-    void onOuterFrameHook(const std::uint64_t rcx)
+    void runFrameTick(const bool withSkeletonPhysics)
     {
-        s_schedulerSequence = main_loop_hook_policy::nextSchedulerSequence(s_schedulerSequence);
-        if (s_pluginLoaded && s_frikAvailable) {
-            frik_hand_world_authority::runPreFrikPass(s_schedulerSequence);
-            scope_transition_telemetry::capture(scope_transition_telemetry::Phase::BeforeFrik, s_schedulerSequence);
-            vanilla_weapon_alignment_telemetry::capture(
-                vanilla_weapon_alignment_telemetry::Phase::BeforeFrik, s_schedulerSequence);
-        }
-        if (s_frikChainGameLoopFunc) {
-            s_frikChainGameLoopFunc(rcx);
-        }
-    }
-
-    bool describeModuleOwningAddress(const std::uintptr_t address, std::array<char, MAX_PATH>& outPath, bool& outIsFrik)
-    {
-        outPath.fill('\0');
-        outIsFrik = false;
-        HMODULE module = nullptr;
-        if (address == 0 ||
-            GetModuleHandleExA(
-                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                reinterpret_cast<LPCSTR>(address),
-                &module) == FALSE ||
-            !module) {
-            return false;
-        }
-        const auto length = GetModuleFileNameA(module, outPath.data(), static_cast<DWORD>(outPath.size()));
-        if (length == 0 || length >= outPath.size()) {
-            return false;
-        }
-        const char* fileName = outPath.data();
-        for (const char* cursor = outPath.data(); *cursor; ++cursor) {
-            if (*cursor == '\\' || *cursor == '/') {
-                fileName = cursor + 1;
-            }
-        }
-        outIsFrik = _stricmp(fileName, "FRIK.dll") == 0;
-        return true;
-    }
-
-    /*
-     * Bounded per-frame attempt to wrap the main-loop call site above FRIK.
-     * Decode and decision live in MainLoopHookPolicy; this reads the live
-     * bytes, resolves module ownership, and writes the call.
-     */
-    void ensureOuterFrameHook()
-    {
-        using namespace main_loop_hook_policy;
-
-        if (s_outerFrameHookInstalled || s_outerHookAttemptState.refused || !s_pluginLoaded || !s_frikAvailable) {
-            return;
-        }
-
-        REL::Relocation hookCallSite{ REL::Offset(rock::offsets::kHookSite_MainLoop) };
-        const std::uintptr_t siteAddress = hookCallSite.address();
-
-        OuterHookProbe probe{};
-        std::uintptr_t immediateTarget = 0;
-        std::uintptr_t terminalTarget = 0;
-        std::array<std::uint8_t, kRelativeCallSize> callBytes{};
-        probe.readable =
-            native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(siteAddress), callBytes.data(), callBytes.size()) &&
-            decodeRelativeCallTarget(callBytes.data(), siteAddress, immediateTarget);
-
-        std::array<char, MAX_PATH> ownerPath{};
-        if (probe.readable) {
-            terminalTarget = immediateTarget;
-            std::array<std::uint8_t, kCommonLibAbsoluteJumpThunkSize> thunkBytes{};
-            std::uintptr_t thunkTarget = 0;
-            if (native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(immediateTarget), thunkBytes.data(), thunkBytes.size()) &&
-                decodeCommonLibAbsoluteJumpTarget(thunkBytes.data(), thunkTarget)) {
-                terminalTarget = thunkTarget;
-            }
-            const auto outerAddress = reinterpret_cast<std::uintptr_t>(&onOuterFrameHook);
-            const auto innerAddress = reinterpret_cast<std::uintptr_t>(&onGameFrameUpdateHook);
-            probe.immediateIsOuterHook = immediateTarget == outerAddress;
-            probe.terminalIsOuterHook = terminalTarget == outerAddress;
-            probe.terminalIsInnerHook = terminalTarget == innerAddress;
-            bool ownedByFrik = false;
-            if (!probe.terminalIsOuterHook && !probe.terminalIsInnerHook &&
-                describeModuleOwningAddress(terminalTarget, ownerPath, ownedByFrik)) {
-                probe.terminalOwnedByFrik = ownedByFrik;
-            }
-        }
-
-        switch (decideOuterHook(s_outerHookAttemptState, probe)) {
-        case OuterHookDecision::AlreadyInstalled:
-            s_outerFrameHookInstalled = true;
-            s_schedulerSequenceAtInstall = s_schedulerSequence;
-            logger::info("ROCK: Outer main loop hook already present at 0x{:X}.", siteAddress);
-            break;
-        case OuterHookDecision::Install: {
-            auto& trampoline = F4SE::GetTrampoline();
-            const auto displaced = trampoline.write_call<5>(siteAddress, &onOuterFrameHook);
-            if (displaced == 0) {
-                s_outerHookAttemptState.refused = true;
-                frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Refused);
-                logger::critical(
-                    "ROCK: Outer main loop hook write at 0x{:X} returned no displaced target. Hand world claims stay disabled this session.",
-                    siteAddress);
-                break;
-            }
-            s_frikChainGameLoopFunc = reinterpret_cast<GameLoopFunc>(displaced);
-            s_outerFrameHookInstalled = true;
-            s_schedulerSequenceAtInstall = s_schedulerSequence;
-            logger::info(
-                "ROCK: Outer main loop hook installed at 0x{:X} above FRIK ({}), chained target 0x{:X}{}; verifying on the next frame.",
-                siteAddress,
-                ownerPath.data(),
-                displaced,
-                displaced == immediateTarget ? "" : " (differs from the decoded target)");
-            break;
-        }
-        case OuterHookDecision::RetryLater:
-            break;
-        case OuterHookDecision::GiveUp:
-            frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Refused);
-            logger::critical(
-                "ROCK: FRIK never hooked the main loop at 0x{:X} within {} frames. Hand world claims (grab, weapon grip, dynamic hand presentation) stay disabled this session.",
-                siteAddress,
-                kMaxOuterHookAttempts);
-            break;
-        case OuterHookDecision::Refuse:
-        default:
-            frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Refused);
-            if (!probe.readable) {
-                logger::critical(
-                    "ROCK: Main loop call site 0x{:X} is not a readable CALL rel32. Hand world claims stay disabled this session.",
-                    siteAddress);
-            } else {
-                logger::critical(
-                    "ROCK: Main loop call site 0x{:X} resolves to 0x{:X} owned by '{}', not FRIK. ROCK will not wrap an unknown hook; hand world claims stay disabled this session.",
-                    siteAddress,
-                    terminalTarget,
-                    ownerPath[0] ? ownerPath.data() : "<unknown module>");
-            }
-            break;
-        }
-    }
-
-    void verifyOuterFrameHook()
-    {
-        if (!s_outerFrameHookInstalled ||
-            frik_hand_world_authority::schedulerState() != frik_hand_world_authority::SchedulerState::Unverified) {
-            return;
-        }
-        if (s_schedulerSequence != s_schedulerSequenceAtInstall) {
-            frik_hand_world_authority::setSchedulerState(frik_hand_world_authority::SchedulerState::Verified);
-            logger::info("ROCK: Pre-FRIK pass verified (sequence {}); hand world claims enabled.", s_schedulerSequence);
-        }
-    }
-
-    /*
-     * FRIK installs its hook at kGameLoaded and calls this chained hook after
-     * its skeleton/weapon pass; ROCK's outer hook wraps FRIK's in turn. The
-     * displaced call is an unrelated PlayerCharacter flag update; native scope
-     * activation ran earlier. Publish the generation-bound rigid camera/overlay
-     * frame here for the later mono render, then let ROCK apply any final
-     * weapon authority in onFrameUpdate.
-     */
-    void onGameFrameUpdateHook(const std::uint64_t rcx)
-    {
-        native_scope_data::beginGameFrame();
-        if (s_originalGameLoopFunc) {
-            s_originalGameLoopFunc(rcx);
-        }
-
-        ensureOuterFrameHook();
-        verifyOuterFrameHook();
-        vanilla_weapon_alignment_telemetry::capture(
-            vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
-        frik_hand_world_authority::beginRockFrame(s_schedulerSequence);
-        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
-            s_physicsInteraction->resolveFrameHands();
-        }
-        scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterFrik, s_schedulerSequence);
-
-        /*
-         * One game-frame timing identity is created here, before any phase
-         * callback. BeforeRock, ROCK update, AfterRock, Complete, and this
-         * frame's provider publication all share this immutable snapshot.
-         */
-        const auto& frameTiming = runtime_state::beginFrameTiming(
-            input_remap_runtime::isMenuInputActive());
+        s_providerTickedThisFrame = true;
+        const auto& frameTiming = game_timing::currentFrameTiming();
 
         rock::provider::refreshNativeAnimationAuthorityLeasesV1();
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::BeforeRock,
             frameTiming);
-
-        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
-            s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
-        }
 
         performance_profiler::refreshSettings(
             g_rockConfig.rockPerformanceProfilerEnabled,
@@ -871,14 +700,16 @@ namespace
             g_rockConfig.rockPerformanceProfilerOverlayText);
         // Keep final presentation and overlay capture in this measured frame.
         performance_profiler::FrameScope profilerFrame;
-        dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
-        onFrameUpdate();
-        native_scope_shot_diagnostics::beginFrame();
-        if (!s_physicsInteraction) native_scope_shot_diagnostics::clearPresentation();
-        // Input classification runs inside onFrameUpdate. Apply the button
-        // scope level after it so an unflagged scope does not wait for a native
-        // cone callback that Bethesda will never issue.
-        driveManualScopeTransitionFallback();
+        if (withSkeletonPhysics) {
+            dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
+            updatePhysicsInteractionFrame();
+            native_scope_shot_diagnostics::beginFrame();
+            if (!s_physicsInteraction) native_scope_shot_diagnostics::clearPresentation();
+            // Input classification runs inside the update. Apply the button
+            // scope level after it so an unflagged scope does not wait for a
+            // native cone callback that Bethesda will never issue.
+            driveManualScopeTransitionFallback();
+        }
         native_scope_data::restoreNativeHousing();
         native_scope_data::reportDiagnostics();
 
@@ -888,11 +719,15 @@ namespace
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::Complete,
             frameTiming);
-        // Last scene writes: every claim of this frame is published before
-        // the read-only render snapshot samples the completed chain.
-        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
-            s_physicsInteraction->presentClaimedHands();
+        // Every claim of this frame is published; FRIK re-solves the claimed
+        // hands when the phase returns, before the read-only render snapshot.
+        // FRIK's weapon pass also follows: settle the weapon-node ownership now.
+        if (withSkeletonPhysics && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->finalizeFrikWeaponOwnershipForFrame();
             s_physicsInteraction->traceScopeColliderState();
+        }
+        if (!withSkeletonPhysics) {
+            return;
         }
         if (s_physicsInteraction) {
             s_physicsInteraction->publishDebugRenderFrame();
@@ -901,27 +736,171 @@ namespace
         }
         scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterRock, s_schedulerSequence);
         dynamic_collider_trace::capturePresentedHands(runtime_state::currentFrame().frameIndex);
-        frik_hand_world_authority::endRockFrame();
         vanilla_weapon_alignment_telemetry::capture(
             vanilla_weapon_alignment_telemetry::Phase::AfterRock, s_schedulerSequence);
     }
 
-    bool hookMainLoop()
+    /*
+     * FrameBegin: the top of FRIK's frame, every frame, skeleton or not, after
+     * the scope enter/exit broadcast. Housekeeping runs here.
+     */
+    void onFrikFrameBegin()
     {
-        REL::Relocation hookCallSite{ REL::Offset(rock::offsets::kHookSite_MainLoop) };
+        s_schedulerSequence = nextFrameSequence(s_schedulerSequence);
+        s_providerTickedThisFrame = false;
+        s_skeletonTickedThisFrame = false;
+        // The frame's one timing sample, before the runtime snapshot consumes it.
+        (void)runtime_state::beginFrameTiming(input_remap_runtime::isMenuInputActive());
+        native_scope_data::beginGameFrame();
+        prepareRuntimeFrame();
+    }
 
-        logger::info("ROCK: Hooking main loop at (0x{:X})...", hookCallSite.address());
-
-        auto& trampoline = F4SE::GetTrampoline();
-        const auto original = trampoline.write_call<5>(hookCallSite.address(), &onGameFrameUpdateHook);
-        s_originalGameLoopFunc = reinterpret_cast<GameLoopFunc>(original);
-
-        if (!s_originalGameLoopFunc) {
-            logger::critical("ROCK: Failed to hook main loop — original function pointer is null!");
-            return false;
+    /*
+     * FrameEnd: the end of FRIK's frame, every frame, after AfterWorldFinal
+     * when the skeleton phases ran and right after FRIK's early return when
+     * they did not (no player, loading, a skeleton released mid-frame). A frame
+     * that AfterArmSolve did not tick is ticked here, without physics. FRIK's
+     * frame runs under one catch, so a C++ exception escaping FRIK or another
+     * client's callback drops this phase for that frame; FrameBegin resets the
+     * tick flags and nothing here is held open across frames, so the tick is
+     * skipped once and resumes on the next frame.
+     */
+    void onFrikFrameEnd()
+    {
+        if (!s_providerTickedThisFrame) {
+            runFrameTick(false);
         }
+    }
 
-        logger::info("ROCK: Main loop hook installed, original: (0x{:X}).", original);
+    /*
+     * ROCK's frame runs inside FRIK's frame at the AfterArmSolve phase (FRIK
+     * API v2.3): both arms are solved, so every hand claim ROCK publishes
+     * here is re-solved by FRIK before finger poses, weapon position and the
+     * world final run, and the solved arm is readable through the API.
+     */
+    void onFrikAfterArmSolve()
+    {
+        if (!s_frikSkeletonAnnounced) {
+            return;
+        }
+        // Claimed before anything below can throw, so FrameEnd never ticks this frame again.
+        s_providerTickedThisFrame = true;
+        s_skeletonTickedThisFrame = true;
+        vanilla_weapon_alignment_telemetry::capture(
+            vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
+        frik_hand_world_authority::beginRockFrame(s_schedulerSequence);
+        // endRockFrame runs on every exit from here, a caught exception included.
+        struct RockFrameEnd
+        {
+            ~RockFrameEnd() { frik_hand_world_authority::endRockFrame(); }
+        };
+        const RockFrameEnd rockFrameEnd{};
+        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->resolveFrameHands();
+        }
+        scope_transition_telemetry::capture(scope_transition_telemetry::Phase::AfterFrik, s_schedulerSequence);
+        runFrameTick(true);
+    }
+
+    /*
+     * AfterWeaponPosition: FRIK's weapon offsets, two-handed grip and scope
+     * camera are applied (FRIK skips the weapon node while ROCK blocks it).
+     * ROCK's immersive scope overlay captures FRIK's camera calibration and
+     * publishes the rigid weapon-local scope frame from the final weapon.
+     */
+    void onFrikAfterWeaponPosition()
+    {
+        if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
+        }
+    }
+
+    // AfterWorldFinal: every bone world transform is final. Latch what was rendered.
+    void onFrikAfterWorldFinal()
+    {
+        if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->captureRenderedHands();
+        }
+    }
+
+    bool frikPowerArmorState() noexcept
+    {
+        return frik_visual_authority::isSkeletonReadyHint() && frik_visual_authority::canReportPowerArmor() ?
+            frik_visual_authority::isInPowerArmor() :
+            f4vr::isInPowerArmorFromBiped();
+    }
+
+    void reportFramePhaseFault(const std::uint32_t phase) noexcept
+    {
+        static std::uint32_t s_reported = 0;
+        if (s_reported++ < 16) {
+            try {
+                logger::error("ROCK: exception escaped FRIK frame phase {}; the rest of ROCK's frame was abandoned.", phase);
+            } catch (...) {
+            }
+        }
+    }
+
+    /*
+     * FRIK's registry does not guard its callbacks and the callback is
+     * noexcept, so a C++ exception escaping a phase handler would terminate
+     * the process inside FRIK's frame. Catch those, unwinding ROCK's scoped
+     * timers and locks, log, and continue with the next frame. Hardware
+     * faults are left alone so a ROCK crash stays reportable.
+     */
+    void invokeFramePhaseGuarded(void (*handler)(), const std::uint32_t phase) noexcept
+    {
+        try {
+            handler();
+        } catch (...) {
+            reportFramePhaseFault(phase);
+        }
+    }
+
+    void FRIK_CALL onFrikFramePhase(const std::uint32_t phase, void*) noexcept
+    {
+        using FramePhase = frik::api::FRIKApiV2::FramePhase;
+        switch (static_cast<FramePhase>(phase)) {
+        case FramePhase::FrameBegin:
+            invokeFramePhaseGuarded(&onFrikFrameBegin, phase);
+            break;
+        case FramePhase::NativeGraphOutput:
+            invokeFramePhaseGuarded(&authored_weapon_grip_capture::onNativeGraphOutput, phase);
+            break;
+        case FramePhase::AfterArmSolve:
+            invokeFramePhaseGuarded(&onFrikAfterArmSolve, phase);
+            break;
+        case FramePhase::AfterWeaponPosition:
+            invokeFramePhaseGuarded(&onFrikAfterWeaponPosition, phase);
+            break;
+        case FramePhase::AfterWorldFinal:
+            invokeFramePhaseGuarded(&onFrikAfterWorldFinal, phase);
+            break;
+        case FramePhase::FrameEnd:
+            invokeFramePhaseGuarded(&onFrikFrameEnd, phase);
+            break;
+        default:
+            break;
+        }
+    }
+
+    /*
+     * Registered once after FRIK loaded; registrations survive skeleton
+     * rebuilds. ROCK fans NativeGraphOutput out to its own provider
+     * consumers (PAPER), so it is the only registrant for that phase.
+     */
+    bool registerFrikFrameCallbacks()
+    {
+        using FramePhase = frik::api::FRIKApiV2::FramePhase;
+        constexpr int kPriority = 100;
+        for (const FramePhase phase : { FramePhase::FrameBegin, FramePhase::NativeGraphOutput, FramePhase::AfterArmSolve, FramePhase::AfterWeaponPosition, FramePhase::AfterWorldFinal, FramePhase::FrameEnd }) {
+            if (!frik_visual_authority::registerFrameCallback("ROCK", phase, &onFrikFramePhase, nullptr, kPriority)) {
+                logger::critical("ROCK: FRIK frame callback registration failed for phase {}.", static_cast<unsigned>(phase));
+                (void)frik_visual_authority::unregisterFrameCallback("ROCK");
+                return false;
+            }
+        }
+        logger::info("ROCK: FRIK frame callbacks registered (FrameBegin, NativeGraphOutput, AfterArmSolve, AfterWeaponPosition, AfterWorldFinal, FrameEnd).");
         return true;
     }
 
@@ -936,6 +915,10 @@ namespace
         switch (static_cast<LE>(msg->type)) {
         case LE::kSkeletonReady:
             logger::info("ROCK: Received kSkeletonReady from FRIK.");
+            if (msg->data && msg->dataLen == sizeof(frik::api::FRIKApiV2::SkeletonLifecycleData)) {
+                const auto* lifecycle = static_cast<const frik::api::FRIKApiV2::SkeletonLifecycleData*>(msg->data);
+                logger::info("ROCK: FRIK skeleton generation {} powerArmor={}.", lifecycle->generation, lifecycle->inPowerArmor ? "yes" : "no");
+            }
             weapon_action_trace::initialize();
             vanilla_weapon_alignment_telemetry::initialize();
             scope_transition_telemetry::initialize();
@@ -951,10 +934,12 @@ namespace
                 logger::warn("ROCK: PhysicsInteraction already exists on kSkeletonReady; deferring recreation to ROCK frame gate.");
             }
             requestDeferredPhysicsCreation();
+            s_frikSkeletonAnnounced = true;
             break;
 
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
+            s_frikSkeletonAnnounced = false;
             weapon_action_trace::invalidateContext();
             vanilla_weapon_alignment_telemetry::shutdown();
             scope_transition_telemetry::shutdown();
@@ -973,10 +958,19 @@ namespace
             }
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
             dynamic_collider_trace::shutdown();
+            // FRIK runs no frame phase without a skeleton: drop the input state now.
+            clearUnavailableRuntimeInputState();
+            break;
+
+        case LE::kScopeEnter:
+        case LE::kScopeExit:
+            // Broadcast at the start of FRIK's frame, before any phase. The
+            // native first-person arm update rebuilds its tree on the scope
+            // edge; hold the controller-hand relation for those frames.
+            frik_hand_world_authority::noteScopeEdge();
             break;
 
         default:
-
             break;
         }
     }
@@ -997,9 +991,9 @@ namespace
             }
 
             /*
-             * FRIK API v2 is a fixed table with an exact struct-size check, so a
-             * successful initialize() already proves every entry this build
-             * calls exists. The error codes are the header's own contract.
+             * FRIK API v2 is append-only since v2.2: initialize(v) proves the
+             * table holds every entry up to v. This build needs v2.3 for frame
+             * phases, body reads, the grip owner and the explicit weapon parent.
              */
             const int frikErr = frik::api::FRIKApiV2::initialize(frik::api::FRIK_API_V2_VERSION);
             if (frikErr != 0) {
@@ -1024,7 +1018,8 @@ namespace
                 case 5:
                     logger::critical(
                         "ROCK: FRIK API v2 initialization FAILED (error 5). "
-                        "Loaded FRIK API v2 table size does not match this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
+                        "Loaded FRIK API v2 table is smaller than v{} requires. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
+                        frik::api::FRIK_API_V2_VERSION);
                     break;
                 default:
                     logger::critical("ROCK: FRIK API v2 initialization FAILED (error {}). ROCK is now DISABLED.", frikErr);
@@ -1076,9 +1071,14 @@ namespace
             s_messaging->RegisterListener(onFRIKMessage, frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
             logger::info("ROCK: Registered FRIK lifecycle event listener on '{}'.", frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
 
-            // FRIK hooks the main loop in its own kGameLoaded handler; whichever
-            // order the dispatch used, the per-frame attempt finishes the job.
-            ensureOuterFrameHook();
+            if (!registerFrikFrameCallbacks()) {
+                logger::critical("ROCK: FRIK frame callbacks are unavailable. ROCK is now DISABLED.");
+                s_frikAvailable = false;
+                return;
+            }
+            // FRIK debounces the game's transient power-armor state and flips
+            // it together with the skeleton generation (API v2.2).
+            f4vr::setPowerArmorStateProvider(&frikPowerArmorState);
 
             logger::info("ROCK: Initialization complete. Waiting for skeleton...");
         }
@@ -1201,11 +1201,6 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     logger::info("ROCK: Install scoped weapon transition animation acceleration...");
     if (!rock::weapon_transition_animation_acceleration::install()) {
         logger::warn("ROCK: Weapon draw/sheath animation acceleration unavailable; native timing remains unchanged.");
-    }
-
-    logger::info("ROCK: Install main loop hook...");
-    if (!hookMainLoop()) {
-        return false;
     }
 
     logger::info("ROCK: Install native scope geometry hook...");

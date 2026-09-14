@@ -86,9 +86,8 @@ namespace rock
 
     frik_visual_authority::RebaseDriver TwoHandedGrip::weaponSeatDriver(const bool seatHandIsLeft) const
     {
-        return weaponSeatFollowsCarrier(seatHandIsLeft) ?
-            frik_visual_authority::physicalHandDriver(weaponCarrierIsLeft()) :
-            frik_visual_authority::physicalHandAimAxisDriver(seatHandIsLeft);
+        return frik_visual_authority::physicalHandDriver(
+            weaponSeatFollowsCarrier(seatHandIsLeft) ? weaponCarrierIsLeft() : seatHandIsLeft);
     }
 
     void TwoHandedGrip::recordPublishedHandWorld(const bool isLeft, const RE::NiTransform& appliedWorld)
@@ -256,8 +255,16 @@ namespace rock
         }
 
         RE::NiNode* nativeParent = _session.weaponNode->parent;
-        if (_leftCarry.weaponNodeReparented) {
-            nativeParent = resolveFirstPersonHandNode(false);
+        const bool awaitingParentRestore = _leftCarry.weaponNodeReparented;
+        if (awaitingParentRestore) {
+            // FRIK restores the game's own handedness setting, not the right hand.
+            bool gameLeftHanded = false;
+            if (!frik_visual_authority::tryResolveHandIsLeft(frik_visual_authority::Hand::Primary, gameLeftHanded)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon,
+                    5000,
+                    "TwoHandedGrip: bLeftHandedMode:VR unavailable; the weapon return assumes FRIK restores the right-hand parent");
+            }
+            nativeParent = resolveFirstPersonHandNode(gameLeftHanded);
             if (!nativeParent) {
                 return;
             }
@@ -272,20 +279,14 @@ namespace rock
         }
 
         /*
-         * blockPrimaryWeaponNodeOwnership is hFRIK's external LEFT-carry
-         * topology switch, not a transform-write-only blocker. Retaining it
-         * here makes hFRIK reparent the weapon back under LArm_Hand on the next
-         * frame, which invalidates this right-parent-local return and snaps the
-         * weapon immediately. Release left-carry topology before beginning the
-         * overlay. ROCK runs after hFRIK and republishes the interpolated node
-         * every frame, so hFRIK's earlier native write cannot reach rendering;
-         * at the exact endpoint both writers already agree on the baseline.
+         * Release the left-carry parent request before beginning the overlay:
+         * FRIK restores RArm_Hand in its next skeleton pass, before this
+         * return's first advance, so the right-parent-local return below
+         * lands on the restored parent. The return writes world transforms,
+         * so the one frame the node still hangs under LArm_Hand renders the
+         * same pose. The weapon-node write block stays held for the return.
          */
         releaseFiringHandWeaponNodeOwnership(_session.weaponNode);
-        if (_session.weaponNode->parent != nativeParent) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: weapon return skipped because native right-hand parenting could not be restored");
-            return;
-        }
 
         RE::NiTransform returnTargetLocal = _weaponNodeLocalBaseline;
         const bool followsAuthoredPrimaryGrip =
@@ -307,6 +308,7 @@ namespace rock
         returnState.lastTargetLocal = returnTargetLocal;
         returnState.retainPrimaryPoseBlocker = usesLeftFiringCarry();
         returnState.followsAuthoredPrimaryGrip = followsAuthoredPrimaryGrip;
+        returnState.parentRestoreGraceFrames = awaitingParentRestore ? 2 : 0;
         returnState.localTransition.begin(startLocal);
         returnState.localTransition.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
             startLocal,
@@ -342,6 +344,14 @@ namespace rock
         if (!state.localTransition.active) {
             return;
         }
+        bool parentChanged = currentWeaponNode && currentWeaponNode->parent != state.nativeParent;
+        if (parentChanged && state.parentRestoreGraceFrames > 0) {
+            // FRIK applies the left-carry parent restore in its next skeleton
+            // pass; the return writes world transforms, so the old parent is
+            // fine for that long.
+            --state.parentRestoreGraceFrames;
+            parentChanged = false;
+        }
         if (!runtime_state::isLocalSkeletonReady() ||
             !currentWeaponNode ||
             currentWeaponNode != state.weaponNode ||
@@ -349,7 +359,7 @@ namespace rock
             currentEquippedWeaponOwnershipKey != state.equippedWeaponOwnershipKey ||
             !state.nativeParent ||
             !isFiniteTransform(state.nativeParent->world) ||
-            currentWeaponNode->parent != state.nativeParent) {
+            parentChanged) {
             clearAllVisualReturns("weapon-identity-or-parent-changed", true, true);
             return;
         }
@@ -808,6 +818,8 @@ namespace rock
                 NativeScopeCameraWriteSource::WeaponVisualAuthority, scopeCameraFollow, scopeCameraResult,
                 scopeTargetReady ? _scope.anchorSource : native_scope_sight_anchor_policy::AnchorSource::None);
         }
+        // FRIK's re-glue and weapon pass must skip this node from now on.
+        noteFrikWeaponNodeWrite();
         return true;
     }
 

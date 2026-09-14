@@ -184,14 +184,6 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::republishPartCarryWeaponTransform(RE::NiNode* weaponNode)
-    {
-        if (_session.state != TwoHandedState::PartCarry || !_hasSolvedWeaponTransform || !weaponNode) {
-            return false;
-        }
-        return applyWeaponVisualAuthority(weaponNode, _lastSolvedWeaponTransform);
-    }
-
     void TwoHandedGrip::updatePartCarryGrip(
         RE::NiNode* weaponNode,
         float dt,

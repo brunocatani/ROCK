@@ -232,18 +232,25 @@ namespace rock
 
         /*
          * Resolve this frame's hand bone cache and isolated controller hands.
-         * The inner main-loop hook calls it right after FRIK's frame so the
+         * FRIK's AfterArmSolve phase calls it right after the arm solve so the
          * scope sync and provider callbacks that run before update() read
          * this frame's hands; update() refreshes again (same inputs).
          */
         void resolveFrameHands() { (void)refreshHandBoneCache(); }
 
         /*
-         * End of ROCK's frame, after every claim of the frame was published:
-         * move each claimed hand to this frame's claim and re-solve the arm
-         * behind it, so the hand draws on the seat ROCK computed this frame.
+         * FRIK's AfterWorldFinal phase: the rendered hand bones are final.
+         * Latch them, and FRIK's verdict on each claimed hand, for the next
+         * frame's controller-hand isolation and chain transport.
          */
-        void presentClaimedHands();
+        void captureRenderedHands();
+
+        /*
+         * End of ROCK's frame, before FRIK's weapon pass: hold or release the
+         * FRIK weapon-node write block for this frame's ownership and report
+         * the two-handed grip to FRIK.
+         */
+        void finalizeFrikWeaponOwnershipForFrame() { _twoHandedGrip.finalizeFrikWeaponOwnershipForFrame(); }
         void publishDebugRenderFrame();
 
     private:

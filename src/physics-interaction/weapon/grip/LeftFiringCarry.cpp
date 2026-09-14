@@ -4,40 +4,6 @@
 
 namespace rock
 {
-    bool TwoHandedGrip::publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode)
-    {
-        if (!weaponNode || weaponNode != _session.weaponNode ||
-            (_session.state != TwoHandedState::Gripping && _session.state != TwoHandedState::PrimaryOnly) ||
-            !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal) {
-            return false;
-        }
-
-        RE::NiTransform physicalHandWorld{};
-        RE::NiTransform presentedHandWorld{};
-        RE::NiTransform feedForwardWeaponWorld{};
-        if (!tryResolveLeftPositionOnlyCarryFrames(
-                weaponNode,
-                physicalHandWorld,
-                presentedHandWorld,
-                feedForwardWeaponWorld,
-                0.0f)) {
-            return false;
-        }
-        /*
-         * Basis pre-write, not a rendered frame: the state handler publishes
-         * the final pose later this frame (the two-hand solve while both
-         * hands hold). Recording it as rendered handed the part-carry
-         * baseline the wand-aimed pose instead of the pose on screen, so the
-         * weapon jumped to it when the firing hand let go.
-         */
-        return applyWeaponVisualAuthority(
-            weaponNode,
-            feedForwardWeaponWorld,
-            0,
-            true,
-            false);
-    }
-
     bool TwoHandedGrip::solveLeftFiringWeaponCarry(RE::NiNode* weaponNode, const float dt)
     {
         if (!weaponNode || !_firing.hasPrimaryHandWeaponLocal) {
@@ -451,6 +417,7 @@ namespace rock
 
     void TwoHandedGrip::syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
     {
+        (void)weaponNode;
         const bool wantLeftFiringCarry = usesLeftFiringCarry() &&
             (_session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PrimaryOnly);
 
@@ -471,81 +438,39 @@ namespace rock
             ROCK_LOG_INFO(Weapon, "TwoHandedGrip: FRIK weapon-node ownership blocked for left-firing carry");
         }
 
-        if (!weaponNode) {
-            return;
-        }
-
-        RE::NiNode* leftHand = resolveFirstPersonHandNode(true);
-        if (!leftHand) {
-            return;
-        }
-        if (weaponNode->parent == leftHand) {
-            _leftCarry.weaponNodeReparented = true;
-            return;
-        }
-
         /*
-         * Re-parent under LArm_Hand preserving world so the scene graph keeps
-         * the weapon riding the firing hand at every point in the frame
-         * (native fire/aim sampling included). Same operation FRIK performs
-         * for the game's own left-handed mode, minus the mirrored offsets.
+         * FRIK API v2.3: FRIK re-parents the weapon node under LArm_Hand and
+         * keeps its own bookkeeping (first-person arm source, off-side hand
+         * pose copy, recoil hand) for this request; the same operation it
+         * performs for the game's own left-handed mode. The request is
+         * recorded now and applied in FRIK's next skeleton pass, before any
+         * frame phase, so the parent seen in this callback is still the right
+         * hand. FRIK restores the game's setting when the request clears or
+         * the skeleton rebuilds.
          */
-        const RE::NiTransform worldBefore = weaponNode->world;
-        RE::NiTransform localInLeftHand{};
-        if (!tryResolveWeaponRootLocal(
-                leftHand,
-                worldBefore,
-                localInLeftHand)) {
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                2000,
-                "TwoHandedGrip: left-firing weapon reparent rejected an invalid target frame");
-            return;
+        if (!_leftCarry.weaponNodeReparented) {
+            if (!frik_visual_authority::setWeaponNodeParentHand(WEAPON_NODE_OWNERSHIP_TAG, frik_visual_authority::Hand::Left)) {
+                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: left-firing carry aborted because FRIK refused the weapon-node parent request");
+                releaseFiringHandWeaponNodeOwnership(weaponNode);
+                transitionToInactive(false);
+                return;
+            }
+            _leftCarry.weaponNodeReparented = true;
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node parent requested under LArm_Hand for left-firing carry");
         }
-        RE::NiPointer<RE::NiAVObject> detached;
-        if (weaponNode->parent) {
-            weaponNode->parent->DetachChild(weaponNode, detached);
-        }
-        leftHand->AttachChild(weaponNode, true);
-        weaponNode->local = localInLeftHand;
-        weaponNode->world = worldBefore;
-        _leftCarry.weaponNodeReparented = true;
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node re-parented under LArm_Hand for left-firing carry");
     }
 
     void TwoHandedGrip::releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
     {
+        (void)weaponNode;
         if (_leftCarry.weaponNodeReparented) {
-            RE::NiNode* node = weaponNode ? weaponNode : _session.weaponNode;
-            RE::NiNode* rightHand = resolveFirstPersonHandNode(false);
-            if (node && rightHand && node->parent != rightHand) {
-                const RE::NiTransform worldBefore = node->world;
-                RE::NiTransform localInRightHand{};
-                if (!tryResolveWeaponRootLocal(
-                        rightHand,
-                        worldBefore,
-                        localInRightHand)) {
-                    ROCK_LOG_SAMPLE_WARN(
-                        Weapon,
-                        2000,
-                        "TwoHandedGrip: right-hand weapon reparent rejected an invalid target frame");
-                } else {
-                    RE::NiPointer<RE::NiAVObject> detached;
-                    if (node->parent) {
-                        node->parent->DetachChild(node, detached);
-                    }
-                    rightHand->AttachChild(node, true);
-                    node->local = localInRightHand;
-                    node->world = worldBefore;
-                    ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node re-parented back under RArm_Hand");
-                }
-            }
+            // FRIK restores the game's parent hand in its next skeleton pass.
+            (void)frik_visual_authority::clearWeaponNodeParentHand(WEAPON_NODE_OWNERSHIP_TAG);
             _leftCarry.weaponNodeReparented = false;
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node parent request cleared; FRIK restores RArm_Hand");
         }
 
         if (_leftCarry.weaponNodeOwnershipBlockEngaged) {
-            // FRIK also force-reattaches native weapon-node parenting once the
-            // block releases (belt and braces for teardown without nodes).
             (void)frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_OWNERSHIP_TAG, false);
             _leftCarry.weaponNodeOwnershipBlockEngaged = false;
             ROCK_LOG_INFO(Weapon, "TwoHandedGrip: FRIK weapon-node ownership restored");

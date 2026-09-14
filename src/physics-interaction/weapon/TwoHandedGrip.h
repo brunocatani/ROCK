@@ -793,6 +793,14 @@ namespace rock
         bool ownsWeaponTransform() const;
 
         /*
+         * End of ROCK's frame (FRIK's AfterArmSolve phase): hold or release
+         * FRIK's weapon-node write block for this frame's ownership, and
+         * report the two-handed grip to FRIK. FRIK's own weapon pass runs
+         * after this callback, so the block must be current before it.
+         */
+        void finalizeFrikWeaponOwnershipForFrame();
+
+        /*
          * The manual-ownership state machine also tracks right-hand
          * PrimaryOnly input ownership, but that state deliberately leaves the
          * weapon transform with hFRIK. Authored calibration must continue to
@@ -914,31 +922,6 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             bool logDiagnostic = false);
 
-        /*
-         * Publishes the left-firing canonical carry pose (firing hand o
-         * inverse(captured hold)) onto the weapon node. While ROCK owns the
-         * node, FRIK's earlier pass leaves it at its OFFHAND GLUE pose, so
-         * any world<->node-local math run before this publish operates in
-         * glue space. update() calls it internally before its grip math;
-         * PhysicsInteraction MUST also call it before the frame's weapon
-         * interaction probes (ranked part selection converts the real palm
-         * point into node-local space - glue space made a forend grab pick
-         * the scope's sight body ~10gu away). Safe pre-update: it reads the
-         * previous frame's scope-safe hand frame, a millimeter-scale error
-         * against the ~10gu glue displacement it removes. No-op unless
-         * left-firing with a valid captured hold on the current weapon.
-         */
-        bool publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode);
-
-        /*
-         * FRIK re-attaches the weapon node to the firing hand every frame
-         * before ROCK runs, even while the firing hand is detached. Callers
-         * must republish ROCK's solved part-carry transform before reading the
-         * weapon node (probes, grip-zone checks, capture frames), or every
-         * weapon-relative computation sees the weapon glued to the firing hand.
-         */
-        bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
-
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
 
         /*
@@ -975,6 +958,8 @@ namespace rock
             const weapon_recoil_policy::SampleIdentity& identity) noexcept;
         [[nodiscard]] bool consumeOwnedWeaponRecoil(RE::NiTransform& outWorldDelta) noexcept;
         [[nodiscard]] bool canUseRightOneHandRecoil() const noexcept;
+        // The right one-hand recoil pose is away from rest: a kick is live or its neutral frame is pending.
+        [[nodiscard]] bool isOneHandRecoilEnvelopeActive() const noexcept;
         void clearOneHandRecoilClaim();
         void applyRightOneHandRecoil(RE::NiNode* weaponNode);
         void traceRecoilSample(const weapon_recoil_policy::SampleIdentity& context,
@@ -1041,6 +1026,9 @@ namespace rock
             RE::NiTransform lastTargetLocal{};
             bool retainPrimaryPoseBlocker{ false };
             bool followsAuthoredPrimaryGrip{ false };
+            // FRIK restores the game's parent hand in its next skeleton pass
+            // after a left-carry release; tolerate the old parent that long.
+            std::uint8_t parentRestoreGraceFrames{ 0 };
         };
 
         /*
@@ -1640,6 +1628,15 @@ namespace rock
          * Idempotent; call after every state/role transition.
          */
         void syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
+        // The first weapon-node write of a frame engages the block at once, so
+        // FRIK's re-glue and weapon pass are skipped from that write on.
+        void noteFrikWeaponNodeWrite();
+        // A one-hand recoil pose was written; recoil writes hold the block for a longer tail.
+        void noteFrikRecoilWeaponNodeWrite();
+        void engageFrikWeaponNodeWriteBlock();
+        void releaseFrikWeaponNodeWriteBlock(const char* reason);
+        void syncFrikOffHandGripReport();
+        void resetFrikWeaponOwnership();
 
         static RE::NiNode* resolveFirstPersonHandNode(bool isLeft);
 
@@ -2094,13 +2091,40 @@ namespace rock
             float gripSeparationWorld{ 0.0f };
         };
 
+        /*
+         * FRIK API v2.3 weapon-node ownership. While ROCK writes the primary
+         * weapon node (two-hand authority, part carry, left carry, return
+         * blends, the authored primary alignment) FRIK's own weapon pass,
+         * which runs after ROCK's AfterArmSolve callback, must write nothing
+         * to it; blockPrimaryWeaponNodeOwnership is a pure write block since
+         * v2.3. The left-carry parent request is separate (LeftFiringCarryState).
+         */
+        struct FrikWeaponNodeOwnershipState
+        {
+            bool writeBlockEngaged{ false };
+            // applyWeaponVisualAuthority wrote the node this frame.
+            bool writtenThisFrame{ false };
+            // Frames since the last write. The block is a state, not a
+            // per-frame flag: every engage edge runs FRIK's reposition reset
+            // and every release edge lets FRIK re-apply its offset local, so
+            // it is held for a window after the last write.
+            std::uint32_t framesSinceWrite{ 0xFFFFFFFFu };
+            // The one-hand recoil pose was written this frame, and frames since its last write.
+            bool recoilWrittenThisFrame{ false };
+            std::uint32_t framesSinceRecoilWrite{ 0xFFFFFFFFu };
+            // The two-handed grip as last reported to FRIK (setOffHandGripping).
+            bool gripReported{ false };
+            bool gripReportedSupportIsLeft{ false };
+            std::uint64_t gripReportedWeaponKey{ 0 };
+        };
+
         // State owned by the LeftFiringCarry module: FRIK weapon-node
-        // ownership blocking, the LArm_Hand reparent witness, and the
-        // left-firing node attachment.
+        // ownership blocking and the LArm_Hand parent request.
         struct LeftFiringCarryState
         {
-            // FRIK weapon-node ownership block + reparent bookkeeping for
-            // left-firing carry; see syncFiringHandWeaponNodeOwnership().
+            // FRIK weapon-node write block + parent-hand request bookkeeping
+            // for left-firing carry; see syncFiringHandWeaponNodeOwnership().
+            // FRIK applies the parent request in its next skeleton pass.
             bool weaponNodeOwnershipBlockEngaged{ false };
             bool weaponNodeReparented{ false };
 
@@ -2237,6 +2261,7 @@ namespace rock
         SupportGripState _support{};
         PartCarryState _partCarry{};
         LeftFiringCarryState _leftCarry{};
+        FrikWeaponNodeOwnershipState _frikWeaponNode{};
         WeaponRecoilState _recoil{};
         // Non-owning sibling service. PhysicsInteraction declares the surface
         // runtime first, so our recoil registration ends before it is destroyed.

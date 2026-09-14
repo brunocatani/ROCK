@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
-#include "physics-interaction/hand/ArmPresentationPolicy.h"
 #include "physics-interaction/hand/RenderedBoneTransportPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
@@ -68,20 +67,6 @@ namespace rock
             skeleton_bone_debug_math::DebugSkeletonBoneSource source,
             SkeletonBoneCaptureSpace space,
             DirectSkeletonBoneSnapshot& outSnapshot);
-        /*
-         * Re-solve one cached arm (upper arm and twists, forearm bones, hand,
-         * fingers) so the hand takes handDelta exactly and the elbow follows
-         * with both bone lengths kept (ArmPresentationPolicy), in the tree
-         * and its refNodes. The whole arm is validated before the first
-         * write. False when nothing was written; outElbowMoveGameUnits is how
-         * far the elbow left FRIK's solve, outReachDeficitGameUnits how far
-         * the wrist lay beyond the straight arm.
-         */
-        bool presentCachedArm(
-            rendered_bone_transport_policy::HandChainSide side,
-            const RE::NiTransform& handDelta,
-            float& outElbowMoveGameUnits,
-            float& outReachDeficitGameUnits);
         void resetCache();
 
     private:
@@ -92,9 +77,6 @@ namespace rock
             int parentTreeIndex = -1;
             int drawableParentSnapshotIndex = -1;
             rendered_bone_transport_policy::HandChainSide chainSide = rendered_bone_transport_policy::HandChainSide::None;
-            // Presentation: which side and segment of the arm the bone belongs to.
-            rendered_bone_transport_policy::HandChainSide armSide = rendered_bone_transport_policy::HandChainSide::None;
-            arm_presentation_policy::ArmSegment armSegment = arm_presentation_policy::ArmSegment::None;
             bool included = false;
         };
 
@@ -204,23 +186,6 @@ namespace rock
             const bool valid = isLeft ? _leftHandNodeWorldValid : _rightHandNodeWorldValid;
             outWorld = valid ? (isLeft ? _leftHandNodeWorld : _rightHandNodeWorld) : RE::NiTransform{};
             return _ready && valid;
-        }
-
-        /*
-         * End of ROCK's frame: move the rendered hand by the change the hand
-         * world authority made to its claim since FRIK consumed it, and
-         * re-solve the arm behind it.
-         */
-        bool presentArm(bool isLeft, const RE::NiTransform& handDelta, float& outElbowMoveGameUnits, float& outReachDeficitGameUnits)
-        {
-            outElbowMoveGameUnits = 0.0f;
-            outReachDeficitGameUnits = 0.0f;
-            return isReady() &&
-                   _reader.presentCachedArm(
-                       isLeft ? rendered_bone_transport_policy::HandChainSide::Left : rendered_bone_transport_policy::HandChainSide::Right,
-                       handDelta,
-                       outElbowMoveGameUnits,
-                       outReachDeficitGameUnits);
         }
 
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }

@@ -30,7 +30,6 @@ namespace rock::authored_weapon_grip_capture
         using BoneTransform = BoneTree::BoneTransforms;
         using UpdateFirstPersonArmFn =
             void* (*)(const RE::PlayerCharacter*, RE::NiNode**, RE::NiNode**);
-        using PostUpdateAnimationGraphManagerFn = void (*)(void* holder);
 
         constexpr int kMaxFlattenedTransforms = 768;
         constexpr std::uint16_t kAuthoredSupportFingerTransformMask = 0x7FFFu;
@@ -57,7 +56,6 @@ namespace rock::authored_weapon_grip_capture
 
         PrimaryFiringGripBoneCache s_primaryFiringGripBoneCache{};
         UpdateFirstPersonArmFn s_originalUpdateFirstPersonArm{ nullptr };
-        PostUpdateAnimationGraphManagerFn s_originalPostUpdate{ nullptr };
         std::atomic<bool> s_hookInstalled{ false };
         std::atomic<bool> s_hookInstallFailed{ false };
         std::atomic<bool> s_primaryFiringGripCaptureEnabled{ false };
@@ -605,8 +603,10 @@ namespace rock::authored_weapon_grip_capture
         }
 
         /*
-         * The graph-output phase fires inside the native game update, between
-         * the previous frame's Complete and the next frame's BeforeRock. It
+         * The graph-output phase is FRIK's NativeGraphOutput frame phase (API
+         * v2.3), which FRIK runs from its own detour of the player
+         * post-animation vfunc: inside the native game update, between the
+         * previous frame's Complete and the next frame's BeforeRock. It
          * attributes no elapsed time: consumers order against it, they do not
          * integrate it, so the dispatched timing is zero-duration and invalid.
          */
@@ -619,7 +619,7 @@ namespace rock::authored_weapon_grip_capture
             return timing;
         }
 
-        void onPostUpdateAnimationGraphManager(void* holder)
+        void onNativeGraphOutputPhase()
         {
 #if defined(_MSC_VER)
             __try {
@@ -644,9 +644,6 @@ namespace rock::authored_weapon_grip_capture
                 makeGraphOutputPhaseTiming());
             captureAuthoredSupportGraphPose();
 #endif
-            if (s_originalPostUpdate) {
-                s_originalPostUpdate(holder);
-            }
         }
 
         __declspec(noinline) void* onUpdateFirstPersonArm(
@@ -739,30 +736,10 @@ namespace rock::authored_weapon_grip_capture
                 return false;
             }
 
-            // hFRIK preserves the native eight-byte prologue and NOPs the
-            // downstream first-to-third-person bridge. Owning this single
-            // validated entry detour lets ROCK retain its proven early grip
-            // sample while addons consume the same graph-output API phase.
-            constexpr std::array<std::uint8_t, 14> kExpectedPostFrikPrefix{
-                0x48, 0x8B, 0xC4, 0x55, 0x48, 0x83, 0xEC, 0x60,
-                0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-            };
-            void* originalPostUpdate = nullptr;
-            const bool postUpdateInstalled = entry_trampoline_hook::install(
-                "shared native graph-output coordinator",
-                offsets::kFunc_PlayerPostUpdateAnimationGraphManager,
-                kExpectedPostFrikPrefix.data(),
-                kExpectedPostFrikPrefix.size(),
-                reinterpret_cast<void*>(&onPostUpdateAnimationGraphManager),
-                originalPostUpdate);
-            if (!postUpdateInstalled || !originalPostUpdate) {
-                s_hookInstallFailed.store(true, std::memory_order_release);
-                return false;
-            }
-            s_originalPostUpdate =
-                reinterpret_cast<PostUpdateAnimationGraphManagerFn>(
-                    originalPostUpdate);
-
+            // The native graph-output point is FRIK's NativeGraphOutput frame
+            // phase since API v2.3 (FRIK owns the detour at that vfunc);
+            // ROCKMain forwards it to onNativeGraphOutput(). Only the
+            // first-person arm capture below is ROCK's own detour.
             // MOV RAX,RSP; PUSH RBP; PUSH RBX; PUSH R14;
             // LEA RBP,[RAX-0x108]. All stolen instructions are position
             // independent and were verified against FO4VR 1.2.72.
@@ -800,8 +777,7 @@ namespace rock::authored_weapon_grip_capture
             s_nativeSupportArmReturnAddress = supportReturn.address();
             s_hookInstalled.store(true, std::memory_order_release);
             ROCK_LOG_INFO(Init,
-                "Native authored firing-grip capture ready; graphOutput=0x{:X} helper=0x{:X} BethesdaPrimaryReturn=0x{:X} BethesdaSupportReturn=0x{:X} source=pre-presentation-graph-locals",
-                REL::Relocation<std::uintptr_t>{ REL::Offset(offsets::kFunc_PlayerPostUpdateAnimationGraphManager) }.address(),
+                "Native authored firing-grip capture ready; graphOutput=FRIK-NativeGraphOutput-phase helper=0x{:X} BethesdaPrimaryReturn=0x{:X} BethesdaSupportReturn=0x{:X} source=pre-presentation-graph-locals",
                 REL::Relocation<std::uintptr_t>{ REL::Offset(offsets::kFunc_UpdateFirstPersonArm) }.address(),
                 s_nativePrimaryArmReturnAddress,
                 s_nativeSupportArmReturnAddress);
@@ -812,6 +788,11 @@ namespace rock::authored_weapon_grip_capture
     bool installHook()
     {
         return installCaptureHook();
+    }
+
+    void onNativeGraphOutput()
+    {
+        onNativeGraphOutputPhase();
     }
 
     void setEnabled(const bool enabled)

@@ -71,22 +71,24 @@ namespace rock
         return resolved;
     }
 
-    void PhysicsInteraction::presentClaimedHands()
+    void PhysicsInteraction::captureRenderedHands()
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandPresentation);
-        if (!_handBoneCache.isReady()) {
-            return;
-        }
-        for (const bool isLeft : { false, true }) {
-            RE::NiTransform delta{};
-            if (!frik_hand_world_authority::tryPlanHandPresentation(isLeft, delta)) {
-                continue;
+        // The bone array was rebuilt by FRIK's world final: both hands' rendered
+        // flattened bones and their nodes are this frame's final values.
+        const bool resolved = _handBoneCache.resolve();
+        frik_hand_world_authority::FrameHandSamples samples{};
+        const auto sampleHand = [this, resolved](bool isLeft, frik_hand_world_authority::RawHandSample& outSample) {
+            if (!resolved) {
+                return;
             }
-            float elbowMoveGameUnits = 0.0f;
-            float reachDeficitGameUnits = 0.0f;
-            const bool applied = _handBoneCache.presentArm(isLeft, delta, elbowMoveGameUnits, reachDeficitGameUnits);
-            frik_hand_world_authority::recordHandPresentation(isLeft, delta, applied, elbowMoveGameUnits, reachDeficitGameUnits);
-        }
+            outSample.flattenedHandWorld = _handBoneCache.getWorldTransform(isLeft);
+            outSample.flattenedHandValid = true;
+            outSample.bodyHandNodeValid = _handBoneCache.tryGetNodeWorldTransform(isLeft, outSample.bodyHandNodeWorld);
+        };
+        sampleHand(false, samples.right);
+        sampleHand(true, samples.left);
+        frik_hand_world_authority::captureRenderedFrame(samples);
         if (g_rockConfig.rockDebugGrabFrameLogging) {
             _dynamicWeaponCollision.tracePresentedWeapon(resolveEquippedWeaponInteractionNode(), runtime_state::currentFrame().frameIndex);
         }

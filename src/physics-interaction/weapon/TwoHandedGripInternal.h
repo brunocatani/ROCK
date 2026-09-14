@@ -60,6 +60,10 @@ namespace rock
         inline constexpr const char* WEAPON_COLLISION_HAND_TAG =
             "ROCK_WeaponCollisionHand";
         inline constexpr const char* WEAPON_NODE_OWNERSHIP_TAG = "ROCK_LeftFiringCarry";
+        // FRIK v2.3 pure write block held while ROCK owns the weapon transform.
+        inline constexpr const char* WEAPON_NODE_WRITE_TAG = "ROCK_WeaponAuthority";
+        // FRIK v2.3 two-handed grip report (Pip-Boy guards, isOffHandGrippingWeapon).
+        inline constexpr const char* TWO_HANDED_GRIP_REPORT_TAG = "ROCK_TwoHandedGrip";
         inline constexpr const char* ONE_HAND_RECOIL_TAG = "ROCK_OneHandRecoil";
         inline constexpr const char* WEAPON_RECOIL_CONTROLLER_TAG = "ROCK_FiringGripRecoil";
         inline constexpr int GRIP_HAND_POSE_PRIORITY = 100;
@@ -281,16 +285,18 @@ namespace rock
         }
 
         /*
-         * Ambidextrous firing grip (left-hand fire) needs BOTH hFRIK blockers:
-         * the finger-pose block (right hand must stop receiving FRIK's weapon
-         * pose) and the weapon-node ownership block (FRIK must stop gluing the
-         * weapon to the right hand). Fail closed to right-only behavior when
-         * either is missing (older FRIK build).
+         * Ambidextrous firing grip (left-hand fire) needs the finger-pose
+         * block (right hand must stop receiving FRIK's weapon pose), the
+         * weapon-node write block (FRIK must stop writing the weapon node)
+         * and, since FRIK API v2.3, the explicit parent-hand request (FRIK
+         * re-parents the node under LArm_Hand and keeps its own bookkeeping).
+         * Fail closed to right-only behavior when any is missing.
          */
         inline bool leftFiringInfrastructureAvailable()
         {
             return frik_visual_authority::canBlockPrimaryHandWeaponPose() &&
-                frik_visual_authority::canBlockPrimaryWeaponNodeOwnership();
+                frik_visual_authority::canBlockPrimaryWeaponNodeOwnership() &&
+                frik_visual_authority::canSetWeaponNodeParentHand();
         }
 
         inline RE::NiNode* sourceRootNodeOrFallback(RE::NiAVObject* sourceRoot, RE::NiNode* fallback)
