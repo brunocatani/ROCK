@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <source_location>
 #include <utility>
 #include <vector>
 
@@ -552,7 +553,8 @@ namespace rock
         GrabReleaseOutcome releaseGrabbedObject(
             RE::hknpWorld* world,
             GrabReleaseCollisionRestoreMode collisionRestoreMode = GrabReleaseCollisionRestoreMode::Delayed,
-            const GrabReleaseContext& releaseContext = {});
+            const GrabReleaseContext& releaseContext = {},
+            const std::source_location& caller = std::source_location::current());
         void updateGrabVisualReturn(const RE::NiTransform& trackedHandWorld, float deltaTime);
         void cancelGrabVisualReturn(const char* reason);
         bool isGrabVisualReturnActive() const { return _grabVisualReturn.active; }

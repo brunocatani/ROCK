@@ -15164,7 +15164,8 @@ namespace rock
     GrabReleaseOutcome Hand::releaseGrabbedObject(
         RE::hknpWorld* world,
         GrabReleaseCollisionRestoreMode collisionRestoreMode,
-        const GrabReleaseContext& releaseContext)
+        const GrabReleaseContext& releaseContext,
+        const std::source_location& caller)
     {
         GrabReleaseOutcome outcome{};
         outcome.finalObjectRelease = releaseContext.finalObjectRelease;
@@ -15200,15 +15201,19 @@ namespace rock
                 _heldObjectIsLooseWeapon ? "yes" : "no");
         }
 
+        const std::string_view callerPath{ caller.file_name() };
+        const auto separator = callerPath.find_last_of("/\\");
+        const auto callerFile = separator == std::string_view::npos ? callerPath : callerPath.substr(separator + 1);
         ROCK_LOG_INFO(Hand,
-            "{} hand RELEASE: bodyId={} constraintId={} proxyBody={} finalObjectRelease={} disposition={} reason={}",
+            "{} hand RELEASE: bodyId={} constraintId={} proxyBody={} finalObjectRelease={} disposition={} reason={} grab={} caller={}:{}",
             handName(),
             _savedObjectState.bodyId.value,
             _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
             _grabAuthorityProxy.isValid() ? _grabAuthorityProxy.getBodyId().value : INVALID_BODY_ID,
             releaseContext.finalObjectRelease ? "yes" : "no",
             releaseDispositionName(releaseContext.disposition),
-            releaseContext.reason ? releaseContext.reason : "none");
+            releaseContext.reason ? releaseContext.reason : "none",
+            _grabFrame.traceId, callerFile, caller.line());
 
         nearby_grab_damping::restoreNearbyGrabDamping(world, _nearbyGrabDamping);
 
