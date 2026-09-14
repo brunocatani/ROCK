@@ -920,6 +920,7 @@ namespace rock
                         }
                         primaryOnlyGripStartedThisFrame = true;
                         nativeFiringGripTransfer = !pendingPrimaryOnlyStartRequested &&
+                            _equipped.handlingSettings.toggleGrabEnabled &&
                             _equipped.handlingSettings.lastGripReleaseDropEnabled;
                         if (nativeFiringGripTransfer) {
                             (firingHandIsLeft ? toggleOccupancyBefore.left : toggleOccupancyBefore.right).

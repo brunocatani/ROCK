@@ -355,8 +355,8 @@ namespace rock::equipped_weapon_manual_ownership_policy
             return true;
         }
 
-        // Firing grips always latch. The next press is an explicit logical
-        // release, including carries created by a non-detach ownership source.
+        // Input already reflects the selected mode: toggle press or physical
+        // button-up. The last equipped grip uses the shared loose transfer.
         return primaryGripHeld;
     }
 

@@ -3289,12 +3289,13 @@ int main()
 
             firing = { .firingGripActive = true };
             auto decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("either firing hand latches without a physical hold in both modes",
-                firingDecision(decision).held);
+            ok &= expectEqual("firing grip uses the configured physical or toggle hold",
+                firingDecision(decision).held, toggleEnabled);
+            firingButton = { .held = true };
 
             supportButton = { .held = true, .pressed = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("support acquisition cannot release an unsqueezed firing hand",
+            ok &= expectTrue("support acquisition preserves a held firing grip",
                 supportDecision(decision).held && firingDecision(decision).held &&
                     !firingDecision(decision).released);
             support = { .partGripActive = true };
@@ -3306,7 +3307,7 @@ int main()
             decision = toggle_grab::prepare(state, input);
             ok &= expectEqual("dynamic full-authority and authored support obey configured release mode",
                 supportDecision(decision).held, toggleEnabled);
-            ok &= expectTrue("support release leaves firing grip latched",
+            ok &= expectTrue("support release preserves a held firing grip",
                 firingDecision(decision).held);
 
             // A provider may replace a support grip with attach-only glue.
@@ -3331,24 +3332,36 @@ int main()
             support = {};
             firingButton = { .held = true, .pressed = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("firing squeeze explicitly requests release in either global mode",
-                !firingDecision(decision).held && firingDecision(decision).released);
+            ok &= expectEqual("firing press releases only in toggle mode",
+                firingDecision(decision).released, toggleEnabled);
+            ok &= expectEqual("hold mode keeps the firing grip while squeezed",
+                firingDecision(decision).held, !toggleEnabled);
+            if (!toggleEnabled) {
+                firingButton = { .released = true };
+                decision = toggle_grab::prepare(state, input);
+                ok &= expectTrue("hold-mode button-up requests equipped-to-loose transfer",
+                    !firingDecision(decision).held && firingDecision(decision).released);
+            }
             toggle_grab::GripReleaseRetention retention{};
             (firingIsLeft ? retention.left : retention.right) = true;
             static_cast<void>(reconcile(retention));
             firingButton = { .released = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("auto-drop refusal relatches firing grip in either global mode",
-                firingDecision(decision).held && !firingDecision(decision).released);
+            ok &= expectEqual("refused toggle release relatches while hold input remains physical",
+                firingDecision(decision).held, toggleEnabled);
+            ok &= expectTrue("auto-drop off retains the last carrier under either input mode",
+                rock::equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership(
+                    true, firingDecision(decision).held, false));
 
             support = { .partGripActive = true };
             firingButton = { .held = true, .pressed = true };
             static_cast<void>(toggle_grab::prepare(state, input));
             firing = {};
             static_cast<void>(reconcile());
-            firingButton = { .held = true };
+            firingButton = toggleEnabled ? toggle_grab::ButtonState{ .held = true } :
+                toggle_grab::ButtonState{ .released = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectFalse("firing release press cannot reacquire after its grip becomes empty",
+            ok &= expectFalse("completed firing release cannot reacquire an empty hand",
                 firingDecision(decision).held || firingDecision(decision).pressed);
             firingButton = { .released = true };
             static_cast<void>(toggle_grab::prepare(state, input));
@@ -3363,9 +3376,10 @@ int main()
             firingButton = { .released = true };
             supportButton = { .released = true };
             decision = toggle_grab::prepare(state, input);
-            ok &= expectTrue("after handoff old firing hand releases attach-only while new firing hand latches",
-                !firingDecision(decision).held && firingDecision(decision).released &&
-                    supportDecision(decision).held && !supportDecision(decision).released);
+            ok &= expectTrue("old firing hand releases attach-only after handoff",
+                !firingDecision(decision).held && firingDecision(decision).released);
+            ok &= expectEqual("new firing hand preserves the configured grab mode",
+                supportDecision(decision).held, toggleEnabled);
         }
     }
 
@@ -4424,8 +4438,10 @@ int main()
             (isLeft ? input.left : input.right) = {.held = true, .pressed = true};
             auto decision = toggle_grab::prepare(state, input);
             const auto released = isLeft ? decision.left : decision.right;
-            ok &= expectTrue("native equipped weapon transfers on its first press in either mode",
-                !released.held && released.released);
+            ok &= expectEqual("native equipped weapon transfers on press only in toggle mode",
+                released.released, toggleEnabled);
+            ok &= expectEqual("native hold-mode weapon stays equipped while squeezed",
+                released.held, !toggleEnabled);
             input.nativeFiringGripTransfer = false;
             (isLeft ? input.left : input.right) = {.released = true};
             decision = toggle_grab::prepare(state, input);
@@ -4442,6 +4458,32 @@ int main()
 
     {
         namespace transferred = rock::transferred_weapon_grab_policy;
+        for (const bool isLeft : {false, true}) {
+            toggle_grab::RuntimeState inputState{};
+            toggle_grab::Input input{
+                .toggleGrabEnabled = false, .inputAllowed = true, .weaponOwnershipKey = 222,
+            };
+            (isLeft ? input.occupancy.left : input.occupancy.right).firingGripActive = true;
+            auto& physical = isLeft ? input.left : input.right;
+            physical = {.held = true, .pressed = true};
+            auto result = toggle_grab::prepare(inputState, input);
+            ok &= expectTrue("hold-mode equipped weapon remains held during the squeeze",
+                (isLeft ? result.left : result.right).held);
+            physical = {.released = true};
+            result = toggle_grab::prepare(inputState, input);
+            const auto release = isLeft ? result.left : result.right;
+            ok &= expectTrue("hold-mode button-up requests the last equipped grip's transfer",
+                release.released && !release.held);
+            auto looseState = transferred::State::AwaitInitialRelease;
+            ok &= expectFalse("the transfer-triggering button-up cannot release the new loose grab",
+                transferred::advance(looseState, physical.held, physical.pressed, physical.released));
+            ok &= expectFalse("the force-grabbed weapon stays held with the button open",
+                transferred::advance(looseState, false, false, false));
+            ok &= expectFalse("a fresh loose-grab press only arms release",
+                transferred::advance(looseState, true, true, false));
+            ok &= expectTrue("the next button-up lets go of the retained loose weapon",
+                transferred::advance(looseState, false, false, true));
+        }
         for (const bool isLeft : {false, true}) {
             const std::uint64_t committedGrab = isLeft ? 102 : 101;
             auto transferInput = transferred::State::AwaitInitialRelease;

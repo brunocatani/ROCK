@@ -34,8 +34,7 @@ namespace rock::equipped_weapon_toggle_grab_policy
 
         [[nodiscard]] constexpr bool usesToggleGrab(const bool toggleGrabEnabled) const noexcept
         {
-            return firingGripActive ||
-                   (toggleGrabEnabled && !(partGripActive && partGripAttachOnly));
+            return toggleGrabEnabled && !(partGripActive && partGripAttachOnly);
         }
     };
 
@@ -119,7 +118,7 @@ namespace rock::equipped_weapon_toggle_grab_policy
             const bool inputAllowed,
             const bool synchronizeOccupancy) noexcept
         {
-            // Attach-only parts and hold-mode support grips follow the physical
+            // Attach-only parts and hold-mode carrying grips follow the physical
             // button. An empty hand must still drain an earlier toggle-release
             // press before that same squeeze can acquire another grip.
             if (!toggleGrab && (occupied ||
@@ -245,7 +244,7 @@ namespace rock::equipped_weapon_toggle_grab_policy
             state.weaponOwnershipKey = input.weaponOwnershipKey;
         }
 
-        if (input.nativeFiringGripTransfer && input.inputAllowed) {
+        if (input.nativeFiringGripTransfer && input.toggleGrabEnabled && input.inputAllowed) {
             if (input.occupancy.left.firingGripActive && input.left.pressed) {
                 state.hands[handIndex(true)] = HandState::Latched;
             }
