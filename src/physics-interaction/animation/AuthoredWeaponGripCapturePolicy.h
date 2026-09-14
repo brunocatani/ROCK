@@ -244,6 +244,19 @@ namespace rock::authored_weapon_grip_capture_policy
             };
         }
 
+        // The two-hand solver replaces weapon transforms but consumes the
+        // same authored firing fingers. Keep that pose registered instead of
+        // clearing it here and republishing it in the later grip update.
+        // The retention path still validates canonical weapon identity and
+        // rejects detached or occupied firing hands before publication.
+        if (commonReady && input.weaponDrawn && input.weaponVisible &&
+            input.conflictingWeaponTransformAuthorityActive) {
+            return {
+                .action = AuthoredPrimaryAction::RetainPoseOnly,
+                .reason = AuthoredPrimaryDecisionReason::ConflictingWeaponAuthority,
+            };
+        }
+
         if (!input.runtimeInitialized) {
             return { .reason = AuthoredPrimaryDecisionReason::RuntimeUnavailable };
         }

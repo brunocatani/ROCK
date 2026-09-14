@@ -122,10 +122,36 @@ int main()
         auto input = eligible;
         input.conflictingWeaponTransformAuthorityActive = true;
         const auto decision = evaluateAuthoredPrimaryFiringGrip(input);
-        return decision.action == AuthoredPrimaryAction::Clear &&
+        return decision.action == AuthoredPrimaryAction::RetainPoseOnly &&
                decision.reason ==
                    AuthoredPrimaryDecisionReason::
                        ConflictingWeaponAuthority;
+    }());
+    static_assert([=] {
+        // Every suspension must still release the pose while the two-hand
+        // solver owns weapon transforms.
+        for (int suspension = 0; suspension < 11; ++suspension) {
+            auto input = eligible;
+            input.conflictingWeaponTransformAuthorityActive = true;
+            switch (suspension) {
+            case 0: input.runtimeInitialized = false; break;
+            case 1: input.visualAuthorityAvailable = false; break;
+            case 2: input.localSkeletonReady = false; break;
+            case 3: input.menuBlocking = true; break;
+            case 4: input.compatibilityBlocking = true; break;
+            case 5: input.weaponKeyValid = false; break;
+            case 6: input.nativeReloadAuthorityActive = true; break;
+            case 7: input.primaryHandHoldingObject = true; break;
+            case 8: input.weaponDrawn = false; break;
+            case 9: input.weaponVisible = false; break;
+            case 10: input.rockFiringHandIsLeft = true; break;
+            }
+            if (evaluateAuthoredPrimaryFiringGrip(input).action !=
+                AuthoredPrimaryAction::Clear) {
+                return false;
+            }
+        }
+        return true;
     }());
     static_assert([=] {
         auto input = eligible;
