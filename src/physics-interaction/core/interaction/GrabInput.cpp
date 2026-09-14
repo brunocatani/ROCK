@@ -447,17 +447,42 @@ namespace rock
         };
 
         const auto handIndex = isLeft ? 1u : 0u;
+        auto& retainedWeapon = _forceGrab.retainedWeaponGrabs[handIndex];
+        if (retainedWeapon.handle && !_forceGrab.pendingCommits[handIndex].active &&
+            (!hand.isHolding() || !hand.getHeldRef() || hand.getHeldRef()->GetHandle() != retainedWeapon.handle)) {
+            retainedWeapon = {};
+        }
+        const auto consumeHandGrabInput = [&]() {
+            GrabButtonState physical{};
+            if (_grabInput.firingHandButtonFrame.valid && _grabInput.firingHandButtonFrame.isLeft == isLeft) {
+                physical = {
+                    .held = _grabInput.firingHandButtonFrame.held,
+                    .pressed = _grabInput.firingHandButtonFrame.pressed,
+                    .released = _grabInput.firingHandButtonFrame.released,
+                };
+                _grabInput.firingHandButtonFrame.valid = false;
+            } else {
+                physical = readGrabButtonState(isLeft, grabButton);
+            }
+            if (retainedWeapon.handle) {
+                const auto previous = retainedWeapon.inputState;
+                (void)transferred_weapon_grab_policy::advance(retainedWeapon.inputState,
+                    physical.held, physical.pressed, physical.released);
+                if (previous != retainedWeapon.inputState) {
+                    ROCK_LOG_INFO(Weapon,
+                        "Transferred weapon grab input: hand={} state={}->{} held={} pressed={} released={}",
+                        isLeft ? "left" : "right", static_cast<unsigned>(previous),
+                        static_cast<unsigned>(retainedWeapon.inputState), physical.held, physical.pressed, physical.released);
+                }
+            }
+            return physical;
+        };
+
         if (_equipped.shoulderGestureConsumedThisFrame[handIndex]) {
             // The equipped-weapon shoulder transaction owns this complete
             // physical button cycle. Never reuse any part of it for world,
             // surface, touch, or peer-held selection.
-            if (_grabInput.firingHandButtonFrame.valid &&
-                _grabInput.firingHandButtonFrame.isLeft == isLeft) {
-                _grabInput.firingHandButtonFrame.valid = false;
-            } else {
-                static_cast<void>(
-                    readGrabButtonState(isLeft, grabButton));
-            }
+            static_cast<void>(consumeHandGrabInput());
             inputSuppressionState.deferredGrabRelease = false;
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry(
@@ -475,13 +500,7 @@ namespace rock
             // not let the same edge start a loose-object, surface, or touch
             // grab after the weapon state releases this hand. Virtual Holsters
             // likewise owns its claimed physical cycle through release.
-            if (_grabInput.firingHandButtonFrame.valid &&
-                _grabInput.firingHandButtonFrame.isLeft == isLeft) {
-                _grabInput.firingHandButtonFrame.valid = false;
-            } else {
-                static_cast<void>(
-                    readGrabButtonState(isLeft, grabButton));
-            }
+            static_cast<void>(consumeHandGrabInput());
             inputSuppressionState.deferredGrabRelease = false;
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry(
@@ -502,11 +521,7 @@ namespace rock
              * release from the Pip-Boy/API frame can drop the object in
              * the same update that reported a successful force-grab.
              */
-            if (_grabInput.firingHandButtonFrame.valid && _grabInput.firingHandButtonFrame.isLeft == isLeft) {
-                _grabInput.firingHandButtonFrame.valid = false;
-            } else {
-                static_cast<void>(readGrabButtonState(isLeft, grabButton));
-            }
+            static_cast<void>(consumeHandGrabInput());
             inputSuppressionState.deferredGrabRelease = false;
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("force-grab-committed-this-frame", true);
@@ -514,6 +529,7 @@ namespace rock
             return false;
         }
         if (_forceGrab.pendingCommits[handIndex].active) {
+            static_cast<void>(consumeHandGrabInput());
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry("pending-force-grab-reservation", true);
             clearGameplayCandidatesForHand(hand, isLeft);
@@ -623,17 +639,7 @@ namespace rock
          * cleared edges and starve free-hand world grabs of press/release
          * input.
          */
-        GrabButtonState grabInput{};
-        if (_grabInput.firingHandButtonFrame.valid && _grabInput.firingHandButtonFrame.isLeft == isLeft) {
-            grabInput = GrabButtonState{
-                .held = _grabInput.firingHandButtonFrame.held,
-                .pressed = _grabInput.firingHandButtonFrame.pressed,
-                .released = _grabInput.firingHandButtonFrame.released,
-            };
-            _grabInput.firingHandButtonFrame.valid = false;
-        } else {
-            grabInput = readGrabButtonState(isLeft, grabButton);
-        }
+        GrabButtonState grabInput = consumeHandGrabInput();
         if (inputSuppressionState.deferredGrabRelease) {
             if (grabInput.held) {
                 inputSuppressionState.deferredGrabRelease = false;
@@ -649,6 +655,15 @@ namespace rock
             }
         }
         const auto rawGrabInput = grabInput;
+        if (retainedWeapon.handle && hand.isHolding()) {
+            // Keep raw input for other gestures. Only loose-grab release is
+            // latched, and its second press cannot leak into acquisition.
+            const bool release = retainedWeapon.inputState ==
+                transferred_weapon_grab_policy::State::ReleaseRequested;
+            grabInput.held = !release;
+            grabInput.pressed = false;
+            grabInput.released = release;
+        }
 
         /*
          * Provider-registered touch targets consume the same physical
@@ -2352,9 +2367,9 @@ namespace rock
         }
         processProviderInteractionCommands(frame);
         serviceLooseGrenadeQuickDraw(frame);
+        serviceEquippedWeaponNativeHandoff(frame);
         servicePendingForceGrabCommits(frame);
         updateSavedGrabOffsetGesture(frame);
-        serviceEquippedWeaponDropMomentumHandoff(frame);
         updateLooseGrenadeFuses(frame);
         publishHandInputOwnership(_rightHand, false);
         publishHandInputOwnership(_leftHand, true);

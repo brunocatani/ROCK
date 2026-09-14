@@ -31,6 +31,7 @@
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
+#include "physics-interaction/input/TransferredWeaponGrabPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
@@ -247,7 +248,7 @@ namespace rock
         void publishDebugRenderFrame();
 
     private:
-        struct EquippedWeaponDropMomentumHandoff;
+        struct EquippedWeaponNativeHandoff;
 
         bool validateCriticalOffsets() const;
 
@@ -354,16 +355,16 @@ namespace rock
         void clearPendingForceGrabCommits();
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
         void saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
-        void updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
-        void armEquippedWeaponDropMomentumHandoff(
+        void updateEquippedWeaponReleaseCapture(RE::NiNode* weaponNode);
+        void armEquippedWeaponNativeHandoff(
             const RE::ObjectRefHandle& handle,
             std::uint32_t droppedFormId,
             equipped_weapon_drop_policy::SourceHand sourceHand,
             const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry);
         bool hasAvailableEquippedWeaponDropHandoff() const;
-        void serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame);
-        void serviceEquippedWeaponDropMomentumTransaction(
-            EquippedWeaponDropMomentumHandoff& handoff,
+        void serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame);
+        void serviceEquippedWeaponNativeTransaction(
+            EquippedWeaponNativeHandoff& handoff,
             const PhysicsFrameContext& frame);
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
@@ -584,16 +585,12 @@ namespace rock
          * Release capture for manually carried equipped weapons: the last
          * ROCK-visible weapon pose (captured one frame ahead of the release,
          * because the release transition restores the node to the FRIK hand
-         * baseline before the drop request is consumed) plus per-hand motion
-         * histories for drop momentum. Index 0 = right hand, 1 = left hand.
+         * baseline before the transfer request is consumed).
          */
         struct EquippedWeaponReleaseCapture
         {
             bool hasWeaponWorld{ false };
             RE::NiTransform weaponWorld{};
-            std::array<equipped_weapon_drop_momentum::HandMotionHistory<RE::NiPoint3>, 2> handHistories{};
-            std::array<bool, 2> hasPreviousHandWorld{};
-            std::array<RE::NiTransform, 2> previousHandWorld{};
         };
 
         enum class EquippedWeaponDropHandoffStage : std::uint8_t
@@ -613,21 +610,18 @@ namespace rock
          * body tree asynchronously, so ROCK first resolves exact-ref bodies,
          * enables collision, places every native motion at the frozen visual
          * release pose with zero velocity, and waits for one completed native
-         * solve before applying captured release momentum exactly once. After
-         * that atomic handoff, Bethesda owns the weapon's normal flight.
+         * solve before the exact-reference force grab takes ownership. The
+         * held-object release path owns any later throw momentum.
          */
-        struct EquippedWeaponDropMomentumHandoff
+        struct EquippedWeaponNativeHandoff
         {
             bool active{ false };
-            bool hasReleaseVelocity{ false };
             bool referenceResolvedOnce{ false };
             bool threeDResolvedOnce{ false };
             RE::ObjectRefHandle handle{};
             std::uint32_t droppedFormId{ 0 };
             float elapsedSeconds{ 0.0f };
             std::uint32_t identityRestartCount{ 0 };
-            RE::NiPoint3 linearVelocityHavok{};
-            RE::NiPoint3 angularVelocityRadiansPerSecond{};
             bool hasReleaseWeaponWorld{ false };
             RE::NiTransform releaseWeaponWorld{};
             EquippedWeaponDropHandoffStage stage{ EquippedWeaponDropHandoffStage::ResolvingBodies };
@@ -835,7 +829,7 @@ namespace rock
         struct EquippedWeaponDropState
         {
             EquippedWeaponReleaseCapture releaseCapture{};
-            std::array<EquippedWeaponDropMomentumHandoff, kEquippedWeaponDropHandoffCapacity> momentumHandoffs{};
+            std::array<EquippedWeaponNativeHandoff, kEquippedWeaponDropHandoffCapacity> nativeHandoffs{};
         };
 
         // State owned by the GrabInput module: grab intents, the shared
@@ -857,7 +851,13 @@ namespace rock
         // State owned by the ForceGrabAndGrenades module.
         struct ForceGrabState
         {
+            struct RetainedWeaponGrab
+            {
+                RE::ObjectRefHandle handle{};
+                transferred_weapon_grab_policy::State inputState{};
+            };
             std::array<PendingForceGrabCommit, 2> pendingCommits{};
+            std::array<RetainedWeaponGrab, 2> retainedWeaponGrabs{};
             std::array<bool, 2> committedThisFrame{};
             std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> grenadeFuses{};
             std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> grenadeImpactBodyIds{};

@@ -1,3 +1,4 @@
+#include "physics-interaction/input/TransferredWeaponGrabPolicy.h"
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
@@ -4408,6 +4409,70 @@ int main()
             ambiguousFilter.verdict,
             DetachedComponentVerdict::FailOpenNoAssembledAnchor);
         ok &= expectTrue("ambiguous inventory preserves all sources", ambiguousFilter.excludedIndices.empty());
+    }
+
+    for (const bool isLeft : {false, true}) {
+        for (const bool toggleEnabled : {false, true}) {
+            toggle_grab::RuntimeState state{};
+            toggle_grab::Input input{
+                .toggleGrabEnabled = toggleEnabled,
+                .inputAllowed = true,
+                .weaponOwnershipKey = 0x7788,
+                .nativeFiringGripTransfer = true,
+            };
+            (isLeft ? input.occupancy.left : input.occupancy.right).firingGripActive = true;
+            (isLeft ? input.left : input.right) = {.held = true, .pressed = true};
+            auto decision = toggle_grab::prepare(state, input);
+            const auto released = isLeft ? decision.left : decision.right;
+            ok &= expectTrue("native equipped weapon transfers on its first press in either mode",
+                !released.held && released.released);
+            input.nativeFiringGripTransfer = false;
+            (isLeft ? input.left : input.right) = {.released = true};
+            decision = toggle_grab::prepare(state, input);
+            ok &= expectFalse("native transfer remains open through primary release confirmation",
+                (isLeft ? decision.left : decision.right).held);
+
+            state = {};
+            (isLeft ? input.left : input.right) = {.held = true, .pressed = true};
+            decision = toggle_grab::prepare(state, input);
+            ok &= expectFalse("trigger-equip acquisition does not become an immediate transfer",
+                (isLeft ? decision.left : decision.right).released);
+        }
+    }
+
+    {
+        namespace transferred = rock::transferred_weapon_grab_policy;
+        auto state = transferred::State::AwaitInitialRelease;
+        ok &= expectFalse("equipped transfer ignores its initiating press",
+            transferred::advance(state, true, true, false));
+        ok &= expectFalse("equipped transfer retains the first button release",
+            transferred::advance(state, false, false, true));
+        ok &= expectEqual("initial release leaves the loose weapon held", state, transferred::State::Held);
+        for (int i = 0; i < 10; ++i) {
+            ok &= expectFalse("open button does not release retained weapon",
+                transferred::advance(state, false, false, false));
+        }
+        ok &= expectFalse("second grab press only arms release",
+            transferred::advance(state, true, true, false));
+        ok &= expectFalse("armed weapon stays held while moving to stash",
+            transferred::advance(state, true, false, false));
+        ok &= expectTrue("second button release lets go",
+            transferred::advance(state, false, false, true));
+        ok &= expectTrue("release survives asynchronous force-grab completion",
+            transferred::advance(state, false, false, false));
+
+        state = transferred::State::AwaitInitialRelease;
+        ok &= expectFalse("initial click completed before native placement cannot drop",
+            transferred::advance(state, false, true, true));
+        ok &= expectTrue("later complete click in one publication releases",
+            transferred::advance(state, false, true, true));
+
+        state = transferred::State::ReleaseArmed;
+        ok &= expectTrue("physical opening completes armed release even if edge was consumed",
+            transferred::advance(state, false, false, false));
+        state = transferred::State::Held;
+        ok &= expectFalse("unarmed release edge cannot drop a retained weapon",
+            transferred::advance(state, false, false, true));
     }
 
     return ok ? 0 : 1;

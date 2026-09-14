@@ -179,7 +179,7 @@ namespace rock
         _lifecycle.stableFrameCountAtomic.store(_lifecycle.state.stableFrameCount, std::memory_order_release);
         _lifecycle.hknpWorldAtomic.store(nullptr, std::memory_order_release);
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _drop.momentumHandoffs = {};
+        _drop.nativeHandoffs = {};
         _grabInput.shoulderStashStates = {};
         _grabInput.mouthConsumeStates = {};
         _feedbackHaptics.reset();
@@ -531,7 +531,7 @@ namespace rock
         _equipped.shoulderGestureConsumedThisFrame = {};
         _grabInput.bareFistGuardState = {};
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _drop.momentumHandoffs = {};
+        _drop.nativeHandoffs = {};
         clearLooseGrenadeRuntimeState();
         _equipped.pendingPrimaryOnlyGripStart = {};
         _equipped.handlingSettings = {};
@@ -675,7 +675,7 @@ namespace rock
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
         _frame.completedPhysicsSolveSequence.store(0, std::memory_order_release);
-        _drop.momentumHandoffs = {};
+        _drop.nativeHandoffs = {};
         markGeneratedBodiesInvalidated();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();

@@ -61,6 +61,9 @@ namespace rock::equipped_weapon_toggle_grab_policy
         bool inputAllowed{ false };
         std::uint64_t weaponOwnershipKey{ 0 };
         GripOccupancy occupancy{};
+        // The firing grip already exists in native equipped presentation.
+        // Its first press starts ROCK ownership solely to transfer it loose.
+        bool nativeFiringGripTransfer{ false };
         ButtonState left{};
         ButtonState right{};
     };
@@ -240,6 +243,15 @@ namespace rock::equipped_weapon_toggle_grab_policy
         if (identityChanged) {
             reset(state);
             state.weaponOwnershipKey = input.weaponOwnershipKey;
+        }
+
+        if (input.nativeFiringGripTransfer && input.inputAllowed) {
+            if (input.occupancy.left.firingGripActive && input.left.pressed) {
+                state.hands[handIndex(true)] = HandState::Latched;
+            }
+            if (input.occupancy.right.firingGripActive && input.right.pressed) {
+                state.hands[handIndex(false)] = HandState::Latched;
+            }
         }
 
         auto left = detail::prepareHand(

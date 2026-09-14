@@ -802,6 +802,7 @@ namespace rock
             }
 
             bool primaryOnlyGripStartedThisFrame = false;
+            bool nativeFiringGripTransfer = false;
             if (firingGripOwnershipFeatureAvailable && !inputBlockingMenuActive && !_twoHandedGrip.isManualOwnershipActive()) {
                 const auto& primaryState = readPrimaryGrabState();
                 if (_equipped.pendingPrimaryOnlyGripStart.pending &&
@@ -917,6 +918,12 @@ namespace rock
                                 static_cast<unsigned>(_equipped.pendingPrimaryOnlyGripStart.source));
                         }
                         primaryOnlyGripStartedThisFrame = true;
+                        nativeFiringGripTransfer = !pendingPrimaryOnlyStartRequested &&
+                            _equipped.handlingSettings.lastGripReleaseDropEnabled;
+                        if (nativeFiringGripTransfer) {
+                            (firingHandIsLeft ? toggleOccupancyBefore.left : toggleOccupancyBefore.right).
+                                firingGripActive = true;
+                        }
                         _equipped.pendingPrimaryOnlyGripStart = {};
                         primaryGripInput = EquippedWeaponPrimaryGripInput{
                             .held = primaryState.held,
@@ -1003,6 +1010,7 @@ namespace rock
                         .weaponOwnershipKey =
                             currentEquippedWeaponOwnershipKey,
                         .occupancy = toggleOccupancyBefore,
+                        .nativeFiringGripTransfer = nativeFiringGripTransfer,
                         .left = toToggleButtonState(
                             leftPhysicalGripState),
                         .right = toToggleButtonState(
@@ -1315,24 +1323,23 @@ namespace rock
                             suppressEquippedDrop;
                     const bool physicalDropRequested =
                         equipped_weapon_drop_policy::shouldAttemptPhysicalDrop(stashCommitSelected);
-                    const bool dropHandoffAvailable = hasAvailableEquippedWeaponDropHandoff();
+                    const bool transferIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+                    const auto transferHandIndex = transferIsLeft ? 1u : 0u;
+                    Hand& transferHand = transferIsLeft ? _leftHand : _rightHand;
+                    const auto& transferInput = transferIsLeft ? frame.left : frame.right;
+                    const bool dropHandoffAvailable = sourceHandKnown && hasAvailableEquippedWeaponDropHandoff() &&
+                        (forceGrabHandBlockerMask(transferHand, transferIsLeft, transferInput.disabled, true) &
+                            ~static_cast<std::uint32_t>(force_grab_policy::HandBlocker::EquippedWeapon)) == 0;
                     if (physicalDropRequested && !dropHandoffAvailable) {
                         ROCK_LOG_WARN(Weapon,
-                            "Equipped weapon physical drop blocked because all native handoffs are active: capacity={}",
-                            _drop.momentumHandoffs.size());
-                        f4vr::showNotification("ROCK: Cannot drop weapon - drop handoff queue is full.");
+                            "Equipped weapon transfer blocked: source hand unavailable or native handoff capacity exhausted capacity={}",
+                            _drop.nativeHandoffs.size());
+                        f4vr::showNotification("ROCK: Cannot take weapon - hand or transfer queue is busy.");
                     }
                     if (physicalDropRequested && dropHandoffAvailable) {
-                        /*
-                         * Seamless drop: spawn the world ref at the weapon's last
-                         * visually-published pose (equipped and dropped weapons
-                         * share the same nif) and hand the captured release
-                         * momentum to the spawned physics bodies once they
-                         * resolve. The previous-frame capture is preferred over
-                         * the live node because the release transition restores
-                         * the weapon node to the FRIK hand baseline before this
-                         * code runs.
-                         */
+                        // Preserve the equipped pose while the native loose bodies
+                        // appear. Force grab then seats the exact reference using
+                        // the same authored weapon resolver as a far-grab catch.
                         RE::NiPoint3 releaseLoc = dropLoc;
                         RE::NiPoint3 releaseRot{};
                         RE::NiTransform releaseWeaponWorld{};
@@ -1351,13 +1358,9 @@ namespace rock
                         }
                         const std::size_t releaseHandIndex = equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u;
                         const auto& releaseHandInput = releaseHandIndex == 1u ? frame.left : frame.right;
-                        const RE::NiPoint3 releaseGripWorld = _drop.releaseCapture.hasPreviousHandWorld[releaseHandIndex] ?
-                                                                 _drop.releaseCapture.previousHandWorld[releaseHandIndex].translate :
-                                                                 releaseHandInput.grabAnchorWorld;
-                        // Consume the equipped body's generated points before
-                        // the drop transaction retires that bank. They only
-                        // bound long-object angular release speed; the frozen
-                        // transform is the native body's placement authority.
+                        const RE::NiPoint3 releaseGripWorld = releaseHandInput.grabAnchorWorld;
+                        // Capture the native placement basis before retiring the
+                        // generated equipped representation.
                         const auto releaseGeometry = hasReleaseRot ?
                                                          _weaponCollision.getCurrentWeaponReleaseGeometry(releaseGripWorld, releaseWeaponWorld) :
                                                          WeaponCollision::ReleaseGeometrySnapshot{};
@@ -1392,7 +1395,20 @@ namespace rock
                                 _weaponCollision.destroyWeaponBody(hknp);
                             }
                             if (dropCommitted && dropResult.handle) {
-                                armEquippedWeaponDropMomentumHandoff(
+                                _forceGrab.pendingCommits[transferHandIndex] = PendingForceGrabCommit{
+                                    .active = true,
+                                    .isLeft = transferIsLeft,
+                                    .phase = PendingForceGrabCommitPhase::WaitingForNativePlacement,
+                                    .targetHandle = dropResult.handle,
+                                    .inventoryTransfer = true,
+                                    .equippedWeaponTransfer = true,
+                                    .maxDistanceGame = 96.0f,
+                                };
+                                _forceGrab.retainedWeaponGrabs[transferHandIndex] = {
+                                    .handle = dropResult.handle,
+                                    .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
+                                };
+                                armEquippedWeaponNativeHandoff(
                                     dropResult.handle,
                                     dropResult.droppedFormID,
                                     sourceHand,
@@ -1400,7 +1416,7 @@ namespace rock
                             }
                             if (dropCommitted) {
                                 ROCK_LOG_INFO(Weapon,
-                                    "Equipped weapon manual release committed formID={:08X} dropped={:08X} reference={} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) lever={:.1f}gu stack={} instanceMatch={}",
+                                    "Equipped weapon transfer to retained loose grab queued formID={:08X} dropped={:08X} reference={} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) lever={:.1f}gu stack={} instanceMatch={}",
                                     dropResult.formID,
                                     dropResult.droppedFormID,
                                     dropResult.success ? "ready" : "pending",
@@ -1430,7 +1446,7 @@ namespace rock
                     clearEquippedWeaponFiringGripInputState();
                 }
             }
-            updateEquippedWeaponReleaseCapture(frame, weaponNode);
+            updateEquippedWeaponReleaseCapture(weaponNode);
             const bool weaponSupportGripActive =
                 gripUpdateResult.after.left.partGripActive;
             const input_remap_policy::EquippedWeaponFiringGripInputGate updatedFiringGripInputGate{

@@ -11,7 +11,7 @@ namespace rock
         bool authoredOnlySupportGrabsEnabled{ true };
         bool toggleGrabEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
-        // Whether the last hand carrying the weapon may drop it by letting go.
+        // Whether releasing the last equipped grip transfers it to a retained loose grab.
         // With false that grip is retained; releases are honored only while
         // the other hand still carries the weapon.
         bool lastGripReleaseDropEnabled{ true };

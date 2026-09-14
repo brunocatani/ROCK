@@ -1,10 +1,10 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 
-// Equipped weapon release capture and drop momentum handoff.
+// Equipped-to-loose native placement before the shared force-grab commit.
 
 namespace rock
 {
-    void PhysicsInteraction::updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode)
+    void PhysicsInteraction::updateEquippedWeaponReleaseCapture(RE::NiNode* weaponNode)
     {
         auto& capture = _drop.releaseCapture;
         if (!_twoHandedGrip.isManualOwnershipActive()) {
@@ -26,40 +26,18 @@ namespace rock
             capture.hasWeaponWorld = true;
         }
 
-        const bool usableDeltaTime = std::isfinite(frame.deltaSeconds) && frame.deltaSeconds > 0.000001f;
 
-        for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
-            const auto& handInput = handIndex == 1 ? frame.left : frame.right;
-            auto& history = capture.handHistories[handIndex];
-            if (!finiteNiTransform(handInput.rawHandWorld)) {
-                continue;
-            }
-            if (capture.hasPreviousHandWorld[handIndex] && usableDeltaTime) {
-                const RE::NiPoint3 deltaGameUnits = handInput.rawHandWorld.translate - capture.previousHandWorld[handIndex].translate;
-                const RE::NiPoint3 rawHandVelocityHavok = held_object_physics_math::gameUnitsDeltaToHavokVelocity(
-                    deltaGameUnits,
-                    frame.deltaSeconds,
-                    physics_scale::havokToGame());
-                const RE::NiPoint3 angularVelocity = held_object_physics_math::angularVelocityFromRotationDelta<RE::NiMatrix3, RE::NiPoint3>(
-                    capture.previousHandWorld[handIndex].rotate,
-                    handInput.rawHandWorld.rotate,
-                    frame.deltaSeconds);
-                history.push(rawHandVelocityHavok, angularVelocity);
-            }
-            capture.previousHandWorld[handIndex] = handInput.rawHandWorld;
-            capture.hasPreviousHandWorld[handIndex] = true;
-        }
     }
 
     bool PhysicsInteraction::hasAvailableEquippedWeaponDropHandoff() const
     {
         return std::any_of(
-            _drop.momentumHandoffs.begin(),
-            _drop.momentumHandoffs.end(),
-            [](const EquippedWeaponDropMomentumHandoff& handoff) { return !handoff.active; });
+            _drop.nativeHandoffs.begin(),
+            _drop.nativeHandoffs.end(),
+            [](const EquippedWeaponNativeHandoff& handoff) { return !handoff.active; });
     }
 
-    void PhysicsInteraction::armEquippedWeaponDropMomentumHandoff(
+    void PhysicsInteraction::armEquippedWeaponNativeHandoff(
         const RE::ObjectRefHandle& handle,
         std::uint32_t droppedFormId,
         equipped_weapon_drop_policy::SourceHand sourceHand,
@@ -74,8 +52,8 @@ namespace rock
                 droppedFormId);
             return;
         }
-        EquippedWeaponDropMomentumHandoff* handoff = nullptr;
-        for (auto& candidate : _drop.momentumHandoffs) {
+        EquippedWeaponNativeHandoff* handoff = nullptr;
+        for (auto& candidate : _drop.nativeHandoffs) {
             if (!candidate.active) {
                 handoff = &candidate;
                 break;
@@ -85,67 +63,34 @@ namespace rock
             ROCK_LOG_WARN(Weapon,
                 "Equipped weapon drop handoff capacity exhausted after admission: dropped={:08X} capacity={}",
                 droppedFormId,
-                _drop.momentumHandoffs.size());
+                _drop.nativeHandoffs.size());
             return;
         }
 
-        // Unknown source (SourceHand::None) falls back to the right hand.
-        const auto& history = _drop.releaseCapture.handHistories[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u];
-        // Histories are world-space hand velocities; no player-space addend exists anymore.
-        const auto release = equipped_weapon_drop_momentum::composeReleaseVelocity(
-            history,
-            RE::NiPoint3{},
-            equipped_weapon_drop_momentum::ReleaseVelocitySettings{
-                .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
-                .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
-                .maxLinearVelocityHavok = g_rockConfig.rockGrabThrowMaxVelocityHavok,
-                .angularVelocityScale = g_rockConfig.rockGrabThrowAngularVelocityScale,
-                .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
-                .longObjectAngularScalingEnabled = g_rockConfig.rockGrabLongObjectAngularScalingEnabled,
-                .longObjectLeverGameUnits = releaseGeometry.leverGameUnits,
-                .longObjectReferenceLeverGameUnits = g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
-                .longObjectMinAngularScale = g_rockConfig.rockGrabLongObjectMinAngularScale,
-            });
-
-        *handoff = EquippedWeaponDropMomentumHandoff{
+        *handoff = EquippedWeaponNativeHandoff{
             .active = true,
-            .hasReleaseVelocity = release.hasData,
             .handle = handle,
             .droppedFormId = droppedFormId,
-            .linearVelocityHavok = release.linearVelocityHavok,
-            .angularVelocityRadiansPerSecond = release.angularVelocityRadiansPerSecond,
             .hasReleaseWeaponWorld = releaseGeometry.hasCapturedWeaponWorld,
             .releaseWeaponWorld = releaseGeometry.capturedWeaponWorld,
             .progressSolveSequence = _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire),
         };
         ROCK_LOG_INFO(Weapon,
-            "Equipped weapon drop handoff armed: dropped={:08X} sourceHand={} velocity={} lever={:.1f}gu angularScale={:.3f} angularCap={:.3f} "
-            "linear=({:.3f},{:.3f},{:.3f}) angular=({:.3f},{:.3f},{:.3f})",
-            droppedFormId,
-            equipped_weapon_drop_policy::sourceHandName(sourceHand),
-            release.hasData ? "captured" : "none",
-            releaseGeometry.leverGameUnits,
-            release.longObjectAngularScale,
-            release.angularVelocityCapRadiansPerSecond,
-            release.linearVelocityHavok.x,
-            release.linearVelocityHavok.y,
-            release.linearVelocityHavok.z,
-            release.angularVelocityRadiansPerSecond.x,
-            release.angularVelocityRadiansPerSecond.y,
-            release.angularVelocityRadiansPerSecond.z);
+            "Equipped weapon native handoff armed for force grab: ref={:08X} hand={}",
+            droppedFormId, equipped_weapon_drop_policy::sourceHandName(sourceHand));
     }
 
-    void PhysicsInteraction::serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame)
+    void PhysicsInteraction::serviceEquippedWeaponNativeHandoff(const PhysicsFrameContext& frame)
     {
-        for (auto& handoff : _drop.momentumHandoffs) {
+        for (auto& handoff : _drop.nativeHandoffs) {
             if (handoff.active) {
-                serviceEquippedWeaponDropMomentumTransaction(handoff, frame);
+                serviceEquippedWeaponNativeTransaction(handoff, frame);
             }
         }
     }
 
-    void PhysicsInteraction::serviceEquippedWeaponDropMomentumTransaction(
-        EquippedWeaponDropMomentumHandoff& handoff,
+    void PhysicsInteraction::serviceEquippedWeaponNativeTransaction(
+        EquippedWeaponNativeHandoff& handoff,
         const PhysicsFrameContext& frame)
     {
         // This bound applies only while an asynchronously published drop has
@@ -165,7 +110,13 @@ namespace rock
                 completedSolveSequence,
                 kPublicationStallSolveSteps);
         };
-        const auto endHandoff = [&](const char* reason, bool warn) {
+        const auto endHandoff = [&](const char* reason, bool warn, bool ready = false) {
+            for (auto& commit : _forceGrab.pendingCommits) {
+                if (commit.active && commit.equippedWeaponTransfer && commit.targetHandle == handoff.handle) {
+                    commit.phase = ready ? PendingForceGrabCommitPhase::AcquireAndCommitExactTarget :
+                                           PendingForceGrabCommitPhase::NativePlacementFailed;
+                }
+            }
             if (warn) {
                 ROCK_LOG_WARN(Weapon,
                     "Equipped weapon drop handoff ended: dropped={:08X} reason={} stage={} elapsed={:.3f}s solveProgress={}->{} restarts={}",
@@ -555,103 +506,29 @@ namespace rock
             handoff.bodySnapshotCount = 0;
             handoff.progressSolveSequence = completedSolveSequence;
             ROCK_LOG_DEBUG(Weapon,
-                "Equipped weapon drop native generation changed before momentum; restarting placement: dropped={:08X} restart={}",
+                "Equipped weapon drop native generation changed before hand acquisition; restarting placement: dropped={:08X} restart={}",
                 handoff.droppedFormId,
                 handoff.identityRestartCount);
             return;
         }
 
-        const RE::hkVector4f linearVelocity{
-            handoff.linearVelocityHavok.x,
-            handoff.linearVelocityHavok.y,
-            handoff.linearVelocityHavok.z,
-            0.0f,
-        };
-        const RE::hkVector4f angularVelocity{
-            handoff.angularVelocityRadiansPerSecond.x,
-            handoff.angularVelocityRadiansPerSecond.y,
-            handoff.angularVelocityRadiansPerSecond.z,
-            0.0f,
-        };
+        // This is a transfer into a held object, never a throw. Clear the
+        // native spawn/contact velocity before the shared force-grab commit.
         const RE::hkVector4f zeroVelocity{};
-        std::size_t velocityWrites = 0;
-        if (handoff.hasReleaseVelocity) {
-            for (std::size_t motionIndex = 0;
-                 motionIndex < uniqueMotionRecordCount;
-                 ++motionIndex) {
-                const auto* record = uniqueMotionRecords[motionIndex];
-                if (!record ||
-                    !havok_runtime::setBodyVelocityDeferred(
-                        frame.hknpWorld,
-                        record->bodyId,
-                        linearVelocity,
-                        angularVelocity)) {
-                    break;
+        for (std::size_t i = 0; i < uniqueMotionRecordCount; ++i) {
+            const auto* record = uniqueMotionRecords[i];
+            if (!record || !havok_runtime::setBodyVelocityDeferred(
+                    frame.hknpWorld, record->bodyId, zeroVelocity, zeroVelocity) ||
+                !havok_runtime::activateBody(frame.hknpWorld, record->bodyId)) {
+                if (publicationStalled()) {
+                    endHandoff("native-velocity-clear-stalled", true);
                 }
-                ++velocityWrites;
-            }
-        } else {
-            velocityWrites = uniqueMotionRecordCount;
-        }
-
-        std::size_t completedMotions = 0;
-        if (velocityWrites == uniqueMotionRecordCount) {
-            for (std::size_t motionIndex = 0;
-                 motionIndex < uniqueMotionRecordCount;
-                 ++motionIndex) {
-                const auto* record = uniqueMotionRecords[motionIndex];
-                if (!record ||
-                    !havok_runtime::activateBody(frame.hknpWorld, record->bodyId)) {
-                    break;
-                }
-                ++completedMotions;
+                return;
             }
         }
-        if (completedMotions != uniqueMotionRecordCount) {
-            if (handoff.hasReleaseVelocity) {
-                for (std::size_t motionIndex = 0;
-                     motionIndex < velocityWrites;
-                     ++motionIndex) {
-                    const auto* record = uniqueMotionRecords[motionIndex];
-                    if (!record) {
-                        continue;
-                    }
-                    (void)havok_runtime::setBodyVelocityDeferred(
-                        frame.hknpWorld,
-                        record->bodyId,
-                        zeroVelocity,
-                        zeroVelocity);
-                    (void)havok_runtime::activateBody(
-                        frame.hknpWorld,
-                        record->bodyId);
-                }
-            }
-            ROCK_LOG_SAMPLE_WARN(Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Equipped weapon drop final momentum write incomplete and partial writes were zeroed; retaining transaction: dropped={:08X} velocityWrites={} activated={} expected={}",
-                handoff.droppedFormId,
-                velocityWrites,
-                completedMotions,
-                uniqueMotionRecordCount);
-            if (publicationStalled()) {
-                endHandoff("final-momentum-write-stalled", true);
-            }
-            return;
-        }
-
         ROCK_LOG_INFO(Weapon,
-            "Equipped weapon drop handoff complete after native contact solve: dropped={:08X} bodies={} motions={} velocity={} elapsed={:.3f}s linear=({:.3f},{:.3f},{:.3f}) angular=({:.3f},{:.3f},{:.3f})",
-            handoff.droppedFormId,
-            acceptedRecordCount,
-            uniqueMotionRecordCount,
-            handoff.hasReleaseVelocity ? "applied" : "none",
-            handoff.elapsedSeconds,
-            handoff.linearVelocityHavok.x,
-            handoff.linearVelocityHavok.y,
-            handoff.linearVelocityHavok.z,
-            handoff.angularVelocityRadiansPerSecond.x,
-            handoff.angularVelocityRadiansPerSecond.y,
-            handoff.angularVelocityRadiansPerSecond.z);
-        handoff = {};
+            "Equipped weapon native placement ready for force grab: ref={:08X} bodies={} motions={} elapsed={:.3f}s",
+            handoff.droppedFormId, acceptedRecordCount, uniqueMotionRecordCount, handoff.elapsedSeconds);
+        endHandoff("native-placement-ready", false, true);
     }
 }
