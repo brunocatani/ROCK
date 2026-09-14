@@ -853,7 +853,9 @@ namespace rock
         {
             struct RetainedWeaponGrab
             {
-                RE::ObjectRefHandle handle{};
+                // Native handles belong to pending reference resolution. Once
+                // committed, the Hand's acquisition identity owns retention.
+                std::uint64_t grabIdentity{ 0 };
                 transferred_weapon_grab_policy::State inputState{};
             };
             std::array<PendingForceGrabCommit, 2> pendingCommits{};

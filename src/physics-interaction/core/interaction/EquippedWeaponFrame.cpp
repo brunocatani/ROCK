@@ -681,6 +681,7 @@ namespace rock
                     // firing-grip ownership still follows the physical hand
                     // state after the menu closes.
                     primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, input_remap_policy::kGrabButtonId);
+                    const auto physicalPrimaryGrabState = primaryGrabState;
                     maskProviderWeaponGrabInput(firingHandIsLeft,
                         (firingHandIsLeft ? providerGripOccupancy.left : providerGripOccupancy.right).weaponEngaged(), primaryGrabState);
                     maskHolsterInput(firingHandIsLeft, primaryGrabState);
@@ -696,9 +697,9 @@ namespace rock
                     _grabInput.firingHandButtonFrame = SharedGrabButtonFrameState{
                         .valid = true,
                         .isLeft = firingHandIsLeft,
-                        .held = primaryGrabState.held,
-                        .pressed = primaryGrabState.pressed,
-                        .released = primaryGrabState.released,
+                        .held = physicalPrimaryGrabState.held,
+                        .pressed = physicalPrimaryGrabState.pressed,
+                        .released = physicalPrimaryGrabState.released,
                     };
                 }
                 return primaryGrabState;
@@ -1405,7 +1406,6 @@ namespace rock
                                     .maxDistanceGame = 96.0f,
                                 };
                                 _forceGrab.retainedWeaponGrabs[transferHandIndex] = {
-                                    .handle = dropResult.handle,
                                     .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
                                 };
                                 armEquippedWeaponNativeHandoff(

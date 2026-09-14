@@ -365,9 +365,11 @@ namespace rock
             }
 
             if (commit.equippedWeaponTransfer) {
+                _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].grabIdentity = hand.heldGrabIdentity();
                 ROCK_LOG_INFO(Weapon,
-                    "Equipped weapon acquired as retained loose grab: hand={} ref={:08X} body={} inputState={}",
-                    commit.isLeft ? "left" : "right", heldRef->GetFormID(), primaryBodyId,
+                    "Equipped weapon acquired as retained loose grab: hand={} ref={:08X} body={} grab={} handleMatches={} inputState={}",
+                    commit.isLeft ? "left" : "right", heldRef->GetFormID(), primaryBodyId, hand.heldGrabIdentity(),
+                    heldRef->GetHandle() == commit.targetHandle,
                     static_cast<unsigned>(_forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u].inputState));
             }
             claimObject(heldRef, claimOwnerForHand(commit.isLeft));

@@ -12158,6 +12158,11 @@ namespace rock
         }
 
         if (!_savedObjectState.refr || _savedObjectState.refr->IsDeleted() || _savedObjectState.refr->IsDisabled()) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand held reference invalid: grab={} ref={:08X} missing={} deleted={} disabled={}",
+                handName(), _grabFrame.traceId, _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0,
+                !_savedObjectState.refr, _savedObjectState.refr && _savedObjectState.refr->IsDeleted(),
+                _savedObjectState.refr && _savedObjectState.refr->IsDisabled());
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return false;
         }

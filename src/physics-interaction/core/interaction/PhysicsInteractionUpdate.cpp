@@ -535,13 +535,17 @@ namespace rock
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
                         if (_rightHand.isHolding()) {
                             auto* r = _rightHand.getHeldRef();
-                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_rightHand, false));
+                            auto release = makeGrabReleaseContext(_rightHand, false);
+                            release.reason = "blocking-menu-opened";
+                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, release);
                             if (r)
                                 releaseObject(r, PhysicsObjectClaimOwner::RightHand);
                         }
                         if (_leftHand.isHolding()) {
                             auto* r = _leftHand.getHeldRef();
-                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_leftHand, true));
+                            auto release = makeGrabReleaseContext(_leftHand, true);
+                            release.reason = "blocking-menu-opened";
+                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, release);
                             if (r)
                                 releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
                         }

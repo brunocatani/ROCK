@@ -14,9 +14,23 @@ namespace rock::transferred_weapon_grab_policy
         ReleaseRequested,
     };
 
-    [[nodiscard]] constexpr bool advance(
-        State& state, bool held, bool pressed, bool released) noexcept
+    [[nodiscard]] constexpr bool ownsInput(
+        bool pendingTransfer, std::uint64_t committedGrab, std::uint64_t heldGrab) noexcept
     {
+        return pendingTransfer || (committedGrab != 0 && committedGrab == heldGrab);
+    }
+
+    [[nodiscard]] constexpr bool advance(
+        State& state, bool held, bool pressed, bool released, bool releaseAllowed = true) noexcept
+    {
+        if (!releaseAllowed) {
+            // A gesture spent on a holster/provider cannot become a delayed
+            // ground drop when that owner yields input back to ROCK.
+            if (state != State::AwaitInitialRelease || !held) {
+                state = State::Held;
+            }
+            return false;
+        }
         switch (state) {
         case State::AwaitInitialRelease:
             if (!held) {

@@ -4442,6 +4442,28 @@ int main()
 
     {
         namespace transferred = rock::transferred_weapon_grab_policy;
+        for (const bool isLeft : {false, true}) {
+            const std::uint64_t committedGrab = isLeft ? 102 : 101;
+            auto transferInput = transferred::State::AwaitInitialRelease;
+            ok &= expectTrue("pending equipped transfer owns input before a held grab exists",
+                transferred::ownsInput(true, 0, 0));
+            ok &= expectFalse("initiating button-up while reference is pending stays held",
+                transferred::advance(transferInput, false, false, true));
+            ok &= expectTrue("retention survives clearing the pending slot after either-hand commit",
+                transferred::ownsInput(false, committedGrab, committedGrab));
+            ok &= expectFalse("committed transfer does not release from an already-open button",
+                transferred::advance(transferInput, false, false, false));
+            ok &= expectFalse("second press arms either hand without dropping",
+                transferred::advance(transferInput, true, true, false));
+            ok &= expectTrue("second button-up releases either committed hand",
+                transferred::advance(transferInput, false, false, true));
+            ok &= expectFalse("ended grab no longer owns retained input",
+                transferred::ownsInput(false, committedGrab, 0));
+            ok &= expectFalse("regrabbing the same reference does not inherit an older grab's latch",
+                transferred::ownsInput(false, committedGrab, committedGrab + 10));
+            ok &= expectFalse("ordinary and provider grabs never acquire transfer retention",
+                transferred::ownsInput(false, 0, committedGrab));
+        }
         auto state = transferred::State::AwaitInitialRelease;
         ok &= expectFalse("equipped transfer ignores its initiating press",
             transferred::advance(state, true, true, false));
@@ -4470,6 +4492,20 @@ int main()
         state = transferred::State::ReleaseArmed;
         ok &= expectTrue("physical opening completes armed release even if edge was consumed",
             transferred::advance(state, false, false, false));
+        state = transferred::State::ReleaseArmed;
+        ok &= expectFalse("holster-owned release consumes the armed drop",
+            transferred::advance(state, false, false, true, false));
+        ok &= expectFalse("leaving a holster cannot cause a delayed ground drop",
+            transferred::advance(state, false, false, false));
+        ok &= expectFalse("a fresh press rearms release after provider input ownership",
+            transferred::advance(state, true, true, false));
+        ok &= expectTrue("a fresh release after provider ownership drops normally",
+            transferred::advance(state, false, false, true));
+        state = transferred::State::AwaitInitialRelease;
+        ok &= expectFalse("claimed initiating release still rearms a transferred grip",
+            transferred::advance(state, false, false, true, false));
+        ok &= expectEqual("claimed initiating cycle finishes held", state, transferred::State::Held);
+
         state = transferred::State::Held;
         ok &= expectFalse("unarmed release edge cannot drop a retained weapon",
             transferred::advance(state, false, false, true));

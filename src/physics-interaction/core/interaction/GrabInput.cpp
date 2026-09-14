@@ -448,11 +448,19 @@ namespace rock
 
         const auto handIndex = isLeft ? 1u : 0u;
         auto& retainedWeapon = _forceGrab.retainedWeaponGrabs[handIndex];
-        if (retainedWeapon.handle && !_forceGrab.pendingCommits[handIndex].active &&
-            (!hand.isHolding() || !hand.getHeldRef() || hand.getHeldRef()->GetHandle() != retainedWeapon.handle)) {
+        const auto& pendingTransfer = _forceGrab.pendingCommits[handIndex];
+        const bool retainedWeaponInput = transferred_weapon_grab_policy::ownsInput(
+            pendingTransfer.active && pendingTransfer.equippedWeaponTransfer,
+            retainedWeapon.grabIdentity, hand.heldGrabIdentity());
+        if (retainedWeapon.grabIdentity != 0 && !retainedWeaponInput) {
+            ROCK_LOG_INFO(Weapon,
+                "Transferred weapon retention ended with its grab: hand={} state={} holding={} expectedGrab={} actualGrab={} ref={:08X}",
+                isLeft ? "left" : "right", static_cast<unsigned>(retainedWeapon.inputState),
+                hand.isHolding(), retainedWeapon.grabIdentity, hand.heldGrabIdentity(),
+                hand.getHeldRef() ? hand.getHeldRef()->GetFormID() : 0);
             retainedWeapon = {};
         }
-        const auto consumeHandGrabInput = [&]() {
+        const auto consumeHandGrabInput = [&](bool releaseAllowed = true) {
             GrabButtonState physical{};
             if (_grabInput.firingHandButtonFrame.valid && _grabInput.firingHandButtonFrame.isLeft == isLeft) {
                 physical = {
@@ -464,15 +472,15 @@ namespace rock
             } else {
                 physical = readGrabButtonState(isLeft, grabButton);
             }
-            if (retainedWeapon.handle) {
+            if (retainedWeaponInput) {
                 const auto previous = retainedWeapon.inputState;
                 (void)transferred_weapon_grab_policy::advance(retainedWeapon.inputState,
-                    physical.held, physical.pressed, physical.released);
+                    physical.held, physical.pressed, physical.released, releaseAllowed);
                 if (previous != retainedWeapon.inputState) {
                     ROCK_LOG_INFO(Weapon,
-                        "Transferred weapon grab input: hand={} state={}->{} held={} pressed={} released={}",
+                        "Transferred weapon grab input: hand={} state={}->{} held={} pressed={} released={} allowed={}",
                         isLeft ? "left" : "right", static_cast<unsigned>(previous),
-                        static_cast<unsigned>(retainedWeapon.inputState), physical.held, physical.pressed, physical.released);
+                        static_cast<unsigned>(retainedWeapon.inputState), physical.held, physical.pressed, physical.released, releaseAllowed);
                 }
             }
             return physical;
@@ -482,7 +490,7 @@ namespace rock
             // The equipped-weapon shoulder transaction owns this complete
             // physical button cycle. Never reuse any part of it for world,
             // surface, touch, or peer-held selection.
-            static_cast<void>(consumeHandGrabInput());
+            static_cast<void>(consumeHandGrabInput(false));
             inputSuppressionState.deferredGrabRelease = false;
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry(
@@ -500,7 +508,7 @@ namespace rock
             // not let the same edge start a loose-object, surface, or touch
             // grab after the weapon state releases this hand. Virtual Holsters
             // likewise owns its claimed physical cycle through release.
-            static_cast<void>(consumeHandGrabInput());
+            static_cast<void>(consumeHandGrabInput(false));
             inputSuppressionState.deferredGrabRelease = false;
             grab_input_intent_policy::reset(inputIntentState);
             cancelPeerHeldJoinRetry(
@@ -574,7 +582,7 @@ namespace rock
             hand.getState() != HandState::SelectionLocked &&
             hand.getState() != HandState::Pulled;
         if (providerHoldsCurrentGrabState || providerBlocksNewGrabPress) {
-            static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, grabButton));
+            static_cast<void>(consumeHandGrabInput(false));
             if (providerSuppressesHeldWeaponTriggerEquip) {
                 static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, 33));
             }
@@ -655,7 +663,7 @@ namespace rock
             }
         }
         const auto rawGrabInput = grabInput;
-        if (retainedWeapon.handle && hand.isHolding()) {
+        if (retainedWeaponInput && hand.isHolding()) {
             // Keep raw input for other gestures. Only loose-grab release is
             // latched, and its second press cannot leak into acquisition.
             const bool release = retainedWeapon.inputState ==
@@ -1811,6 +1819,11 @@ namespace rock
             const bool injectionCommit = injectionMode && consumeEligibility.eligible &&
                 consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate;
             if (grabInput.released || injectionCommit) {
+                ROCK_LOG_INFO(Hand,
+                    "Held release input: hand={} grab={} physical=({},{},{}) logical=({},{},{}) injection={}",
+                    isLeft ? "left" : "right", hand.heldGrabIdentity(),
+                    rawGrabInput.held, rawGrabInput.pressed, rawGrabInput.released,
+                    grabInput.held, grabInput.pressed, grabInput.released, injectionCommit);
                 hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
                 auto* heldRef = hand.getHeldRef();
                 std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
@@ -1935,6 +1948,8 @@ namespace rock
                     &_bodyBoneColliders,
                     makeGrabReleaseContext(hand, isLeft));
                 if (heldRef && !hand.isHolding()) {
+                    ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
+                        isLeft ? "left" : "right", heldFormID);
                     releaseObject(heldRef, claimOwnerForHand(isLeft));
                     dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
                     dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
