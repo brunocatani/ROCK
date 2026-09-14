@@ -1220,11 +1220,17 @@ namespace rock
             const auto handPose = grip.hasFingerSplay ?
                 frik_visual_authority::makeHandPoseDataFromJointValues(grip.fingerPose, grip.fingerSplayRadians) :
                 frik_visual_authority::makeHandPoseDataFromJointValues(grip.fingerPose);
-            (void)frik_visual_authority::setHandPoseCustom(
+            if (!frik_visual_authority::setHandPoseCustom(
                 SUPPORT_GRIP_TAG,
                 handFromBool(isLeft),
                 handPose,
-                GRIP_HAND_POSE_PRIORITY);
+                GRIP_HAND_POSE_PRIORITY)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                    "TwoHandedGrip: finger pose publication failed hand={} stage=joint-pose",
+                    isLeft ? "left" : "right");
+                (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+                return;
+            }
         }
 
         if (grip.hasFingerLocalTransforms) {
@@ -1233,7 +1239,23 @@ namespace rock
             for (std::size_t i = 0; i < grip.fingerLocalTransforms.size(); ++i) {
                 overrideData.localTransforms[i] = grip.fingerLocalTransforms[i];
             }
-            (void)frik_visual_authority::setHandPoseCustomLocalTransforms(SUPPORT_GRIP_TAG, handFromBool(isLeft), &overrideData, GRIP_HAND_POSE_PRIORITY);
+            std::size_t failureIndex = grab_finger_local_transform_runtime::kInvalidFingerLocalTransformIndex;
+            grab_finger_local_transform_math::FingerLocalTransformSafetyFailure failure{};
+            if (!grab_finger_local_transform_runtime::fingerLocalTransformOverrideIsSafeForPublication(
+                    overrideData, &failureIndex, &failure)) {
+                if (failureIndex < grip.fingerLocalTransforms.size()) {
+                    grab_finger_local_transform_runtime::logRejectedFingerTransform(
+                        isLeft, failureIndex, "support-publication", overrideData.localTransforms[failureIndex], failure);
+                }
+                (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+                return;
+            }
+            if (!frik_visual_authority::setHandPoseCustomLocalTransforms(SUPPORT_GRIP_TAG, handFromBool(isLeft), &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                    "TwoHandedGrip: finger pose publication failed hand={} stage=local-transforms",
+                    isLeft ? "left" : "right");
+                (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+            }
         }
     }
 

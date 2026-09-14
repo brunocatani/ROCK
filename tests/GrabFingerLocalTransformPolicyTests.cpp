@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 namespace
@@ -37,7 +38,7 @@ namespace
 
     bool expectFloat(const char* name, float actual, float expected)
     {
-        if (std::fabs(actual - expected) > 0.0001f) {
+        if (!std::isfinite(actual) || std::fabs(actual - expected) > 0.0001f) {
             std::printf("%s expected %.4f got %.4f\n", name, expected, actual);
             return false;
         }
@@ -64,7 +65,8 @@ namespace
 
     bool expectPointClose(const char* name, const RE::NiPoint3& actual, const RE::NiPoint3& expected)
     {
-        if (std::fabs(actual.x - expected.x) > 0.001f ||
+        if (!std::isfinite(actual.x) || !std::isfinite(actual.y) || !std::isfinite(actual.z) ||
+            std::fabs(actual.x - expected.x) > 0.001f ||
             std::fabs(actual.y - expected.y) > 0.001f ||
             std::fabs(actual.z - expected.z) > 0.001f) {
             std::printf("%s expected (%.4f, %.4f, %.4f) got (%.4f, %.4f, %.4f)\n",
@@ -188,9 +190,95 @@ static bool testPublicationSafety()
     return ok;
 }
 
+static bool testCommandedFingerCorrectionFrame()
+{
+    using namespace rock;
+    using namespace grab_finger_local_transform_runtime;
+    bool ok = true;
+    for (const bool isLeft : { false, true }) {
+        DirectSkeletonBoneSnapshot snapshot{};
+        snapshot.valid = true;
+        auto hand = transform_math::makeIdentityTransform<RE::NiTransform>();
+        hand.translate = { -79200.0f, 90300.0f, 7920.0f };
+        hand.rotate = axisAngleStored({ 0.0f, 0.0f, 1.0f }, isLeft ? -0.6f : 0.6f);
+        snapshot.bones.push_back({ .name = isLeft ? "LArm_Hand" : "RArm_Hand", .treeIndex = 0, .world = hand });
+        frik_visual_authority::FingerLocalTransformOverride baseline{};
+        baseline.enabledMask = grab_finger_local_transform_math::kFullFingerLocalTransformMask;
+        for (std::size_t index = 0; index < 15; ++index) {
+            baseline.localTransforms[index] = transform_math::makeIdentityTransform<RE::NiTransform>();
+            baseline.localTransforms[index].translate = { 2.0f, 0.0f, 0.0f };
+            baseline.localTransforms[index].rotate = axisAngleStored({ 0.0f, 0.0f, 1.0f }, 0.4f);
+            snapshot.bones.push_back({
+                .name = root_flattened_finger_skeleton_runtime::fingerBoneName(isLeft, index / 3, index % 3),
+                .treeIndex = static_cast<int>(index + 1),
+                .parentTreeIndex = index % 3 == 0 ? 0 : static_cast<int>(index),
+                .world = hand,
+            });
+        }
+
+        std::array<LiveFingerTransform, 15> nodes{};
+        ok &= expectBool("requested finger frame resolves", resolveFingerTransforms(snapshot, isLeft, baseline, nodes), true);
+        const auto first = transform_math::composeTransforms(hand, baseline.localTransforms[0]);
+        const auto second = transform_math::composeTransforms(first, baseline.localTransforms[1]);
+        ok &= expectPointClose("proximal uses requested rest offset", nodes[0].world.translate, first.translate);
+        ok &= expectPointClose("middle inherits requested proximal pose", nodes[1].world.translate, second.translate);
+        ok &= expectFloat("requested curl replaces displayed pose as correction source", nodes[0].world.rotate.entry[0][0], first.rotate.entry[0][0]);
+
+        // Displayed poses can differ during interpolation or after a prior
+        // grab. Even a poisoned displayed thumb must not change this solve.
+        snapshot.bones[1].world.rotate.entry[0][0] = std::numeric_limits<float>::quiet_NaN();
+        snapshot.bones[2].world.translate.x = 1.0e20f;
+        snapshot.bones[3].world.scale = 0.00001f;
+        for (int frame = 0; frame < 2000; ++frame) {
+            ok &= expectBool("displayed finger state is excluded", resolveFingerTransforms(snapshot, isLeft, baseline, nodes), true);
+            ok &= expectFloat("repeated capture preserves requested curl", nodes[0].world.rotate.entry[0][0], first.rotate.entry[0][0]);
+            ok &= expectBool("correction frame stays rigid", transform_math::storedRotationOrthonormalityError(nodes[2].world.rotate) < 0.000001, true);
+        }
+
+        auto corrected = baseline;
+        corrected.localTransforms[0].rotate = axisAngleStored({ 0.0f, 1.0f, 0.0f }, 0.7f);
+        updatePoseFingerTransform(0, corrected, nodes);
+        updatePoseFingerTransform(1, corrected, nodes);
+        const auto correctedFirst = transform_math::composeTransforms(hand, corrected.localTransforms[0]);
+        const auto correctedSecond = transform_math::composeTransforms(correctedFirst, baseline.localTransforms[1]);
+        ok &= expectPointClose("child correction follows corrected parent", nodes[1].world.translate, correctedSecond.translate);
+        ok &= expectFloat("correction preserves authored scale", corrected.localTransforms[0].scale, baseline.localTransforms[0].scale);
+
+        snapshot.bones[2].parentTreeIndex = 0;
+        const char* reason = nullptr;
+        std::size_t failureIndex = 15;
+        ok &= expectBool("unexpected finger parent fails closed", resolveFingerTransforms(snapshot, isLeft, baseline, nodes, &reason, &failureIndex), false);
+        ok &= expectBool("chain failure identifies joint", failureIndex == 1, true);
+        snapshot.bones[2].parentTreeIndex = 1;
+        snapshot.bones[0].world.rotate.entry[0][0] = 100.0f;
+        ok &= expectBool("invalid hand root fails closed", resolveFingerTransforms(snapshot, isLeft, baseline, nodes), false);
+    }
+
+    // Reaching an alternate thumb lane exactly must retain the full pose,
+    // rather than report a correction failure and discard other fingers.
+    frik_visual_authority::FingerLocalTransformOverride baseline{};
+    baseline.enabledMask = grab_finger_local_transform_math::kFullFingerLocalTransformMask;
+    std::array<LiveFingerTransform, 15> nodes{};
+    for (std::size_t index = 0; index < 15; ++index) {
+        baseline.localTransforms[index] = transform_math::makeIdentityTransform<RE::NiTransform>();
+        nodes[index] = { .world = baseline.localTransforms[index], .parentWorld = baseline.localTransforms[index], .valid = true };
+    }
+    grab_finger_pose_runtime::SolvedGrabFingerPose pose{};
+    pose.usedAlternateThumbCurve = true;
+    pose.usedAlternateThumbSurfaceHit = true;
+    pose.hasThumbAlternateCurveFrame = true;
+    pose.thumbAlternateCurveOpenDirectionWorld = { 1.0f, 0.0f, 0.0f };
+    pose.thumbAlternateCurveNormalWorld = { 0.0f, 0.0f, 1.0f };
+    pose.values[0] = 1.0f;
+    ok &= expectBool("aligned alternate thumb lane succeeds", applyAlternateThumbPlaneCorrection(false, pose, nodes, 0.3f, 1.0f, false, 1.0f, baseline), true);
+    ok &= expectBool("aligned alternate thumb pose stays safe", fingerLocalTransformOverrideIsSafeForPublication(baseline), true);
+    return ok;
+}
+
 int main()
 {
     bool ok = true;
+    ok &= testCommandedFingerCorrectionFrame();
     using namespace rock::grab_finger_local_transform_math;
     using namespace rock::grab_finger_pose_runtime;
     using rock::TriangleData;
@@ -549,25 +637,37 @@ int main()
         RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
 
     std::array<float, 5> splayRadians{};
+    std::array<RE::NiPoint3, 5> splayOpenDirections{};
+    const auto splayLandmarks = rock::root_flattened_finger_skeleton_runtime::buildLandmarkSet(liveFingerSnapshot);
+    for (std::size_t finger = 0; finger < splayOpenDirections.size(); ++finger) {
+        splayOpenDirections[finger] = splayLandmarks.fingers[finger].openDirection;
+    }
     SolvedGrabFingerPose splayPose{};
     ok &= expectBool("surface-contact splay rejects poses without targets",
-        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayRadians),
+        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayOpenDirections, splayRadians),
         false);
     splayPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, 0.2f, 0.0f };
     splayPose.surfaceAimTargetValid[1] = 1;
     ok &= expectBool("surface-contact splay builds from current target",
-        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayRadians),
+        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayOpenDirections, splayRadians),
         true);
     ok &= expectFloat("surface-contact splay stores positive index offset",
         splayRadians[1],
         kMaxSurfaceContactSplayRadians);
     splayPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, -0.2f, 0.0f };
     ok &= expectBool("surface-contact splay rebuilds when target moves",
-        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayRadians),
+        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayOpenDirections, splayRadians),
         true);
     ok &= expectFloat("surface-contact splay stores negative index offset",
         splayRadians[1],
         -kMaxSurfaceContactSplayRadians);
+
+    auto displayedSplayedSnapshot = liveFingerSnapshot;
+    displayedSplayedSnapshot.fingers[1].points[1].y -= 0.8f;
+    displayedSplayedSnapshot.fingers[1].points[2].y -= 1.6f;
+    ok &= expectBool("surface splay ignores previously displayed splay",
+        buildSurfaceContactSplayValues(splayPose, displayedSplayedSnapshot, splayOpenDirections, splayRadians), true);
+    ok &= expectFloat("absolute splay stays fixed across displayed poses", splayRadians[1], -kMaxSurfaceContactSplayRadians);
 
     SolvedGrabFingerPose thumbIndexCurveOnly{};
     thumbIndexCurveOnly.usedAlternateThumbSurfaceHit = true;

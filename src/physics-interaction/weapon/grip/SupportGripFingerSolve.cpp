@@ -380,9 +380,11 @@ namespace rock
                 }
                 if (completeDirectFingerEvidence &&
                     frozenSolve.liveFingerSnapshotValid &&
+                    frozenSolve.commandedOpenDirectionsValid &&
                     grab_finger_pose_runtime::buildSurfaceContactSplayValues(
                         meshFingerPose,
                         frozenSolve.liveFingerSnapshot,
+                        frozenSolve.commandedOpenDirectionsWorld,
                         capturedFingerSplayRadians)) {
                     capturedFingerSplayRadiansPtr = &capturedFingerSplayRadians;
                 }
@@ -446,10 +448,18 @@ namespace rock
                 grip.fingerLocalTransforms = localTransforms;
                 grip.fingerLocalTransformMask = localTransformMask;
                 grip.hasFingerLocalTransforms = true;
-                ROCK_LOG_DEBUG(Weapon,
-                    "TwoHandedGrip: full-hand local transform override prepared hand={} mask=0x{:04X}",
+                double maxBasisError = 0.0;
+                for (const auto& local : localTransforms) {
+                    maxBasisError = (std::max)(maxBasisError,
+                        transform_math::storedRotationOrthonormalityError(local.rotate));
+                }
+                ROCK_LOG_INFO(Weapon,
+                    "TwoHandedGrip: dynamic finger pose prepared hand={} mask=0x{:04X} lane={} curls=({:.3f},{:.3f},{:.3f},{:.3f},{:.3f}) maxBasisError={:.8f}",
                     isLeft ? "left" : "right",
-                    grip.fingerLocalTransformMask);
+                    grip.fingerLocalTransformMask,
+                    grab_finger_pose_math::thumbLaneName(meshFingerPosePtr->selectedThumbLane),
+                    meshFingerPosePtr->values[0], meshFingerPosePtr->values[1], meshFingerPosePtr->values[2],
+                    meshFingerPosePtr->values[3], meshFingerPosePtr->values[4], maxBasisError);
             }
         }
 
