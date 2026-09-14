@@ -786,15 +786,27 @@ namespace
         // Claimed before anything below can throw, so FrameEnd never ticks this frame again.
         s_providerTickedThisFrame = true;
         s_skeletonTickedThisFrame = true;
-        vanilla_weapon_alignment_telemetry::capture(
-            vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
         frik_hand_world_authority::beginRockFrame(s_schedulerSequence);
-        // endRockFrame runs on every exit from here, a caught exception included.
+        // On every exit from here, a caught exception included: hand FRIK back
+        // the weapon local it re-glued, then close the hand authority's frame.
         struct RockFrameEnd
         {
-            ~RockFrameEnd() { frik_hand_world_authority::endRockFrame(); }
+            ~RockFrameEnd()
+            {
+                if (s_physicsInteraction) {
+                    s_physicsInteraction->restoreFrikWeaponOffsetAfterRockFrame();
+                }
+                frik_hand_world_authority::endRockFrame();
+            }
         };
         const RockFrameEnd rockFrameEnd{};
+        // FRIK writes its stored weapon offset after this phase. Present it on
+        // the node for ROCK's frame, so every read sees the weapon FRIK renders.
+        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->presentFrikWeaponOffsetForRockFrame();
+        }
+        vanilla_weapon_alignment_telemetry::capture(
+            vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->resolveFrameHands();
         }
@@ -805,12 +817,14 @@ namespace
     /*
      * AfterWeaponPosition: FRIK's weapon offsets, two-handed grip and scope
      * camera are applied (FRIK skips the weapon node while ROCK blocks it).
-     * ROCK's immersive scope overlay captures FRIK's camera calibration and
+     * ROCK latches the weapon local FRIK wrote, which its next frame presents,
+     * and its immersive scope overlay captures FRIK's camera calibration and
      * publishes the rigid weapon-local scope frame from the final weapon.
      */
     void onFrikAfterWeaponPosition()
     {
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->captureFrikWeaponOffsetLatch();
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
     }

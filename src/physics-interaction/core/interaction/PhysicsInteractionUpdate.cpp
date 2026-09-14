@@ -226,6 +226,28 @@ namespace rock
         _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
+    void PhysicsInteraction::captureFrikWeaponOffsetLatch()
+    {
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+            return;
+        }
+        _twoHandedGrip.captureFrikWeaponOffsetLatch(f4vr::getWeaponNode());
+    }
+
+    void PhysicsInteraction::presentFrikWeaponOffsetForRockFrame()
+    {
+        if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+            return;
+        }
+        _twoHandedGrip.presentFrikWeaponOffsetForRockFrame(f4vr::getWeaponNode());
+    }
+
+    void PhysicsInteraction::restoreFrikWeaponOffsetAfterRockFrame()
+    {
+        // Unconditional: a presented node is always handed back, whatever changed during the frame.
+        _twoHandedGrip.restoreFrikWeaponOffsetAfterRockFrame();
+    }
+
     void PhysicsInteraction::publishDebugRenderFrame()
     {
         const auto& runtime = runtime_state::currentFrame();

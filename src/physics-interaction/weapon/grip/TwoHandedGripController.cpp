@@ -26,6 +26,7 @@ namespace rock
         // skeleton is released; a ROCK-side destroy (session reset, deferred
         // recreation) must hand them back itself.
         resetFrikWeaponOwnership();
+        restoreFrikWeaponOffsetAfterRockFrame();
         releaseFiringHandWeaponNodeOwnership(nullptr);
         clearOneHandRecoilClaim();
         if (_recoil.controllerRegistered) {

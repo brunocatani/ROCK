@@ -27,6 +27,7 @@
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/weapon/grip/FrikWeaponPresentationPolicy.h"
 
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
@@ -799,6 +800,17 @@ namespace rock
          * after this callback, so the block must be current before it.
          */
         void finalizeFrikWeaponOwnershipForFrame();
+
+        /*
+         * FRIK's weapon presentation for a Weapon node ROCK does not hold
+         * (FrikWeaponPresentationPolicy.h). Capture runs after FRIK's weapon
+         * pass; present, at the start of ROCK's frame, applies the latched
+         * local to the node; restore, at the end of that frame, hands FRIK back
+         * the re-glue local unless ROCK's write block keeps FRIK off the node.
+         */
+        void captureFrikWeaponOffsetLatch(RE::NiNode* weaponNode);
+        void presentFrikWeaponOffsetForRockFrame(RE::NiNode* weaponNode);
+        void restoreFrikWeaponOffsetAfterRockFrame();
 
         /*
          * The manual-ownership state machine also tracks right-hand
@@ -2118,6 +2130,15 @@ namespace rock
             std::uint64_t gripReportedWeaponKey{ 0 };
         };
 
+        // State owned by the FrikWeaponNodeOwnership module: FRIK's weapon offset as ROCK presents it.
+        struct FrikWeaponPresentationState
+        {
+            frik_weapon_presentation_policy::OffsetLatch latch{};
+            // Set between present and restore, inside one ROCK frame only.
+            RE::NiNode* presentedNode{ nullptr };
+            RE::NiTransform reglueLocal{};
+        };
+
         // State owned by the LeftFiringCarry module: FRIK weapon-node
         // ownership blocking and the LArm_Hand parent request.
         struct LeftFiringCarryState
@@ -2262,6 +2283,7 @@ namespace rock
         PartCarryState _partCarry{};
         LeftFiringCarryState _leftCarry{};
         FrikWeaponNodeOwnershipState _frikWeaponNode{};
+        FrikWeaponPresentationState _frikWeaponPresentation{};
         WeaponRecoilState _recoil{};
         // Non-owning sibling service. PhysicsInteraction declares the surface
         // runtime first, so our recoil registration ends before it is destroyed.

@@ -1,15 +1,33 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/grip/FrikWeaponPresentationPolicy.h"
 #include "physics-interaction/weapon/grip/WeaponNodeWriteBlockPolicy.h"
 
 // FRIK API v2.3 weapon-node ownership and grip reporting: the write block ROCK
-// holds while it owns the primary weapon node, and the two-handed grip report
-// FRIK keys its Pip-Boy guards and isOffHandGrippingWeapon on.
+// holds while it owns the primary weapon node, the FRIK weapon offset ROCK
+// presents on the node for its own frame while it does not, and the two-handed
+// grip report FRIK keys its Pip-Boy guards and isOffHandGrippingWeapon on.
 
 namespace rock
 {
     namespace
     {
         namespace write_block_policy = weapon_node_write_block_policy;
+        namespace presentation_policy = frik_weapon_presentation_policy;
+
+        [[nodiscard]] presentation_policy::NodeIdentity frikWeaponIdentity(const RE::NiNode* weaponNode) noexcept
+        {
+            presentation_policy::NodeIdentity identity{};
+            if (!weaponNode || !weaponNode->parent) {
+                return identity;
+            }
+            identity.node = reinterpret_cast<std::uintptr_t>(weaponNode);
+            identity.parent = reinterpret_cast<std::uintptr_t>(weaponNode->parent);
+            if (!weaponNode->children.empty() && weaponNode->children[0]) {
+                identity.modelRoot = reinterpret_cast<std::uintptr_t>(weaponNode->children[0].get());
+            }
+            identity.inPowerArmor = f4vr::isInPowerArmor();
+            return identity;
+        }
     }
 
     void TwoHandedGrip::noteFrikWeaponNodeWrite()
@@ -116,6 +134,57 @@ namespace rock
             "TwoHandedGrip: two-handed grip {} reported to FRIK support={}",
             active ? "engaged" : "released",
             supportIsLeft ? "left" : "right");
+    }
+
+    void TwoHandedGrip::captureFrikWeaponOffsetLatch(RE::NiNode* weaponNode)
+    {
+        _frikWeaponPresentation.latch = presentation_policy::captureOffsetLatch(
+            _frikWeaponPresentation.latch,
+            presentation_policy::CaptureInput{
+                .identity = frikWeaponIdentity(weaponNode),
+                .local = weaponNode ? weaponNode->local : RE::NiTransform{},
+                .nodeVisible = f4vr::isNodeVisible(weaponNode),
+                .writeBlockHeld = _frikWeaponNode.writeBlockEngaged,
+            });
+    }
+
+    void TwoHandedGrip::presentFrikWeaponOffsetForRockFrame(RE::NiNode* weaponNode)
+    {
+        // A frame that ended without its restore must not leak into this one.
+        restoreFrikWeaponOffsetAfterRockFrame();
+        auto& presentation = _frikWeaponPresentation;
+        if (!weaponNode ||
+            !presentation_policy::shouldPresent(presentation.latch,
+                presentation_policy::PresentInput{
+                    .identity = frikWeaponIdentity(weaponNode),
+                    .nodeVisible = f4vr::isNodeVisible(weaponNode),
+                    .rockOwnsLivePose = _frikWeaponNode.writeBlockEngaged,
+                })) {
+            return;
+        }
+        /*
+         * Not an authority write: FRIK keeps the node, the block stays
+         * released, and FRIK's weapon pass writes this same local after the
+         * restore. Local and subtree worlds change together, since ROCK's
+         * readers take both.
+         */
+        presentation.presentedNode = weaponNode;
+        presentation.reglueLocal = weaponNode->local;
+        weaponNode->local = presentation.latch.local;
+        f4vr::updateTransformsDown(weaponNode, true);
+    }
+
+    void TwoHandedGrip::restoreFrikWeaponOffsetAfterRockFrame()
+    {
+        auto& presentation = _frikWeaponPresentation;
+        RE::NiNode* const node = presentation.presentedNode;
+        presentation.presentedNode = nullptr;
+        if (!presentation_policy::shouldRestore(node != nullptr, _frikWeaponNode.writeBlockEngaged)) {
+            return;
+        }
+        // FRIK's weapon pass reads the node's local and world before rewriting it: both go back to what FRIK left.
+        node->local = presentation.reglueLocal;
+        f4vr::updateTransformsDown(node, true);
     }
 
     void TwoHandedGrip::resetFrikWeaponOwnership()

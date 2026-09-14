@@ -103,6 +103,16 @@ namespace rock
         void init();
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
+
+        /*
+         * FRIK writes its stored weapon offset after ROCK's AfterArmSolve
+         * work. The latch (AfterWeaponPosition) keeps the local FRIK wrote;
+         * present applies it to the Weapon node for ROCK's frame, and restore
+         * hands FRIK back the re-glue local when that frame ends.
+         */
+        void captureFrikWeaponOffsetLatch();
+        void presentFrikWeaponOffsetForRockFrame();
+        void restoreFrikWeaponOffsetAfterRockFrame();
         void traceScopeColliderState() const;
 
         [[nodiscard]] bool tryGetManualScopePresentationTarget(
