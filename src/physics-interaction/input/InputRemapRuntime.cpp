@@ -946,8 +946,8 @@ namespace rock::input_remap_runtime
          * and sends its haptic pulses (weapon fire rumble) there. Retarget
          * game-originated pulses aimed at the RIGHT wand to the LEFT wand so
          * the rumble lands in the hand actually holding the weapon. ROCK,
-         * FRIK and the configurator address PHYSICAL hands with their own
-         * pulses and pass through untouched.
+         * FRIK, Immersive Flashlight and the configurator address PHYSICAL
+         * hands with their own pulses and pass through untouched.
          */
         void hookedTriggerHapticPulse(vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex, std::uint32_t axisId, unsigned short durationMicroSec)
         {
@@ -956,6 +956,7 @@ namespace rock::input_remap_runtime
             if (shouldRemapLeftHandFireTriggerForGame() &&
                 !isCallerModule(callerAddress, L"ROCK.dll") &&
                 !isCallerModule(callerAddress, L"FRIK.dll") &&
+                !isCallerModule(callerAddress, L"ImmersiveFlashlightVR.dll") &&
                 !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand) && hand == input_remap_policy::Hand::Right) {
