@@ -298,7 +298,6 @@ namespace rock
     {
         RE::hknpWorld* hknp = nullptr;
         int grabButton = input_remap_policy::kGrabButtonId;
-        bool rightHandWeaponEquipped = false;
         bool ambidextrousHandoffAvailable = false;
         equipped_weapon_manual_ownership_policy::FiringGripModeAvailability firingGripModes{};
         bool gripZoneSettleEquipEnabled = false;
@@ -351,7 +350,9 @@ namespace rock
     {
         auto* heldRef = hand.getHeldRef();
         const auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
-        hand.releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(hand, isLeft));
+        auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+        releaseContext.reason = reason ? reason : "normal-grab-suppressed";
+        hand.releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
         if (heldRef) {
             releaseObject(heldRef, claimOwnerForHand(isLeft));
         }
@@ -403,7 +404,6 @@ namespace rock
         GrabInputHandPrelude& outPrelude)
     {
         const int grabButton = context.grabButton;
-        const bool rightHandWeaponEquipped = context.rightHandWeaponEquipped;
         const auto collisionGeneration = context.collisionGeneration;
 
         const auto& handInput = isLeft ? frame.left : frame.right;
@@ -598,9 +598,13 @@ namespace rock
         const bool heldWeaponEquipTriggerPressedEdge =
             !providerSuppressesHeldWeaponTriggerEquip && readHeldWeaponEquipTriggerPressedEdge(isLeft);
         const bool handIsFiringHand = isLeft == _twoHandedGrip.isFiringHandLeft();
+        // The skeleton's Weapon node/drawn flag can outlive unequip. Use the
+        // same item authority as force grab, sampled for each hand after any
+        // earlier hand's equip/transfer instead of caching scene occupancy.
+        const bool equippedWeaponPresent = currentEquippedWeaponFormId() != 0;
         if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
                 handIsFiringHand,
-                rightHandWeaponEquipped,
+                equippedWeaponPresent,
                 _twoHandedGrip.isHandPartGripping(isLeft),
                 _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(isLeft))) {
             grab_input_intent_policy::reset(inputIntentState);
@@ -2336,7 +2340,6 @@ namespace rock
                 collisionGeneration);
         }
         constexpr int grabButton = input_remap_policy::kGrabButtonId;
-        const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
         const bool ambidextrousHandoffAvailable =
             _equipped.handlingSettings.ambidextrousHandoffEnabled &&
             TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
@@ -2353,7 +2356,6 @@ namespace rock
         const GrabInputHandContext handContext{
             .hknp = hknp,
             .grabButton = grabButton,
-            .rightHandWeaponEquipped = rightHandWeaponEquipped,
             .ambidextrousHandoffAvailable = ambidextrousHandoffAvailable,
             .firingGripModes = firingGripModes,
             .gripZoneSettleEquipEnabled = gripZoneSettleEquipEnabled,
