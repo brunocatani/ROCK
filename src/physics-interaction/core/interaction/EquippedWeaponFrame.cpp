@@ -314,6 +314,12 @@ namespace rock
                 !frame.menuBlocked &&
                 physicsWritesAllowedForWorld(frame.hknpWorld));
         reconcileEquippedWeaponHandlingMode();
+        // WeaponCollision has just read the actual drawn inventory instance;
+        // its observed identity exists before geometry/grab-session readiness.
+        _twoHandedGrip.observeEquippedOwnership(
+            runtime.weaponDrawn && _weaponCollision.getCurrentObservedEquippedWeaponFormID() != 0 ?
+                currentEquippedWeaponOwnershipKey : 0,
+            currentAuthoredGripGenerationKey);
 
         {
             WeaponInteractionContact leftWeaponContact{};
@@ -536,8 +542,7 @@ namespace rock
                         .ownershipKey = currentEquippedWeaponOwnershipKey,
                         .grabButtonId = input_remap_policy::kGrabButtonId,
                         .isLeft = isLeft,
-                        .weaponEngaged = weaponNode &&
-                            (occupancy.firingGripActive || _twoHandedGrip.isHandPartCarryGripping(isLeft)),
+                        .weaponEngaged = occupancy.firingGripActive || _twoHandedGrip.isHandPartCarryGripping(isLeft),
                         .toggleGrab = toggleGrab,
                         .held = button.held,
                         .pressed = button.pressed,
@@ -792,16 +797,7 @@ namespace rock
                 static_cast<void>(readPrimaryGrabState());
             }
 
-            auto toggleOccupancyBefore =
-                _twoHandedGrip.getGripOccupancy();
-            if (_twoHandedGrip.
-                    isPersistentEquippedCarryInputAcquisitionPending()) {
-                auto& pendingFiringOccupancy =
-                    _twoHandedGrip.isFiringHandLeft() ?
-                    toggleOccupancyBefore.left :
-                    toggleOccupancyBefore.right;
-                pendingFiringOccupancy.firingGripActive = false;
-            }
+            auto toggleOccupancyBefore = _twoHandedGrip.getGrabInputOccupancy();
 
             bool primaryOnlyGripStartedThisFrame = false;
             bool nativeFiringGripTransfer = false;
@@ -1130,15 +1126,7 @@ namespace rock
                     supportAuthorityMode,
                     firingGripProximityAuthorityEnabled,
                     effectiveHandlingSettings);
-            auto toggleOccupancyAfter = gripUpdateResult.after;
-            if (_twoHandedGrip.
-                    isPersistentEquippedCarryInputAcquisitionPending()) {
-                auto& pendingFiringOccupancy =
-                    _twoHandedGrip.isFiringHandLeft() ?
-                    toggleOccupancyAfter.left :
-                    toggleOccupancyAfter.right;
-                pendingFiringOccupancy.firingGripActive = false;
-            }
+            const auto toggleOccupancyAfter = _twoHandedGrip.getGrabInputOccupancy();
             const auto toggleReconcileDecision =
                 equipped_weapon_toggle_grab_policy::reconcile(
                     _equipped.toggleGrabState,

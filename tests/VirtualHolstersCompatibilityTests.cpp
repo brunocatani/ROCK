@@ -35,6 +35,59 @@ int main()
 {
     using WeaponGrabMode = rock::equipped_weapon_toggle_grab_policy::Mode;
     bool ok = true;
+    namespace ownership = rock::equipped_weapon_toggle_grab_policy;
+    ok &= expect("confirmed native equip owns firing before any grab session",
+        ownership::confirmedFiringGripOccupied(100, 0, false));
+    ok &= expect("old grab session cannot own an unequipped weapon",
+        !ownership::confirmedFiringGripOccupied(0, 100, false));
+    ok &= expect("part carry leaves the firing hand free",
+        !ownership::confirmedFiringGripOccupied(100, 100, true));
+    ok &= expect("replacement native weapon cannot inherit old part carry",
+        ownership::confirmedFiringGripOccupied(101, 100, true));
+    for (const auto mode : {WeaponGrabMode::ToggleBoth, WeaponGrabMode::ToggleFiringOnly, WeaponGrabMode::HoldBoth}) {
+        for (const bool left : {false, true}) {
+            toggle::GripOccupancy occupancy{};
+            auto& firing = left ? occupancy.left : occupancy.right;
+            firing.firingGripActive = ownership::confirmedFiringGripOccupied(100, 0, false);
+            const auto unarmed = toggle::forGrabInput(occupancy, false);
+            ok &= expect("native equip does not manufacture grab activation",
+                !unarmed.left.firingGripActive && !unarmed.right.firingGripActive);
+            ok &= expect("input gating preserves actual ownership", firing.firingGripActive);
+            auto input = inZone(firing.usesToggleGrab(mode), left);
+            input.weaponEngaged = firing.weaponEngaged();
+            vh::HandState holster{};
+            const auto claimed = vh::advance(holster, input);
+            ok &= expect("first native equipped gesture belongs to holster in every mode and hand",
+                claimed.consumeInput && claimed.retainGrip);
+            input.holster.inZone = false;
+            input.pressed = false;
+            input.held = false;
+            input.released = true;
+            const auto released = vh::advance(holster, input);
+            ok &= expect("native holster gesture drains its release", released.consumeInput && released.retainGrip);
+
+            // Outside a holster, accepting the first explicit grab session
+            // still enables the existing native-to-loose toggle transfer.
+            toggle::RuntimeState buttons{};
+            toggle::Input firstGrab{
+                .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 100,
+                .occupancy = toggle::forGrabInput(occupancy, true),
+                .nativeFiringGripTransfer = true,
+            };
+            (left ? firstGrab.left : firstGrab.right) = {.held = true, .pressed = true};
+            const auto result = toggle::prepare(buttons, firstGrab);
+            const auto primary = left ? result.left : result.right;
+            ok &= expect("first accepted grab keeps mode-specific transfer behavior",
+                toggle::firingUsesToggle(mode) ? (!primary.held && primary.released) : (primary.held && !primary.released));
+        }
+    }
+    {
+        toggle::GripOccupancy supportOnly{};
+        supportOnly.left.partGripActive = true;
+        const auto input = toggle::forGrabInput(supportOnly, false);
+        ok &= expect("unarmed firing input does not remove support", input.left.partGripActive);
+    }
+
     for (const bool left : { false, true }) {
         auto input = inZone(true, left);
         vh::HandState state{};

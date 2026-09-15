@@ -76,6 +76,27 @@ namespace rock::equipped_weapon_toggle_grab_policy
         HandGripOccupancy right{};
     };
 
+    // Actual drawn-item identity owns the firing grip before any grab input.
+    // A stale scene node or old grab session cannot establish this ownership.
+    [[nodiscard]] inline constexpr bool confirmedFiringGripOccupied(
+        std::uint64_t confirmedOwnershipKey, std::uint64_t sessionOwnershipKey, bool partCarryActive) noexcept
+    {
+        return confirmedOwnershipKey != 0 &&
+            !(partCarryActive && sessionOwnershipKey == confirmedOwnershipKey);
+    }
+
+    // Occupancy and input activation are distinct. Native equipped carry
+    // already owns a hand, but does not arm a toggle or consume its first
+    // acquisition press until the grab session accepts that input.
+    [[nodiscard]] inline constexpr GripOccupancy forGrabInput(GripOccupancy occupancy, bool firingInputArmed) noexcept
+    {
+        if (!firingInputArmed) {
+            occupancy.left.firingGripActive = false;
+            occupancy.right.firingGripActive = false;
+        }
+        return occupancy;
+    }
+
     struct RuntimeState
     {
         std::uint64_t weaponOwnershipKey{ 0 };

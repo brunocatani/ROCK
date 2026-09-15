@@ -492,6 +492,9 @@ namespace rock
 
         [[nodiscard]] EquippedWeaponGripOccupancy
             getGripOccupancy() const noexcept;
+        [[nodiscard]] EquippedWeaponGripOccupancy getGrabInputOccupancy() const noexcept;
+        // Publish only identity read from the actual drawn inventory item.
+        void observeEquippedOwnership(std::uint64_t ownershipKey, std::uint64_t gripGenerationKey);
 
         [[nodiscard]] AuthoredSupportGripIndicatorFrame
             getAuthoredSupportGripIndicatorFrame() const noexcept
@@ -687,7 +690,11 @@ namespace rock
             return weapon_part_grip_report_policy::partGripCountsAsCarry(grip.active, grip.attachOnly);
         }
 
-        bool isFiringGripOccupied() const { return _session.state == TwoHandedState::Gripping || _session.state == TwoHandedState::PrimaryOnly; }
+        bool isFiringGripOccupied() const
+        {
+            return equipped_weapon_toggle_grab_policy::confirmedFiringGripOccupied(
+                _confirmedEquippedOwnershipKey, _session.equippedWeaponOwnershipKey, isPartCarryActive());
+        }
 
         /*
          * True while an OPEN free palm hovers inside the firing-grip reattach
@@ -2247,6 +2254,9 @@ namespace rock
             float detailedLogCooldownSeconds{ 0.0f };
         };
 
+        // Value-only equipped identity, independent of the grab-session state.
+        std::uint64_t _confirmedEquippedOwnershipKey{ 0 };
+        std::uint64_t _confirmedEquippedGripGenerationKey{ 0 };
         GripSession _session{};
         FiringGripState _firing{};
         SupportGripState _support{};

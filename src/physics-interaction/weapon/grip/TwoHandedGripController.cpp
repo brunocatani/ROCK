@@ -792,6 +792,8 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
+        _confirmedEquippedOwnershipKey = 0;
+        _confirmedEquippedGripGenerationKey = 0;
         clearOneHandRecoilClaim();
         _recoil.equippedIdentity = {};
         _recoil.rightBaseValid = false;
