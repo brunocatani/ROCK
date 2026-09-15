@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace RE { class NiAVObject; class TESObjectREFR; }
+namespace rock::authored_weapon_grip_library { struct LookupResult; struct WeaponVariantIdentity; }
 
 namespace rock
 {
@@ -27,6 +28,14 @@ namespace rock::vanilla_weapon_alignment_telemetry
     void recordLooseGrab(RE::TESObjectREFR* ref, bool isLeft, std::uint64_t grabIdentity,
         const RE::NiTransform& handWorld) noexcept;
     void recordInput(const AuthoredPrimaryFiringGripFrameInput& input);
+    void recordAuthoredSelection(const AuthoredPrimaryFiringGripFrameInput& input,
+        const authored_weapon_grip_library::WeaponVariantIdentity& requested,
+        const authored_weapon_grip_library::LookupResult& selected,
+        const RE::NiPoint3& modelTranslation, bool compiledMinigunSeat) noexcept;
+    // Boundary-only calls from the main-thread preharvest job. The writer
+    // receives formatted values and never retains graph or pose pointers.
+    void recordAuthoredPose(std::uint32_t formId, std::uint64_t captureSequence,
+        const char* source, const char* label, const RE::NiTransform& pose) noexcept;
     void recordSolve(std::uint32_t formId, std::uint64_t captureSequence,
         const char* source, const RE::NiTransform& handInWeapon,
         const RE::NiTransform& trackedHand, const RE::NiTransform& solvedWeapon);

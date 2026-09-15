@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 
 #include "RockConfig.h"
@@ -137,7 +138,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
+            next->log->info("VWA start version=4 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -303,6 +304,49 @@ namespace rock::vanilla_weapon_alignment_telemetry
         } catch (...) {
             ++session->captureFailures;
         }
+    }
+
+    void recordAuthoredPose(std::uint32_t formId, std::uint64_t captureSequence,
+        const char* source, const char* label, const RE::NiTransform& pose) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        try {
+            session->log->info("VWA authored-pose seq={} form={:08X} capture={} source={} label={}",
+                session->sequence, formId, captureSequence, source, label);
+            transform("authored-source", label, pose);
+        } catch (...) { ++session->captureFailures; }
+    }
+
+    void recordAuthoredSelection(const AuthoredPrimaryFiringGripFrameInput& input,
+        const authored_weapon_grip_library::WeaponVariantIdentity& requested,
+        const authored_weapon_grip_library::LookupResult& selected,
+        const RE::NiPoint3& modelTranslation, bool compiledMinigunSeat) noexcept
+    {
+        if (!captureThread || !sampling() || !input.weapon || input.weapon->formID != session->formId) return;
+        try {
+            session->log->info("VWA authored-selection seq={} form={:08X} requestedVariant={:016X} instance={:016X} instanceKnown={} found={} source={} capture={} variantFallback={} reason={} support={} supportSource={} supportCapture={} rightMask={:04X} supportMask={:04X} compiledMinigun={} registration=({:.6f},{:.6f},{:.6f})",
+                session->sequence, input.weapon->formID, requested.key, requested.instanceContentKey,
+                requested.instanceContentKnown, selected.found, static_cast<unsigned>(selected.source),
+                selected.captureSequence, selected.usedVariantFallback, selected.reason,
+                selected.hasSupportRelation, static_cast<unsigned>(selected.supportSource), selected.supportCaptureSequence,
+                selected.rightFiringFingerPose.enabledMask, selected.supportFingerPose.enabledMask,
+                compiledMinigunSeat, modelTranslation.x, modelTranslation.y, modelTranslation.z);
+            if (selected.found) {
+                transform("authored-selection", "raw-right-hand-in-weapon", selected.rightHandWeaponLocal);
+                if (selected.hasSupportRelation) transform("authored-selection", "raw-support-hand-in-weapon", selected.supportHandWeaponLocal);
+                for (std::size_t i = 0; i < selected.rightFiringFingerPose.localTransforms.size(); ++i) {
+                    if ((selected.rightFiringFingerPose.enabledMask & (1u << i)) == 0) continue;
+                    session->log->info("VWA authored-finger seq={} capture={} index={}", session->sequence, selected.captureSequence, i);
+                    transform("authored-selection", "right-finger-local", selected.rightFiringFingerPose.localTransforms[i]);
+                }
+            }
+            RE::NiTransform liveRelation{};
+            std::uint64_t liveSequence = 0;
+            const bool liveAvailable = authored_weapon_grip_capture::tryGetPrimaryFiringGripRelation(
+                input.weaponNode, liveRelation, liveSequence);
+            session->log->info("VWA authored-live-comparison seq={} available={} capture={}", session->sequence, liveAvailable, liveSequence);
+            if (liveAvailable) transform("authored-selection", "live-graph-hand-in-weapon", liveRelation);
+        } catch (...) { ++session->captureFailures; }
     }
 
     void recordInput(const AuthoredPrimaryFiringGripFrameInput& input)
