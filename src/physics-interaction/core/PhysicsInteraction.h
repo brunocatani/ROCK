@@ -629,7 +629,25 @@ namespace rock
             std::uint64_t bodyDiscoverySolveSequence{ 0 };
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity> bodySnapshots{};
             std::size_t bodySnapshotCount{ 0 };
+            // Value-only terminal evidence. waitReason points only to literals;
+            // no scene/body pointers survive the service callback.
+            const char* waitReason{ "not-serviced" };
+            std::uint32_t visitedNodes{ 0 };
+            std::uint32_t collisionObjects{ 0 };
+            std::uint32_t scannedBodies{ 0 };
+            std::uint32_t acceptedBodies{ 0 };
+            std::uint32_t uniqueMotions{ 0 };
+            std::uint32_t scanFailures{ 0 };
+            std::uint32_t invalidSystems{ 0 };
+            std::uint32_t depthSkips{ 0 };
+            std::uint32_t foreignRefSkips{ 0 };
+            std::uint64_t rejectionMask{ 0 };
+            std::uint32_t inspectedBodyId{ 0x7FFFFFFF };
+            std::uint32_t identityProofMask{ 0 };
+            std::uint64_t observedSolveSequence{ 0 };
         };
+
+        void reportEquippedWeaponPlacementFailure(const EquippedWeaponNativeHandoff& handoff, const char* reason) const;
 
         /*
          * Single-consumption snapshot of the firing hand's grab button. The

@@ -2,6 +2,7 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
@@ -51,7 +52,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             // Exact form IDs bound the investigation; they do not establish
             // that the active model or animation assets are unmodified vanilla.
             return formId == 0x00004822 || formId == 0x0015B043 || formId == 0x00024F55 ||
-                   formId == 0x0014831A || formId == 0x0014831B;
+                   formId == 0x0014831A || formId == 0x0014831B || formId == 0x000DF42E || formId == 0x00171B2B;
         }
 
         const char* phaseName(Phase phase)
@@ -139,7 +140,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=5 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
+            next->log->info("VWA start version=6 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -201,6 +202,14 @@ namespace rock::vanilla_weapon_alignment_telemetry
         }
         session->log->info("VWA phase seq={} phase={} form={:08X} overruns={}",
             schedulerSequence, phaseLabel, formId, session->pool->overrun_counter());
+        if (phase == Phase::BeforeFrik || phase == Phase::AfterFrik) {
+            auto* weapon = equipped && equipped->item.object ? equipped->item.object->As<RE::TESObjectWEAP>() : nullptr;
+            const auto offset = frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, f4vr::getWeaponNode());
+            session->log->info("VWA offset-source seq={} phase={} form={:08X} found={} source={} reason={} revision={}",
+                schedulerSequence, phaseLabel, formId, offset.found, static_cast<unsigned>(offset.source), offset.reason,
+                frik_weapon_offset_cache::currentRevision());
+            if (offset.found) transform(phaseLabel, "frik-weapon-offset", offset.offset);
+        }
         auto* nodes = f4vr::getPlayerNodes();
         node(phaseLabel, "right-wand", nodes ? nodes->primaryWandNode : nullptr);
         node(phaseLabel, "left-wand", nodes ? nodes->SecondaryWandNode : nullptr);

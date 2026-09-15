@@ -193,7 +193,10 @@ namespace rock
                 }
                 if (commit.equippedWeaponTransfer) {
                     for (auto& handoff : _drop.nativeHandoffs) {
-                        if (handoff.active && handoff.handle == commit.targetHandle) handoff = {};
+                        if (handoff.active && handoff.handle == commit.targetHandle) {
+                            reportEquippedWeaponPlacementFailure(handoff, reason);
+                            handoff = {};
+                        }
                     }
                     _forceGrab.retainedWeaponGrabs[commit.isLeft ? 1u : 0u] = {};
                 }

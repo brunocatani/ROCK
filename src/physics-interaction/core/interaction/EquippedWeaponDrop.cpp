@@ -89,6 +89,17 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::reportEquippedWeaponPlacementFailure(const EquippedWeaponNativeHandoff& handoff, const char* reason) const
+    {
+        ROCK_LOG_WARN(Weapon,
+            "Native placement failure ref={:08X} reason={} waiting={} stage={} elapsed={:.3f}s refSeen={} rootSeen={} nodes={} collisionObjects={} scanned={} accepted={} motions={} scanFailures={} invalidSystems={} depthSkips={} foreignRefSkips={} rejectionMask={:X} body={} identityProofMask={:X} solve={}->{} restarts={}",
+            handoff.droppedFormId, reason, handoff.waitReason, static_cast<unsigned>(handoff.stage), handoff.elapsedSeconds,
+            handoff.referenceResolvedOnce, handoff.threeDResolvedOnce, handoff.visitedNodes, handoff.collisionObjects,
+            handoff.scannedBodies, handoff.acceptedBodies, handoff.uniqueMotions, handoff.scanFailures, handoff.invalidSystems,
+            handoff.depthSkips, handoff.foreignRefSkips, handoff.rejectionMask, handoff.inspectedBodyId, handoff.identityProofMask,
+            handoff.progressSolveSequence, handoff.observedSolveSequence, handoff.identityRestartCount);
+    }
+
     void PhysicsInteraction::serviceEquippedWeaponNativeTransaction(
         EquippedWeaponNativeHandoff& handoff,
         const PhysicsFrameContext& frame)
@@ -97,6 +108,7 @@ namespace rock
         // made no state progress. Paused physics does not consume the budget.
         constexpr std::uint64_t kPublicationStallSolveSteps = 180;
 
+        handoff.waitReason = "world-unavailable";
         if (!handoff.active || !frame.worldReady || !frame.hknpWorld) {
             return;
         }
@@ -104,6 +116,7 @@ namespace rock
         handoff.elapsedSeconds += (std::max)(0.0f, frame.deltaSeconds);
         const std::uint64_t completedSolveSequence =
             _frame.completedPhysicsSolveSequence.load(std::memory_order_acquire);
+        handoff.observedSolveSequence = completedSolveSequence;
         const auto publicationStalled = [&]() {
             return equipped_weapon_drop_momentum::publicationProgressStalled(
                 handoff.progressSolveSequence,
@@ -118,6 +131,7 @@ namespace rock
                 }
             }
             if (warn) {
+                reportEquippedWeaponPlacementFailure(handoff, reason);
                 ROCK_LOG_WARN(Weapon,
                     "Equipped weapon drop handoff ended: dropped={:08X} reason={} stage={} elapsed={:.3f}s solveProgress={}->{} restarts={}",
                     handoff.droppedFormId,
@@ -138,6 +152,7 @@ namespace rock
             handoff = {};
         };
 
+        handoff.waitReason = "reference-unavailable";
         const auto droppedRefPtr = handoff.handle.get();
         auto* droppedRef = droppedRefPtr.get();
         if (!droppedRef) {
@@ -160,6 +175,7 @@ namespace rock
             handoff.droppedFormId = droppedRef->GetFormID();
         }
 
+        handoff.waitReason = "physics-world-or-3d-unavailable";
         auto* scanWorld = frame.bhkWorld;
         if (!scanWorld) {
             auto* cell = droppedRef->GetParentCell();
@@ -186,6 +202,7 @@ namespace rock
         }
 
         if (handoff.stage == EquippedWeaponDropHandoffStage::ResolvingBodies) {
+            handoff.waitReason = "collision-enable";
             const bool collisionPrepared =
                 physics_recursive_wrappers::enableCollisionRecursive(droppedRoot, true, true, true);
             if (!collisionPrepared) {
@@ -212,6 +229,19 @@ namespace rock
             frame.hknpWorld,
             droppedRef,
             scanOptions);
+        handoff.waitReason = "exact-reference-scan";
+        handoff.visitedNodes = bodySet.diagnostics.visitedNodes;
+        handoff.collisionObjects = bodySet.diagnostics.collisionObjects;
+        handoff.scannedBodies = static_cast<std::uint32_t>(bodySet.records.size());
+        handoff.acceptedBodies = 0;
+        handoff.uniqueMotions = 0;
+        handoff.scanFailures = bodySet.diagnostics.scanFailures;
+        handoff.invalidSystems = bodySet.diagnostics.invalidPhysicsSystems;
+        handoff.depthSkips = bodySet.diagnostics.depthLimitSkips;
+        handoff.foreignRefSkips = bodySet.diagnostics.foreignRefBodySkips;
+        handoff.rejectionMask = 0;
+        for (std::size_t i = 0; i < bodySet.diagnostics.rejectCounts.size(); ++i)
+            if (bodySet.diagnostics.rejectCounts[i] != 0) handoff.rejectionMask |= std::uint64_t{1} << i;
         const bool bodyScanComplete =
             bodySet.diagnostics.scanFailures == 0 &&
             bodySet.diagnostics.invalidPhysicsSystems == 0 &&
@@ -262,6 +292,9 @@ namespace rock
                 uniqueMotionRecords[uniqueMotionRecordCount++] = &record;
             }
         }
+        handoff.waitReason = "accepted-native-bodies";
+        handoff.acceptedBodies = static_cast<std::uint32_t>(acceptedRecordCount);
+        handoff.uniqueMotions = static_cast<std::uint32_t>(uniqueMotionRecordCount);
         if (bodyCollectionOverflow) {
             ROCK_LOG_SAMPLE_WARN(Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
@@ -282,9 +315,14 @@ namespace rock
 
         auto tryReadBodyIdentity = [&](std::uint32_t bodyId,
                                        equipped_weapon_drop_momentum::BodyIdentityKey& outIdentity) {
+            handoff.inspectedBodyId = bodyId;
             const auto live = havok_runtime::snapshotBody(
                 frame.hknpWorld,
                 RE::hknpBodyId{ bodyId });
+            // Bits: valid/body/motion/shape/collision/owner/bodyId/system-instance.
+            handoff.identityProofMask = (live.valid ? 1u : 0u) | (live.body ? 2u : 0u) | (live.motion ? 4u : 0u) |
+                (live.valid && live.body && live.body->shape ? 8u : 0u) | (live.collisionObject ? 16u : 0u) |
+                (live.ownerNode ? 32u : 0u) | (live.valid && live.body && live.body->bodyId.value == bodyId ? 64u : 0u);
             if (!live.valid || !live.body || !live.motion || !live.body->shape ||
                 !live.collisionObject || !live.ownerNode ||
                 live.body->bodyId.value != bodyId) {
@@ -297,6 +335,7 @@ namespace rock
             if (!physicsSystemInstance) {
                 return false;
             }
+            handoff.identityProofMask |= 128u;
             outIdentity = equipped_weapon_drop_momentum::BodyIdentityKey{
                 .bodyId = bodyId,
                 .motionId = live.motionIndex,
@@ -314,6 +353,10 @@ namespace rock
             if (!tryReadBodyIdentity(record.bodyId, outIdentity)) {
                 return false;
             }
+            // Additional bits identify which scan/live identity comparison failed.
+            handoff.identityProofMask |= (outIdentity.motionId == record.motionId ? 256u : 0u) |
+                (outIdentity.collisionObjectIdentity == reinterpret_cast<std::uintptr_t>(record.collisionObject) ? 512u : 0u) |
+                (outIdentity.owningNodeIdentity == reinterpret_cast<std::uintptr_t>(record.owningNode) ? 1024u : 0u);
             return outIdentity.motionId == record.motionId &&
                    outIdentity.collisionObjectIdentity ==
                        reinterpret_cast<std::uintptr_t>(record.collisionObject) &&
@@ -354,6 +397,7 @@ namespace rock
         };
 
         if (handoff.stage == EquippedWeaponDropHandoffStage::ResolvingBodies) {
+            handoff.waitReason = "body-identity";
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity>
                 capturedIdentities{};
             for (std::size_t i = 0; i < acceptedRecordCount; ++i) {
@@ -371,6 +415,7 @@ namespace rock
                 };
             }
 
+            handoff.waitReason = "root-inverse";
             const auto currentRootInverse =
                 transform_math::invertTransform(droppedRoot->world);
             if (!finiteNiTransform(currentRootInverse)) {
@@ -388,6 +433,7 @@ namespace rock
             for (std::size_t motionIndex = 0;
                  motionIndex < uniqueMotionRecordCount;
                  ++motionIndex) {
+                handoff.waitReason = "body-world-transform";
                 const auto* record = uniqueMotionRecords[motionIndex];
                 RE::NiTransform currentBodyWorld{};
                 if (!record ||
@@ -401,6 +447,7 @@ namespace rock
                     }
                     return;
                 }
+                handoff.waitReason = "release-target-transform";
                 const auto rootToBody = transform_math::composeTransforms(
                     currentRootInverse,
                     currentBodyWorld);
@@ -442,6 +489,7 @@ namespace rock
                     havok_runtime::activateBody(
                         frame.hknpWorld,
                         motionBodyIds[motionIndex]);
+                handoff.waitReason = !transformQueued ? "release-transform-write" : !velocityQueued ? "release-velocity-write" : "body-activation";
                 if (!activated) {
                     const std::size_t rollbackCount =
                         queuedMotions + (transformQueued ? 1u : 0u);
@@ -481,6 +529,7 @@ namespace rock
             handoff.bodyDiscoverySolveSequence = completedSolveSequence;
             handoff.progressSolveSequence = completedSolveSequence;
             handoff.stage = EquippedWeaponDropHandoffStage::WaitingForSettleStep;
+            handoff.waitReason = "completed-physics-solve";
             ROCK_LOG_INFO(Weapon,
                 "Equipped weapon drop native bodies placed at frozen release pose; waiting one solve: dropped={:08X} scanned={} bodies={} motions={} collisionEnabled=yes solveSeq={} restarts={}",
                 handoff.droppedFormId,
@@ -492,6 +541,7 @@ namespace rock
             return;
         }
 
+        handoff.waitReason = "completed-physics-solve";
         if (handoff.stage != EquippedWeaponDropHandoffStage::WaitingForSettleStep ||
             !equipped_weapon_drop_momentum::completedSettleStep(
                 handoff.bodyDiscoverySolveSequence,
@@ -499,6 +549,7 @@ namespace rock
             return;
         }
 
+        handoff.waitReason = "settled-body-identity";
         if (!currentBodySetMatches()) {
             ++handoff.identityRestartCount;
             handoff.stage = EquippedWeaponDropHandoffStage::ResolvingBodies;
@@ -512,6 +563,7 @@ namespace rock
             return;
         }
 
+        handoff.waitReason = "settled-velocity-clear";
         // This is a transfer into a held object, never a throw. Clear the
         // native spawn/contact velocity before the shared force-grab commit.
         const RE::hkVector4f zeroVelocity{};
