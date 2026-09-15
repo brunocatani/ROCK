@@ -55,6 +55,7 @@ namespace rock::weapon_equip_transfer
             bool matchedInstanceData = false;
             std::uint32_t stackID = 0;
             std::uint32_t count = 0;
+            std::uintptr_t stackAddress = 0;
             RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
             RE::BGSEquipSlot* equipSlot = nullptr;
         };
@@ -149,6 +150,7 @@ namespace rock::weapon_equip_transfer
                             .found = true,
                             .stackID = stackID,
                             .count = stack->GetCount(),
+                            .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
                             .instanceData = RE::BSTSmartPointer<RE::TBO_InstanceData>{ instanceData },
                             .equipSlot = equipSlot,
                         };
@@ -194,6 +196,7 @@ namespace rock::weapon_equip_transfer
                         .matchedInstanceData = expectedInstanceData && instanceData.get() == expectedInstanceData,
                         .stackID = stackID,
                         .count = stack->GetCount(),
+                        .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
                         .instanceData = instanceData,
                         .equipSlot = weapon->GetEquipSlot(instanceData.get()),
                     };
@@ -455,9 +458,16 @@ namespace rock::weapon_equip_transfer
             result.weapon,
             stack.instanceData.get());
         result.matchedEquippedStack = equippedStack.found &&
-            equippedStack.stackID == stack.stackID &&
-            (!stack.instanceData ||
-                equippedStack.instanceData.get() == stack.instanceData.get());
+            weapon_inventory_stack_selection_policy::matchesEquippedStack(
+                { stack.stackAddress, reinterpret_cast<std::uintptr_t>(stack.instanceData.get()), stack.count },
+                { equippedStack.stackAddress, reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()), equippedStack.count });
+        ROCK_LOG_INFO(Weapon,
+            "Held equip stack validation weapon={:08X} requestedIndex={} equippedIndex={} found={} identityMatch={} requestedNode=0x{:X} equippedNode=0x{:X} requestedInstance=0x{:X} equippedInstance=0x{:X}",
+            result.weapon->formID, stack.stackID, equippedStack.stackID,
+            equippedStack.found, result.matchedEquippedStack,
+            stack.stackAddress, equippedStack.stackAddress,
+            reinterpret_cast<std::uintptr_t>(stack.instanceData.get()),
+            reinterpret_cast<std::uintptr_t>(equippedStack.instanceData.get()));
         if (!result.matchedEquippedStack) {
             result.reason = EquipReason::EquippedStackMismatch;
             return result;

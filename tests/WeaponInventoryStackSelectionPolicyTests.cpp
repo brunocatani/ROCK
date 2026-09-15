@@ -20,6 +20,18 @@ int main()
 
     bool ok = true;
 
+    const StackWitness requested{ 0x1000, 0xA000, 1 };
+    ok &= expect("equip may rebuild or move a stack while preserving the exact instance",
+        matchesEquippedStack(requested, { 0x2000, 0xA000, 1 }));
+    ok &= expect("a reused stack node must not admit a different weapon instance",
+        !matchesEquippedStack(requested, { 0x1000, 0xB000, 1 }));
+    ok &= expect("missing equipped stack must fail closed",
+        !matchesEquippedStack(requested, {}));
+    ok &= expect("base-data stack identity survives a list reorder",
+        matchesEquippedStack({ 0x1000, 0, 1 }, { 0x1000, 0, 1 }));
+    ok &= expect("base-data weapons cannot borrow another stack",
+        !matchesEquippedStack({ 0x1000, 0, 1 }, { 0x2000, 0, 1 }));
+
     Snapshot duplicateBefore{};
     duplicateBefore.count = 2;
     duplicateBefore.stacks[0] = StackWitness{ .stackAddress = 0x1000, .instanceDataAddress = 0xA000, .count = 1 };
