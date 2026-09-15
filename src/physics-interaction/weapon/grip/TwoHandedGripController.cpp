@@ -314,6 +314,20 @@ namespace rock
         }
 
         /*
+         * Left-firing feed-forward pre-write: at this point weaponNode->world
+         * is not the carried pose (observed about 180 degrees off under
+         * LArm_Hand). Every world<->weapon-local conversion below (part-grip
+         * captures, mesh grab points, promotion distances, the two-hand solver
+         * base) would silently mix real-space palm/contact points with that
+         * frame, and the two-hand solver keeps its roll, rendering the weapon
+         * upside down while both hands hold. Publishing the canonical
+         * feed-forward pose FIRST makes the node a real-space basis for all
+         * existing math; the state handlers below re-publish their final
+         * solved pose. The pre-write is a basis, not the rendered frame.
+         */
+        (void)publishLeftFiringFeedForwardWeaponPose(weaponNode);
+
+        /*
          * Support-side routing follows the CURRENT firing hand: the support
          * hand is whichever physical hand does not own the firing grip. All
          * grip math below is weapon-relative; the hands only choose roles.

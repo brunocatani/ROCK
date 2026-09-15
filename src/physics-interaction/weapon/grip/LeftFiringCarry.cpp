@@ -4,6 +4,40 @@
 
 namespace rock
 {
+    bool TwoHandedGrip::publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode)
+    {
+        if (!weaponNode || weaponNode != _session.weaponNode ||
+            (_session.state != TwoHandedState::Gripping && _session.state != TwoHandedState::PrimaryOnly) ||
+            !usesLeftFiringCarry() || !_firing.hasPrimaryHandWeaponLocal) {
+            return false;
+        }
+
+        RE::NiTransform physicalHandWorld{};
+        RE::NiTransform presentedHandWorld{};
+        RE::NiTransform feedForwardWeaponWorld{};
+        if (!tryResolveLeftPositionOnlyCarryFrames(
+                weaponNode,
+                physicalHandWorld,
+                presentedHandWorld,
+                feedForwardWeaponWorld,
+                0.0f)) {
+            return false;
+        }
+        /*
+         * Basis pre-write, not a rendered frame: the state handler publishes
+         * the final pose later this frame (the two-hand solve while both
+         * hands hold). Recording it as rendered handed the part-carry
+         * baseline the wand-aimed pose instead of the pose on screen, so the
+         * weapon jumped to it when the firing hand let go.
+         */
+        return applyWeaponVisualAuthority(
+            weaponNode,
+            feedForwardWeaponWorld,
+            0,
+            true,
+            false);
+    }
+
     bool TwoHandedGrip::solveLeftFiringWeaponCarry(RE::NiNode* weaponNode, const float dt)
     {
         if (!weaponNode || !_firing.hasPrimaryHandWeaponLocal) {

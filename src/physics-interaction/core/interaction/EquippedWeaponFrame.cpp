@@ -182,6 +182,14 @@ namespace rock
         weapon_recoil_policy::WeaponEvidence recoilWeapon{};
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
+        /*
+         * The weapon node does not keep ROCK's carry pose across frames, even
+         * in part-carry. Republish ROCK's solved carry transform first so
+         * weapon-part probes, firing-grip zone checks, and grip capture frames
+         * all read the weapon where the player sees it - the same frame the
+         * generated colliders follow.
+         */
+        (void)_twoHandedGrip.republishPartCarryWeaponTransform(weaponNode);
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool retainedWeaponCollisionActive =
             _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
@@ -486,6 +494,16 @@ namespace rock
             const auto firingGripDecision =
                 resolveEquippedWeaponDetachDecision(
                     _equipped.handlingSettings);
+
+            /*
+             * While the LEFT hand carries the weapon, the node does not hold
+             * last frame's carry pose here; the ranked part probes below
+             * convert real palm points into node-local space, so a stale frame
+             * made a forend grab select the wrong part. Publish the canonical
+             * carry pose first so both hands probe the weapon where it
+             * actually is.
+             */
+            (void)_twoHandedGrip.publishLeftFiringFeedForwardWeaponPose(weaponNode);
 
             leftWeaponContactSource = consumeWeaponContactForHand(true, frame.left, weaponNode != nullptr, leftWeaponContact);
             // The free firing hand needs weapon-part probes for part grips and

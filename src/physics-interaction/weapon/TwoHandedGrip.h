@@ -934,6 +934,29 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             bool logDiagnostic = false);
 
+        /*
+         * Publishes the left-firing canonical carry pose (firing hand o
+         * inverse(captured hold)) onto the weapon node. The node does not keep
+         * the pose ROCK wrote across frames (observed about 180 degrees off
+         * under LArm_Hand at the next AfterArmSolve), so any world<->node-local
+         * math run before this publish mixes frames. update() calls it
+         * internally before its grip math; PhysicsInteraction MUST also call
+         * it before the frame's weapon interaction probes (ranked part
+         * selection converts the real palm point into node-local space). Safe
+         * pre-update: it reads the previous frame's scope-safe hand frame, a
+         * millimeter-scale error against the displacement it removes. No-op
+         * unless left-firing with a valid captured hold on the current weapon.
+         */
+        bool publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode);
+
+        /*
+         * Part-carry counterpart: the weapon node does not keep ROCK's solved
+         * part-carry pose across frames either. Callers must republish it
+         * before reading the weapon node (probes, grip-zone checks, capture
+         * frames), or every weapon-relative computation sees a stale pose.
+         */
+        bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
+
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
 
         /*
