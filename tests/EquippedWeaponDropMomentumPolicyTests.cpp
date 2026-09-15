@@ -49,6 +49,17 @@ int main()
         .collisionObjectIdentity = 0x3000,
         .physicsSystemInstanceIdentity = 0x4000,
     };
+    auto discoveryWrapper = bodyIdentity;
+    discoveryWrapper.owningNodeIdentity = 0x9000;
+    discoveryWrapper.collisionObjectIdentity = 0xA000;
+    ok &= expectTrue("another scene wrapper can discover the same system body",
+        matchesDiscoveredBody(bodyIdentity, discoveryWrapper.bodyId, discoveryWrapper.motionId, discoveryWrapper.physicsSystemInstanceIdentity));
+    ok &= expectFalse("discovery alias does not replace the native generation snapshot", sameBodyIdentity(bodyIdentity, discoveryWrapper));
+    ok &= expectFalse("foreign system cannot pass with reused body and motion IDs", matchesDiscoveredBody(bodyIdentity, 11, 7, 0x5000));
+    ok &= expectFalse("missing discovery system fails closed", matchesDiscoveredBody(bodyIdentity, 11, 7, 0));
+    ok &= expectFalse("different discovered body fails", matchesDiscoveredBody(bodyIdentity, 12, 7, 0x4000));
+    ok &= expectFalse("different discovered motion fails", matchesDiscoveredBody(bodyIdentity, 11, 8, 0x4000));
+    ok &= expectFalse("invalid discovered body fails", matchesDiscoveredBody(bodyIdentity, 0x7FFFFFFF, 7, 0x4000));
     ok &= expectTrue("identical native body generation is stable", sameBodyIdentity(bodyIdentity, bodyIdentity));
     auto rebuiltIdentity = bodyIdentity;
     rebuiltIdentity.physicsSystemInstanceIdentity = 0x5000;

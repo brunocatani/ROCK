@@ -23,6 +23,20 @@ namespace rock::equipped_weapon_drop_momentum
         std::uintptr_t physicsSystemInstanceIdentity{ 0 };
     };
 
+    // A scene scan enumerates every body in a shared physics system through
+    // whichever wrapper it encounters first. That wrapper is discovery evidence,
+    // not necessarily the body's native owner. Keep the native owner in the
+    // snapshot; require the discovery to identify the same live system/body.
+    [[nodiscard]] constexpr bool matchesDiscoveredBody(const BodyIdentityKey& nativeIdentity,
+        std::uint32_t discoveredBodyId, std::uint32_t discoveredMotionId,
+        std::uintptr_t discoveredSystemInstance) noexcept
+    {
+        return discoveredBodyId != 0x7FFF'FFFF && discoveredSystemInstance != 0 &&
+               nativeIdentity.bodyId == discoveredBodyId &&
+               nativeIdentity.motionId == discoveredMotionId &&
+               nativeIdentity.physicsSystemInstanceIdentity == discoveredSystemInstance;
+    }
+
     [[nodiscard]] constexpr bool sameBodyIdentity(const BodyIdentityKey& lhs, const BodyIdentityKey& rhs) noexcept
     {
         return lhs.bodyId == rhs.bodyId &&

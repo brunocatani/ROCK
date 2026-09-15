@@ -357,11 +357,15 @@ namespace rock
             handoff.identityProofMask |= (outIdentity.motionId == record.motionId ? 256u : 0u) |
                 (outIdentity.collisionObjectIdentity == reinterpret_cast<std::uintptr_t>(record.collisionObject) ? 512u : 0u) |
                 (outIdentity.owningNodeIdentity == reinterpret_cast<std::uintptr_t>(record.owningNode) ? 1024u : 0u);
-            return outIdentity.motionId == record.motionId &&
-                   outIdentity.collisionObjectIdentity ==
-                       reinterpret_cast<std::uintptr_t>(record.collisionObject) &&
-                   outIdentity.owningNodeIdentity ==
-                       reinterpret_cast<std::uintptr_t>(record.owningNode);
+            auto* discoveredSystem = record.collisionObject ?
+                havok_runtime::getPhysicsSystemFromCollisionObject(record.collisionObject) : nullptr;
+            const auto discoveredInstance = reinterpret_cast<std::uintptr_t>(
+                havok_runtime::getPhysicsSystemInstance(discoveredSystem));
+            // Bits 11/12: discovery system available / same native system.
+            handoff.identityProofMask |= (discoveredInstance != 0 ? 2048u : 0u) |
+                (discoveredInstance != 0 && discoveredInstance == outIdentity.physicsSystemInstanceIdentity ? 4096u : 0u);
+            return equipped_weapon_drop_momentum::matchesDiscoveredBody(
+                outIdentity, record.bodyId, record.motionId, discoveredInstance);
         };
         auto currentBodySetMatches = [&]() {
             if (handoff.bodySnapshotCount == 0 ||
@@ -400,6 +404,7 @@ namespace rock
             handoff.waitReason = "body-identity";
             std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity>
                 capturedIdentities{};
+            std::size_t sharedSystemOwners = 0;
             for (std::size_t i = 0; i < acceptedRecordCount; ++i) {
                 equipped_weapon_drop_momentum::BodyIdentityKey identity{};
                 if (!acceptedRecords[i] ||
@@ -408,6 +413,10 @@ namespace rock
                         endHandoff("native-identity-read-stalled", true);
                     }
                     return;
+                }
+                if (identity.collisionObjectIdentity != reinterpret_cast<std::uintptr_t>(acceptedRecords[i]->collisionObject) ||
+                    identity.owningNodeIdentity != reinterpret_cast<std::uintptr_t>(acceptedRecords[i]->owningNode)) {
+                    ++sharedSystemOwners;
                 }
                 capturedIdentities[i] = EquippedWeaponDropBodySnapshot{
                     .valid = true,
@@ -531,13 +540,14 @@ namespace rock
             handoff.stage = EquippedWeaponDropHandoffStage::WaitingForSettleStep;
             handoff.waitReason = "completed-physics-solve";
             ROCK_LOG_INFO(Weapon,
-                "Equipped weapon drop native bodies placed at frozen release pose; waiting one solve: dropped={:08X} scanned={} bodies={} motions={} collisionEnabled=yes solveSeq={} restarts={}",
+                "Equipped weapon drop native bodies placed at frozen release pose; waiting one solve: dropped={:08X} scanned={} bodies={} motions={} collisionEnabled=yes solveSeq={} restarts={} sharedSystemOwners={}",
                 handoff.droppedFormId,
                 bodySet.records.size(),
                 acceptedRecordCount,
                 uniqueMotionRecordCount,
                 handoff.bodyDiscoverySolveSequence,
-                handoff.identityRestartCount);
+                handoff.identityRestartCount,
+                sharedSystemOwners);
             return;
         }
 
