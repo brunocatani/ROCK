@@ -99,6 +99,10 @@ namespace rock::authored_weapon_grip_capture
         std::atomic<RE::NiNode*> s_authoredSupportGripWeaponNode{ nullptr };
         std::uintptr_t s_nativePrimaryArmReturnAddress{ 0 };
         std::uintptr_t s_nativeSupportArmReturnAddress{ 0 };
+        float s_authoredWeaponLocalScale{ 1.0f };
+        std::atomic<std::uint32_t> s_authoredWeaponScaleFormId{ 0 };
+        std::uintptr_t s_authoredWeaponScaleTreeIdentity{ 0 };
+        std::uintptr_t s_authoredWeaponScaleTransformsIdentity{ 0 };
         std::uint64_t s_primaryFiringGripGraphPoseSequence{ 0 };
         std::uint64_t s_lastConsumedAuthoredSupportGraphPoseSequence{ 0 };
 
@@ -324,6 +328,7 @@ namespace rock::authored_weapon_grip_capture
 
         void captureAuthoredSupportGraphPose()
         {
+            s_authoredWeaponScaleFormId.store(0, std::memory_order_release);
             if (!s_primaryFiringGripCaptureEnabled.load(std::memory_order_acquire) ||
                 nativeAnimationAuthorityActive()) {
                 invalidateAuthoredSupportGraphPose();
@@ -348,6 +353,20 @@ namespace rock::authored_weapon_grip_capture
                 recordAuthoredSupportGripCaptureFailure(
                     AuthoredSupportGripCaptureFailureReason::BoneCacheIncomplete);
                 return;
+            }
+
+            // Weapon scale does not require support-hand bones or fingers.
+            const int weaponIndex = s_primaryFiringGripBoneCache.weaponIndex;
+            auto* equipped = f4vr::getEquippedWeaponItem();
+            if (weaponIndex >= 0 && weaponIndex < source->numTransforms &&
+                source->transforms[weaponIndex].refNode && equipped && equipped->item.object) {
+                const float graphScale = authoritativeLocal(source->transforms[weaponIndex]).scale;
+                if (std::isfinite(graphScale)) {
+                    s_authoredWeaponLocalScale = graphScale;
+                    s_authoredWeaponScaleTreeIdentity = reinterpret_cast<std::uintptr_t>(source);
+                    s_authoredWeaponScaleTransformsIdentity = reinterpret_cast<std::uintptr_t>(source->transforms);
+                    s_authoredWeaponScaleFormId.store(equipped->item.object->formID, std::memory_order_release);
+                }
             }
 
             std::uint16_t missingFingerMask = 0;
@@ -838,6 +857,7 @@ namespace rock::authored_weapon_grip_capture
         const bool wasEnabled = s_primaryFiringGripCaptureEnabled.exchange(
             effectiveEnabled,
             std::memory_order_acq_rel);
+        if (!effectiveEnabled || !wasEnabled) s_authoredWeaponScaleFormId.store(0, std::memory_order_release);
         if (!effectiveEnabled) {
             invalidatePrimaryFiringGripCapture();
             invalidateAuthoredSupportGraphPose();
@@ -936,6 +956,24 @@ namespace rock::authored_weapon_grip_capture
         // presentation-world transforms after hFRIK has moved the weapon.
         outAuthoredPrimaryHandInWeapon = s_authoredPrimaryHandInWeapon;
         outCaptureSequence = sequence;
+        return true;
+    }
+
+    bool tryGetAnimationWeaponScale(const RE::NiNode* expectedWeaponNode,
+        const std::uint32_t expectedFormId, float& outScale)
+    {
+        outScale = 1.0f;
+        if (!expectedWeaponNode || expectedFormId == 0 || !claimOrValidateThread() ||
+            !s_primaryFiringGripCaptureEnabled.load(std::memory_order_acquire) ||
+            s_authoredWeaponScaleFormId.load(std::memory_order_acquire) != expectedFormId) return false;
+        auto* source = f4vr::getFirstPersonBoneTree();
+        if (!validTree(source) || !primaryFiringGripCacheMatches(*source) ||
+            s_authoredWeaponScaleTreeIdentity != reinterpret_cast<std::uintptr_t>(source) ||
+            s_authoredWeaponScaleTransformsIdentity != reinterpret_cast<std::uintptr_t>(source->transforms)) return false;
+        const int index = s_primaryFiringGripBoneCache.weaponIndex;
+        if (index < 0 || index >= source->numTransforms ||
+            source->transforms[index].refNode != expectedWeaponNode || !std::isfinite(s_authoredWeaponLocalScale)) return false;
+        outScale = s_authoredWeaponLocalScale;
         return true;
     }
 

@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 
@@ -1852,6 +1853,31 @@ namespace rock
             _weaponCollision.getCurrentObservedEquippedWeaponFormID() == equippedWeapon->formID;
         const bool equippedWeaponTransitionActive =
             _equipped.transition.getPublicSnapshot().active;
+
+        // Normalize the presentation baseline before any ROCK grip/collision
+        // consumer reads it. Animation graph scale and an explicit Weapon
+        // animation owner remain authoritative over this default.
+        if (_lifecycle.initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable &&
+            runtime.localSkeletonReady && !runtime.localMenuBlocking && !runtime.compatibilityConfigBlocking &&
+            runtime.weaponDrawn && !equippedWeaponTransitionActive && equippedGenerationMatchesForm &&
+            weaponNode->parent && f4vr::isNodeVisible(weaponNode) &&
+            (nativeAuthorityFlags & authored_weapon_grip_capture_policy::kWeapon) == 0) {
+            const float parentScale = weaponNode->parent->world.scale;
+            float animationScale = 1.0f;
+            const bool animationAvailable = authored_weapon_grip_capture::tryGetAnimationWeaponScale(
+                weaponNode, equippedWeapon->formID, animationScale);
+            const float desiredScale = authored_weapon_grip_capture_policy::resolveWeaponPresentationScale(animationAvailable, animationScale);
+            if (std::isfinite(parentScale) && std::abs(parentScale) > 0.0001f &&
+                std::abs(weaponNode->world.scale - desiredScale) > 0.00001f) {
+                const float previousScale = weaponNode->world.scale;
+                weaponNode->local.scale = desiredScale / parentScale;
+                f4vr::updateDown(weaponNode, true);
+                ROCK_LOG_SAMPLE_INFO(Animation, 2000,
+                    "Weapon presentation scale form={:08X} incoming={:.6f} target={:.6f} result={:.6f} source={}",
+                    equippedWeapon->formID, previousScale, desiredScale, weaponNode->world.scale,
+                    animationAvailable ? "animation-graph" : "unit-default");
+            }
+        }
 
         native_idle_grip_preharvest::observeEquippedWeapon(
             equippedGenerationMatchesForm ? equippedWeapon : nullptr,

@@ -64,6 +64,10 @@ namespace rock::authored_weapon_grip_capture
         const RE::NiNode* expectedWeaponNode,
         RE::NiTransform& outAuthoredPrimaryHandInWeapon,
         std::uint64_t& outCaptureSequence);
+    // Pre-presentation graph-local Weapon scale; never reads the final visible
+    // weapon scale or a persisted pose. Borrowed node identity is checked now.
+    [[nodiscard]] bool tryGetAnimationWeaponScale(const RE::NiNode* expectedWeaponNode,
+        std::uint32_t expectedFormId, float& outScale);
     [[nodiscard]] bool tryResolveAuthoredSupportGrip(
         const RE::NiNode* expectedWeaponNode,
         RE::NiTransform& outSupportHandInWeapon,

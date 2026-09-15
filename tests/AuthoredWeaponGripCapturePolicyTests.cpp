@@ -6,6 +6,14 @@ int main()
 {
     using namespace rock::authored_weapon_grip_capture_policy;
 
+    if (resolveWeaponPresentationScale(false, 0.865347f) != 1.0f) return 90;
+    if (resolveWeaponPresentationScale(true, 1.0f) != 1.0f) return 91;
+    if (resolveWeaponPresentationScale(true, 0.75f) != 0.75f) return 92;
+    if (resolveWeaponPresentationScale(true, 1.25f) != 1.25f) return 93;
+    if (resolveWeaponPresentationScale(true, 0.0f) != 0.0f) return 94;
+    if (resolveWeaponPresentationScale(true, std::numeric_limits<float>::quiet_NaN()) != 1.0f) return 95;
+    if (resolveWeaponPresentationScale(true, std::numeric_limits<float>::infinity()) != 1.0f) return 96;
+
     struct AffineTransform
     {
         float scale;

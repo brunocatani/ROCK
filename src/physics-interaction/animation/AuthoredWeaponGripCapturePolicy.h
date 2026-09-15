@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cmath>
 #include <string_view>
 
 namespace rock::authored_weapon_grip_capture_policy
@@ -440,6 +441,13 @@ namespace rock::authored_weapon_grip_capture_policy
                input.snapshotSupportGripCaptureSequence != 0 &&
                input.snapshotFingerLocalTransformMask ==
                    kCompleteAuthoredSupportFingerLocalTransformMask;
+    }
+
+    // Presentation starts at unit scale. A fresh animation graph value is
+    // applied on top, including zero scale used by an animation to hide a mesh.
+    [[nodiscard]] inline float resolveWeaponPresentationScale(bool animationAvailable, float animationScale) noexcept
+    {
+        return animationAvailable && std::isfinite(animationScale) ? animationScale : 1.0f;
     }
 
     template <class Transform, class Point, class LocalPointToWorld>
