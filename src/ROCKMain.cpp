@@ -56,6 +56,12 @@ namespace
     bool s_physicsPublished = false;
 
     bool s_frikAvailable = false;
+    /*
+     * ROCK handled kSkeletonReady for FRIK's current skeleton. FRIK broadcasts
+     * it after that skeleton's first world final, so on that first frame
+     * AfterArmSolve is skipped and FrameEnd ticks without physics.
+     */
+    bool s_frikSkeletonAnnounced = false;
 
     bool s_pluginLoaded = false;
     std::atomic<std::uint32_t> s_providerGeneration{ 1 };
@@ -171,11 +177,14 @@ namespace
 
     void ensurePhysicsInteractionForReadySkeleton(const runtime_state::RuntimeFrameSnapshot& runtime)
     {
-        // ROCK creation is event-driven when FRIK first announces skeleton
-        // readiness. The frame loop also recovers a missed lifecycle message
-        // when the live skeleton becomes ready later.
+        // ROCK creation is event-driven when FRIK announces skeleton readiness.
+        // The frame loop re-requests a dropped creation only for a skeleton
+        // FRIK has announced: this runs at FrameBegin, before the kSkeletonReady
+        // FRIK broadcasts later in the frame that builds it, and that event
+        // would rebuild whatever was created here.
         if (!s_physicsCreationRequested.load(std::memory_order_acquire) &&
             !s_physicsInteraction &&
+            s_frikSkeletonAnnounced &&
             runtime.visualAuthorityAvailable &&
             runtime.localSkeletonReady) {
             s_physicsCreationRequested.store(true, std::memory_order_release);
@@ -667,12 +676,6 @@ namespace
     bool s_providerTickedThisFrame = false;
     // AfterArmSolve ran this frame: the later skeleton phases may read ROCK's frame state.
     bool s_skeletonTickedThisFrame = false;
-    /*
-     * ROCK handled kSkeletonReady for FRIK's current skeleton. FRIK broadcasts
-     * it after that skeleton's first world final, so on that first frame
-     * AfterArmSolve is skipped and FrameEnd ticks without physics.
-     */
-    bool s_frikSkeletonAnnounced = false;
 
     /*
      * One ROCK tick: the provider V1 phases around ROCK's own update. With a
