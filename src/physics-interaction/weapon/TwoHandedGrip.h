@@ -906,6 +906,22 @@ namespace rock
          * carry uses the untrimmed authored-seat variant privately and applies
          * aim trim to the separately mirrored native weapon orientation.
          */
+        // Shared with loose-weapon seats; inputs are physical bone-in-wand
+        // frames, never the hand bones after ROCK has presented a grip.
+        static bool tryBuildMirroredSupportHandWeaponLocal(
+            const RE::NiTransform& leftHandWeaponLocal,
+            const RE::NiTransform& leftBoneInWand,
+            const RE::NiTransform& rightBoneInWand,
+            RE::NiTransform& outRightHandWeaponLocal);
+
+        static bool tryResolveAuthoredActivationAxes(
+            const RE::NiTransform& rightHandWeaponLocal,
+            const RE::NiTransform& weaponWorld,
+            authored_weapon_grip_activation_policy::HandTopology topology,
+            RE::NiPoint3& outSide,
+            RE::NiPoint3& outDown,
+            RE::NiPoint3& outReference);
+
         static bool tryBuildMirroredLeftFiringHandWeaponLocal(
             const RE::NiTransform& canonicalRightHandWeaponLocal,
             const RE::NiPoint3& firingGripWeaponLocal,

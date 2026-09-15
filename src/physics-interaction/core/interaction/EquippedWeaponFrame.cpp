@@ -1727,6 +1727,18 @@ namespace rock
             if (overlayFrame.count) debug::Install();
         }
 
+        for (const bool isLeft : {false, true}) {
+            const auto& hand = isLeft ? _leftHand : _rightHand;
+            if (!hand.isHolding() && hand.hasSelection() && !_touchGrabRuntime.isHandActive(isLeft)) {
+                overlayFrame.count += static_cast<std::uint32_t>(loose_weapon_grip_zone::collectIndicators(
+                    isLeft, hand.getSelection().refr,
+                    std::span<RE::NiPoint3>(overlayFrame.positions).subspan(overlayFrame.count)));
+            }
+        }
+        if (overlayFrame.count) {
+            debug::Install();
+        }
+
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         const std::uint64_t currentWeaponGenerationKey =
             _weaponCollision.getCurrentWeaponGenerationKey();

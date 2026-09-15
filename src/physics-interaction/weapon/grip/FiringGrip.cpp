@@ -1501,6 +1501,22 @@ namespace rock
             return false;
         }
 
+        return tryBuildMirroredSupportHandWeaponLocal(leftHandWeaponLocal,
+            _firing.leftNaturalBoneInWand, _firing.rightNaturalBoneInWand, outRightHandWeaponLocal);
+    }
+
+    bool TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
+        const RE::NiTransform& leftHandWeaponLocal,
+        const RE::NiTransform& leftBoneInWand,
+        const RE::NiTransform& rightBoneInWand,
+        RE::NiTransform& outRightHandWeaponLocal)
+    {
+        outRightHandWeaponLocal = {};
+        if (!isFiniteTransform(leftHandWeaponLocal) ||
+            !isFiniteTransform(leftBoneInWand) || !isFiniteTransform(rightBoneInWand)) {
+            return false;
+        }
+
         /*
          * Mirror only ORIENTATION through the physical wand pair. The cached
          * bone-in-wand transforms remove hFRIK's asymmetric hand-bone
@@ -1518,9 +1534,9 @@ namespace rock
             return result;
         };
         const RE::NiTransform leftBoneInWandOrientation =
-            orientationFrame(_firing.leftNaturalBoneInWand);
+            orientationFrame(leftBoneInWand);
         const RE::NiTransform rightBoneInWandOrientation =
-            orientationFrame(_firing.rightNaturalBoneInWand);
+            orientationFrame(rightBoneInWand);
         const RE::NiTransform leftHandWeaponOrientation =
             orientationFrame(leftHandWeaponLocal);
 

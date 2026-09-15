@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/PipeFiringGripPolicy.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 
 #include <array>
 #include <cmath>
@@ -15,6 +16,9 @@
 #include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"
+#include "RE/Bethesda/BSExtraData.h"
+#include "RockConfig.h"
+#include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiNode.h"
 
@@ -51,6 +55,32 @@ namespace rock::loose_weapon_grip_zone
 
         // Per-frame publication from PhysicsInteraction; see the header.
         CanonicalPrimaryHandFrame s_canonicalPrimaryHandFrame{};
+        CanonicalPrimaryHandFrame s_physicalLeftHandFrame{};
+        struct NearState
+        {
+            std::uint32_t refID{ 0 };
+            std::uint64_t captureSequence{ 0 };
+            RE::NiPoint3 lastDirection{};
+            bool lastDirectionValid{ false };
+            AuthoredSupportDebug debug{};
+            std::array<RE::NiPoint3, 2> indicatorLocal{};
+            std::size_t indicatorCount{ 0 };
+        };
+        std::array<NearState, 2> s_nearStates{};
+
+        bool isUsableWorldTransform(const RE::NiTransform& transform);
+
+        bool physicalHandWorld(bool isLeft, RE::NiTransform& out)
+        {
+            const auto& frame = isLeft ? s_physicalLeftHandFrame : s_canonicalPrimaryHandFrame;
+            if (frame.valid && isUsableWorldTransform(frame.handWorld)) {
+                out = frame.handWorld;
+                return true;
+            }
+            RE::NiPoint3 palm{};
+            return !frame.presentedByRock && TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(isLeft, palm, out);
+        }
+
 
         std::size_t handIndex(const bool isLeft) { return isLeft ? 0u : 1u; }
 
@@ -347,9 +377,8 @@ namespace rock::loose_weapon_grip_zone
                     *outTestedHandWorld = canonicalHandWorld;
                 }
             } else {
-                RE::NiPoint3 leftPalmWorld{};
                 RE::NiTransform leftHandWorld{};
-                if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(true, leftPalmWorld, leftHandWorld)) {
+                if (physicalHandWorld(true, leftHandWorld)) {
                     state.hasFiringHandWeaponLocal = TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
                         canonicalHandWeaponLocal,
                         state.gripWeaponLocal,
@@ -393,6 +422,161 @@ namespace rock::loose_weapon_grip_zone
         }
     }
 
+    void publishPhysicalLeftHandFrame(const CanonicalPrimaryHandFrame& frame)
+    {
+        s_physicalLeftHandFrame = frame;
+    }
+
+    bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out)
+    {
+        namespace activation = authored_weapon_grip_activation_policy;
+        namespace selection = loose_weapon_authored_grab_policy;
+        out = {};
+        auto& state = s_nearStates[handIndex(isLeft)];
+        state.debug = {};
+        state.indicatorCount = 0;
+        auto* base = ref ? ref->GetObjectReference() : nullptr;
+        auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
+        auto* root = ref ? ref->Get3D() : nullptr;
+        if (!weapon || !root || !isUsableWorldTransform(root->world) ||
+            weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade ||
+            weapon->weaponData.type == RE::WEAPON_TYPE::kMine ||
+            !physicalHandWorld(isLeft, out.handWorld)) {
+            state = {};
+            return false;
+        }
+        const auto authored = authored_weapon_grip_library::find(weapon, root, f4vr::isInPowerArmor());
+        if (state.refID != ref->GetFormID() || state.captureSequence != authored.supportCaptureSequence) {
+            state = {};
+            state.refID = ref->GetFormID();
+            state.captureSequence = authored.supportCaptureSequence;
+        }
+        const auto probeWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(out.handWorld, isLeft);
+        const auto probeLocal = transform_math::worldPointToLocal(root->world, probeWorld);
+        HandZoneState firing{};
+        const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
+        const float firingDistance = pointDistance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
+        const bool firingEligible = firingResolved && firing.hasLoosePlacementHandWeaponLocal &&
+            firingDistance <= equipped_weapon_handling_runtime::current().gripZoneEquipRadiusGameUnits;
+
+        if (firingResolved && firing.hasLoosePlacementHandWeaponLocal &&
+            firingDistance <= g_rockConfig.rockWeaponInteractionProbeRadius) {
+            state.indicatorLocal[state.indicatorCount++] = firing.gripWeaponLocal;
+        }
+        RE::NiTransform supportLocal = authored.supportHandWeaponLocal;
+        bool supportResolved = authored.found && authored.hasSupportRelation &&
+            authored.supportFingerPose.complete() && isUsableWorldTransform(supportLocal);
+        if (supportResolved && !isLeft) {
+            RE::NiTransform leftWorld{}, rightWorld{};
+            auto* nodes = f4vr::getPlayerNodes();
+            supportResolved = nodes && nodes->SecondaryWandNode && nodes->primaryWandNode &&
+                physicalHandWorld(true, leftWorld) && physicalHandWorld(false, rightWorld) &&
+                isUsableWorldTransform(nodes->SecondaryWandNode->world) &&
+                isUsableWorldTransform(nodes->primaryWandNode->world);
+            if (supportResolved) {
+                supportResolved = TwoHandedGrip::tryBuildMirroredSupportHandWeaponLocal(
+                    authored.supportHandWeaponLocal,
+                    transform_math::composeTransforms(transform_math::invertTransform(nodes->SecondaryWandNode->world), leftWorld),
+                    transform_math::composeTransforms(transform_math::invertTransform(nodes->primaryWandNode->world), rightWorld),
+                    supportLocal);
+            }
+        }
+        float supportDistance = 0.0f;
+        bool supportEligible = false;
+        if (supportResolved) {
+            const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportLocal, isLeft);
+            supportDistance = pointDistance(probeLocal, seatLocal) * std::fabs(root->world.scale);
+            auto& debug = state.debug;
+            debug.seatWorld = transform_math::localPointToWorld(root->world, seatLocal);
+            debug.probeWorld = probeWorld;
+            debug.radius = g_rockConfig.rockWeaponInteractionProbeRadius;
+            RE::TBO_InstanceData* instance = nullptr;
+            if (ref->extraList) {
+                if (const auto* extra = ref->extraList->GetByType<RE::ExtraInstanceData>()) {
+                    instance = extra->data.get();
+                }
+            }
+            const auto* equipSlot = weapon->GetEquipSlot(instance);
+            if (!equipSlot) {
+                equipSlot = weapon->GetEquipSlot(nullptr);
+            }
+            debug.family = activation::resolveWeaponFamily({
+                .effectiveEquipSlotFormID = equipSlot ? equipSlot->GetFormID() : 0,
+                .equippedWeaponPresent = true,
+                .meleeOrUnarmed = weapon_type_policy::isMelee(weapon->weaponData.type.get()),
+            });
+            const auto topology = activation::resolveHandTopology(!isLeft, isLeft);
+            debug.valid = TwoHandedGrip::tryResolveAuthoredActivationAxes(
+                authored.rightHandWeaponLocal, root->world, topology,
+                debug.sideWorld, debug.downWorld, debug.referenceWorld);
+            const auto vec = [](const RE::NiPoint3& p) { return activation::Vec3{p.x, p.y, p.z}; };
+            const auto gate = activation::evaluateDirectionGate({
+                .weaponFamily = debug.family,
+                .handTopology = topology,
+                .authoredSeatWorld = vec(debug.seatWorld),
+                .liveProbeWorld = vec(probeWorld),
+                .supportSideAxisWorld = vec(debug.sideWorld),
+                .downAxisWorld = vec(debug.downWorld),
+                .lastStableDirectionWorld = vec(state.lastDirection),
+                .radialCapGameUnits = debug.radius,
+                .lastStableDirectionValid = state.lastDirectionValid,
+            });
+            if (gate.directionValid && gate.radialDistanceGameUnits >= activation::kMinimumDirectionDistanceGameUnits) {
+                state.lastDirection = {gate.approachDirectionWorld.x, gate.approachDirectionWorld.y, gate.approachDirectionWorld.z};
+                state.lastDirectionValid = true;
+            }
+            supportEligible = debug.valid && gate.spatialPass &&
+                supportDistance <= g_rockConfig.rockWeaponInteractionTouchRadius;
+            debug.eligible = supportEligible;
+            const auto indicator = activation::evaluateIndicator({
+                .weaponFamily = debug.family,
+                .authoredSeatWorld = vec(debug.seatWorld),
+                .supportSideAxisWorld = vec(debug.sideWorld),
+                .downAxisWorld = vec(debug.downWorld),
+                .activationStateValid = debug.valid,
+                .activationSpatialPass = gate.spatialPass,
+                .supportGripAllowed = true,
+            });
+            if (indicator.visible) {
+                state.indicatorLocal[state.indicatorCount++] = transform_math::worldPointToLocal(root->world,
+                    RE::NiPoint3{indicator.markerWorld.x, indicator.markerWorld.y, indicator.markerWorld.z});
+            }
+        }
+        out.role = selection::select(firingEligible, firingDistance, supportEligible, supportDistance);
+        if (out.role == selection::Role::None) {
+            return false;
+        }
+        out.handWeaponLocal = out.role == selection::Role::Support ? supportLocal : firing.loosePlacementHandWeaponLocal;
+        return true;
+    }
+
+    void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref)
+    {
+        NearGrab ignored{};
+        (void)tryResolveNearGrab(isLeft, ref, ignored);
+    }
+
+    bool tryGetAuthoredSupportDebug(bool isLeft, AuthoredSupportDebug& out)
+    {
+        out = s_nearStates[handIndex(isLeft)].debug;
+        return out.valid;
+    }
+
+    std::size_t collectIndicators(bool isLeft, RE::TESObjectREFR* ref, std::span<RE::NiPoint3> positions)
+    {
+        const auto& state = s_nearStates[handIndex(isLeft)];
+        auto* root = ref ? ref->Get3D() : nullptr;
+        if (!ref || ref->GetFormID() != state.refID || !root ||
+            !isUsableWorldTransform(root->world) || !f4vr::isNodeVisible(root)) {
+            return 0;
+        }
+        const auto count = (std::min)(positions.size(), state.indicatorCount);
+        for (std::size_t index = 0; index < count; ++index) {
+            positions[index] = transform_math::localPointToWorld(root->world, state.indicatorLocal[index]);
+        }
+        return count;
+    }
+
     void publishCanonicalPrimaryHandFrame(const CanonicalPrimaryHandFrame& frame)
     {
         s_canonicalPrimaryHandFrame = frame;
@@ -408,7 +592,8 @@ namespace rock::loose_weapon_grip_zone
         RE::TESObjectREFR* heldRef,
         const bool heldSettled,
         const float dt,
-        const float equipRadiusGameUnits)
+        const float equipRadiusGameUnits,
+        const bool firingGripEligible)
     {
         auto& state = s_handStates[handIndex(isLeft)];
         if (!holdingLooseWeapon || !heldRef) {
@@ -443,7 +628,7 @@ namespace rock::loose_weapon_grip_zone
         }
 
         next.palmToGripDistance = pointDistance(next.palmWorld, next.gripWorld);
-        next.insideRadius = next.palmToGripDistance <= equipRadiusGameUnits;
+        next.insideRadius = firingGripEligible && next.palmToGripDistance <= equipRadiusGameUnits;
         if (next.insideRadius && heldSettled) {
             next.insideSettledSeconds += (std::max)(0.0f, dt);
         } else {

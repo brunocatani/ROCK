@@ -1,5 +1,8 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 
+#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
+#include <limits>
+#include <initializer_list>
 #include <cassert>
 #include <cmath>
 
@@ -456,6 +459,40 @@ int main()
     assert(indicatorChecksPassed);
     if (!indicatorChecksPassed) {
         return 1;
+    }
+
+    {
+        namespace loose = rock::loose_weapon_authored_grab_policy;
+        using Role = loose::Role;
+        // Independent hand topologies on a never-equipped loose rifle:
+        // each physical hand accepts its side and rejects the opposite side.
+        bool looseGripsPass = true;
+        for (bool supportIsLeft : {false, true}) {
+            const auto topology = resolveHandTopology(!supportIsLeft, supportIsLeft);
+            const auto side = orientRightFiringAxisForTopology({-1.0f, 0.0f, 0.0f}, topology);
+            const auto looseDown = orientRightFiringAxisForTopology({0.0f, 0.0f, -1.0f}, topology);
+            DirectionGateInput input{
+                .weaponFamily = WeaponFamily::TwoHandGun,
+                .handTopology = topology,
+                .liveProbeWorld = side,
+                .supportSideAxisWorld = side,
+                .downAxisWorld = looseDown,
+                .radialCapGameUnits = 3.0f,
+            };
+            looseGripsPass &= loose::select(false, 10.0f, evaluateDirectionGate(input).spatialPass, 1.0f) == Role::Support;
+            input.liveProbeWorld = {-side.x, -side.y, -side.z};
+            looseGripsPass &= loose::select(false, 10.0f, evaluateDirectionGate(input).spatialPass, 1.0f) == Role::None;
+        }
+        looseGripsPass &= loose::select(true, 0.5f, true, 1.0f) == Role::Firing;
+        looseGripsPass &= loose::select(true, 1.5f, true, 1.0f) == Role::Support;
+        looseGripsPass &= loose::select(true, 1.0f, true, 1.0f) == Role::Firing;
+        looseGripsPass &= loose::select(false, 0.0f, false, 0.0f) == Role::None;
+        looseGripsPass &= loose::select(true, std::numeric_limits<float>::quiet_NaN(), true, 1.0f) == Role::Support;
+        looseGripsPass &= loose::select(false, 0.0f, true, std::numeric_limits<float>::infinity()) == Role::None;
+        looseGripsPass &= loose::select(true, -1.0f, false, 0.0f) == Role::None;
+        if (!looseGripsPass) {
+            return 1;
+        }
     }
 
     return 0;

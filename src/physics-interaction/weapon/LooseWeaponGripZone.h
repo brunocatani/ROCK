@@ -1,7 +1,10 @@
 #pragma once
 
+#include <span>
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/weapon/LooseWeaponAuthoredGrabPolicy.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 
 namespace RE
 {
@@ -57,6 +60,35 @@ namespace rock::loose_weapon_grip_zone
 
     void publishCanonicalPrimaryHandFrame(const CanonicalPrimaryHandFrame& frame);
 
+    void publishPhysicalLeftHandFrame(const CanonicalPrimaryHandFrame& frame);
+
+    struct NearGrab
+    {
+        loose_weapon_authored_grab_policy::Role role{ loose_weapon_authored_grab_policy::Role::None };
+        RE::NiTransform handWorld{};
+        RE::NiTransform handWeaponLocal{};
+    };
+
+    struct AuthoredSupportDebug
+    {
+        bool valid{ false };
+        bool eligible{ false };
+        authored_weapon_grip_activation_policy::WeaponFamily family{};
+        RE::NiPoint3 seatWorld{};
+        RE::NiPoint3 probeWorld{};
+        RE::NiPoint3 sideWorld{};
+        RE::NiPoint3 downWorld{};
+        RE::NiPoint3 referenceWorld{};
+        float radius{ 0.0f };
+    };
+
+    // Frame-thread only. Reprojects both seats from the current loose root;
+    // never borrows equipped ownership or retains scene pointers.
+    bool tryResolveNearGrab(bool isLeft, RE::TESObjectREFR* ref, NearGrab& out);
+    void updateNearGrabCandidate(bool isLeft, RE::TESObjectREFR* ref);
+    bool tryGetAuthoredSupportDebug(bool isLeft, AuthoredSupportDebug& out);
+    std::size_t collectIndicators(bool isLeft, RE::TESObjectREFR* ref, std::span<RE::NiPoint3> positions);
+
     /*
      * Refresh one hand's grip-zone state. Call once per frame per hand.
      * heldSettled must be true only while the grab is in its settled held
@@ -69,7 +101,8 @@ namespace rock::loose_weapon_grip_zone
         RE::TESObjectREFR* heldRef,
         bool heldSettled,
         float dt,
-        float equipRadiusGameUnits);
+        float equipRadiusGameUnits,
+        bool firingGripEligible = true);
 
     /*
      * True when the hand's palm has stayed inside the configured grip radius

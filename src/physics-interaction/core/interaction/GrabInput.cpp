@@ -1360,6 +1360,10 @@ namespace rock
         } else if (!hand.isHolding() && hand.hasSelection() && !input_remap_runtime::isMenuInputActive()) {
             nativeIdleGripCandidate = hand.getSelection().retainedRef;
         }
+        // Evaluate both physical hands independently, including a support-only
+        // first grab. Cold native sampling is already driven by this candidate.
+        loose_weapon_grip_zone::updateNearGrabCandidate(isLeft,
+            input_remap_runtime::isMenuInputActive() ? nullptr : nativeIdleGripCandidate.get());
         native_idle_grip_preharvest::observeCandidate(std::move(nativeIdleGripCandidate));
 
         const bool heldWeaponEquipOwnershipEligible =
@@ -1383,7 +1387,8 @@ namespace rock
             hand.getHeldRef(),
             hand.getState() == HandState::HeldBody,
             frame.deltaSeconds,
-            _equipped.handlingSettings.gripZoneEquipRadiusGameUnits);
+            _equipped.handlingSettings.gripZoneEquipRadiusGameUnits,
+            !hand.isHoldingAuthoredSupportGrip());
 
         /*
          * Grip-zone hover probe: while either OPEN hand's selection
@@ -1950,7 +1955,9 @@ namespace rock
                     g_rockConfig.rockGrabForceFadeInTime,
                     g_rockConfig.rockGrabTauMin,
                     &_bodyBoneColliders,
-                    makeGrabReleaseContext(hand, isLeft));
+                    makeGrabReleaseContext(hand, isLeft),
+                    isLeft ? &_rightHand : &_leftHand,
+                    &(isLeft ? frame.right : frame.left).rawHandWorld);
                 if (heldRef && !hand.isHolding()) {
                     ROCK_LOG_WARN(Hand, "Held update ended grab without an input release: hand={} ref={:08X}",
                         isLeft ? "left" : "right", heldFormID);
@@ -2278,6 +2285,10 @@ namespace rock
             canonicalPrimaryHand.presentedByRock =
                 _twoHandedGrip.hasVisualAuthorityForHand(false);
             loose_weapon_grip_zone::publishCanonicalPrimaryHandFrame(canonicalPrimaryHand);
+            loose_weapon_grip_zone::CanonicalPrimaryHandFrame physicalLeftHand{};
+            physicalLeftHand.valid = _twoHandedGrip.tryGetPhysicalHandWorld(true, physicalLeftHand.handWorld);
+            physicalLeftHand.presentedByRock = _twoHandedGrip.hasVisualAuthorityForHand(true);
+            loose_weapon_grip_zone::publishPhysicalLeftHandFrame(physicalLeftHand);
         }
 
         if (!runtime_state::isLocalSkeletonReady()) {

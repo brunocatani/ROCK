@@ -441,6 +441,7 @@ namespace rock
 
         bool isHolding() const { return isHoldingState(_state); }
         bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
+        bool isHoldingAuthoredSupportGrip() const { return isHoldingLooseWeapon() && _grabFrame.authoredLooseWeaponSupportGrip; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }
@@ -543,7 +544,9 @@ namespace rock
             float forceFadeInTime,
             float tauMin,
             const BodyBoneColliderSet* bodyBoneColliders,
-            const GrabReleaseContext& releaseContext = {});
+            const GrabReleaseContext& releaseContext = {},
+            Hand* peerHand = nullptr,
+            const RE::NiTransform* peerHandWorld = nullptr);
         void publishHeldBodyScope(RE::hknpWorld* world);
         bool refreshRagdollBodyScope(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
         bool validateHeldObjectUpdate(RE::hknpWorld* world, const GrabReleaseContext& releaseContext);
@@ -753,13 +756,17 @@ namespace rock
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
             ValidatedGrabSelection& outSelection);
+        bool coordinateLooseWeaponProxy(RE::hknpWorld* world, Hand* peer,
+            const RE::NiTransform* peerHandWorld, RE::NiTransform& proxyWorld);
         bool updateHeldDrive(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
             const GrabReleaseContext& releaseContext,
-            HeldDriveUpdate& outUpdate);
+            HeldDriveUpdate& outUpdate,
+            Hand* peerHand,
+            const RE::NiTransform* peerHandWorld);
         bool updateHeldVisualPresentation(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float deltaTime,

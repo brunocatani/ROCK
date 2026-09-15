@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandFrame.h"
 
@@ -334,6 +335,73 @@ int main()
                 .source = authority::GrabAuthorityPivotSource::GripSupportModel,
             });
         ok &= expectFalse("freeze rejects non-finite authority rotation", frozen.valid);
+    }
+
+    {
+        // Both motor chains must reconstruct one root target even when their
+        // bodies, local pivots, and column-authored proxies differ.
+        auto root = identityTransform();
+        root.translate = {100.0f, -70.0f, 20.0f};
+        root.scale = 1.3f;
+        root.rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 0.0f, 1.0f}, 0.7f);
+        std::array<RE::NiTransform, 2> proxy{identityTransform(), identityTransform()};
+        proxy[0].translate = {105.0f, -80.0f, 12.0f};
+        proxy[0].rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({1.0f, 0.0f, 0.0f}, 0.4f);
+        proxy[1].translate = {102.0f, -42.0f, 15.0f};
+        proxy[1].rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 1.0f, 0.0f}, -0.8f);
+        proxy[1].scale = 0.9f;
+        std::array<RE::NiTransform, 2> bodyLocal{identityTransform(), identityTransform()};
+        bodyLocal[0].translate = {2.0f, -1.0f, 3.0f};
+        bodyLocal[1].translate = {-3.0f, 8.0f, 1.0f};
+        bodyLocal[1].rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 1.0f, 0.0f}, 0.5f);
+        std::array<RE::NiTransform, 2> relation{};
+        for (std::size_t i = 0; i < 2; ++i) {
+            relation[i] = rock::grab_frame_math::objectInGeneratedProxyLocalSpace(proxy[i],
+                rock::transform_math::composeTransforms(root, bodyLocal[i]));
+        }
+        const RE::NiPoint3 primaryLocal{-1.0f, 2.0f, 0.0f}, supportLocal{2.0f, 25.0f, 1.0f};
+        const auto primaryTarget = rock::transform_math::localPointToWorld(root, primaryLocal);
+        const auto initialSupport = rock::transform_math::localPointToWorld(root, supportLocal);
+        const auto span = rock::weaponSolverLength(initialSupport - primaryTarget);
+        const std::array<RE::NiPoint3, 4> directions{{{1.0f, 0.0f, 0.0f}, {-1.0f, 0.0f, 0.0f},
+            {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+        for (const auto& direction : directions) {
+            for (const float handSeparation : {10.0f, 70.0f}) {
+                const auto supportTarget = rock::makeLockedSupportGripTarget(primaryTarget,
+                    primaryTarget + direction * handSeparation, initialSupport, span, 0.001f);
+                const auto solve = rock::solveTwoHandedWeaponTransformFrikPivot(
+                    rock::WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3>{
+                        .weaponWorldTransform = root, .primaryGripLocal = primaryLocal,
+                        .supportGripLocal = supportLocal, .primaryTargetWorld = primaryTarget,
+                        .supportTargetWorld = supportTarget,
+                    });
+                ok &= expectTrue("loose two-hand target solves", solve.solved);
+                ok &= expectPointNear("primary wrist pivot stays fixed",
+                    rock::transform_math::localPointToWorld(solve.weaponWorldTransform, primaryLocal), primaryTarget, 0.001f);
+                ok &= expectPointNear("support follows fixed-length aim ray",
+                    rock::transform_math::localPointToWorld(solve.weaponWorldTransform, supportLocal), supportTarget, 0.001f);
+                ok &= expectNear("two-hand turn preserves scale", solve.weaponWorldTransform.scale, root.scale, 0.0001f);
+                for (std::size_t i = 0; i < 2; ++i) {
+                    const auto body = rock::transform_math::composeTransforms(solve.weaponWorldTransform, bodyLocal[i]);
+                    const auto targetProxy = rock::grab_frame_math::generatedProxyFromObjectWorld(body, relation[i]);
+                    const auto readback = rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(targetProxy, relation[i]);
+                    ok &= expectPointNear("both proxies reconstruct shared body", readback.translate, body.translate, 0.001f);
+                    for (int row = 0; row < 3; ++row) for (int col = 0; col < 3; ++col) {
+                        ok &= expectNear("shared proxy orientation", readback.rotate.entry[row][col], body.rotate.entry[row][col], 0.0001f);
+                    }
+                    auto physicalNi = proxy[i], targetNi = targetProxy;
+                    physicalNi.rotate = rock::transform_math::transposeRotation(physicalNi.rotate);
+                    targetNi.rotate = rock::transform_math::transposeRotation(targetNi.rotate);
+                    const auto correction = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(physicalNi), targetNi);
+                    physicalNi.translate.x += 5.0f;
+                    auto releasedProxy = rock::transform_math::composeTransforms(physicalNi, correction);
+                    releasedProxy.rotate = rock::transform_math::transposeRotation(releasedProxy.rotate);
+                    const auto releasedBody = rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(releasedProxy, relation[i]);
+                    ok &= expectPointNear("remaining hand keeps seat while moving", releasedBody.translate,
+                        body.translate + RE::NiPoint3{5.0f, 0.0f, 0.0f}, 0.001f);
+                }
+            }
+        }
     }
 
     return ok ? 0 : 1;

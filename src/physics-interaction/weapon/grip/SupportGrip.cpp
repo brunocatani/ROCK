@@ -40,6 +40,25 @@ namespace rock
             return false;
         }
 
+        return tryResolveAuthoredActivationAxes(_firing.rightCanonicalHandWeaponLocal,
+            weaponWorld, handTopology, outSupportSideAxisWorld, outDownAxisWorld, outReferenceAxisWorld);
+    }
+
+    bool TwoHandedGrip::tryResolveAuthoredActivationAxes(
+        const RE::NiTransform& rightHandWeaponLocal,
+        const RE::NiTransform& weaponWorld,
+        const authored_weapon_grip_activation_policy::HandTopology handTopology,
+        RE::NiPoint3& outSupportSideAxisWorld,
+        RE::NiPoint3& outDownAxisWorld,
+        RE::NiPoint3& outReferenceAxisWorld)
+    {
+        outSupportSideAxisWorld = {};
+        outDownAxisWorld = {};
+        outReferenceAxisWorld = {};
+        if (!isInvertibleTransform(weaponWorld) || !isFiniteTransform(rightHandWeaponLocal) ||
+            handTopology == authored_weapon_grip_activation_policy::HandTopology::Invalid) {
+            return false;
+        }
         const auto normalizeVector = [](const RE::NiPoint3& input,
                                          RE::NiPoint3& output) {
             output = {};
@@ -73,7 +92,7 @@ namespace rock
         const RE::NiTransform rightFiringHandWorld =
             transform_math::composeTransforms(
                 weaponWorld,
-                _firing.rightCanonicalHandWeaponLocal);
+                rightHandWeaponLocal);
         if (!isFiniteTransform(rightFiringHandWorld)) {
             return false;
         }

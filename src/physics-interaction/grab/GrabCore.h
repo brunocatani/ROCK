@@ -776,6 +776,13 @@ namespace rock
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool syntheticLooseWeaponPrimaryAttach = false;
+        bool authoredLooseWeaponSupportGrip = false;
+        // Game-frame-only carry corrections. Frozen constraint/visual seats
+        // remain immutable; both proxies receive the same two-hand root target.
+        RE::NiTransform looseWeaponSoloProxyCorrection{};
+        RE::NiTransform looseWeaponSharedProxyCorrection{};
+        std::uint64_t looseWeaponSharedPeerTrace = 0;
+        bool hasLooseWeaponSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
@@ -839,6 +846,11 @@ namespace rock
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
             syntheticLooseWeaponPrimaryAttach = false;
+            authoredLooseWeaponSupportGrip = false;
+            looseWeaponSoloProxyCorrection = {};
+            looseWeaponSharedProxyCorrection = {};
+            looseWeaponSharedPeerTrace = 0;
+            hasLooseWeaponSoloProxyCorrection = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
@@ -977,6 +989,16 @@ namespace rock::grab_frame_math
 
         result.scale = proxyWorld.scale * objectProxyLocal.scale;
         return result;
+    }
+
+    // Inverse of objectFromGeneratedProxyLocalSpace. Proxy rotations store
+    // native column axes; object and relation transforms store Ni row axes.
+    template <class Transform>
+    inline Transform generatedProxyFromObjectWorld(const Transform& objectWorld, const Transform& objectProxyLocal)
+    {
+        Transform proxy = transform_math::composeTransforms(objectWorld, transform_math::invertTransform(objectProxyLocal));
+        proxy.rotate = transform_math::transposeRotation(proxy.rotate);
+        return proxy;
     }
 
     template <class Transform, class Vector>
