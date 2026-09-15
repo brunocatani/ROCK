@@ -7,8 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace rock::frik_weapon_offset_cache { struct LookupResult; }
-
 namespace RE
 {
     class NiAVObject;
@@ -109,7 +107,7 @@ namespace rock::authored_weapon_grip_library
 
     // Apply only to a physical-right consumer copy. Stored poses and left
     // firing/support consumers retain the original animation data.
-    void applyPipeDefaultOffset(LookupResult& result, const frik_weapon_offset_cache::LookupResult& offset, bool isLeft) noexcept;
+    void applyPipeDefaultOffset(LookupResult& result, bool isLeft) noexcept;
 
     /*
      * Attach the physical-hand relation measured from the final

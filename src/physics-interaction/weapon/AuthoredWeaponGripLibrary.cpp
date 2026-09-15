@@ -3,7 +3,6 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
 #include "physics-interaction/weapon/PipeFiringGripPolicy.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "rock_support/Fo4VrRuntime.h"
@@ -390,15 +389,14 @@ namespace rock::authored_weapon_grip_library
         return false;
     }
 
-    void applyPipeDefaultOffset(LookupResult& result, const frik_weapon_offset_cache::LookupResult& offset, const bool isLeft) noexcept
+    void applyPipeDefaultOffset(LookupResult& result, const bool isLeft) noexcept
     {
-        if (!pipe_firing_grip_policy::useFrikDefault(result.found, isLeft, result.vanillaPipePose,
-                offset.found && offset.source == frik_weapon_offset_cache::OffsetSource::EmbeddedResource)) return;
+        if (!pipe_firing_grip_policy::useCompiledDefault(result.found, isLeft, result.vanillaPipePose)) return;
         // FRIK stores Weapon-in-Hand; authored consumers need Hand-in-Weapon.
-        const auto handInWeapon = transform_math::invertTransform(offset.offset);
+        const auto handInWeapon = transform_math::invertTransform(pipe_firing_grip_policy::weaponInHand<RE::NiTransform>());
         if (!finiteTransform(handInWeapon)) return;
         result.rightHandWeaponLocal = handInWeapon;
-        result.reason = "pipeDefaultFrikOffset";
+        result.reason = "compiledPipeCalibratedOffset";
     }
 
     LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, const bool inPowerArmor)

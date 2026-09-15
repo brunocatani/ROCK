@@ -73,11 +73,10 @@ int main()
     namespace pipe = rock::pipe_firing_grip_policy;
     static_assert(pipe::isPipe(0x24F55) && pipe::isPipe(0x14831A) && pipe::isPipe(0x14831B));
     static_assert(!pipe::isPipe(0x4822));
-    static_assert(pipe::useFrikDefault(true, false, true, true));
-    static_assert(!pipe::useFrikDefault(true, true, true, true));
-    static_assert(!pipe::useFrikDefault(true, false, false, true));
-    static_assert(!pipe::useFrikDefault(true, false, true, false));
-    static_assert(!pipe::useFrikDefault(false, false, true, true));
+    static_assert(pipe::useCompiledDefault(true, false, true));
+    static_assert(!pipe::useCompiledDefault(true, true, true));
+    static_assert(!pipe::useCompiledDefault(true, false, false));
+    static_assert(!pipe::useCompiledDefault(false, false, true));
     struct PipeTransform { MockRotation rotate; MockTranslation translate; float scale; };
     struct PipeFingers { std::array<PipeTransform, 15> localTransforms; unsigned enabledMask; };
     const auto copyTransform = [](const pipe::Transform& src) {
@@ -88,6 +87,14 @@ int main()
             for (int c = 0; c < 3; ++c) dst.rotate.entry[r][c] = src.rotate[r * 3 + c];
         return dst;
     };
+    const auto calibration = pipe::weaponInHand<PipeTransform>();
+    if (!pipe::matches(calibration, pipe::kWeaponInHand)) return 78;
+    if (!pipe::isPromotedCalibration(0x24F55, false, calibration)) return 79;
+    if (pipe::isPromotedCalibration(0x24F55, true, calibration)) return 80;
+    if (pipe::isPromotedCalibration(0x4822, false, calibration)) return 81;
+    auto editedCalibration = calibration;
+    editedCalibration.translate.z += 0.25f;
+    if (pipe::isPromotedCalibration(0x24F55, false, editedCalibration)) return 82;
     for (const auto& vanilla : pipe::kVanillaPoses) {
         const auto hand = copyTransform(vanilla.hand);
         PipeFingers fingers{};

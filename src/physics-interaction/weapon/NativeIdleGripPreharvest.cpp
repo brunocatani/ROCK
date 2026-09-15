@@ -2037,7 +2037,7 @@ namespace rock::native_idle_grip_preharvest
                 job.weaponFormId, clipPath.data(), handInWeapon, rightFiringFingerPose);
             if (pipe_firing_grip_policy::isPipe(job.weaponFormId)) {
                 ROCK_LOG_INFO(Animation, "Pipe right grip selection form={:08X} variant={:016X} correction={} source=fresh-native-idle subgraph={:016X} clip={}",
-                    job.weaponFormId, job.variant.key, vanillaPipePose ? "frik-default" : "authored-passthrough", subgraphIdentifier, clipPath.data());
+                    job.weaponFormId, job.variant.key, vanillaPipePose ? "compiled-calibration" : "authored-passthrough", subgraphIdentifier, clipPath.data());
             }
             if (!authored_weapon_grip_library::publishResolvedVariant(job.weapon, job.variant, job.inPowerArmor, handInWeapon, captureSequence,
                     authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest, &rightFiringFingerPose, vanillaPipePose)) {

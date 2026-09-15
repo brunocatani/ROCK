@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 
 #include <array>
 #include <cmath>
@@ -165,13 +166,15 @@ namespace rock::loose_weapon_grip_zone
                 weapon,
                 looseRoot,
                 f4vr::isInPowerArmor());
-            authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, frikLookup, isLeft);
+            authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, isLeft);
+            const bool promotedPipeCalibration = authoredLookup.found &&
+                pipe_firing_grip_policy::isPromotedCalibration(weapon->formID, isLeft, frikLookup.offset);
             constexpr bool authoredGripEligible = true;
             const auto selectedSource = weapon_grip_authority_policy::select(
                 weapon_grip_authority_policy::Availability{
                     .frikCustomFile =
                         frikLookup.found &&
-                        frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile,
+                        frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile && !promotedPipeCalibration,
                     .authoredAnimation = authoredGripEligible && authoredLookup.found,
                     .frikEmbeddedResource =
                         frikLookup.found &&

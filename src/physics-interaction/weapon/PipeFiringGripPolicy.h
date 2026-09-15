@@ -9,6 +9,14 @@
 namespace rock::pipe_firing_grip_policy
 {
     using Transform = authored_weapon_grip_cache::PersistedTransform;
+    // User calibration from Pipe.json, 2026-09-14 23:07. FRIK's
+    // Weapon-in-Hand convention; shared by the vanilla pipe right-hand defaults.
+    inline constexpr Transform kWeaponInHand{
+        { -0.122000001f, 0.99000001f, 0.0689999983f, 0.986999989f, 0.114f, 0.108999997f, 0.100000001f, 0.0810000002f, -0.991999984f },
+        { 10.3997459f, -1.45530391f, -6.33630705f },
+        0.999999881f
+    };
+
     struct VanillaPose
     {
         std::string_view clip;
@@ -19,7 +27,7 @@ namespace rock::pipe_firing_grip_policy
     // Original FO4VR idle samples captured 2026-09-14. These are identity
     // witnesses only, not replacement poses. Compare the full right-hand pose
     // so a replacement using the same filename can supply its own grip.
-    inline constexpr std::array<VanillaPose, 3> kVanillaPoses{{
+    inline constexpr std::array<VanillaPose, 4> kVanillaPoses{{
         { "Actors/Character/_1stPerson/Animations/PipeRifle/WPNIdleReady.hkx",
           { { -0.00433182716f, 0.702639163f, -0.711533308f, 0.998639166f, 0.0400210619f, 0.0334412754f, 0.0519735515f, -0.710420132f, -0.701856375f }, { 2.08685541f, -9.78134632f, 2.11661911f }, 1.0f }, {{
             { { 0.625230849f, -0.582359612f, -0.519561052f, -0.770904839f, -0.357097268f, -0.527434707f, 0.121622816f, 0.730300546f, -0.672212124f }, { 1.58291626f, -1.26259232f, -1.85326385f }, 1.0f },
@@ -74,6 +82,24 @@ namespace rock::pipe_firing_grip_policy
             { { 0.856890559f, -0.5154984f, -7.2017383e-07f, 0.5154984f, 0.856890559f, -2.40189451e-08f, 6.29491865e-07f, -3.50666767e-07f, 1.0f }, { 2.23825836f, 0.0f, 0.0f }, 1.0f },
             { { 0.752102613f, -0.659046054f, -4.49742856e-08f, 0.659046054f, 0.752102613f, 2.2358272e-06f, -1.43968759e-06f, -1.71121155e-06f, 1.0f }, { 1.66590881f, 0.0f, 0.0f }, 1.0f },
         }} },
+        { "Actors/Character/_1stPerson/Animations/HandmadeRevolver/WPNIdleReady.hkx",
+          { { -0.121149898f, 0.990542293f, 0.0644115359f, 0.986754417f, 0.11312598f, 0.116268136f, 0.107881874f, 0.0776442364f, -0.991127253f }, { 3.21272349f, -8.61000443f, -5.16761827f }, 1.0f }, {{
+            { { 0.43404144f, -0.637149096f, -0.636906028f, -0.899125934f, -0.262112617f, -0.350527942f, 0.0563975275f, 0.724802315f, -0.686645031f }, { 1.58290863f, -1.26262283f, -1.853302f }, 1.0f },
+            { { 0.586247683f, -0.810131907f, 2.30528059e-07f, 0.810131907f, 0.586247683f, 3.1852062e-07f, -3.93190277e-07f, 2.61337618e-11f, 1.0f }, { 3.56959534f, 0.0f, 0.0f }, 1.0f },
+            { { 0.954619169f, -0.297829241f, 5.33060813e-08f, 0.297829241f, 0.954619169f, -7.45535374e-07f, 1.71155179e-07f, 7.27578424e-07f, 1.0f }, { 2.40182114f, 0.0f, 0.0f }, 1.0f },
+            { { 0.993430793f, 0.00371175818f, 0.114374518f, -0.0170794353f, 0.993088365f, 0.116119683f, -0.113152996f, -0.117310315f, 0.986627936f }, { 7.50128746f, 0.430532455f, -2.27776337f }, 1.0f },
+            { { 0.551785886f, -0.833985865f, 8.3448278e-05f, 0.833985865f, 0.551785886f, 0.000256667612f, -0.000260102708f, -7.2030889e-05f, 0.99999994f }, { 3.01818657f, 0.0f, 0.0f }, 1.0f },
+            { { 0.845665574f, -0.533713162f, 8.16127681e-07f, 0.533713162f, 0.845665574f, 7.60363577e-08f, -7.30752731e-07f, 3.71276712e-07f, 1.0f }, { 1.85023499f, 0.0f, 0.0f }, 1.0f },
+            { { 0.425143957f, -0.901881158f, 0.0765716583f, 0.883397162f, 0.431875587f, 0.181915313f, -0.197135404f, -0.00969704241f, 0.980328321f }, { 7.59570503f, 0.62125206f, -0.457481384f }, 1.0f },
+            { { 0.617355585f, -0.786684275f, -2.35874438e-07f, 0.786684275f, 0.617355585f, 3.31634908e-07f, -1.15273558e-07f, -3.90295384e-07f, 1.0f }, { 3.09163952f, 0.0f, 0.0f }, 1.0f },
+            { { 0.482070148f, -0.876132727f, -8.28757862e-08f, 0.876132727f, 0.482070148f, -1.06873216e-07f, 1.33587051e-07f, -2.10897895e-08f, 1.0f }, { 2.18796349f, 0.0f, 0.0f }, 1.0f },
+            { { 0.228203714f, -0.97316587f, -0.0295173228f, 0.915212631f, 0.204074502f, 0.347475916f, -0.332127988f, -0.106309913f, 0.937224209f }, { 7.46391106f, 0.350524902f, 1.43872833f }, 1.0f },
+            { { 0.854495764f, -0.519458413f, 9.95733416e-08f, 0.519458413f, 0.854495764f, 1.07199114e-07f, -1.40770467e-07f, -3.98769693e-08f, 1.0f }, { 2.66441917f, 0.0f, 0.0f }, 1.0f },
+            { { 0.551070809f, -0.83445853f, 3.13946146e-07f, 0.83445853f, 0.551070809f, 2.02740921e-07f, -3.42185444e-07f, 1.50250401e-07f, 1.0f }, { 1.89974213f, 0.0f, 0.0f }, 1.0f },
+            { { 0.294671059f, -0.951470792f, -0.0887277722f, 0.890679896f, 0.239826977f, 0.3862288f, -0.346206009f, -0.192838505f, 0.918125689f }, { 6.63713264f, -0.357091904f, 3.01843262f }, 1.0f },
+            { { 0.813540637f, -0.58150804f, -6.62715536e-07f, 0.58150804f, 0.813540637f, -1.04915195e-07f, 6.00155033e-07f, -3.00021611e-07f, 1.0f }, { 2.23826146f, 0.0f, 0.0f }, 1.0f },
+            { { 0.64481926f, -0.764335155f, -4.55176405e-07f, 0.764335155f, 0.64481926f, 2.14639726e-06f, -1.34706011e-06f, -1.73194564e-06f, 1.0f }, { 1.66590405f, 0.0f, 0.0f }, 1.0f },
+        }} },
     }};
 
     [[nodiscard]] constexpr bool isPipe(std::uint32_t form) noexcept
@@ -120,8 +146,26 @@ namespace rock::pipe_firing_grip_policy
         return false;
     }
 
-    [[nodiscard]] constexpr bool useFrikDefault(bool found, bool isLeft, bool vanillaPose, bool embeddedOffset) noexcept
+    [[nodiscard]] constexpr bool useCompiledDefault(bool found, bool isLeft, bool vanillaPose) noexcept
     {
-        return found && !isLeft && vanillaPose && embeddedOffset;
+        return found && !isLeft && vanillaPose;
+    }
+
+    template <class T>
+    [[nodiscard]] bool isPromotedCalibration(std::uint32_t form, bool isLeft, const T& offset) noexcept
+    {
+        return isPipe(form) && !isLeft && matches(offset, kWeaponInHand);
+    }
+
+    template <class T>
+    [[nodiscard]] T weaponInHand() noexcept
+    {
+        T result{};
+        result.translate = { kWeaponInHand.translate[0], kWeaponInHand.translate[1], kWeaponInHand.translate[2] };
+        result.scale = kWeaponInHand.scale;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                result.rotate.entry[r][c] = kWeaponInHand.rotate[r * 3 + c];
+        return result;
     }
 }
