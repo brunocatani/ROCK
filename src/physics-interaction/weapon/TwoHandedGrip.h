@@ -106,7 +106,7 @@ namespace rock
         EquippedWeaponPrimaryGripInput leftPhysicalGripInput{};
         EquippedWeaponPrimaryGripInput rightPhysicalGripInput{};
         RE::NiPoint3 hmdPositionWorld{};
-        bool toggleGrabEnabled{ false };
+        equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
         bool animationBoundaryActive{ false };
         bool hasHmdFrame{ false };
         weapon_recoil_policy::WeaponEvidence recoilWeapon{};
@@ -1148,7 +1148,7 @@ namespace rock
             bool rightGripHeld{ false };
             bool leftHandHoldingObject{ false };
             bool rightHandHoldingObject{ false };
-            bool toggleGrabEnabled{ false };
+            equipped_weapon_toggle_grab_policy::Mode weaponGrabMode{ equipped_weapon_toggle_grab_policy::Mode::HoldBoth };
             bool animationBoundaryActive{ false };
             bool scopeMenuOpen{ false };
             bool manualScopeActivationRequested{ false };

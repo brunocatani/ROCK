@@ -1676,6 +1676,55 @@ static bool testAccessoryClassification()
 
 int main()
 {
+    using WeaponGrabMode = rock::equipped_weapon_toggle_grab_policy::Mode;
+    namespace grab_modes = rock::equipped_weapon_toggle_grab_policy;
+    static_assert(grab_modes::fromSetting(1) == WeaponGrabMode::ToggleBoth);
+    static_assert(grab_modes::fromSetting(2) == WeaponGrabMode::ToggleFiringOnly);
+    static_assert(grab_modes::fromSetting(3) == WeaponGrabMode::HoldBoth);
+    static_assert(grab_modes::fromSetting(0) == WeaponGrabMode::ToggleBoth);
+    static_assert(grab_modes::fromSetting(4) == WeaponGrabMode::ToggleBoth);
+    for (const bool firingLeft : {false, true}) {
+        grab_modes::RuntimeState state{};
+        grab_modes::Input input{ .weaponGrabMode=WeaponGrabMode::ToggleFiringOnly, .inputAllowed=true,
+            .weaponOwnershipKey=654, .nativeFiringGripTransfer=true };
+        (firingLeft ? input.occupancy.left : input.occupancy.right).firingGripActive=true;
+        (firingLeft ? input.left : input.right)={.held=true, .pressed=true};
+        const auto result=grab_modes::prepare(state,input);
+        if (!(firingLeft ? result.left.released : result.right.released) ||
+            !(firingLeft ? result.leftReleasePressConsumed : result.rightReleasePressConsumed)) return 94;
+    }
+
+    for (const auto mode : {WeaponGrabMode::ToggleBoth, WeaponGrabMode::ToggleFiringOnly, WeaponGrabMode::HoldBoth}) {
+        for (const bool firingLeft : {false, true}) {
+            grab_modes::RuntimeState state{};
+            grab_modes::GripOccupancy occupancy{};
+            auto& firing = firingLeft ? occupancy.left : occupancy.right;
+            auto& support = firingLeft ? occupancy.right : occupancy.left;
+            firing.firingGripActive = true;
+            support.partGripActive = true;
+            grab_modes::Input input{ .weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 987,
+                .occupancy = occupancy, .left = {.held=true, .pressed=true}, .right = {.held=true, .pressed=true} };
+            static_cast<void>(grab_modes::prepare(state, input));
+            static_cast<void>(grab_modes::reconcile(state, mode, input.weaponOwnershipKey, occupancy, {}));
+            input.left = {.released=true};
+            input.right = {.released=true};
+            auto result = grab_modes::prepare(state, input);
+            const auto& firingResult = firingLeft ? result.left : result.right;
+            const auto& supportResult = firingLeft ? result.right : result.left;
+            if (firingResult.held != (mode != WeaponGrabMode::HoldBoth) ||
+                supportResult.held != (mode == WeaponGrabMode::ToggleBoth)) return 91;
+            if (mode == WeaponGrabMode::ToggleFiringOnly) {
+                // A former firing hand must not carry its latch into support.
+                input.occupancy = firingLeft ? grab_modes::GripOccupancy{.left={.partGripActive=true}, .right={.firingGripActive=true}} :
+                    grab_modes::GripOccupancy{.left={.firingGripActive=true}, .right={.partGripActive=true}};
+                result = grab_modes::prepare(state, input);
+                if ((firingLeft ? result.left.held : result.right.held) || !(firingLeft ? result.right.held : result.left.held)) return 92;
+            }
+            grab_modes::HandGripOccupancy attachOnly{.partGripActive=true, .partGripAttachOnly=true};
+            if (attachOnly.usesToggleGrab(mode)) return 93;
+        }
+    }
+
     bool ok = true;
 
     ok &= testRecoilProfiles();
@@ -2769,7 +2818,7 @@ int main()
     const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
         .ambidextrousHandoffEnabled = true,
         .authoredOnlySupportGrabsEnabled = true,
-        .toggleGrabEnabled = true,
+        .weaponGrabMode = WeaponGrabMode::ToggleBoth,
         .equippedWeaponShoulderStashEnabled = true,
         .lastGripReleaseDropEnabled = false,
         .immersiveWeapon = {
@@ -2807,7 +2856,7 @@ int main()
     ok &= expectTrue("base ROCK enables authored-only support acquisition",
         coreWeaponHandling.authoredOnlySupportGrabsEnabled);
     ok &= expectTrue("base ROCK enables configured equipped-weapon toggle grab",
-        coreWeaponHandling.toggleGrabEnabled);
+        coreWeaponHandling.weaponGrabMode == WeaponGrabMode::ToggleBoth);
     ok &= expectFalse("base ROCK applies the configured last-grip drop preference",
         coreWeaponHandling.lastGripReleaseDropEnabled);
     ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
@@ -2944,7 +2993,7 @@ int main()
     ok &= expectTrue("an addon lease cannot suppress ROCK shoulder stash",
         externalHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectTrue("an addon lease cannot suppress ROCK toggle grab",
-        externalHandling.toggleGrabEnabled);
+        externalHandling.weaponGrabMode == WeaponGrabMode::ToggleBoth);
     ok &= expectFalse("an addon lease cannot re-enable the last-grip drop",
         externalHandling.lastGripReleaseDropEnabled);
     ok &= expectTrue("an addon handling lease cannot suppress authored-only support",
@@ -3082,8 +3131,12 @@ int main()
     ok &= expectNear("provider PrimaryDetach owns detach haptic tuning",
         providerDetach.gripDetachHapticIntensity,
         0.50f);
+    auto mixedModeHandling = coreWeaponHandling;
+    mixedModeHandling.weaponGrabMode = WeaponGrabMode::ToggleFiringOnly;
+    ok &= expectTrue("changing both-toggle to firing-only reconciles existing grips",
+        requiresEquippedWeaponHandlingModeReconcile(coreWeaponHandling, mixedModeHandling));
     auto holdToGrabHandling = coreWeaponHandling;
-    holdToGrabHandling.toggleGrabEnabled = false;
+    holdToGrabHandling.weaponGrabMode = WeaponGrabMode::HoldBoth;
     ok &= expectTrue("changing equipped-weapon grab input mode reconciles live grips",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,
@@ -3092,7 +3145,7 @@ int main()
     {
         toggle_grab::RuntimeState toggleState{};
         toggle_grab::Input toggleInput{
-            .toggleGrabEnabled = true,
+            .weaponGrabMode = WeaponGrabMode::ToggleBoth,
             .inputAllowed = true,
             .weaponOwnershipKey = 0x1234u,
             .occupancy = {},
@@ -3118,7 +3171,7 @@ int main()
 
         const auto toggleAcquisition = toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = true }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{});
@@ -3148,7 +3201,7 @@ int main()
 
         static_cast<void>(toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = true }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3160,7 +3213,7 @@ int main()
 
         static_cast<void>(toggle_grab::reconcile(
             toggleState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             toggleInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .left = { .partGripActive = false }, .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3181,7 +3234,7 @@ int main()
             toggleState.hands[toggle_grab::handIndex(false)],
             toggle_grab::HandState::Latched);
 
-        toggleInput.toggleGrabEnabled = false;
+        toggleInput.weaponGrabMode = WeaponGrabMode::HoldBoth;
         toggleInput.right = { .held = false, .released = true };
         toggleDecision = toggle_grab::prepare(toggleState, toggleInput);
         ok &= expectTrue("disabled toggle mode passes physical release input",
@@ -3199,7 +3252,7 @@ int main()
     {
         toggle_grab::RuntimeState retainedState{};
         toggle_grab::Input retainedInput{
-            .toggleGrabEnabled = true,
+            .weaponGrabMode = WeaponGrabMode::ToggleBoth,
             .inputAllowed = true,
             .weaponOwnershipKey = 0x1235u,
             .occupancy = {},
@@ -3213,7 +3266,7 @@ int main()
         auto retainedDecision = toggle_grab::prepare(retainedState, retainedInput);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3224,7 +3277,7 @@ int main()
             !retainedDecision.right.held && retainedDecision.right.released);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{}));
@@ -3233,7 +3286,7 @@ int main()
             toggle_grab::HandState::ReleasePending);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = true } },
             toggle_grab::GripReleaseRetention{ .right = true }));
@@ -3255,7 +3308,7 @@ int main()
                 retainedDecision.rightReleasePressConsumed);
         static_cast<void>(toggle_grab::reconcile(
             retainedState,
-            true,
+            WeaponGrabMode::ToggleBoth,
             retainedInput.weaponOwnershipKey,
             toggle_grab::GripOccupancy{ .right = { .partGripActive = false } },
             toggle_grab::GripReleaseRetention{ .right = true }));
@@ -3268,7 +3321,7 @@ int main()
         for (const bool firingIsLeft : { false, true }) {
             toggle_grab::RuntimeState state{ .weaponOwnershipKey = 0x1236u };
             toggle_grab::Input input{
-                .toggleGrabEnabled = toggleEnabled,
+                .weaponGrabMode = (toggleEnabled ? WeaponGrabMode::ToggleBoth : WeaponGrabMode::HoldBoth),
                 .inputAllowed = true,
                 .weaponOwnershipKey = state.weaponOwnershipKey,
             };
@@ -3283,7 +3336,7 @@ int main()
                 return firingIsLeft ? decision.right : decision.left;
             };
             const auto reconcile = [&](const toggle_grab::GripReleaseRetention& retention = {}) {
-                return toggle_grab::reconcile(state, toggleEnabled,
+                return toggle_grab::reconcile(state, (toggleEnabled ? WeaponGrabMode::ToggleBoth : WeaponGrabMode::HoldBoth),
                     input.weaponOwnershipKey, input.occupancy, retention);
             };
 
@@ -4429,7 +4482,7 @@ int main()
         for (const bool toggleEnabled : {false, true}) {
             toggle_grab::RuntimeState state{};
             toggle_grab::Input input{
-                .toggleGrabEnabled = toggleEnabled,
+                .weaponGrabMode = (toggleEnabled ? WeaponGrabMode::ToggleBoth : WeaponGrabMode::HoldBoth),
                 .inputAllowed = true,
                 .weaponOwnershipKey = 0x7788,
                 .nativeFiringGripTransfer = true,
@@ -4461,7 +4514,7 @@ int main()
         for (const bool isLeft : {false, true}) {
             toggle_grab::RuntimeState inputState{};
             toggle_grab::Input input{
-                .toggleGrabEnabled = false, .inputAllowed = true, .weaponOwnershipKey = 222,
+                .weaponGrabMode = WeaponGrabMode::HoldBoth, .inputAllowed = true, .weaponOwnershipKey = 222,
             };
             (isLeft ? input.occupancy.left : input.occupancy.right).firingGripActive = true;
             auto& physical = isLeft ? input.left : input.right;

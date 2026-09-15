@@ -528,7 +528,7 @@ namespace rock
             const auto advanceHolsterInput = [&](const bool isLeft, const GrabButtonState& button) {
                 const auto handIndex = equipped_weapon_toggle_grab_policy::handIndex(isLeft);
                 const auto& occupancy = isLeft ? holsterOccupancy.left : holsterOccupancy.right;
-                const bool toggleGrab = occupancy.usesToggleGrab(_equipped.handlingSettings.toggleGrabEnabled);
+                const bool toggleGrab = occupancy.usesToggleGrab(_equipped.handlingSettings.weaponGrabMode);
                 const auto decision = virtual_holsters::advance(
                     _equipped.holsterInputStates[handIndex],
                     virtual_holsters::Input{
@@ -921,7 +921,7 @@ namespace rock
                         }
                         primaryOnlyGripStartedThisFrame = true;
                         nativeFiringGripTransfer = !pendingPrimaryOnlyStartRequested &&
-                            _equipped.handlingSettings.toggleGrabEnabled &&
+                            equipped_weapon_toggle_grab_policy::firingUsesToggle(_equipped.handlingSettings.weaponGrabMode) &&
                             _equipped.handlingSettings.lastGripReleaseDropEnabled;
                         if (nativeFiringGripTransfer) {
                             (firingHandIsLeft ? toggleOccupancyBefore.left : toggleOccupancyBefore.right).
@@ -1007,8 +1007,8 @@ namespace rock
                 equipped_weapon_toggle_grab_policy::prepare(
                     _equipped.toggleGrabState,
                     equipped_weapon_toggle_grab_policy::Input{
-                        .toggleGrabEnabled = _equipped.handlingSettings.
-                            toggleGrabEnabled,
+                        .weaponGrabMode = _equipped.handlingSettings.
+                            weaponGrabMode,
                         .inputAllowed = !inputBlockingMenuActive,
                         .weaponOwnershipKey =
                             currentEquippedWeaponOwnershipKey,
@@ -1087,8 +1087,8 @@ namespace rock
                     .released = rightPhysicalGripState.released,
                 },
                 .hmdPositionWorld = frame.hmdPositionWorld,
-                .toggleGrabEnabled =
-                    _equipped.handlingSettings.toggleGrabEnabled,
+                .weaponGrabMode =
+                    _equipped.handlingSettings.weaponGrabMode,
                 .animationBoundaryActive = frame.reloadBoundaryActive,
                 .hasHmdFrame = frame.hasHmdFrame,
                 .recoilWeapon = recoilWeapon,
@@ -1142,7 +1142,7 @@ namespace rock
             const auto toggleReconcileDecision =
                 equipped_weapon_toggle_grab_policy::reconcile(
                     _equipped.toggleGrabState,
-                    _equipped.handlingSettings.toggleGrabEnabled,
+                    _equipped.handlingSettings.weaponGrabMode,
                     currentEquippedWeaponOwnershipKey,
                     toggleOccupancyAfter,
                     equipped_weapon_toggle_grab_policy::GripReleaseRetention{
@@ -1948,8 +1948,8 @@ namespace rock
                 g_rockConfig.rockAmbidextrousFiringGripEnabled,
             .authoredOnlySupportGrabsEnabled =
                 !g_rockConfig.rockGrabAnywhereOnWeapon,
-            .toggleGrabEnabled =
-                g_rockConfig.rockToggleGrab,
+            .weaponGrabMode =
+                equipped_weapon_toggle_grab_policy::fromSetting(g_rockConfig.rockWeaponGrabMode),
             .equippedWeaponShoulderStashEnabled =
                 g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
                 !virtualHolstersLoaded,
@@ -2249,15 +2249,15 @@ namespace rock
                 _equipped.shoulderCoordinator.weaponOwnershipKey :
                 currentEquippedWeaponOwnershipKey;
 
-        const auto sheathInputMode =
-            equipped_weapon_shoulder::resolveSheathInputMode(
-                _equipped.handlingSettings.immersiveWeapon.
-                    firingGripDetachEnabled,
-                _equipped.handlingSettings.toggleGrabEnabled);
+        const auto sheathModeForHand = [&](bool isLeft) {
+            const bool firingRole = _equipped.shoulderSheath.active || isLeft == firingHandIsLeft;
+            return equipped_weapon_shoulder::resolveSheathInputMode(
+                _equipped.handlingSettings.immersiveWeapon.firingGripDetachEnabled,
+                equipped_weapon_toggle_grab_policy::usesToggleForRole(_equipped.handlingSettings.weaponGrabMode, firingRole));
+        };
         equipped_weapon_shoulder::FrameInput coordinatorInput{
             .enabled = handlingEnabled,
             .inputAllowed = !menuInputActive,
-            .sheathInputMode = sheathInputMode,
             .storedActive = _equipped.shoulderSheath.active,
             .stashedByLeftHand =
                 _equipped.shoulderSheath.stashedByLeftHand,
@@ -2265,6 +2265,7 @@ namespace rock
             .presentation = nativePresentation,
             .storedZone = _equipped.shoulderSheath.zone,
             .right = {
+                .sheathInputMode = sheathModeForHand(false),
                 .button = {
                     .held = rightPhysicalGrip.held,
                     .pressed = rightPhysicalGrip.pressed,
@@ -2272,6 +2273,7 @@ namespace rock
                 },
             },
             .left = {
+                .sheathInputMode = sheathModeForHand(true),
                 .button = {
                     .held = leftPhysicalGrip.held,
                     .pressed = leftPhysicalGrip.pressed,
@@ -2488,7 +2490,7 @@ namespace rock
                     1u : 0u];
             ROCK_LOG_INFO(
                 Weapon,
-                "Equipped shoulder coordinator action={} reason={} phase={}->{} hand={} gesture={} zone={} candidate={} confirmed={} source={} confidence={:.2f} speed={:.1f} nativeState={}({}) sheathInput={} immersive={} toggle={}",
+                "Equipped shoulder coordinator action={} reason={} phase={}->{} hand={} gesture={} zone={} candidate={} confirmed={} source={} confidence={:.2f} speed={:.1f} nativeState={}({}) sheathInput={} immersive={} grabMode={}",
                 equipped_weapon_shoulder::actionName(
                     result.decision.action),
                 equipped_weapon_shoulder::reasonName(
@@ -2517,12 +2519,12 @@ namespace rock
                 held_weapon_equip_state_policy::nativeWeaponStateName(
                     nativeWeaponState),
                 equipped_weapon_shoulder::sheathInputModeName(
-                    sheathInputMode),
+                    result.decision.hand == equipped_weapon_shoulder::Hand::Left ?
+                        coordinatorInput.left.sheathInputMode : coordinatorInput.right.sheathInputMode),
                 _equipped.handlingSettings.immersiveWeapon.
                         firingGripDetachEnabled ?
                     "yes" : "no",
-                _equipped.handlingSettings.toggleGrabEnabled ?
-                    "yes" : "no");
+                equipped_weapon_toggle_grab_policy::modeName(_equipped.handlingSettings.weaponGrabMode));
         } else if (previousPhase !=
                    _equipped.shoulderCoordinator.phase) {
             ROCK_LOG_DEBUG(

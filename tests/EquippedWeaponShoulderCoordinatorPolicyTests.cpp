@@ -66,10 +66,11 @@ int main()
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .sheathInputMode = sheathInputMode,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableDrawn,
         };
+        input.right.sheathInputMode = sheathInputMode;
+        input.left.sheathInputMode = sheathInputMode;
         input.right.eligible = true;
         input.right.carriesWeapon = true;
         return input;
@@ -80,12 +81,13 @@ int main()
         FrameInput input{
             .enabled = true,
             .inputAllowed = true,
-            .sheathInputMode = sheathInputMode,
             .storedActive = true,
             .weaponOwnershipKey = 0xAAu,
             .presentation = NativePresentation::StableSheathed,
             .storedZone = BodyZoneKind::RightShoulder,
         };
+        input.right.sheathInputMode = sheathInputMode;
+        input.left.sheathInputMode = sheathInputMode;
         input.right.eligible = true;
         return input;
     };
@@ -123,6 +125,7 @@ int main()
         input.right.carriesWeapon = false;
         input.left.eligible = true;
         input.left.carriesWeapon = true;
+        input.right.sheathInputMode = SheathInputMode::HoldRelease;
         input.left.detector = leftCandidate(false);
         input.left.button = { .held = true, .pressed = true };
         const auto decision = advance(state, input);
@@ -145,6 +148,7 @@ int main()
         input.right.carriesWeapon = false;
         input.left.eligible = true;
         input.left.carriesWeapon = true;
+        input.right.sheathInputMode = SheathInputMode::Tap;
         input.left.detector = leftCandidate(true);
         input.left.button = { .held = true, .pressed = true };
         auto decision = advance(state, input);

@@ -46,6 +46,8 @@ int main(int argc, char** argv)
     try {
         CSimpleIniA compiled;
         rock::RockConfig::buildCompiledDefaults(compiled);
+        require(compiled.GetLongValue("ImmersiveWeapons", "iWeaponGrabMode", 0) == 1, "weapon grab mode default must preserve toggle both");
+        require(compiled.GetValue("ImmersiveWeapons", "bToggleGrab", nullptr) == nullptr, "retired toggle boolean remains in the supported catalog");
         if (argc == 3 && std::string_view(argv[1]) == "--dump-defaults") {
             require(compiled.SaveFile(argv[2], false) >= 0, "compiled defaults dump failed");
             return 0;

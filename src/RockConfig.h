@@ -90,8 +90,8 @@ namespace rock
         // Whether the last equipped grip transfers the weapon into a retained loose grab.
         // With false that grip is retained under either input mode.
         bool rockAutoDrop = false;
-        // Tap to grab and tap again to release equipped-weapon grips.
-        bool rockToggleGrab = true;
+        // 1: toggle both grips; 2: toggle firing only; 3: hold both grips.
+        int rockWeaponGrabMode = 1;
         // Allow dynamic support grabs beyond authored grips. False preserves
         // authored-grip preference and the existing missing-pose fallback.
         bool rockGrabAnywhereOnWeapon = false;
