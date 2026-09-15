@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
+#include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 
 #include "RockConfig.h"
@@ -138,7 +139,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=4 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
+            next->log->info("VWA start version=5 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -211,7 +212,42 @@ namespace rock::vanilla_weapon_alignment_telemetry
         std::size_t emitted = 0;
         unsigned int sceneMask = 0;
         auto* root = f4vr::getFirstPersonSkeleton();
-        node(phaseLabel, "skeleton-root", root);
+        node(phaseLabel, "animation-skeleton-root", root);
+        // The first-person animation hands are input to the authored capture.
+        // The visible body hand is a different node, driven by the root bone
+        // tree. Comparing only the former to a body-hand claim invents a pose
+        // error even when the rendered hand correctly follows that claim.
+        auto* bodyRoot = f4vr::getRootNode();
+        node(phaseLabel, "rendered-body-root", bodyRoot);
+        unsigned bodyHandMask = 0;
+        std::size_t bodyEmitted = 0;
+        const auto bodyTraversal = weapon_scene::visitScene(static_cast<RE::NiAVObject*>(bodyRoot), [&](RE::NiAVObject* current) {
+            const auto name = nodeName(current);
+            const bool right = name == "RArm_Hand";
+            const bool left = name == "LArm_Hand";
+            const bool finger = name.starts_with("RArm_Finger");
+            if (right || left || finger) {
+                if (bodyEmitted == 32) return false;
+                ++bodyEmitted;
+                node(phaseLabel, right ? "rendered-right-hand" : left ? "rendered-left-hand" : "rendered-right-finger", current);
+                if (right) bodyHandMask |= 1;
+                if (left) bodyHandMask |= 2;
+            }
+            return true;
+        });
+        session->log->info("VWA body-end seq={} phase={} visited={} emitted={} truncated={} handMask={:X} sameAsAnimationRoot={}",
+            schedulerSequence, phaseLabel, bodyTraversal.visited, bodyEmitted, bodyTraversal.truncated, bodyHandMask, bodyRoot == root);
+        if (phase == Phase::AfterRock) {
+            for (const bool isLeft : {false, true}) {
+                RE::NiTransform claimed{}, presented{};
+                const bool hasClaim = frik_hand_world_authority::tryGetPublishedHandWorld(isLeft, claimed);
+                const bool hasPresented = frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, presented);
+                session->log->info("VWA hand-authority seq={} hand={} claimed={} presented={}",
+                    schedulerSequence, isLeft ? "left" : "right", hasClaim, hasPresented);
+                if (hasClaim) transform(phaseLabel, isLeft ? "left-winning-claim" : "right-winning-claim", claimed);
+                if (hasPresented) transform(phaseLabel, isLeft ? "left-presented-frame" : "right-presented-frame", presented);
+            }
+        }
         const auto traversal = weapon_scene::visitScene(static_cast<RE::NiAVObject*>(root), [&](RE::NiAVObject* current) {
             if (selected(current)) {
                 if (emitted == 40) {
@@ -345,7 +381,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             const bool liveAvailable = authored_weapon_grip_capture::tryGetPrimaryFiringGripRelation(
                 input.weaponNode, liveRelation, liveSequence);
             session->log->info("VWA authored-live-comparison seq={} available={} capture={}", session->sequence, liveAvailable, liveSequence);
-            if (liveAvailable) transform("authored-selection", "live-graph-hand-in-weapon", liveRelation);
+            if (liveAvailable) transform("authored-selection", "animation-graph-hand-in-weapon", liveRelation);
         } catch (...) { ++session->captureFailures; }
     }
 
