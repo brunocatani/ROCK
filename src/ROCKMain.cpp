@@ -673,6 +673,8 @@ namespace
     {
         s_schedulerSequence = main_loop_hook_policy::nextSchedulerSequence(s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable) {
+            vanilla_weapon_alignment_telemetry::capture(
+                vanilla_weapon_alignment_telemetry::Phase::BeforeRockPreFrik, s_schedulerSequence);
             frik_hand_world_authority::runPreFrikPass(s_schedulerSequence);
             scope_transition_telemetry::capture(scope_transition_telemetry::Phase::BeforeFrik, s_schedulerSequence);
             vanilla_weapon_alignment_telemetry::capture(

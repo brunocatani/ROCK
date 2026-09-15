@@ -33,6 +33,7 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -11948,6 +11949,8 @@ namespace rock
         clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
 
         ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
+        vanilla_weapon_alignment_telemetry::recordLooseGrab(
+            _savedObjectState.refr, _isLeft, _grabFrame.traceId, handWorldTransform);
         return true;
     }
 

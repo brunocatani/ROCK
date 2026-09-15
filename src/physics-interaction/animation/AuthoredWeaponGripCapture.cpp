@@ -7,6 +7,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -621,6 +622,8 @@ namespace rock::authored_weapon_grip_capture
 
         void onPostUpdateAnimationGraphManager(void* holder)
         {
+            vanilla_weapon_alignment_telemetry::recordNative(
+                vanilla_weapon_alignment_telemetry::NativePhase::GraphEntry);
 #if defined(_MSC_VER)
             __try {
                 // Animation addons capture first and may publish their ROCK V1
@@ -647,6 +650,8 @@ namespace rock::authored_weapon_grip_capture
             if (s_originalPostUpdate) {
                 s_originalPostUpdate(holder);
             }
+            vanilla_weapon_alignment_telemetry::recordNative(
+                vanilla_weapon_alignment_telemetry::NativePhase::GraphExit);
         }
 
         __declspec(noinline) void* onUpdateFirstPersonArm(
@@ -673,9 +678,21 @@ namespace rock::authored_weapon_grip_capture
                 invalidateAuthoredSupportGripCapture();
             }
 
+            if (primaryPass || supportPass) {
+                vanilla_weapon_alignment_telemetry::recordNative(primaryPass ?
+                    vanilla_weapon_alignment_telemetry::NativePhase::PrimaryArmEntry :
+                    vanilla_weapon_alignment_telemetry::NativePhase::SupportArmEntry,
+                    weapon ? *weapon : nullptr, offsetNode ? *offsetNode : nullptr);
+            }
             void* result = s_originalUpdateFirstPersonArm ?
                 s_originalUpdateFirstPersonArm(player, weapon, offsetNode) :
                 nullptr;
+            if (primaryPass || supportPass) {
+                vanilla_weapon_alignment_telemetry::recordNative(primaryPass ?
+                    vanilla_weapon_alignment_telemetry::NativePhase::PrimaryArmExit :
+                    vanilla_weapon_alignment_telemetry::NativePhase::SupportArmExit,
+                    weapon ? *weapon : nullptr, offsetNode ? *offsetNode : nullptr);
+            }
             if (!captureEnabled || authorityActive) {
                 return result;
             }

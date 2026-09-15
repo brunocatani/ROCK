@@ -22,7 +22,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
     namespace
     {
         // Investigation owner: ROCK weapon presentation. Remove this targeted
-        // capture once SMG translation and pipe rotation have been qualified.
+        // capture once 10mm scale, SMG translation and pipe rotation are qualified.
         // Existing bDebugWeaponOmodDump gates it and defaults to false. Enable
         // before skeleton creation. No worker or file exists when disabled.
         struct Session
@@ -35,20 +35,27 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::uint64_t sequence{ 0 };
             std::uint32_t formId{ 0 };
             bool sampling{ false };
+            unsigned int nativeMask{ 0 };
+            std::uint64_t captureFailures{ 0 };
+            std::array<std::chrono::steady_clock::time_point, 2> lastLooseSample{};
         };
         std::unique_ptr<Session> session;
+        // Lifecycle and phase capture share the game thread. Native animation
+        // workers see false in their own TLS and never read the session pointer.
+        thread_local bool captureThread = false;
 
         bool targeted(std::uint32_t formId)
         {
-            // Exact runtime IDs of the four Fallout4.esm forms; never match
-            // names, low FormID bits, keywords, or modded copies of these guns.
-            return formId == 0x0015B043 || formId == 0x00024F55 ||
+            // Exact form IDs bound the investigation; they do not establish
+            // that the active model or animation assets are unmodified vanilla.
+            return formId == 0x00004822 || formId == 0x0015B043 || formId == 0x00024F55 ||
                    formId == 0x0014831A || formId == 0x0014831B;
         }
 
         const char* phaseName(Phase phase)
         {
             switch (phase) {
+            case Phase::BeforeRockPreFrik: return "before-rock-pre-frik";
             case Phase::BeforeFrik: return "before-frik";
             case Phase::AfterFrik: return "after-frik";
             case Phase::AfterRock: return "after-rock";
@@ -85,10 +92,12 @@ namespace rock::vanilla_weapon_alignment_telemetry
 
         void node(const char* phase, std::string_view role, const RE::NiAVObject* value)
         {
-            session->log->info("VWA node seq={} phase={} role={} ptr={:X} name='{}' parent={:X} parentName='{}' flags={:X}",
+            session->log->info("VWA node seq={} phase={} role={} ptr={:X} name='{}' parent={:X} parentName='{}' flags={:X} parentLocalS={:.6f} parentWorldS={:.6f}",
                 session->sequence, phase, role, reinterpret_cast<std::uintptr_t>(value), nodeName(value),
                 reinterpret_cast<std::uintptr_t>(value ? value->parent : nullptr),
-                nodeName(value ? value->parent : nullptr), value ? value->GetFlags() : 0);
+                nodeName(value ? value->parent : nullptr), value ? value->GetFlags() : 0,
+                value && value->parent ? value->parent->local.scale : 0.0f,
+                value && value->parent ? value->parent->world.scale : 0.0f);
             if (value) {
                 transform(phase, "local", value->local);
                 transform(phase, "world", value->world);
@@ -100,6 +109,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             const auto name = nodeName(value);
             constexpr std::array names{
                 "Weapon", "WeaponOffset", "P-Receiver", "TGunReceiver", "PipeRifleReceiver", "RevolverReceiver",
+                "10mmReceiverParentObject", "Pistol10mmReceiver",
                 "P-Grip", "P-Barrel", "P-Mag", "P-Scope", "ProjectileNode",
                 "WeaponMagazine", "WeaponMagazineTrans", "WeaponTrigger", "WeaponTriggerTrans",
                 "WeaponBolt", "WeaponBoltTrans", "WeaponOptics1", "WeaponOptics1Trans",
@@ -127,10 +137,11 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=2 pid={} build={} {} forms=0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-frik,after-frik,after-rock sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
+            next->log->info("VWA start version=3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
+            captureThread = true;
             logger::info("ROCK: Vanilla weapon alignment telemetry enabled at '{}'.", path);
         } catch (const std::exception& error) {
             logger::error("ROCK: Vanilla weapon alignment telemetry could not initialize: {}", error.what());
@@ -139,8 +150,9 @@ namespace rock::vanilla_weapon_alignment_telemetry
 
     void shutdown()
     {
+        captureThread = false;
         if (session) {
-            session->log->info("VWA end overruns={}", session->pool->overrun_counter());
+            session->log->info("VWA end overruns={} captureFailures={}", session->pool->overrun_counter(), session->captureFailures);
             session->log->flush();
             session.reset();
         }
@@ -156,8 +168,10 @@ namespace rock::vanilla_weapon_alignment_telemetry
             return;
         }
         auto* equipped = f4vr::getEquippedWeaponItem();
-        const std::uint32_t formId = equipped ? equipped->item.object->formID : 0;
-        if (phase == Phase::BeforeFrik) {
+        const std::uint32_t formId = equipped && equipped->item.object ? equipped->item.object->formID : 0;
+        if (phase == Phase::BeforeRockPreFrik) {
+            session->sequence = schedulerSequence;
+            session->nativeMask = 0;
             session->sampling = false;
             if (!targeted(formId) || schedulerSequence == 0) {
                 session->formId = 0;
@@ -196,6 +210,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
         std::size_t emitted = 0;
         unsigned int sceneMask = 0;
         auto* root = f4vr::getFirstPersonSkeleton();
+        node(phaseLabel, "skeleton-root", root);
         const auto traversal = weapon_scene::visitScene(static_cast<RE::NiAVObject*>(root), [&](RE::NiAVObject* current) {
             if (selected(current)) {
                 if (emitted == 40) {
@@ -205,16 +220,18 @@ namespace rock::vanilla_weapon_alignment_telemetry
                 ++emitted;
                 const auto name = nodeName(current);
                 if (name == "Weapon") sceneMask |= 1;
-                if (name == "TGunReceiver" || name == "PipeRifleReceiver" || name == "RevolverReceiver") sceneMask |= 2;
+                if (name == "TGunReceiver" || name == "PipeRifleReceiver" || name == "RevolverReceiver" ||
+                    name == "Pistol10mmReceiver" || name == "10mmReceiverParentObject") sceneMask |= 2;
                 if (name == "ProjectileNode") sceneMask |= 4;
                 if (name == "RArm_Hand") sceneMask |= 8;
                 if (name == "LArm_Hand") sceneMask |= 16;
             }
             return true;
         });
-        session->log->info("VWA phase-end seq={} phase={} root={:X} visited={} emitted={} truncated={} sceneMask={:X} weaponSceneComplete={}",
+        session->log->info("VWA phase-end seq={} phase={} root={:X} visited={} emitted={} truncated={} sceneMask={:X} weaponSceneComplete={} nativeMask={:X} captureFailures={}",
             schedulerSequence, phaseLabel, reinterpret_cast<std::uintptr_t>(root), traversal.visited, emitted,
-            traversal.truncated, sceneMask, !traversal.truncated && (sceneMask & 7) == 7);
+            traversal.truncated, sceneMask, !traversal.truncated && (sceneMask & 7) == 7,
+            session->nativeMask, session->captureFailures);
         if ((sceneMask & 7) != 7 || traversal.truncated) {
             session->log->warn("VWA incomplete-scene seq={} phase={} sceneMask={:X}; missing weapon/receiver/muzzle or traversal bound reached, do not infer transform ownership from this phase",
                 schedulerSequence, phaseLabel, sceneMask);
@@ -222,6 +239,69 @@ namespace rock::vanilla_weapon_alignment_telemetry
         if (phase == Phase::AfterRock) {
             session->sampling = false;
             session->log->flush();
+        }
+    }
+
+    void recordNative(NativePhase phase, const RE::NiAVObject* weapon,
+        const RE::NiAVObject* offset) noexcept
+    {
+        if (!captureThread || !sampling()) return;
+        const unsigned int bit = 1u << static_cast<unsigned int>(phase);
+        if ((session->nativeMask & bit) != 0) return;
+        session->nativeMask |= bit;
+        try {
+            constexpr std::array labels{
+                "graph-entry", "graph-exit", "primary-arm-entry", "primary-arm-exit",
+                "support-arm-entry", "support-arm-exit"
+            };
+            const auto* label = labels[static_cast<std::size_t>(phase)];
+            auto* equipped = f4vr::getEquippedWeaponItem();
+            const auto formId = equipped && equipped->item.object ? equipped->item.object->formID : 0;
+            if (formId != session->formId) {
+                session->log->info("VWA native-boundary seq={} phase={} form={:08X}->{:08X}",
+                    session->sequence, label, session->formId, formId);
+                return;
+            }
+            session->log->info("VWA native seq={} phase={} form={:08X}", session->sequence, label, formId);
+            node(label, "native-weapon-argument", weapon);
+            node(label, "native-offset-argument", offset);
+            auto* root = f4vr::getFirstPersonSkeleton();
+            node(label, "skeleton-root", root);
+            unsigned int found = 0;
+            const auto traversal = weapon_scene::visitScene(static_cast<RE::NiAVObject*>(root), [&](RE::NiAVObject* current) {
+                const auto name = nodeName(current);
+                if (name == "Weapon") { node(label, "weapon", current); found |= 1; }
+                if (name == "RArm_Hand") { node(label, "right-hand", current); found |= 2; }
+                if (name == "LArm_Hand") { node(label, "left-hand", current); found |= 4; }
+                return true;
+            });
+            session->log->info("VWA native-end seq={} phase={} mask={:X} visited={} truncated={}",
+                session->sequence, label, found, traversal.visited, traversal.truncated);
+        } catch (...) {
+            // Report the failure count in the enclosing phase/end record;
+            // diagnostic allocation/I/O failure cannot cross a native hook.
+            ++session->captureFailures;
+        }
+    }
+
+    void recordLooseGrab(RE::TESObjectREFR* ref, bool isLeft, std::uint64_t grabIdentity,
+        const RE::NiTransform& handWorld) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled || !ref) return;
+        const auto* base = ref->GetObjectReference();
+        if (!base || !targeted(base->formID)) return;
+        auto& last = session->lastLooseSample[isLeft ? 1u : 0u];
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last < std::chrono::milliseconds(250)) return;
+        last = now;
+        try {
+            session->log->info("VWA loose-grab seq={} form={:08X} ref={:08X} hand={} grab={}",
+                session->sequence, base->formID, ref->formID, isLeft ? "left" : "right", grabIdentity);
+            node("loose-grab", "model-root", ref->Get3D());
+            transform("loose-grab", "tracked-hand-world", handWorld);
+            session->log->flush();
+        } catch (...) {
+            ++session->captureFailures;
         }
     }
 
