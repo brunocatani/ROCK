@@ -558,6 +558,9 @@ namespace rock::provider
         LeftFiringInfrastructureAvailable = 1u << 3,
         ManualOwnershipActive = 1u << 4,
         PartCarryActive = 1u << 5,
+        // Effective firing-grip occupancy, including native right-hand carry
+        // after inventory/holster equip without an explicit ROCK grip.
+        // Clear during PartCarry and when WeaponPresent is clear.
         FiringGripOccupied = 1u << 6,
         WeaponPresent = 1u << 7,
     };
@@ -3133,6 +3136,10 @@ namespace rock::provider
             const RockProviderEquippedWeaponHandlingRequestV1* request);
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearEquippedWeaponHandlingAuthorityV1)(
             std::uint64_t ownerToken);
+        // Query on the game thread. Check success and WeaponPresent before
+        // interpreting FiringGripOccupied: no weapon or a failed query means
+        // neither attached nor detached. currentFiringHand names the firing
+        // role, which can move between physical hands during a handoff.
         bool(ROCK_PROVIDER_CALL* getEquippedWeaponHandlingStateV1)(
             RockProviderEquippedWeaponHandlingStateV1* outState);
         RockProviderResultV1(ROCK_PROVIDER_CALL* publishDebugOverlayV1)(
