@@ -1477,7 +1477,7 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool logMissingAimFrame);
 
-        bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, float dt);
+        bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, float dt, const char*& outReason);
 
         void releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
 
@@ -2035,6 +2035,7 @@ namespace rock
             float primaryGripConfidence{ 0.0f };
 
             equipped_weapon_manual_ownership_policy::GripReleaseDebounceState primaryReleaseDebounce{};
+            equipped_weapon_manual_ownership_policy::PrimaryReleaseIntentState primaryReleaseIntent{};
             bool persistentCarryActive{ false };
             bool persistentCarryDetachArmed{ false };
             bool persistentCarryInputAcquisitionPending{ false };
@@ -2085,8 +2086,6 @@ namespace rock
              * the same gesture (or a grab-synchronized grip flicker) and is
              * deferred.
              */
-            float gripAgeSeconds{ 0.0f };
-            bool freshGripDeferLogged{ false };
         };
 
         // State owned by the PartCarry module: which grip anchors the

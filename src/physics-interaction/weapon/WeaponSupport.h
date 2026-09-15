@@ -125,7 +125,6 @@ namespace rock::weapon_support_authority_policy
         bool providerPartAuthorityActive{ false };
         bool authoredCaptureEligible{ false };
         bool supportPalmInsideHandoffZone{ false };
-        bool authoredSeatInsideHandoffZone{ false };
     };
 
     [[nodiscard]] inline constexpr float firingGripCaptureReach(
@@ -140,9 +139,9 @@ namespace rock::weapon_support_authority_policy
      * Support-pose selection must not remove the separate dynamic ambidextrous
      * handoff station at the firing grip. This bypass exists only during a
      * two-hand acquisition with the live support palm inside the
-     * lateral cylinders. Exact provider authority remains ahead of it. If a
-     * usable authored seat is itself inside that same zone (the common pistol
-     * case), retain the authored seat instead of replacing it with dynamic.
+     * lateral cylinders. Exact provider authority remains ahead of it. A
+     * usable authored support seat always wins an overlapping handoff station;
+     * grabbing support does not express intent to change the firing hand.
      */
     [[nodiscard]] inline constexpr bool shouldCaptureDynamicHandoffGrip(
         const DynamicHandoffGripCaptureInput& input) noexcept
@@ -155,8 +154,7 @@ namespace rock::weapon_support_authority_policy
             return false;
         }
 
-        return !input.authoredCaptureEligible ||
-               !input.authoredSeatInsideHandoffZone;
+        return !input.authoredCaptureEligible;
     }
 
     template <class Transform>
@@ -402,32 +400,56 @@ namespace rock::equipped_weapon_manual_ownership_policy
                (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
     }
 
-    /*
-     * A firing-grip release that confirms while the support grab is only
-     * moments old is part of the SAME physical gesture (reach-over
-     * takeover) or a grab-synchronized grip flicker - never an independent,
-     * deliberate release. Acting on it immediately let a fresh offhand grab
-     * steal the firing role one frame after capture (left-firing round-4
-     * break, 2026-07-12). This is an elapsed-time contract (the human
-     * gesture window does not shrink at higher frame rates), tuned to the
-     * historically documented 110 ms: it outlasts short grip click flickers
-     * while staying imperceptible for deliberate takeovers.
-     */
-    inline constexpr float kFreshSupportGripPrimaryReleaseDeferSeconds = 0.110f;
-    /*
-     * The release-confirm debounce stays a consecutive-publication count
-     * (grip evidence arrives once per frame), so the defer window must
-     * outlast it at the SLOWEST supported game rate (45 FPS) or a
-     * grab-synchronized release acts on its first confirmable frame.
-     */
-    static_assert(
-        kFreshSupportGripPrimaryReleaseDeferSeconds >
-            static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f,
-        "defer window must outlast the release-confirm debounce at every supported rate");
-
-    [[nodiscard]] inline constexpr bool shouldDeferPrimaryReleaseActionForFreshSupportGrip(float supportGripAgeSeconds) noexcept
+    struct PrimaryReleaseIntentState
     {
-        return supportGripAgeSeconds <= kFreshSupportGripPrimaryReleaseDeferSeconds;
+        std::uint64_t ownershipKey{ 0 };
+        bool firingHandIsLeft{ false };
+        bool pending{ false };
+    };
+
+    struct PrimaryReleaseIntentInput
+    {
+        std::uint64_t ownershipKey{ 0 };
+        bool firingHandIsLeft{ false };
+        bool logicalHeld{ false };
+        bool logicalReleased{ false };
+        bool supportGripActive{ false };
+        bool freeSupportIndicatorActive{ false };
+        bool primaryOwned{ true };
+    };
+
+    struct PrimaryReleaseIntentDecision
+    {
+        bool retained{ true };
+        bool blockedBySupportHover{ false };
+    };
+
+    [[nodiscard]] inline constexpr PrimaryReleaseIntentDecision resolvePrimaryReleaseIntent(
+        PrimaryReleaseIntentState& state, const PrimaryReleaseIntentInput& input) noexcept
+    {
+        if (state.ownershipKey != input.ownershipKey || state.firingHandIsLeft != input.firingHandIsLeft) {
+            state = {input.ownershipKey, input.firingHandIsLeft, false};
+        }
+        // Native equipped carry is ownership even before the first squeeze.
+        // An open input level alone must never manufacture a release/handoff.
+        if (!input.ownershipKey) {
+            state = {};
+            return {};
+        }
+        if (!input.primaryOwned) {
+            state.pending = false;
+            return {.retained = input.logicalHeld};
+        }
+        if (input.logicalReleased) {
+            if (!input.supportGripActive && input.freeSupportIndicatorActive) {
+                state.pending = false;
+                return {.retained = true, .blockedBySupportHover = true};
+            }
+            state.pending = true;
+        } else if (input.logicalHeld) {
+            state.pending = false;
+        }
+        return {.retained = !state.pending};
     }
 
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(

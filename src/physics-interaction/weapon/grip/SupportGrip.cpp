@@ -1211,8 +1211,6 @@ namespace rock
             immersive_weapon_policy::DetachAuthority::None;
         _support.rotationBlend = 0.0f;
         _gripLogCounter = 0;
-        _support.gripAgeSeconds = 0.0f;
-        _support.freshGripDeferLogged = false;
 
         const char* supportBaselineName = "inactive";
         if (dynamicBaselineActive) {
@@ -2997,7 +2995,6 @@ namespace rock
                 });
         firing_grip_reattach_zone_policy::ZoneInput handoffInput{};
         bool supportPalmInsideHandoffZone = false;
-        bool authoredSeatInsideHandoffZone = false;
         const bool firingGripZoneAcquisition = decision.acquisitionSource ==
             WeaponInteractionAcquisitionSource::FiringGripZone;
         if (ambidextrousHandoffCaptureContext &&
@@ -3011,13 +3008,7 @@ namespace rock
             handoffInput.palmWorld = { palmPos.x, palmPos.y, palmPos.z };
             supportPalmInsideHandoffZone =
                 firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
-            if (authoredSupportFrameValid) {
-                const auto seatWorld = transform_math::localPointToWorld(
-                    weaponNode->world, authoredSupportPalmWeaponLocal);
-                handoffInput.palmWorld = { seatWorld.x, seatWorld.y, seatWorld.z };
-                authoredSeatInsideHandoffZone =
-                    firing_grip_reattach_zone_policy::evaluateZone(handoffInput).inside;
-            }
+
         }
         if (firingGripZoneAcquisition && !supportPalmInsideHandoffZone) {
             ROCK_LOG_SAMPLE_DEBUG(Weapon, 1000,
@@ -3044,8 +3035,6 @@ namespace rock
                                 useAuthoredSupportGrip,
                             .supportPalmInsideHandoffZone =
                                 supportPalmInsideHandoffZone,
-                            .authoredSeatInsideHandoffZone =
-                                authoredSeatInsideHandoffZone,
                         });
         if (_handlingSettings.authoredOnlySupportGrabsEnabled &&
             !providerPartAuthority.active) {

@@ -332,8 +332,6 @@ namespace rock
                         immersive_weapon_policy::DetachAuthority::None;
                     // Fresh two-hand configuration: the just-taken firing grip
                     // gets the same release-defer window as a fresh support grab.
-                    _support.gripAgeSeconds = 0.0f;
-                    _support.freshGripDeferLogged = false;
                     WeaponPartGrip& reattachedSupportGrip =
                         partGrip(newSupportHandIsLeft);
                     if (weapon_support_authority_policy::

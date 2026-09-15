@@ -1788,11 +1788,12 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, const float dt)
+    bool TwoHandedGrip::tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, const float dt, const char*& outReason)
     {
         const bool supportHandIsLeft = isSupportHandLeft();
         if (!weaponNode || !_handlingSettings.ambidextrousHandoffEnabled ||
             !canBeginPrimaryOnlyGripForHand(supportHandIsLeft)) {
+            outReason = "receiving-hand-unavailable";
             return false;
         }
 
@@ -1804,46 +1805,30 @@ namespace rock
         if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(
                 supportGrip.active,
                 supportGrip.attachOnly)) {
+            outReason = "support-grip-not-promotable";
             return false;
         }
 
-        /*
-         * Promotion uses the support GRIP POINT (where the hand
-         * actually grabbed the weapon), not the palm pivot: a shooting-cup
-         * palm sits a hand-width away from the grip center and the tight
-         * cylinder would decline a seated takeover. The same lateral zone
-         * used for acquisition keeps handguard/foregrip support grips out.
-         */
-        const RE::NiPoint3 supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
-        firing_grip_reattach_zone_policy::ZoneInput promotionInput{};
-        // A grip admitted by the firing-grip cylinders must retain that same
-        // reach through transfer. Ordinary support-grip promotion keeps its
-        // existing tuning and does not change authored support acquisition.
-        const float promotionReach = weapon_support_authority_policy::firingGripCaptureReach(
-            supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone,
-            _handlingSettings.firingGripReattachRadiusGameUnits,
-            _handlingSettings.firingGripPromotionRadiusGameUnits);
-        if (!tryBuildFiringGripZoneInput(weaponNode,
-                _session.weaponGenerationKey, _session.equippedWeaponOwnershipKey,
-                promotionReach, promotionInput)) {
+        if (!_firing.hasRightCanonicalHandWeaponLocal ||
+            _firing.rightCanonicalWeaponNode != weaponNode ||
+            _firing.rightCanonicalGenerationKey != _session.weaponGenerationKey ||
+            !isUsableHandAuthorityTransform(_firing.rightCanonicalHandWeaponLocal)) {
+            outReason = "canonical-frame-not-current";
             return false;
         }
-        promotionInput.palmWorld = {
-            supportGripWorld.x, supportGripWorld.y, supportGripWorld.z };
-        const auto promotionZone =
-            firing_grip_reattach_zone_policy::evaluateZone(promotionInput);
-        if (!promotionZone.inside) {
-            return false;
-        }
-
+        // Entry is a confirmed release of the current firing grip, with
+        // the other hand still owning support. The acquisition radius no
+        // longer limits an intentional transfer after both grips are held.
         RE::NiTransform handTransform{};
         if (!tryGetSolverHandTransform(supportHandIsLeft, handTransform)) {
+            outReason = "receiving-hand-frame-unavailable";
             return false;
         }
 
         // A left firing hand needs FRIK's right-hand weapon pose blocked for
         // the whole left-firing tenure; abort the promotion if that fails.
         if (supportHandIsLeft && !blockFrikPrimaryWeaponPose()) {
+            outReason = "native-pose-block-failed";
             return false;
         }
 
@@ -1855,7 +1840,7 @@ namespace rock
          * canonical native hold directly - the promoted hand's live bone is
          * still part-grip-locked here, so a live capture froze that locked
          * angle and (for the right) poisoned the canonical snapshot below.
-         * The cylinder gate has already validated the current canonical.
+         * The identity checks above validate the current canonical.
          */
         RE::NiTransform newFiringHandWeaponLocal{};
         bool usedAuthoredCanonical = false;
@@ -1865,6 +1850,7 @@ namespace rock
                     newFiringHandWeaponLocal,
                     &usedAuthoredCanonical)) {
                 restoreFrikPrimaryWeaponPose();
+                outReason = "firing-mirror-unavailable";
                 return false;
             }
             holdSource = usedAuthoredCanonical ? "authored-mirror" : "native-mirror";
@@ -1913,12 +1899,8 @@ namespace rock
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = isFiringHandLeft();
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: support hand promoted to firing grip hand={} zoneSide={} along={:.2f} perp={:.2f} hold={}",
-            firingHandName(),
-            firing_grip_reattach_zone_policy::sideName(promotionZone.side),
-            promotionZone.alongAxisGameUnits,
-            promotionZone.perpendicularDistanceGameUnits,
-            holdSource);
+            "TwoHandedGrip: support hand promoted to firing grip hand={} reason=primary-release hold={}",
+            firingHandName(), holdSource);
         return true;
     }
 }

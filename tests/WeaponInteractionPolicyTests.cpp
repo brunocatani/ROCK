@@ -3559,7 +3559,6 @@ int main()
         .providerPartAuthorityActive = false,
         .authoredCaptureEligible = false,
         .supportPalmInsideHandoffZone = true,
-        .authoredSeatInsideHandoffZone = false,
     };
     ok &= expectTrue(
         "firing-grip station restores dynamic ambidextrous handoff",
@@ -3593,21 +3592,19 @@ int main()
         }
         input.supportPalmInsideHandoffZone = true;
         input.authoredCaptureEligible = true;
-        input.authoredSeatInsideHandoffZone = evaluateHandoff({ 0.0f, 3.0f, 0.0f }).inside;
-        ok &= expectTrue("an authored seat inside the old sphere but outside the cylinder does not steal handoff",
+        ok &= expectFalse("eligible authored support wins an overlapping firing-hand station",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
-        ok &= expectTrue(
-            "authored support away from firing grip cannot steal dynamic handoff",
+        ok &= expectFalse(
+            "eligible authored support wins regardless of its distance from the firing seat",
             shouldCaptureDynamicHandoffGrip(input));
     }
     {
         auto input = dynamicHandoffGrip;
         input.authoredCaptureEligible = true;
-        input.authoredSeatInsideHandoffZone = true;
         ok &= expectFalse(
             "authored firing-grip seat remains preferred for pistols",
             shouldCaptureDynamicHandoffGrip(input));
@@ -4085,16 +4082,62 @@ int main()
     ok &= expectFalse("stable open primary samples release firing grip", primaryReleaseDecision.retained);
     ok &= expectTrue("stable open primary samples confirm release", primaryReleaseDecision.releaseConfirmed);
 
-    ok &= expectTrue("release confirmed on a just-captured support grip is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(0.0f));
-    // The confirm debounce is a publication count; the defer window must
-    // outlast it at the slowest supported rate (2 frames at 45 FPS).
-    ok &= expectTrue("release confirmed on the earliest confirmable frame after a grab is deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(static_cast<float>(kPrimaryReleaseConfirmFrames) / 45.0f));
-    ok &= expectTrue("release confirmed at the defer window edge is still deferred",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds));
-    ok &= expectFalse("release confirmed on an aged support grip acts normally",
-        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferSeconds + 0.001f));
+    {
+        namespace toggle = rock::equipped_weapon_toggle_grab_policy;
+        for (const auto mode : {toggle::Mode::ToggleBoth, toggle::Mode::ToggleFiringOnly, toggle::Mode::HoldBoth}) {
+            for (const bool firingLeft : {false, true}) {
+                PrimaryReleaseIntentState intent{};
+                PrimaryReleaseIntentInput input{.ownershipKey = 71, .firingHandIsLeft = firingLeft};
+                ok &= expectTrue("native carry is retained without a release gesture", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.supportGripActive = true;
+                ok &= expectTrue("adding support cannot switch the firing hand", resolvePrimaryReleaseIntent(intent, input).retained);
+
+                toggle::RuntimeState buttons{};
+                buttons.weaponOwnershipKey = 71;
+                buttons.hands[toggle::handIndex(firingLeft)] = toggle::firingUsesToggle(mode) ? toggle::HandState::Latched : toggle::HandState::Open;
+                toggle::Input buttonInput{.weaponGrabMode = mode, .inputAllowed = true, .weaponOwnershipKey = 71};
+                (firingLeft ? buttonInput.occupancy.left : buttonInput.occupancy.right).firingGripActive = true;
+                auto& physical = firingLeft ? buttonInput.left : buttonInput.right;
+                physical = toggle::firingUsesToggle(mode) ? toggle::ButtonState{.held = true, .pressed = true} : toggle::ButtonState{.released = true};
+                const auto prepared = toggle::prepare(buttons, buttonInput);
+                const auto logical = firingLeft ? prepared.left : prepared.right;
+                input.logicalHeld = logical.held;
+                input.logicalReleased = logical.released;
+                input.supportGripActive = false;
+                input.freeSupportIndicatorActive = true;
+                const auto blocked = resolvePrimaryReleaseIntent(intent, input);
+                ok &= expectTrue("support hover blocks detach in every mode and hand", blocked.retained && blocked.blockedBySupportHover);
+                toggle::GripReleaseRetention retention{};
+                (firingLeft ? retention.left : retention.right) = true;
+                (void)toggle::reconcile(buttons, mode, 71, buttonInput.occupancy, retention);
+                if (toggle::firingUsesToggle(mode)) {
+                    ok &= expectEqual("blocked release restores the owning toggle latch", buttons.hands[toggle::handIndex(firingLeft)], toggle::HandState::Latched);
+                }
+                input.logicalHeld = false;
+                input.logicalReleased = false;
+                input.freeSupportIndicatorActive = false;
+                ok &= expectTrue("leaving support hover cannot replay the consumed detach", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.supportGripActive = true;
+                ok &= expectTrue("support acquisition stays two-handed with primary button open", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.logicalReleased = true;
+                ok &= expectFalse("intentional primary release with support enables transfer", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.logicalReleased = false;
+                ok &= expectFalse("accepted release survives debounce frames", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.firingHandIsLeft = !firingLeft;
+                ok &= expectTrue("new firing hand never inherits old release intent", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.supportGripActive = false;
+                input.logicalReleased = true;
+                ok &= expectFalse("sole primary release outside support hover retains auto-drop", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.logicalReleased = false;
+                ++input.ownershipKey;
+                ok &= expectTrue("replacement weapon cannot inherit pending release", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.primaryOwned = false;
+                ok &= expectFalse("part carry keeps the intentionally free firing hand open", resolvePrimaryReleaseIntent(intent, input).retained);
+                input.logicalHeld = true;
+                ok &= expectTrue("part carry still accepts a new physical grab", resolvePrimaryReleaseIntent(intent, input).retained);
+            }
+        }
+    }
 
     RuntimeState manualState{};
     auto manualDecision = update(manualState,
