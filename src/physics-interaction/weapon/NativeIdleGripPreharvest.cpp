@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
@@ -2032,8 +2033,14 @@ namespace rock::native_idle_grip_preharvest
                 return true;
             }
             const std::uint64_t captureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
+            const bool vanillaPipePose = pipe_firing_grip_policy::recognizesVanilla(
+                job.weaponFormId, clipPath.data(), handInWeapon, rightFiringFingerPose);
+            if (pipe_firing_grip_policy::isPipe(job.weaponFormId)) {
+                ROCK_LOG_INFO(Animation, "Pipe right grip selection form={:08X} variant={:016X} correction={} source=fresh-native-idle subgraph={:016X} clip={}",
+                    job.weaponFormId, job.variant.key, vanillaPipePose ? "frik-default" : "authored-passthrough", subgraphIdentifier, clipPath.data());
+            }
             if (!authored_weapon_grip_library::publishResolvedVariant(job.weapon, job.variant, job.inPowerArmor, handInWeapon, captureSequence,
-                    authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest, &rightFiringFingerPose)) {
+                    authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest, &rightFiringFingerPose, vanillaPipePose)) {
                 failJob(state, "authoredGripLibraryRejectedSample");
                 return true;
             }
@@ -2221,7 +2228,11 @@ namespace rock::native_idle_grip_preharvest
                         state.job.inPowerArmor, static_cast<unsigned>(state.job.origin), i, graphProjects.size(), count < graphProjects.size(), graphProjects[static_cast<decltype(graphProjects)::size_type>(i)].c_str());
             }
 
-            if (hydrateCachedPose(state)) {
+            // Disk identity hashes project paths, not replacement clip contents.
+            // Re-sample this correction family once per session so installing or
+            // removing an animation replacement cannot reuse stale pose data.
+            const bool freshPipePose = pipe_firing_grip_policy::isPipe(state.job.weaponFormId);
+            if (!freshPipePose && hydrateCachedPose(state)) {
                 if (!g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
                     releaseJob(state);
                     return;

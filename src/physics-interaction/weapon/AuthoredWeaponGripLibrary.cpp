@@ -2,6 +2,9 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/VanillaWeaponGripFrame.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/TransformMath.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -43,6 +46,7 @@ namespace rock::authored_weapon_grip_library
             bool hasSupportRelation{ false };
             bool hasRightPositionOnlyHandWeaponLocal{ false };
             bool occupied{ false };
+            bool vanillaPipePose{ false };
         };
 
         std::array<Entry, kCapacity> s_entries{};
@@ -153,6 +157,7 @@ namespace rock::authored_weapon_grip_library
                 .hasRightPositionOnlyHandWeaponLocal =
                     entry.hasRightPositionOnlyHandWeaponLocal,
                 .usedVariantFallback = usedVariantFallback,
+                .vanillaPipePose = entry.vanillaPipePose,
                 .reason = usedVariantFallback ? "authoredAnimationFormFallback" : "authoredAnimationExactVariant",
             };
         }
@@ -189,7 +194,7 @@ namespace rock::authored_weapon_grip_library
 
     bool publishResolvedVariant(const RE::TESObjectWEAP* weapon, const WeaponVariantIdentity variant, const bool inPowerArmor,
         const RE::NiTransform& rightHandWeaponLocal, const std::uint64_t captureSequence, const CaptureSource source,
-        const FiringFingerPose* rightFiringFingerPose)
+        const FiringFingerPose* rightFiringFingerPose, const bool vanillaPipePose)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         const bool validFingerPose = rightFiringFingerPose && validCompleteFingerPose(*rightFiringFingerPose);
@@ -272,6 +277,7 @@ namespace rock::authored_weapon_grip_library
         destination->captureSequence = captureSequence;
         destination->publicationOrdinal = ++s_publicationOrdinal;
         destination->source = source;
+        destination->vanillaPipePose = vanillaPipePose && source == CaptureSource::NativeIdlePreharvest;
 
         if (newIdentity || isNativeIdleAuthority(source)) {
             ROCK_LOG_INFO(Animation,
@@ -382,6 +388,17 @@ namespace rock::authored_weapon_grip_library
             return true;
         }
         return false;
+    }
+
+    void applyPipeDefaultOffset(LookupResult& result, const frik_weapon_offset_cache::LookupResult& offset, const bool isLeft) noexcept
+    {
+        if (!pipe_firing_grip_policy::useFrikDefault(result.found, isLeft, result.vanillaPipePose,
+                offset.found && offset.source == frik_weapon_offset_cache::OffsetSource::EmbeddedResource)) return;
+        // FRIK stores Weapon-in-Hand; authored consumers need Hand-in-Weapon.
+        const auto handInWeapon = transform_math::invertTransform(offset.offset);
+        if (!finiteTransform(handInWeapon)) return;
+        result.rightHandWeaponLocal = handInWeapon;
+        result.reason = "pipeDefaultFrikOffset";
     }
 
     LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, const bool inPowerArmor)

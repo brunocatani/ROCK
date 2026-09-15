@@ -161,10 +161,11 @@ namespace rock::loose_weapon_grip_zone
 
             const auto frikLookup =
                 frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, looseRoot);
-            const auto authoredLookup = authored_weapon_grip_library::find(
+            auto authoredLookup = authored_weapon_grip_library::find(
                 weapon,
                 looseRoot,
                 f4vr::isInPowerArmor());
+            authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, frikLookup, isLeft);
             constexpr bool authoredGripEligible = true;
             const auto selectedSource = weapon_grip_authority_policy::select(
                 weapon_grip_authority_policy::Availability{

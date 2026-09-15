@@ -1,4 +1,6 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripAuthorityPolicy.h"
+#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
+#include <limits>
 
 int main()
 {
@@ -65,6 +67,51 @@ int main()
     static_assert(selectLookup(false, false, false, 2, 3) == LookupSelection::None);
     static_assert(selectLookup(false, false, false, 0, 1) == LookupSelection::SoleFormVariant);
     static_assert(selectLookup(false, false, false, 0, 0) == LookupSelection::None);
+
+    // Vanilla pipe offsets are physical-right defaults. Replacements keep
+    // authority even when they reuse the original idle path.
+    namespace pipe = rock::pipe_firing_grip_policy;
+    static_assert(pipe::isPipe(0x24F55) && pipe::isPipe(0x14831A) && pipe::isPipe(0x14831B));
+    static_assert(!pipe::isPipe(0x4822));
+    static_assert(pipe::useFrikDefault(true, false, true, true));
+    static_assert(!pipe::useFrikDefault(true, true, true, true));
+    static_assert(!pipe::useFrikDefault(true, false, false, true));
+    static_assert(!pipe::useFrikDefault(true, false, true, false));
+    static_assert(!pipe::useFrikDefault(false, false, true, true));
+    struct PipeTransform { MockRotation rotate; MockTranslation translate; float scale; };
+    struct PipeFingers { std::array<PipeTransform, 15> localTransforms; unsigned enabledMask; };
+    const auto copyTransform = [](const pipe::Transform& src) {
+        PipeTransform dst{};
+        dst.translate = {src.translate[0], src.translate[1], src.translate[2]};
+        dst.scale = src.scale;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) dst.rotate.entry[r][c] = src.rotate[r * 3 + c];
+        return dst;
+    };
+    for (const auto& vanilla : pipe::kVanillaPoses) {
+        const auto hand = copyTransform(vanilla.hand);
+        PipeFingers fingers{};
+        fingers.enabledMask = 0x7FFF;
+        for (std::size_t i = 0; i < fingers.localTransforms.size(); ++i)
+            fingers.localTransforms[i] = copyTransform(vanilla.fingers[i]);
+        if (!pipe::recognizesVanilla(0x24F55, vanilla.clip, hand, fingers)) return 70;
+        if (pipe::recognizesVanilla(0x4822, vanilla.clip, hand, fingers)) return 71;
+        if (pipe::recognizesVanilla(0x24F55, "Custom/WPNIdleReady.hkx", hand, fingers)) return 72;
+        auto replacement = hand;
+        replacement.translate.z += 0.1f;
+        if (pipe::recognizesVanilla(0x24F55, vanilla.clip, replacement, fingers)) return 73;
+        replacement = hand;
+        replacement.rotate.entry[0][1] += 0.01f;
+        if (pipe::recognizesVanilla(0x24F55, vanilla.clip, replacement, fingers)) return 74;
+        replacement = hand;
+        replacement.scale = std::numeric_limits<float>::quiet_NaN();
+        if (pipe::recognizesVanilla(0x24F55, vanilla.clip, replacement, fingers)) return 75;
+        auto customFingers = fingers;
+        customFingers.localTransforms[14].rotate.entry[1][0] += 0.01f;
+        if (pipe::recognizesVanilla(0x24F55, vanilla.clip, hand, customFingers)) return 76;
+        fingers.enabledMask = 0x3FFF;
+        if (pipe::recognizesVanilla(0x24F55, vanilla.clip, hand, fingers)) return 77;
+    }
 
     return 0;
 }
