@@ -64,6 +64,9 @@ namespace rock
          * weapons; throwables deliberately preserve their live object rotation.
          */
         bool forcedArrival = false;
+        // A native equipped-to-loose transfer has already placed the model
+        // at its released pose. Preserve that pose through grab acquisition.
+        bool preserveEquippedPose = false;
         // Only the exact ROCK-created grenade-mode reference may carry an
         // authored PROJECTILE-layer body through active-grab admission.
         bool allowProjectileLayerForExactTarget = false;
@@ -103,6 +106,7 @@ namespace rock
             hasHmdConeDot = false;
             pinchCloseSelectionFallback = false;
             forcedArrival = false;
+            preserveEquippedPose = false;
             allowProjectileLayerForExactTarget = false;
             actorEquipment = {};
             equipmentAnchor = {};

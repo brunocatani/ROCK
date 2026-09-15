@@ -279,7 +279,8 @@ namespace rock
                     commit.maxDistanceGame,
                     commit.inventoryTransfer &&
                         commit.targetIsLooseThrowable &&
-                        loose_grenade_runtime::isThrowableRef(targetRef))) {
+                        loose_grenade_runtime::isThrowableRef(targetRef),
+                    commit.equippedWeaponTransfer)) {
                 commit.phase = PendingForceGrabCommitPhase::WaitingForSettle;
                 if (timedOut) {
                     abandon("failed to resolve physics body", provider::RockProviderInteractionFailureV1::TargetBodyMissing, targetRef);

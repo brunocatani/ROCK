@@ -5,6 +5,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/GrabOffsetAcquisition.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -599,7 +600,8 @@ namespace rock
             const RE::NiPoint3& sourcePointWorld,
             std::uint32_t preferredBodyId,
             float maxDistanceGame,
-            bool allowProjectileLayerForExactTarget);
+            bool allowProjectileLayerForExactTarget,
+            bool preserveEquippedPose = false);
         void clearActorEquipmentDropHandoff(const char* reason = "cleared");
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
@@ -1354,6 +1356,9 @@ namespace rock
         int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
+        grab_offset_acquisition::Transition<RE::NiTransform> _grabOffsetAcquisition;
+        float _grabOffsetMaximumGripError = 0.0f;
+        float _grabOffsetMaximumRotationError = 0.0f;
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         grab_three_phase::ObjectGripArea _grabObjectGripAtGrab{};
         held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};

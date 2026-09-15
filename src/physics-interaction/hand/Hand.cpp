@@ -280,6 +280,7 @@ namespace rock
         }
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
@@ -389,6 +390,7 @@ namespace rock
         _isHoldingFlag.store(false, std::memory_order_release);
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabOffsetAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
@@ -1122,7 +1124,8 @@ namespace rock
         const RE::NiPoint3& sourcePointWorld,
         std::uint32_t preferredBodyId,
         float maxDistanceGame,
-        bool allowProjectileLayerForExactTarget)
+        bool allowProjectileLayerForExactTarget,
+        bool preserveEquippedPose)
     {
         if (!hknpWorld || !targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
             return false;
@@ -1199,6 +1202,7 @@ namespace rock
         selection.hasHitPoint = true;
         selection.hasHitNormal = true;
         selection.forcedArrival = true;
+        selection.preserveEquippedPose = preserveEquippedPose;
         selection.allowProjectileLayerForExactTarget = allowProjectileLayerForExactTarget;
 
         if (!selection.isValid()) {

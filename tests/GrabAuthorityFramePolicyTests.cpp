@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/grab/GrabOffsetAcquisition.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandFrame.h"
 
@@ -335,6 +336,62 @@ int main()
                 .source = authority::GrabAuthorityPivotSource::GripSupportModel,
             });
         ok &= expectFalse("freeze rejects non-finite authority rotation", frozen.valid);
+    }
+
+    // A long off-center grip exposes origin-based interpolation: rotating a
+    // 60-unit lever must not bow a two-unit grip correction away from its line.
+    for (int axis = 0; axis < 3; ++axis) {
+        namespace acquisition = rock::grab_offset_acquisition;
+        auto start = identityTransform();
+        start.translate = { 12.0f, -5.0f, 8.0f };
+        start.scale = 1.3f;
+        auto target = start;
+        float quaternion[4]{ 0, 0, 0, std::cos(1.45f) };
+        quaternion[axis] = std::sin(1.45f);
+        target.rotate = rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
+        const RE::NiPoint3 grip{ 60.0f, -30.0f, 10.0f };
+        const auto firstGrip = rock::transform_math::localPointToWorld(start, grip);
+        const RE::NiPoint3 lastGrip = firstGrip + RE::NiPoint3{ 2.0f, 0.0f, 0.0f };
+        target = rock::grab_frame_math::shiftObjectToAlignGripWithPocket(target, lastGrip,
+            rock::transform_math::localPointToWorld(target, grip));
+        float lastAngle = 0.0f;
+        for (int step = 0; step <= 20; ++step) {
+            const float fraction = step / 20.0f;
+            const auto blended = acquisition::interpolateAtGrip(start, target, grip, fraction);
+            const auto actualGrip = rock::transform_math::localPointToWorld(blended, grip);
+            ok &= expectNear("offset grip advances along the segment", actualGrip.x, firstGrip.x + 2.0f * fraction, 0.001f);
+            ok &= expectNear("offset grip never bows sideways", actualGrip.y, firstGrip.y, 0.001f);
+            ok &= expectNear("offset grip never bows vertically", actualGrip.z, firstGrip.z, 0.001f);
+            const float angle = acquisition::rotationAngleRadians(start.rotate, blended.rotate);
+            ok &= expectTrue("orientation advances monotonically along the short arc", angle + 0.001f >= lastAngle && angle <= 2.901f);
+            lastAngle = angle;
+        }
+
+        auto proxy = identityTransform();
+        float proxyQuaternion[4]{ 0.2f, -0.3f, 0.1f, 0.92736185f };
+        proxy.rotate = rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(proxyQuaternion);
+        proxy.translate = { 100.0f, 200.0f, -30.0f };
+        proxy.scale = 0.85f;
+        const auto targetLocal = rock::grab_frame_math::objectInGeneratedProxyLocalSpace(proxy, target);
+        auto transition = acquisition::begin(proxy, start, targetLocal, grip);
+        ok &= expectTrue("rotation and translation initialize acquisition", transition.active);
+        const auto initialProxy = acquisition::advance(transition, proxy, targetLocal, grip, 0.0f);
+        const auto initialBody = rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(initialProxy, targetLocal);
+        ok &= expectNear("constraint starts at actual body x", initialBody.translate.x, start.translate.x, 0.001f);
+        ok &= expectNear("constraint starts at actual body y", initialBody.translate.y, start.translate.y, 0.001f);
+        ok &= expectNear("constraint starts at actual body z", initialBody.translate.z, start.translate.z, 0.001f);
+        ok &= expectNear("constraint starts at actual rotation", acquisition::rotationAngleRadians(initialBody.rotate, start.rotate), 0.0f, 0.001f);
+
+        proxy.translate.x += 25.0f;
+        const auto movingProxy = acquisition::advance(transition, proxy, targetLocal, grip, 0.0f);
+        const auto movingBody = rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(movingProxy, targetLocal);
+        ok &= expectNear("acquisition follows hand translation without world-space lag", movingBody.translate.x, start.translate.x + 25.0f, 0.001f);
+        const auto endedProxy = acquisition::advance(transition, proxy, targetLocal, grip, transition.durationSeconds);
+        ok &= expectFalse("acquisition ends deterministically", transition.active);
+        ok &= expectNear("completion returns exact physical proxy", endedProxy.translate.x, proxy.translate.x, 0.0f);
+        const auto noCorrection = acquisition::begin(proxy,
+            rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(proxy, targetLocal), targetLocal, grip);
+        ok &= expectFalse("an already seated pose does not restart correction", noCorrection.active);
     }
 
     {
