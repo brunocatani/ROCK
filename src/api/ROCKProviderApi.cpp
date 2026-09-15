@@ -3,6 +3,7 @@
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
 #include "api/ProviderLeasePolicy.h"
+#include "api/ProviderStatePolicy.h"
 #include "api/TouchGrabRegistry.h"
 
 #include <array>
@@ -516,7 +517,7 @@ namespace
     bool ROCK_PROVIDER_CALL apiIsProviderReady()
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
-        return pi && pi->isInitialized();
+        return pi && pi->isProviderReady();
     }
 
     std::uint64_t ROCK_PROVIDER_CALL apiRegisterFrameCallback(RockProviderFrameCallback callback, void* userData)
@@ -734,6 +735,7 @@ namespace
 
     bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot)
     {
+        provider_state_policy::clearQueryOutput(outSnapshot, ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE);
         if (!outSnapshot || outSnapshot->size < ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE) {
             return false;
         }
@@ -766,6 +768,7 @@ namespace
 
     bool ROCK_PROVIDER_CALL apiGetHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* outFrame)
     {
+        provider_state_policy::clearQueryOutput(outFrame, 112);
         /*
          * Hand frames expose ROCK's hand authority as a value snapshot instead
          * of a NiNode lookup. Consumers need the same primary/offhand mapping,
@@ -791,7 +794,11 @@ namespace
             snapshot = s_lastSnapshot;
         }
 
-        if (snapshot.providerReady == 0) {
+        const auto transformFlag = hand == RockProviderHand::Left ?
+            RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid :
+            RockProviderFrameEnrichmentFlagV1::RightHandTransformValid;
+        if (!apiIsProviderReady() || snapshot.providerReady == 0 ||
+            !(snapshot.enrichmentFlags & static_cast<std::uint32_t>(transformFlag))) {
             return false;
         }
 
@@ -829,6 +836,7 @@ namespace
 
     bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (!outState || outState->size != sizeof(RockProviderWeaponPartGripStateV1)) {
             return false;
         }
@@ -837,7 +845,7 @@ namespace
         }
 
         std::scoped_lock lock(s_snapshotMutex);
-        if (!s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
+        if (!apiIsProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
             return false;
         }
         *outState = s_lastPartGripStates[hand == RockProviderHand::Left ? 1u : 0u];
@@ -948,6 +956,7 @@ namespace
         const RockProviderHand hand,
         RockProviderHandFrameV1* outFrame)
     {
+        provider_state_policy::clearQueryOutput(outFrame, 112);
         if (!outFrame ||
             outFrame->size < 112 ||
             (hand != RockProviderHand::Right &&
@@ -998,6 +1007,8 @@ namespace
                 RockProviderHandFrameFlagV1::Offhand);
         }
         frame.transform = providerTransform;
+        frame.state = hand == RockProviderHand::Left ? snapshot.leftHandState : snapshot.rightHandState;
+        frame.bodyId = hand == RockProviderHand::Left ? snapshot.leftHandBodyId : snapshot.rightHandBodyId;
         frame.frameIndex = snapshot.frameIndex;
         frame.worldGeneration = snapshot.worldGeneration;
         frame.skeletonGeneration = snapshot.skeletonGeneration;
@@ -2428,6 +2439,7 @@ namespace
         const RockProviderHand hand,
         RockProviderHandInteractionStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (!outState || ownerToken == 0 ||
             (hand != RockProviderHand::Right && hand != RockProviderHand::Left)) {
             return RockProviderResultV1::InvalidArgument;
@@ -2442,7 +2454,7 @@ namespace
             return ownerResult;
         }
         std::scoped_lock lock(s_snapshotMutex);
-        if (!s_hasSnapshot) {
+        if (!apiIsProviderReady() || !s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
             return RockProviderResultV1::NotReady;
         }
         *outState = s_lastHandInteractionStates[
@@ -2468,6 +2480,7 @@ namespace
         const std::uint32_t maxEvents,
         RockProviderEventStreamStateV1* outStreamState)
     {
+        provider_state_policy::clearQueryOutput(outStreamState);
         if (ownerToken == 0 || !outStreamState ||
             outStreamState->size < sizeof(RockProviderEventStreamStateV1) ||
             (maxEvents != 0 && !outEvents)) {
@@ -2527,6 +2540,7 @@ namespace
         const std::uint64_t ownerToken,
         RockProviderEquippedWeaponStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -2552,6 +2566,7 @@ namespace
         const RockProviderWeaponPartResolutionQueryV1* query,
         RockProviderWeaponPartResolutionResultV1* outResolution)
     {
+        provider_state_policy::clearQueryOutput(outResolution);
         if (ownerToken == 0 || !query || !outResolution) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -2599,11 +2614,11 @@ namespace
         const std::uint32_t maxParts,
         std::uint32_t* outPartCount)
     {
+        if (outPartCount) *outPartCount = 0;
         if (ownerToken == 0 || !outPartCount ||
             (maxParts != 0 && !outParts)) {
             return RockProviderResultV1::InvalidArgument;
         }
-        *outPartCount = 0;
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::WeaponPartObservability);
@@ -2629,11 +2644,11 @@ namespace
         const std::uint32_t maxResults,
         std::uint32_t* outResultCount)
     {
+        if (outResultCount) *outResultCount = 0;
         if (ownerToken == 0 || !outResultCount ||
             (maxResults != 0 && !outResults)) {
             return RockProviderResultV1::InvalidArgument;
         }
-        *outResultCount = 0;
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::WeaponPartObservability);
@@ -2662,6 +2677,7 @@ namespace
         Query&& query,
         const bool requireAnimationThread = false)
     {
+        provider_state_policy::clearQueryOutput(output);
         if (ownerToken == 0 || !output) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -2717,11 +2733,11 @@ namespace
         const std::uint32_t maxEntries,
         std::uint32_t* outEntryCount)
     {
+        if (outEntryCount) *outEntryCount = 0;
         if (ownerToken == 0 || !outEntryCount ||
             (maxEntries != 0 && !outEntries)) {
             return RockProviderResultV1::InvalidArgument;
         }
-        *outEntryCount = 0;
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::WeaponComposition);
@@ -2758,6 +2774,7 @@ namespace
         RockProviderPresentedHandPoseV1* outPose)
     {
         if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            provider_state_policy::clearQueryOutput(outPose);
             return RockProviderResultV1::HandUnavailable;
         }
         const auto result = queryPhysicsInteractionValueV1(
@@ -2784,12 +2801,12 @@ namespace
         const std::uint32_t maxContacts,
         std::uint32_t* outContactCount)
     {
+        if (outContactCount) *outContactCount = 0;
         if (ownerToken == 0 || !outContactCount ||
             (hand != RockProviderHand::Right && hand != RockProviderHand::Left) ||
             (maxContacts != 0 && !outContacts)) {
             return RockProviderResultV1::InvalidArgument;
         }
-        *outContactCount = 0;
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::SemanticHandContacts);
@@ -2817,11 +2834,11 @@ namespace
         const std::uint32_t maxDescriptors,
         std::uint32_t* outDescriptorCount)
     {
+        if (outDescriptorCount) *outDescriptorCount = 0;
         if (ownerToken == 0 || !outDescriptorCount ||
             (maxDescriptors != 0 && !outDescriptors)) {
             return RockProviderResultV1::InvalidArgument;
         }
-        *outDescriptorCount = 0;
         const auto ownerResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::PlayerColliderDescriptors);
@@ -2847,6 +2864,7 @@ namespace
         RockProviderHandCollisionAvailabilityV1* outState)
     {
         if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            provider_state_policy::clearQueryOutput(outState);
             return RockProviderResultV1::HandUnavailable;
         }
         return queryPhysicsInteractionValueV1(
@@ -3242,6 +3260,7 @@ namespace
         const RockProviderHand hand,
         RockProviderHandInputSuppressionStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState ||
             (hand != RockProviderHand::Right && hand != RockProviderHand::Left)) {
             return RockProviderResultV1::InvalidArgument;
@@ -3392,6 +3411,7 @@ namespace
     bool ROCK_PROVIDER_CALL apiGetNativeAnimationAuthorityStateV1(
         RockProviderNativeAnimationAuthorityStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (!outState || outState->size != sizeof(RockProviderNativeAnimationAuthorityStateV1)) {
             return false;
         }
@@ -3502,6 +3522,7 @@ namespace
         const std::uint64_t ownerToken,
         RockProviderEquippedWeaponGripStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (!outState ||
             outState->size != sizeof(RockProviderEquippedWeaponGripStateV1)) {
             return false;
@@ -3875,6 +3896,7 @@ namespace
         const std::uint32_t maxStates,
         std::uint32_t* outStateCount)
     {
+        if (outStateCount) *outStateCount = 0;
         if (ownerToken == 0 || scopeToken == 0 || !outStateCount ||
             (maxStates != 0 && !outStates)) {
             return RockProviderResultV1::InvalidArgument;
@@ -4063,6 +4085,7 @@ namespace
     bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(
         RockProviderEquippedWeaponHandlingStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (!outState ||
             outState->size != sizeof(RockProviderEquippedWeaponHandlingStateV1)) {
             return false;
@@ -4131,6 +4154,7 @@ namespace
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetHandTargetDetailsV1(std::uint64_t ownerToken,
         RockProviderHand hand, RockProviderHandTargetDetailsV1* out)
     {
+        provider_state_policy::clearQueryOutput(out);
         if (!out || (hand != RockProviderHand::Left && hand != RockProviderHand::Right)) return RockProviderResultV1::InvalidArgument;
         if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
         if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
@@ -4148,6 +4172,7 @@ namespace
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryReferenceInteractionV1(std::uint64_t ownerToken,
         const RockProviderReferenceQueryV1* query, RockProviderReferenceInteractionV1* out)
     {
+        provider_state_policy::clearQueryOutput(out);
         if (!out) return RockProviderResultV1::InvalidArgument;
         if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
         if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
@@ -4162,6 +4187,7 @@ namespace
     RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryPowerArmorTargetV1(std::uint64_t ownerToken,
         const RockProviderReferenceQueryV1* query, RockProviderPowerArmorTargetV1* out)
     {
+        provider_state_policy::clearQueryOutput(out);
         if (!out) return RockProviderResultV1::InvalidArgument;
         if (out->size != sizeof(*out)) return RockProviderResultV1::InvalidSize;
         if (out->version != ROCK_PROVIDER_API_VERSION) return RockProviderResultV1::UnsupportedVersion;
@@ -4206,6 +4232,7 @@ namespace
         const RockProviderWorldRaycastRequestV1* request,
         RockProviderWorldRaycastResultV1* outResult)
     {
+        provider_state_policy::clearQueryOutput(outResult);
         if (ownerToken == 0 || !request || !outResult) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -4597,6 +4624,7 @@ namespace
         const RockProviderWeaponContactQuery* query,
         RockProviderWeaponContactResult* outResult)
     {
+        provider_state_policy::clearQueryOutput(outResult);
         if (!query || !outResult ||
             query->size != sizeof(RockProviderWeaponContactQuery) ||
             outResult->size != sizeof(RockProviderWeaponContactResult)) {
@@ -4613,6 +4641,7 @@ namespace
 
     bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult)
     {
+        provider_state_policy::clearQueryOutput(outResult);
         if (!outResult || outResult->size != sizeof(RockProviderWeaponClassificationV1)) {
             return false;
         }
@@ -4789,6 +4818,7 @@ namespace
         const std::uint32_t maxContacts,
         RockProviderExternalContactStreamStateV1* outStreamState)
     {
+        provider_state_policy::clearQueryOutput(outStreamState);
         if (ownerToken == 0 || !outStreamState ||
             outStreamState->size < sizeof(RockProviderExternalContactStreamStateV1) ||
             (maxContacts != 0 && !outContacts)) {
@@ -4967,6 +4997,7 @@ namespace
         const std::uint64_t ownerToken,
         RockProviderOffhandReservationStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -5009,6 +5040,7 @@ namespace
         const RockProviderLogicalInputActionV1 action,
         RockProviderLogicalInputActionStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -5070,6 +5102,7 @@ namespace
         const std::uint32_t queryFlags,
         RockProviderPlayerControllerStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (ownerToken == 0 || !outState) {
             return RockProviderResultV1::InvalidArgument;
         }
@@ -5241,6 +5274,7 @@ namespace
 
     bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState)
     {
+        provider_state_policy::clearQueryOutput(outState);
         if (!outState || outState->size != sizeof(RockProviderRawWandButtonStateV1)) {
             return false;
         }
@@ -5353,15 +5387,7 @@ namespace
     [[nodiscard]] bool handGripActive(
         const RockProviderHandInteractionStateV1& state) noexcept
     {
-        constexpr std::uint32_t gripFlags =
-            static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::FiringGrip) |
-            static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::PartGrip) |
-            static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::PartCarry);
-        return state.phase == RockProviderHandInteractionPhaseV1::Holding ||
-               (state.flags & gripFlags) != 0;
+        return provider_state_policy::handHolding(state);
     }
 
     [[nodiscard]] bool sameHandGrip(
@@ -5430,6 +5456,12 @@ namespace
         current.targetSequence = sameHandTarget(current, previous) ?
             previous.targetSequence :
             advanceSequence(previous.targetSequence);
+        if (!(current.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid))) {
+            // Loss of observation is not a measured release.
+            current.gripSequence = previous.gripSequence;
+            current.releaseSequence = previous.releaseSequence;
+            return;
+        }
         const bool wasGripActive = handGripActive(previous);
         const bool gripActive = handGripActive(current);
         current.gripSequence = gripActive &&
@@ -5485,6 +5517,9 @@ namespace
                left.terminalSequence == right.terminalSequence &&
                left.transitionSource == right.transitionSource &&
                left.terminalResult == right.terminalResult &&
+               left.transitionWeaponFormId == right.transitionWeaponFormId &&
+               left.terminalWeaponFormId == right.terminalWeaponFormId &&
+               left.terminalSource == right.terminalSource &&
                left.worldGeneration == right.worldGeneration &&
                left.skeletonGeneration == right.skeletonGeneration &&
                left.providerGeneration == right.providerGeneration;
@@ -5784,6 +5819,7 @@ namespace rock::provider
                 auto& currentHand = handInteractionStates[index];
                 const auto& previousHand = previousHands[index];
                 if (hadPrevious &&
+                    (currentHand.flags & static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::Valid)) &&
                     handGripActive(previousHand) &&
                     !handGripActive(currentHand) &&
                     currentHand.phase ==
@@ -5902,6 +5938,10 @@ namespace rock::provider
                 equippedWeaponState.terminalSequence != 0 &&
                 equippedWeaponState.terminalSequence !=
                     previousEquipped.terminalSequence;
+            snapshot.rightHandState |= provider_state_policy::handStateFlags(handInteractionStates[0],
+                PhysicsInteraction::s_rightHandDisabled.load(std::memory_order_acquire));
+            snapshot.leftHandState |= provider_state_policy::handStateFlags(handInteractionStates[1],
+                PhysicsInteraction::s_leftHandDisabled.load(std::memory_order_acquire));
             s_lastSnapshot = snapshot;
             s_hasSnapshot = true;
             s_lastPartGripStates = partGripStates;
@@ -5946,14 +5986,15 @@ namespace rock::provider
             event.kind =
                 RockProviderEventKindV1::EquippedWeaponTransitionTerminal;
             event.weaponGenerationKey =
-                equippedWeaponState.weaponGenerationKey;
-            event.formId = equippedWeaponState.weaponFormId;
+                equippedWeaponState.terminalWeaponFormId == equippedWeaponState.weaponFormId ?
+                    equippedWeaponState.weaponGenerationKey : 0;
+            event.formId = equippedWeaponState.terminalWeaponFormId;
             event.result = static_cast<std::uint32_t>(
                 equippedWeaponState.terminalResult);
             event.subjectSequence =
                 equippedWeaponState.terminalSequence;
             event.data[0] = static_cast<std::uint32_t>(
-                equippedWeaponState.transitionSource);
+                equippedWeaponState.terminalSource);
             event.data[1] = equippedWeaponState.flags;
             publishProviderEvent(event);
         }
@@ -6155,6 +6196,24 @@ namespace rock::provider
 
     void clearExternalBodiesForProviderLoss()
     {
+        {
+            std::scoped_lock lock(s_snapshotMutex);
+            // Preserve lifecycle/terminal history, invalidate all live reads.
+            s_lastSnapshot.providerReady = 0;
+            s_lastSnapshot.lifecycleFlags &= ~(
+                static_cast<std::uint32_t>(RockProviderLifecycleFlag::ProviderReady) |
+                static_cast<std::uint32_t>(RockProviderLifecycleFlag::GeneratedBodiesValid) |
+                static_cast<std::uint32_t>(RockProviderLifecycleFlag::PhysicsWriteAllowed) |
+                static_cast<std::uint32_t>(RockProviderLifecycleFlag::VisualWriteAllowed));
+            s_lastSnapshot.enrichmentFlags &= ~(
+                static_cast<std::uint32_t>(RockProviderFrameEnrichmentFlagV1::RightHandTransformValid) |
+                static_cast<std::uint32_t>(RockProviderFrameEnrichmentFlagV1::LeftHandTransformValid));
+            s_lastSnapshot.rightHandState = 0;
+            s_lastSnapshot.leftHandState = 0;
+            for (auto& state : s_lastHandInteractionStates) state.flags = 0;
+            s_lastPartGripStates = {};
+            s_lastEquippedWeaponState.flags = 0;
+        }
         std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>
             suppressionOwners{};
         std::array<std::uint64_t, ROCK_PROVIDER_MAX_CONSUMERS_V1>

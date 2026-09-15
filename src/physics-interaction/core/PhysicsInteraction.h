@@ -132,6 +132,13 @@ namespace rock
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
 
         bool isInitialized() const { return _lifecycle.initialized; }
+        bool isProviderReady() const
+        {
+            return _lifecycle.initialized.load(std::memory_order_acquire) &&
+                ::rock::provider::hasLifecycleFlag(
+                    _lifecycle.flagsAtomic.load(std::memory_order_acquire),
+                    ::rock::provider::RockProviderLifecycleFlag::ProviderReady);
+        }
         void requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName);
         void noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason);
         void noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason);

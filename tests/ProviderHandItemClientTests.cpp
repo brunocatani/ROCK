@@ -98,6 +98,13 @@ int main()
         assert(items.GetHeldItem(true) == &leftItem);
     }
 
+    // The release event retains the old target identity without still holding it.
+    auto releaseLookups = lookups;
+    hands[0].phase = RockProviderHandInteractionPhaseV1::Releasing;
+    assert(!items.GetHeldItem(false, &result) && result == RockProviderResultV1::Ok);
+    assert(lookups == releaseLookups);
+    hands[0].phase = RockProviderHandInteractionPhaseV1::Holding;
+
     // A failed query must not resolve even a populated output into an object.
     auto previousLookups = lookups;
     for (auto error : { RockProviderResultV1::PermissionDenied,
@@ -114,6 +121,16 @@ int main()
     hands[0].phase = RockProviderHandInteractionPhaseV1::Selecting;
     assert(!items.GetHeldItem(false, &result) && result == RockProviderResultV1::Ok);
     assert(lookups == previousLookups);
+
+    // An equipped weapon occupies the hand but its base form is not a held REFR.
+    hands[0].phase = RockProviderHandInteractionPhaseV1::Holding;
+    hands[0].targetKind = RockProviderBodyContactTargetKind::Weapon;
+    hands[0].flags = valid | static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::FiringGrip) |
+        static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::NativeWeaponCarry);
+    assert(!items.GetHeldItem(false, &result) && result == RockProviderResultV1::Ok);
+    assert(lookups == previousLookups);
+    hands[0].targetKind = RockProviderBodyContactTargetKind::DynamicProp;
+    hands[0].flags = valid;
 
     // Touch grips may have a world reference; global surfaces may have none.
     hands[0].flags |= static_cast<std::uint32_t>(RockProviderHandInteractionFlagV1::TouchGrab);
