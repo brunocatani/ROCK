@@ -52,6 +52,7 @@ namespace rock::weapon_equip_transfer
         RemoveItemFailed,
         DroppedReferenceUnavailable,
         Dropped,
+        PreviousWeaponRestoreResetUnavailable,
     };
 
     struct EquipInput

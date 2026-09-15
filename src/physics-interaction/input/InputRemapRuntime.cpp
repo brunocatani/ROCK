@@ -1166,16 +1166,39 @@ namespace rock::input_remap_runtime
             }
         }
 
+        void traceNativeWeaponInputGate(const char* gate, const RE::InputEvent* event,
+            const input_remap_policy::NativeActionSuppressionInput& input,
+            bool suppressed, bool providerSuppressed = false)
+        {
+            if (!input.eventMatched || !logger::isDebugEnabled()) return;
+            const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+            if (!button || (!button->QJustPressed() &&
+                (button->QPressed() || button->QHeldDownSecs() < 0.0f))) return;
+            ROCK_LOG_DEBUG(Input,
+                "NATIVE-WEAPON-INPUT gate={} suppressed={} provider={} primary={} pressed={} drawn={} heldWeapon={} firingGrip={} detached={} shoulder={} realMelee={} meleeSuppression={} gameplay={} menu={}",
+                gate, suppressed, providerSuppressed, input.primaryHandEvent,
+                button->QJustPressed(), input.weaponDrawn, input.eventHandHeldWeapon,
+                input.equippedWeaponFiringGripInputActive, input.equippedWeaponPrimaryDetached,
+                input.equippedWeaponShoulderSheathActive, input.realMeleeWeaponEquipped,
+                input.nativeMeleeSuppressionActive, input.gameplayInputAllowed, input.menuInputActive);
+        }
+
         [[nodiscard]] bool shouldSuppressNativeGripReadyAction(const RE::InputEvent* event)
         {
-            return input_remap_policy::shouldSuppressNativeGripReadyAction(
-                makeNativeActionSuppressionInput(true, eventNameMatches(event, kNativeEventWandGrip)));
+            const auto input = makeNativeActionSuppressionInput(
+                true, event, eventNameMatches(event, kNativeEventWandGrip));
+            const bool suppressed = input_remap_policy::shouldSuppressNativeGripReadyAction(input);
+            traceNativeWeaponInputGate("ready-grip", event, input, suppressed);
+            return suppressed;
         }
 
         [[nodiscard]] bool shouldSuppressNativeGripReloadAction(const RE::InputEvent* event)
         {
-            return input_remap_policy::shouldSuppressNativeGripReloadAction(
-                makeNativeActionSuppressionInput(true, event, eventNameMatches(event, kNativeEventWandGrip)));
+            const auto input = makeNativeActionSuppressionInput(
+                true, event, eventNameMatches(event, kNativeEventWandGrip));
+            const bool suppressed = input_remap_policy::shouldSuppressNativeGripReloadAction(input);
+            traceNativeWeaponInputGate("reload-grip", event, input, suppressed);
+            return suppressed;
         }
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
@@ -1185,18 +1208,18 @@ namespace rock::input_remap_runtime
                     eventNameMatches(event, kNativeEventWandThumbClick)));
         }
 
-        [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event)
+        [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event, const char* gate)
         {
             // Conditional chord leases are evaluated against the raw sample
             // before the consumer's next frame callback can publish ownership.
-            if (eventNameMatches(event, kNativeEventWandTrigger) &&
+            const bool providerSuppressed = eventNameMatches(event, kNativeEventWandTrigger) &&
                 isProviderOpenVrGameInputSuppressed(isSecondaryWandInputEvent(event) ?
-                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right)) return true;
-            return input_remap_policy::shouldSuppressNativeTriggerAction(
-                makeNativeActionSuppressionInput(
-                    true,
-                    event,
-                    eventNameMatches(event, kNativeEventWandTrigger)));
+                    input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
+            const auto input = makeNativeActionSuppressionInput(
+                true, event, eventNameMatches(event, kNativeEventWandTrigger));
+            const bool suppressed = providerSuppressed || input_remap_policy::shouldSuppressNativeTriggerAction(input);
+            traceNativeWeaponInputGate(gate, event, input, suppressed, providerSuppressed);
+            return suppressed;
         }
 
         [[nodiscard]] bool shouldSuppressLegacyPipboyTriggerOpenEvent(const RE::InputEvent* event)
@@ -1557,7 +1580,7 @@ namespace rock::input_remap_runtime
                 return;
             }
 
-            if (shouldSuppressNativeTriggerActionEvent(inputEvent)) {
+            if (shouldSuppressNativeTriggerActionEvent(inputEvent, "ready-trigger")) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -2626,7 +2649,7 @@ namespace rock::input_remap_runtime
 
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)
     {
-        return shouldSuppressNativeTriggerActionEvent(event);
+        return shouldSuppressNativeTriggerActionEvent(event, "attack-trigger");
     }
 
     bool isNativePipboyInputSuppressionActive()

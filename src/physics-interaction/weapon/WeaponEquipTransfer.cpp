@@ -1,6 +1,8 @@
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/NativeMemory.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
@@ -11,6 +13,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 
 #include "rock_support/Fo4VrRuntime.h"
+#include <REL/Relocation.h>
 
 #include <array>
 #include <utility>
@@ -19,6 +22,33 @@ namespace rock::weapon_equip_transfer
 {
     namespace
     {
+        [[nodiscard]] bool clearPreviousWeaponRestore(RE::PlayerCharacter* player) noexcept
+        {
+            // FO4VR 1.2.72: Unequip at 140E745F0 snapshots the player's saved
+            // one-hand items, clears them at 140E7482D, then re-equips each via
+            // 140E7486D -> 140E714A0 -> EquipObject. Intentional ROCK detach
+            // must invalidate that restoration before RemoveItem can unequip.
+            // Use the native destructor/clear routine (140F7CF70), not the
+            // incompatible CommonLib PlayerCharacter::lastOneHandItems layout.
+            constexpr std::array<std::uint8_t, 17> expected{
+                0x48, 0x89, 0x5C, 0x24, 0x18, 0x56, 0x48, 0x83, 0xEC,
+                0x20, 0x48, 0x8D, 0xB1, 0x08, 0x11, 0x00, 0x00,
+            };
+            if (!player || !REL::Module::IsVR() ||
+                REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) return false;
+            const auto address = REL::Offset(0xF7CF70).address();
+            std::array<std::uint8_t, expected.size()> actual{};
+            if (!native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const void*>(address), actual.data(), actual.size()) ||
+                actual != expected) {
+                ROCK_LOG_WARN(Weapon, "Equipped detach refused: previous-weapon restore reset entry validation failed");
+                return false;
+            }
+            using ClearLastOneHandItems = void (*)(RE::PlayerCharacter*);
+            reinterpret_cast<ClearLastOneHandItems>(address)(player);
+            return true;
+        }
+
         struct InventoryWeaponStack
         {
             bool found = false;
@@ -249,6 +279,8 @@ namespace rock::weapon_equip_transfer
             return "dropped-reference-unavailable";
         case DropReason::Dropped:
             return "dropped";
+        case DropReason::PreviousWeaponRestoreResetUnavailable:
+            return "previous-weapon-restore-reset-unavailable";
         default:
             return "not-attempted";
         }
@@ -479,7 +511,17 @@ namespace rock::weapon_equip_transfer
         }
         removeData.stackData.push_back(stack.stackID);
 
+        if (!clearPreviousWeaponRestore(player)) {
+            result.reason = DropReason::PreviousWeaponRestoreResetUnavailable;
+            return result;
+        }
         result.handle = player->RemoveItem(removeData);
+        const auto equippedAfterDrop = readEquippedWeaponSnapshot();
+        ROCK_LOG_INFO(Weapon,
+            "Equipped detach native removal: weapon={:08X} stack={} previousRestoreCleared=yes remainingEquipped={:08X} handleValid={}",
+            result.formID, result.stackID,
+            equippedAfterDrop.weapon ? equippedAfterDrop.weapon->GetFormID() : 0,
+            static_cast<bool>(result.handle));
         if (!result.handle) {
             result.reason = DropReason::RemoveItemFailed;
             return result;
