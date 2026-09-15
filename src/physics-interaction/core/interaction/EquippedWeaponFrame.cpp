@@ -1857,9 +1857,11 @@ namespace rock
         // Normalize the presentation baseline before any ROCK grip/collision
         // consumer reads it. Animation graph scale and an explicit Weapon
         // animation owner remain authoritative over this default.
+        // A transition can remain active after the exact model is visible;
+        // waiting for completion leaves its first equipped frames undersized.
         if (_lifecycle.initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable &&
             runtime.localSkeletonReady && !runtime.localMenuBlocking && !runtime.compatibilityConfigBlocking &&
-            runtime.weaponDrawn && !equippedWeaponTransitionActive && equippedGenerationMatchesForm &&
+            runtime.weaponDrawn && equippedGenerationMatchesForm &&
             weaponNode->parent && f4vr::isNodeVisible(weaponNode) &&
             (nativeAuthorityFlags & authored_weapon_grip_capture_policy::kWeapon) == 0) {
             const float parentScale = weaponNode->parent->world.scale;
