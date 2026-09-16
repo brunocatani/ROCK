@@ -1488,7 +1488,7 @@ namespace rock
             _session.weaponGenerationKey = 0;
             _weaponNodeLocalBaseline = currentWeaponNode->local;
             _hasWeaponNodeLocalBaseline = true;
-            return rebindLeftCarryFramesToWeapon(
+            return rebindCarryFramesToWeapon(
                 currentWeaponNode,
                 0,
                 currentEquippedWeaponOwnershipKey,
@@ -1523,7 +1523,7 @@ namespace rock
         }
 
         if ((generationChanged || weaponRootChanged) &&
-            !rebindLeftCarryFramesToWeapon(
+            !rebindCarryFramesToWeapon(
                 currentWeaponNode,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey,

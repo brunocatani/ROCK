@@ -1192,7 +1192,10 @@ namespace rock
             return false;
         }
 
+        // Touching is still native carry: hovering support must not freeze
+        // the aim cache before the first real two-hand grab/collision build.
         if (_session.state == TwoHandedState::Inactive ||
+            _session.state == TwoHandedState::Touching ||
             _session.state == TwoHandedState::PrimaryOnly) {
             return true;
         }
@@ -1802,9 +1805,7 @@ namespace rock
         // authority (visual-only/full) are orthogonal to handoff capability.
         // AttachOnly glue alone cannot inherit the firing grip. The cylinder
         // gate below keeps every other promotable grip tied to the firing grip.
-        if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(
-                supportGrip.active,
-                supportGrip.attachOnly)) {
+        if (!supportGrip.active || supportGrip.attachOnly) {
             outReason = "support-grip-not-promotable";
             return false;
         }
@@ -1816,9 +1817,26 @@ namespace rock
             outReason = "canonical-frame-not-current";
             return false;
         }
-        // Entry is a confirmed release of the current firing grip, with
-        // the other hand still owning support. The acquisition radius no
-        // longer limits an intentional transfer after both grips are held.
+        // Releasing a forward support hold leaves that hand carrying the
+        // weapon; takeover applies only when it actually occupies the firing
+        // station. Use the captured grip point, not the offset palm of a cup.
+        firing_grip_reattach_zone_policy::ZoneInput promotionInput{};
+        const float reach = weapon_support_authority_policy::firingGripCaptureReach(
+            supportGrip.acquisitionSource == WeaponInteractionAcquisitionSource::FiringGripZone,
+            _handlingSettings.firingGripReattachRadiusGameUnits,
+            _handlingSettings.firingGripPromotionRadiusGameUnits);
+        if (!tryBuildFiringGripZoneInput(weaponNode, _session.weaponGenerationKey,
+                _session.equippedWeaponOwnershipKey, reach, promotionInput)) {
+            outReason = "firing-zone-unavailable";
+            return false;
+        }
+        const auto supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
+        promotionInput.palmWorld = {supportGripWorld.x, supportGripWorld.y, supportGripWorld.z};
+        if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(supportGrip.active,
+                supportGrip.attachOnly, firing_grip_reattach_zone_policy::evaluateZone(promotionInput).inside)) {
+            outReason = "support-outside-firing-zone";
+            return false;
+        }
         RE::NiTransform handTransform{};
         if (!tryGetSolverHandTransform(supportHandIsLeft, handTransform)) {
             outReason = "receiving-hand-frame-unavailable";
@@ -1843,23 +1861,22 @@ namespace rock
          * The identity checks above validate the current canonical.
          */
         RE::NiTransform newFiringHandWeaponLocal{};
-        bool usedAuthoredCanonical = false;
         const char* holdSource = nullptr;
         if (supportHandIsLeft) {
-            if (!tryComputeMirroredLeftFiringHandWeaponLocal(
-                    newFiringHandWeaponLocal,
-                    &usedAuthoredCanonical)) {
+            RE::NiPoint3 capturedFiringGrip{};
+            const char* captureFailure = nullptr;
+            if (!tryBuildCurrentLeftFiringGripCapture(weaponNode, _session.weaponGenerationKey,
+                    _session.equippedWeaponOwnershipKey, newFiringHandWeaponLocal, capturedFiringGrip, &captureFailure)) {
                 restoreFrikPrimaryWeaponPose();
-                outReason = "firing-mirror-unavailable";
+                outReason = captureFailure ? captureFailure : "firing-mirror-unavailable";
                 return false;
             }
-            holdSource = usedAuthoredCanonical ? "authored-mirror" : "native-mirror";
+            holdSource = _firing.rightCanonicalSource == RightFiringCanonicalSource::AuthoredAnimation ?
+                "authored-mirror" : "native-mirror";
         } else {
             newFiringHandWeaponLocal = _firing.rightCanonicalHandWeaponLocal;
-            holdSource = _firing.rightCanonicalSource ==
-                    RightFiringCanonicalSource::AuthoredAnimation ?
-                "authored-canonical" :
-                "native-canonical";
+            holdSource = _firing.rightCanonicalSource == RightFiringCanonicalSource::AuthoredAnimation ?
+                "authored-canonical" : "native-canonical";
         }
         beginHandVisualReturn(isFiringHandLeft(), "ambidextrous-firing-hand-promotion");
         if (_handlingSettings.detachAuthority ==

@@ -1478,7 +1478,7 @@ namespace rock
          * frame - to the new node and generation. A right-carry session has
          * no left frames to rebind and succeeds unconditionally.
          */
-        bool rebindLeftCarryFramesToWeapon(
+        bool rebindCarryFramesToWeapon(
             RE::NiNode* currentWeaponNode,
             std::uint64_t targetWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,

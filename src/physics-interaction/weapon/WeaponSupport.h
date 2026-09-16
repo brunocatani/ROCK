@@ -106,7 +106,8 @@ namespace rock::weapon_support_authority_policy
 
     inline constexpr bool canPromoteSupportGripToFiringGrip(
         bool supportGripActive,
-        bool attachOnly)
+        bool attachOnly,
+        bool insideFiringZone)
     {
         // Authored versus dynamic is pose selection, while VisualOnlySupport
         // controls transform authority before a handoff. Neither changes an
@@ -114,7 +115,7 @@ namespace rock::weapon_support_authority_policy
         // contract that may never inherit firing-grip ownership; promotion is
         // still independently gated by ambidextrous mode, infrastructure, and
         // firing-grip cylinder at the call site.
-        return supportGripActive && !attachOnly;
+        return supportGripActive && !attachOnly && insideFiringZone;
     }
 
     struct DynamicHandoffGripCaptureInput
@@ -398,6 +399,22 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return activeEquippedOwnershipKey != 0 &&
                activeEquippedOwnershipKey == currentEquippedOwnershipKey &&
                (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
+    }
+
+    struct NativeAimRebindInput
+    {
+        bool nativeRightCarry{ false };
+        bool frameValid{ false };
+        std::uint64_t capturedOwnershipKey{ 0 };
+        std::uint64_t currentOwnershipKey{ 0 };
+        bool sameRoot{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool canRebindNativeAim(const NativeAimRebindInput& input) noexcept
+    {
+        return input.frameValid && input.currentOwnershipKey != 0 &&
+            input.capturedOwnershipKey == input.currentOwnershipKey &&
+            (!input.nativeRightCarry || input.sameRoot);
     }
 
     struct PrimaryReleaseIntentState

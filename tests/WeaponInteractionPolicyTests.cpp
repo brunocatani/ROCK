@@ -3492,11 +3492,11 @@ int main()
             false,
             true));
     ok &= expectTrue("active support may attempt handoff regardless of authored or dynamic pose selection",
-        canPromoteSupportGripToFiringGrip(true, false));
+        canPromoteSupportGripToFiringGrip(true, false, true));
     ok &= expectFalse("inactive support cannot attempt handoff",
-        canPromoteSupportGripToFiringGrip(false, false));
+        canPromoteSupportGripToFiringGrip(false, false, true));
     ok &= expectFalse("AttachOnly support never inherits firing-grip ownership",
-        canPromoteSupportGripToFiringGrip(true, true));
+        canPromoteSupportGripToFiringGrip(true, true, true));
 
     using rock::weapon_support_authority_policy::DynamicHandoffGripCaptureInput;
     using rock::weapon_support_authority_policy::shouldCaptureDynamicHandoffGrip;
@@ -3552,6 +3552,11 @@ int main()
         ok &= expectFalse("no-contact handoff cannot bypass an exclusive part whitelist",
             rock::canAcquireFiringGripHandoff(true, normal, true));
     }
+    ok &= expectFalse("forward support release cannot become a firing-hand takeover",
+        canPromoteSupportGripToFiringGrip(true, false, false));
+    ok &= expectTrue("forward support remains a carry anchor after primary detaches",
+        rock::weapon_support_authority_policy::canCarryAfterFiringGripDetach(
+            rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     const DynamicHandoffGripCaptureInput dynamicHandoffGrip{
         .normalSupportAcquisition = true,
         .ambidextrousHandoffEnabled = true,
@@ -4647,6 +4652,22 @@ int main()
         state = transferred::State::Held;
         ok &= expectFalse("unarmed release edge cannot drop a retained weapon",
             transferred::advance(state, false, false, true));
+    }
+
+    {
+        namespace ownership = rock::equipped_weapon_manual_ownership_policy;
+        ownership::NativeAimRebindInput aim{.nativeRightCarry = true, .frameValid = true,
+            .capturedOwnershipKey = 71, .currentOwnershipKey = 71, .sameRoot = true};
+        ok &= expectTrue("right-fired native aim survives a same-item collision rebuild", ownership::canRebindNativeAim(aim));
+        aim.sameRoot = false;
+        ok &= expectFalse("native right replacement model must capture fresh aim", ownership::canRebindNativeAim(aim));
+        aim.nativeRightCarry = false;
+        ok &= expectTrue("left carry preserves its existing same-item rebind contract", ownership::canRebindNativeAim(aim));
+        aim.currentOwnershipKey = 72;
+        ok &= expectFalse("another equipped instance cannot inherit aim", ownership::canRebindNativeAim(aim));
+        aim.currentOwnershipKey = 71;
+        aim.frameValid = false;
+        ok &= expectFalse("missing aim cannot be made valid by a rebuild", ownership::canRebindNativeAim(aim));
     }
 
     return ok ? 0 : 1;

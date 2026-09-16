@@ -542,6 +542,14 @@ namespace rock
             currentWeaponGenerationKey,
             currentEquippedWeaponOwnershipKey);
 
+        const auto tryReleasedPrimaryHandoff = [&]() {
+            if (!handlingSettings.ambidextrousHandoffEnabled || !primaryGripInput.released || !supportOwned) return false;
+            const char* reason = "not-attempted";
+            if (tryPromoteSupportGripToFiringGrip(_session.weaponNode, dt, reason)) return true;
+            ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Primary release handoff not applied: hand={} reason={}; evaluating detach policy", firingHandName(), reason);
+            return false;
+        };
+
         switch (_session.state) {
         case TwoHandedState::Inactive:
             if (supportTouchingSupport && !supportHandHoldingObject) {
@@ -658,19 +666,10 @@ namespace rock
                     }
                     transitionToInactive(ownsWeaponTransform());
                 }
-            } else if (handlingSettings.ambidextrousHandoffEnabled && primaryGripInput.released && supportOwned) {
-                // An intentional release with retained support has one outcome:
-                // transfer firing ownership. Failed capture must not fall into
-                // the independent detach/drop branch below.
-                const char* refusal = "not-attempted";
-                if (!tryPromoteSupportGripToFiringGrip(_session.weaponNode, dt, refusal)) {
-                    if (isFiringHandLeft()) _gripReleaseRetained.left = true;
-                    else _gripReleaseRetained.right = true;
-                    _firing.primaryReleaseIntent.pending = false;
-                    _firing.primaryReleaseDebounce = {};
-                    ROCK_LOG_WARN(Weapon, "Weapon hand transfer retained both grips: primary={} reason={}", firingHandName(), refusal);
-                    updateGripping(_session.weaponNode, dt);
-                }
+            } else if (tryReleasedPrimaryHandoff()) {
+                // Only a successful takeover consumes the primary release.
+                // A distant support grip or unavailable mirror must still
+                // reach the ordinary detach-to-support transition below.
             } else if (handlingSettings.primaryDetachEnabled &&
                        !primaryGripInput.held) {
                 if (weapon_support_authority_policy::

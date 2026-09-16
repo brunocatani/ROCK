@@ -552,20 +552,23 @@ namespace rock
         }
     }
 
-    bool TwoHandedGrip::rebindLeftCarryFramesToWeapon(
+    bool TwoHandedGrip::rebindCarryFramesToWeapon(
         RE::NiNode* currentWeaponNode,
         const std::uint64_t targetWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey,
         const bool logMissingAimFrame)
     {
-        if (usesNativeRightCarry()) {
-            return true;
-        }
-        if (!_firing.rightNativeWeaponAimFrame.valid ||
-            _firing.rightNativeWeaponAimFrame.weaponOwnershipKey !=
-                currentEquippedWeaponOwnershipKey ||
-            !isFiniteTransform(
-                _firing.rightNativeWeaponAimFrame.weaponInWandOrientation)) {
+        if (!equipped_weapon_manual_ownership_policy::canRebindNativeAim({
+                .nativeRightCarry = usesNativeRightCarry(),
+                .frameValid = _firing.rightNativeWeaponAimFrame.valid &&
+                    isFiniteTransform(_firing.rightNativeWeaponAimFrame.weaponInWandOrientation),
+                .capturedOwnershipKey = _firing.rightNativeWeaponAimFrame.weaponOwnershipKey,
+                .currentOwnershipKey = currentEquippedWeaponOwnershipKey,
+                .sameRoot = _firing.rightNativeWeaponAimFrame.weaponNodeIdentity == currentWeaponNode,
+            })) {
+            // Native right carry remains usable before its first aim sample.
+            // Left carry needs the captured orientation and must fail closed.
+            if (usesNativeRightCarry()) return true;
             if (logMissingAimFrame) {
                 ROCK_LOG_WARN(
                     Weapon,
@@ -575,6 +578,9 @@ namespace rock
             }
             return false;
         }
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: native aim rebound hand={} generation={:016X}->{:016X} ownership={:016X}",
+            firingHandName(), _firing.rightNativeWeaponAimFrame.weaponGenerationKey,
+            targetWeaponGenerationKey, currentEquippedWeaponOwnershipKey);
         _firing.rightNativeWeaponAimFrame.weaponNodeIdentity =
             currentWeaponNode;
         _firing.rightNativeWeaponAimFrame.weaponGenerationKey =
