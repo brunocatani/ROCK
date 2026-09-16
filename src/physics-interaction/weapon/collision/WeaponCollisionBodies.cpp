@@ -355,6 +355,8 @@ namespace rock
         instance.generatedLocalTrianglesGame.clear();
         instance.generatedSourceLocalPointsGame.clear();
         instance.generatedSourceLocalTrianglesGame.clear();
+        instance.generatedTriangleIndex.clear();
+        instance.generatedSourceTriangleIndex.clear();
         instance.generatedPointCount = 0;
         instance.generatedSourceGroupId = 0;
         instance.semantic = {};

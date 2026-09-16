@@ -805,9 +805,8 @@ namespace rock
             return false;
         }
 
-        std::scoped_lock poseLock(_compoundPoseMutex);
         if (_compoundPoseScratch.size() != _createdCompoundChildCount ||
-            _pendingCompoundChildTransforms.size() != _createdCompoundChildCount) {
+            _preparedCompoundChildTransforms.size() != _createdCompoundChildCount) {
             return false;
         }
 
@@ -826,10 +825,14 @@ namespace rock
                     _compoundPoseScratch[i].shapeInWeapon,
                     _createdCenterWeaponLocal,
                     weaponScale,
-                    _pendingCompoundChildTransforms[i])) {
+                    _preparedCompoundChildTransforms[i])) {
                 return false;
             }
         }
+        std::scoped_lock poseLock(_compoundPoseMutex);
+        if (_pendingCompoundChildTransforms == _preparedCompoundChildTransforms) return true;
+        std::copy(_preparedCompoundChildTransforms.begin(), _preparedCompoundChildTransforms.end(),
+            _pendingCompoundChildTransforms.begin());
         ++_queuedCompoundPoseSequence;
         return true;
     }
@@ -1054,6 +1057,7 @@ namespace rock
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
             _compoundPoseScratch.resize(compoundGeometry.children.size());
+            _preparedCompoundChildTransforms.resize(compoundGeometry.children.size());
             _pendingCompoundChildTransforms.resize(compoundGeometry.children.size());
             for (std::size_t i = 0; i < compoundGeometry.children.size(); ++i) {
                 _compoundPoseScratch[i].shapeInWeapon = compoundGeometry.children[i].shapeInWeapon;
@@ -1718,6 +1722,7 @@ namespace rock
         {
             std::scoped_lock poseLock(_compoundPoseMutex);
             _compoundPoseScratch.clear();
+            _preparedCompoundChildTransforms.clear();
             _pendingCompoundChildTransforms.clear();
             _queuedCompoundPoseSequence = 0;
             _consumedCompoundPoseSequence = 0;

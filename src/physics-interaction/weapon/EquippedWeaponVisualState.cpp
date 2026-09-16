@@ -4,6 +4,7 @@
 #include "RE/NetImmerse/NiNode.h"
 
 #include "rock_support/Fo4VrRuntime.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include <array>
 #include <cstdio>
@@ -65,7 +66,9 @@ namespace rock::equipped_weapon_visual_state
             if (!asNode) {
                 return false;
             }
-            for (const auto& child : asNode->children) {
+            const auto& children = asNode->children;
+            for (decltype(children.capacity()) slot = 0; slot < children.capacity() && context.budget > 0; ++slot) {
+                const auto& child = children[slot];
                 if (child && findExactInstance(child.get(), depth - 1, pathDepth + 1, context)) {
                     return true;
                 }
@@ -76,23 +79,47 @@ namespace rock::equipped_weapon_visual_state
 
     Snapshot observe(
         const std::uint32_t weaponBaseFormID,
-        const std::uintptr_t excludedInstanceAddress) noexcept
+        const std::uintptr_t excludedInstanceAddress,
+        ObservationCache* cache) noexcept
     {
+        performance_profiler::ScopedTimer timer(performance_profiler::Scope::WeaponVisualObservation);
         Snapshot snapshot{};
         if (weaponBaseFormID == 0) {
             return snapshot;
         }
 
         auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
-        snapshot.weaponRoot = firstPersonSkeleton ?
-            f4vr::findNode(firstPersonSkeleton, "Weapon") :
-            nullptr;
+        auto* cachedRoot = cache ? cache->weaponPath.resolve(firstPersonSkeleton) : nullptr;
+        if (cachedRoot && (!cachedRoot->name.c_str() || std::strcmp(cachedRoot->name.c_str(), "Weapon") != 0)) cachedRoot = nullptr;
+        snapshot.weaponRoot = cachedRoot ? cachedRoot->IsNode() :
+            (firstPersonSkeleton ? f4vr::findNode(firstPersonSkeleton, "Weapon") : nullptr);
         if (!snapshot.weaponRoot) {
+            if (cache) *cache = {};
             return snapshot;
+        }
+        if (cache && !cachedRoot) {
+            cache->weaponPath.capture(firstPersonSkeleton, snapshot.weaponRoot);
+            cache->instancePath.clear();
         }
 
         char token[16]{};
         std::snprintf(token, sizeof(token), "(%08X)", weaponBaseFormID);
+        if (cache && cache->formID == weaponBaseFormID && cache->excludedInstance == excludedInstanceAddress) {
+            snapshot.ancestorPathVisible = true;
+            auto* instance = cache->instancePath.resolve(snapshot.weaponRoot, [&](RE::NiAVObject* node) {
+                if (snapshot.pathNodeCount < snapshot.pathNodes.size()) snapshot.pathNodes[snapshot.pathNodeCount++] = node;
+            });
+            if (instance && instance->name.c_str() && std::strstr(instance->name.c_str(), token) &&
+                reinterpret_cast<std::uintptr_t>(instance) != excludedInstanceAddress) {
+                snapshot.exactInstance = instance;
+                for (std::size_t i = 0; i + 1 < snapshot.pathNodeCount; ++i)
+                    snapshot.ancestorPathVisible &= isLocallyVisible(snapshot.pathNodes[i]);
+                snapshot.instanceLocallyVisible = isLocallyVisible(instance);
+                return snapshot;
+            }
+            snapshot.pathNodeCount = 0;
+            snapshot.ancestorPathVisible = false;
+        }
         SearchContext context{};
         context.token = token;
         context.excludedInstanceAddress = excludedInstanceAddress;
@@ -102,8 +129,14 @@ namespace rock::equipped_weapon_visual_state
                 kMaximumInstanceSearchDepth,
                 0,
                 context)) {
+            if (cache) {
+                cache->formID = weaponBaseFormID;
+                cache->excludedInstance = excludedInstanceAddress;
+                cache->instancePath.capture(snapshot.weaponRoot, context.result.exactInstance);
+            }
             return context.result;
         }
+        if (cache) cache->instancePath.clear();
         return snapshot;
     }
 

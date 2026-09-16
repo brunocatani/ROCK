@@ -148,6 +148,7 @@ namespace rock
             bool releaseSceneGraph);
 
         EquipVisualBridge _bridge;
+        equipped_weapon_visual_state::ObservationCache _visualCache;
         equipped_weapon_transition_policy::State _policyState{};
         Identity _observedIdentity{};
         Identity _boundIdentity{};

@@ -232,7 +232,7 @@ namespace rock
         if (current.valid() && input.visualAuthorityAvailable && (_active || input.localSkeletonReady) &&
             !input.menuBlocking && !input.compatibilityBlocking) {
             visual = equipped_weapon_visual_state::observe(current.formID,
-                _active ? _supersededNativeInstanceNode : 0);
+                _active ? _supersededNativeInstanceNode : 0, &_visualCache);
             _presentationWeaponFormID = current.formID;
             _presentationKnown = input.localSkeletonReady;
             _nativeRenderable = visual.exactInstance && visual.ancestorPathVisible && visual.instanceLocallyVisible;
@@ -631,6 +631,7 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::shutdown()
     {
+        _visualCache = {};
         _presentationKnown = false;
         _presentationWeaponFormID = 0;
         _nativeRenderable = false;
@@ -665,6 +666,7 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::abandonSceneGraph()
     {
+        _visualCache = {};
         _presentationKnown = false;
         _presentationWeaponFormID = 0;
         _nativeRenderable = false;
@@ -734,6 +736,7 @@ namespace rock
         if (!identity.valid()) {
             return;
         }
+        _visualCache = {};
         const bool completesSuppressedHeldDraw =
             _waitingForExpectedIdentity &&
             (source == Source::HeldTriggerEquip ||

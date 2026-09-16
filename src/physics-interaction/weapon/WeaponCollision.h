@@ -23,6 +23,8 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
+#include "physics-interaction/weapon/WeaponTriangleIndex.h"
+#include "physics-interaction/weapon/WeaponScenePath.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -414,6 +416,8 @@ namespace rock
             std::vector<TriangleData> generatedLocalTrianglesGame{};
             std::vector<RE::NiPoint3> generatedSourceLocalPointsGame{};
             std::vector<TriangleData> generatedSourceLocalTrianglesGame{};
+            WeaponTriangleIndex generatedTriangleIndex;
+            WeaponTriangleIndex generatedSourceTriangleIndex;
             std::uint32_t generatedPointCount{ 0 };
             std::uintptr_t generatedSourceGroupId{ 0 };
             WeaponPartClassification semantic{};
@@ -679,6 +683,11 @@ namespace rock
             // combine with a stable form identity for persisted
             // authored-pose lookups.
             std::uint64_t observedInstanceContentKey{ 0 };
+            // Game-thread, one runtime frame. Cheap pointer witnesses also
+            // invalidate an equip switch that occurs within that frame.
+            mutable weapon_generation_identity_policy::EquippedWeaponGenerationIdentity frameClassification{};
+            mutable std::uint64_t classificationFrame{ 0 };
+            mutable bool classificationValid{ false };
         };
 
         // State owned by the WeaponCollisionBodies module: the live and
@@ -786,6 +795,15 @@ namespace rock
         // Default-initialized on purpose; see the struct comment.
         AtomicBodyPublicationState _published;
         EvidenceSnapshotState _evidence;
+        struct EmitterPath
+        {
+            weapon_scene::Path<RE::NiAVObject, 16> transform;
+            weapon_scene::Path<RE::NiAVObject, 16> effect;
+            std::size_t transformRoot = 0;
+            std::size_t effectRoot = 0;
+        };
+        // Game-thread lookup cache; only the value snapshot crosses threads.
+        std::array<EmitterPath, MAX_WEAPON_EMITTERS> _emitterPaths{};
         GeneratedSourceState _sources{};
         DriveControlState _drive{};
         CollisionDiagnosticsState _diagnostics{};

@@ -105,6 +105,14 @@ namespace rock::performance_profiler
                 return "weaponCollision";
             case Scope::WeaponCollisionTransforms:
                 return "weaponCollisionTransforms";
+            case Scope::WeaponContactProbe:
+                return "weaponContactProbe";
+            case Scope::WeaponEmitterRefresh:
+                return "weaponEmitterRefresh";
+            case Scope::WeaponIdentityRead:
+                return "weaponIdentityRead";
+            case Scope::WeaponVisualObservation:
+                return "weaponVisualObservation";
             case Scope::GeneratedBodyContactRegistry:
                 return "generatedBodyRegistry";
             case Scope::WeaponColliderBuild:

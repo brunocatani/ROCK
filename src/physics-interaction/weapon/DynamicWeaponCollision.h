@@ -268,6 +268,8 @@ namespace rock
         havok_compound_shape_builder::DynamicCompoundShape _compoundShape{};
         mutable std::mutex _compoundPoseMutex;
         std::vector<WeaponCollision::CompoundChildPoseSnapshot> _compoundPoseScratch;
+        // Game-thread preparation stays outside the physics publication lock.
+        std::vector<havok_compound_shape_builder::ChildTransform> _preparedCompoundChildTransforms;
         std::vector<havok_compound_shape_builder::ChildTransform> _pendingCompoundChildTransforms;
         std::uint64_t _queuedCompoundPoseSequence{ 0 };
         std::uint64_t _consumedCompoundPoseSequence{ 0 };

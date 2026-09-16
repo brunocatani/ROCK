@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/weapon/WeaponSceneChildren.h"
+#include "physics-interaction/weapon/WeaponScenePath.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTracePolicy.h"
 
 #include <array>
@@ -28,6 +29,7 @@ namespace
     };
     struct Node
     {
+        Node* parent{};
         SparseChildren children;
         Node* IsNode() { return this; }
     };
@@ -36,6 +38,40 @@ namespace
 int main()
 {
     using rock::weapon_scene::visitScene;
+    {
+        Node root, branch, leaf, replacement, newRoot;
+        branch.parent = &root;
+        leaf.parent = &branch;
+        root.children.slots[7].value = &branch;
+        branch.children.slots[6].value = &leaf;
+        rock::weapon_scene::Path<Node> path;
+        if (!path.capture(&root, &leaf)) return 27;
+        std::size_t visits = 0;
+        if (path.resolve(&root, [&](Node*) { ++visits; }) != &leaf || visits != 3) return 28;
+        if (path.resolve(&newRoot)) return 29;
+        // Replacing an intermediate child must stop before any stale descendant.
+        root.children.slots[7].value = &replacement;
+        visits = 0;
+        if (path.resolve(&root, [&](Node*) { ++visits; }) || visits != 1) return 30;
+        root.children.slots[7].value = &branch;
+        branch.children.slots[6].value = nullptr;
+        if (path.resolve(&root)) return 31;
+        branch.children.slots[2].value = &leaf;
+        if (path.resolve(&root) || !path.capture(&root, &leaf) || path.resolve(&root) != &leaf) return 32;
+        branch.children.slotCount = 1;
+        if (path.resolve(&root)) return 33;
+        branch.children.slotCount = 8;
+        path.clear();
+        if (path.resolve(&root)) return 34;
+        rock::weapon_scene::Path<Node, 1> shortPath;
+        if (shortPath.capture(&root, &leaf) || shortPath.resolve(&root)) return 35;
+        if (!path.capture(&root, &root) || path.resolve(&root) != &root) return 36;
+        if (path.capture(&root, &replacement) || path.resolve(&root)) return 37;
+        if (!path.capture(&root, &leaf)) return 38;
+        // A newly inserted sibling can change first-match discovery semantics.
+        root.children.slots[0].value = &replacement;
+        if (path.resolve(&root)) return 39;
+    }
     Node skeleton, hand, weapon, muzzle;
     // Reproduce a weapon branch after holes in the skeleton's child slots.
     skeleton.children.slots[6].value = &hand;

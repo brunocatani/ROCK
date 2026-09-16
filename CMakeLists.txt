@@ -301,6 +301,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponInteractionPolicyTests)
 
+  add_executable(ROCKWeaponTriangleIndexTests "${ROOT_DIR}/tests/WeaponTriangleIndexTests.cpp")
+  target_compile_features(ROCKWeaponTriangleIndexTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponTriangleIndexTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponTriangleIndexTests)
+
   add_executable(ROCKVirtualHolstersCompatibilityTests
     "${ROOT_DIR}/tests/VirtualHolstersCompatibilityTests.cpp"
   )
@@ -845,6 +850,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
     ROCKWeaponInteractionPolicyTests
+    ROCKWeaponTriangleIndexTests
     ROCKEquippedWeaponShoulderCoordinatorPolicyTests
     ROCKInteractionSafetyPolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
