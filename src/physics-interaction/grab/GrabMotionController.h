@@ -534,6 +534,7 @@ namespace rock::grab_motion_controller
     struct VisualHandPublishInput
     {
         bool hasTelemetryCapture = false;
+        bool acquisitionPending = false;
         bool touchHeldPhase = false;
         bool acquisitionVisualEligible = false;
         bool hasPivotTrackingError = false;
@@ -589,6 +590,10 @@ namespace rock::grab_motion_controller
         VisualHandPublishDecision decision{};
         if (!input.hasTelemetryCapture) {
             decision.reason = "missingTelemetryCapture";
+            return decision;
+        }
+        if (input.acquisitionPending) {
+            decision.reason = "awaitingGripAcquisition";
             return decision;
         }
         if (!input.hasPivotTrackingError) {

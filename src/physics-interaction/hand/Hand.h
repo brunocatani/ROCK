@@ -5,6 +5,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/GrabAcquisition.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -1345,6 +1346,7 @@ namespace rock
         int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
+        grab_acquisition::Transition _grabAcquisition;
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         grab_three_phase::ObjectGripArea _grabObjectGripAtGrab{};
         held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};

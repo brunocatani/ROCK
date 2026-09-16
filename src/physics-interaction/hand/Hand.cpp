@@ -280,6 +280,7 @@ namespace rock
         }
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
@@ -389,6 +390,7 @@ namespace rock
         _isHoldingFlag.store(false, std::memory_order_release);
         _nearbyGrabDamping.clear();
         _grabFrame.clear();
+        _grabAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;

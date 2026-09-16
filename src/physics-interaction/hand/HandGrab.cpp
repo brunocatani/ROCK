@@ -5480,9 +5480,7 @@ namespace rock
         // of a normal NiTransform inverse. Transform-B stays on the selected
         // BODY-local grip pivot captured by the authority freeze.
         const RE::NiTransform desiredBodyWorldAtCreation =
-            _grabFrame.hasTelemetryCapture ?
-                _grabFrame.authority.desiredBodyWorldAtGrab :
-                grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, _grabFrame.proxyAuthorityBodyHandSpace);
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, _grabFrame.proxyAuthorityBodyHandSpace);
         const RE::NiTransform desiredBodyTransformProxySpace =
             grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyWorldAtCreation);
         const RE::NiPoint3 relationPivotBConstraintLocalGame =
@@ -10652,6 +10650,7 @@ namespace rock
         const bool meshGrabFound = surface.meshGrabFound;
         const char* grabPointMode = surface.pointMode;
         const char* grabFallbackReason = surface.fallbackReason;
+        _grabAcquisition = {};
             if (grab_target::isRagdoll(sel.targetKind) &&
                 (!surface.surfaceHit.valid || !surface.surfaceHit.sourceShape ||
                     surface.surfaceHit.sourceNode != _grabFrame.heldNode)) {
@@ -10708,13 +10707,39 @@ namespace rock
                 }
 
                 const char* driveReason = joiningPeerHeldObject ? "joining-peer-held-loose-object" : "ordinary-dynamic-loose-object";
-                if (!createProxyConstraintGrabDrive(
+                RE::NiTransform initialProxyWorld = proxyFrameWorldAtGrab;
+                RE::NiPoint3 initialPivotWorld = grabPivotAWorld;
+                bool acquisitionReady = true;
+                if (!joiningPeerHeldObject && sel.targetKind == grab_target::Kind::LooseObject &&
+                    (_grabFrame.syntheticLooseWeaponPrimaryAttach || sel.forcedArrival)) {
+                    acquisitionReady = _grabAcquisition.begin(proxyFrameWorldAtGrab,
+                        _grabFrame.authority.bodyWorldAtGrab, _grabFrame.proxyAuthorityBodyHandSpace,
+                        _grabFrame.authority.pivotBConstraintLocalGame);
+                    if (acquisitionReady && _grabAcquisition.pending) {
+                        initialProxyWorld = _grabAcquisition.sample(proxyFrameWorldAtGrab,
+                            _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame, 0.0f);
+                        initialPivotWorld = generatedProxyLocalPointToWorld(initialProxyWorld,
+                            _grabFrame.authority.pivotAHandBodyLocalGame);
+                        acquisitionReady = isFiniteNiTransform(initialProxyWorld) && initialProxyWorld.scale > 0.0f;
+                        // The joint starts satisfied. Move its target toward the
+                        // current hand with full motor support, rather than sagging
+                        // under a second force ramp during the same transition.
+                        _grabFrame.fadeInGrabConstraint = false;
+                        _grabFrame.motorFadeReason = "coordinatedGripAcquisition";
+                        ROCK_LOG_INFO(Hand,
+                            "{} GRIP_ACQUIRE begin trace={} duration={:.3f}s rotation={:.2f}deg source={}",
+                            handName(), _grabFrame.traceId, _grabAcquisition.durationSeconds,
+                            grab_acquisition::rotationDegrees(_grabFrame.authority.bodyWorldAtGrab, initialDesiredBodyWorld),
+                            grabFallbackReason);
+                    }
+                }
+                if (!acquisitionReady || !createProxyConstraintGrabDrive(
                         bhkWorld,
                         world,
                         objectBodyId,
-                        proxyFrameWorldAtGrab,
+                        initialProxyWorld,
                         handWorldTransform,
-                        grabPivotAWorld,
+                        initialPivotWorld,
                         tau,
                         damping,
                         maxForce,
@@ -10739,6 +10764,7 @@ namespace rock
 
             const bool driveCreated = _activeConstraint.isValid() && _grabAuthorityProxy.isValid();
             if (!driveCreated) {
+                _grabAcquisition = {};
                 ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: proxy-constraint dynamic grab creation failed", handName());
                 destroyGrabAuthorityProxy(bhkWorld);
                 clearGrabExternalHandWorldTransform(_isLeft);
@@ -12233,6 +12259,24 @@ namespace rock
             return false;
         }
 
+        if (_grabAcquisition.pending) {
+            const bool targetWasComplete = _grabAcquisition.targetComplete();
+            // This target uses the controller palm sampled in AfterArmSolve.
+            // No previous-frame hand claim or deferred presentation drives it.
+            update.proxyAuthorityWorld = _grabAcquisition.sample(update.proxyAuthorityWorld,
+                _grabFrame.proxyAuthorityBodyHandSpace, _grabFrame.authority.pivotBConstraintLocalGame,
+                held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime) ? deltaTime : 0.0f);
+            update.proxyAuthoritySource = "coordinatedGripAcquisition";
+            if (!isFiniteNiTransform(update.proxyAuthorityWorld) || update.proxyAuthorityWorld.scale <= 0.0f) {
+                ROCK_LOG_WARN(Hand, "{} hand release: invalid acquisition target trace={}", handName(), _grabFrame.traceId);
+                releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                return false;
+            }
+            if (!targetWasComplete && _grabAcquisition.targetComplete()) {
+                ROCK_LOG_INFO(Hand, "{} GRIP_ACQUIRE target-complete trace={}; awaiting solved grip and rotation",
+                    handName(), _grabFrame.traceId);
+            }
+        }
         update.desiredObjectWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(update.proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
         if (_hasGrabFingerSweepDebug) {
@@ -12261,6 +12305,14 @@ namespace rock
                 grab_three_phase::phaseName(_grabAcquisitionPhase));
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return false;
+        }
+        if (_grabAcquisition.pending) {
+            const float solvedAngle = grab_acquisition::rotationDegrees(update.solvedBodyWorld, update.desiredBodyWorld);
+            if (_grabAcquisition.finishIfSettled(update.pivotTrackingErrorGameUnits, solvedAngle,
+                    g_rockConfig.rockGrabTouchAcquireDistanceGameUnits)) {
+                ROCK_LOG_INFO(Hand, "{} GRIP_ACQUIRE settled trace={} gripError={:.3f}gu rotationError={:.2f}deg",
+                    handName(), _grabFrame.traceId, update.pivotTrackingErrorGameUnits, solvedAngle);
+            }
         }
         if (held_object_physics_math::instantDeviationExceeded(
                 update.pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
@@ -12501,6 +12553,7 @@ namespace rock
         const auto visualPublishDecision = grab_motion_controller::evaluateVisualHandPublishGate(
             grab_motion_controller::VisualHandPublishInput{
                 .hasTelemetryCapture = _grabFrame.hasTelemetryCapture,
+                .acquisitionPending = _grabAcquisition.pending,
                 .touchHeldPhase = _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
                 .acquisitionVisualEligible = acquisitionVisualEligible,
                 .hasPivotTrackingError = hasPivotTrackingError,
@@ -12728,6 +12781,9 @@ namespace rock
         const HeldDriveUpdate& driveUpdate,
         bool convergingAcquisitionPhase)
     {
+        // A moving acquisition target may already have zero motor error while
+        // still far from the final hand seat. It cannot promote/reacquire yet.
+        if (_grabAcquisition.pending) return;
         const auto& desiredObjectWorld = driveUpdate.desiredObjectWorld;
         const auto& desiredBodyWorld = driveUpdate.desiredBodyWorld;
         const auto& proxyAuthorityWorld = driveUpdate.proxyAuthorityWorld;
@@ -15514,6 +15570,7 @@ namespace rock
         clearGrabAuthorityProxyRuntime();
         _heldBodyIds.clear();
         _grabFrame.clear();
+        _grabAcquisition = {};
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldDriveDecision = {};
