@@ -4614,14 +4614,15 @@ namespace rock
         constexpr const char* GRAB_RETURN_HAND_TAG = "ROCK_GrabReturn";
         constexpr int GRAB_RETURN_HAND_PRIORITY = 85;
 
-        bool applyGrabExternalHandWorldTransform(bool isLeft, const RE::NiTransform& adjustedHandTransform)
+        bool applyGrabExternalHandWorldTransform(bool isLeft, const RE::NiTransform& adjustedHandTransform,
+            frik_visual_authority::RebaseDriver driver)
         {
             return frik_visual_authority::publishHandWorld(
                 GRAB_EXTERNAL_HAND_TAG,
                 handFromBool(isLeft),
                 adjustedHandTransform,
                 GRAB_EXTERNAL_HAND_PRIORITY,
-                frik_visual_authority::physicalHandDriver(isLeft));
+                driver);
         }
 
         void clearGrabExternalHandWorldTransform(bool isLeft)
@@ -12002,6 +12003,14 @@ namespace rock
         clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
 
         ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
+        if (sel.preserveEquippedPose && rootNode) {
+            const auto desiredRoot = transform_math::composeTransforms(
+                _grabFrame.authority.desiredBodyWorldAtGrab, transform_math::invertTransform(_grabFrame.rootBodyLocal));
+            vanilla_weapon_alignment_telemetry::recordTransferPose(sel.refr ? sel.refr->GetFormID() : 0,
+                _isLeft, "commit", rootNode->world, handWorldTransform,
+                &proxyPreparation.proxyFrameWorldAtGrab, &desiredRoot);
+            _grabFrame.transferPoseTracePending = true;
+        }
         vanilla_weapon_alignment_telemetry::recordLooseGrab(
             _savedObjectState.refr, _isLeft, _grabFrame.traceId, handWorldTransform);
         return true;
@@ -12355,10 +12364,12 @@ namespace rock
         _grabFrame.looseWeaponSharedProxyCorrection = transform_math::composeTransforms(
             transform_math::invertTransform(physicalNi), targetNi);
         if (!_grabFrame.looseWeaponSharedPeerTrace) {
+            _grabFrame.looseWeaponVisualTraceElapsed = 0.5f;
             ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot started ref={:08X} primary={} separation={:.3f}",
                 handName(), getHeldRef()->GetFormID(), primary.handName(), separation);
         }
         _grabFrame.looseWeaponSharedPeerTrace = peer->_grabFrame.traceId;
+        _grabFrame.looseWeaponSharedPrimaryIsLeft = primary._isLeft;
         proxyWorld = targetProxy;
         return true;
     }
@@ -12456,6 +12467,14 @@ namespace rock
                     handName(), _grabFrame.traceId, update.pivotTrackingErrorGameUnits, update.grabRotationErrorDegrees,
                     _grabOffsetMaximumGripError, _grabOffsetMaximumRotationError);
             }
+        }
+        if (_grabFrame.transferPoseTracePending) {
+            _grabFrame.transferPoseTracePending = false;
+            const auto rootFromBody = transform_math::invertTransform(_grabFrame.rootBodyLocal);
+            const auto root = transform_math::composeTransforms(update.solvedBodyWorld, rootFromBody);
+            const auto desiredRoot = transform_math::composeTransforms(update.desiredBodyWorld, rootFromBody);
+            vanilla_weapon_alignment_telemetry::recordTransferPose(getHeldRef() ? getHeldRef()->GetFormID() : 0,
+                _isLeft, "first-drive", root, handWorldTransform, &update.proxyAuthorityWorld, &desiredRoot);
         }
         if (held_object_physics_math::instantDeviationExceeded(
                 update.pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
@@ -12708,6 +12727,18 @@ namespace rock
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
             });
+        if (_grabFrame.looseWeaponSharedPeerTrace && g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
+            _grabFrame.looseWeaponVisualTraceElapsed += (std::max)(0.0f, deltaTime);
+            if (_grabFrame.looseWeaponVisualTraceElapsed >= 0.5f) {
+                _grabFrame.looseWeaponVisualTraceElapsed = 0.0f;
+                ROCK_LOG_INFO(Hand, "Shared grip seat: grab={} hand={} primary={} phase={} publish={} gate={} settled={} acquisition={} tracking={:.3f} relationT=({:.3f},{:.3f},{:.3f}) presented={}",
+                    _grabFrame.traceId, handName(), _grabFrame.looseWeaponSharedPrimaryIsLeft ? "left" : "right",
+                    grab_three_phase::phaseName(_grabAcquisitionPhase), visualPublishDecision.apply, visualPublishDecision.reason,
+                    _grabFrame.seat.hasSettledVisualHandRelation, _grabOffsetAcquisition.active, pivotTrackingErrorGameUnits,
+                    _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z,
+                    driveUpdate.hasPresentedBodyWorld);
+            }
+        }
         if (_grabFrame.hasTelemetryCapture &&
             !_grabOffsetAcquisition.active && visualPublishDecision.apply) {
             RE::NiTransform heldVisualNodeWorld{};
@@ -12831,7 +12862,11 @@ namespace rock
                 }
 
                 _grabVisualHandTransform = nextVisualHandWorld;
-                if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform)) {
+                const auto visualDriver = _grabFrame.looseWeaponSharedPeerTrace ?
+                    (_grabFrame.looseWeaponSharedPrimaryIsLeft ? frik_visual_authority::RebaseDriver::LeftWeaponPivot :
+                        frik_visual_authority::RebaseDriver::RightWeaponPivot) :
+                    frik_visual_authority::physicalHandDriver(_isLeft);
+                if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform, visualDriver)) {
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
                     _hasLastPublishedGrabVisualHandTransform = true;
                     clearGrabVisualReturn("active-grab-authority-acquired", false);

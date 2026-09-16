@@ -68,6 +68,8 @@ namespace rock::hand_world_claim_registry_policy
         LeftHandPosition,
         RightHandAimAxis,
         LeftHandAimAxis,
+        RightWeaponPivot,
+        LeftWeaponPivot,
     };
 
     [[nodiscard]] constexpr bool isPositionDriver(const RebaseDriver driver) noexcept
@@ -75,9 +77,14 @@ namespace rock::hand_world_claim_registry_policy
         return driver == RebaseDriver::RightHandPosition || driver == RebaseDriver::LeftHandPosition;
     }
 
+    [[nodiscard]] constexpr bool isWeaponPivotDriver(const RebaseDriver driver) noexcept
+    {
+        return driver == RebaseDriver::RightWeaponPivot || driver == RebaseDriver::LeftWeaponPivot;
+    }
+
     [[nodiscard]] constexpr bool isAimAxisDriver(const RebaseDriver driver) noexcept
     {
-        return driver == RebaseDriver::RightHandAimAxis || driver == RebaseDriver::LeftHandAimAxis;
+        return driver == RebaseDriver::RightHandAimAxis || driver == RebaseDriver::LeftHandAimAxis || isWeaponPivotDriver(driver);
     }
 
     // Two hand chains closer than this do not define an aim axis.
@@ -120,10 +127,12 @@ namespace rock::hand_world_claim_registry_policy
         case RebaseDriver::RightHand:
         case RebaseDriver::RightHandPosition:
         case RebaseDriver::RightHandAimAxis:
+        case RebaseDriver::RightWeaponPivot:
             return &frame.hands[handIndex(false)];
         case RebaseDriver::LeftHand:
         case RebaseDriver::LeftHandPosition:
         case RebaseDriver::LeftHandAimAxis:
+        case RebaseDriver::LeftWeaponPivot:
             return &frame.hands[handIndex(true)];
         default:
             return nullptr;
@@ -135,8 +144,10 @@ namespace rock::hand_world_claim_registry_policy
     {
         switch (driver) {
         case RebaseDriver::RightHandAimAxis:
+        case RebaseDriver::RightWeaponPivot:
             return &frame.hands[handIndex(true)];
         case RebaseDriver::LeftHandAimAxis:
+        case RebaseDriver::LeftWeaponPivot:
             return &frame.hands[handIndex(false)];
         default:
             return nullptr;
@@ -465,7 +476,26 @@ namespace rock::hand_world_claim_registry_policy
             return plan;
         }
         RE::NiTransform rebased = claim.target;
-        if (isPositionDriver(claim.driver) || isAimAxisDriver(claim.driver)) {
+        if (isWeaponPivotDriver(claim.driver)) {
+            // Both hands are seats on one rigid weapon. Transport both by
+            // the same carrier motion and two-hand aim, never by each hand's
+            // independent fore/aft translation (which slides a locked seat).
+            const auto carrierDelta = transform_math::composeTransforms(
+                transform_math::orthonormalizedTransform(driverNow.world),
+                transform_math::invertTransform(transform_math::orthonormalizedTransform(claim.driverAtPublish.world)));
+            rebased = transform_math::composeTransforms(carrierDelta, claim.target);
+            if (otherDriverNow.valid && claim.otherDriverAtPublish.valid &&
+                isFiniteTransform(otherDriverNow.world) && isFiniteTransform(claim.otherDriverAtPublish.world)) {
+                const auto oldAxis = claim.otherDriverAtPublish.world.translate - claim.driverAtPublish.world.translate;
+                const auto newAxis = otherDriverNow.world.translate - driverNow.world.translate;
+                auto swing = transform_math::makeIdentityTransform<RE::NiTransform>();
+                swing.rotate = storedRotationFromTo(transform_math::localVectorToWorld(carrierDelta, oldAxis), newAxis);
+                rebased.translate = driverNow.world.translate + transform_math::localVectorToWorld(
+                    swing, rebased.translate - driverNow.world.translate);
+                rebased.rotate = transform_math::orthonormalizeStoredRotation(
+                    transform_math::multiplyStoredRotations(rebased.rotate, swing.rotate));
+            }
+        } else if (isPositionDriver(claim.driver) || isAimAxisDriver(claim.driver)) {
             // The driver's translation only: the seat keeps its offset from
             // the hand, and its orientation unless the aim axis turned.
             rebased.translate.x += driverNow.world.translate.x - claim.driverAtPublish.world.translate.x;

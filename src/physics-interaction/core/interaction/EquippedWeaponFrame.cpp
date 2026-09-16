@@ -1,5 +1,6 @@
 #include "physics-interaction/core/PhysicsInteractionInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
+#include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/telemetry/ScopeTransitionTelemetry.h"
 
@@ -1398,6 +1399,10 @@ namespace rock
                                 _forceGrab.retainedWeaponGrabs[transferHandIndex] = {
                                     .inputState = transferred_weapon_grab_policy::State::AwaitInitialRelease,
                                 };
+                                vanilla_weapon_alignment_telemetry::recordTransferPose(
+                                    dropResult.droppedFormID, transferIsLeft, "release",
+                                    releaseGeometry.capturedWeaponWorld,
+                                    (transferIsLeft ? frame.left : frame.right).rawHandWorld);
                                 armEquippedWeaponNativeHandoff(
                                     dropResult.handle,
                                     dropResult.droppedFormID,

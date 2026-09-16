@@ -27,6 +27,11 @@ namespace rock::vanilla_weapon_alignment_telemetry
         const RE::NiAVObject* offset = nullptr) noexcept;
     void recordLooseGrab(RE::TESObjectREFR* ref, bool isLeft, std::uint64_t grabIdentity,
         const RE::NiTransform& handWorld) noexcept;
+    // Transition boundaries only, including modded weapons. Captures value
+    // transforms synchronously; no scene pointers reach the async writer.
+    void recordTransferPose(std::uint32_t refId, bool isLeft, const char* stage,
+        const RE::NiTransform& weaponWorld, const RE::NiTransform& handWorld,
+        const RE::NiTransform* proxyWorld = nullptr, const RE::NiTransform* desiredWeaponWorld = nullptr) noexcept;
     void recordInput(const AuthoredPrimaryFiringGripFrameInput& input);
     void recordAuthoredSelection(const AuthoredPrimaryFiringGripFrameInput& input,
         const authored_weapon_grip_library::WeaponVariantIdentity& requested,

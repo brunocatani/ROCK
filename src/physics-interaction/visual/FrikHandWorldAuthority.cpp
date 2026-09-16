@@ -196,6 +196,10 @@ namespace rock::frik_hand_world_authority
                 return "right-hand-aim-axis";
             case RebaseDriver::LeftHandAimAxis:
                 return "left-hand-aim-axis";
+            case RebaseDriver::RightWeaponPivot:
+                return "right-weapon-pivot";
+            case RebaseDriver::LeftWeaponPivot:
+                return "left-weapon-pivot";
             default:
                 return "static";
             }

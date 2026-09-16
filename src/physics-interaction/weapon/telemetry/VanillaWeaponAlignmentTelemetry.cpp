@@ -373,6 +373,25 @@ namespace rock::vanilla_weapon_alignment_telemetry
         }
     }
 
+    void recordTransferPose(std::uint32_t refId, bool isLeft, const char* stage,
+        const RE::NiTransform& weaponWorld, const RE::NiTransform& handWorld,
+        const RE::NiTransform* proxyWorld, const RE::NiTransform* desiredWeaponWorld) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        try {
+            session->log->info("VWA transfer-pose seq={} ref={:08X} hand={} stage={}",
+                session->sequence, refId, isLeft ? "left" : "right", stage);
+            transform("transfer", "weapon-world", weaponWorld);
+            transform("transfer", "physical-hand-world", handWorld);
+            if (proxyWorld) transform("transfer", "proxy-world", *proxyWorld);
+            if (desiredWeaponWorld) transform("transfer", "desired-weapon-world", *desiredWeaponWorld);
+            if (std::isfinite(handWorld.scale) && std::abs(handWorld.scale) > 0.0001f) {
+                transform("transfer", "weapon-in-physical-hand", transform_math::composeTransforms(
+                    transform_math::invertTransform(handWorld), weaponWorld));
+            }
+        } catch (...) { ++session->captureFailures; }
+    }
+
     void recordAuthoredPose(std::uint32_t formId, std::uint64_t captureSequence,
         const char* source, const char* label, const RE::NiTransform& pose) noexcept
     {

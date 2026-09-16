@@ -782,6 +782,9 @@ namespace rock
         RE::NiTransform looseWeaponSoloProxyCorrection{};
         RE::NiTransform looseWeaponSharedProxyCorrection{};
         std::uint64_t looseWeaponSharedPeerTrace = 0;
+        bool looseWeaponSharedPrimaryIsLeft = false;
+        float looseWeaponVisualTraceElapsed = 0.0f;
+        bool transferPoseTracePending = false;
         bool hasLooseWeaponSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
@@ -850,6 +853,9 @@ namespace rock
             looseWeaponSoloProxyCorrection = {};
             looseWeaponSharedProxyCorrection = {};
             looseWeaponSharedPeerTrace = 0;
+            looseWeaponSharedPrimaryIsLeft = false;
+            looseWeaponVisualTraceElapsed = 0.0f;
+            transferPoseTracePending = false;
             hasLooseWeaponSoloProxyCorrection = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;

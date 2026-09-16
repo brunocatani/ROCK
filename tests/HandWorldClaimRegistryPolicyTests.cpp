@@ -463,6 +463,42 @@ int main()
         ok &= expectEnum("never consumed", planPresentation(ConsumedTarget{}, winner(registry, false), consumedTarget, true).decision, PresentationDecision::NoClaim);
     }
 
+    // A shared weapon carries both fixed hand seats through one rigid
+    // delta. Changing controller separation must not slide either seat.
+    for (const auto driver : {RebaseDriver::RightWeaponPivot, RebaseDriver::LeftWeaponPivot}) {
+        Claim front{}, rear{};
+        front.valid = rear.valid = true;
+        front.driver = rear.driver = driver;
+        front.target = translated(8.0f, 2.0f, 0.0f);
+        rear.target = translated(0.0f, 1.0f, 0.0f);
+        front.driverAtPublish = rear.driverAtPublish = sample(identity());
+        front.otherDriverAtPublish = rear.otherDriverAtPublish = sample(translated(10.0f, 0.0f, 0.0f));
+        const auto frontAlong = planRebase(front, sample(identity()), sample(translated(30.0f, 0.0f, 0.0f)));
+        const auto rearAlong = planRebase(rear, sample(identity()), sample(translated(30.0f, 0.0f, 0.0f)));
+        ok &= expectNear("shared forward hand cannot slide along barrel", translationDeltaGameUnits(frontAlong.target, front.target), 0.0f, 0.001f);
+        ok &= expectNear("shared rear hand cannot slide along barrel", translationDeltaGameUnits(rearAlong.target, rear.target), 0.0f, 0.001f);
+        const auto wristTurn = planRebase(front, sample(yawed(60.0f)), sample(translated(10.0f, 0.0f, 0.0f)));
+        ok &= expectNear("two-hand aim cancels carrier yaw across the grip axis", translationDeltaGameUnits(wristTurn.target, front.target), 0.0f, 0.001f);
+        ok &= expectNear("two-hand aim keeps grip orientation through carrier yaw", rotationDeltaDegrees(wristTurn.target, front.target), 0.0f, 0.01f);
+        const auto movedPrimary = sample(translated(3.0f, 4.0f, 5.0f));
+        const auto turnedSupport = sample(translated(3.0f, 29.0f, 5.0f));
+        const auto frontTurn = planRebase(front, movedPrimary, turnedSupport);
+        const auto rearTurn = planRebase(rear, movedPrimary, turnedSupport);
+        ok &= expectNear("front seat turns about primary x", frontTurn.target.translate.x, 1.0f, 0.001f);
+        ok &= expectNear("front seat turns about primary y", frontTurn.target.translate.y, 12.0f, 0.001f);
+        ok &= expectNear("rear seat turns about primary x", rearTurn.target.translate.x, 2.0f, 0.001f);
+        ok &= expectNear("rear seat turns about primary y", rearTurn.target.translate.y, 4.0f, 0.001f);
+        ok &= expectNear("shared seats keep separation", translationDeltaGameUnits(frontTurn.target, rearTurn.target),
+            translationDeltaGameUnits(front.target, rear.target), 0.001f);
+        ok &= expectNear("shared seats keep relative rotation", rotationDeltaDegrees(frontTurn.target, rearTurn.target), 0.0f, 0.01f);
+        ok &= expectNear("shared seats follow locomotion z", frontTurn.target.translate.z, 5.0f, 0.001f);
+        DriverFrame frame{};
+        frame.hands[0] = sample(identity()); frame.hands[1] = sample(translated(10.0f, 0.0f, 0.0f));
+        const auto primaryIndex = driver == RebaseDriver::LeftWeaponPivot ? 1u : 0u;
+        ok &= expectTrue("pivot driver samples its primary hand", sampleForDriver(frame, driver) == &frame.hands[primaryIndex]);
+        ok &= expectTrue("pivot driver samples the other hand", otherHandSampleForDriver(frame, driver) == &frame.hands[1u - primaryIndex]);
+    }
+
     if (!ok) {
         std::printf("HandWorldClaimRegistryPolicyTests FAILED\n");
         return 1;
