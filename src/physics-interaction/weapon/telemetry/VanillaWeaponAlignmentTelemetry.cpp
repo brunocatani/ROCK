@@ -3,6 +3,7 @@
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
@@ -172,6 +173,27 @@ namespace rock::vanilla_weapon_alignment_telemetry
         }
         auto* equipped = f4vr::getEquippedWeaponItem();
         const std::uint32_t formId = equipped && equipped->item.object ? equipped->item.object->formID : 0;
+        // PAPER's Complete callback precedes final presentation. Pair its cycle
+        // trace with this readback using the provider frame, not scheduler seq.
+        // Investigation owner: PAPER/ROCK Timberwolf handoff; remove when qualified.
+        if (phase == Phase::AfterRock && formId == 0x1700206C &&
+            runtime_state::currentFrame().frameIndex % 8 == 0) {
+            const auto frame = runtime_state::currentFrame().frameIndex;
+            auto* weapon = f4vr::getWeaponNode();
+            RE::NiTransform right{};
+            const bool rightValid = frik_hand_world_authority::tryGetPresentedHandWorld(false, right);
+            session->log->info("CYCLE_TRACE final frame={} form={:08X} scheduler={} weaponValid={} rightValid={} overruns={}",
+                frame, formId, schedulerSequence, weapon != nullptr, rightValid, session->pool->overrun_counter());
+            const auto pose = [&](const char* label, const RE::NiTransform& value) {
+                const auto& t = value.translate;
+                const auto& r = value.rotate.entry;
+                session->log->info("CYCLE_TRACE final-pose frame={} label={} T=({:.5f},{:.5f},{:.5f}) S={:.6f} R=({:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f})",
+                    frame, label, t.x, t.y, t.z, value.scale,
+                    r[0][0], r[0][1], r[0][2], r[1][0], r[1][1], r[1][2], r[2][0], r[2][1], r[2][2]);
+            };
+            if (weapon) pose("weapon-world", weapon->world);
+            if (rightValid) pose("right-world", right);
+        }
         if (phase == Phase::BeforeRockPreFrik) {
             session->sequence = schedulerSequence;
             session->nativeMask = 0;
