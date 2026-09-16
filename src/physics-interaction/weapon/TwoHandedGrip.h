@@ -795,11 +795,14 @@ namespace rock
 
         /*
          * End of ROCK's frame (FRIK's AfterArmSolve phase): hold or release
-         * FRIK's weapon-node write block for this frame's ownership, and
-         * report the two-handed grip to FRIK. FRIK's own weapon pass runs
+         * FRIK's weapon-node write block for this frame's ownership.
+         * FRIK's own weapon pass runs
          * after this callback, so the block must be current before it.
          */
         void finalizeFrikWeaponOwnershipForFrame();
+
+        // AfterWeaponPosition: FRIK has finished clearing grips for weapon changes.
+        void syncFrikOffHandGripReport();
 
         /*
          * FRIK's weapon presentation for a Weapon node ROCK does not hold
@@ -1504,7 +1507,8 @@ namespace rock
         bool captureRightNativeWeaponAimFrame(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            std::uint64_t weaponInstanceContentKey);
         bool hasRightNativeWeaponAimFrame(
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
@@ -1670,7 +1674,6 @@ namespace rock
         void noteFrikRecoilWeaponNodeWrite();
         void engageFrikWeaponNodeWriteBlock();
         void releaseFrikWeaponNodeWriteBlock(const char* reason);
-        void syncFrikOffHandGripReport();
         void resetFrikWeaponOwnership();
 
         static RE::NiNode* resolveFirstPersonHandNode(bool isLeft);
@@ -1967,6 +1970,7 @@ namespace rock
             RE::NiNode* weaponNodeIdentity{ nullptr };
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t weaponOwnershipKey{ 0 };
+            std::uint64_t weaponInstanceContentKey{ 0 };
             bool valid{ false };
         };
 

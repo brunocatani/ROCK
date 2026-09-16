@@ -1306,9 +1306,8 @@
             return false;
         }
         RE::NiTransform handWorld{};
-        if (!frik_visual_authority::tryGetHandWorldTransform(
-                isLeft ? frik_visual_authority::Hand::Left :
-                         frik_visual_authority::Hand::Right,
+        if (!frik_visual_authority::tryGetPresentedHandWorldTransform(
+                isLeft,
                 handWorld) ||
             !finiteNiTransform(handWorld)) {
             return false;

@@ -45,7 +45,8 @@ namespace rock
             !captureRightNativeWeaponAimFrame(
                 weaponNode,
                 currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey)) {
+                currentEquippedWeaponOwnershipKey,
+                _firing.rightCanonicalInstanceContentKey)) {
             return reject("native-right-aim-unavailable");
         }
 
@@ -226,7 +227,9 @@ namespace rock
                     !captureRightNativeWeaponAimFrame(
                         weaponNode,
                         currentWeaponGenerationKey,
-                        currentEquippedWeaponOwnershipKey)) {
+                        currentEquippedWeaponOwnershipKey,
+                        hasRightFiringHandCanonicalFrame(weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey) ?
+                            _firing.rightCanonicalInstanceContentKey : 0)) {
                     return reject("native-right-aim-unavailable");
                 }
                 resolvedLeftHandWeaponLocal =
@@ -1204,7 +1207,8 @@ namespace rock
     bool TwoHandedGrip::captureRightNativeWeaponAimFrame(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
-        const std::uint64_t currentEquippedWeaponOwnershipKey)
+        const std::uint64_t currentEquippedWeaponOwnershipKey,
+        const std::uint64_t weaponInstanceContentKey)
     {
         auto* playerNodes = f4vr::getPlayerNodes();
         RE::NiNode* rightWand =
@@ -1239,6 +1243,7 @@ namespace rock
             .weaponNodeIdentity = weaponNode,
             .weaponGenerationKey = currentWeaponGenerationKey,
             .weaponOwnershipKey = currentEquippedWeaponOwnershipKey,
+            .weaponInstanceContentKey = weaponInstanceContentKey,
             .valid = true,
         };
 
@@ -1348,6 +1353,22 @@ namespace rock
         const std::uint64_t currentEquippedWeaponOwnershipKey,
         const std::uint64_t weaponInstanceContentKey)
     {
+        // A collider rebuild can precede the first handoff. Keep the already
+        // captured native aim before the presentation guard below prevents
+        // recapture; never carry it across a model, equip or content change.
+        auto& aim = _firing.rightNativeWeaponAimFrame;
+        if (aim.valid && currentWeaponGenerationKey != 0 &&
+            aim.weaponGenerationKey != currentWeaponGenerationKey &&
+            isFiniteTransform(aim.weaponInWandOrientation) &&
+            native_weapon_aim_policy::canRebind(
+                { aim.weaponNodeIdentity, aim.weaponOwnershipKey, aim.weaponInstanceContentKey },
+                { weaponNode, currentEquippedWeaponOwnershipKey, weaponInstanceContentKey })) {
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: native right aim preserved across collision rebuild oldGeneration={:016X} newGeneration={:016X} ownership={:016X}",
+                aim.weaponGenerationKey, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey);
+            aim.weaponGenerationKey = currentWeaponGenerationKey;
+        }
+
         /*
          * Passive canonical capture: whenever the equipped weapon rides the
          * native RIGHT hand (no ROCK transform ownership), the live weapon
@@ -1394,7 +1415,8 @@ namespace rock
         (void)captureRightNativeWeaponAimFrame(
             weaponNode,
             currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey);
+            currentEquippedWeaponOwnershipKey,
+            weaponInstanceContentKey);
         // The animation capture is a more direct authority than a later
         // presentation sample. Preserve it for this exact weapon identity,
         // generation, and ownership.

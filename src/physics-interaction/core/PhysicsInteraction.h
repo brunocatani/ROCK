@@ -257,10 +257,10 @@ namespace rock
 
         /*
          * End of ROCK's frame, before FRIK's weapon pass: hold or release the
-         * FRIK weapon-node write block for this frame's ownership and report
-         * the two-handed grip to FRIK.
+         * FRIK weapon-node write block for this frame's ownership.
          */
         void finalizeFrikWeaponOwnershipForFrame() { _twoHandedGrip.finalizeFrikWeaponOwnershipForFrame(); }
+        void syncFrikOffHandGripReport() { _twoHandedGrip.syncFrikOffHandGripReport(); }
         void publishDebugRenderFrame();
 
     private:

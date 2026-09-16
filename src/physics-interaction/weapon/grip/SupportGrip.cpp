@@ -907,7 +907,8 @@ namespace rock
             (void)captureRightNativeWeaponAimFrame(
                 weaponNode,
                 decision.weaponGenerationKey,
-                currentEquippedWeaponOwnershipKey);
+                currentEquippedWeaponOwnershipKey,
+                weaponCollision.getCurrentEquippedWeaponInstanceContentKey());
         }
 
         /*

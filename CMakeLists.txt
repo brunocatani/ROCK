@@ -841,6 +841,11 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKFrikWeaponPresentationPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKFrikWeaponPresentationPolicyTests)
 
+  add_executable(ROCKFrikPresentedHandTests "${ROOT_DIR}/tests/FrikPresentedHandTests.cpp")
+  target_compile_features(ROCKFrikPresentedHandTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFrikPresentedHandTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKFrikPresentedHandTests)
+
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
@@ -910,6 +915,7 @@ if(BUILD_ROCK_TESTS)
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
     ROCKFrikWeaponPresentationPolicyTests
+    ROCKFrikPresentedHandTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and
   # config stub. Build those once, then reuse the PCH artifact and support library

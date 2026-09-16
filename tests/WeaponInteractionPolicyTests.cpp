@@ -1677,6 +1677,21 @@ int main()
 {
     bool ok = true;
 
+    {
+        using namespace rock::native_weapon_aim_policy;
+        int firstNode = 0;
+        int replacementNode = 0;
+        const Identity captured{ &firstNode, 41, 73 };
+        ok &= expectTrue("collision-only rebuild preserves native aim", canRebind(captured, captured));
+        ok &= expectTrue("a replacement model cannot inherit native aim", !canRebind(captured, { &replacementNode, 41, 73 }));
+        ok &= expectTrue("a different equipped instance cannot inherit native aim", !canRebind(captured, { &firstNode, 42, 73 }));
+        ok &= expectTrue("changed weapon content cannot inherit native aim", !canRebind(captured, { &firstNode, 41, 74 }));
+        ok &= expectTrue("unknown captured content cannot be rebound", !canRebind({ &firstNode, 41, 0 }, captured));
+        ok &= expectTrue("unknown current content cannot be rebound", !canRebind(captured, { &firstNode, 41, 0 }));
+        ok &= expectTrue("missing model cannot be rebound", !canRebind({ nullptr, 41, 73 }, { nullptr, 41, 73 }));
+        ok &= expectTrue("missing equipped identity cannot be rebound", !canRebind({ &firstNode, 0, 73 }, { &firstNode, 0, 73 }));
+    }
+
     ok &= testRecoilProfiles();
 
     ok &= testNativeGripFrames();

@@ -439,6 +439,14 @@ namespace rock::frik_visual_authority
         return detail::isFiniteNiTransform(outWorld);
     }
 
+    // Read the last completed visual hand, including claims and palm blend.
+    // Before FRIK's world final the flattened tree still holds that completed
+    // presentation; FirstPersonHand can instead contain the native re-glue.
+    [[nodiscard]] inline bool tryGetPresentedHandWorldTransform(const bool isLeft, RE::NiTransform& outWorld)
+    {
+        return tryGetBoneWorldTransform(isLeft ? "LArm_Hand" : "RArm_Hand", outWorld);
+    }
+
     // Live arm chain nodes for a hand: valid after AfterArmSolve, final after AfterWorldFinal.
     [[nodiscard]] inline bool tryGetArmChain(Hand hand, ArmChainTransforms& outChain)
     {

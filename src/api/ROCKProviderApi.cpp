@@ -960,8 +960,8 @@ namespace
         }
 
         RE::NiTransform presentedWorld{};
-        if (!frik_visual_authority::tryGetHandWorldTransform(
-                toVisualHand(hand),
+        if (!frik_visual_authority::tryGetPresentedHandWorldTransform(
+                hand == RockProviderHand::Left,
                 presentedWorld)) {
             return false;
         }

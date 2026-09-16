@@ -827,6 +827,7 @@ namespace
     void onFrikAfterWeaponPosition()
     {
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
+            s_physicsInteraction->syncFrikOffHandGripReport();
             s_physicsInteraction->captureFrikWeaponOffsetLatch();
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }

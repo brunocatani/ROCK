@@ -83,7 +83,6 @@ namespace rock
         } else {
             releaseFrikWeaponNodeWriteBlock("no-weapon-authority");
         }
-        syncFrikOffHandGripReport();
     }
 
     void TwoHandedGrip::releaseFrikWeaponNodeWriteBlock(const char* reason)
@@ -103,8 +102,9 @@ namespace rock
         const bool supportIsLeft = isSupportHandLeft();
         const std::uint64_t weaponKey = _session.equippedWeaponOwnershipKey;
         /*
-         * Report on ROCK's own edges: state, support hand and equipped weapon
-         * instance (FRIK drops the report on a drawn weapon change). FRIK's
+         * Run after FRIK's weapon pass, which drops reports on a drawn weapon
+         * change. Report on ROCK's state, support-hand and weapon-instance
+         * edges only after that invalidation has finished. FRIK's
          * isOffHandGrippingWeapon is the union over every reporter and its
          * own detector, so it is not consulted here.
          */
