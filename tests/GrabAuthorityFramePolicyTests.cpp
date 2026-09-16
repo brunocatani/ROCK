@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/grab/GrabOffsetAcquisition.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
@@ -402,8 +403,29 @@ int main()
     }
 
     {
-        // Both motor chains must reconstruct one root target even when their
-        // bodies, local pivots, and column-authored proxies differ.
+        using Mode = rock::held_object_drive_policy::HeldBodySetDriveMode;
+        using rock::held_object_drive_policy::canShareTwoHandPivot;
+        for (const auto first : {Mode::SingleDynamic, Mode::ConnectedDynamic}) {
+            for (const auto second : {Mode::SingleDynamic, Mode::ConnectedDynamic}) {
+                ok &= expectTrue("ordinary rigid props share one pivot without a weapon root",
+                    canShareTwoHandPivot(first, second, false, false));
+            }
+        }
+        for (const auto mode : {Mode::ComplexArticulated, Mode::FixedAttached, Mode::IncompleteNativeScan}) {
+            ok &= expectFalse("separate jointed or unverified parts keep independent targets",
+                canShareTwoHandPivot(mode, Mode::SingleDynamic, false, false));
+            ok &= expectFalse("rigid assembly qualification is symmetric",
+                canShareTwoHandPivot(Mode::SingleDynamic, mode, false, false));
+            ok &= expectTrue("two grips on the same driven part share its body frame",
+                canShareTwoHandPivot(mode, mode, true, false));
+            ok &= expectTrue("existing canonical weapon assemblies retain their pivot",
+                canShareTwoHandPivot(mode, mode, false, true));
+        }
+    }
+
+    for (const bool sameBody : {false, true}) {
+        // Ordinary props use the driven body as the common frame; rigid
+        // assemblies can use distinct body frames. Neither needs authored seats.
         auto root = identityTransform();
         root.translate = {100.0f, -70.0f, 20.0f};
         root.scale = 1.3f;
@@ -415,9 +437,11 @@ int main()
         proxy[1].rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 1.0f, 0.0f}, -0.8f);
         proxy[1].scale = 0.9f;
         std::array<RE::NiTransform, 2> bodyLocal{identityTransform(), identityTransform()};
-        bodyLocal[0].translate = {2.0f, -1.0f, 3.0f};
-        bodyLocal[1].translate = {-3.0f, 8.0f, 1.0f};
-        bodyLocal[1].rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 1.0f, 0.0f}, 0.5f);
+        if (!sameBody) {
+            bodyLocal[0].translate = {2.0f, -1.0f, 3.0f};
+            bodyLocal[1].translate = {-3.0f, 8.0f, 1.0f};
+            bodyLocal[1].rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 1.0f, 0.0f}, 0.5f);
+        }
         std::array<RE::NiTransform, 2> relation{};
         for (std::size_t i = 0; i < 2; ++i) {
             relation[i] = rock::grab_frame_math::objectInGeneratedProxyLocalSpace(proxy[i],

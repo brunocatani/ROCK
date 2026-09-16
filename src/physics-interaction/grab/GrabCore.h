@@ -779,13 +779,13 @@ namespace rock
         bool authoredLooseWeaponSupportGrip = false;
         // Game-frame-only carry corrections. Frozen constraint/visual seats
         // remain immutable; both proxies receive the same two-hand root target.
-        RE::NiTransform looseWeaponSoloProxyCorrection{};
-        RE::NiTransform looseWeaponSharedProxyCorrection{};
-        std::uint64_t looseWeaponSharedPeerTrace = 0;
-        bool looseWeaponSharedPrimaryIsLeft = false;
-        float looseWeaponVisualTraceElapsed = 0.0f;
+        RE::NiTransform looseObjectSoloProxyCorrection{};
+        RE::NiTransform looseObjectSharedProxyCorrection{};
+        std::uint64_t looseObjectSharedPeerTrace = 0;
+        bool looseObjectSharedPrimaryIsLeft = false;
+        float looseObjectVisualTraceElapsed = 0.0f;
         bool transferPoseTracePending = false;
-        bool hasLooseWeaponSoloProxyCorrection = false;
+        bool hasLooseObjectSoloProxyCorrection = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
@@ -850,13 +850,13 @@ namespace rock
             activeGrabPointUsesMultiFingerEvidence = false;
             syntheticLooseWeaponPrimaryAttach = false;
             authoredLooseWeaponSupportGrip = false;
-            looseWeaponSoloProxyCorrection = {};
-            looseWeaponSharedProxyCorrection = {};
-            looseWeaponSharedPeerTrace = 0;
-            looseWeaponSharedPrimaryIsLeft = false;
-            looseWeaponVisualTraceElapsed = 0.0f;
+            looseObjectSoloProxyCorrection = {};
+            looseObjectSharedProxyCorrection = {};
+            looseObjectSharedPeerTrace = 0;
+            looseObjectSharedPrimaryIsLeft = false;
+            looseObjectVisualTraceElapsed = 0.0f;
             transferPoseTracePending = false;
-            hasLooseWeaponSoloProxyCorrection = false;
+            hasLooseObjectSoloProxyCorrection = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;

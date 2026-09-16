@@ -156,6 +156,19 @@ namespace rock::held_object_drive_policy
         };
     }
 
+    [[nodiscard]] inline constexpr bool canShareTwoHandPivot(
+        HeldBodySetDriveMode firstMode, HeldBodySetDriveMode secondMode,
+        bool sameBody, bool sharedWeaponRoot) noexcept
+    {
+        // Weapons already provide one canonical assembly frame. Other props
+        // can share a root only when both captures establish a rigid assembly;
+        // grabbing separate joints must not freeze their relative motion.
+        const auto rigid = [](HeldBodySetDriveMode mode) {
+            return mode == HeldBodySetDriveMode::SingleDynamic || mode == HeldBodySetDriveMode::ConnectedDynamic;
+        };
+        return sameBody || sharedWeaponRoot || (rigid(firstMode) && rigid(secondMode));
+    }
+
     inline float sanitizeMotorAuthorityScale(float baseScale)
     {
         return std::clamp(std::isfinite(baseScale) && baseScale > 0.0f ? baseScale : 1.0f, 0.05f, 1.0f);

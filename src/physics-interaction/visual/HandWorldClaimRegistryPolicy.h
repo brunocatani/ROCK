@@ -68,8 +68,8 @@ namespace rock::hand_world_claim_registry_policy
         LeftHandPosition,
         RightHandAimAxis,
         LeftHandAimAxis,
-        RightWeaponPivot,
-        LeftWeaponPivot,
+        RightObjectPivot,
+        LeftObjectPivot,
     };
 
     [[nodiscard]] constexpr bool isPositionDriver(const RebaseDriver driver) noexcept
@@ -77,14 +77,14 @@ namespace rock::hand_world_claim_registry_policy
         return driver == RebaseDriver::RightHandPosition || driver == RebaseDriver::LeftHandPosition;
     }
 
-    [[nodiscard]] constexpr bool isWeaponPivotDriver(const RebaseDriver driver) noexcept
+    [[nodiscard]] constexpr bool isObjectPivotDriver(const RebaseDriver driver) noexcept
     {
-        return driver == RebaseDriver::RightWeaponPivot || driver == RebaseDriver::LeftWeaponPivot;
+        return driver == RebaseDriver::RightObjectPivot || driver == RebaseDriver::LeftObjectPivot;
     }
 
     [[nodiscard]] constexpr bool isAimAxisDriver(const RebaseDriver driver) noexcept
     {
-        return driver == RebaseDriver::RightHandAimAxis || driver == RebaseDriver::LeftHandAimAxis || isWeaponPivotDriver(driver);
+        return driver == RebaseDriver::RightHandAimAxis || driver == RebaseDriver::LeftHandAimAxis || isObjectPivotDriver(driver);
     }
 
     // Two hand chains closer than this do not define an aim axis.
@@ -127,12 +127,12 @@ namespace rock::hand_world_claim_registry_policy
         case RebaseDriver::RightHand:
         case RebaseDriver::RightHandPosition:
         case RebaseDriver::RightHandAimAxis:
-        case RebaseDriver::RightWeaponPivot:
+        case RebaseDriver::RightObjectPivot:
             return &frame.hands[handIndex(false)];
         case RebaseDriver::LeftHand:
         case RebaseDriver::LeftHandPosition:
         case RebaseDriver::LeftHandAimAxis:
-        case RebaseDriver::LeftWeaponPivot:
+        case RebaseDriver::LeftObjectPivot:
             return &frame.hands[handIndex(true)];
         default:
             return nullptr;
@@ -144,10 +144,10 @@ namespace rock::hand_world_claim_registry_policy
     {
         switch (driver) {
         case RebaseDriver::RightHandAimAxis:
-        case RebaseDriver::RightWeaponPivot:
+        case RebaseDriver::RightObjectPivot:
             return &frame.hands[handIndex(true)];
         case RebaseDriver::LeftHandAimAxis:
-        case RebaseDriver::LeftWeaponPivot:
+        case RebaseDriver::LeftObjectPivot:
             return &frame.hands[handIndex(false)];
         default:
             return nullptr;
@@ -476,8 +476,8 @@ namespace rock::hand_world_claim_registry_policy
             return plan;
         }
         RE::NiTransform rebased = claim.target;
-        if (isWeaponPivotDriver(claim.driver)) {
-            // Both hands are seats on one rigid weapon. Transport both by
+        if (isObjectPivotDriver(claim.driver)) {
+            // Both hands are seats on one rigid object. Transport both by
             // the same carrier motion and two-hand aim, never by each hand's
             // independent fore/aft translation (which slides a locked seat).
             const auto carrierDelta = transform_math::composeTransforms(

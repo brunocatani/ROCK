@@ -12274,24 +12274,32 @@ namespace rock
         bool heldMotorContactSoftening = false;
     };
 
-    bool Hand::coordinateLooseWeaponProxy(RE::hknpWorld* world, Hand* peer,
+    bool Hand::coordinateLooseObjectProxy(RE::hknpWorld* world, Hand* peer,
         const RE::NiTransform* peerHandWorld, RE::NiTransform& proxyWorld)
     {
-        const bool shared = isHoldingLooseWeapon() && peer && peerHandWorld &&
-            peer->isHoldingLooseWeapon() && getHeldRef() == peer->getHeldRef();
+        const bool sameObject = isHolding() && peer && peerHandWorld && peer->isHolding() &&
+            getHeldRef() && getHeldRef() == peer->getHeldRef();
+        const bool sameBody = sameObject && _savedObjectState.bodyId.value == peer->_savedObjectState.bodyId.value;
+        // Detached pieces can retain the same actor ref without sharing a
+        // rigid root. Only two grips on the same ragdoll body may share a pivot.
+        const bool sameAssembly = sameObject && (sameBody ||
+            (!grab_target::isRagdoll(_savedObjectState.targetKind) && !grab_target::isRagdoll(peer->_savedObjectState.targetKind)));
+        const bool shared = sameAssembly && held_object_drive_policy::canShareTwoHandPivot(
+            _heldDriveDecision.mode, peer->_heldDriveDecision.mode, sameBody,
+            isHoldingLooseWeapon() && peer->isHoldingLooseWeapon());
         const auto finishOldPair = [](Hand& hand, std::uint64_t peerTrace) {
             auto& frame = hand._grabFrame;
-            if (frame.looseWeaponSharedPeerTrace && frame.looseWeaponSharedPeerTrace != peerTrace) {
-                frame.looseWeaponSoloProxyCorrection = frame.looseWeaponSharedProxyCorrection;
-                frame.hasLooseWeaponSoloProxyCorrection = true;
-                frame.looseWeaponSharedPeerTrace = 0;
+            if (frame.looseObjectSharedPeerTrace && frame.looseObjectSharedPeerTrace != peerTrace) {
+                frame.looseObjectSoloProxyCorrection = frame.looseObjectSharedProxyCorrection;
+                frame.hasLooseObjectSoloProxyCorrection = true;
+                frame.looseObjectSharedPeerTrace = 0;
                 ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot ended; preserving remaining grip", hand.handName());
             }
         };
         const auto correctedProxy = [](const Hand& hand, RE::NiTransform proxy) {
-            if (hand._grabFrame.hasLooseWeaponSoloProxyCorrection) {
+            if (hand._grabFrame.hasLooseObjectSoloProxyCorrection) {
                 proxy.rotate = transform_math::transposeRotation(proxy.rotate);
-                proxy = transform_math::composeTransforms(proxy, hand._grabFrame.looseWeaponSoloProxyCorrection);
+                proxy = transform_math::composeTransforms(proxy, hand._grabFrame.looseObjectSoloProxyCorrection);
                 proxy.rotate = transform_math::transposeRotation(proxy.rotate);
             }
             return proxy;
@@ -12320,13 +12328,18 @@ namespace rock
         const Hand& support = thisPrimary ? *peer : *this;
         const auto primaryProxy = correctedProxy(primary, thisPrimary ? proxyWorld : peerProxy);
         const auto supportProxy = correctedProxy(support, thisPrimary ? peerProxy : proxyWorld);
+        // One driven body is its own common frame, including two seats on a
+        // jointed object's same part. Different rigid bodies use the assembly
+        // root; independent articulated parts keep their existing joint motion.
+        const auto primaryBodyLocal = sameBody ? transform_math::makeIdentityTransform<RE::NiTransform>() : primary._grabFrame.rootBodyLocal;
+        const auto supportBodyLocal = sameBody ? transform_math::makeIdentityTransform<RE::NiTransform>() : support._grabFrame.rootBodyLocal;
         const auto primaryBody = grab_frame_math::objectFromGeneratedProxyLocalSpace(
             primaryProxy, primary._grabFrame.proxyAuthorityBodyHandSpace);
         const auto root = transform_math::composeTransforms(primaryBody,
-            transform_math::invertTransform(primary._grabFrame.rootBodyLocal));
-        const auto primaryLocal = transform_math::localPointToWorld(primary._grabFrame.rootBodyLocal,
+            transform_math::invertTransform(primaryBodyLocal));
+        const auto primaryLocal = transform_math::localPointToWorld(primaryBodyLocal,
             primary.activeProxyConstraintPivotBLocalGame());
-        const auto supportLocal = transform_math::localPointToWorld(support._grabFrame.rootBodyLocal,
+        const auto supportLocal = transform_math::localPointToWorld(supportBodyLocal,
             support.activeProxyConstraintPivotBLocalGame());
         const auto primaryTarget = generatedProxyLocalPointToWorld(primaryProxy,
             primary._grabFrame.authority.pivotAHandBodyLocalGame);
@@ -12348,7 +12361,7 @@ namespace rock
             ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Loose two-hand pivot degenerate axis: separation={:.4f}; sharing primary target", separation);
         }
         const auto sharedRoot = solved.solved ? solved.weaponWorldTransform : root;
-        const auto sharedBody = transform_math::composeTransforms(sharedRoot, _grabFrame.rootBodyLocal);
+        const auto sharedBody = transform_math::composeTransforms(sharedRoot, thisPrimary ? primaryBodyLocal : supportBodyLocal);
         const auto targetProxy = grab_frame_math::generatedProxyFromObjectWorld(sharedBody, _grabFrame.proxyAuthorityBodyHandSpace);
         if (!isFiniteNiTransform(targetProxy) || targetProxy.scale <= 0.0001f) {
             return false;
@@ -12357,15 +12370,15 @@ namespace rock
         physicalNi.rotate = transform_math::transposeRotation(physicalNi.rotate);
         auto targetNi = targetProxy;
         targetNi.rotate = transform_math::transposeRotation(targetNi.rotate);
-        _grabFrame.looseWeaponSharedProxyCorrection = transform_math::composeTransforms(
+        _grabFrame.looseObjectSharedProxyCorrection = transform_math::composeTransforms(
             transform_math::invertTransform(physicalNi), targetNi);
-        if (!_grabFrame.looseWeaponSharedPeerTrace) {
-            _grabFrame.looseWeaponVisualTraceElapsed = 0.5f;
+        if (!_grabFrame.looseObjectSharedPeerTrace) {
+            _grabFrame.looseObjectVisualTraceElapsed = 0.5f;
             ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot started ref={:08X} primary={} separation={:.3f}",
                 handName(), getHeldRef()->GetFormID(), primary.handName(), separation);
         }
-        _grabFrame.looseWeaponSharedPeerTrace = peer->_grabFrame.traceId;
-        _grabFrame.looseWeaponSharedPrimaryIsLeft = primary._isLeft;
+        _grabFrame.looseObjectSharedPeerTrace = peer->_grabFrame.traceId;
+        _grabFrame.looseObjectSharedPrimaryIsLeft = primary._isLeft;
         proxyWorld = targetProxy;
         return true;
     }
@@ -12397,13 +12410,13 @@ namespace rock
             return false;
         }
 
-        if (!coordinateLooseWeaponProxy(world, peerHand, peerHandWorld, update.proxyAuthorityWorld)) {
-            ROCK_LOG_WARN(Hand, "{} hand release: shared weapon pivot target unavailable", handName());
+        if (!coordinateLooseObjectProxy(world, peerHand, peerHandWorld, update.proxyAuthorityWorld)) {
+            ROCK_LOG_WARN(Hand, "{} hand release: shared object pivot target unavailable", handName());
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return false;
         }
-        if (_grabFrame.looseWeaponSharedPeerTrace) {
-            update.proxyAuthoritySource = "sharedLooseWeaponPalmPivot";
+        if (_grabFrame.looseObjectSharedPeerTrace) {
+            update.proxyAuthoritySource = "sharedLooseObjectPalmPivot";
             if (_grabOffsetAcquisition.active) {
                 ROCK_LOG_INFO(Hand, "{} OFFSET_ACQUIRE ended trace={} reason=shared-grip", handName(), _grabFrame.traceId);
                 _grabOffsetAcquisition = {};
@@ -12723,12 +12736,13 @@ namespace rock
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
             });
-        if (_grabFrame.looseWeaponSharedPeerTrace && g_rockConfig.rockDebugWeaponOmodDumpEnabled) {
-            _grabFrame.looseWeaponVisualTraceElapsed += (std::max)(0.0f, deltaTime);
-            if (_grabFrame.looseWeaponVisualTraceElapsed >= 0.5f) {
-                _grabFrame.looseWeaponVisualTraceElapsed = 0.0f;
+        if (_grabFrame.looseObjectSharedPeerTrace && (g_rockConfig.rockDebugGrabFrameLogging ||
+                (_heldObjectIsLooseWeapon && g_rockConfig.rockDebugWeaponOmodDumpEnabled))) {
+            _grabFrame.looseObjectVisualTraceElapsed += (std::max)(0.0f, deltaTime);
+            if (_grabFrame.looseObjectVisualTraceElapsed >= 0.5f) {
+                _grabFrame.looseObjectVisualTraceElapsed = 0.0f;
                 ROCK_LOG_INFO(Hand, "Shared grip seat: grab={} hand={} primary={} phase={} publish={} gate={} settled={} acquisition={} tracking={:.3f} relationT=({:.3f},{:.3f},{:.3f}) presented={}",
-                    _grabFrame.traceId, handName(), _grabFrame.looseWeaponSharedPrimaryIsLeft ? "left" : "right",
+                    _grabFrame.traceId, handName(), _grabFrame.looseObjectSharedPrimaryIsLeft ? "left" : "right",
                     grab_three_phase::phaseName(_grabAcquisitionPhase), visualPublishDecision.apply, visualPublishDecision.reason,
                     _grabFrame.seat.hasSettledVisualHandRelation, _grabOffsetAcquisition.active, pivotTrackingErrorGameUnits,
                     _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z,
@@ -12858,9 +12872,9 @@ namespace rock
                 }
 
                 _grabVisualHandTransform = nextVisualHandWorld;
-                const auto visualDriver = _grabFrame.looseWeaponSharedPeerTrace ?
-                    (_grabFrame.looseWeaponSharedPrimaryIsLeft ? frik_visual_authority::RebaseDriver::LeftWeaponPivot :
-                        frik_visual_authority::RebaseDriver::RightWeaponPivot) :
+                const auto visualDriver = _grabFrame.looseObjectSharedPeerTrace ?
+                    (_grabFrame.looseObjectSharedPrimaryIsLeft ? frik_visual_authority::RebaseDriver::LeftObjectPivot :
+                        frik_visual_authority::RebaseDriver::RightObjectPivot) :
                     frik_visual_authority::physicalHandDriver(_isLeft);
                 if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform, visualDriver)) {
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;

@@ -758,7 +758,7 @@ namespace rock
             RE::hknpWorld* world,
             const GrabSharedObjectContext& sharedContext,
             ValidatedGrabSelection& outSelection);
-        bool coordinateLooseWeaponProxy(RE::hknpWorld* world, Hand* peer,
+        bool coordinateLooseObjectProxy(RE::hknpWorld* world, Hand* peer,
             const RE::NiTransform* peerHandWorld, RE::NiTransform& proxyWorld);
         bool updateHeldDrive(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,

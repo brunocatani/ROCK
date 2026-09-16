@@ -463,9 +463,9 @@ int main()
         ok &= expectEnum("never consumed", planPresentation(ConsumedTarget{}, winner(registry, false), consumedTarget, true).decision, PresentationDecision::NoClaim);
     }
 
-    // A shared weapon carries both fixed hand seats through one rigid
+    // A shared object carries both fixed hand seats through one rigid
     // delta. Changing controller separation must not slide either seat.
-    for (const auto driver : {RebaseDriver::RightWeaponPivot, RebaseDriver::LeftWeaponPivot}) {
+    for (const auto driver : {RebaseDriver::RightObjectPivot, RebaseDriver::LeftObjectPivot}) {
         Claim front{}, rear{};
         front.valid = rear.valid = true;
         front.driver = rear.driver = driver;
@@ -475,8 +475,8 @@ int main()
         front.otherDriverAtPublish = rear.otherDriverAtPublish = sample(translated(10.0f, 0.0f, 0.0f));
         const auto frontAlong = planRebase(front, sample(identity()), sample(translated(30.0f, 0.0f, 0.0f)));
         const auto rearAlong = planRebase(rear, sample(identity()), sample(translated(30.0f, 0.0f, 0.0f)));
-        ok &= expectNear("shared forward hand cannot slide along barrel", translationDeltaGameUnits(frontAlong.target, front.target), 0.0f, 0.001f);
-        ok &= expectNear("shared rear hand cannot slide along barrel", translationDeltaGameUnits(rearAlong.target, rear.target), 0.0f, 0.001f);
+        ok &= expectNear("shared forward hand cannot slide along object", translationDeltaGameUnits(frontAlong.target, front.target), 0.0f, 0.001f);
+        ok &= expectNear("shared rear hand cannot slide along object", translationDeltaGameUnits(rearAlong.target, rear.target), 0.0f, 0.001f);
         const auto wristTurn = planRebase(front, sample(yawed(60.0f)), sample(translated(10.0f, 0.0f, 0.0f)));
         ok &= expectNear("two-hand aim cancels carrier yaw across the grip axis", translationDeltaGameUnits(wristTurn.target, front.target), 0.0f, 0.001f);
         ok &= expectNear("two-hand aim keeps grip orientation through carrier yaw", rotationDeltaDegrees(wristTurn.target, front.target), 0.0f, 0.01f);
@@ -494,7 +494,7 @@ int main()
         ok &= expectNear("shared seats follow locomotion z", frontTurn.target.translate.z, 5.0f, 0.001f);
         DriverFrame frame{};
         frame.hands[0] = sample(identity()); frame.hands[1] = sample(translated(10.0f, 0.0f, 0.0f));
-        const auto primaryIndex = driver == RebaseDriver::LeftWeaponPivot ? 1u : 0u;
+        const auto primaryIndex = driver == RebaseDriver::LeftObjectPivot ? 1u : 0u;
         ok &= expectTrue("pivot driver samples its primary hand", sampleForDriver(frame, driver) == &frame.hands[primaryIndex]);
         ok &= expectTrue("pivot driver samples the other hand", otherHandSampleForDriver(frame, driver) == &frame.hands[1u - primaryIndex]);
     }
