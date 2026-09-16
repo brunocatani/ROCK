@@ -12290,10 +12290,15 @@ namespace rock
         const auto finishOldPair = [](Hand& hand, std::uint64_t peerTrace) {
             auto& frame = hand._grabFrame;
             if (frame.looseObjectSharedPeerTrace && frame.looseObjectSharedPeerTrace != peerTrace) {
-                frame.looseObjectSoloProxyCorrection = frame.looseObjectSharedProxyCorrection;
-                frame.hasLooseObjectSoloProxyCorrection = true;
+                // Weapons return to the remaining hand's captured solo grip,
+                // like equipped support release. Props retain their shared pose.
+                const bool preserveSharedPose = !hand.isHoldingLooseWeapon();
+                frame.looseObjectSoloProxyCorrection = preserveSharedPose ? frame.looseObjectSharedProxyCorrection :
+                    transform_math::makeIdentityTransform<RE::NiTransform>();
+                frame.hasLooseObjectSoloProxyCorrection = preserveSharedPose;
                 frame.looseObjectSharedPeerTrace = 0;
-                ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot ended; preserving remaining grip", hand.handName());
+                ROCK_LOG_INFO(Hand, "{} hand loose two-hand pivot ended; {}", hand.handName(),
+                    preserveSharedPose ? "preserving remaining grip" : "restoring solo weapon grip");
             }
         };
         const auto correctedProxy = [](const Hand& hand, RE::NiTransform proxy) {
