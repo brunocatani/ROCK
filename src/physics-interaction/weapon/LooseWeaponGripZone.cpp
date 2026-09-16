@@ -456,11 +456,10 @@ namespace rock::loose_weapon_grip_zone
         HandZoneState firing{};
         const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
         const float firingDistance = pointDistance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
-        const bool firingEligible = firingResolved && firing.hasLoosePlacementHandWeaponLocal &&
-            firingDistance <= equipped_weapon_handling_runtime::current().gripZoneEquipRadiusGameUnits;
+        const bool firingEligible = firingResolved && firing.hasFiringHandWeaponLocal &&
+            firingDistance <= g_rockConfig.rockWeaponInteractionProbeRadius;
 
-        if (firingResolved && firing.hasLoosePlacementHandWeaponLocal &&
-            firingDistance <= g_rockConfig.rockWeaponInteractionProbeRadius) {
+        if (firingEligible) {
             state.indicatorLocal[state.indicatorCount++] = firing.gripWeaponLocal;
         }
         RE::NiTransform supportLocal = authored.supportHandWeaponLocal;
@@ -525,8 +524,9 @@ namespace rock::loose_weapon_grip_zone
                 state.lastDirection = {gate.approachDirectionWorld.x, gate.approachDirectionWorld.y, gate.approachDirectionWorld.z};
                 state.lastDirectionValid = true;
             }
-            supportEligible = debug.valid && gate.spatialPass &&
-                supportDistance <= g_rockConfig.rockWeaponInteractionTouchRadius;
+            // The visible activation cone is the capture area. Requiring mesh
+            // touch here made its indicator promise a seat the grab ignored.
+            supportEligible = debug.valid && gate.spatialPass;
             debug.eligible = supportEligible;
             const auto indicator = activation::evaluateIndicator({
                 .weaponFamily = debug.family,
@@ -534,7 +534,7 @@ namespace rock::loose_weapon_grip_zone
                 .supportSideAxisWorld = vec(debug.sideWorld),
                 .downAxisWorld = vec(debug.downWorld),
                 .activationStateValid = debug.valid,
-                .activationSpatialPass = gate.spatialPass,
+                .activationSpatialPass = supportEligible,
                 .supportGripAllowed = true,
             });
             if (indicator.visible) {
@@ -546,7 +546,7 @@ namespace rock::loose_weapon_grip_zone
         if (out.role == selection::Role::None) {
             return false;
         }
-        out.handWeaponLocal = out.role == selection::Role::Support ? supportLocal : firing.loosePlacementHandWeaponLocal;
+        out.handWeaponLocal = out.role == selection::Role::Support ? supportLocal : firing.firingHandWeaponLocal;
         return true;
     }
 

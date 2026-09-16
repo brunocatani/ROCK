@@ -1216,12 +1216,14 @@ namespace rock::grab_authority_frame_math
         Transform ownerBodyLocal{};
         Transform desiredObjectWorld{};
         Transform desiredBodyWorld{};
+        Transform visualHandObjectLocal{};
         Vector pivotAWorld{};
         Vector gripPointWorld{};
         Vector visualNormalWorld{};
         GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
         bool hasDesiredObjectWorld = false;
         bool hasDesiredBodyWorld = false;
+        bool hasVisualHandObjectLocal = false;
         bool visualNormalValid = false;
     };
 
@@ -1278,6 +1280,8 @@ namespace rock::grab_authority_frame_math
             !isFiniteTransform(input.objectWorld) ||
             !isFiniteTransform(input.bodyWorld) ||
             !isFiniteTransform(input.constraintBodyWorld) ||
+            (input.hasVisualHandObjectLocal && (!isFiniteTransform(input.visualHandObjectLocal) ||
+                input.visualHandObjectLocal.scale <= 0.0001f)) ||
             !isFiniteVector(input.pivotAWorld) ||
             !isFiniteVector(input.gripPointWorld)) {
             return frozen;
@@ -1350,7 +1354,10 @@ namespace rock::grab_authority_frame_math
             input.proxyWorld,
             frozen.desiredObjectWorld,
             input.pivotAWorld);
-        frozen.rawHandSpace = splitFrame.rawHandSpace;
+        // Authored seats define the visual wrist in object space. Keep the
+        // physical proxy and its motor relation independent of that pose.
+        frozen.rawHandSpace = input.hasVisualHandObjectLocal ?
+            transform_math::invertTransform(input.visualHandObjectLocal) : splitFrame.rawHandSpace;
         frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
         frozen.proxyAuthorityHandSpace =

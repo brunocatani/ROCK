@@ -311,6 +311,57 @@ int main()
             0.001f);
     }
 
+    for (const bool isLeft : {false, true}) {
+        // An authored wrist must stay on the weapon even when the physical
+        // controller and the selected scene node use different frames.
+        auto weaponWorld = identityTransform();
+        weaponWorld.translate = {40.0f, 20.0f, 10.0f};
+        weaponWorld.rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 0.0f, 1.0f}, 0.7f);
+        auto objectLocal = identityTransform(), bodyLocal = identityTransform(), handLocal = identityTransform();
+        objectLocal.translate = {3.0f, -2.0f, 1.0f};
+        objectLocal.rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({1.0f, 0.0f, 0.0f}, 0.4f);
+        bodyLocal.translate = {-2.0f, 5.0f, 0.0f};
+        handLocal.translate = {isLeft ? -2.0f : 2.0f, 15.0f, -3.0f};
+        handLocal.rotate = rock::weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>({0.0f, 1.0f, 0.0f}, isLeft ? -1.1f : 1.1f);
+        const auto objectWorld = rock::transform_math::composeTransforms(weaponWorld, objectLocal);
+        const auto bodyWorld = rock::transform_math::composeTransforms(weaponWorld, bodyLocal);
+        auto physicalHand = identityTransform();
+        physicalHand.translate = {50.0f, 25.0f, 10.0f};
+        authority::GrabAuthorityFrameFreezeInput<RE::NiTransform> input{
+            .rawHandWorld = physicalHand,
+            .proxyWorld = physicalHand,
+            .proxyAuthorityFrameWorld = physicalHand,
+            .objectWorld = objectWorld,
+            .bodyWorld = bodyWorld,
+            .constraintBodyWorld = bodyWorld,
+            .rootBodyLocal = bodyLocal,
+            .desiredBodyWorld = bodyWorld,
+            .pivotAWorld = physicalHand.translate,
+            .gripPointWorld = rock::transform_math::localPointToWorld(weaponWorld, handLocal.translate),
+            .source = authority::GrabAuthorityPivotSource::LooseWeaponPrimaryAttach,
+            .hasDesiredBodyWorld = true,
+        };
+        const auto physicalCapture = authority::freezeGrabAuthorityFrame(input);
+        const auto objectToBody = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(objectWorld), bodyWorld);
+        input.visualHandObjectLocal = rock::transform_math::composeTransforms(objectToBody,
+            rock::transform_math::composeTransforms(rock::transform_math::invertTransform(bodyLocal), handLocal));
+        input.hasVisualHandObjectLocal = true;
+        const auto authoredCapture = authority::freezeGrabAuthorityFrame(input);
+        ok &= expectTrue("authored wrist and physical capture remain valid", physicalCapture.valid && authoredCapture.valid);
+        const auto renderedHand = rock::grab_frame_math::computeFrameFromCapturedObject(authoredCapture.desiredObjectWorld, authoredCapture.rawHandSpace);
+        const auto drivenRoot = rock::transform_math::composeTransforms(authoredCapture.desiredBodyWorld, rock::transform_math::invertTransform(bodyLocal));
+        const auto expectedHand = rock::transform_math::composeTransforms(drivenRoot, handLocal);
+        ok &= expectPointNear("rendered wrist is exactly on authored seat", renderedHand.translate, expectedHand.translate, 0.001f);
+        ok &= expectPointNear("authored wrist does not move physics target", authoredCapture.desiredBodyWorld.translate, physicalCapture.desiredBodyWorld.translate, 0.001f);
+        ok &= expectPointNear("authored wrist does not move selected body pivot", authoredCapture.pivotBConstraintLocalGame, physicalCapture.pivotBConstraintLocalGame, 0.001f);
+        for (int row = 0; row < 3; ++row) for (int col = 0; col < 3; ++col) {
+            ok &= expectNear("rendered wrist uses authored rotation", renderedHand.rotate.entry[row][col], expectedHand.rotate.entry[row][col], 0.0001f);
+            ok &= expectNear("authored wrist does not rotate physics target", authoredCapture.desiredBodyWorld.rotate.entry[row][col], physicalCapture.desiredBodyWorld.rotate.entry[row][col], 0.0001f);
+        }
+        input.visualHandObjectLocal.translate.x = std::numeric_limits<float>::quiet_NaN();
+        ok &= expectFalse("invalid authored wrist fails capture closed", authority::freezeGrabAuthorityFrame(input).valid);
+    }
+
     {
         RE::NiTransform invalidHand = identityTransform();
         invalidHand.rotate.entry[0][0] = std::numeric_limits<float>::infinity();
