@@ -389,6 +389,13 @@ int main()
         const auto endedProxy = acquisition::advance(transition, proxy, targetLocal, grip, transition.durationSeconds);
         ok &= expectFalse("acquisition ends deterministically", transition.active);
         ok &= expectNear("completion returns exact physical proxy", endedProxy.translate.x, proxy.translate.x, 0.0f);
+        const auto alignedBody = rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(endedProxy, targetLocal);
+        const auto authoredTarget = rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(proxy, targetLocal);
+        ok &= expectNear("arbitrary released orientation converges to authored rotation",
+            acquisition::rotationAngleRadians(alignedBody.rotate, authoredTarget.rotate), 0.0f, 0.001f);
+        ok &= expectPointNear("arbitrary released position converges to authored grip",
+            rock::transform_math::localPointToWorld(alignedBody, grip),
+            rock::transform_math::localPointToWorld(authoredTarget, grip), 0.001f);
         const auto noCorrection = acquisition::begin(proxy,
             rock::grab_frame_math::objectFromGeneratedProxyLocalSpace(proxy, targetLocal), targetLocal, grip);
         ok &= expectFalse("an already seated pose does not restart correction", noCorrection.active);

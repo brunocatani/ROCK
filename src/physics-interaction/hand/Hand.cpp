@@ -1125,7 +1125,7 @@ namespace rock
         std::uint32_t preferredBodyId,
         float maxDistanceGame,
         bool allowProjectileLayerForExactTarget,
-        bool preserveEquippedPose)
+        bool equippedWeaponTransfer)
     {
         if (!hknpWorld || !targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
             return false;
@@ -1202,7 +1202,7 @@ namespace rock
         selection.hasHitPoint = true;
         selection.hasHitNormal = true;
         selection.forcedArrival = true;
-        selection.preserveEquippedPose = preserveEquippedPose;
+        selection.equippedWeaponTransfer = equippedWeaponTransfer;
         selection.allowProjectileLayerForExactTarget = allowProjectileLayerForExactTarget;
 
         if (!selection.isValid()) {

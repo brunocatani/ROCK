@@ -1027,11 +1027,7 @@ namespace rock
                 return frame;
             }
 
-            if (looseWeaponGrab && selection.forcedArrival && selection.preserveEquippedPose &&
-                rootNode && isFiniteNiTransform(rootNode->world)) {
-                frame.desiredRootWorld = rootNode->world;
-                frame.reason = "equippedTransferPreservePose";
-            } else if (savedGrabOffsetAttachValid) {
+            if (savedGrabOffsetAttachValid) {
                 /*
                  * A per-object saved offset is explicit hand-placement
                  * authority, so it overrides both the generic FRIK weapon
@@ -10735,7 +10731,7 @@ namespace rock
                 const char* driveReason = joiningPeerHeldObject ? "joining-peer-held-loose-object" : "ordinary-dynamic-loose-object";
                 RE::NiTransform initialProxyWorld = proxyFrameWorldAtGrab;
                 RE::NiPoint3 initialConstraintPivotWorld = grabPivotAWorld;
-                if (!joiningPeerHeldObject && !sel.preserveEquippedPose &&
+                if (!joiningPeerHeldObject &&
                     sel.targetKind == grab_target::Kind::LooseObject &&
                     (_grabFrame.syntheticLooseWeaponPrimaryAttach || sel.forcedArrival)) {
                     _grabOffsetAcquisition = grab_offset_acquisition::begin(
@@ -12003,7 +11999,7 @@ namespace rock
         clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
 
         ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
-        if (sel.preserveEquippedPose && rootNode) {
+        if (sel.equippedWeaponTransfer && rootNode) {
             const auto desiredRoot = transform_math::composeTransforms(
                 _grabFrame.authority.desiredBodyWorldAtGrab, transform_math::invertTransform(_grabFrame.rootBodyLocal));
             vanilla_weapon_alignment_telemetry::recordTransferPose(sel.refr ? sel.refr->GetFormID() : 0,

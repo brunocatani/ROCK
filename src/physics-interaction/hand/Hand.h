@@ -601,7 +601,7 @@ namespace rock
             std::uint32_t preferredBodyId,
             float maxDistanceGame,
             bool allowProjectileLayerForExactTarget,
-            bool preserveEquippedPose = false);
+            bool equippedWeaponTransfer = false);
         void clearActorEquipmentDropHandoff(const char* reason = "cleared");
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);
