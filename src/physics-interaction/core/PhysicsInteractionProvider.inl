@@ -989,6 +989,10 @@
         setFlag(Flag::WeaponPresent, outState.weaponFormId != 0 && resolveEquippedWeaponInteractionNode());
         setFlag(Flag::WeaponDrawn, outState.weaponFormId != 0 && runtime_state::currentFrame().weaponDrawn);
         setFlag(Flag::PresentationKnown, presentationKnown);
+        setFlag(Flag::BipodInputReserved, g_rockConfig.rockBipodMode &&
+            (outState.flags & static_cast<std::uint32_t>(Flag::Valid)) &&
+            _dynamicWeaponCollision.surfaceSupportReservesInput(
+                reinterpret_cast<std::uintptr_t>(resolveEquippedWeaponInteractionNode()), outState.weaponGenerationKey));
         outState.worldGeneration =
             _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
         outState.skeletonGeneration =

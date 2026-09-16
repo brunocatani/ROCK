@@ -1038,6 +1038,11 @@ namespace rock::provider
         // Equipped identity can exist while holstered. WeaponPresent matches
         // handling-state WeaponPresent: drawn with a resolved weapon root.
         WeaponEquipped = 1u << 11,
+        // Bipod mode is enabled and the physical right-stick click belongs to
+        // a current weapon/surface contact, an active latch, or its release
+        // this frame. False when bBipodMode is off. Consumers must reject the
+        // complete opening gesture, not replay its release when this clears.
+        BipodInputReserved = 1u << 12,
     };
 
     enum class RockProviderExternalContactFlagV1 : std::uint32_t

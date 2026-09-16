@@ -1791,6 +1791,7 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::retireAll(void* bhkWorld, const bool preserveSurfaceSupport)
     {
+        _surfaceInputReserved = false;
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
@@ -1816,6 +1817,7 @@ namespace rock
         clearLocalProxyStateLocked();
         _surfaceSupport = {};
         _enabledAtomic.store(false, std::memory_order_release);
+        _surfaceInputReserved = false;
         _frameAcceptingIntent = false;
         _frameHasIntent = false;
         _frameIndex = 0;
