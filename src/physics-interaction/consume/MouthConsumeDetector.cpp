@@ -74,16 +74,16 @@ namespace rock::mouth_consume
         [[nodiscard]] float resolvedProbeSpeed(const DetectorInput& input, const RuntimeState& runtime) noexcept
         {
             const Probe* probe = selectedProbe(input);
-            if (!probe) {
+            if (!probe || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld)) {
                 return 0.0f;
-            }
-            if (probe->hasVelocity) {
-                return probeSpeed(*probe);
             }
             if (!runtime.hasLastProbePoint || input.deltaSeconds <= 0.000001f) {
                 return 0.0f;
             }
-            return length(sub(probe->pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
+            // Match back stash: common HMD translation is locomotion, not an
+            // eating gesture. Keep relative hand motion in the speed check.
+            const auto relativePoint = sub(probe->pointGame, input.hmdPositionWorld);
+            return length(sub(relativePoint, runtime.lastProbePointRelativeToHmdGame)) / input.deltaSeconds;
         }
     }
 
@@ -111,11 +111,6 @@ namespace rock::mouth_consume
         return add(add(add(hmdPositionWorld, mul(right, offsetGameUnits.x)), mul(forward, offsetGameUnits.y)), mul(kWorldUp, offsetGameUnits.z));
     }
 
-    float probeSpeed(const Probe& probe) noexcept
-    {
-        return probe.hasVelocity ? length(probe.velocityGamePerSecond) : 0.0f;
-    }
-
     float candidateConfidence(float distanceGameUnits, float thresholdGameUnits, float radiusGameUnits) noexcept
     {
         if (!std::isfinite(distanceGameUnits) || !std::isfinite(thresholdGameUnits) || thresholdGameUnits <= 0.0001f) {
@@ -132,12 +127,12 @@ namespace rock::mouth_consume
         Decision decision{};
         const Probe* probe = selectedProbe(input);
         auto updateProbeHistory = [&]() {
-            if (!probe) {
+            if (!probe || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld)) {
                 runtime.hasLastProbePoint = false;
                 return;
             }
-            runtime.lastProbePointGame = probe->pointGame;
-            runtime.hasLastProbePoint = finitePoint(probe->pointGame);
+            runtime.lastProbePointRelativeToHmdGame = sub(probe->pointGame, input.hmdPositionWorld);
+            runtime.hasLastProbePoint = finitePoint(runtime.lastProbePointRelativeToHmdGame);
         };
 
         const float speed = resolvedProbeSpeed(input, runtime);

@@ -8,8 +8,6 @@ namespace rock::mouth_consume
     struct Probe
     {
         RE::NiPoint3 pointGame{};
-        RE::NiPoint3 velocityGamePerSecond{};
-        bool hasVelocity = false;
     };
 
     struct RuntimeState
@@ -19,7 +17,7 @@ namespace rock::mouth_consume
         bool confirmed = false;
         float dwellSeconds = 0.0f;
         float nextCandidatePulseTimeSeconds = 0.0f;
-        RE::NiPoint3 lastProbePointGame{};
+        RE::NiPoint3 lastProbePointRelativeToHmdGame{};
         bool hasLastProbePoint = false;
     };
 
@@ -66,7 +64,6 @@ namespace rock::mouth_consume
         const RE::NiPoint3& hmdPositionWorld,
         const RE::NiPoint3& hmdForwardWorld,
         const RE::NiPoint3& offsetGameUnits) noexcept;
-    [[nodiscard]] float probeSpeed(const Probe& probe) noexcept;
     [[nodiscard]] float candidateConfidence(float distanceGameUnits, float thresholdGameUnits, float radiusGameUnits) noexcept;
     [[nodiscard]] Decision evaluate(const DetectorInput& input, RuntimeState& runtime) noexcept;
 }
