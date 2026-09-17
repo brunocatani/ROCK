@@ -151,6 +151,10 @@ namespace rock::performance_profiler
                 return "contactResolve";
             case Scope::NativeContactCallback:
                 return "nativeContactCallbacks";
+            case Scope::NativeMeleeCallback:
+                return "nativeMeleeCallback";
+            case Scope::NativeMeleeDispatch:
+                return "nativeMeleeDispatch";
             case Scope::GrabAcquisitionBodyScan:
                 return "grabAcquisitionBodyScan";
             case Scope::GrabAcquisitionActivePrep:
@@ -214,6 +218,10 @@ namespace rock::performance_profiler
                 return "grabAcquisitionCacheInvalidated";
             case Counter::GrabNearbyDampingRestoreFailed:
                 return "grabNearbyDampingRestoreFailed";
+            case Counter::NativeMeleeRockPartnerDropped:
+                return "nativeMeleeRockPartnerDropped";
+            case Counter::NativeMeleeDecodeFailed:
+                return "nativeMeleeDecodeFailed";
             case Counter::Count:
                 break;
             }
@@ -257,6 +265,8 @@ namespace rock::performance_profiler
                 return "equippedWeaponFingerPoseSpatialNodeVisits";
             case ValueMetric::EquippedWeaponFingerPoseTriangleTests:
                 return "equippedWeaponFingerPoseTriangleTests";
+            case ValueMetric::NativeMeleeCallbacksPerFrame:
+                return "nativeMeleeCallbacksPerFrame";
             case ValueMetric::Count:
                 break;
             }
@@ -810,6 +820,11 @@ namespace rock::performance_profiler
             s_settings.intervalStartFrame.store(0, std::memory_order_release);
         }
         s_settings.enabled.store(true, std::memory_order_release);
+    }
+
+    bool enabled() noexcept
+    {
+        return s_settings.enabled.load(std::memory_order_acquire);
     }
 
     void beginFrame() noexcept

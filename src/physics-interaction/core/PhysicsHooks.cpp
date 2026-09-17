@@ -14,6 +14,7 @@
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/native/NativePlayerCollisionFilter.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -26,10 +27,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string_view>
@@ -927,261 +926,79 @@ namespace rock
             return outCount <= burst || outCount % period == 0;
         }
 
-        /*
-         * NATIVE-MELEE-TRACE partner decode. Layout verified against the raw
-         * disassembly of the FO4VR VRMeleeImpact callback (RVA 0xEFF000):
-         *   contactEvent + 0x00 : hknpWorld*
-         *   contactEvent + 0x20 : int, our body's index in the event pair
-         *   collisionEvent+ 0x08 : int[2], the pair's body ids
-         *   collisionEvent+ 0x11 : byte, event flag (native returns when == 1)
-         *   player       + 0x908 : float, native melee cooldown gate
-         * Every read is guarded and fails closed. Aggregates a per-layer
-         * histogram of the partner body so one session shows whether an
-         * NPC-layer partner ever reaches the native callback.
-         */
-        /*
-         * Returns true when the event's partner body sits on a ROCK-owned
-         * collision layer. The caller must then drop the event instead of
-         * forwarding it to the native VRMeleeImpact callback: the native code
-         * accepts any ref-less non-static body as a "hit the world" melee
-         * target, performs the hit, and arms the ~0.7s melee cooldown, so one
-         * ROCK self-contact at swing start silently eats the real NPC hit
-         * (verified in-game 2026-08-27: cooldown armed by a
-         * ROCK_DynamicWeaponCompound partner on 95% of events).
-         */
-        bool traceVrMeleeImpactPartner(RE::Actor* actor, void* contactEvent, void* collisionEvent, bool actorIsPlayer)
+        enum class MeleeContactDecodeStage : std::uint32_t
         {
-            static std::array<std::atomic<std::uint32_t>, 128> s_layerCounts{};
-            static std::atomic<std::uint32_t> s_totalCount{ 0 };
-            static std::atomic<std::uint32_t> s_flaggedCount{ 0 };
-            static std::atomic<std::uint32_t> s_cooldownActiveCount{ 0 };
-            static std::atomic<std::uint32_t> s_decodeFailedCount{ 0 };
-            static std::atomic<std::uint32_t> s_rockPartnerCount{ 0 };
-            static std::atomic<std::int64_t> s_lastSummaryMs{ 0 };
-            static std::atomic<std::uint32_t> s_detailCount{ 0 };
-            static std::atomic<std::uint32_t> s_actorPathPlayerCount{ 0 };
-            static std::atomic<std::uint32_t> s_actorPathNpcCount{ 0 };
-            static std::atomic<std::uint32_t> s_actorPathReflessCount{ 0 };
-            static std::atomic<std::uint32_t> s_actorPathDetailCount{ 0 };
+            Complete = 0,
+            EventBuffers = 1,
+            World = 2,
+            PartnerBody = 3
+        };
 
-            const auto total = s_totalCount.fetch_add(1, std::memory_order_relaxed) + 1;
+        // hkHandle has a non-trivial destructor; MSVC requires its construction
+        // outside the function containing the SEH boundary below.
+        bool readMeleeBodyFilter(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t& filterInfo)
+        {
+            return body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filterInfo);
+        }
 
-            std::uint8_t eventFlag = 0;
-            if (collisionEvent && native_memory::tryReadField(collisionEvent, 0x11, eventFlag) && eventFlag == 1) {
-                s_flaggedCount.fetch_add(1, std::memory_order_relaxed);
+        // The callback owns these event buffers for this invocation only. Keep
+        // the existing FO4VR event layout, but protect the complete read with SEH
+        // instead of querying page protection for each scalar. Body lookup still
+        // validates the allocation bound, body identity, and live motion slot.
+        // Never cache an event, world, or body pointer between callbacks.
+        MeleeContactDecodeStage readMeleeContactPartner(
+            const void* contactEvent, const void* collisionEvent, std::uint32_t& filterInfo) noexcept
+        {
+            filterInfo = 0;
+            auto stage = MeleeContactDecodeStage::EventBuffers;
+            if (!native_memory::pointerLooksReadable(contactEvent) ||
+                !native_memory::pointerLooksReadable(collisionEvent)) {
+                return stage;
             }
-            float cooldown = 0.0f;
-            if (actorIsPlayer && actor && native_memory::tryReadField(actor, 0x908, cooldown) && cooldown > 0.0f) {
-                s_cooldownActiveCount.fetch_add(1, std::memory_order_relaxed);
-            }
 
-            std::uint32_t ourIndex = 0xFFFF'FFFFu;
-            std::uint32_t bodyIds[2] = { 0x7FFF'FFFFu, 0x7FFF'FFFFu };
-            std::uint32_t otherFilterInfo = 0;
-            bool decoded = false;
-            RE::hknpWorld* world = nullptr;
-            if (contactEvent && collisionEvent &&
-                native_memory::tryReadField(contactEvent, 0x0, world) && world &&
-                native_memory::tryReadField(contactEvent, 0x20, ourIndex) && ourIndex <= 1 &&
-                native_memory::tryReadField(collisionEvent, 0x08, bodyIds[0]) &&
-                native_memory::tryReadField(collisionEvent, 0x0C, bodyIds[1])) {
-                const auto otherId = bodyIds[1u - ourIndex];
-                if (body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ otherId }, otherFilterInfo)) {
-                    s_layerCounts[otherFilterInfo & 0x7F].fetch_add(1, std::memory_order_relaxed);
-                    decoded = true;
+            __try {
+                RE::hknpWorld* world = nullptr;
+                std::uint32_t ourIndex = 0;
+                std::uint32_t otherId = 0;
+                std::memcpy(&world, contactEvent, sizeof(world));
+                std::memcpy(&ourIndex, static_cast<const char*>(contactEvent) + 0x20, sizeof(ourIndex));
+                if (ourIndex > 1) {
+                    return stage;
                 }
-            }
-            if (!decoded) {
-                s_decodeFailedCount.fetch_add(1, std::memory_order_relaxed);
-            }
-            const bool rockPartner =
-                decoded &&
-                collision_layer_policy::isRockOwnedMatrixLayer(otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK);
-            if (rockPartner) {
-                s_rockPartnerCount.fetch_add(1, std::memory_order_relaxed);
-            }
-
-            /*
-             * NATIVE-MELEE-TRACE partner identity for the actor-path layers
-             * (charcontroller 30, biped 8, deadbip 32, bipedNoCC 33). These are
-             * the layers a landed NPC hit must arrive on, and they are rare in
-             * the event stream, so per-event ref resolution here is bounded.
-             * The identity split answers the open question directly: does the
-             * NPC's controller ever reach this callback, or only the player's?
-             */
-            const std::uint32_t partnerLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-            const bool actorPathPartner = decoded &&
-                (partnerLayer == collision_layer_policy::FO4_LAYER_CHARCONTROLLER ||
-                    partnerLayer == collision_layer_policy::FO4_LAYER_BIPED ||
-                    partnerLayer == collision_layer_policy::FO4_LAYER_DEADBIP ||
-                    partnerLayer == collision_layer_policy::FO4_LAYER_BIPED_NO_CC);
-            if (actorPathPartner) {
-                auto* player = RE::PlayerCharacter::GetSingleton();
-                auto* cell = player ? player->GetParentCell() : nullptr;
-                auto* bhkWorld = cell ? cell->GetbhkWorld() : nullptr;
-                const auto otherId = bodyIds[1u - ourIndex];
-                RE::TESObjectREFR* partnerRef =
-                    bhkWorld ? resolveBodyToRef(bhkWorld, world, RE::hknpBodyId{ otherId }) : nullptr;
-                const bool partnerIsPlayer = partnerRef && partnerRef == player;
-                if (partnerIsPlayer) {
-                    s_actorPathPlayerCount.fetch_add(1, std::memory_order_relaxed);
-                } else if (partnerRef) {
-                    s_actorPathNpcCount.fetch_add(1, std::memory_order_relaxed);
-                } else {
-                    s_actorPathReflessCount.fetch_add(1, std::memory_order_relaxed);
+                std::memcpy(&otherId,
+                    static_cast<const char*>(collisionEvent) + 0x08 + (1u - ourIndex) * sizeof(otherId),
+                    sizeof(otherId));
+                stage = MeleeContactDecodeStage::World;
+                if (!native_memory::pointerLooksReadable(world)) {
+                    return stage;
                 }
-                if (!partnerIsPlayer) {
-                    std::uint32_t actorDetailCount = 0;
-                    if (shouldEmitNativeMeleeTrace(s_actorPathDetailCount, actorDetailCount, 30, 50)) {
-                        /*
-                         * Mirror of the native resolution walk (raw disassembly
-                         * of RVA 0xEFF000, 2026-08-27): partner hknpBody =
-                         * *(world+0x20) + id*0x90; body+0x88 is a
-                         * bhkNPCollisionObject*, its sceneObject at +0x10 feeds
-                         * TESObjectREFR::FindReferenceFor3D. Also reads the
-                         * player cooldown MODE byte (+0x948) and the common
-                         * post-dispatch value (+0x90C): in table mode a native
-                         * dispatch never touches +0x908, so +0x90C is the only
-                         * reliable "native dispatched a hit" witness.
-                         */
-                        std::uintptr_t bodyArray = 0;
-                        std::uint32_t bodyFlags = 0;
-                        std::uint32_t bodyKey = 0;
-                        void* collisionObject = nullptr;
-                        void* sceneObject = nullptr;
-                        RE::TESObjectREFR* nativeRef = nullptr;
-                        if (native_memory::tryReadField(world, 0x20, bodyArray) && bodyArray != 0) {
-                            auto* bodyPtr = reinterpret_cast<void*>(bodyArray + static_cast<std::uintptr_t>(otherId) * 0x90);
-                            native_memory::tryReadField(bodyPtr, 0x40, bodyFlags);
-                            native_memory::tryReadField(bodyPtr, 0x60, bodyKey);
-                            if (native_memory::tryReadField(bodyPtr, 0x88, collisionObject) && collisionObject &&
-                                native_memory::tryReadField(collisionObject, 0x10, sceneObject) && sceneObject) {
-                                nativeRef = RE::TESObjectREFR::FindReferenceFor3D(static_cast<RE::NiAVObject*>(sceneObject));
-                            }
-                        }
-                        std::uint8_t cooldownMode = 0;
-                        float commonCooldown = 0.0f;
-                        if (actorIsPlayer && actor) {
-                            native_memory::tryReadField(actor, 0x948, cooldownMode);
-                            native_memory::tryReadField(actor, 0x90C, commonCooldown);
-                        }
-                        /*
-                         * Direct reject-gate values from the raw disassembly of
-                         * 0xEFF000 (Ghidra 2026-08-27): teammate bit 26 of
-                         * target+0x2D0; the opaque attacker conjunction
-                         * (+0x9E8==1 && +0xA90!=0); hostility; base weapon
-                         * type (velocity gate applies only to non-hostile +
-                         * type>6); primary wand tracked speed at +0x28
-                         * (threshold 300.0) and angular at +0x2C.
-                         */
-                        std::uint32_t targetNiFlags = 0;
-                        std::uint32_t targetFormFlags = 0;
-                        RE::Actor* targetActor = nullptr;
-                        bool hostile = false;
-                        if (nativeRef) {
-                            native_memory::tryReadField(nativeRef, 0x2D0, targetNiFlags);
-                            native_memory::tryReadField(nativeRef, 0x10, targetFormFlags);
-                            if (nativeRef->formType == RE::ENUM_FORM_ID::kACHR) {
-                                targetActor = static_cast<RE::Actor*>(nativeRef);
-                            }
-                            if (actor && targetActor) {
-                                hostile = actor->GetHostileToActor(targetActor);
-                            }
-                        }
-                        std::uint32_t attacker9E8 = 0;
-                        std::uint32_t attackerA90 = 0;
-                        if (actor) {
-                            native_memory::tryReadField(actor, 0x9E8, attacker9E8);
-                            native_memory::tryReadField(actor, 0xA90, attackerA90);
-                        }
-                        int weaponType = -1;
-                        if (auto* equippedItem = f4vr::getEquippedWeaponItem()) {
-                            if (auto* weaponForm = equippedItem->item.object; weaponForm && weaponForm->formType == RE::ENUM_FORM_ID::kWEAP) {
-                                weaponType = static_cast<int>(static_cast<const RE::TESObjectWEAP*>(weaponForm)->weaponData.type.get());
-                            }
-                        }
-                        float wandLinear = -1.0f;
-                        float wandAngular = -1.0f;
-                        static const REL::Relocation<void**> s_primaryWandController{ REL::Offset(0x5AC8EB0) };
-                        if (void* wand = *s_primaryWandController) {
-                            native_memory::tryReadField(wand, 0x28, wandLinear);
-                            native_memory::tryReadField(wand, 0x2C, wandAngular);
-                        }
-                        ROCK_LOG_INFO(Combat,
-                            "NATIVE-MELEE-TRACE actor-path partner: layer={} bodyId={} flags=0x{:X} npObj={} scene={} nativeRef=0x{:08X} teammate={} niFlags=0x{:08X} formFlags=0x{:08X} hostile={} atk9E8={} atkA90={} weapType={} wandLin={:.1f} wandAng={:.2f} cdMode={} cdCommon={:.3f} flag11={} cd908={:.3f} total={}",
-                            partnerLayer,
-                            otherId,
-                            bodyFlags,
-                            collisionObject ? "ok" : "null",
-                            sceneObject ? "ok" : "null",
-                            nativeRef ? nativeRef->GetFormID() : 0u,
-                            (targetNiFlags >> 26) & 1u,
-                            targetNiFlags,
-                            targetFormFlags,
-                            hostile ? "yes" : "no",
-                            attacker9E8,
-                            attackerA90,
-                            weaponType,
-                            wandLinear,
-                            wandAngular,
-                            cooldownMode,
-                            commonCooldown,
-                            eventFlag,
-                            cooldown,
-                            total);
-                    }
+                stage = MeleeContactDecodeStage::PartnerBody;
+                if (!readMeleeBodyFilter(world, otherId, filterInfo)) {
+                    return stage;
                 }
+                return MeleeContactDecodeStage::Complete;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return stage;
             }
+        }
 
-            std::uint32_t detailCount = 0;
-            if (shouldEmitNativeMeleeTrace(s_detailCount, detailCount, 20, 500)) {
-                ROCK_LOG_INFO(Combat,
-                    "NATIVE-MELEE-TRACE VRMeleeImpact event: player={} ourIndex={} bodies=[{},{}] otherFilter=0x{:08X} flag11={} cooldown={:.3f} total={}",
-                    actorIsPlayer ? "yes" : "no",
-                    ourIndex,
-                    bodyIds[0],
-                    bodyIds[1],
-                    otherFilterInfo,
-                    eventFlag,
-                    cooldown,
-                    total);
+        // Counts cross the physics/main-thread boundary without retaining engine
+        // pointers. Timing and per-frame volume use the opt-in asynchronous profiler;
+        // only malformed input produces a rate-limited main-thread warning.
+        std::atomic<std::uint64_t> g_meleeCallbacksThisFrame{ 0 };
+        std::atomic<std::uint64_t> g_meleeDecodeFailures{ 0 };
+        std::atomic<MeleeContactDecodeStage> g_meleeDecodeFailureStage{ MeleeContactDecodeStage::Complete };
+
+        void reportMeleeContactFrame()
+        {
+            const auto callbacks = g_meleeCallbacksThisFrame.exchange(0, std::memory_order_relaxed);
+            performance_profiler::observeValue(performance_profiler::ValueMetric::NativeMeleeCallbacksPerFrame, callbacks);
+            const auto failures = g_meleeDecodeFailures.exchange(0, std::memory_order_relaxed);
+            if (failures != 0) {
+                ROCK_LOG_SAMPLE_WARN(Combat, 2000,
+                    "Native melee contact decode failed: frameFailures={} deepestStage={} (1=events,2=world,3=body); native forwarding preserved",
+                    failures, static_cast<std::uint32_t>(g_meleeDecodeFailureStage.load(std::memory_order_relaxed)));
             }
-
-            const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch())
-                                   .count();
-            auto lastMs = s_lastSummaryMs.load(std::memory_order_acquire);
-            if (nowMs - lastMs >= 2000 &&
-                s_lastSummaryMs.compare_exchange_strong(lastMs, nowMs, std::memory_order_acq_rel)) {
-                char histogram[224];
-                std::size_t written = 0;
-                histogram[0] = '\0';
-                for (std::uint32_t layer = 0; layer < s_layerCounts.size(); ++layer) {
-                    const auto count = s_layerCounts[layer].load(std::memory_order_relaxed);
-                    if (count == 0) {
-                        continue;
-                    }
-                    const auto result = std::snprintf(
-                        histogram + written, sizeof(histogram) - written, "L%u:%u ", layer, count);
-                    if (result <= 0 || written + static_cast<std::size_t>(result) >= sizeof(histogram)) {
-                        break;
-                    }
-                    written += static_cast<std::size_t>(result);
-                }
-                ROCK_LOG_INFO(Combat,
-                    "NATIVE-MELEE-TRACE VRMeleeImpact summary: total={} flag11={} cooldownActive={} decodeFailed={} rockPartnerDropped={} actorPath[player={} npc={} refless={}] partnerLayers=[{}]",
-                    total,
-                    s_flaggedCount.load(std::memory_order_relaxed),
-                    s_cooldownActiveCount.load(std::memory_order_relaxed),
-                    s_decodeFailedCount.load(std::memory_order_relaxed),
-                    s_rockPartnerCount.load(std::memory_order_relaxed),
-                    s_actorPathPlayerCount.load(std::memory_order_relaxed),
-                    s_actorPathNpcCount.load(std::memory_order_relaxed),
-                    s_actorPathReflessCount.load(std::memory_order_relaxed),
-                    histogram);
-            }
-
-            return rockPartner;
         }
 
         bool hookedWeaponSwingHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
@@ -1261,6 +1078,10 @@ namespace rock
 
         void hookedVrMeleeImpactCallback(RE::Actor* actor, void* contactEvent, void* collisionEvent)
         {
+            performance_profiler::ScopedTimer callbackTimer(performance_profiler::Scope::NativeMeleeCallback);
+            if (performance_profiler::enabled()) {
+                g_meleeCallbacksThisFrame.fetch_add(1, std::memory_order_relaxed);
+            }
             /*
              * FO4VR registers this callback while attaching native VR melee
              * collision to the first-person weapon nodes. It owns the native
@@ -1289,11 +1110,20 @@ namespace rock
              * co-located colliders from consuming the melee hit and arming
              * the cooldown. Undecodable events pass through unchanged.
              */
-            if (traceVrMeleeImpactPartner(actor, contactEvent, collisionEvent, input.actorIsPlayer)) {
+            std::uint32_t partnerFilter = 0;
+            const auto decodeStage = readMeleeContactPartner(contactEvent, collisionEvent, partnerFilter);
+            if (decodeStage != MeleeContactDecodeStage::Complete) {
+                g_meleeDecodeFailureStage.store(decodeStage, std::memory_order_relaxed);
+                g_meleeDecodeFailures.fetch_add(1, std::memory_order_relaxed);
+                performance_profiler::addCounter(performance_profiler::Counter::NativeMeleeDecodeFailed);
+            } else if (collision_layer_policy::isRockOwnedMatrixLayer(
+                           partnerFilter & collision_layer_policy::FO4_LAYER_FILTER_MASK)) {
+                performance_profiler::addCounter(performance_profiler::Counter::NativeMeleeRockPartnerDropped);
                 return;
             }
 
             if (g_originalVrMeleeImpactCallback) {
+                performance_profiler::ScopedTimer nativeTimer(performance_profiler::Scope::NativeMeleeDispatch);
                 g_originalVrMeleeImpactCallback(actor, contactEvent, collisionEvent);
             }
         }
@@ -1493,6 +1323,7 @@ namespace rock
     {
         g_nativeRuntimeSettingFrameClock.fetch_add(1, std::memory_order_acq_rel);
         reportProxyContactTrace();
+        reportMeleeContactFrame();
     }
 
     bool isNativeMeleeSuppressionActive()

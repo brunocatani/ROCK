@@ -53,6 +53,8 @@ namespace rock::performance_profiler
         DebugOverlayRender,
         ContactResolve,
         NativeContactCallback,
+        NativeMeleeCallback,
+        NativeMeleeDispatch,
         GrabAcquisitionBodyScan,
         GrabAcquisitionActivePrep,
         GrabMeshExtraction,
@@ -85,6 +87,8 @@ namespace rock::performance_profiler
         GrabAcquisitionCacheMiss,
         GrabAcquisitionCacheInvalidated,
         GrabNearbyDampingRestoreFailed,
+        NativeMeleeRockPartnerDropped,
+        NativeMeleeDecodeFailed,
         Count
     };
 
@@ -107,6 +111,7 @@ namespace rock::performance_profiler
         EquippedWeaponFingerPoseSelectedTriangles,
         EquippedWeaponFingerPoseSpatialNodeVisits,
         EquippedWeaponFingerPoseTriangleTests,
+        NativeMeleeCallbacksPerFrame,
         Count
     };
 
@@ -115,6 +120,7 @@ namespace rock::performance_profiler
     using OverlayLines = std::array<std::array<char, kOverlayLineLength>, kOverlayMaxLines>;
 
     void refreshSettings(bool enabled, int logIntervalFrames, int warmupFrames, bool overlayTextEnabled) noexcept;
+    bool enabled() noexcept;
     void beginFrame() noexcept;
     void endFrame() noexcept;
     void addEventCount(Scope scope, std::uint64_t count = 1) noexcept;
