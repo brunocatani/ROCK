@@ -11,8 +11,7 @@
 
 namespace rock::grab_pinch_pocket_policy
 {
-    // The old compact envelope admitted at most 10 * 10 * 4 cubic game units.
-    inline constexpr float kDefaultMaxVolumeCubicGameUnits = 400.0f;
+    inline constexpr float kDefaultMaxVolumeCubicGameUnits = 100.0f;
     inline constexpr float kMaxVolumeCubicGameUnits = 1000000.0f;
     inline constexpr float kDefaultMaxPocketDistanceGameUnits = 8.0f;
     inline constexpr float kDefaultMinFingerGapGameUnits = 1.0f;

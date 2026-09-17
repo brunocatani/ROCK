@@ -77,15 +77,15 @@ int main()
 
     bool ok = true;
 
-    const auto longRodBounds = bounds(30.0f, 3.0f, 2.0f);
-    ok &= expectNear("total bounding volume includes long dimension", longRodBounds.boundsVolumeCubicGameUnits, 180.0f);
+    const auto longRodBounds = bounds(30.0f, 1.5f, 2.0f);
+    ok &= expectNear("total bounding volume includes long dimension", longRodBounds.boundsVolumeCubicGameUnits, 90.0f);
     ok &= expectTrue("long thin object fits volume budget", evaluateObject(validInput(longRodBounds)).accept);
-    ok &= expectTrue("compact object of equal volume also fits", evaluateObject(validInput(bounds(6.0f, 6.0f, 5.0f))).accept);
-    ok &= expectTrue("flat wide object fits volume budget", evaluateObject(validInput(bounds(30.0f, 20.0f, 0.5f))).accept);
+    ok &= expectTrue("compact object of equal volume also fits", evaluateObject(validInput(bounds(6.0f, 5.0f, 3.0f))).accept);
+    ok &= expectTrue("flat wide object fits volume budget", evaluateObject(validInput(bounds(30.0f, 20.0f, 0.1f))).accept);
     ok &= expectTrue("coin still fits", evaluateObject(validInput(bounds(2.0f, 2.0f, 0.3f))).accept);
-    ok &= expectTrue("small thick object has no separate thickness veto", evaluateObject(validInput(bounds(7.0f, 7.0f, 5.6f))).accept);
-    ok &= expectTrue("volume boundary is inclusive", evaluateObject(validInput(bounds(10.0f, 10.0f, 4.0f))).accept);
-    ok &= expectFalse("volume above boundary is rejected", evaluateObject(validInput(bounds(10.0f, 10.0f, 4.01f))).accept);
+    ok &= expectTrue("small thick object has no separate thickness veto", evaluateObject(validInput(bounds(4.5f, 4.5f, 4.5f))).accept);
+    ok &= expectTrue("volume boundary is inclusive", evaluateObject(validInput(bounds(10.0f, 5.0f, 2.0f))).accept);
+    ok &= expectFalse("volume above boundary is rejected", evaluateObject(validInput(bounds(10.0f, 5.0f, 2.01f))).accept);
     ok &= expectFalse("large total volume is rejected", evaluateObject(validInput(bounds(16.0f, 12.0f, 8.0f))).accept);
 
     const auto scaledBounds = computeMeshExtentsFromBounds(

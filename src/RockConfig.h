@@ -429,7 +429,7 @@ namespace rock
         float rockGrabOppositionContactMaxAgeSeconds = 0.0556f;
         bool rockGrabPinchPocketEnabled = true;
         bool rockGrabPinchCloseSelectionEnabled = true;
-        float rockGrabPinchMaxVolumeCubicGameUnits = 400.0f;
+        float rockGrabPinchMaxVolumeCubicGameUnits = 100.0f;
         float rockGrabPinchMaxPocketDistanceGameUnits = 8.0f;
         float rockGrabPinchMinFingerGapGameUnits = 1.0f;
         float rockGrabPinchMaxFingerGapGameUnits = 12.0f;
