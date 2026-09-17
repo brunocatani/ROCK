@@ -38,11 +38,13 @@ namespace rock::nearby_grab_damping
         inline constexpr std::uint16_t kInvalidMotionPropertiesId = INVALID_MOTION_PROPERTIES_ID;
         inline constexpr std::size_t kMaxCachedDampedProperties = 128;
 
-        struct MotionPropertiesRecord
+        // Native library insertion reads this whole record with aligned SIMD loads.
+        struct alignas(16) MotionPropertiesRecord
         {
             std::array<std::uint8_t, offsets::kMotionProperties_RecordSize> bytes{};
         };
         static_assert(sizeof(MotionPropertiesRecord) == offsets::kMotionProperties_RecordSize);
+        static_assert(alignof(MotionPropertiesRecord) == 16);
 
         struct BodyMotionState
         {
