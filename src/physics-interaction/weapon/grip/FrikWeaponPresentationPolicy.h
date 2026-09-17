@@ -18,6 +18,16 @@
  * FRIK's pass sees exactly what it would have seen without ROCK. When ROCK's
  * write block is engaged at the end of its frame the node keeps its pose,
  * since FRIK leaves the node alone.
+ *
+ * A latch can only be captured on a frame FRIK wrote. ROCK's authored primary
+ * alignment writes the node and holds the write block from the equip frame
+ * on, so for such a weapon FRIK never writes and nothing is ever captured;
+ * the node would be read at the glue for the whole hold (the position-only
+ * alignment inherits that rotation: every weapon rendered at the vanilla
+ * attach, pipe rifles pointing up). ROCK keeps its own copy of FRIK's offset
+ * table, so the stored offset stands in for the latch whenever no captured
+ * one matches; presenting it every frame under the block gives ROCK's
+ * readers the pose FRIK 0.78 wrote before each ROCK frame.
  */
 namespace rock::frik_weapon_presentation_policy
 {
@@ -47,6 +57,19 @@ namespace rock::frik_weapon_presentation_policy
     struct OffsetLatch
     {
         NodeIdentity identity{};
+        RE::NiTransform local{};
+        bool valid = false;
+    };
+
+    /*
+     * FRIK's stored per-weapon offset from ROCK's copy of the offset table,
+     * resolved once per node identity and table revision (a miss is kept the
+     * same way, so the name lookup does not repeat every frame).
+     */
+    struct SynthesizedOffset
+    {
+        NodeIdentity identity{};
+        std::uint64_t offsetTableRevision = 0;
         RE::NiTransform local{};
         bool valid = false;
     };
@@ -96,19 +119,54 @@ namespace rock::frik_weapon_presentation_policy
     {
         NodeIdentity identity{};
         bool nodeVisible = false;
-        // ROCK held the write block when FRIK re-glued the node this frame, so the live node is ROCK's pose.
-        bool rockOwnsLivePose = false;
+        // ROCK owns the weapon pose this frame (two-hand authority, part
+        // carry, left carry, a return blend): the node holds ROCK's own solve,
+        // which FRIK restores behind its glue, and FRIK's offset must not
+        // replace it. The write block alone does not own the pose: the
+        // authored alignment and the one-hand recoil re-apply themselves on
+        // top of FRIK's pose every frame, as they did under FRIK 0.78.
+        bool rockOwnsPose = false;
+        // The node hangs under the hand FRIK's stored offset is authored for
+        // (the game's primary hand), so that offset is a valid local here.
+        bool underPrimaryHand = false;
+    };
+
+    enum class PresentSource : std::uint8_t
+    {
+        None,
+        // The local FRIK last wrote for this node, parent and model.
+        CapturedLatch,
+        // FRIK's stored offset from ROCK's copy of the offset table.
+        SynthesizedOffset,
     };
 
     /*
-     * Start of ROCK's frame. Only a node FRIK re-glued this frame is presented,
-     * and only with a latch taken under the same parent for the same model:
-     * the local is relative to that hand, and a swapped model is a new weapon.
+     * Start of ROCK's frame: which local stands in for FRIK's weapon pass on
+     * the node ROCK is about to read. The captured latch is FRIK's own last
+     * write and wins whenever it matches the node, parent and model (a
+     * swapped model is a new weapon, a reparented node a different local).
+     * Without one (a new weapon before FRIK's first write, or a write block
+     * held since before it, so FRIK never wrote) the stored offset of the
+     * current table revision is presented under the primary hand. Nothing is
+     * presented while ROCK owns the pose or the weapon is hidden.
      */
-    [[nodiscard]] constexpr bool shouldPresent(const OffsetLatch& latch, const PresentInput& input) noexcept
+    [[nodiscard]] constexpr PresentSource selectPresentation(
+        const OffsetLatch& latch,
+        const SynthesizedOffset& synthesized,
+        const std::uint64_t offsetTableRevision,
+        const PresentInput& input) noexcept
     {
-        return !input.rockOwnsLivePose && input.nodeVisible && latch.valid && input.identity.valid() &&
-               latch.identity == input.identity;
+        if (input.rockOwnsPose || !input.nodeVisible || !input.identity.valid()) {
+            return PresentSource::None;
+        }
+        if (latch.valid && latch.identity == input.identity) {
+            return PresentSource::CapturedLatch;
+        }
+        if (input.underPrimaryHand && synthesized.valid && synthesized.identity == input.identity &&
+            synthesized.offsetTableRevision == offsetTableRevision) {
+            return PresentSource::SynthesizedOffset;
+        }
+        return PresentSource::None;
     }
 
     /*

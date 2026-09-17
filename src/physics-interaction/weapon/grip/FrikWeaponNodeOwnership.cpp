@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/weapon/grip/FrikWeaponPresentationPolicy.h"
 #include "physics-interaction/weapon/grip/WeaponNodeWriteBlockPolicy.h"
 
@@ -59,8 +60,18 @@ namespace rock
         }
     }
 
-    void TwoHandedGrip::finalizeFrikWeaponOwnershipForFrame()
+    void TwoHandedGrip::finalizeFrikWeaponOwnershipForFrame(const std::uint64_t equippedWeaponOwnershipKey)
     {
+        if (equippedWeaponOwnershipKey != _frikWeaponNode.ownershipKey) {
+            /*
+             * A tail bridges a missed write on the weapon it was written for.
+             * Carried across an equip it keeps FRIK's weapon pass, so its
+             * first offset write and its grip clearing, off the new weapon.
+             */
+            _frikWeaponNode.ownershipKey = equippedWeaponOwnershipKey;
+            _frikWeaponNode.framesSinceWrite = write_block_policy::kNeverWritten;
+            _frikWeaponNode.framesSinceRecoilWrite = write_block_policy::kNeverWritten;
+        }
         _frikWeaponNode.framesSinceWrite = write_block_policy::advanceFramesSinceWrite(
             _frikWeaponNode.framesSinceWrite,
             _frikWeaponNode.writtenThisFrame);
@@ -162,36 +173,92 @@ namespace rock
             });
     }
 
-    void TwoHandedGrip::presentFrikWeaponOffsetForRockFrame(RE::NiNode* weaponNode)
+    bool TwoHandedGrip::ownsWeaponPoseForFrikPresentation() const
+    {
+        return ownsWeaponTransform() || isWeaponVisualReturnActive() ||
+            (usesLeftFiringCarry() && isManualOwnershipActive());
+    }
+
+    void TwoHandedGrip::refreshSynthesizedFrikWeaponOffset(
+        RE::NiNode* weaponNode,
+        const RE::TESObjectWEAP* equippedWeapon,
+        const presentation_policy::NodeIdentity& identity)
+    {
+        auto& synthesized = _frikWeaponPresentation.synthesized;
+        if (!identity.valid()) {
+            synthesized = {};
+            return;
+        }
+        const std::uint64_t revision = frik_weapon_offset_cache::currentRevision();
+        if (synthesized.identity == identity && synthesized.offsetTableRevision == revision) {
+            return;
+        }
+        synthesized = presentation_policy::SynthesizedOffset{ .identity = identity, .offsetTableRevision = revision };
+        const auto lookup = frik_weapon_offset_cache::findPrimaryWeaponOffset(equippedWeapon, weaponNode);
+        /*
+         * Only a stored offset stands in for FRIK's write. The table's
+         * live-node fallback is the node's current local, which is the glue
+         * (or ROCK's own pose) here; FRIK itself keeps the glue for a weapon
+         * without a stored offset.
+         */
+        const bool stored = lookup.found &&
+            (lookup.source == frik_weapon_offset_cache::OffsetSource::EmbeddedResource ||
+                lookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile);
+        if (stored && presentation_policy::isFiniteTransform(lookup.offset)) {
+            synthesized.local = lookup.offset;
+            synthesized.valid = true;
+        }
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: FRIK weapon offset for the equipped weapon {} (reason={} tableRevision={})",
+            synthesized.valid ? "resolved from ROCK's offset table" : "not stored; the node reads at FRIK's glue until FRIK writes it",
+            lookup.reason ? lookup.reason : "unknown",
+            revision);
+    }
+
+    void TwoHandedGrip::presentFrikWeaponOffsetForRockFrame(RE::NiNode* weaponNode, const RE::TESObjectWEAP* equippedWeapon)
     {
         // A frame that ended without its restore must not leak into this one.
         restoreFrikWeaponOffsetAfterRockFrame();
         auto& presentation = _frikWeaponPresentation;
+        // FRIK's stored offset is authored under the game's primary hand.
+        bool gameLeftHanded = false;
+        (void)frik_visual_authority::tryResolveHandIsLeft(frik_visual_authority::Hand::Primary, gameLeftHanded);
+        RE::NiNode* const primaryHand = resolveFirstPersonHandNode(gameLeftHanded);
         const presentation_policy::PresentInput input{
             .identity = frikWeaponIdentity(weaponNode),
             .nodeVisible = f4vr::isNodeVisible(weaponNode),
-            .rockOwnsLivePose = _frikWeaponNode.writeBlockEngaged,
+            .rockOwnsPose = ownsWeaponPoseForFrikPresentation(),
+            .underPrimaryHand = weaponNode && primaryHand && weaponNode->parent == primaryHand,
         };
-        if (!weaponNode || !presentation_policy::shouldPresent(presentation.latch, input)) {
+        refreshSynthesizedFrikWeaponOffset(weaponNode, equippedWeapon, input.identity);
+        const auto source = presentation_policy::selectPresentation(
+            presentation.latch,
+            presentation.synthesized,
+            frik_weapon_offset_cache::currentRevision(),
+            input);
+        if (!weaponNode || source == presentation_policy::PresentSource::None) {
             /*
-             * FRIK re-glued a visible weapon this frame and no latch matches
-             * it, so ROCK's frame reads the node at the glue pose. One such
-             * frame is expected on every weapon change; a run of them means
-             * the latch never captures (identity churn, capture frames with
-             * the node hidden or blocked).
+             * FRIK re-glued a visible weapon this frame and neither a latch
+             * nor a stored offset matches it, so ROCK's frame reads the node
+             * at the glue pose. Expected for a weapon without a stored
+             * offset (FRIK keeps the glue for it too); a run of them on a
+             * stored weapon means the identity churns or the node hangs
+             * under a hand the offset is not authored for.
              */
-            if (weaponNode && input.nodeVisible && input.identity.valid() && !input.rockOwnsLivePose) {
+            if (weaponNode && input.nodeVisible && input.identity.valid() && !input.rockOwnsPose) {
                 if (_frikWeaponNode.glueFramesWithoutLatch != 0xFFFFFFFFu) {
                     ++_frikWeaponNode.glueFramesWithoutLatch;
                 }
                 if (_frikWeaponNode.glueFramesWithoutLatch > 1) {
                     ROCK_LOG_SAMPLE_DEBUG(Weapon,
                         2000,
-                        "TwoHandedGrip: weapon read at glue pose: no presentable FRIK offset latch for {} frames (latchValid={} sameWeapon={} sameParent={})",
+                        "TwoHandedGrip: weapon read at glue pose: no presentable FRIK offset for {} frames (latchValid={} sameWeapon={} sameParent={} storedOffset={} underPrimaryHand={})",
                         _frikWeaponNode.glueFramesWithoutLatch,
                         presentation.latch.valid,
                         presentation.latch.valid && presentation.latch.identity.sameWeapon(input.identity),
-                        presentation.latch.identity.parent == input.identity.parent);
+                        presentation.latch.identity.parent == input.identity.parent,
+                        presentation.synthesized.valid,
+                        input.underPrimaryHand);
                 }
             } else {
                 _frikWeaponNode.glueFramesWithoutLatch = 0;
@@ -202,12 +269,18 @@ namespace rock
         /*
          * Not an authority write: FRIK keeps the node, the block stays
          * released, and FRIK's weapon pass writes this same local after the
-         * restore. Local and subtree worlds change together, since ROCK's
-         * readers take both.
+         * restore. While the block is held for the authored alignment or a
+         * recoil pose, this re-seeds FRIK's offset under the hand every frame
+         * and those writers re-apply themselves on top, the order FRIK 0.78
+         * gave them; the block then keeps the result through FRIK's pass.
+         * Local and subtree worlds change together, since ROCK's readers take
+         * both.
          */
         presentation.presentedNode = weaponNode;
         presentation.reglueLocal = weaponNode->local;
-        weaponNode->local = presentation.latch.local;
+        weaponNode->local = source == presentation_policy::PresentSource::CapturedLatch ?
+            presentation.latch.local :
+            presentation.synthesized.local;
         f4vr::updateTransformsDown(weaponNode, true);
     }
 

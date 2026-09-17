@@ -231,7 +231,7 @@ namespace rock
         if (!_lifecycle.initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
             return;
         }
-        _twoHandedGrip.presentFrikWeaponOffsetForRockFrame(f4vr::getWeaponNode());
+        _twoHandedGrip.presentFrikWeaponOffsetForRockFrame(f4vr::getWeaponNode(), currentEquippedWeaponForm());
     }
 
     void PhysicsInteraction::restoreFrikWeaponOffsetAfterRockFrame()
@@ -242,7 +242,13 @@ namespace rock
 
     void PhysicsInteraction::finalizeFrikWeaponOwnershipForFrame()
     {
-        _twoHandedGrip.finalizeFrikWeaponOwnershipForFrame();
+        // Same identity as the authored grip: the stack/instance key when
+        // generated collision is on, the equipped form otherwise.
+        std::uint64_t equippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
+        if (equippedWeaponOwnershipKey == 0) {
+            equippedWeaponOwnershipKey = currentEquippedWeaponFormId();
+        }
+        _twoHandedGrip.finalizeFrikWeaponOwnershipForFrame(equippedWeaponOwnershipKey);
     }
 
     void PhysicsInteraction::syncFrikOffHandGripReport()

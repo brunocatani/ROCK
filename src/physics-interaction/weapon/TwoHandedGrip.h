@@ -32,6 +32,11 @@
 
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
+
+namespace RE
+{
+    class TESObjectWEAP;
+}
 #include "RE/NetImmerse/NiTransform.h"
 
 namespace rock
@@ -782,22 +787,25 @@ namespace rock
          * End of ROCK's frame (FRIK's AfterArmSolve phase): hold or release
          * FRIK's weapon-node write block for this frame's ownership.
          * FRIK's own weapon pass runs after this callback, so the block must
-         * be current before it.
+         * be current before it. equippedWeaponOwnershipKey identifies the
+         * equipped weapon; a change ends the write tails of the previous one.
          */
-        void finalizeFrikWeaponOwnershipForFrame();
+        void finalizeFrikWeaponOwnershipForFrame(std::uint64_t equippedWeaponOwnershipKey);
 
         // AfterWeaponPosition: FRIK has finished clearing grips for weapon changes.
         void syncFrikOffHandGripReport();
 
         /*
-         * FRIK's weapon presentation for a Weapon node ROCK does not hold
-         * (FrikWeaponPresentationPolicy.h). Capture runs after FRIK's weapon
-         * pass; present, at the start of ROCK's frame, applies the latched
-         * local to the node; restore, at the end of that frame, hands FRIK back
-         * the re-glue local unless ROCK's write block keeps FRIK off the node.
+         * FRIK's weapon presentation for a Weapon node whose pose ROCK does
+         * not own (FrikWeaponPresentationPolicy.h). Capture runs after FRIK's
+         * weapon pass; present, at the start of ROCK's frame, applies the
+         * latched local, or FRIK's stored offset for equippedWeapon from
+         * ROCK's offset table when FRIK has not written this weapon, to the
+         * node; restore, at the end of that frame, hands FRIK back the re-glue
+         * local unless ROCK's write block keeps FRIK off the node.
          */
         void captureFrikWeaponOffsetLatch(RE::NiNode* weaponNode);
-        void presentFrikWeaponOffsetForRockFrame(RE::NiNode* weaponNode);
+        void presentFrikWeaponOffsetForRockFrame(RE::NiNode* weaponNode, const RE::TESObjectWEAP* equippedWeapon);
         void restoreFrikWeaponOffsetAfterRockFrame();
 
         /*
@@ -1683,6 +1691,13 @@ namespace rock
         void engageFrikWeaponNodeWriteBlock();
         void releaseFrikWeaponNodeWriteBlock(const char* reason);
         void resetFrikWeaponOwnership();
+        // ROCK's own solve is on the node: two-hand authority, part carry, left carry, a return blend.
+        [[nodiscard]] bool ownsWeaponPoseForFrikPresentation() const;
+        // FRIK's stored offset for the equipped weapon from ROCK's offset table, resolved once per identity and table revision.
+        void refreshSynthesizedFrikWeaponOffset(
+            RE::NiNode* weaponNode,
+            const RE::TESObjectWEAP* equippedWeapon,
+            const frik_weapon_presentation_policy::NodeIdentity& identity);
 
         static RE::NiNode* resolveFirstPersonHandNode(bool isLeft);
 
@@ -2166,6 +2181,8 @@ namespace rock
             // Consecutive ROCK frames that read a visible, FRIK-owned weapon
             // at its glue pose because no offset latch was presentable.
             std::uint32_t glueFramesWithoutLatch{ 0 };
+            // The equipped weapon the write tails belong to; a change ends them.
+            std::uint64_t ownershipKey{ 0 };
             // The two-handed grip as last reported to FRIK (setOffHandGripping).
             bool gripReported{ false };
             bool gripReportedSupportIsLeft{ false };
@@ -2176,6 +2193,7 @@ namespace rock
         struct FrikWeaponPresentationState
         {
             frik_weapon_presentation_policy::OffsetLatch latch{};
+            frik_weapon_presentation_policy::SynthesizedOffset synthesized{};
             // Set between present and restore, inside one ROCK frame only.
             RE::NiNode* presentedNode{ nullptr };
             RE::NiTransform reglueLocal{};

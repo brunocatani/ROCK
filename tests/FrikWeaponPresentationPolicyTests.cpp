@@ -86,16 +86,34 @@ int main()
     const OffsetLatch hiddenReparented = captureOffsetLatch(written, { .identity = leftCarry, .local = reglueLocal, .nodeVisible = false });
     ok &= expectTrue("a hidden reparented weapon keeps the latch", hiddenReparented.valid && sameLocal(hiddenReparented.local, offsetLocal));
 
-    // Present: a node FRIK re-glued this frame, with a latch for the same parent and model.
-    ok &= expectTrue("present while FRIK owns the node", shouldPresent(written, { .identity = kRightHandWeapon, .nodeVisible = true }));
-    ok &= expectFalse("no present while ROCK owns the live pose",
-        shouldPresent(written, { .identity = kRightHandWeapon, .nodeVisible = true, .rockOwnsLivePose = true }));
-    ok &= expectFalse("no present for a hidden weapon", shouldPresent(written, { .identity = kRightHandWeapon, .nodeVisible = false }));
-    ok &= expectFalse("no present under another parent", shouldPresent(written, { .identity = leftCarry, .nodeVisible = true }));
-    ok &= expectFalse("no present on the swap frame", shouldPresent(written, { .identity = swapped, .nodeVisible = true }));
-    ok &= expectFalse("no present for another node", shouldPresent(written, { .identity = otherNode, .nodeVisible = true }));
-    ok &= expectFalse("no present across a power armor change", shouldPresent(written, { .identity = powerArmor, .nodeVisible = true }));
-    ok &= expectFalse("no present without a latch", shouldPresent({}, { .identity = kRightHandWeapon, .nodeVisible = true }));
+    // Present: the captured latch wins for the same node, parent and model; the stored offset stands in under the primary hand.
+    const SynthesizedOffset stored{ .identity = kRightHandWeapon, .offsetTableRevision = 7, .local = offsetLocal, .valid = true };
+    const SynthesizedOffset none{};
+    const auto present = [](const OffsetLatch& latch, const SynthesizedOffset& synthesized, const PresentInput& input) {
+        return selectPresentation(latch, synthesized, 7, input);
+    };
+    ok &= expectTrue("captured latch presented while FRIK owns the node",
+        present(written, stored, { .identity = kRightHandWeapon, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::CapturedLatch);
+    ok &= expectTrue("captured latch presented while ROCK only holds the write block",
+        present(written, none, { .identity = kRightHandWeapon, .nodeVisible = true }) == PresentSource::CapturedLatch);
+    ok &= expectTrue("stored offset presented before FRIK's first write",
+        present({}, stored, { .identity = kRightHandWeapon, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::SynthesizedOffset);
+    ok &= expectTrue("no stored offset away from the primary hand",
+        present({}, stored, { .identity = kRightHandWeapon, .nodeVisible = true }) == PresentSource::None);
+    ok &= expectTrue("a stale offset table revision is not presented",
+        selectPresentation({}, stored, 8, { .identity = kRightHandWeapon, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("a stored offset resolved for another weapon is not presented",
+        present({}, stored, { .identity = swapped, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("no present while ROCK owns the pose",
+        present(written, stored, { .identity = kRightHandWeapon, .nodeVisible = true, .rockOwnsPose = true, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("no present for a hidden weapon",
+        present(written, stored, { .identity = kRightHandWeapon, .nodeVisible = false, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("no latch present under another parent", present(written, none, { .identity = leftCarry, .nodeVisible = true }) == PresentSource::None);
+    ok &= expectTrue("no present on the swap frame", present(written, none, { .identity = swapped, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("no present for another node", present(written, none, { .identity = otherNode, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("no present across a power armor change",
+        present(written, none, { .identity = powerArmor, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("nothing to present", present({}, none, { .identity = kRightHandWeapon, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
 
     // Restore: FRIK gets its re-glue local back whenever it rewrites the node next.
     ok &= expectTrue("restore while the block is released", shouldRestore(true, false));
