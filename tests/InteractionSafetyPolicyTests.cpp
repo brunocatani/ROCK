@@ -4,6 +4,7 @@
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
+#include "physics-interaction/input/BareFistGesturePolicy.h"
 
 #include <cstdio>
 #include <limits>
@@ -53,6 +54,44 @@ int main()
     using namespace rock::provider::interaction_command_policy;
 
     bool ok = true;
+    {
+        using namespace rock::bare_fist_gesture;
+        // Exercise complete physical cycles, including releases that occur
+        // between game-frame observations and leave the buttons held again.
+        std::uint64_t cycle = 2;
+        cycle = observe(cycle, true, true, false, false);
+        ok &= expectEqual("held-at-start fists require release", capture(cycle), Capture::Rearming);
+        cycle = observe(cycle, true, false, true, false);
+        cycle = observe(cycle, true, false, false, false);
+        ok &= expectEqual("partial chord cannot capture fists", capture(cycle), Capture::Idle);
+        cycle = observe(cycle, true, true, false, false);
+        State state{};
+        ok &= expectEqual("capture starts qualification without draw", update(state, {cycle, true, false, 0.1f}), Action::None);
+        ok &= expectEqual("short fist hold does not draw", update(state, {cycle, true, false, 0.9f}), Action::None);
+        ok &= expectEqual("full second draws fists once", update(state, {cycle, true, false, 0.11f}), Action::Draw);
+        ok &= expectEqual("drawing waits for native readiness", update(state, {cycle, true, false, 0.1f}), Action::None);
+        ok &= expectEqual("unobserved draw has no active fists", state.phase, Phase::Drawing);
+        static_cast<void>(update(state, {cycle, true, true, 0.1f}));
+        ok &= expectEqual("observed unarmed draw enables fists", state.phase, Phase::Active);
+        const auto firstCycle = cycle;
+        cycle = observe(cycle, true, true, false, true);
+        ok &= expectEqual("release and repress cancels captured chord", capture(cycle), Capture::Draining);
+        ok &= expectEqual("first release ends active fists", update(state, {cycle, true, true, 0.01f}), Action::Cancel);
+        ok &= expectEqual("held tail stays consumed", observe(cycle, true, false, false, false), cycle);
+        cycle = observe(cycle, true, false, true, false);
+        cycle = observe(cycle, true, true, false, false);
+        ok &= expectTrue("fresh capture has new identity", cycle != firstCycle);
+        static_cast<void>(update(state, {cycle, true, false, 0.1f}));
+        ok &= expectEqual("new cycle cannot reuse qualification", state.phase, Phase::Qualifying);
+        ok &= expectEqual("occupancy or gameplay loss cancels qualification", update(state, {cycle, false, false, 1.0f}), Action::Cancel);
+        static_cast<void>(update(state, {cycle, true, false, 0.0f}));
+        static_cast<void>(update(state, {cycle, true, false, 1.0f}));
+        ok &= expectEqual("failed draw retires instead of retrying", update(state, {cycle, true, false, 2.0f}), Action::Cancel);
+        state = {Phase::Active, firstCycle, 0};
+        ok &= expectEqual("new capture cannot inherit old attack permission", update(state, {cycle, true, true, 0.0f}), Action::Cancel);
+        ok &= expectEqual("stale samples cancel held capture", capture(observe(cycle, false, true, false, false)), Capture::Draining);
+        ok &= expectFalse("reserved fist input blocks force grab", isAvailable({.inputReserved = true}));
+    }
     const HandAvailabilityInput freeHand{};
     const HandAvailabilityInput blockedHand{ .holding = true };
 

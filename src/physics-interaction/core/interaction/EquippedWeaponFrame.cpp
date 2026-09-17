@@ -12,6 +12,10 @@ namespace rock
     {
         void maskProviderWeaponGrabInput(bool isLeft, bool holding, GrabButtonState& button)
         {
+            if (input_remap_runtime::ownsBareFistInput()) {
+                button = {};
+                return;
+            }
             using Flag = provider::RockProviderHandInputSuppressionFlagV1;
             const auto flags = provider::currentHandInputSuppressionFlagsV1(
                 isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right);

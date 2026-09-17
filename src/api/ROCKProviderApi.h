@@ -3143,12 +3143,12 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getWeaponPartGripStateV1)(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState);
         bool(ROCK_PROVIDER_CALL* getRawWandButtonStateV1)(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
         /*
-         * True while a provider suppression lease blocks native game input,
-         * including the pipboy-hand trigger's flashlight hold. Holding an
-         * object or supporting a weapon does not suppress the flashlight.
-         * Consumers that repurpose the trigger should treat it as
-         * exclusively theirs only while this reads true; otherwise a hold may
-         * still toggle the flashlight. While ROCK input remapping is enabled,
+         * True while a provider input lease or ROCK's held bare-fist gesture
+         * suppresses the native flashlight hold. Ordinary object holding and
+         * weapon support do not suppress it. This observation does not grant
+         * trigger ownership: respect effective hand-input suppression flags
+         * and acquire the consumer's own lease before repurposing input.
+         * While ROCK input remapping is enabled,
          * the legacy trigger-release Pip-Boy open is always moved to a short
          * release of the native Pause button and is not represented here.
          */

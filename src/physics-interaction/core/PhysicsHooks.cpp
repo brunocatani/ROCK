@@ -458,9 +458,11 @@ namespace rock
 
         native_melee_suppression::NativeMeleeImpactPolicyInput makeNativeMeleeImpactPolicyInput(const RE::Actor* actor)
         {
+            const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleeImpactPolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
-                .actorIsPlayer = isPlayerActor(actor) };
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
+                    (player && input_remap_runtime::isBareFistMeleeSuppressed() && !f4vr::getEquippedWeaponItem()),
+                .actorIsPlayer = player };
         }
 
         RE::Setting* resolveNativeMeleeRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName, bool& missingLogged)
@@ -854,9 +856,11 @@ namespace rock
 
         native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(const RE::Actor* actor)
         {
+            const bool player = isPlayerActor(actor);
             return native_melee_suppression::NativeMeleePolicyInput{
-                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire),
-                .actorIsPlayer = isPlayerActor(actor) };
+                .suppressionActive = g_nativeMeleeSuppressionActive.load(std::memory_order_acquire) ||
+                    (player && input_remap_runtime::isBareFistMeleeSuppressed() && !f4vr::getEquippedWeaponItem()),
+                .actorIsPlayer = player };
         }
 
         bool applyNativeMeleeDecision(const native_melee_suppression::NativeMeleeEvent event,
@@ -1329,6 +1333,11 @@ namespace rock
     bool isNativeMeleeSuppressionActive()
     {
         return g_nativeMeleeSuppressionActive.load(std::memory_order_acquire);
+    }
+
+    bool areNativeMeleeHooksInstalled()
+    {
+        return g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire);
     }
 
     void enforceNativeMeleeRuntimeSuppression(bool forceCheck)

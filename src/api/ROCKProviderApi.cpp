@@ -3281,6 +3281,10 @@ namespace
         *outState = {};
         outState->frameIndex = frameIndex;
         outState->hand = hand;
+        if (rock::input_remap_runtime::ownsBareFistInput()) {
+            outState->effectiveFlags = static_cast<std::uint32_t>(
+                RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
+        }
         for (const auto& slot : s_handInputSuppressions) {
             if (slot.hand != hand) {
                 continue;

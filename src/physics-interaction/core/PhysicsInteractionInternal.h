@@ -112,6 +112,7 @@
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/VRControllers.h"
 #include <windows.h>
 
@@ -1031,6 +1032,13 @@ namespace rock
             return weapon ? weapon->formID : 0;
         }
 
+        inline bool currentEquippedWeaponOccupiesHand()
+        {
+            return fo4vr_actor_state_policy::equippedWeaponOccupiesHand(
+                currentEquippedWeaponFormId() != 0,
+                f4vr::getNativeWeaponState(f4vr::getPlayer()));
+        }
+
         inline void fillProviderTransform(const RE::NiTransform& source, ::rock::provider::RockProviderTransform& target)
         {
             for (int row = 0; row < 3; ++row) {
@@ -1367,7 +1375,7 @@ namespace rock
              * candidate internally, so this handoff should not branch by weapon
              * type or create a separate melee-owned update path.
              */
-            if (!runtime_state::currentFrame().weaponDrawn) {
+            if (!runtime_state::currentFrame().weaponDrawn || !currentEquippedWeaponOccupiesHand()) {
                 return nullptr;
             }
 

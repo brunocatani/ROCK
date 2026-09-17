@@ -47,6 +47,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
+#include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "api/ROCKProviderApi.h"
 
 namespace RE
@@ -378,6 +379,9 @@ namespace rock
         void clearLooseGrenadeImpactWatches();
         void clearLooseGrenadeRuntimeState();
         void enforceNoBareFistState(bool forceRecheck);
+        void updateBareFistMode(const PhysicsFrameContext& frame);
+        void cancelBareFistMode(const char* reason);
+        [[nodiscard]] bool bareFistHandsAvailable(const PhysicsFrameContext& frame) const;
 
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,
@@ -867,6 +871,10 @@ namespace rock
             std::array<HeldWeaponTriggerEquipIntent, 2> heldWeaponTriggerEquipIntents{};
             SharedGrabButtonFrameState firingHandButtonFrame{};
             bare_fist_guard_policy::RecheckState bareFistGuardState{};
+            bare_fist_gesture::State bareFistGesture{};
+            bool bareFistDrawOwned{ false };
+            bool bareFistHolsterRequested{ false };
+            std::uint32_t bareFistWorldGeneration{ 0 };
             std::array<ProviderHandInputSuppressionRuntimeState, 2> providerHandInputSuppressionStates{};
             std::array<peer_held_join_retry_policy::RuntimeState, 2> peerHeldJoinRetryStates{};
             std::array<mouth_consume::RuntimeState, 2> mouthConsumeStates{};

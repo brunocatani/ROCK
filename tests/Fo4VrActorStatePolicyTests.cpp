@@ -18,6 +18,12 @@ int main()
     using namespace rock::fo4vr_actor_state_policy;
 
     bool ok = true;
+    ok &= expect("holstered inventory equipment leaves the hand free", !equippedWeaponOccupiesHand(true, 0));
+    ok &= expect("empty equipment leaves the hand free", !equippedWeaponOccupiesHand(false, 3));
+    for (std::uint32_t state = 1; state <= 5; ++state) {
+        ok &= expect("carry and transition states retain ownership", equippedWeaponOccupiesHand(true, state));
+    }
+    ok &= expect("unavailable weapon state retains ownership", equippedWeaponOccupiesHand(true, kInvalidWeaponState));
     ok &= expect("the verified actor-state storage offset must remain 0x0C",
         kWeaponStateStorageOffset == 0x0C);
     ok &= expect("the verified weapon-state field must begin at bit two",

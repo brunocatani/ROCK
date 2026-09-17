@@ -59,10 +59,19 @@ namespace rock
 
     void PhysicsInteraction::enforceNoBareFistState(bool forceRecheck)
     {
+        if (input_remap_runtime::isBareFistDrawPermitted() && currentEquippedWeaponFormId() == 0) return;
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* legacyPlayer = f4vr::getPlayer();
         if (!player || !legacyPlayer) {
             _grabInput.bareFistGuardState = {};
+            return;
+        }
+
+        const auto nativeState = f4vr::getNativeWeaponState(player);
+        if (_grabInput.bareFistDrawOwned && _grabInput.bareFistHolsterRequested &&
+            (nativeState == 4 || nativeState == 5)) {
+            // The owned exit already reached WantToSheathe/Sheathing. Let it
+            // finish instead of dispatching the same holster every frame.
             return;
         }
 
@@ -410,6 +419,17 @@ namespace rock
         auto& inputIntentState = _grabInput.intentStates[isLeft ? 1u : 0u];
         auto& peerHeldJoinRetryState = _grabInput.peerHeldJoinRetryStates[isLeft ? 1u : 0u];
         auto& inputSuppressionState = _grabInput.providerHandInputSuppressionStates[isLeft ? 1u : 0u];
+        if (input_remap_runtime::ownsBareFistInput()) {
+            static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, context.grabButton));
+            static_cast<void>(input_remap_runtime::consumeRawButtonState(isLeft, 33));
+            grab_input_intent_policy::reset(inputIntentState);
+            _grabInput.heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u] = {};
+            peer_held_join_retry_policy::reset(peerHeldJoinRetryState);
+            inputSuppressionState.deferredGrabRelease = false;
+            clearGameplayCandidatesForHand(hand, isLeft);
+            if (hand.hasSelection()) hand.clearSelectionState(false);
+            return false;
+        }
         const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
         const auto providerHand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
         const std::uint32_t providerInputSuppressionFlags = provider::currentHandInputSuppressionFlagsV1(providerHand);
@@ -601,7 +621,7 @@ namespace rock
         // The skeleton's Weapon node/drawn flag can outlive unequip. Use the
         // same item authority as force grab, sampled for each hand after any
         // earlier hand's equip/transfer instead of caching scene occupancy.
-        const bool equippedWeaponPresent = currentEquippedWeaponFormId() != 0;
+        const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
         if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
                 handIsFiringHand,
                 equippedWeaponPresent,

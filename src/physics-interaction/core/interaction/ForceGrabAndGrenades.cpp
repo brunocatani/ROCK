@@ -61,7 +61,7 @@ namespace rock
             state == HandState::Idle || state == HandState::SelectedClose || state == HandState::SelectedFar;
         // Equip data remains authoritative while menus temporarily hide or
         // detach the weapon's 3D node.
-        const bool equippedWeaponPresent = currentEquippedWeaponFormId() != 0;
+        const bool equippedWeaponPresent = currentEquippedWeaponOccupiesHand();
         const bool equippedWeaponOccupiesHand = force_grab_policy::equippedWeaponOccupiesHand(
             isLeft,
             equippedWeaponPresent,
@@ -78,6 +78,7 @@ namespace rock
             .pendingForceGrab = includePendingCommit && _forceGrab.pendingCommits[isLeft ? 1u : 0u].active,
             .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
             .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
+            .inputReserved = input_remap_runtime::ownsBareFistInput(),
         });
     }
 

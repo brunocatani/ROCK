@@ -439,6 +439,9 @@ namespace rock
 
     void PhysicsInteraction::update()
     {
+        auto cancelInterruptedFists = F4SE::stl::scope_exit([this] {
+            cancelBareFistMode("interaction-frame-interrupted");
+        });
         _frame.debugOverlayFrameIndex = 0;
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
@@ -753,6 +756,7 @@ namespace rock
                 primaryGrabHeld ? "yes" : "no",
                 _equipped.pendingPrimaryOnlyGripStart.pending ? "yes" : "no");
         }
+        updateBareFistMode(frame);
         enforceNoBareFistState(forceBareFistRecheck);
 
         if (_layers.registered &&
@@ -858,6 +862,10 @@ namespace rock
 
         const auto equippedWeaponFrame = updateEquippedWeaponFrame(frame, bhk, hknp);
         finalizeInteractionFrame(frame, bhk, hknp, equippedWeaponFrame);
+        if (input_remap_runtime::ownsBareFistInput() && !bareFistHandsAvailable(frame)) {
+            cancelBareFistMode("hand-owner-changed");
+        }
+        cancelInterruptedFists.release();
     }
 
     void PhysicsInteraction::dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr, std::uint32_t formID, std::uint32_t layer)

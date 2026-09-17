@@ -559,6 +559,9 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        cancelBareFistMode("physics-shutdown");
+        _grabInput.bareFistDrawOwned = false;
+        input_remap_runtime::setBareFistDrawState(0, false, false);
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
         debug::ShutdownShapePipeline();
         input_remap_runtime::setRealMeleeWeaponEquipped(false);

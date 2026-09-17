@@ -477,6 +477,44 @@ namespace rock::weapon_equip_transfer
         return result;
     }
 
+    bool replaceHolsteredWeaponWithUnarmed() noexcept
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* manager = RE::ActorEquipManager::GetSingleton();
+        if (!player || !manager || f4vr::getNativeWeaponState(player) != 0) return false;
+        const auto equipped = readEquippedWeaponSnapshot();
+        if (!equipped.weapon) return true;
+        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
+        if (!stack.found || !stack.equipSlot ||
+            (equipped.instanceData && stack.instanceData.get() != equipped.instanceData)) {
+            ROCK_LOG_WARN(Weapon, "Bare fists refused: holstered inventory stack unavailable weapon={:08X}", equipped.weapon->GetFormID());
+            return false;
+        }
+        // VR raw witnesses: 140E70280 consumes manager/actor/object/count and
+        // builds the synchronous request to 140E745F0; caller 1409CB31F
+        // independently supplies the same object and stack/slot argument ABI.
+        constexpr std::array<std::uint8_t, 15> expected{
+            0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x18, 0x55,
+            0x57, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x70,
+        };
+        const auto target = REL::Offset(0xE70280).address();
+        std::array<std::uint8_t, expected.size()> actual{};
+        if (!native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(target), actual.data(), actual.size()) ||
+            actual != expected || !clearPreviousWeaponRestore(player)) {
+            ROCK_LOG_WARN(Weapon, "Bare fists refused: native unequip/previous-weapon validation failed");
+            return false;
+        }
+        RE::BGSObjectInstance object(equipped.weapon, stack.instanceData.get());
+        using UnequipObject = bool (*)(RE::ActorEquipManager*, RE::Actor*, const RE::BGSObjectInstance*,
+            std::uint32_t, const RE::BGSEquipSlot*, std::uint32_t, bool, bool, bool, bool, const RE::BGSEquipSlot*);
+        const bool accepted = reinterpret_cast<UnequipObject>(target)(manager, player, &object, 1, stack.equipSlot,
+            stack.stackID, false, true, false, true, nullptr);
+        const auto remaining = readEquippedWeaponSnapshot();
+        ROCK_LOG_INFO(Weapon, "Bare fists equipment replacement: previous={:08X} stack={} accepted={} remaining={:08X}",
+            equipped.weapon->GetFormID(), stack.stackID, accepted, remaining.weapon ? remaining.weapon->GetFormID() : 0);
+        return accepted && !remaining.weapon;
+    }
+
     EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept
     {
         EquippedDropResult result{};

@@ -456,7 +456,7 @@
         if (_twoHandedGrip.isPartCarryActive()) {
             setFlag(RuntimeFlag::PartCarryActive);
         }
-        if (outState.weaponFormId != 0 && resolveEquippedWeaponInteractionNode()) {
+        if (currentEquippedWeaponOccupiesHand() && resolveEquippedWeaponInteractionNode()) {
             setFlag(RuntimeFlag::WeaponPresent);
             // Inventory/holster equips can remain in Inactive or Touching:
             // the native right hand still occupies the firing grip. The
@@ -875,6 +875,10 @@
             state.effectiveInputSuppressionFlags =
                 ::rock::provider::currentHandInputSuppressionFlagsV1(
                     state.hand);
+            if (input_remap_runtime::ownsBareFistInput()) {
+                state.effectiveInputSuppressionFlags |= static_cast<std::uint32_t>(
+                    ::rock::provider::RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
+            }
             if (state.effectiveInputSuppressionFlags != 0) {
                 state.flags |= static_cast<std::uint32_t>(
                     Flag::InputSuppressed);
