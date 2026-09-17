@@ -1484,7 +1484,8 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool logMissingAimFrame);
 
-        bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode, float dt, const char*& outReason);
+        weapon_support_authority_policy::FiringGripPromotionResult tryPromoteSupportGripToFiringGrip(
+            RE::NiNode* weaponNode, float dt, const char*& outReason);
 
         void releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
 
@@ -1500,11 +1501,12 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             std::uint64_t weaponInstanceContentKey);
-        bool canCaptureRightNativeWeaponAimFrame() const;
+        bool canCaptureRightNativeWeaponAimFrame(bool cleanIntentAvailable = false) const;
         bool captureRightNativeWeaponAimFrame(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            const RE::NiTransform* cleanNativeIntentWorld = nullptr);
         bool hasRightNativeWeaponAimFrame(
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,

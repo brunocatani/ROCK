@@ -24,6 +24,13 @@
 
 namespace rock::weapon_support_authority_policy
 {
+    enum class FiringGripPromotionResult
+    {
+        NotApplicable,
+        Blocked,
+        Promoted,
+    };
+
     enum class WeaponSupportAuthorityMode
     {
         FullTwoHandedSolver = 0,
@@ -409,6 +416,14 @@ namespace rock::equipped_weapon_manual_ownership_policy
         std::uint64_t currentOwnershipKey{ 0 };
         bool sameRoot{ false };
     };
+
+    [[nodiscard]] inline constexpr bool canCaptureNativeAim(
+        bool nativeCarry, bool weaponReturnActive, bool scopeAllowsCapture,
+        bool collisionPresentationActive, bool cleanIntentAvailable) noexcept
+    {
+        return nativeCarry && !weaponReturnActive && scopeAllowsCapture &&
+            (!collisionPresentationActive || cleanIntentAvailable);
+    }
 
     [[nodiscard]] inline constexpr bool canRebindNativeAim(const NativeAimRebindInput& input) noexcept
     {

@@ -235,6 +235,16 @@ namespace rock
             weaponNode,
             currentWeaponGenerationKey);
 
+        // The publisher resets every update and reconstructs the native pose
+        // before collision/recoil presentation. Seed aim while this exact
+        // frame and weapon still own it, including persistent primary carry.
+        // Sampling rendered roots later can be blocked for the whole hold.
+        if (_recoil.rightBaseValid) {
+            (void)captureRightNativeWeaponAimFrame(weaponNode,
+                currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey,
+                &_recoil.rightWeaponBase);
+        }
+
         refreshNaturalHandInWandFrames();
         refreshAuthoredSupportRightMirror();
 
@@ -545,7 +555,25 @@ namespace rock
         const auto tryReleasedPrimaryHandoff = [&]() {
             if (!handlingSettings.ambidextrousHandoffEnabled || !primaryGripInput.released || !supportOwned) return false;
             const char* reason = "not-attempted";
-            if (tryPromoteSupportGripToFiringGrip(_session.weaponNode, dt, reason)) return true;
+            const auto result = tryPromoteSupportGripToFiringGrip(_session.weaponNode, dt, reason);
+            if (result == weapon_support_authority_policy::FiringGripPromotionResult::Promoted) return true;
+            if (result == weapon_support_authority_policy::FiringGripPromotionResult::Blocked) {
+                // This gesture selected the firing station. Missing pose data
+                // must not reinterpret it as a drop or replay it after the
+                // support hand leaves. Retain ownership and require a fresh
+                // release, reconciling both hold and toggle input modes.
+                _firing.primaryReleaseIntent.pending = false;
+                _firing.primaryReleaseDebounce = {};
+                (isFiringHandLeft() ? _gripReleaseRetained.left : _gripReleaseRetained.right) = true;
+                ROCK_LOG_SAMPLE_WARN(Weapon, 1000,
+                    "Primary release handoff blocked: hand={} reason={} action=retain-grips generation={:016X} cleanIntent={} collisionPresentation={} weaponReturn={} scopeOpen={} rootRebase={}",
+                    firingHandName(), reason, _session.weaponGenerationKey,
+                    _recoil.rightBaseValid, _visuals.weaponCollisionHandPresentationFromPreviousFrame[1],
+                    _visuals.returningWeapon.localTransition.active, _scope.menuOpenThisFrame,
+                    _scope.safeHandFrames[1].rootRebaseActive);
+                updateGripping(_session.weaponNode, dt);
+                return true;
+            }
             ROCK_LOG_SAMPLE_INFO(Weapon, 1000, "Primary release handoff not applied: hand={} reason={}; evaluating detach policy", firingHandName(), reason);
             return false;
         };
@@ -667,9 +695,8 @@ namespace rock
                     transitionToInactive(ownsWeaponTransform());
                 }
             } else if (tryReleasedPrimaryHandoff()) {
-                // Only a successful takeover consumes the primary release.
-                // A distant support grip or unavailable mirror must still
-                // reach the ordinary detach-to-support transition below.
+                // A firing-station handoff owns this release even if its
+                // preparation failed. Distant support reaches detach below.
             } else if (handlingSettings.primaryDetachEnabled &&
                        !primaryGripInput.held) {
                 if (weapon_support_authority_policy::

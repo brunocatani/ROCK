@@ -4656,6 +4656,22 @@ int main()
 
     {
         namespace ownership = rock::equipped_weapon_manual_ownership_policy;
+        ok &= expectFalse("collision-adjusted rendered roots cannot seed missing native aim",
+            ownership::canCaptureNativeAim(true, false, true, true, false));
+        ok &= expectTrue("current clean native intent seeds aim during continuous collision presentation",
+            ownership::canCaptureNativeAim(true, false, true, true, true));
+        ok &= expectTrue("unmodified native roots still permit aim capture",
+            ownership::canCaptureNativeAim(true, false, true, false, false));
+        for (const bool collisionPresentation : {false, true}) {
+            for (const bool cleanIntent : {false, true}) {
+                ok &= expectFalse("left or part carry cannot overwrite native right aim",
+                    ownership::canCaptureNativeAim(false, false, true, collisionPresentation, cleanIntent));
+                ok &= expectFalse("weapon return cannot seed native aim even with clean intent",
+                    ownership::canCaptureNativeAim(true, true, true, collisionPresentation, cleanIntent));
+                ok &= expectFalse("scope reconstruction cannot seed native aim even with clean intent",
+                    ownership::canCaptureNativeAim(true, false, false, collisionPresentation, cleanIntent));
+            }
+        }
         ownership::NativeAimRebindInput aim{.nativeRightCarry = true, .frameValid = true,
             .capturedOwnershipKey = 71, .currentOwnershipKey = 71, .sameRoot = true};
         ok &= expectTrue("right-fired native aim survives a same-item collision rebuild", ownership::canRebindNativeAim(aim));
