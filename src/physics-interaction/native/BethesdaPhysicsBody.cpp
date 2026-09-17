@@ -1146,8 +1146,11 @@ namespace rock
     {
         if (!isValid())
             return false;
+        // The native setter uses aligned SIMD loads; callers only promise floats.
+        alignas(16) const float linear[4] = { linVel[0], linVel[1], linVel[2], linVel[3] };
+        alignas(16) const float angular[4] = { angVel[0], angVel[1], angVel[2], angVel[3] };
         static REL::Relocation<SetVelocity_t> setVel{ REL::Offset(offsets::kFunc_CollisionObject_SetVelocity) };
-        return setVel(_collisionObject, linVel, angVel) != 0;
+        return setVel(_collisionObject, linear, angular) != 0;
     }
 
     void BethesdaPhysicsBody::setMotionType(BethesdaMotionType type)
