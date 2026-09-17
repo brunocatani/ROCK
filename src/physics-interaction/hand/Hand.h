@@ -5,6 +5,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabOffsetAcquisition.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
@@ -683,6 +684,7 @@ namespace rock
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorTarget(outTarget); }
         bool tryGetHandColliderTargetForDebug(std::uint32_t bodyId, RE::NiTransform& outTarget) const { return _boneColliders.tryGetBodyTargetForDebug(bodyId, outTarget); }
         const dynamic_hand_twin::TwinTargets& dynamicTwinTargets() const { return _boneColliders.dynamicTwinTargets(); }
+        bool tryGetPinchFingerFrame(grab_pinch_pocket_policy::FingerFrame& outFrame) const;
         RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const
         {
             return _boneColliders.buildDynamicTwinShape(slotFrame, isPalm);

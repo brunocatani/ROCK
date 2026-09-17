@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
 /*
@@ -69,6 +70,9 @@ namespace rock::root_flattened_finger_skeleton_runtime
 
         for (std::size_t finger = 0; finger < outSnapshot.fingers.size(); ++finger) {
             auto& chain = outSnapshot.fingers[finger];
+            hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> tipInput{};
+            tipInput.extrapolateFromPrevious = true;
+            tipInput.extrapolateAlongStartBoneAxis = true;
             for (std::size_t segment = 0; segment < chain.points.size(); ++segment) {
                 const char* name = fingerBoneName(isLeft, finger, segment);
                 const auto* node = name ?
@@ -82,7 +86,13 @@ namespace rock::root_flattened_finger_skeleton_runtime
                     return false;
                 }
                 chain.points[segment] = node->world.translate;
+                if (segment == 1) tipInput.previous = node->world;
+                if (segment == 2) tipInput.start = node->world;
             }
+            const auto tipFrame = hand_bone_collider_geometry_math::buildSegmentColliderFrame(tipInput);
+            chain.tipSegmentCenterWorld = tipFrame.transform.translate;
+            chain.tipDirectionWorld = tipFrame.xAxis;
+            chain.tipGeometryValid = tipFrame.valid;
             chain.valid = true;
         }
 

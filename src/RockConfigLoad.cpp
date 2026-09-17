@@ -1359,27 +1359,13 @@ namespace rock
                 0.0556f;
         rockGrabPinchPocketEnabled = ini.GetBoolValue(SECTION, "bGrabPinchPocketEnabled", rockGrabPinchPocketEnabled);
         rockGrabPinchCloseSelectionEnabled = ini.GetBoolValue(SECTION, "bGrabPinchCloseSelectionEnabled", rockGrabPinchCloseSelectionEnabled);
-        rockGrabPinchCompactMaxExtentGameUnits = readClampedFloat(ini,
+        rockGrabPinchMaxVolumeCubicGameUnits = readClampedFloat(ini,
             SECTION,
-            "fGrabPinchCompactMaxExtentGameUnits",
-            rockGrabPinchCompactMaxExtentGameUnits,
-            grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits,
-            1.0f,
-            grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits);
-        rockGrabPinchThinRodMaxLengthGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabPinchThinRodMaxLengthGameUnits",
-            rockGrabPinchThinRodMaxLengthGameUnits,
-            grab_pinch_pocket_policy::kDefaultThinRodMaxLengthGameUnits,
-            1.0f,
-            120.0f);
-        rockGrabPinchThinRodMaxCrossSectionGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabPinchThinRodMaxCrossSectionGameUnits",
-            rockGrabPinchThinRodMaxCrossSectionGameUnits,
-            grab_pinch_pocket_policy::kDefaultThinRodMaxCrossSectionGameUnits,
-            0.1f,
-            40.0f);
+            "fGrabPinchMaxVolumeCubicGameUnits",
+            rockGrabPinchMaxVolumeCubicGameUnits,
+            grab_pinch_pocket_policy::kDefaultMaxVolumeCubicGameUnits,
+            0.001f,
+            grab_pinch_pocket_policy::kMaxVolumeCubicGameUnits);
         rockGrabPinchMaxPocketDistanceGameUnits = readClampedFloat(ini,
             SECTION,
             "fGrabPinchMaxPocketDistanceGameUnits",
@@ -1418,13 +1404,7 @@ namespace rock
             grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue,
             0.0f,
             1.0f);
-        rockGrabPinchSurfaceInsetGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabPinchSurfaceInsetGameUnits",
-            rockGrabPinchSurfaceInsetGameUnits,
-            grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits,
-            0.0f,
-            8.0f);
+
         readVec3("fGrabPinchDetectionDirectionHandspaceX",
             "fGrabPinchDetectionDirectionHandspaceY",
             "fGrabPinchDetectionDirectionHandspaceZ",

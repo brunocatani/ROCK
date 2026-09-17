@@ -541,7 +541,6 @@ namespace rock
                  * long axis instead.
                  */
                 input.extrapolateAlongStartBoneAxis = true;
-                input.extrapolatedLengthScale = 0.65f;
             }
         } else {
             return false;

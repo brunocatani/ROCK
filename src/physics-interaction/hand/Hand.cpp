@@ -2210,6 +2210,25 @@ namespace rock
         _selectionHoldSeconds = 0.0f;
     }
 
+    bool Hand::tryGetPinchFingerFrame(grab_pinch_pocket_policy::FingerFrame& outFrame) const
+    {
+        outFrame = {};
+        root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, snapshot)) return false;
+        std::array<RE::NiPoint3, 2> tips{};
+        constexpr auto tipSegment = static_cast<std::size_t>(hand_collider_semantics::HandFingerSegment::Tip);
+        const auto& colliders = _boneColliders.dynamicTwinTargets();
+        for (std::size_t finger = 0; finger < tips.size(); ++finger) {
+            const auto& chain = snapshot.fingers[finger];
+            const auto& collider = colliders.fingers[finger][tipSegment];
+            if (!chain.valid || !chain.tipGeometryValid || !collider.valid ||
+                !grab_pinch_pocket_policy::colliderTipEndpoint(chain.tipSegmentCenterWorld,
+                    chain.tipDirectionWorld, collider.length, collider.convexRadius, tips[finger])) return false;
+        }
+        outFrame = grab_pinch_pocket_policy::makeFingerFrame(tips[0], tips[1]);
+        return outFrame.valid;
+    }
+
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,
         const RE::NiPoint3& farSelectionDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
         const FarSelectionHmdConeGate& farHmdConeGate, float deltaTime, const OtherHandSelectionContext& otherHandContext)
@@ -2254,23 +2273,20 @@ namespace rock
         }
 
         RE::NiPoint3 resolvedPinchOrigin = pinchOrigin;
+        RE::NiPoint3 resolvedPinchDirection = pinchDirection;
         bool resolvedHasPinchOrigin = hasPinchOrigin;
         auto resolvePinchOriginIfNeeded = [&]() {
             if (resolvedHasPinchOrigin) {
                 return true;
             }
 
-            root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
-            if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, fingerSnapshot) ||
-                !fingerSnapshot.valid ||
-                !fingerSnapshot.fingers[0].valid ||
-                !fingerSnapshot.fingers[1].valid) {
+            grab_pinch_pocket_policy::FingerFrame pinchFrame{};
+            if (!tryGetPinchFingerFrame(pinchFrame)) {
                 return false;
             }
-
-            const RE::NiPoint3 thumbPad = fingerSnapshot.fingers[0].points[2];
-            const RE::NiPoint3 indexPad = fingerSnapshot.fingers[1].points[2];
-            resolvedPinchOrigin = (thumbPad + indexPad) * 0.5f;
+            resolvedPinchOrigin = pinchFrame.center;
+            resolvedPinchDirection = grab_pinch_pocket_policy::detectionDirection(
+                pinchFrame, pinchDirection, g_rockConfig.rockGrabPinchDetectionAxisBlend);
             resolvedHasPinchOrigin = true;
             return true;
         };
@@ -2283,7 +2299,7 @@ namespace rock
             nearCandidate = findCloseObject(bhkWorld,
                 hknpWorld,
                 resolvedPinchOrigin,
-                pinchDirection,
+                resolvedPinchDirection,
                 _isLeft,
                 otherHandContext,
                 _isLeft ? "pinch-near-L" : "pinch-near-R");
