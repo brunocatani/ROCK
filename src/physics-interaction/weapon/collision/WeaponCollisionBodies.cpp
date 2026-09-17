@@ -342,6 +342,8 @@ namespace rock
         instance.shape = nullptr;
         instance.driveNode = nullptr;
         instance.sourceNode = nullptr;
+        instance.driveNodeRef.reset();
+        instance.sourceNodeRef.reset();
         instance.sourceName.clear();
         instance.driveRootName.clear();
         instance.sourceRootName.clear();

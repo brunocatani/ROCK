@@ -111,6 +111,28 @@ namespace rock
         _drive.workbenchExitRebuildRequested.store(true, std::memory_order_release);
     }
 
+    void WeaponCollision::requestRebuildForReplacedSources()
+    {
+        /*
+         * A model replaced under the same Weapon node keeps the equipped
+         * identity, the ownership key and the root, so no scene transition
+         * retires the generated bodies, and every compound snapshot fails on
+         * a source the root no longer contains. Ask the update path for one
+         * rebuild. A request while a replacement is being prepared or staged
+         * would cancel it and start over every frame.
+         */
+        if (!hasWeaponBody() || getCurrentWeaponGenerationKey() == 0 ||
+            _sources.preparation || _sources.pendingBuild.active) {
+            return;
+        }
+        if (_drive.rebuildRequested.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        ROCK_LOG_WARN(Weapon,
+            "Generated weapon source nodes are no longer under the weapon root; requesting rebuild cachedKey={:016X}",
+            _identity.cachedWeaponKey);
+    }
+
     void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn)
     {
         (void)dt;

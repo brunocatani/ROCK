@@ -1523,6 +1523,8 @@ namespace rock
             instance.shape = shape;
             instance.driveNode = source.driveRoot ? source.driveRoot : source.sourceRoot;
             instance.sourceNode = source.sourceRoot;
+            instance.driveNodeRef = RE::NiPointer<RE::NiAVObject>{ instance.driveNode };
+            instance.sourceNodeRef = RE::NiPointer<RE::NiAVObject>{ instance.sourceNode };
             instance.sourceName = source.sourceName;
             instance.driveRootName = instance.driveNode ? safeNodeName(instance.driveNode) : "";
             instance.sourceRootName = source.sourceRoot ? safeNodeName(source.sourceRoot) : "";

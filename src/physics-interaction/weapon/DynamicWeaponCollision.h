@@ -139,6 +139,8 @@ namespace rock
             std::uint64_t weaponGenerationKey,
             const WeaponCollision& weaponCollision,
             const RE::NiPoint3* primaryGripWeaponLocal);
+        // This frame's compound snapshot found a generated source the weapon root no longer contains.
+        [[nodiscard]] bool compoundSourcesUnavailable() const { return _compoundSourcesUnavailable; }
 
         void flushPendingPhysicsDrive(
             RE::hknpWorld* world,
@@ -343,6 +345,7 @@ namespace rock
         std::atomic<float> _gripRecoveryDistanceGameUnitsAtomic{ 210.0f };
         std::atomic<std::uint32_t> _bodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<bool> _rebuildRequestedAtomic{ false };
+        bool _compoundSourcesUnavailable{ false };
         std::atomic<std::uint64_t> _proxyPairCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _obstacleCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _rawPointCallbackSequenceAtomic{ 0 };

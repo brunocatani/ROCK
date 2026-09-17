@@ -489,6 +489,7 @@ namespace rock
         FrameResult result{};
         result.requestedWeaponWorld = _frameRequestedWeaponWorld;
         result.resolvedWeaponWorld = _frameRequestedWeaponWorld;
+        _compoundSourcesUnavailable = false;
 
         const bool frameMatches =
             _frameAcceptingIntent &&
@@ -878,6 +879,9 @@ namespace rock
             !compoundGeometry.valid ||
             compoundGeometry.generationKey != bounds.generationKey ||
             compoundGeometry.generationKey != _frameGenerationKey) {
+            _compoundSourcesUnavailable =
+                compoundGeometry.failure == WeaponCollision::CompoundGeometrySnapshotFailure::SourceTransformUnavailable &&
+                compoundGeometry.generationKey == _frameGenerationKey;
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,

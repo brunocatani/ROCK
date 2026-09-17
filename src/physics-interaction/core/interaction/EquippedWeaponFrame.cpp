@@ -1543,6 +1543,9 @@ namespace rock
                     currentWeaponGenerationKey,
                     _weaponCollision,
                     surfaceSupportPrimaryValid ? &surfaceSupportPrimaryGripLocal : nullptr);
+            if (_dynamicWeaponCollision.compoundSourcesUnavailable()) {
+                _weaponCollision.requestRebuildForReplacedSources();
+            }
             const bool dynamicWeaponDebugEnabled =
                 g_rockConfig.rockDebugShowColliders &&
                 g_rockConfig.rockDebugDrawDynamicWeaponColliders;
