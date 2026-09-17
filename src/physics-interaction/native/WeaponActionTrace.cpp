@@ -161,7 +161,7 @@ namespace rock::weapon_action_trace
                 return;
             }
             auto next = std::make_unique<Session>();
-            const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_WeaponActions.log");
+            const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_0.9_WeaponActions.log");
             auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, 4 * 1024 * 1024, 2, true);
             next->pool = std::make_shared<spdlog::details::thread_pool>(1024, 1);
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponActions", sink,

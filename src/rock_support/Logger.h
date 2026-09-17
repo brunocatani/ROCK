@@ -277,7 +277,8 @@ namespace rock::logger
             path = path.value().parent_path().append(expectedGamePath);
         }
 
-        *path /= fmt::format("{}.log", logFileName);
+        // Keep this checkout's files separate while retaining ROCK's runtime identity.
+        *path /= fmt::format("{}_0.9.log", logFileName);
         auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
             path->string(),
             10 * 1024 * 1024,

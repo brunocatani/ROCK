@@ -16,7 +16,7 @@ namespace
     std::filesystem::path resolveConfigDirectory()
     {
         return rock::resources::getPathInDocuments(
-            R"(\My Games\Fallout4VR\Mods_Config\ROCK)");
+            R"(\My Games\Fallout4VR\Mods_Config\ROCK_0.9)");
     }
 
     std::int64_t eventTicks() noexcept

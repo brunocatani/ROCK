@@ -34,7 +34,7 @@ namespace rock::dynamic_collider_trace
         if (session || !g_rockConfig.rockDebugGrabFrameLogging) return;
         try {
             auto next = std::make_unique<Session>();
-            const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_ColliderTrace.log");
+            const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_0.9_ColliderTrace.log");
             auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, 10 * 1024 * 1024, 5, true);
             next->pool = std::make_shared<spdlog::details::thread_pool>(2048, 1);
             next->log = std::make_shared<spdlog::async_logger>("ROCK_ColliderTrace", sink, next->pool,

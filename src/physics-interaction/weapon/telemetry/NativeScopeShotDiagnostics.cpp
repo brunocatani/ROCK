@@ -315,7 +315,7 @@ namespace rock::native_scope_shot_diagnostics
                 writerFailed.store(false, std::memory_order_relaxed);
                 thread = std::jthread([](std::stop_token stop) {
                     try {
-                        const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_ScopeShots.log");
+                        const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_0.9_ScopeShots.log");
                         auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, 4 * 1024 * 1024, 2, false);
                         spdlog::logger log("ROCK_ScopeShots", sink);
                         log.set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");

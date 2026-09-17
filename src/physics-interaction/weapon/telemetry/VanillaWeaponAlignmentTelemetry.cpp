@@ -135,7 +135,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
         }
         try {
             auto next = std::make_unique<Session>();
-            const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_WeaponAlignment.log");
+            const auto path = resources::getPathInDocuments("/My Games/Fallout4VR/F4SE/ROCK_0.9_WeaponAlignment.log");
             auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, 8 * 1024 * 1024, 3, true);
             next->pool = std::make_shared<spdlog::details::thread_pool>(1024, 1);
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,

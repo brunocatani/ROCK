@@ -96,7 +96,7 @@ int main()
         // The writer flushes on later windows. Keep delivering empty frames as
         // the game does, rather than requiring an extra production flush API.
         { FrameScope idleFrame; }
-        std::ifstream input(logDirectory / "ROCK_Profiler.log");
+        std::ifstream input(logDirectory / "ROCK_0.9_Profiler.log");
         output.assign(std::istreambuf_iterator<char>(input), {});
         if (counts(output, "handFrameResolve", "readQueries").size() == 2) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(20));

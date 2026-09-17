@@ -604,7 +604,7 @@ namespace rock::performance_profiler
                         path = path.value().parent_path().append(gamepath);
                     }
 
-                    *path /= "ROCK_Profiler.log";
+                    *path /= "ROCK_0.9_Profiler.log";
                     auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_st>(path->string(), 1024 * 1024 * 10, 5, true);
                     _logger = std::make_shared<spdlog::logger>("ROCK_PROFILER_ASYNC", sink);
                     _logger->set_level(spdlog::level::info);

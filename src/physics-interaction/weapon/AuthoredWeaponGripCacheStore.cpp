@@ -25,7 +25,7 @@ namespace rock::authored_weapon_grip_cache
 {
     namespace
     {
-        constexpr auto kCacheRelativePath = R"(\My Games\Fallout4VR\Mods_Config\ROCK\AuthoredWeaponGripCache)";
+        constexpr auto kCacheRelativePath = R"(\My Games\Fallout4VR\Mods_Config\ROCK_0.9\AuthoredWeaponGripCache)";
         constexpr std::size_t kMaximumPendingWrites = 64;
         constexpr std::size_t kMaximumCandidateFiles = kMaximumCachedEntries * 4;
 
