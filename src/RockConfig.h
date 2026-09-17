@@ -27,6 +27,7 @@
 #include "config/ConfigurationStore.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
+#include "physics-interaction/input/BareFistGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/GripZoneIndicatorPolicy.h"
 
@@ -170,6 +171,8 @@ namespace rock
          * rendered hand through one-way visual authority.
          */
         bool rockEnableVanillaMelee = true;
+        bool rockRockyModeEnabled = true;
+        float rockRockyModeHoldSeconds = bare_fist_gesture::kDefaultHoldSeconds;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;

@@ -6,7 +6,9 @@ namespace rock::bare_fist_gesture
 {
     inline constexpr std::uint64_t kButtons = (1ull << 2) | (1ull << 33);
     inline constexpr std::uint64_t kMaximumSampleAgeMilliseconds = 100;
-    inline constexpr float kQualificationSeconds = 1.0f;
+    inline constexpr float kDefaultHoldSeconds = 1.0f;
+    inline constexpr float kMinimumHoldSeconds = 0.1f;
+    inline constexpr float kMaximumHoldSeconds = 10.0f;
     inline constexpr float kDrawTimeoutSeconds = 2.0f;
 
     // Low bits hold capture state; the upper bits identify a physical cycle.
@@ -38,6 +40,7 @@ namespace rock::bare_fist_gesture
         Phase phase{ Phase::Idle };
         std::uint64_t cycle{ 0 };
         float seconds{ 0.0f };
+        float requiredHoldSeconds{ kDefaultHoldSeconds };
     };
     struct Input
     {
@@ -45,6 +48,7 @@ namespace rock::bare_fist_gesture
         bool eligible{ false };
         bool drawnUnarmed{ false };
         float deltaSeconds{ 0.0f };
+        float holdSeconds{ kDefaultHoldSeconds };
     };
     enum class Action { None, Draw, Cancel };
 
@@ -57,12 +61,14 @@ namespace rock::bare_fist_gesture
             return started ? Action::Cancel : Action::None;
         }
         if (state.phase == Phase::Idle) {
-            state = { Phase::Qualifying, input.cycle, 0.0f };
+            // A hot reload affects the next physical hold, never shortens
+            // qualification under buttons the player is already holding.
+            state = { Phase::Qualifying, input.cycle, 0.0f, input.holdSeconds };
             return Action::None;
         }
         if (state.phase == Phase::Qualifying) {
             state.seconds += input.deltaSeconds;
-            if (state.seconds >= kQualificationSeconds) {
+            if (state.seconds >= state.requiredHoldSeconds) {
                 state.phase = Phase::Drawing;
                 state.seconds = 0.0f;
                 return Action::Draw;

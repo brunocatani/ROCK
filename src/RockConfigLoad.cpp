@@ -660,6 +660,10 @@ namespace rock
             180.0f);
 
         rockEnableVanillaMelee = ini.GetBoolValue(SECTION, "bEnableVanillaMelee", rockEnableVanillaMelee);
+        rockRockyModeEnabled = ini.GetBoolValue(SECTION, "bRockyModeEnabled", rockRockyModeEnabled);
+        rockRockyModeHoldSeconds = readClampedFloat(ini, SECTION, "fRockyModeHoldSeconds",
+            rockRockyModeHoldSeconds, bare_fist_gesture::kDefaultHoldSeconds,
+            bare_fist_gesture::kMinimumHoldSeconds, bare_fist_gesture::kMaximumHoldSeconds);
         rockNativeCharacterControllerObjectContactFilterEnabled = ini.GetBoolValue(
             SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 

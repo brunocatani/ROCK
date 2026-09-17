@@ -46,6 +46,25 @@ int main(int argc, char** argv)
     try {
         CSimpleIniA compiled;
         rock::RockConfig::buildCompiledDefaults(compiled);
+        require(compiled.GetBoolValue("PhysicsInteraction", "bRockyModeEnabled", false), "Rocky mode default must preserve enabled behavior");
+        require(compiled.GetDoubleValue("PhysicsInteraction", "fRockyModeHoldSeconds", 0) == 1.0, "Rocky mode default must preserve one-second qualification");
+        {
+            CSimpleIniA rocky;
+            rocky.SetBoolValue("PhysicsInteraction", "bRockyModeEnabled", false);
+            rocky.SetDoubleValue("PhysicsInteraction", "fRockyModeHoldSeconds", 2.5);
+            auto values = rock::RockConfig::parseValues(rocky);
+            require(!values.rockRockyModeEnabled && values.rockRockyModeHoldSeconds == 2.5f,
+                "Rocky mode enable flag and custom timer must load");
+            rocky.SetDoubleValue("PhysicsInteraction", "fRockyModeHoldSeconds", -1);
+            require(rock::RockConfig::parseValues(rocky).rockRockyModeHoldSeconds == 0.1f,
+                "Rocky mode timer must retain a positive qualification period");
+            rocky.SetDoubleValue("PhysicsInteraction", "fRockyModeHoldSeconds", 100);
+            require(rock::RockConfig::parseValues(rocky).rockRockyModeHoldSeconds == 10.0f,
+                "Rocky mode timer must respect the supported maximum");
+            rocky.SetValue("PhysicsInteraction", "fRockyModeHoldSeconds", "nan");
+            require(rock::RockConfig::parseValues(rocky).rockRockyModeHoldSeconds == 1.0f,
+                "Rocky mode non-finite timer must recover to its default");
+        }
         require(compiled.GetLongValue("ImmersiveWeapons", "iWeaponGrabMode", 0) == 1, "weapon grab mode default must preserve toggle both");
         require(compiled.GetValue("ImmersiveWeapons", "bToggleGrab", nullptr) == nullptr, "retired toggle boolean remains in the supported catalog");
         if (argc == 3 && std::string_view(argv[1]) == "--dump-defaults") {

@@ -72,7 +72,7 @@ namespace rock
         const auto weaponForm = currentEquippedWeaponFormId();
         const bool ownsDraw = _grabInput.bareFistDrawOwned &&
             _grabInput.bareFistWorldGeneration == _lifecycle.worldGenerationAtomic.load(std::memory_order_acquire);
-        const bool eligible = player && !player->IsDead(false) && g_rockConfig.rockEnableVanillaMelee &&
+        const bool eligible = g_rockConfig.rockRockyModeEnabled && player && !player->IsDead(false) && g_rockConfig.rockEnableVanillaMelee &&
             !runtime.compatibilityConfigBlocking && !runtime.localGameStopped && runtime.localSkeletonReady &&
             (nativeState == 0 || (ownsDraw && weaponForm == 0)) &&
             input_remap_runtime::bareFistHooksReady() && areNativeMeleeHooksInstalled() &&
@@ -80,7 +80,7 @@ namespace rock
             (!_grabInput.bareFistDrawOwned || gestureStarted);
         input_remap_runtime::setBareFistAdmission(eligible);
         if (!eligible) {
-            if (input_remap_runtime::isRawButtonPhysicallyHeld(true, 2) &&
+            if (g_rockConfig.rockRockyModeEnabled && input_remap_runtime::isRawButtonPhysicallyHeld(true, 2) &&
                 input_remap_runtime::isRawButtonPhysicallyHeld(true, 33) &&
                 input_remap_runtime::isRawButtonPhysicallyHeld(false, 2) &&
                 input_remap_runtime::isRawButtonPhysicallyHeld(false, 33)) {
@@ -104,6 +104,7 @@ namespace rock
             .eligible = input_remap_runtime::bareFistChordValid(),
             .drawnUnarmed = drawnUnarmed,
             .deltaSeconds = frame.deltaSeconds,
+            .holdSeconds = g_rockConfig.rockRockyModeHoldSeconds,
         });
         if (action == bare_fist_gesture::Action::Cancel) {
             // The policy clears its state on cancellation; preserve its prior

@@ -91,6 +91,20 @@ int main()
         ok &= expectEqual("new capture cannot inherit old attack permission", update(state, {cycle, true, true, 0.0f}), Action::Cancel);
         ok &= expectEqual("stale samples cancel held capture", capture(observe(cycle, false, true, false, false)), Capture::Draining);
         ok &= expectFalse("reserved fist input blocks force grab", isAvailable({.inputReserved = true}));
+        state = {};
+        static_cast<void>(update(state, {cycle, true, false, 0.0f, 2.0f}));
+        ok &= expectEqual("custom timer holds qualification past one second",
+            update(state, {cycle, true, false, 1.0f, 2.0f}), Action::None);
+        ok &= expectEqual("shorter reloaded timer cannot complete the current hold",
+            update(state, {cycle, true, false, 0.5f, 0.25f}), Action::None);
+        ok &= expectEqual("current hold completes at its captured timer",
+            update(state, {cycle, true, false, 0.5f, 0.25f}), Action::Draw);
+        static_cast<void>(update(state, {cycle, true, true, 0.0f, 0.25f}));
+        ok &= expectEqual("disabling eligibility ends an active Rocky session",
+            update(state, {cycle, false, true, 0.0f, 0.25f}), Action::Cancel);
+        static_cast<void>(update(state, {cycle, true, false, 0.0f, 0.25f}));
+        ok &= expectEqual("next hold uses the new fractional timer",
+            update(state, {cycle, true, false, 0.25f, 0.25f}), Action::Draw);
     }
     const HandAvailabilityInput freeHand{};
     const HandAvailabilityInput blockedHand{ .holding = true };
