@@ -16,6 +16,30 @@ namespace rock::vanilla_weapon_alignment_telemetry
     enum class Phase { BeforeRockPreFrik, BeforeFrik, AfterFrik, AfterRock };
     enum class NativePhase { GraphEntry, GraphExit, PrimaryArmEntry, PrimaryArmExit, SupportArmEntry, SupportArmExit };
 
+    // Borrowed only for the synchronous capture; the async logger receives
+    // formatted values, never these references or the scene pointer.
+    struct NativeAimCapture
+    {
+        const char* caller;
+        std::uint32_t callerLine;
+        std::uint32_t weaponFormId;
+        std::uint64_t generation;
+        std::uint64_t ownership;
+        std::uint64_t instanceContent;
+        const RE::NiAVObject* weapon;
+        const RE::NiTransform& wandWorld;
+        const RE::NiTransform& inputWorld;
+        const RE::NiTransform& previousAim;
+        const RE::NiTransform& nextAim;
+        bool previousValid;
+        bool identityChanged;
+        bool cleanIntent;
+        std::uint32_t intentSource;
+        std::uint32_t gripState;
+        bool authoredRefreshed;
+        bool writeBlocked;
+    };
+
     // Main/game thread only. The worker receives formatted text, never scene
     // pointers. Skeleton destruction drains and joins it outside frame capture.
     void initialize();
@@ -25,6 +49,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
     // accessing session state. No scene pointers leave the owning callback.
     void recordNative(NativePhase phase, const RE::NiAVObject* weapon = nullptr,
         const RE::NiAVObject* offset = nullptr) noexcept;
+    void recordNativeAimCapture(const NativeAimCapture& capture) noexcept;
     void recordLooseGrab(RE::TESObjectREFR* ref, bool isLeft, std::uint64_t grabIdentity,
         const RE::NiTransform& handWorld) noexcept;
     // Transition boundaries only, including modded weapons. Captures value

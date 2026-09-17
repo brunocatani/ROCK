@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <source_location>
 
 #include "api/FRIKApiV2.h"
 #include "physics-interaction/grab/MeshGrab.h"
@@ -1523,7 +1524,8 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             std::uint64_t weaponInstanceContentKey,
-            const RE::NiTransform* cleanNativeIntentWorld = nullptr);
+            const RE::NiTransform* cleanNativeIntentWorld = nullptr,
+            std::source_location captureLocation = std::source_location::current());
         bool hasRightNativeWeaponAimFrame(
             const RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,

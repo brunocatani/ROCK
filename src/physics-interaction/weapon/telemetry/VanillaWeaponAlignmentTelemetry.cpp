@@ -42,6 +42,8 @@ namespace rock::vanilla_weapon_alignment_telemetry
             unsigned int nativeMask{ 0 };
             std::uint64_t captureFailures{ 0 };
             std::array<std::chrono::steady_clock::time_point, 2> lastLooseSample{};
+            std::uint32_t aimCapturesRemaining{ 0 };
+            std::chrono::steady_clock::time_point lastAimJump{};
         };
         std::unique_ptr<Session> session;
         // Lifecycle and phase capture share the game thread. Native animation
@@ -141,7 +143,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=6 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16",
+            next->log->info("VWA start version=7 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -348,6 +350,45 @@ namespace rock::vanilla_weapon_alignment_telemetry
         } catch (...) {
             // Report the failure count in the enclosing phase/end record;
             // diagnostic allocation/I/O failure cannot cross a native hook.
+            ++session->captureFailures;
+        }
+    }
+
+    void recordNativeAimCapture(const NativeAimCapture& capture) noexcept
+    {
+        if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
+        // Diagnose the equip/handoff overwrite, including modded weapons.
+        // Stable carry stops after this burst; later large changes remain
+        // observable at a capped rate. Remove with the aim-source repair.
+        if (capture.identityChanged) session->aimCapturesRemaining = 48;
+        const float deltaDegrees = capture.previousValid ?
+            hand_world_claim_registry_policy::rotationDeltaDegrees(capture.previousAim, capture.nextAim) : 0.0f;
+        const auto now = std::chrono::steady_clock::now();
+        const bool largeJump = capture.previousValid && deltaDegrees >= 5.0f;
+        if (session->aimCapturesRemaining == 0 &&
+            (!largeJump || now - session->lastAimJump < std::chrono::milliseconds(250))) return;
+        if (session->aimCapturesRemaining > 0) --session->aimCapturesRemaining;
+        if (largeJump) session->lastAimJump = now;
+        try {
+            std::string_view caller = capture.caller ? capture.caller : "unknown";
+            const auto separator = caller.find_last_of("/\\");
+            if (separator != std::string_view::npos) caller.remove_prefix(separator + 1);
+            session->log->info("VWA aim-write seq={} frame={} form={:08X} caller={}:{} generation={:016X} ownership={:016X} instance={:016X} identityChanged={} previousValid={} source={} intentSource={} gripState={} authoredRefreshed={} writeBlocked={} deltaDegrees={:.5f} burstRemaining={}",
+                session->sequence, runtime_state::currentFrame().frameIndex, capture.weaponFormId,
+                caller, capture.callerLine, capture.generation, capture.ownership, capture.instanceContent,
+                capture.identityChanged, capture.previousValid,
+                capture.cleanIntent ? "frame-intent" : "scene-world", capture.intentSource,
+                capture.gripState, capture.authoredRefreshed, capture.writeBlocked, deltaDegrees,
+                session->aimCapturesRemaining);
+            if (capture.previousValid) transform("aim-write", "previous-weapon-in-right-wand", capture.previousAim);
+            transform("aim-write", "next-weapon-in-right-wand", capture.nextAim);
+            transform("aim-write", "input-weapon-world", capture.inputWorld);
+            transform("aim-write", "right-wand-world", capture.wandWorld);
+            node("aim-write", "weapon-at-capture", capture.weapon);
+            if (capture.weapon && capture.weapon->parent) {
+                transform("aim-write", "weapon-parent-world", capture.weapon->parent->world);
+            }
+        } catch (...) {
             ++session->captureFailures;
         }
     }
