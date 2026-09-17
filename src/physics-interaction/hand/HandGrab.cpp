@@ -1493,9 +1493,7 @@ namespace rock
         {
             return grab_pinch_pocket_policy::sanitizeConfig(grab_pinch_pocket_policy::Config{
                 .enabled = g_rockConfig.rockGrabPinchPocketEnabled,
-                .compactMaxExtentGameUnits = g_rockConfig.rockGrabPinchCompactMaxExtentGameUnits,
-                .thinRodMaxLengthGameUnits = g_rockConfig.rockGrabPinchThinRodMaxLengthGameUnits,
-                .thinRodMaxCrossSectionGameUnits = g_rockConfig.rockGrabPinchThinRodMaxCrossSectionGameUnits,
+                .maxVolumeCubicGameUnits = g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits,
                 .maxPocketDistanceGameUnits = g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits,
                 .minFingerGapGameUnits = g_rockConfig.rockGrabPinchMinFingerGapGameUnits,
                 .maxFingerGapGameUnits = g_rockConfig.rockGrabPinchMaxFingerGapGameUnits,
@@ -1561,9 +1559,7 @@ namespace rock
         {
             RuntimePinchPocketCandidate candidate{};
             const auto config = currentPinchPocketConfig();
-            const float objectScale =
-                std::isfinite(objectWorldTransform.scale) && objectWorldTransform.scale > 0.0f ? objectWorldTransform.scale : 1.0f;
-            candidate.meshExtents = grab_pinch_pocket_policy::computeMeshExtents(localMeshTriangles, objectScale);
+            candidate.meshExtents = grab_pinch_pocket_policy::computeMeshExtents(localMeshTriangles, objectWorldTransform.scale);
 
             root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
             const bool hasFingerSnapshot =
@@ -11764,7 +11760,7 @@ namespace rock
             looseWeaponGrab);
         if (pinchPocketCandidate.valid) {
             ROCK_LOG_DEBUG(Hand,
-                "{} hand PINCH POCKET candidate accepted: reason={} pocket=({:.1f},{:.1f},{:.1f}) point=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) gap={:.2f}gu dist={:.2f}gu extents=({:.2f},{:.2f},{:.2f})",
+                "{} hand PINCH POCKET candidate accepted: reason={} pocket=({:.1f},{:.1f},{:.1f}) point=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) gap={:.2f}gu dist={:.2f}gu extents=({:.2f},{:.2f},{:.2f}) boundsVolume={:.2f}/{:.2f}gu^3",
                 handName(),
                 pinchPocketCandidate.decision.reason,
                 pinchPocketCandidate.pinchPocketWorld.x,
@@ -11780,10 +11776,12 @@ namespace rock
                 pinchPocketCandidate.pocketToSurfaceDistanceGameUnits,
                 pinchPocketCandidate.meshExtents.minExtentGameUnits,
                 pinchPocketCandidate.meshExtents.middleExtentGameUnits,
-                pinchPocketCandidate.meshExtents.maxExtentGameUnits);
+                pinchPocketCandidate.meshExtents.maxExtentGameUnits,
+                pinchPocketCandidate.meshExtents.boundsVolumeCubicGameUnits,
+                g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits);
         } else if (g_rockConfig.rockDebugGrabFrameLogging) {
             ROCK_LOG_DEBUG(Hand,
-                "{} hand PINCH POCKET candidate rejected: reason={} gap={:.2f}gu dist={:.2f}gu extentsValid={} extents=({:.2f},{:.2f},{:.2f}) close={} bodies={}",
+                "{} hand PINCH POCKET candidate rejected: reason={} gap={:.2f}gu dist={:.2f}gu extentsValid={} extents=({:.2f},{:.2f},{:.2f}) boundsVolume={:.2f}/{:.2f}gu^3 close={} bodies={}",
                 handName(),
                 pinchPocketCandidate.decision.reason,
                 pinchPocketCandidate.thumbIndexGapGameUnits,
@@ -11792,6 +11790,8 @@ namespace rock
                 pinchPocketCandidate.meshExtents.minExtentGameUnits,
                 pinchPocketCandidate.meshExtents.middleExtentGameUnits,
                 pinchPocketCandidate.meshExtents.maxExtentGameUnits,
+                pinchPocketCandidate.meshExtents.boundsVolumeCubicGameUnits,
+                g_rockConfig.rockGrabPinchMaxVolumeCubicGameUnits,
                 (!sel.isFarSelection && !grabbedFromPullCatch) ? "yes" : "no",
                 preparedBodySet.acceptedCount());
         }

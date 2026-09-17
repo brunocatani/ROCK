@@ -187,15 +187,9 @@ namespace rock
                 grab_pinch_pocket_policy::Config{
                     .enabled =
                         g_rockConfig.rockGrabPinchPocketEnabled,
-                    .compactMaxExtentGameUnits =
+                    .maxVolumeCubicGameUnits =
                         g_rockConfig.
-                            rockGrabPinchCompactMaxExtentGameUnits,
-                    .thinRodMaxLengthGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchThinRodMaxLengthGameUnits,
-                    .thinRodMaxCrossSectionGameUnits =
-                        g_rockConfig.
-                            rockGrabPinchThinRodMaxCrossSectionGameUnits,
+                            rockGrabPinchMaxVolumeCubicGameUnits,
                     .maxPocketDistanceGameUnits =
                         g_rockConfig.
                             rockGrabPinchMaxPocketDistanceGameUnits,

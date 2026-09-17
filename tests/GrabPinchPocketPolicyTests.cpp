@@ -1,8 +1,10 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 
 #include <cmath>
+#include <array>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 namespace
 {
@@ -75,52 +77,38 @@ int main()
 
     bool ok = true;
 
-    auto compact = evaluateObject(validInput(bounds(7.0f, 5.0f, 2.0f)));
-    ok &= expectTrue("compact object accepted", compact.accept);
-    ok &= expectTrue("compact object flag", compact.compactObject);
-    ok &= expectReason("compact object reason", compact.reason, "pinchCompact");
+    const auto longRodBounds = bounds(30.0f, 3.0f, 2.0f);
+    ok &= expectNear("total bounding volume includes long dimension", longRodBounds.boundsVolumeCubicGameUnits, 180.0f);
+    ok &= expectTrue("long thin object fits volume budget", evaluateObject(validInput(longRodBounds)).accept);
+    ok &= expectTrue("compact object of equal volume also fits", evaluateObject(validInput(bounds(6.0f, 6.0f, 5.0f))).accept);
+    ok &= expectTrue("flat wide object fits volume budget", evaluateObject(validInput(bounds(30.0f, 20.0f, 0.5f))).accept);
+    ok &= expectTrue("coin still fits", evaluateObject(validInput(bounds(2.0f, 2.0f, 0.3f))).accept);
+    ok &= expectTrue("small thick object has no separate thickness veto", evaluateObject(validInput(bounds(7.0f, 7.0f, 5.6f))).accept);
+    ok &= expectTrue("volume boundary is inclusive", evaluateObject(validInput(bounds(10.0f, 10.0f, 4.0f))).accept);
+    ok &= expectFalse("volume above boundary is rejected", evaluateObject(validInput(bounds(10.0f, 10.0f, 4.01f))).accept);
+    ok &= expectFalse("large total volume is rejected", evaluateObject(validInput(bounds(16.0f, 12.0f, 8.0f))).accept);
 
-    auto compactLimit = evaluateObject(validInput(bounds(10.0f, 5.0f, 2.0f)));
-    ok &= expectTrue("compact object accepts the configured 10gu limit", compactLimit.accept);
-    ok &= expectReason("compact object limit reason", compactLimit.reason, "pinchCompact");
+    const auto scaledBounds = computeMeshExtentsFromBounds(
+        RE::NiPoint3{}, RE::NiPoint3{ 10.0f, 5.0f, 2.0f }, 2.0f);
+    ok &= expectNear("doubling scale multiplies volume by eight", scaledBounds.boundsVolumeCubicGameUnits, 800.0f);
+    ok &= expectFalse("scaled-up object exceeds volume budget", evaluateObject(validInput(scaledBounds)).accept);
+    auto tunedVolume = validInput(scaledBounds);
+    tunedVolume.config.maxVolumeCubicGameUnits = 800.0f;
+    ok &= expectTrue("configured volume limit controls acceptance", evaluateObject(tunedVolume).accept);
+    ok &= expectFalse("invalid scale cannot understate volume", computeMeshExtentsFromBounds(
+        RE::NiPoint3{}, RE::NiPoint3{ 10.0f, 5.0f, 2.0f }, std::numeric_limits<float>::quiet_NaN()).valid);
+    ok &= expectFalse("overflowing volume fails closed", computeMeshExtentsFromBounds(
+        RE::NiPoint3{}, RE::NiPoint3{ 1.0e20f, 1.0e20f, 1.0e20f }, 1.0f).valid);
 
-    auto canSizedObject = evaluateObject(validInput(bounds(11.0f, 5.0f, 2.0f)));
-    ok &= expectFalse("can-sized object above compact limit rejected", canSizedObject.accept);
-    ok &= expectReason("can-sized object reason", canSizedObject.reason, "objectTooLarge");
-
-    auto mugSizedObject = evaluateObject(validInput(bounds(7.0f, 7.0f, 5.6f)));
-    ok &= expectFalse("mug-sized compact object too thick to pinch", mugSizedObject.accept);
-    ok &= expectFalse("mug-sized compact flag rejected", mugSizedObject.compactObject);
-    ok &= expectReason("mug-sized compact reason", mugSizedObject.reason, "compactTooThickToPinch");
-
-    auto shortCanObject = evaluateObject(validInput(bounds(6.0f, 4.7f, 4.7f)));
-    ok &= expectFalse("short can too thick to pinch", shortCanObject.accept);
-    ok &= expectReason("short can reason", shortCanObject.reason, "compactTooThickToPinch");
-
-    auto coinObject = evaluateObject(validInput(bounds(2.0f, 2.0f, 0.3f)));
-    ok &= expectTrue("coin accepted", coinObject.accept);
-    ok &= expectReason("coin reason", coinObject.reason, "pinchCompact");
-
-    auto cigarObject = evaluateObject(validInput(bounds(7.5f, 1.3f, 1.3f)));
-    ok &= expectTrue("cigar accepted", cigarObject.accept);
-    ok &= expectReason("cigar reason", cigarObject.reason, "pinchCompact");
-
-    auto thicknessLimitObject = evaluateObject(validInput(bounds(6.0f, 5.0f, 4.0f)));
-    ok &= expectTrue("compact object accepts the configured 4gu thickness limit", thicknessLimitObject.accept);
-    ok &= expectReason("thickness limit reason", thicknessLimitObject.reason, "pinchCompact");
-
-    auto thinRod = evaluateObject(validInput(bounds(17.5f, 3.5f, 2.0f)));
-    ok &= expectTrue("short thin rod accepted", thinRod.accept);
-    ok &= expectTrue("short thin rod flag", thinRod.thinRod);
-    ok &= expectReason("short thin rod reason", thinRod.reason, "pinchThinRod");
-
-    auto longRod = evaluateObject(validInput(bounds(30.0f, 3.0f, 2.0f)));
-    ok &= expectFalse("long rod rejected", longRod.accept);
-    ok &= expectReason("long rod reason", longRod.reason, "objectTooLarge");
-
-    auto largeProp = evaluateObject(validInput(bounds(16.0f, 12.0f, 8.0f)));
-    ok &= expectFalse("large prop rejected", largeProp.accept);
-    ok &= expectReason("large prop reason", largeProp.reason, "objectTooLarge");
+    struct Triangle { RE::NiPoint3 v0, v1, v2; };
+    std::array<Triangle, 2> mesh{{
+        { { 0.0f, 0.0f, 0.0f }, { 1.0f, 3.0f, 0.0f }, { 1.0f, 0.0f, 2.0f } },
+        { { 29.0f, 0.0f, 0.0f }, { 30.0f, 3.0f, 0.0f }, { 30.0f, 0.0f, 2.0f } },
+    }};
+    ok &= expectNear("volume includes separated mesh parts", computeMeshExtents(mesh, 1.0f).boundsVolumeCubicGameUnits, 180.0f);
+    mesh[1].v0.x = std::numeric_limits<float>::quiet_NaN();
+    ok &= expectFalse("invalid mesh part cannot silently shrink total volume", computeMeshExtents(mesh, 1.0f).valid);
+    ok &= expectFalse("empty mesh has no volume evidence", computeMeshExtents(std::array<Triangle, 0>{}, 1.0f).valid);
 
     auto farGrab = validInput(bounds(5.0f, 4.0f, 2.0f));
     farGrab.closeGrab = false;
@@ -132,13 +120,13 @@ int main()
     handPocketOnly.handPocketOnlyGrab = true;
     decision = evaluateObject(handPocketOnly);
     ok &= expectTrue("hand-pocket-only can use pinch geometry", decision.accept);
-    ok &= expectReason("hand-pocket-only pinch reason", decision.reason, "pinchCompact");
+    ok &= expectReason("hand-pocket-only pinch reason", decision.reason, "pinchObjectVolume");
 
     auto looseWeapon = validInput(bounds(5.0f, 4.0f, 2.0f));
     looseWeapon.looseWeaponGrab = true;
     decision = evaluateObject(looseWeapon);
     ok &= expectTrue("loose weapon can use pinch geometry", decision.accept);
-    ok &= expectReason("loose weapon pinch reason", decision.reason, "pinchCompact");
+    ok &= expectReason("loose weapon pinch reason", decision.reason, "pinchObjectVolume");
 
     auto multiBody = validInput(bounds(5.0f, 4.0f, 2.0f));
     multiBody.multipleAcceptedBodies = true;
