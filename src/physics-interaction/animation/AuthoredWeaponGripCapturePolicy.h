@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cmath>
+#include <limits>
 #include <string_view>
 
 namespace rock::authored_weapon_grip_capture_policy
@@ -448,6 +449,25 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] inline float resolveWeaponPresentationScale(bool animationAvailable, float animationScale) noexcept
     {
         return animationAvailable && std::isfinite(animationScale) ? animationScale : 1.0f;
+    }
+
+    /*
+     * Tolerance of the position-only hold identity check. The check recovers
+     * the palm pivot from the solved weapon world and the tracked hand world
+     * and compares it with the authored pivot; equal in real arithmetic, in
+     * float the recovered pivot carries the rounding of the world coordinates
+     * it passed through: one ulp is 0.008 gu near 76000 and 0.010-0.013 gu
+     * was measured there, so the tolerance follows the coordinate magnitude
+     * above a floor that covers small coordinates.
+     */
+    inline constexpr float kPositionOnlyHoldGripErrorFloorGameUnits = 0.01f;
+    inline constexpr float kPositionOnlyHoldGripErrorUlps = 4.0f;
+
+    [[nodiscard]] constexpr float positionOnlyHoldGripErrorTolerance(const float maxAbsWorldCoordinate) noexcept
+    {
+        const float magnitude = maxAbsWorldCoordinate < 0.0f ? -maxAbsWorldCoordinate : maxAbsWorldCoordinate;
+        const float rounding = kPositionOnlyHoldGripErrorUlps * std::numeric_limits<float>::epsilon() * magnitude;
+        return rounding > kPositionOnlyHoldGripErrorFloorGameUnits ? rounding : kPositionOnlyHoldGripErrorFloorGameUnits;
     }
 
     template <class Transform, class Point, class LocalPointToWorld>

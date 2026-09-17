@@ -1183,15 +1183,23 @@ namespace rock
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
                 rightPositionOnlyHandWeaponLocal,
                 false);
-        constexpr float kMaximumPositionOnlyHoldGripErrorGameUnits = 0.01f;
+        // Float rounding of the world coordinates the pivot went through
+        // (AuthoredWeaponGripCapturePolicy.h); the identity itself is exact.
+        const float positionOnlyHoldGripErrorTolerance =
+            authored_weapon_grip_capture_policy::positionOnlyHoldGripErrorTolerance(
+                (std::max)({ std::fabs(solvedWeaponWorld.translate.x),
+                    std::fabs(solvedWeaponWorld.translate.y),
+                    std::fabs(solvedWeaponWorld.translate.z),
+                    std::fabs(trackedHandWorld.translate.x),
+                    std::fabs(trackedHandWorld.translate.y),
+                    std::fabs(trackedHandWorld.translate.z) }));
         const float positionOnlyHoldGripError = pointDistance(
             cachedPositionOnlyGripWeaponLocal,
             authoredGripWeaponLocal);
         const bool positionOnlyHoldValid =
             finiteTransform(rightPositionOnlyHandWeaponLocal) &&
             std::isfinite(positionOnlyHoldGripError) &&
-            positionOnlyHoldGripError <=
-                kMaximumPositionOnlyHoldGripErrorGameUnits;
+            positionOnlyHoldGripError <= positionOnlyHoldGripErrorTolerance;
         const bool positionOnlyHoldPublished =
             compiledMinigunFiringSeat ||
             (authoredLibraryEntryAvailable &&
@@ -1205,12 +1213,13 @@ namespace rock
         if (!positionOnlyHoldPublished) {
             if (!_positionOnlyHoldPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
-                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu",
+                    "Authored position-only loose hold publication failed weaponKey=0x{:X} capture={} entry={} valid={} gripError={:.4f}gu tolerance={:.4f}gu",
                     currentWeaponKey,
                     resolvedCaptureSequence,
                     authoredLibraryEntryAvailable ? "yes" : "no",
                     positionOnlyHoldValid ? "yes" : "no",
-                    positionOnlyHoldGripError);
+                    positionOnlyHoldGripError,
+                    positionOnlyHoldGripErrorTolerance);
                 _positionOnlyHoldPublishFailureLogged = true;
             }
         } else {
