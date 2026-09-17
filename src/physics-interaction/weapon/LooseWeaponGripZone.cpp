@@ -9,13 +9,11 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/VectorMath.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/BSExtraData.h"
@@ -86,8 +84,7 @@ namespace rock::loose_weapon_grip_zone
 
         std::size_t handIndex(const bool isLeft) { return isLeft ? 0u : 1u; }
 
-        constexpr const char* kLiveWeaponNodeCarrierRejected =
-            "liveWeaponNodeLocalIsNotNativeCarrier";
+
 
         bool isFinitePoint(const RE::NiPoint3& point)
         {
@@ -148,7 +145,7 @@ namespace rock::loose_weapon_grip_zone
              */
             if (weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade ||
                 weapon->weaponData.type == RE::WEAPON_TYPE::kMine) {
-                state.reason = "throwableSkipsFrikOffset";
+                state.reason = "throwableSkipsAuthoredGrip";
                 return false;
             }
 
@@ -192,169 +189,34 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            const auto frikLookup =
-                frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, looseRoot);
             auto authoredLookup = authored_weapon_grip_library::find(
-                weapon,
-                looseRoot,
-                f4vr::isInPowerArmor());
+                weapon, looseRoot, f4vr::isInPowerArmor());
             authored_weapon_grip_library::applyPipeDefaultOffset(authoredLookup, isLeft);
-            const bool promotedPipeCalibration = authoredLookup.found &&
-                pipe_firing_grip_policy::isPromotedCalibration(weapon->formID, isLeft, frikLookup.offset);
-            constexpr bool authoredGripEligible = true;
-            const auto selectedSource = weapon_grip_authority_policy::select(
-                weapon_grip_authority_policy::Availability{
-                    .frikCustomFile =
-                        frikLookup.found &&
-                        frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile && !promotedPipeCalibration,
-                    .authoredAnimation = authoredGripEligible && authoredLookup.found,
-                    .frikEmbeddedResource =
-                        frikLookup.found &&
-                        frikLookup.source == frik_weapon_offset_cache::OffsetSource::EmbeddedResource,
-                    .allowFrikLiveNodeFallback = false,
-                });
-
-            RE::NiTransform canonicalHandWeaponLocal{};
-            RE::NiTransform canonicalPlacementHandWeaponLocal{};
-            bool canonicalPlacementResolved = false;
-            /*
-             * Native carrier: hFRIK's Weapon-node local is authored under
-             * RArm_Hand, so the canonical hand frame composed with that offset
-             * is where the native right hand would carry this weapon. The live
-             * Weapon node's parent is not consulted: ROCK re-parents it under
-             * LArm_Hand for the left carry and presents RArm_Hand itself while
-             * the right hand supports or part-carries the equipped weapon.
-             */
-            const auto tryResolveAttachedRootWorld =
-                [&](RE::NiTransform& outAttachedRootWorld,
-                    const char*& outFailureReason) {
-                    outAttachedRootWorld = {};
-                    if (!frikLookup.found) {
-                        outFailureReason = frikLookup.reason;
-                        return false;
-                    }
-                    /*
-                     * The live Weapon-node local is hFRIK's carrier only while
-                     * hFRIK drives that node. Under ROCK's carry (part carry,
-                     * support lock, left-firing carry) it is ROCK's own solve
-                     * and moves with the carry hands; consuming it rotated
-                     * every loose grab of a weapon without an hFRIK offset
-                     * while the equipped weapon was carried. hFRIK carries
-                     * such a weapon on the animation's own local, which the
-                     * authored relation already encodes, so the full authored
-                     * hold below is the exact native placement for it.
-                     */
-                    if (frikLookup.source ==
-                        frik_weapon_offset_cache::OffsetSource::LiveWeaponNodeFallback) {
-                        outFailureReason = kLiveWeaponNodeCarrierRejected;
-                        return false;
-                    }
-
-                    outAttachedRootWorld = transform_math::composeTransforms(
-                        canonicalHandWorld,
-                        frikLookup.offset);
-                    outAttachedRootWorld.scale = looseRoot->world.scale;
-                    if (!isUsableWorldTransform(outAttachedRootWorld)) {
-                        outFailureReason = "nonFiniteAttachedRoot";
-                        return false;
-                    }
-                    return true;
-                };
-
-            if (selectedSource == weapon_grip_authority_policy::Source::AuthoredAnimation) {
-                canonicalHandWeaponLocal = authoredLookup.rightHandWeaponLocal;
-                state.gripWeaponLocal =
-                    computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
+            if (!authoredLookup.found) {
                 state.reason = authoredLookup.reason;
-                const char* carrierFailureReason =
-                    "nativeCarrierUnavailable";
-
-                // Loose authored grabs always use the native-carrier solve.
-                // The equipped-only cache must not change their rotation.
-                if (!canonicalPlacementResolved) {
-                    RE::NiTransform attachedRootWorld{};
-                    if (tryResolveAttachedRootWorld(
-                            attachedRootWorld,
-                            carrierFailureReason)) {
-                        const RE::NiTransform positionOnlyWeaponWorld =
-                            authored_weapon_grip_capture_policy::
-                                resolveAuthoredPrimaryWeaponWorldPositionOnly(
-                                    attachedRootWorld,
-                                    state.gripWeaponLocal,
-                                    canonicalPalmWorld,
-                                    [](const RE::NiTransform& transform,
-                                        const RE::NiPoint3& point) {
-                                        return transform_math::localPointToWorld(
-                                            transform,
-                                            point);
-                                    });
-                        canonicalPlacementHandWeaponLocal =
-                            transform_math::composeTransforms(
-                                transform_math::invertTransform(
-                                    positionOnlyWeaponWorld),
-                                canonicalHandWorld);
-                        if (isUsableWorldTransform(
-                                canonicalPlacementHandWeaponLocal)) {
-                            canonicalPlacementResolved = true;
-                            state.placementReason =
-                                "authoredNativeCarrierPositionOnly";
-                        } else {
-                            carrierFailureReason =
-                                "derivedPositionOnlyHoldInvalid";
-                        }
-                    }
-                }
-
-                if (!canonicalPlacementResolved) {
-                    canonicalPlacementHandWeaponLocal =
-                        canonicalHandWeaponLocal;
-                    canonicalPlacementResolved = true;
-                    const bool noFrikOffset =
-                        carrierFailureReason == kLiveWeaponNodeCarrierRejected;
-                    state.placementReason = noFrikOffset ?
-                        "authoredFullRigidNoFrikOffset" :
-                        "authoredFullRigidFallback";
-                    if (!noFrikOffset) {
-                        ROCK_LOG_SAMPLE_WARN(Hand, 1000,
-                            "Authored loose weapon position-only carrier unavailable formID={:08X} source={}; using full authored hold",
-                            weapon->formID,
-                            carrierFailureReason);
-                    }
-                }
-            } else if (
-                selectedSource == weapon_grip_authority_policy::Source::FrikCustomFile ||
-                selectedSource == weapon_grip_authority_policy::Source::FrikEmbeddedResource ||
-                selectedSource == weapon_grip_authority_policy::Source::FrikLiveNodeFallback) {
-                RE::NiTransform attachedRootWorld{};
-                const char* attachedRootFailureReason =
-                    "attachedRootUnavailable";
-                if (!tryResolveAttachedRootWorld(
-                        attachedRootWorld,
-                        attachedRootFailureReason)) {
-                    state.reason = attachedRootFailureReason;
-                    return false;
-                }
-
-                state.gripWeaponLocal =
-                    transform_math::worldPointToLocal(attachedRootWorld, canonicalPalmWorld);
-                canonicalHandWeaponLocal = transform_math::composeTransforms(
-                    transform_math::invertTransform(attachedRootWorld),
-                    canonicalHandWorld);
-                canonicalPlacementHandWeaponLocal =
-                    canonicalHandWeaponLocal;
-                canonicalPlacementResolved = true;
-                state.reason = frikLookup.reason;
-                state.placementReason = "frikFullRigid";
-            } else {
-                state.reason = authoredGripEligible ?
-                                   authoredLookup.reason :
-                                   weapon_grip_authority_policy::sourceName(selectedSource);
                 return false;
             }
 
+            const RE::NiTransform canonicalHandWeaponLocal = authoredLookup.rightHandWeaponLocal;
+            state.gripWeaponLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
+            state.reason = authoredLookup.reason;
+            RE::NiTransform aimWorld{};
+            if (!TwoHandedGrip::tryGetRightWeaponAimWorld(looseRoot->world.scale, aimWorld)) {
+                state.reason = "rockWeaponAimUnavailable";
+                return false;
+            }
+            const RE::NiTransform positionOnlyWeaponWorld =
+                authored_weapon_grip_capture_policy::resolveAuthoredPrimaryWeaponWorldPositionOnly(
+                    aimWorld, state.gripWeaponLocal, canonicalPalmWorld,
+                    [](const RE::NiTransform& transform, const RE::NiPoint3& point) {
+                        return transform_math::localPointToWorld(transform, point);
+                    });
+            const RE::NiTransform canonicalPlacementHandWeaponLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(positionOnlyWeaponWorld), canonicalHandWorld);
+            state.placementReason = "authoredRockControllerPositionOnly";
+
             if (!isFinitePoint(state.gripWeaponLocal) ||
                 !isUsableWorldTransform(canonicalHandWeaponLocal) ||
-                !canonicalPlacementResolved ||
                 !isUsableWorldTransform(
                     canonicalPlacementHandWeaponLocal)) {
                 state.reason = "nonFiniteCanonicalGrip";
@@ -368,9 +230,8 @@ namespace rock::loose_weapon_grip_zone
             }
 
             /*
-             * Probe: the seat's orientation is FRIK's stored offset under the
-             * canonical right hand, and a left seat mirrors it through both
-             * physical hands. Compare those hands with FRIK's tracked hands.
+             * Compare the physical hands used for ROCK's controller-based
+             * seat and left-hand mirror with the provider's tracked hands.
              */
             {
                 RE::NiTransform firstPersonRight{};
@@ -486,7 +347,7 @@ namespace rock::loose_weapon_grip_zone
         HandZoneState firing{};
         const bool firingResolved = tryResolveGripWorld(isLeft, ref, firing);
         const float firingDistance = pointDistance(probeLocal, firing.gripWeaponLocal) * std::fabs(root->world.scale);
-        const bool firingEligible = firingResolved && firing.hasFiringHandWeaponLocal &&
+        const bool firingEligible = firingResolved && firing.hasFiringHandWeaponLocal && firing.hasLoosePlacementHandWeaponLocal &&
             firingDistance <= g_rockConfig.rockWeaponInteractionProbeRadius;
 
         if (firingEligible) {
@@ -577,6 +438,7 @@ namespace rock::loose_weapon_grip_zone
             return false;
         }
         out.handWeaponLocal = out.role == selection::Role::Support ? supportLocal : firing.firingHandWeaponLocal;
+        out.placementHandWeaponLocal = out.role == selection::Role::Support ? supportLocal : firing.loosePlacementHandWeaponLocal;
         return true;
     }
 

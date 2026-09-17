@@ -1,5 +1,4 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
-#include "physics-interaction/weapon/PipeFiringGripPolicy.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 #include <algorithm>
@@ -9,7 +8,6 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
@@ -225,19 +223,9 @@ namespace rock
             _physicalHandInWandLocal = {};
         }
 
-        // Re-resolving from the still-live detached model against the
-        // filewatch-published cache guarantees that a newly created custom
-        // offset also overrides a previously captured authored handoff frame.
-        const auto frikLookup =
-            frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, model);
-        const bool customFrikOffsetPresent =
-            frikLookup.found &&
-            frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile &&
-            !pipe_firing_grip_policy::isPromotedCalibration(input.weaponFormID, input.isLeftHand, frikLookup.offset);
-        const auto authoredLookup =
-            !customFrikOffsetPresent && input.weapon ?
-                authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :
-                authored_weapon_grip_library::LookupResult{};
+        const auto authoredLookup = input.weapon ?
+            authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :
+            authored_weapon_grip_library::LookupResult{};
 
         RE::NiTransform resolvedHandWorld{};
         RE::NiTransform resolvedHandWeaponLocal{};
@@ -254,11 +242,9 @@ namespace rock
         if (_hasFiringHandWeaponLocal) {
             _firingHandWeaponLocal = resolvedHandWeaponLocal;
         } else if (
-            !customFrikOffsetPresent &&
             input.hasFiringHandWeaponLocal &&
             isFiniteTransform(input.firingHandWeaponLocal)) {
-            // The frame captured before inventory transfer remains a safe
-            // fallback only when no explicit custom correction is present.
+            // Preserve the authored loose hold captured before inventory transfer.
             _firingHandWeaponLocal = input.firingHandWeaponLocal;
             _hasFiringHandWeaponLocal = true;
             targetReason = "capturedLooseHoldFallback";
@@ -476,8 +462,8 @@ namespace rock
             }
 
             /*
-             * Rotation carrier selection. RIGHT bridges follow the live
-             * native root (its right-hand glue is the final carry). LEFT
+             * Rotation carrier selection. RIGHT bridges use ROCK's controller
+             * basis and the authored grip for placement. LEFT
              * bridges must use the carry's solved pose supplied by the
              * caller: this update runs before ROCK's carry re-poses the node
              * each frame, so a live root read would return the right-glue or
@@ -496,14 +482,8 @@ namespace rock
                 }
             } else {
                 nativePositionOnlyCarrierAvailable =
-                    input.nativeVisual &&
-                    input.nativeVisual->weaponRoot &&
-                    isFiniteTransform(
-                        input.nativeVisual->weaponRoot->world);
-                if (nativePositionOnlyCarrierAvailable) {
-                    nativeCarrierWorld =
-                        input.nativeVisual->weaponRoot->world;
-                }
+                    _hasFiringHandWeaponLocal && _hasPhysicalHandInWandLocal &&
+                    TwoHandedGrip::tryGetRightWeaponAimWorld(_model->world.scale, nativeCarrierWorld);
             }
             if (_isLeftHand &&
                 nativePositionOnlyCarrierAvailable &&

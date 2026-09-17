@@ -2,7 +2,7 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/visual/FrikHandWorldAuthority.h"
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 
 #include "RockConfig.h"
@@ -143,7 +143,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=7 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250",
+            next->log->info("VWA start version=8 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -227,12 +227,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
         session->log->info("VWA phase seq={} phase={} form={:08X} overruns={}",
             schedulerSequence, phaseLabel, formId, session->pool->overrun_counter());
         if (phase == Phase::BeforeFrik || phase == Phase::AfterFrik) {
-            auto* weapon = equipped && equipped->item.object ? equipped->item.object->As<RE::TESObjectWEAP>() : nullptr;
-            const auto offset = frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, f4vr::getWeaponNode());
-            session->log->info("VWA offset-source seq={} phase={} form={:08X} found={} source={} reason={} revision={}",
-                schedulerSequence, phaseLabel, formId, offset.found, static_cast<unsigned>(offset.source), offset.reason,
-                frik_weapon_offset_cache::currentRevision());
-            if (offset.found) transform(phaseLabel, "frik-weapon-offset", offset.offset);
+            transform(phaseLabel, "rock-weapon-in-controller", weapon_aim_basis::weaponInController());
         }
         auto* nodes = f4vr::getPlayerNodes();
         node(phaseLabel, "right-wand", nodes ? nodes->primaryWandNode : nullptr);
@@ -363,8 +358,12 @@ namespace rock::vanilla_weapon_alignment_telemetry
         if (capture.identityChanged) session->aimCapturesRemaining = 48;
         const float deltaDegrees = capture.previousValid ?
             hand_world_claim_registry_policy::rotationDeltaDegrees(capture.previousAim, capture.nextAim) : 0.0f;
+        const auto inputInWand = transform_math::composeTransforms(
+            transform_math::invertTransform(capture.wandWorld), capture.inputWorld);
+        const float inputDeltaDegrees = hand_world_claim_registry_policy::rotationDeltaDegrees(inputInWand, capture.nextAim);
         const auto now = std::chrono::steady_clock::now();
-        const bool largeJump = capture.previousValid && deltaDegrees >= 5.0f;
+        const bool largeJump = (capture.previousValid && deltaDegrees >= 5.0f) ||
+            (capture.authoredRefreshed && inputDeltaDegrees >= 5.0f);
         if (session->aimCapturesRemaining == 0 &&
             (!largeJump || now - session->lastAimJump < std::chrono::milliseconds(250))) return;
         if (session->aimCapturesRemaining > 0) --session->aimCapturesRemaining;
@@ -373,12 +372,12 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::string_view caller = capture.caller ? capture.caller : "unknown";
             const auto separator = caller.find_last_of("/\\");
             if (separator != std::string_view::npos) caller.remove_prefix(separator + 1);
-            session->log->info("VWA aim-write seq={} frame={} form={:08X} caller={}:{} generation={:016X} ownership={:016X} instance={:016X} identityChanged={} previousValid={} source={} intentSource={} gripState={} authoredRefreshed={} writeBlocked={} deltaDegrees={:.5f} burstRemaining={}",
+            session->log->info("VWA aim-write seq={} frame={} form={:08X} caller={}:{} generation={:016X} ownership={:016X} instance={:016X} identityChanged={} previousValid={} source=rock-controller-basis inputSource={} intentSource={} gripState={} authoredRefreshed={} writeBlocked={} deltaDegrees={:.5f} inputDeltaDegrees={:.5f} burstRemaining={}",
                 session->sequence, runtime_state::currentFrame().frameIndex, capture.weaponFormId,
                 caller, capture.callerLine, capture.generation, capture.ownership, capture.instanceContent,
                 capture.identityChanged, capture.previousValid,
                 capture.cleanIntent ? "frame-intent" : "scene-world", capture.intentSource,
-                capture.gripState, capture.authoredRefreshed, capture.writeBlocked, deltaDegrees,
+                capture.gripState, capture.authoredRefreshed, capture.writeBlocked, deltaDegrees, inputDeltaDegrees,
                 session->aimCapturesRemaining);
             if (capture.previousValid) transform("aim-write", "previous-weapon-in-right-wand", capture.previousAim);
             transform("aim-write", "next-weapon-in-right-wand", capture.nextAim);
@@ -398,7 +397,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
     {
         if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled || !ref) return;
         const auto* base = ref->GetObjectReference();
-        if (!base || !targeted(base->formID)) return;
+        if (!base || !base->As<RE::TESObjectWEAP>()) return;
         auto& last = session->lastLooseSample[isLeft ? 1u : 0u];
         const auto now = std::chrono::steady_clock::now();
         if (now - last < std::chrono::milliseconds(250)) return;

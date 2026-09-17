@@ -14,7 +14,6 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/hand/NativeWandVisualSuppression.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
@@ -802,24 +801,15 @@ namespace
         s_skeletonTickedThisFrame = true;
         performance_profiler::ScopedTimer preludeTimer(performance_profiler::Scope::FramePrelude);
         frik_hand_world_authority::beginRockFrame(s_schedulerSequence);
-        // On every exit from here, a caught exception included: hand FRIK back
-        // the weapon local it re-glued, then close the hand authority's frame.
+        // Close hand authority on every exit, including a caught exception.
         struct RockFrameEnd
         {
             ~RockFrameEnd()
             {
-                if (s_physicsInteraction) {
-                    s_physicsInteraction->restoreFrikWeaponOffsetAfterRockFrame();
-                }
                 frik_hand_world_authority::endRockFrame();
             }
         };
         const RockFrameEnd rockFrameEnd{};
-        // FRIK writes its stored weapon offset after this phase. Present it on
-        // the node for ROCK's frame, so every read sees the weapon FRIK renders.
-        if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
-            s_physicsInteraction->presentFrikWeaponOffsetForRockFrame();
-        }
         vanilla_weapon_alignment_telemetry::capture(
             vanilla_weapon_alignment_telemetry::Phase::AfterFrik, s_schedulerSequence);
         if (s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
@@ -834,8 +824,7 @@ namespace
      * AfterWeaponPosition: FRIK's weapon offsets, two-handed grip and scope
      * camera are applied (FRIK skips the weapon node while ROCK blocks it).
      * ROCK reports its two-handed grip after FRIK's own grip invalidation,
-     * re-applies the presentation scale FRIK's full-local write undid, latches
-     * the weapon local its next frame presents, and its immersive scope
+     * re-applies presentation scale after FRIK's pass, and its immersive scope
      * overlay captures FRIK's camera calibration and publishes the rigid
      * weapon-local scope frame from the final weapon.
      */
@@ -844,7 +833,6 @@ namespace
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->syncFrikOffHandGripReport();
             s_physicsInteraction->normalizeWeaponPresentationScaleAfterFrikWeaponPass();
-            s_physicsInteraction->captureFrikWeaponOffsetLatch();
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
     }
@@ -1085,7 +1073,6 @@ namespace
                 logger::critical("ROCK: Required VR INI enforcement is unavailable; initialization stopped.");
                 return;
             }
-            rock::frik_weapon_offset_cache::preload();
             rock::saved_grab_offset::preload();
             rock::authored_weapon_grip_cache::preload();
             rock::installHavokTimingFixHook();

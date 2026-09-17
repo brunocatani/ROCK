@@ -28,7 +28,6 @@
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
-#include "physics-interaction/weapon/grip/FrikWeaponPresentationPolicy.h"
 #include "physics-interaction/weapon/grip/WeaponNodeWriteBlockPolicy.h"
 
 #include "RE/NetImmerse/NiAVObject.h"
@@ -554,6 +553,7 @@ namespace rock
          * firing-hand presentation it fails closed instead of reading the
          * presented hand back as solver input.
          */
+        static bool tryGetRightWeaponAimWorld(float weaponScale, RE::NiTransform& outWorld);
         bool tryGetAuthoredPrimaryTrackedFiringHandWorld(
             RE::NiTransform& outHandWorld) const;
 
@@ -795,19 +795,6 @@ namespace rock
 
         // AfterWeaponPosition: FRIK has finished clearing grips for weapon changes.
         void syncFrikOffHandGripReport();
-
-        /*
-         * FRIK's weapon presentation for a Weapon node whose pose ROCK does
-         * not own (FrikWeaponPresentationPolicy.h). Capture runs after FRIK's
-         * weapon pass; present, at the start of ROCK's frame, applies the
-         * latched local, or FRIK's stored offset for equippedWeapon from
-         * ROCK's offset table when FRIK has not written this weapon, to the
-         * node; restore, at the end of that frame, hands FRIK back the re-glue
-         * local unless ROCK's write block keeps FRIK off the node.
-         */
-        void captureFrikWeaponOffsetLatch(RE::NiNode* weaponNode);
-        void presentFrikWeaponOffsetForRockFrame(RE::NiNode* weaponNode, const RE::TESObjectWEAP* equippedWeapon);
-        void restoreFrikWeaponOffsetAfterRockFrame();
 
         /*
          * The manual-ownership state machine also tracks right-hand
@@ -1513,7 +1500,7 @@ namespace rock
          * canonical wrist must never become weapon rotation authority again.
          */
         void rememberRightFiringHandCanonicalFrame(std::uint64_t weaponInstanceContentKey);
-        void refreshRightNativeCanonicalFrame(
+        void refreshRightNativeAimFrame(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
@@ -1693,14 +1680,6 @@ namespace rock
         void engageFrikWeaponNodeWriteBlock();
         void releaseFrikWeaponNodeWriteBlock(const char* reason);
         void resetFrikWeaponOwnership();
-        // ROCK's own solve is on the node: two-hand authority, part carry, left carry, a return blend.
-        [[nodiscard]] bool ownsWeaponPoseForFrikPresentation() const;
-        // FRIK's stored offset for the equipped weapon from ROCK's offset table, resolved once per identity and table revision.
-        void refreshSynthesizedFrikWeaponOffset(
-            RE::NiNode* weaponNode,
-            const RE::TESObjectWEAP* equippedWeapon,
-            const frik_weapon_presentation_policy::NodeIdentity& identity);
-
         static RE::NiNode* resolveFirstPersonHandNode(bool isLeft);
 
         authored_support_grab_policy::Selection capturePartGrip(
@@ -2180,25 +2159,12 @@ namespace rock
             // Why the block was held at the end of the last ROCK frame; a tail
             // is logged once per episode when it holds without a predicate.
             weapon_node_write_block_policy::HoldReason lastHoldReason{ weapon_node_write_block_policy::HoldReason::None };
-            // Consecutive ROCK frames that read a visible, FRIK-owned weapon
-            // at its glue pose because no offset latch was presentable.
-            std::uint32_t glueFramesWithoutLatch{ 0 };
             // The equipped weapon the write tails belong to; a change ends them.
             std::uint64_t ownershipKey{ 0 };
             // The two-handed grip as last reported to FRIK (setOffHandGripping).
             bool gripReported{ false };
             bool gripReportedSupportIsLeft{ false };
             std::uint64_t gripReportedWeaponKey{ 0 };
-        };
-
-        // State owned by the FrikWeaponNodeOwnership module: FRIK's weapon offset as ROCK presents it.
-        struct FrikWeaponPresentationState
-        {
-            frik_weapon_presentation_policy::OffsetLatch latch{};
-            frik_weapon_presentation_policy::SynthesizedOffset synthesized{};
-            // Set between present and restore, inside one ROCK frame only.
-            RE::NiNode* presentedNode{ nullptr };
-            RE::NiTransform reglueLocal{};
         };
 
         // State owned by the LeftFiringCarry module: FRIK weapon-node
@@ -2348,7 +2314,6 @@ namespace rock
         PartCarryState _partCarry{};
         LeftFiringCarryState _leftCarry{};
         FrikWeaponNodeOwnershipState _frikWeaponNode{};
-        FrikWeaponPresentationState _frikWeaponPresentation{};
         WeaponRecoilState _recoil{};
         // Non-owning sibling service. PhysicsInteraction declares the surface
         // runtime first, so our recoil registration ends before it is destroyed.

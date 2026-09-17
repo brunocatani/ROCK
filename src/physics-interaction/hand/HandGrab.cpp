@@ -1065,11 +1065,10 @@ namespace rock
 
                 /*
                  * Both firing hands use the same weapon-relative authority resolver.
-                 * It enforces custom hFRIK > learned authored > embedded hFRIK and
-                 * performs no filesystem work on this grab path. Explicit hFRIK
-                 * keeps its complete correction. Authored loose placement always
-                 * derives from the native carrier, so a prior equip cannot replace
-                 * the first-grab weapon orientation.
+                 * Authored grip data seats the weapon on ROCK's controller aim
+                 * without filesystem work. Near and pulled firing grabs use the
+                 * same physical hold; the separate authored wrist relation is
+                 * retained for hand and finger presentation.
                  */
                 RE::NiTransform handWorld{};
                 RE::NiTransform handWeaponLocal{};
@@ -1077,7 +1076,7 @@ namespace rock
                 bool haveDesiredRoot = nearAuthored;
                 if (nearAuthored) {
                     handWorld = nearGrip->handWorld;
-                    handWeaponLocal = nearGrip->handWeaponLocal;
+                    handWeaponLocal = nearGrip->placementHandWeaponLocal;
                     frame.supportGrip = nearGrip->role == loose_weapon_authored_grab_policy::Role::Support;
                     holdReason = frame.supportGrip ? "authoredCloseSupportGrip" : "authoredCloseFiringGrip";
                 } else {
@@ -1098,7 +1097,7 @@ namespace rock
                 if (!haveDesiredRoot) {
                     /*
                      * Palm-anchored fallback for non-throwable forced arrivals
-                     * without a usable FRIK offset: root axes follow the live hand
+                     * without a usable authored grip: root axes follow the live hand
                      * basis and the root origin sits on the hand grab pivot. Any
                      * fixed choice is correct here -- the goal is a deterministic
                      * commit pose, not a per-weapon tuned grip.
@@ -1117,7 +1116,7 @@ namespace rock
             frame.desiredRootWorld.scale =
                 rootNode && std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
             if (nearAuthored) {
-                const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(nearGrip->handWeaponLocal, isLeft);
+                const auto seatLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(nearGrip->placementHandWeaponLocal, isLeft);
                 frame.desiredRootWorld.translate = {};
                 frame.desiredRootWorld.translate = grabPivotAWorld - transform_math::localPointToWorld(frame.desiredRootWorld, seatLocal);
             }

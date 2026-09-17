@@ -42,7 +42,7 @@ namespace rock
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
-    // inverts it onto hFRIK's live primary hand. The paired support relation
+    // seats it on ROCK's controller aim at the physical palm. The paired support relation
     // is captured while Bethesda's native right-primary topology is intact,
     // then republished as a frame-scoped candidate. A fully validated stable
     // snapshot bridges transient firing-animation capture gaps only while all
@@ -104,7 +104,6 @@ namespace rock
         std::string_view _lastSuspensionReason{}; // Static reason literals only.
         std::uint64_t _lastSuspensionLogMs{ 0 };
         bool _reportPoseSuspension{ false };
-        std::uint64_t _frikOffsetCacheRevision{ 0 };
         std::uint64_t _captureSequenceFloor{ 0 };
         std::uint64_t _supportCaptureSequenceFloor{ 0 };
         StableAuthoredSupportGripSnapshot _stableAuthoredSupportGrip{};
@@ -118,7 +117,6 @@ namespace rock
         bool _canonicalPublishFailureLogged{ false };
         bool _libraryPublishFailureLogged{ false };
         bool _positionOnlyHoldPublishFailureLogged{ false };
-        bool _customFrikOffsetOverrideActive{ false };
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };
         bool _supportCaptureFailureLogged{ false };

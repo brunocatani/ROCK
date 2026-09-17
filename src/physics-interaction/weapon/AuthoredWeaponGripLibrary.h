@@ -61,7 +61,6 @@ namespace rock::authored_weapon_grip_library
         FiringFingerPose supportFingerPose{};
         std::uint64_t supportCaptureSequence{ 0 };
         std::uint64_t captureSequence{ 0 };
-        std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
         CaptureSource supportSource{ CaptureSource::Unknown };
         bool hasSupportRelation{ false };
@@ -118,7 +117,6 @@ namespace rock::authored_weapon_grip_library
         const RE::TESObjectWEAP* weapon,
         bool inPowerArmor,
         std::uint64_t authoredCaptureSequence,
-        std::uint64_t frikOffsetRevision,
         const RE::NiTransform& rightPositionOnlyHandWeaponLocal);
 
     /*

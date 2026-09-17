@@ -152,12 +152,6 @@ namespace rock::pipe_firing_grip_policy
     }
 
     template <class T>
-    [[nodiscard]] bool isPromotedCalibration(std::uint32_t form, bool isLeft, const T& offset) noexcept
-    {
-        return isPipe(form) && !isLeft && matches(offset, kWeaponInHand);
-    }
-
-    template <class T>
     [[nodiscard]] T weaponInHand() noexcept
     {
         T result{};

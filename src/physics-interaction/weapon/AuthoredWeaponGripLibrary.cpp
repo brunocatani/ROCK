@@ -36,7 +36,6 @@ namespace rock::authored_weapon_grip_library
             FiringFingerPose supportFingerPose{};
             std::uint64_t supportCaptureSequence{ 0 };
             std::uint64_t captureSequence{ 0 };
-            std::uint64_t positionOnlyFrikOffsetRevision{ 0 };
             std::uint64_t publicationOrdinal{ 0 };
             CaptureSource source{ CaptureSource::Unknown };
             CaptureSource supportSource{ CaptureSource::Unknown };
@@ -148,8 +147,6 @@ namespace rock::authored_weapon_grip_library
                 .supportFingerPose = entry.supportFingerPose,
                 .supportCaptureSequence = entry.supportCaptureSequence,
                 .captureSequence = entry.captureSequence,
-                .positionOnlyFrikOffsetRevision =
-                    entry.positionOnlyFrikOffsetRevision,
                 .source = entry.source,
                 .supportSource = entry.supportSource,
                 .hasSupportRelation = entry.hasSupportRelation,
@@ -253,7 +250,6 @@ namespace rock::authored_weapon_grip_library
 
         if (destination->captureSequence != captureSequence) {
             destination->rightPositionOnlyHandWeaponLocal = {};
-            destination->positionOnlyFrikOffsetRevision = 0;
             destination->hasRightPositionOnlyHandWeaponLocal = false;
             // The paired support relation belongs to the authored pose, not
             // to one capture instance: the same idle republished from a new
@@ -297,12 +293,10 @@ namespace rock::authored_weapon_grip_library
         const RE::TESObjectWEAP* weapon,
         const bool inPowerArmor,
         const std::uint64_t authoredCaptureSequence,
-        const std::uint64_t frikOffsetRevision,
         const RE::NiTransform& rightPositionOnlyHandWeaponLocal)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         if (weaponFormId == 0 || authoredCaptureSequence == 0 ||
-            frikOffsetRevision == 0 ||
             !finiteTransform(rightPositionOnlyHandWeaponLocal)) {
             return false;
         }
@@ -317,7 +311,6 @@ namespace rock::authored_weapon_grip_library
 
             entry.rightPositionOnlyHandWeaponLocal =
                 rightPositionOnlyHandWeaponLocal;
-            entry.positionOnlyFrikOffsetRevision = frikOffsetRevision;
             entry.hasRightPositionOnlyHandWeaponLocal = true;
             return true;
         }

@@ -19,9 +19,8 @@ namespace rock::loose_weapon_grip_zone
      * Firing-grip zone for loosely held weapons.
      *
      * While a hand holds a loose/dynamic weapon, this runtime resolves one
-     * canonical firing relation in strict authority order: a user hFRIK JSON,
-     * ROCK's learned native-animation pose, then an hFRIK embedded cold
-     * fallback. It projects that fixed Weapon-relative grip onto the loose
+     * canonical firing relation from ROCK's learned native-animation pose.
+     * It projects that fixed Weapon-relative grip onto the loose
      * model and tracks whether the holding palm is inside the grip radius.
      *
      * All geometry is weapon-root-local at the projection step and world at
@@ -66,7 +65,10 @@ namespace rock::loose_weapon_grip_zone
     {
         loose_weapon_authored_grab_policy::Role role{ loose_weapon_authored_grab_policy::Role::None };
         RE::NiTransform handWorld{};
+        // Authored relation for hand/finger presentation, independent of the
+        // physical relation used to place the weapon at ROCK's controller aim.
         RE::NiTransform handWeaponLocal{};
+        RE::NiTransform placementHandWeaponLocal{};
     };
 
     struct AuthoredSupportDebug
@@ -125,9 +127,8 @@ namespace rock::loose_weapon_grip_zone
     /*
      * Stateless one-shot resolver of the loose weapon PLACEMENT hold. For an
      * authored grip this always derives the position-only hold from the
-     * native/hFRIK carrier. It deliberately ignores the equipped-position
-     * cache so every loose grab uses the same path as the first loose grab.
-     * Full authored placement is the final aligned fallback. The other hand
+     * ROCK controller basis. It does not depend on a previous equip or a
+     * provider offset; missing authored data leaves the grip unavailable. The other hand
      * receives the matching mirrored hold. Weapon world = hand world o
      * inverse(hold). Used by pull-catch and force-grab commit; frame-thread
      * only.

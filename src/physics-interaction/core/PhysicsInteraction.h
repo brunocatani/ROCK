@@ -112,9 +112,6 @@ namespace rock
          * present applies it to the Weapon node for ROCK's frame, and restore
          * hands FRIK back the re-glue local when that frame ends.
          */
-        void captureFrikWeaponOffsetLatch();
-        void presentFrikWeaponOffsetForRockFrame();
-        void restoreFrikWeaponOffsetAfterRockFrame();
         // End of ROCK's tick: settle FRIK's weapon-node write block before FRIK's weapon pass.
         void finalizeFrikWeaponOwnershipForFrame();
         // AfterWeaponPosition: report the two-handed grip to FRIK after its own grip invalidation.

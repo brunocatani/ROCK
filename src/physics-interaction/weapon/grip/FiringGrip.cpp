@@ -2,6 +2,7 @@
 
 #include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
 #include "physics-interaction/weapon/telemetry/VanillaWeaponAlignmentTelemetry.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 
 // Firing-hand grip: canonical right frame, native aim-frame capture, left/right mirroring, authored primary firing grip canonical and finger pose, reattach, support-to-firing promotion, and PrimaryOnly (persistent equipped carry) sessions.
 
@@ -1112,6 +1113,14 @@ namespace rock
         clearPrimaryGripWorldAuthority(false);
     }
 
+    bool TwoHandedGrip::tryGetRightWeaponAimWorld(const float weaponScale, RE::NiTransform& outWorld)
+    {
+        outWorld = {};
+        const auto* nodes = f4vr::getPlayerNodes();
+        return nodes && nodes->primaryWandNode &&
+            weapon_aim_basis::tryResolveWorld(nodes->primaryWandNode->world, weaponScale, outWorld);
+    }
+
     bool TwoHandedGrip::tryGetAuthoredPrimaryTrackedFiringHandWorld(
         RE::NiTransform& outHandWorld) const
     {
@@ -1239,16 +1248,7 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform weaponInRightWand =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(rightWand->world),
-                cleanNativeIntentWorld ? *cleanNativeIntentWorld : weaponNode->world);
-        weaponInRightWand =
-            left_firing_position_only_math::orientationOnly(
-                weaponInRightWand);
-        if (!isFiniteTransform(weaponInRightWand)) {
-            return false;
-        }
+        const RE::NiTransform weaponInRightWand = weapon_aim_basis::weaponInController();
 
         const bool identityChanged =
             !_firing.rightNativeWeaponAimFrame.valid ||
@@ -1305,7 +1305,7 @@ namespace rock
                 barrelInRightWand.x,
                 barrelInRightWand.y,
                 barrelInRightWand.z,
-                cleanNativeIntentWorld ? "clean-native-intent" : "unmodified-native-world");
+                "rock-controller-basis");
         }
         return true;
     }
@@ -1450,7 +1450,7 @@ namespace rock
             _firing.hasLeftNaturalBoneInDampedDriver);
     }
 
-    void TwoHandedGrip::refreshRightNativeCanonicalFrame(
+    void TwoHandedGrip::refreshRightNativeAimFrame(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey,
@@ -1483,77 +1483,17 @@ namespace rock
             aim.weaponGenerationKey = currentWeaponGenerationKey;
         }
 
-        /*
-         * Passive canonical capture: whenever the equipped weapon rides the
-         * native RIGHT hand (no ROCK transform ownership), the live weapon
-         * pose already carries FRIK's authored per-weapon offsets, so the
-         * canonical right hold and its weapon-in-wand frame can refresh
-         * continuously. Without this, a weapon that was never
-         * right-firing-gripped in the session had no canonical, and a LEFT
-         * takeover fell back to the raw squeeze capture - the per-weapon
-         * offsets (e.g. the UMP's large forward offset) silently missing
-         * from the mirrored left hold ("worked before by coincidence").
-         */
+        // The aim basis is ROCK-owned even before a firing grip is acquired.
+        // Authored animation remains the authority for the hand relation;
+        // never derive that relation from a provider-presented weapon node.
         if (_visuals.weaponCollisionHandPresentationFromPreviousFrame[1] ||
             isManualOwnershipActive() || _leftCarry.weaponNodeOwnershipBlockEngaged ||
             _visuals.returningWeapon.localTransition.active ||
-            !scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(_scope.menuOpenThisFrame, _scope.safeHandFrames[1].rootRebaseActive) || !weaponNode ||
-            currentWeaponGenerationKey == 0 || !isFiniteTransform(weaponNode->world)) {
+            !scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(_scope.menuOpenThisFrame, _scope.safeHandFrames[1].rootRebaseActive)) {
             return;
         }
-        auto* playerNodes = f4vr::getPlayerNodes();
-        RE::NiTransform rightHandWorld{};
-        if (!playerNodes || !playerNodes->primaryWandNode ||
-            !isFiniteTransform(playerNodes->primaryWandNode->world) ||
-            !tryGetSolverHandTransform(false, rightHandWorld)) {
-            return;
-        }
-        const RE::NiTransform boneInRightWand = transform_math::composeTransforms(
-            transform_math::invertTransform(playerNodes->primaryWandNode->world), rightHandWorld);
-        // Same wrist-range gate as the mirror's wand-map sampling, plus a
-        // loose weapon-to-hand bound so a mid-equip/mid-teleport frame never
-        // poisons the canonical.
-        constexpr float kMaxBoneToWandDistance = 30.0f;
-        constexpr float kMaxWeaponToHandDistance = 100.0f;
-        const RE::NiPoint3 weaponToHand = sub(weaponNode->world.translate, rightHandWorld.translate);
-        if (!isFiniteTransform(boneInRightWand) ||
-            std::sqrt(dot(boneInRightWand.translate, boneInRightWand.translate)) > kMaxBoneToWandDistance ||
-            std::sqrt(dot(weaponToHand, weaponToHand)) > kMaxWeaponToHandDistance) {
-            return;
-        }
-        const RE::NiTransform canonicalHold = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), rightHandWorld);
-        const RE::NiPoint3 canonicalGrip = worldToWeaponLocal(computeGrabLegacyPalmPivotAWorldFromHandBasis(rightHandWorld, false), weaponNode);
-        if (!isFiniteTransform(canonicalHold) || !std::isfinite(canonicalGrip.x) || !std::isfinite(canonicalGrip.y) || !std::isfinite(canonicalGrip.z)) {
-            return;
-        }
-        if (!captureRightNativeWeaponAimFrame(
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey,
-                weaponInstanceContentKey)) {
-            return;
-        }
-        // The animation capture is a more direct authority than a later
-        // presentation sample. Preserve it for this exact weapon identity,
-        // generation, and ownership.
-        if (hasRightFiringHandCanonicalFrame(
-                weaponNode,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponOwnershipKey) &&
-            _firing.rightCanonicalSource ==
-                RightFiringCanonicalSource::AuthoredAnimation) {
-            return;
-        }
-
-        _firing.rightCanonicalHandWeaponLocal = canonicalHold;
-        _firing.rightCanonicalGripWeaponLocal = canonicalGrip;
-        _firing.rightCanonicalWeaponNode = weaponNode;
-        _firing.rightCanonicalGenerationKey = currentWeaponGenerationKey;
-        _firing.rightCanonicalOwnershipKey = currentEquippedWeaponOwnershipKey;
-        _firing.rightCanonicalInstanceContentKey = weaponInstanceContentKey;
-        _firing.rightCanonicalCaptureSequence = 0;
-        _firing.rightCanonicalSource = RightFiringCanonicalSource::NativeCarry;
-        _firing.hasRightCanonicalHandWeaponLocal = true;
+        (void)captureRightNativeWeaponAimFrame(
+            weaponNode, currentWeaponGenerationKey, currentEquippedWeaponOwnershipKey, weaponInstanceContentKey);
     }
 
     bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(

@@ -834,12 +834,12 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponNodeWriteBlockPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponNodeWriteBlockPolicyTests)
 
-  add_executable(ROCKFrikWeaponPresentationPolicyTests
-    "${ROOT_DIR}/tests/FrikWeaponPresentationPolicyTests.cpp"
+  add_executable(ROCKWeaponAimBasisTests
+    "${ROOT_DIR}/tests/WeaponAimBasisTests.cpp"
   )
-  target_compile_features(ROCKFrikWeaponPresentationPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKFrikWeaponPresentationPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKFrikWeaponPresentationPolicyTests)
+  target_compile_features(ROCKWeaponAimBasisTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponAimBasisTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponAimBasisTests)
 
   add_executable(ROCKFrikPresentedHandTests "${ROOT_DIR}/tests/FrikPresentedHandTests.cpp")
   target_compile_features(ROCKFrikPresentedHandTests PRIVATE cxx_std_23)
@@ -914,7 +914,7 @@ if(BUILD_ROCK_TESTS)
     ROCKHandWorldClaimRegistryPolicyTests
     ROCKTrackedHandIsolationPolicyTests
     ROCKRenderedBoneTransportPolicyTests
-    ROCKFrikWeaponPresentationPolicyTests
+    ROCKWeaponAimBasisTests
     ROCKFrikPresentedHandTests
   )
   # Every policy executable uses the same CommonLib-heavy precompiled header and
