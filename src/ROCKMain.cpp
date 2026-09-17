@@ -707,6 +707,8 @@ namespace
         if (withSkeletonPhysics) {
             dynamic_collider_trace::beginFrame(g_rockConfig.rockDebugGrabFrameLogging, s_schedulerSequence);
             updatePhysicsInteractionFrame();
+            vanilla_weapon_alignment_telemetry::capture(
+                vanilla_weapon_alignment_telemetry::Phase::AfterWeaponSolve, s_schedulerSequence);
             native_scope_shot_diagnostics::beginFrame();
             if (!s_physicsInteraction) native_scope_shot_diagnostics::clearPresentation();
             // Input classification runs inside the update. Apply the button
@@ -842,6 +844,8 @@ namespace
     {
         if (s_skeletonTickedThisFrame && s_pluginLoaded && s_frikAvailable && s_physicsInteraction) {
             s_physicsInteraction->captureRenderedHands();
+            vanilla_weapon_alignment_telemetry::capture(
+                vanilla_weapon_alignment_telemetry::Phase::AfterWorldFinal, s_schedulerSequence);
         }
     }
 

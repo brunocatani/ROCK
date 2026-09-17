@@ -4,6 +4,7 @@
 #include "physics-interaction/weapon/WeaponSceneTraversal.h"
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "api/ROCKProviderApiInternal.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
@@ -37,6 +38,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             std::shared_ptr<spdlog::async_logger> log;
             std::chrono::steady_clock::time_point lastSample{};
             std::uint64_t sequence{ 0 };
+            std::uint64_t cycleTraceSequence{ 0 };
             std::uint32_t formId{ 0 };
             bool sampling{ false };
             unsigned int nativeMask{ 0 };
@@ -64,7 +66,9 @@ namespace rock::vanilla_weapon_alignment_telemetry
             case Phase::BeforeRockPreFrik: return "before-rock-pre-frik";
             case Phase::BeforeFrik: return "before-frik";
             case Phase::AfterFrik: return "after-frik";
+            case Phase::AfterWeaponSolve: return "after-weapon-solve";
             case Phase::AfterRock: return "after-rock";
+            case Phase::AfterWorldFinal: return "after-world-final";
             }
             return "unknown";
         }
@@ -143,7 +147,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
             next->log = std::make_shared<spdlog::async_logger>("ROCK_WeaponAlignment", sink,
                 next->pool, spdlog::async_overflow_policy::overrun_oldest);
             next->log->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
-            next->log->info("VWA start version=8 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250",
+            next->log->info("VWA start version=9 authoredSources=unknown:0,live:1,persisted:2,preharvest:3 pid={} build={} {} forms=00004822,0015B043,00024F55,0014831A,0014831B,000DF42E,00171B2B intervalMs=2000 minBoundaryMs=250 matrices=Ni-stored-rows frames=before-rock-pre-frik,before-frik,after-frik,after-rock nativeMask=graph-entry:1,graph-exit:2,primary-entry:4,primary-exit:8,support-entry:16,support-exit:32 nativeThread=game-only looseGrabMinMs=250 sceneMask=weapon:1,receiver:2,muzzle:4,rightHand:8,leftHand:16 aimWritesPerIdentity=48 aimJumpDegrees=5 aimJumpMinMs=250 cycleStride=8 cycleStages=after-frik,after-weapon-solve,after-rock,after-world-final",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             next->log->flush();
             session = std::move(next);
@@ -175,27 +179,51 @@ namespace rock::vanilla_weapon_alignment_telemetry
         }
         auto* equipped = f4vr::getEquippedWeaponItem();
         const std::uint32_t formId = equipped && equipped->item.object ? equipped->item.object->formID : 0;
-        // PAPER's Complete callback precedes final presentation. Pair its cycle
-        // trace with this readback using the provider frame, not scheduler seq.
-        // Investigation owner: PAPER/ROCK Timberwolf handoff; remove when qualified.
-        if (phase == Phase::AfterRock && formId == 0x1700206C &&
-            runtime_state::currentFrame().frameIndex % 8 == 0) {
-            const auto frame = runtime_state::currentFrame().frameIndex;
+        // Investigation owner: ROCK/PAPER cycle integration. Compare the
+        // solver output, PAPER's publication, and FRIK's later world final.
+        // Authority selects the weapon, so a changed mod load index cannot
+        // silently disable the trace. Remove after the cycle is qualified.
+        const auto authorityFlags = provider::currentNativeAnimationAuthorityFlagsV1();
+        using Authority = provider::RockProviderNativeAnimationAuthorityFlagV1;
+        const bool handsOnly = (authorityFlags & static_cast<std::uint32_t>(Authority::Hands)) != 0 &&
+            (authorityFlags & static_cast<std::uint32_t>(Authority::Weapon)) == 0;
+        const bool cyclePhase = phase == Phase::AfterFrik || phase == Phase::AfterWeaponSolve ||
+            phase == Phase::AfterRock || phase == Phase::AfterWorldFinal;
+        if (cyclePhase && schedulerSequence != 0 && schedulerSequence % 8 == 0 &&
+            formId != 0 && (handsOnly || session->cycleTraceSequence == schedulerSequence)) {
+            session->cycleTraceSequence = schedulerSequence;
             auto* weapon = f4vr::getWeaponNode();
-            RE::NiTransform right{};
-            const bool rightValid = frik_hand_world_authority::tryGetPresentedHandWorld(false, right);
-            session->log->info("CYCLE_TRACE final frame={} form={:08X} scheduler={} weaponValid={} rightValid={} overruns={}",
-                frame, formId, schedulerSequence, weapon != nullptr, rightValid, session->pool->overrun_counter());
+            const auto* nodes = f4vr::getPlayerNodes();
+            const auto* phaseLabel = phaseName(phase);
+            session->log->info("CYCLE_TRACE phase={} frame={} scheduler={} form={:08X} authority=0x{:X} weaponValid={} parent={} overruns={}",
+                phaseLabel, runtime_state::currentFrame().frameIndex, schedulerSequence, formId, authorityFlags,
+                weapon != nullptr, weapon && weapon->parent ? weapon->parent->name.c_str() : "none",
+                session->pool->overrun_counter());
             const auto pose = [&](const char* label, const RE::NiTransform& value) {
                 const auto& t = value.translate;
                 const auto& r = value.rotate.entry;
-                session->log->info("CYCLE_TRACE final-pose frame={} label={} T=({:.5f},{:.5f},{:.5f}) S={:.6f} R=({:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f})",
-                    frame, label, t.x, t.y, t.z, value.scale,
+                session->log->info("CYCLE_TRACE pose phase={} scheduler={} label={} T=({:.5f},{:.5f},{:.5f}) S={:.6f} R=({:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f})",
+                    phaseLabel, schedulerSequence, label, t.x, t.y, t.z, value.scale,
                     r[0][0], r[0][1], r[0][2], r[1][0], r[1][1], r[1][2], r[2][0], r[2][1], r[2][2]);
             };
-            if (weapon) pose("weapon-world", weapon->world);
-            if (rightValid) pose("right-world", right);
+            if (weapon) {
+                pose("weapon-world", weapon->world);
+                pose("weapon-local", weapon->local);
+                if (weapon->parent) pose("weapon-parent", weapon->parent->world);
+            }
+            if (nodes && nodes->primaryWandNode) pose("right-wand", nodes->primaryWandNode->world);
+            if (nodes && nodes->SecondaryWandNode) pose("left-wand", nodes->SecondaryWandNode->world);
+            for (const bool isLeft : { false, true }) {
+                RE::NiTransform value{};
+                if (frik_hand_world_authority::tryGetInputDriverWorld(isLeft, value))
+                    pose(isLeft ? "left-driver" : "right-driver", value);
+                if (frik_hand_world_authority::tryGetRawHandWorld(isLeft, value))
+                    pose(isLeft ? "left-input" : "right-input", value);
+                if (frik_hand_world_authority::tryGetPresentedHandWorld(isLeft, value))
+                    pose(isLeft ? "left-presented" : "right-presented", value);
+            }
         }
+        if (phase == Phase::AfterWeaponSolve || phase == Phase::AfterWorldFinal) return;
         if (phase == Phase::BeforeRockPreFrik) {
             session->sequence = schedulerSequence;
             session->nativeMask = 0;

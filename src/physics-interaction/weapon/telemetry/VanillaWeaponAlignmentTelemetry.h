@@ -13,7 +13,7 @@ namespace rock
 
 namespace rock::vanilla_weapon_alignment_telemetry
 {
-    enum class Phase { BeforeRockPreFrik, BeforeFrik, AfterFrik, AfterRock };
+    enum class Phase { BeforeRockPreFrik, BeforeFrik, AfterFrik, AfterWeaponSolve, AfterRock, AfterWorldFinal };
     enum class NativePhase { GraphEntry, GraphExit, PrimaryArmEntry, PrimaryArmExit, SupportArmEntry, SupportArmExit };
 
     // Borrowed only for the synchronous capture; the async logger receives
