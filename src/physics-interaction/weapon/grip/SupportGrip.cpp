@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
+#include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/hand/HandFingerMirrorMath.h"
 
 // Support-hand grip: authored capability qualification and selection, dynamic
@@ -1593,17 +1594,21 @@ namespace rock
         RE::NiTransform primaryTransform{};
         RE::NiTransform supportTransform{};
         RE::NiTransform primaryDriverWorld{};
+        RE::NiTransform supportDriverWorld{};
+        // Authored hands are presentation targets during a native cycle.
+        // Use the same controller-derived physical frames as one-hand carry;
+        // animated wrists must not become inputs to the two-hand weapon solve.
         const bool primaryTransformAvailable =
-            primaryHandIsLeft ?
+            primaryHandIsLeft || supportGrip.authoredSupportGrip ?
             tryResolvePhysicalHandFrame(
-                true,
+                primaryHandIsLeft,
                 primaryTransform,
                 primaryDriverWorld) :
             tryGetSolverHandTransform(false, primaryTransform);
-        if (!primaryTransformAvailable ||
-            !tryGetSolverHandTransform(
-                supportHandIsLeft,
-                supportTransform)) {
+        const bool supportTransformAvailable = supportGrip.authoredSupportGrip ?
+            tryResolvePhysicalHandFrame(supportHandIsLeft, supportTransform, supportDriverWorld) :
+            tryGetSolverHandTransform(supportHandIsLeft, supportTransform);
+        if (!primaryTransformAvailable || !supportTransformAvailable) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because authoritative hand transforms are unavailable");
             logGripFailureIncident("authoritative-hand-frame-unavailable");
@@ -1791,6 +1796,20 @@ namespace rock
 
         WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{};
         solverInput.weaponWorldTransform = weaponNode->world;
+        if (supportGrip.authoredSupportGrip) {
+            const auto* nodes = f4vr::getPlayerNodes();
+            const auto* wand = nodes ? (primaryHandIsLeft ? nodes->SecondaryWandNode : nodes->primaryWandNode) : nullptr;
+            // The axis-only authored solve preserves the input frame's roll.
+            // A cycling Weapon root contains graph motion at AfterArmSolve;
+            // seed from ROCK's controller basis, never that animated root.
+            if (!wand || !weapon_aim_basis::tryResolveWorld(
+                    wand->world, weaponNode->world.scale, solverInput.weaponWorldTransform)) {
+                _hasSolvedWeaponTransform = false;
+                logGripFailureIncident("authored-controller-aim-unavailable");
+                transitionToInactive(false);
+                return;
+            }
+        }
         solverInput.primaryGripLocal = _firing.primaryGripLocal;
         solverInput.supportGripLocal = supportGripLocal;
         solverInput.primaryTargetWorld = primaryController;

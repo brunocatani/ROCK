@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/WeaponAimBasis.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/weapon/WeaponSupport.h"
 
 #include <cstdio>
 #include <limits>
@@ -61,6 +62,32 @@ int main()
     ok &= expect("player translation accepted", weapon_aim_basis::tryResolveWorld(moved, 1.0f, movedAim));
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c) ok &= expect("player translation cannot rotate aim", movedAim.rotate.entry[r][c] == weapon.rotate.entry[r][c]);
+
+    // The authored two-hand solve leaves roll to its starting basis. Reusing
+    // an animated Weapon root therefore lets a cycle roll the gun even when
+    // both controller targets are stationary.
+    WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> input{};
+    input.weaponWorldTransform = weapon;
+    input.primaryGripLocal = { 0.815f, -0.734f, -2.679f };
+    input.supportGripLocal = { 0.755f, 21.439f, -0.052f };
+    input.primaryTargetWorld = transform_math::localPointToWorld(weapon, input.primaryGripLocal);
+    input.supportTargetWorld = transform_math::localPointToWorld(weapon, input.supportGripLocal);
+    const auto reference = solveTwoHandedWeaponTransformFrikPivot(input);
+    ok &= expect("controller-based two-hand solve succeeds", reference.solved);
+    RE::NiTransform animated = weapon;
+    const auto axis = weaponSolverNormalize(weaponSolverSub(input.supportTargetWorld, input.primaryTargetWorld));
+    const auto cycleRotation = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(axis, 0.8f);
+    animated.rotate = weaponSolverApplyWorldRotationToStoredBasis<RE::NiMatrix3, RE::NiPoint3>(cycleRotation, weapon.rotate);
+    input.weaponWorldTransform = animated;
+    const auto contaminated = solveTwoHandedWeaponTransformFrikPivot(input);
+    ok &= expect("cycle roll survives the old animated-root solve", contaminated.solved &&
+        weapon_support_acquisition_math::rotationAngleRadians(
+            transform_math::composeTransforms(transform_math::invertTransform(reference.weaponWorldTransform), contaminated.weaponWorldTransform).rotate) > 0.7f);
+    ok &= expect("authored solve obtains a fresh controller basis", weapon_aim_basis::tryResolveWorld(controller, animated.scale, input.weaponWorldTransform));
+    const auto fixed = solveTwoHandedWeaponTransformFrikPivot(input);
+    ok &= expect("controller-based solve retains both grip targets", fixed.solved && fixed.primaryError < 0.0001f && fixed.supportError < 0.0001f);
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) ok &= expect("animated roll cannot enter controller-based solve", near(fixed.weaponWorldTransform.rotate.entry[r][c], reference.weaponWorldTransform.rotate.entry[r][c]));
     ok &= expect("invalid scale rejected", !weapon_aim_basis::tryResolveWorld(controller, 0.0f, weapon));
     controller.rotate.entry[0][0] = std::numeric_limits<float>::quiet_NaN();
     ok &= expect("invalid controller rejected", !weapon_aim_basis::tryResolveWorld(controller, 1.0f, weapon));
