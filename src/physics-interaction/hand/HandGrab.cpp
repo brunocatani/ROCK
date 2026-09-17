@@ -391,10 +391,15 @@ namespace rock
             alignas(16) float targetRotationHavok[4]{};
             transform_math::niRowsToHavokQuaternion(targetWorld.rotate, targetRotationHavok);
 
+            // Native hard-keyframing uses aligned stores; caller outputs need only float alignment.
+            alignas(16) float linearVelocityHavok[4]{};
+            alignas(16) float angularVelocityRadians[4]{};
             using ComputeHardKeyFrame_t = void (*)(RE::hknpWorld*, RE::hknpBodyId, float*, float*, float, float*, float*);
             static REL::Relocation<ComputeHardKeyFrame_t> compute{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
-            compute(world, bodyId, targetPositionHavok, targetRotationHavok, deltaTime, outLinearVelocityHavok, outAngularVelocityRadians);
+            compute(world, bodyId, targetPositionHavok, targetRotationHavok, deltaTime, linearVelocityHavok, angularVelocityRadians);
 
+            havok_runtime::copyVector4(linearVelocityHavok, outLinearVelocityHavok);
+            havok_runtime::copyVector4(angularVelocityRadians, outAngularVelocityRadians);
             outLinearVelocityHavok[3] = 0.0f;
             outAngularVelocityRadians[3] = 0.0f;
             return havok_runtime::isFinite3(outLinearVelocityHavok) && havok_runtime::isFinite3(outAngularVelocityRadians);
