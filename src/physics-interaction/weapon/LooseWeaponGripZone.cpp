@@ -11,6 +11,8 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
@@ -365,6 +367,23 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
+            /*
+             * Probe: the seat's orientation is FRIK's stored offset under the
+             * canonical right hand, and a left seat mirrors it through both
+             * physical hands. Compare those hands with FRIK's tracked hands.
+             */
+            {
+                RE::NiTransform firstPersonRight{};
+                const bool rightValid = frik_visual_authority::tryGetHandWorldTransform(
+                    frik_visual_authority::Hand::Right, firstPersonRight);
+                ROCK_LOG_SAMPLE_INFO(Hand, 1000,
+                    "Loose seat right canonical hand: published={} presentedByRock={} vsFirstPerson={:.1f}deg/{:.2f}gu",
+                    publishedFrame.valid,
+                    publishedFrame.presentedByRock,
+                    rightValid ? tracked_hand_isolation_policy::rotationDegrees(canonicalHandWorld, firstPersonRight) : -1.0f,
+                    rightValid ? tracked_hand_isolation_policy::translationGameUnits(canonicalHandWorld, firstPersonRight) : -1.0f);
+            }
+
             if (!isLeft) {
                 state.firingHandWeaponLocal = canonicalHandWeaponLocal;
                 state.loosePlacementHandWeaponLocal =
@@ -379,6 +398,17 @@ namespace rock::loose_weapon_grip_zone
             } else {
                 RE::NiTransform leftHandWorld{};
                 if (physicalHandWorld(true, leftHandWorld)) {
+                    {
+                        RE::NiTransform firstPersonLeft{};
+                        const bool leftValid = frik_visual_authority::tryGetHandWorldTransform(
+                            frik_visual_authority::Hand::Left, firstPersonLeft);
+                        ROCK_LOG_SAMPLE_INFO(Hand, 1000,
+                            "Loose seat left physical hand: published={} presentedByRock={} vsFirstPerson={:.1f}deg/{:.2f}gu",
+                            s_physicalLeftHandFrame.valid,
+                            s_physicalLeftHandFrame.presentedByRock,
+                            leftValid ? tracked_hand_isolation_policy::rotationDegrees(leftHandWorld, firstPersonLeft) : -1.0f,
+                            leftValid ? tracked_hand_isolation_policy::translationGameUnits(leftHandWorld, firstPersonLeft) : -1.0f);
+                    }
                     state.hasFiringHandWeaponLocal = TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
                         canonicalHandWeaponLocal,
                         state.gripWeaponLocal,

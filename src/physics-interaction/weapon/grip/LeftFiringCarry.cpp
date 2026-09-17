@@ -1,5 +1,7 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
+#include "physics-interaction/hand/TrackedHandIsolationPolicy.h"
+
 // Left-firing equipped carry: position-only carry solve, weapon node ownership/reparenting, feed-forward weapon publish, and owned recoil delivery.
 
 namespace rock
@@ -233,6 +235,7 @@ namespace rock
         }
 
         RE::NiTransform physicalDriverWorld{};
+        const char* physicalHandSource = "driver-relation";
         if (!tryResolvePhysicalHandFrame(
                 true,
                 outPhysicalHandWorld,
@@ -245,6 +248,7 @@ namespace rock
                 !isUsableHandAuthorityTransform(outPhysicalHandWorld)) {
                 return false;
             }
+            physicalHandSource = "solver-fallback";
         }
 
         auto* playerNodes = f4vr::getPlayerNodes();
@@ -257,12 +261,26 @@ namespace rock
         if (!hasLeftFiringDampedFollowFrame(
                 weaponNode,
                 _session.weaponGenerationKey,
-                _session.equippedWeaponOwnershipKey) &&
-            !captureLeftFiringDampedFollowFrame(
-                weaponNode,
-                leftWand->world,
-                outPhysicalHandWorld)) {
-            return false;
+                _session.equippedWeaponOwnershipKey)) {
+            if (!captureLeftFiringDampedFollowFrame(
+                    weaponNode,
+                    leftWand->world,
+                    outPhysicalHandWorld)) {
+                return false;
+            }
+            // Probe: the reference the carry's damping correction is measured
+            // against, and which hand basis supplied it.
+            RE::NiTransform firstPersonLeftHand{};
+            const bool firstPersonValid = frik_visual_authority::tryGetHandWorldTransform(
+                frik_visual_authority::Hand::Left, firstPersonLeftHand);
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: left carry reference captured physicalSource={} handInWand={:.1f}deg physicalVsFirstPerson={:.1f}deg/{:.2f}gu",
+                physicalHandSource,
+                tracked_hand_isolation_policy::rotationDegrees(
+                    _firing.leftDampedFollowFrame.handInWandOrientation,
+                    transform_math::makeIdentityTransform<RE::NiTransform>()),
+                firstPersonValid ? tracked_hand_isolation_policy::rotationDegrees(outPhysicalHandWorld, firstPersonLeftHand) : -1.0f,
+                firstPersonValid ? tracked_hand_isolation_policy::translationGameUnits(outPhysicalHandWorld, firstPersonLeftHand) : -1.0f);
         }
         const RE::NiTransform dampedAimCarrierWorld =
             left_firing_position_only_math::
@@ -322,6 +340,30 @@ namespace rock
         outPresentedHandWorld = transform_math::composeTransforms(
             outWeaponWorld,
             _firing.primaryHandWeaponLocal);
+
+        /*
+         * Probe: the carry orientation is wandL o damping o mirror(aim). Log
+         * each factor so a rotated carry names the input that rotated it.
+         */
+        {
+            RE::NiTransform firstPersonLeftHand{};
+            const bool firstPersonValid = frik_visual_authority::tryGetHandWorldTransform(
+                frik_visual_authority::Hand::Left, firstPersonLeftHand);
+            const RE::NiPoint3 muzzle{ 0.0f, 1.0f, 0.0f };
+            const RE::NiPoint3 barrelWorld = transform_math::rotateLocalVectorToWorld(outWeaponWorld.rotate, muzzle);
+            const RE::NiPoint3 barrelInLeftWand = transform_math::rotateWorldVectorToLocal(leftWand->world.rotate, barrelWorld);
+            const RE::NiPoint3 aimBarrelInRightWand = transform_math::rotateLocalVectorToWorld(
+                _firing.rightNativeWeaponAimFrame.weaponInWandOrientation.rotate, muzzle);
+            ROCK_LOG_SAMPLE_INFO(Weapon, 1000,
+                "TwoHandedGrip: left carry frame physicalSource={} damping={:.1f}deg physicalVsFirstPerson={:.1f}deg/{:.2f}gu barrelWorld=({:.2f},{:.2f},{:.2f}) barrelInLeftWand=({:.2f},{:.2f},{:.2f}) aimBarrelInRightWand=({:.2f},{:.2f},{:.2f})",
+                physicalHandSource,
+                tracked_hand_isolation_policy::rotationDegrees(dampedAimCarrierWorld, leftWand->world),
+                firstPersonValid ? tracked_hand_isolation_policy::rotationDegrees(outPhysicalHandWorld, firstPersonLeftHand) : -1.0f,
+                firstPersonValid ? tracked_hand_isolation_policy::translationGameUnits(outPhysicalHandWorld, firstPersonLeftHand) : -1.0f,
+                barrelWorld.x, barrelWorld.y, barrelWorld.z,
+                barrelInLeftWand.x, barrelInLeftWand.y, barrelInLeftWand.z,
+                aimBarrelInRightWand.x, aimBarrelInRightWand.y, aimBarrelInRightWand.z);
+        }
         return isFiniteTransform(outWeaponWorld) &&
                isUsableHandAuthorityTransform(outPhysicalHandWorld) &&
                isUsableHandAuthorityTransform(outPresentedHandWorld);
