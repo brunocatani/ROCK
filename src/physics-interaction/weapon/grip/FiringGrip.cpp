@@ -1231,6 +1231,14 @@ namespace rock
             return false;
         }
 
+        // FRIK applies a requested reparent on its next skeleton pass. The
+        // logical left-carry state can already be clear while this node is
+        // still under the left hand; that pose is not a right-hand baseline.
+        const RE::NiNode* const rightHand = resolveFirstPersonHandNode(false);
+        if (!rightHand || weaponNode->parent != rightHand) {
+            return false;
+        }
+
         RE::NiTransform weaponInRightWand =
             transform_math::composeTransforms(
                 transform_math::invertTransform(rightWand->world),
@@ -1518,11 +1526,13 @@ namespace rock
         if (!isFiniteTransform(canonicalHold) || !std::isfinite(canonicalGrip.x) || !std::isfinite(canonicalGrip.y) || !std::isfinite(canonicalGrip.z)) {
             return;
         }
-        (void)captureRightNativeWeaponAimFrame(
-            weaponNode,
-            currentWeaponGenerationKey,
-            currentEquippedWeaponOwnershipKey,
-            weaponInstanceContentKey);
+        if (!captureRightNativeWeaponAimFrame(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey,
+                weaponInstanceContentKey)) {
+            return;
+        }
         // The animation capture is a more direct authority than a later
         // presentation sample. Preserve it for this exact weapon identity,
         // generation, and ownership.

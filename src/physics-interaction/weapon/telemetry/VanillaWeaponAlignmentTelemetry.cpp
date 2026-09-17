@@ -359,7 +359,7 @@ namespace rock::vanilla_weapon_alignment_telemetry
         if (!captureThread || !session || !g_rockConfig.rockDebugWeaponOmodDumpEnabled) return;
         // Diagnose the equip/handoff overwrite, including modded weapons.
         // Stable carry stops after this burst; later large changes remain
-        // observable at a capped rate. Remove with the aim-source repair.
+        // observable at a capped rate. Remove after runtime validation of the aim-source repair.
         if (capture.identityChanged) session->aimCapturesRemaining = 48;
         const float deltaDegrees = capture.previousValid ?
             hand_world_claim_registry_policy::rotationDeltaDegrees(capture.previousAim, capture.nextAim) : 0.0f;

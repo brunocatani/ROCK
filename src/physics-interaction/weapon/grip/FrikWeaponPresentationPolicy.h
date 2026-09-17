@@ -147,8 +147,10 @@ namespace rock::frik_weapon_presentation_policy
      * swapped model is a new weapon, a reparented node a different local).
      * Without one (a new weapon before FRIK's first write, or a write block
      * held since before it, so FRIK never wrote) the stored offset of the
-     * current table revision is presented under the primary hand. Nothing is
-     * presented while ROCK owns the pose or the weapon is hidden.
+     * current table revision is presented under the primary hand. Hidden
+     * equip frames still feed authored alignment and native aim capture, so
+     * they need the same baseline. Visibility gates capturing a FRIK write,
+     * not presenting a known offset. ROCK-owned poses are left intact.
      */
     [[nodiscard]] constexpr PresentSource selectPresentation(
         const OffsetLatch& latch,
@@ -156,7 +158,7 @@ namespace rock::frik_weapon_presentation_policy
         const std::uint64_t offsetTableRevision,
         const PresentInput& input) noexcept
     {
-        if (input.rockOwnsPose || !input.nodeVisible || !input.identity.valid()) {
+        if (input.rockOwnsPose || !input.identity.valid()) {
             return PresentSource::None;
         }
         if (latch.valid && latch.identity == input.identity) {

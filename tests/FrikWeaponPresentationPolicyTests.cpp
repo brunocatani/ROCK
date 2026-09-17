@@ -106,8 +106,14 @@ int main()
         present({}, stored, { .identity = swapped, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
     ok &= expectTrue("no present while ROCK owns the pose",
         present(written, stored, { .identity = kRightHandWeapon, .nodeVisible = true, .rockOwnsPose = true, .underPrimaryHand = true }) == PresentSource::None);
-    ok &= expectTrue("no present for a hidden weapon",
-        present(written, stored, { .identity = kRightHandWeapon, .nodeVisible = false, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("hidden equip uses the captured offset before aim capture",
+        present(whileHidden, stored, { .identity = kRightHandWeapon, .nodeVisible = false, .underPrimaryHand = true }) == PresentSource::CapturedLatch);
+    ok &= expectTrue("hidden equip before FRIK's first write uses the stored offset",
+        present({}, stored, { .identity = kRightHandWeapon, .nodeVisible = false, .underPrimaryHand = true }) == PresentSource::SynthesizedOffset);
+    ok &= expectTrue("hidden equip cannot replace a ROCK-owned pose",
+        present(written, stored, { .identity = kRightHandWeapon, .nodeVisible = false, .rockOwnsPose = true, .underPrimaryHand = true }) == PresentSource::None);
+    ok &= expectTrue("hidden equip cannot apply a right-hand offset under the left hand",
+        present(hiddenReparented, stored, { .identity = leftCarry, .nodeVisible = false }) == PresentSource::None);
     ok &= expectTrue("no latch present under another parent", present(written, none, { .identity = leftCarry, .nodeVisible = true }) == PresentSource::None);
     ok &= expectTrue("no present on the swap frame", present(written, none, { .identity = swapped, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
     ok &= expectTrue("no present for another node", present(written, none, { .identity = otherNode, .nodeVisible = true, .underPrimaryHand = true }) == PresentSource::None);
