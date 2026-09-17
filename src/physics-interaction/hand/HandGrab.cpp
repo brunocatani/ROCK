@@ -8716,6 +8716,12 @@ namespace rock
                 nearGrip.arrangement, input.joiningPeerHeldObject, nearGrip.role);
             const bool dynamicOffhand = role == policy::Role::Support && input.joiningPeerHeldObject &&
                 nearGrip.arrangement == policy::Arrangement::OneHanded && !input.transferPose;
+            ROCK_LOG_SAMPLE_INFO(Hand, 1000,
+                "{} loose weapon role selection ref={:08X} peerHolding={} touchingPocket={} pull={} forced={} transfer={} arrangement={} zoneRole={} selectedRole={} dynamicSupport={}",
+                handName(), sel.refr ? sel.refr->GetFormID() : 0, input.joiningPeerHeldObject,
+                touchingPocket, grabbedFromPullCatch, sel.forcedArrival, input.transferPose != nullptr,
+                static_cast<unsigned>(nearGrip.arrangement), static_cast<unsigned>(nearGrip.role),
+                static_cast<unsigned>(role), dynamicOffhand);
             requireAuthoredPose = (role != policy::Role::None || input.transferPose != nullptr) && !dynamicOffhand;
             nearGrip.role = role;
             nearGrip.handWorld = handWorldTransform;

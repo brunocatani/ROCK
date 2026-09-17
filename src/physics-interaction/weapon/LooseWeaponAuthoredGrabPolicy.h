@@ -28,7 +28,9 @@ namespace rock::loose_weapon_authored_grab_policy
         Role transferRole, Arrangement layout, bool peerHolding, Role zoneRole) noexcept
     {
         if (transfer) return transferRole;
-        if (!touching) return Role::Firing;
+        // An arriving free weapon takes firing. A second hand on an already
+        // held weapon keeps its selected station even before palm contact.
+        if (!touching && !peerHolding) return Role::Firing;
         if (sharedFiringZone(layout) && zoneRole != Role::None) {
             return peerHolding ? Role::Support : Role::Firing;
         }

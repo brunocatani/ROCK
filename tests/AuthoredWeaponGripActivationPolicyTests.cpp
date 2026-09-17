@@ -509,6 +509,24 @@ int main()
             looseGripsPass &= loose::acquisitionRole(false, true, Role::None, layout, false, Role::Firing) == Role::None;
         }
         looseGripsPass &= loose::acquisitionRole(true, false, Role::None, Layout::Separated, false, Role::Support) == Role::Support;
+        // Near acquisition of an already-held weapon must preserve the station:
+        // no semantic palm contact is required to recognize the joining hand.
+        for (const bool touching : { false, true }) {
+            looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, Layout::Separated, true, Role::Support) == Role::Support;
+            // A deliberate second firing-station grab stays at that station;
+            // a mesh grab outside the authored zones remains dynamic.
+            looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, Layout::Separated, true, Role::Firing) == Role::Firing;
+            for (const auto layout : { Layout::Separated, Layout::Close, Layout::OneHanded }) {
+                looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, layout, true, Role::None) == Role::None;
+                looseGripsPass &= loose::acquisitionRole(touching, true, Role::Support, layout, true, Role::Firing) == Role::Support;
+                looseGripsPass &= loose::acquisitionRole(touching, true, Role::Firing, layout, true, Role::Support) == Role::Firing;
+            }
+            for (const auto layout : { Layout::Close, Layout::OneHanded }) {
+                for (const auto zone : { Role::Firing, Role::Support }) {
+                    looseGripsPass &= loose::acquisitionRole(touching, false, Role::None, layout, true, zone) == Role::Support;
+                }
+            }
+        }
         if (!looseGripsPass) return 1;
     }
 
